@@ -1,0 +1,2684 @@
+{
+  "arm": "paged",
+  "case": {
+    "id": "regression-general",
+    "query": "Create one concise study note explaining simple linear regression with a small worked example.",
+    "check": "One predictor; explains the method and a worked example without silently requiring a specific software workflow. Concrete application data are welcome."
+  },
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "simple linear regression least squares slope intercept worked example",
+      "topics": [],
+      "roles": [
+        "formal",
+        "worked_example"
+      ],
+      "seconds": 16.682,
+      "excerpts": [
+        {
+          "id": "exc_f213361bf057b0_566_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › IDENTIFYING THE LEAST SQUARES LINE FROM SUMMARY STATISTICS",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains how to identify the least squares line from summary statistics: estimate the slope b1 = (sy/sx)R, use the point (x̄, ȳ) with the point-slope equation, and simplify to obtain b0 = ȳ − b1x̄. Example 8.10 applies this to Elmhurst aid and family income data, producing aid = 24,327 − 0.0431 × family income. A software summary table gives matching estimates for b0 and b1.",
+          "pages": [
+            359
+          ],
+          "figure_ids": [
+            "fig_f213361bf057b0_5187_v2"
+          ],
+          "chunk_ids": [
+            "chk_f213361bf057b0_945_v2",
+            "chk_f213361bf057b0_946_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_945_v2",
+          "hit_text": "To identify the least squares line from summary statistics:\n\n• Estimate the slope parameter, b1 = (sy/sx)R.\n• Noting that the point (¯x,y¯) is on the least squares line, use x0 = x¯ and y0 = y¯ with the point-slope equation: y − y¯ = b1(x − x¯).\n• Simplify the equation, which would reveal that b0 = y¯ − b1x¯.\n\nEXAMPLE 8.10 START Example problem: Using the point (101780,19940) from the sample means and the slope estimate\n\nb1 = −0.0431 from Guided Practice 8.9, ﬁnd the least-squares line for predicting aid based on family income.\n\nSolution to the example: Apply the point-slope equation using (101.78,19.94) and the slope b1 = −0.0431:\n\ny − y0 = b1(x − x0) y − 19,940 = −0.0431(x − 101,780)\n\nExpanding the right side and then adding 19,940 to each side, the equation simpliﬁes: aid = 24,327 − 0.0431 × family income\n\nHere we have replaced y with aid and x with family income to put the equation in context. The ﬁnal equation should always include a “hat” on the variable being predicted, whether it is a generic “y” or a named variable like “aid”.\n\nEXAMPLE 8.10 HAS ENDED.\n\nA computer is usually used to compute the least squares line, and a summary table generated using software for the Elmhurst regression line is shown in Figure 8.14. The ﬁrst column of numbers provides estimates for b0 and b1, respectively. These results match those from Example 8.10 (with some minor rounding error).\n\nEstimate Std. Error t value Pr(>|t|) (Intercept) 24319.3 1291.5 18.83 <0.0001 family income -0.0431 0.0108 -3.98 0.0002",
+          "hit_page_start": 359,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.338,
+                264.788,
+                577.868,
+                277.367
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.758,
+                284.014,
+                836.654,
+                363.225
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                382.979,
+                852.879,
+                415.542
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                417.742,
+                852.881,
+                445.731
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                463.341,
+                852.874,
+                499.947
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                375.641,
+                505.795,
+                624.127,
+                546.489
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                552.653,
+                759.791,
+                603.199
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                612.809,
+                852.876,
+                655.578
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                665.253,
+                372.092,
+                677.832
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                695.6,
+                852.944,
+                753.463
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                287.938,
+                771.731,
+                712.062,
+                817.529
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024329950559458757
+        },
+        {
+          "id": "exc_0689cddaba206d_703_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.2 Writing the least squares regression line",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains writing the least squares regression line for predicting gift aid from family income. Defines the intercept a and slope b as statistics computed from data. Gives formulas: slope b = r sy/sx, and intercept a = y¯ − bx¯ using the point of averages. Notes a computer is usually used, and presents a summary table of estimates for the Elmhurst College data.",
+          "pages": [
+            459
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_6295_v2"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1169_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1169_v2",
+          "hit_text": "For the Elmhurst College data, we could ﬁt a least squares regression line for predicting gift aid based on a student’s family income and write the equation as:\n\naid̂ = a + b × family income\n\nHere a is the y-intercept of the least squares regression line and b is the slope of the least squares regression line. a and b are both statistics that can be calculated from the data.\n\nWe can enter all of the data into a statistical software package and easily ﬁnd the values of a and b. However, we can also calculate these values by hand, using only the summary statistics.\n\n• The slope of the least squares line is given by b = r sy sx where r is the correlation coeﬃcient between the variables x and y, and sx and sy are the sample standard deviations of x, the explanatory variable, and y, the response variable.\n• The point of averages (x,¯ y¯) is always on the least squares line. Plugging this point in for x and y in the least squares equation and solving for a gives\n\ny¯ = a + bx¯ a = y¯− bx¯\n\nWe mentioned earlier that a computer is usually used to compute the least squares line. A summary table based on computer output is shown in Figure 5.20 for the Elmhurst College data. The ﬁrst column of numbers provides estimates for a and b, respectively.\n\nEstimate Std. Error t value Pr(>∣t∣) (Intercept) 24.3193 1.2915 18.83 0.0000 family income -0.0431 0.0108 -3.98 0.0002\n\nFigure 5.20: Summary of least squares ﬁt for the Elmhurst College data.",
+          "hit_page_start": 459,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                98.79,
+                852.938,
+                126.465
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                389.954,
+                128.191,
+                577.49,
+                182.152
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                169.232,
+                852.936,
+                196.907
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                199.423,
+                852.941,
+                227.097
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                171.479,
+                232.456,
+                852.946,
+                377.143
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                365.1,
+                369.307,
+                675.598,
+                419.912
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                427.284,
+                852.944,
+                470.053
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                290.739,
+                475.49,
+                709.265,
+                530.985
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                240.827,
+                546.583,
+                759.176,
+                559.163
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024193548387096774
+        },
+        {
+          "id": "exc_0689cddaba206d_728_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › Section summary",
+          "roles": [
+            "summary",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Summarizes least-squares regression: the line minimizes squared residuals and passes through (x̄, ȳ); form ŷ = a + bx; R² is the proportion of variation in the response explained by the linear relationship, ranges 0 to 1, and does not indicate direction; a and b are sample statistics; slope b is the predicted change in y per one-unit increase in x; intercept a is the predicted y at x = 0, sometimes unreasonable due to extrapolation or impossible values; interpret a, b, and R² in context.",
+          "pages": [
+            473
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1203_v2",
+            "chk_0689cddaba206d_1204_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1203_v2",
+          "hit_text": "• The simple linear regression model is ﬁt to the data by minimizing the sum of the squares of the residuals. Because of this, the resulting equation is often called the least-squares regression line (LSRL) and is calculated using technology. This regression line will pass through the point (¯x , y¯).\n• We write the least squares regression line in the form: yˆ = a+bx. The slope b and the y-intercept a can be calculated using technology or identiﬁed from computer output.\n• In simple linear regression, the square of the correlation coeﬃcient, R2, is called the coeﬃcient of determination. R2 is the proportion of variation in the response variable that is explained by the linear relationship with the explanatory variable.\n• R2 is always between 0 and 1, inclusive, or between 0% and 100%, inclusive. R2 applies to any type of model, not just a linear model, and can be used to compare the ﬁt among various models. The higher the value of R2, the better the model “ﬁts” the data.\n• The value of R2 is always positive and cannot tell us the direction of the association. If ﬁnding r based on R2, make sure to use either the scatterplot or the slope of the regression line to determine whether r =+ √R2 or − √R2.\n• The coeﬃcients a and b of the least-squares regression line model (line of best ﬁt) are statistics because they are based on a sample of values.\n• The slope b of the least-squares regression line can be interpreted as the predicted increase or decrease in the response variable y for a one-unit increase in the explanatory variable x.",
+          "hit_page_start": 473,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                326.336,
+                852.948,
+                814.241
+              ],
+              "page": 473,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023821721311475412
+        },
+        {
+          "id": "exc_f213361bf057b0_564_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › GUIDED PRACTICE 8.8 START",
+          "roles": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "regression-diagnostics",
+            "correlation"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Guided Practice 8.8 asks whether least squares regression can be applied to the Elmhurst data; the solution notes a linear trend, no obvious outliers, roughly constant variance, and non-time-series observations. Section 8.2.4 sets up the least squares line aid = β0 + β1 × family income, defines β0 and β1 as parameters, and gives two properties for estimating them: b1 = (sy/sx)R and that (x̄, ȳ) lies on the line. Summary statistics for family income and gift aid are listed with R = −0.499.",
+          "pages": [
+            357,
+            358
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_942_v2",
+            "chk_f213361bf057b0_943_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_942_v2",
+          "hit_text": "Should we have concerns about applying least squares regression to the Elmhurst data in Figure 8.11?10 Go to the preceding footnote link for the Guided Practice solution.\n\nGUIDED PRACTICE 8.8 HAS ENDED.\n\n10The trend appears to be linear, the data fall around the line with no obvious outliers, the variance is roughly constant. These are also not time series observations. Least squares regression can be applied to these data.\n\n8.2.4 Finding the least squares line For the Elmhurst data, we could write the equation of the least squares regression line as\n\naid = β0 + β1 × family income\n\nHere the equation is set up to predict gift aid based on a student’s family income, which would be useful to students considering Elmhurst. These two values, β0 and β1, are the parameters of the regression line.\n\nAs in Chapters 5, 6, and 7, the parameters are estimated using observed data. In practice, this estimation is done using a computer in the same way that other estimates, like a sample mean, can be estimated using a computer or calculator. However, we can also ﬁnd the parameter estimates by applying two properties of the least squares line:\n\n• The slope of the least squares line can be estimated by b1 = sy sx R where R is the correlation between the two variables, and sx and sy are the sample standard deviations of the explanatory variable and response, respectively.\n• If x¯ is the sample mean of the explanatory variable and y¯ is the sample mean of the vertical variable, then the point (¯x,y¯) is on the least squares line.",
+          "hit_page_start": 357,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.874,
+                116.797
+              ],
+              "page": 357,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                119.312,
+                440.474,
+                131.891
+              ],
+              "page": 357,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                926.029,
+                852.941,
+                949.707
+              ],
+              "page": 357,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                66.713,
+                819.036,
+                111.37
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                374.627,
+                127.513,
+                592.817,
+                149.337
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                155.5,
+                852.944,
+                198.27
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                200.785,
+                852.944,
+                258.65
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                171.479,
+                268.876,
+                852.949,
+                402.452
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0215111301369863
+        },
+        {
+          "id": "exc_0689cddaba206d_705_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.3 Interpreting the coeﬃcients of a regression line",
+          "roles": [
+            "worked_example",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains interpreting coefficients in a linear regression model. Worked examples interpret the slope (-0.0431) and y-intercept (24.3) for Elmhurst College gift aid predicted from family income, noting the slope gives the predicted change in y per one-unit change in x and the intercept gives predicted y when x = 0, valid only if the model extends to x = 0.",
+          "pages": [
+            460
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1171_v2",
+            "chk_0689cddaba206d_1172_v2",
+            "chk_0689cddaba206d_1173_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1172_v2",
+          "hit_text": "Interpreting the coeﬃcients in a regression model is often one of the most important steps in the analysis.\n\nEXAMPLE 5.18 START Example problem: The slope for the Elmhurst College data for predicting gift aid based on family income was calculated as -0.0431. Intepret this quantity in the context of the problem. Solution to the example: You might recall from an algebra course that slope is change in y over change in x. The slope of the regression line tells us about the average change in y for each unit change in x. Here, both x and y are in thousands of dollars and the slope is negative. So if x is one unit or one thousand dollars higher, the predicted value of y will be 0.0431 thousand dollars less. In other words, for each additional thousand dollars of family income, the predicted gift aid is 0.0431 thousand, or $43.10 less. EXAMPLE 5.18 HAS ENDED. EXAMPLE 5.19 START Example problem: The y-intercept for the Elmhurst College data for predicting gift aid based on family income was calculated as 24.3. Intepret this quantity in the context of the problem. Solution to the example: The intercept a describes the predicted value of y when x = 0. The predicted gift aid is 24.3 thousand dollars if a student’s family has no income. The meaning of the intercept is relevant to this application since the family income for some students at Elmhurst is$0. In other applications, the intercept may have little or no practical value if there are no observations where x is near zero (extrapolation). Here, it would be acceptable to say that the average gift aid is 24.3 thousand dollars among students whose family have 0 dollars in income.\nEXAMPLE 5.19 HAS ENDED.",
+          "hit_page_start": 460,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                98.79,
+                852.936,
+                126.465
+              ],
+              "page": 460,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                145.023,
+                852.877,
+                518.323
+              ],
+              "page": 460,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01996268656716418
+        },
+        {
+          "id": "exc_0689cddaba206d_702_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › Learning objectives",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Learning objectives for least-squares regression: calculate and interpret coefficients and the coefficient of determination. The section motivates least squares as a rigorous alternative to fitting lines by eye, using family income and gift aid data from 50 Elmhurst College freshmen. It contrasts minimizing the sum of residual magnitudes with minimizing the sum of squared residuals, explaining that squaring penalizes larger errors more than proportionally, and notes the least squares line minimizes the sum of squared errors.",
+          "pages": [
+            457,
+            458
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_6273_v2",
+            "fig_0689cddaba206d_6283_v2",
+            "fig_0689cddaba206d_6284_v2"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1166_v2",
+            "chk_0689cddaba206d_1167_v2",
+            "chk_0689cddaba206d_1168_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1168_v2",
+          "hit_text": "In Figure 5.19, we imagine the squared error about a line as actual squares. The least squares regression line minimizes the sum of the areas of these squared errors. In the ﬁgure, the sum of the squared error is 4 + 1 + 1 = 6. There is no other line about which the sum of the squared error will be smaller.\n\nFigure 5.19: A screenshot from the interactive Desmos Activity: Least Squares Demo. Find it at openintro.org/ahss/desmos. The line is the least squares regression line as it makes the sum of squared error (in the y direction) least. Here the smallest possible sum of squared error is 6.",
+          "hit_page_start": 458,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                330.245,
+                852.948,
+                401.027
+              ],
+              "page": 458,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                208.825,
+                766.207,
+                791.18,
+                824.071
+              ],
+              "page": 458,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019149626744563452
+        },
+        {
+          "id": "exc_0689cddaba206d_704_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.2 Writing the least squares regression line › EXAMPLE 5.16 START",
+          "roles": [
+            "worked_example",
+            "exercise"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Two examples interpret regression output and prediction. Example 5.16 explains columns of a regression table: Estimate = -0.0431 as the slope point estimate b, Std. Error = 0.0108, t value = -3.98 for the null hypothesis that the population slope = 0, and Pr(>|t|) = 0.0002 as the two-sided p-value. Example 5.17 asks whether a linear equation can predict an individual student's financial aid; the answer is no, due to variability around the line and data from one freshman class.",
+          "pages": [
+            459
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1170_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1170_v2",
+          "hit_text": "Example problem: Using the second, third, and fourth columns in Figure 5.20 is beyond the scope of this book. However, can you guess what they represent?\n\nSolution to the example: Look at the second row, which corresponds to the slope. The ﬁrst column, Estimate = -0.0431, tells us our best estimate for the slope of the population regression line. We call this point estimate b. The second column, Std. Error = 0.0108, is the standard error of this point estimate. The third column, t value = -3.98, is the T test statistic for the null hypothesis that the slope of the population regression line = 0. The last column, Pr(>∣t∣) = 0.0002, is the p-value for this two-sided T-test.\n\nEXAMPLE 5.16 HAS ENDED.\nEXAMPLE 5.17 START\n\nExample problem: Suppose a high school senior is considering Elmhurst College. Can she simply use the linear equation that we have found to calculate her ﬁnancial aid from the university?\n\nSolution to the example: No. Using the equation will provide a prediction or estimate. However, as we see in the scatterplot, there is a lot of variability around the line. While the linear equation is good at capturing the trend in the data, there will be signiﬁcant error in predicting an individual student’s aid. Additionally, the data all come from one freshman class, and the way aid is determined by the university may change from year to year.",
+          "hit_page_start": 459,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                612.448,
+                852.874,
+                640.122
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                657.732,
+                852.879,
+                758.705
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                755.46,
+                372.092,
+                804.409
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                810.173,
+                852.868,
+                837.847
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                855.458,
+                852.879,
+                928.417
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018804949527841095
+        },
+        {
+          "id": "exc_f213361bf057b0_570_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › EXAMPLE 8.12 HAS ENDED. › INTERPRETING PARAMETERS ESTIMATED BY LEAST SQUARES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains interpretation of least squares parameters: the slope is the estimated difference in y for a one-unit increase in x; the intercept is the average outcome of y when x = 0, provided the linear model is valid at x = 0, which is often not the case.",
+          "pages": [
+            360
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_950_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_950_v2",
+          "hit_text": "The slope describes the estimated diﬀerence in the y variable if the explanatory variable x for a case happened to be one unit larger. The intercept describes the average outcome of y if x = 0 and the linear model is valid all the way to x = 0, which in many applications is not the case.",
+          "hit_page_start": 360,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.338,
+                873.256,
+                836.667,
+                916.027
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01834319526627219
+        },
+        {
+          "id": "exc_64ed84430ae3b2_261_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 6 Linear Regression and Correlation › Example 6.6 › Least Squares Criteria for Best Fit",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The process of fitting the best fit line is called linear regression. The idea behind finding the best fit line is based on the assumption that the data are scattered about a straight line. The criteria for the best fit line is that the sum of the squared errors (SSE) is minimized, that is made as small as possible. Any other line you might choose would have a higher SSE than the best fit line. This best fit line is called the least squares regression line.\n\nNote: Computer spreadsheets, statistical software, and many calculators can quickly calculate the best fit line and create the graphs. The calculations tend to be tedious if done by hand. Instructions to use the TI-83, TI-83+, and TI-84+ calculators to find the best fit line and create a scatterplot are shown at the end of this section.\n\nTHIRD EXAM vs FINAL EXAM EXAMPLE: The graph of the line of best fit for the third exam/final exam example is shown below:\n\nFigure 6.9 Exam Score\n\nThe least squares regression line (best fit line) for the third exam/final exam example has the equation:",
+          "pages": [
+            112
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_1609_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_297_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_297_v1",
+          "hit_text": "The process of fitting the best fit line is called linear regression. The idea behind finding the best fit line is based on the assumption that the data are scattered about a straight line. The criteria for the best fit line is that the sum of the squared errors (SSE) is minimized, that is made as small as possible. Any other line you might choose would have a higher SSE than the best fit line. This best fit line is called the least squares regression line.\n\nNote: Computer spreadsheets, statistical software, and many calculators can quickly calculate the best fit line and create the graphs. The calculations tend to be tedious if done by hand. Instructions to use the TI-83, TI-83+, and TI-84+ calculators to find the best fit line and create a scatterplot are shown at the end of this section.\n\nTHIRD EXAM vs FINAL EXAM EXAMPLE: The graph of the line of best fit for the third exam/final exam example is shown below:\n\nFigure 6.9 Exam Score\n\nThe least squares regression line (best fit line) for the third exam/final exam example has the equation:",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.054,
+                306.461,
+                835.642,
+                416.97
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                138.659,
+                431.861,
+                834.783,
+                522.271
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.054,
+                537.162,
+                834.706,
+                581.757
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                404.598,
+                869.4,
+                557.997,
+                882.986
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                913.052,
+                821.82,
+                948.74
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018333333333333333
+        },
+        {
+          "id": "exc_45ecdb7da7734b_279_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Correlation and linear regression › 12.4 Estimating a linear regression model › 12.4.1 Linear regression in jamovi",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "jamovi"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Demonstrates running a simple linear regression in jamovi using parenthood.csv, with dani.grump as the dependent variable and dani.sleep as a covariate. Reports the fitted intercept b̂0 = 125.96 and slope b̂1 = −8.94, giving the regression line Ŷi = 125.96 + (−8.94Xi).",
+          "pages": [
+            287
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2224_v2",
+            "fig_45ecdb7da7734b_2225_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_627_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_627_v2",
+          "hit_text": "To run my linear regression, open up the ‘Regression’ – ‘Linear Regression’ analysis in jamovi, using the parenthood.csv data file. Then specify dani.grump as the ‘Dependent Variable’ and dani.sleep as the variable entered in the ‘Covariates’ box. This gives the\n\nresults shown in Figure 12.13, showing an intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best fitting regression line that I plotted in Figure 12.12 has this formula:\n\n𝑌𝑖̂ = 125.96 + (−8.94𝑋𝑖)\n\nFigure 12.13. A jamovi screenshot showing a simple linear regression analysis",
+          "hit_page_start": 287,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                324.637,
+                843.736,
+                376.956
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                337.603,
+                843.75,
+                453.151
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                418.877,
+                387.575,
+                612.373,
+                486.36
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                218.368,
+                809.26,
+                812.88,
+                828.368
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01803751803751804
+        },
+        {
+          "id": "exc_45ecdb7da7734b_277_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Correlation and linear regression › 12.3 What is a linear regression model?",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Introduces linear regression as a more powerful extension of Pearson correlation, using a sleep-grumpiness example. Explains the regression line as a line through the middle of the data, reviews the straight-line formula y = a + bx, and defines intercept and slope. Presents the regression model notation Ŷi = b0 + b1Xi, distinguishing observed Yi from predicted Ŷi, and defines residuals as εi = Yi − Ŷi, giving the full model Yi = b0 + b1Xi + εi.",
+          "pages": [
+            283,
+            284,
+            285
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_621_v2",
+            "chk_45ecdb7da7734b_622_v2",
+            "chk_45ecdb7da7734b_623_v2",
+            "chk_45ecdb7da7734b_624_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_622_v2",
+          "hit_text": "Notice that, since we’re not idiots, the regression line goes through the middle of the data. We don’t find ourselves imagining anything like the rather silly plot shown in Figure 12.11(b). This is not highly surprising. The line that I’ve drawn in Figure 12.11(b) doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right?\n\nFigure 12.11. Panel (a) shows the sleep-grumpiness scatterplot from Figure 12.9 with the best fitting regression line drawn over the top. Not surprisingly, the line goes through the middle of the data. In contrast, panel (b) shows the same data, but with a very poor choice of regression line drawn over the top\n\nThis is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑎 + 𝑏𝑥\n\nThe two variables are 𝑥 and 𝑦, and we have two coeﬀicients, 𝑎 and 𝑏.123 The coeﬀicient 𝑎 represents the y-intercept of the line, and coeﬀicient 𝑏 represents the slope of the line. The intercept is interpreted as “the value of y that you get when 𝑥 = 0”. Similarly, a slope of b means that if you increase the x-value by 1 unit, then the y-value goes up by\n\nb units, and a negative slope means that the y-value would go down rather than up. We use the exact same formula for a regression line.",
+          "hit_page_start": 284,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                98.644,
+                812.502,
+                184.169
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                604.814,
+                812.484,
+                673.735
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                688.901,
+                812.484,
+                757.822
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                442.769,
+                719.196,
+                525.979,
+                814.622
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                752.404,
+                812.502,
+                881.039
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                854.946,
+                812.484,
+                890.658
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01793066088840737
+        },
+        {
+          "id": "exc_f213361bf057b0_565_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › GUIDED PRACTICE 8.9 START",
+          "roles": [
+            "exercise",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.85,
+          "synopsis": "A guided practice asks the reader to compute the slope of the regression line of gift aid against family income using summary statistics. It then recalls the point-slope form of a line, y − y0 = slope × (x − x0), which can be used to find the model fit, including the estimate of b0.",
+          "pages": [
+            359
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_944_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_944_v2",
+          "hit_text": "Using the summary statistics in Figure 8.13, compute the slope for the regression line of gift aid against family income.11 Go to the preceding footnote link for the Guided Practice solution.\n\nGUIDED PRACTICE 8.9 HAS ENDED.\n\nYou might recall the point-slope form of a line from math class, which we can use to ﬁnd the model ﬁt, including the estimate of b0. Given the slope of a line and a point on the line, (x0,y0), the equation for the line can be written as\n\ny − y0 = slope × (x − x0)",
+          "hit_page_start": 359,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.869,
+                116.797
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                119.312,
+                440.474,
+                131.891
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                149.659,
+                852.941,
+                192.428
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                409.858,
+                207.208,
+                590.142,
+                229.033
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017352557600347776
+        },
+        {
+          "id": "exc_dd1e65de648fb2_992_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.1 What is a linear regression model?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "hypothesis-tests",
+            "correlation",
+            "graphs",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Since the basic ideas in regression are closely tied to correlation, we’ll return to the parenthood.Rdata file that we were using to illustrate how correlations work. Recall that, in this data set, we were trying to find out why Danielle is so very grumpy all the time, and our working hypothesis was that I’m not getting enough sleep. We drew some scatterplots to help us examine the relationship between the amount of sleep I get, and my grumpiness the following day. The actual scatterplot that we draw is the one shown in Figure 15.1, and as we saw previously this corresponds to a correlation of 𝑟 = −.90, but what we find ourselves secretly imagining is something that looks closer to Figure 15.2a. That is, we mentally draw a straight line through the middle of the data. In statistics, this line that we’re drawing is called a regression line. Notice that – since we’re not idiots – the regression line goes through the middle of the data. We don’t find ourselves imagining anything like the rather silly plot shown in Figure 15.2b.\n\nThis is not highly surprising: the line that I’ve drawn in Figure 15.2b doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right? This is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑚𝑥 + 𝑐\n\nThis is not highly surprising: the line that I’ve drawn in Figure 15.2b doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right? This is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑚𝑥 + 𝑐\n\nOr, at least, that’s what it was when I went to high school all those years ago. The two variables are 𝑥 and 𝑦, and we have two coeﬀicients, 𝑚 and 𝑐. The coeﬀicient 𝑚 represents the slope of the line, and the coeﬀicient 𝑐 represents the 𝑦-intercept of the line. Digging further back into our decaying memories of high school (sorry, for some of us high school was a long time ago), we remember that the intercept is interpreted as “the value of 𝑦 that you get when",
+          "pages": [
+            606
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1467_v1",
+            "chk_dd1e65de648fb2_1468_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1468_v1",
+          "hit_text": "This is not highly surprising: the line that I’ve drawn in Figure 15.2b doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right? This is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑚𝑥 + 𝑐\n\nOr, at least, that’s what it was when I went to high school all those years ago. The two variables are 𝑥 and 𝑦, and we have two coeﬀicients, 𝑚 and 𝑐. The coeﬀicient 𝑚 represents the slope of the line, and the coeﬀicient 𝑐 represents the 𝑦-intercept of the line. Digging further back into our decaying memories of high school (sorry, for some of us high school was a long time ago), we remember that the intercept is interpreted as “the value of 𝑦 that you get when",
+          "hit_page_start": 606,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                597.308,
+                866.114,
+                685.258
+              ],
+              "page": 606,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                455.596,
+                663.172,
+                543.956,
+                754.356
+              ],
+              "page": 606,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.222,
+                711.223,
+                863.984,
+                853.731
+              ],
+              "page": 606,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015873015873015872
+        },
+        {
+          "id": "exc_f213361bf057b0_569_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › EXAMPLE 8.12 HAS ENDED. › EXAMPLE 8.13 START",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A worked example interprets the slope and intercept of a least squares line for Elmhurst data: b1 = −0.0431 means about $43.10 less aid per additional $1,000 family income on average, and b0 = 24,319 is average aid at zero family income. It cautions that the observational data show association, not causation, and notes the intercept is meaningful only when x near zero is observed.",
+          "pages": [
+            360
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_949_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_949_v2",
+          "hit_text": "Example problem: The intercept and slope estimates for the Elmhurst data are b0 = 24,319 and b1 = −0.0431. What do these numbers really mean?\n\nSolution to the example: Interpreting the slope parameter is helpful in almost any application. For each additional $1,000 of family income, we would expect a student to receive a net diﬀerence of$1,000 × (−0.0431) = −$43.10 in aid on average, i.e.$43.10 less. Note that a higher family income corresponds to less aid because the coeﬃcient of family income is negative in the model. We must be cautious in this interpretation: while there is a real association, we cannot interpret a causal connection between the variables because these data are observational. That is, increasing a student’s family income may not cause the student’s aid to drop. (It would be reasonable to contact the college and ask if the relationship is causal, i.e. if Elmhurst College’s aid decisions are partially based on students’ family income.)\n\nThe estimated intercept b0 = 24,319 describes the average aid if a student’s family had no income. The meaning of the intercept is relevant to this application since the family income for some students at Elmhurst is $0. In other applications, the intercept may have little or no practical value if there are no observations where x is near zero.\n\nEXAMPLE 8.13 HAS ENDED.",
+          "hit_page_start": 360,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                558.648,
+                852.874,
+                595.253
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                603.933,
+                852.879,
+                737.271
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                746.944,
+                852.876,
+                804.809
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                814.482,
+                372.092,
+                827.062
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01567982456140351
+        },
+        {
+          "id": "exc_f213361bf057b0_567_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › EXAMPLE 8.11 START",
+          "roles": [
+            "worked_example",
+            "introduction"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Two worked examples on least squares regression. The first interprets regression output columns for β1: point estimate b1 = −0.0431, standard error SEb = 0.0108, t-test statistic T = −3.98 for H0: β1 = 0, and p-value 0.0002. The second discusses whether an estimated linear equation can be used to predict an individual student's financial aid, noting data come from one freshman class and the equation gives only an imperfect estimate.",
+          "pages": [
+            360
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_947_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_947_v2",
+          "hit_text": "Example problem: Examine the second, third, and fourth columns in Figure 8.14. Can you guess what they represent? (If you have not reviewed any inference chapter yet, skip this example.)\n\nSolution to the example: We’ll describe the meaning of the columns using the second row, which corresponds to β1. The ﬁrst column provides the point estimate for β1, as we calculated in an earlier example: b1 = −0.0431. The second column is a standard error for this point estimate: SEb\n\n= 0.0108. The third column is a t-test statistic for the null hypothesis that β1 = 0: T = −3.98. The last column is the p-value for the t-test statistic for the null hypothesis β1 = 0 and a two-sided alternative hypothesis: 0.0002. We will get into more of these details in Section 8.4.\n\n1\n\nEXAMPLE 8.11 HAS ENDED.\nEXAMPLE 8.12 START\n\nExample problem: Suppose a high school senior is considering Elmhurst College. Can she simply use the linear equation that we have estimated to calculate her ﬁnancial aid from the university?\n\nSolution to the example: She may use it as an estimate, though some qualiﬁers on this approach are important. First, the data all come from one freshman class, and the way aid is determined by the university may change from year to year. Second, the equation will provide an imperfect estimate. While the linear equation is good at capturing the trend in the data, no individual student’s aid will be perfectly predicted.",
+          "hit_page_start": 360,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.868,
+                116.797
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                134.407,
+                852.877,
+                193.213
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                179.376,
+                852.882,
+                222.461
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                175.557,
+                187.553,
+                181.096,
+                193.842
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                232.134,
+                372.092,
+                281.083
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                286.847,
+                852.868,
+                314.521
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                332.131,
+                852.881,
+                405.091
+              ],
+              "page": 360,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015523230568823272
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_569_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "7 References › 21. Glossary › / › Linear Combination",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "effect-size"
+          ],
+          "confidence": 0.96,
+          "synopsis": "A linear combination of variables is a way of creating a new variable by combining other variables. A linear combination is one in which each variable is multiplied by a coefﬁcient and the are products summed. For example, if\n\nY = 3X1 + 2X2 + .5X3\n\nthen Y is a linear combination of the variables X1, X2, and X3.\n\nLinear Regression Linear regression is a method for predicting a criterion variable from one or more predictor variable. In simple regression, the criterion is predicted from a single predictor variable and the best-ﬁtting straight line is of the form\n\nY' = bX + A\n\nwhere Y' is the predicted score, X is the predictor variable, b is the slope, and A is the Y intercept. Typically, the criterion for the “best ﬁtting” line is the line for which the sum of\n\nthe squared errors of prediction is minimized. In multiple regression, the criterion is predicted from two or more predictor variables.\n\nLinear Relationship There is a perfect linear relationship between two variables if a scatterplot of the points falls on a straight line. The relationship is linear even if the points diverge from the line as long as the divergence is random rather than being systematic.\n\nLinear Transformation A linear transformation is any transformation of a variable that can be achieved by multiplying it by a constant, and then adding a second constant. If Y is the transformed value of X, then Y = aX + b. The transformation from degrees Fahrenheit to degrees Centigrade is linear and is done using the formula:\n\nC = 0.55556F - 17.7778.\n\nLinear Transformation A linear transformation is any transformation of a variable that can be achieved by multiplying it by a constant, and then adding a second constant. If Y is the transformed value of X, then Y = aX + b. The transformation from degrees Fahrenheit to degrees Centigrade is linear and is done using the formula:\n\nC = 0.55556F - 17.7778.\n\nLogarithm The logarithm of a number is the power the base of the logarithm has to be raised to in order to equal the number. If the base of the logarithm is 10 and the number is 1,000, then the log is 3 since 10 has to be raised to the 3rd power to equal 1,000.\n\nLower Adjacent Value A component of a box plot, the lower adjacent value is smallest value in the data above the inner lower fence.\n\nLower Hinge A component of a box plot, the lower hinge is the 25th percentile. The upper hinge is the 75th percentile.\n\nMain Effect A main effect of an independent variable is the effect of the variable averaging over all levels of the other variable(s). For example, in a design with age and gender as factors, the main effect of gender would be the difference between the genders averaging across all ages used in the experiment.\n\nMargin of Error When a statistic is used to estimate a parameter, it is common to compute a conﬁdence interval. The margin of error is the difference between the statistic and the endpoints of the interval. For example, if the statistic were 0.6 and the conﬁdence interval ranged from 0.4 to 0.8, then the margin of error would be 0.20. Unless otherwise speciﬁed, the 95% conﬁdence interval is used.\n\nMargin of Error When a statistic is used to estimate a parameter, it is common to compute a conﬁdence interval. The margin of error is the difference between the statistic and the endpoints of the interval. For example, if the statistic were 0.6 and the conﬁdence interval ranged from 0.4 to 0.8, then the margin of error would be 0.20. Unless otherwise speciﬁed, the 95% conﬁdence interval is used.\n\nMarginal Mean In a design with two factors, the marginal means for one factor are the means for that factor averaged across all levels of the other factor. In the table shown below, the two factors are “Relationship” and “Companion Weight.” The marginal means for each of the two levels of Relationship (Girl Friend and Acquaintance) are computed by averaging across the two levels of Companion Weight. Thus, the marginal mean for Acquaintance of 6.37 is the mean of 6.15 and 6.59.\n\n|  | Companion Weight | \n |  | Obese | Typical | Marginal Mean\nRelationship | Girl Friend | 5.65 | 6.19 | 5.92\nAcquaintance | 6.15 | 6.59 | 6.37\n | Marginal Mean | 5.9 | 6.39 |\n\nMarginal Mean In a design with two factors, the marginal means for one factor are the means for that factor averaged across all levels of the other factor. In the table shown below, the two factors are “Relationship” and “Companion Weight.” The marginal means for each of the two levels of Relationship (Girl Friend and Acquaintance) are computed by averaging across the two levels of Companion Weight. Thus, the marginal mean for Acquaintance of 6.37 is the mean of 6.15 and 6.59.\n\n|  | Companion Weight | \n |  | Obese | Typical | Marginal Mean\nRelationship | Girl Friend | 5.65 | 6.19 | 5.92\nAcquaintance | 6.15 | 6.59 | 6.37\n | Marginal Mean | 5.9 | 6.39 |\n\nMean Also known as the arithmetic mean, the mean is typically what is meant by the word “average.” The mean is perhaps the most common measure of central tendency. The mean of a variable is given by (the sum of all its values)/(the number of values). For example, the mean of 4, 8, and 9 is 7. The sample mean is written as M, and the population mean as the Greek letter mu (μ). Despite its popularity, the mean may not be an appropriate measure of central tendency for skewed distributions, or in situations with outliers. Other than the arithmetic mean, there is the geometric mean and the harmonic mean.\n\nMean Also known as the arithmetic mean, the mean is typically what is meant by the word “average.” The mean is perhaps the most common measure of central tendency. The mean of a variable is given by (the sum of all its values)/(the number of values). For example, the mean of 4, 8, and 9 is 7. The sample mean is written as M, and the population mean as the Greek letter mu (μ). Despite its popularity, the mean may not be an appropriate measure of central tendency for skewed distributions, or in situations with outliers. Other than the arithmetic mean, there is the geometric mean and the harmonic mean.\n\nMedian The median is a popular measure of central tendency. It is the 50th percentile of a distribution. To ﬁnd the median of a number of values, ﬁrst order them, then ﬁnd the observation in the middle: the median of 5, 2, 7, 9, and 4 is 5. (Note that if there is an even number of values, one takes the average of the middle two: the median of 4, 6, 8, and 10 is 7.) The median is often more appropriate than the mean in skewed distributions and in situations with outliers.\n\nMisses Misses occur when a diagnostic test returns a negative result, but the true state of the subject is positive. For example, if a person has strep throat and the diagnostic test fails to indicate it, then a miss has occurred. The concept is similar to a Type II error in signiﬁcance testing.\n\nMode The mode is a measure of central tendency. It is the most frequent value in a distribution: the mode of 3, 4, 4, 5, 5, 5, 8 is 5. Note that the mode may be very different from the mean and the median.\n\nMode The mode is a measure of central tendency. It is the most frequent value in a distribution: the mode of 3, 4, 4, 5, 5, 5, 8 is 5. Note that the mode may be very different from the mean and the median.\n\nMultiple Regression Multiple regression is linear regression in which two or more predictor variables are used\n\nto predict the criterion.",
+          "pages": [
+            671,
+            672,
+            673,
+            674
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_1089_v1",
+            "chk_f97f47b7a1fd68_1090_v1",
+            "chk_f97f47b7a1fd68_1091_v1",
+            "chk_f97f47b7a1fd68_1092_v1",
+            "chk_f97f47b7a1fd68_1093_v1",
+            "chk_f97f47b7a1fd68_1094_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_1089_v1",
+          "hit_text": "A linear combination of variables is a way of creating a new variable by combining other variables. A linear combination is one in which each variable is multiplied by a coefﬁcient and the are products summed. For example, if\n\nY = 3X1 + 2X2 + .5X3\n\nthen Y is a linear combination of the variables X1, X2, and X3.\n\nLinear Regression Linear regression is a method for predicting a criterion variable from one or more predictor variable. In simple regression, the criterion is predicted from a single predictor variable and the best-ﬁtting straight line is of the form\n\nY' = bX + A\n\nwhere Y' is the predicted score, X is the predictor variable, b is the slope, and A is the Y intercept. Typically, the criterion for the “best ﬁtting” line is the line for which the sum of\n\nthe squared errors of prediction is minimized. In multiple regression, the criterion is predicted from two or more predictor variables.\n\nLinear Relationship There is a perfect linear relationship between two variables if a scatterplot of the points falls on a straight line. The relationship is linear even if the points diverge from the line as long as the divergence is random rather than being systematic.\n\nLinear Transformation A linear transformation is any transformation of a variable that can be achieved by multiplying it by a constant, and then adding a second constant. If Y is the transformed value of X, then Y = aX + b. The transformation from degrees Fahrenheit to degrees Centigrade is linear and is done using the formula:\n\nC = 0.55556F - 17.7778.",
+          "hit_page_start": 671,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                605.033,
+                876.007,
+                665.479
+              ],
+              "page": 671,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                675.109,
+                371.106,
+                693.888
+              ],
+              "page": 671,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                703.518,
+                650.43,
+                722.297
+              ],
+              "page": 671,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                731.807,
+                864.644,
+                811.312
+              ],
+              "page": 671,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                820.942,
+                286.002,
+                839.721
+              ],
+              "page": 671,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                849.351,
+                871.075,
+                888.963
+              ],
+              "page": 671,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                91.069,
+                830.897,
+                130.682
+              ],
+              "page": 672,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                140.192,
+                877.487,
+                219.697
+              ],
+              "page": 672,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                229.207,
+                861.356,
+                329.545
+              ],
+              "page": 672,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                352.433,
+                388.886,
+                371.212
+              ],
+              "page": 672,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015040515040515042
+        },
+        {
+          "id": "exc_f213361bf057b0_589_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.4 Inference for linear regression › 8.4.2 Understanding regression output from software",
+          "roles": [
+            "introduction",
+            "formal",
+            "worked_example",
+            "exercise"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "hypothesis-tests",
+            "t-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains inference for the slope in simple linear regression: standard error and t test statistic for b1, reading software output (estimate, std. error, t value, p-value), and testing whether the true slope is zero. Worked examples interpret regression output for midterm election losses versus unemployment and Elmhurst College aid versus family income, including a guided practice testing whether the family income coefficient is zero.",
+          "pages": [
+            371,
+            372,
+            373
+          ],
+          "figure_ids": [
+            "fig_f213361bf057b0_5401_v2",
+            "fig_f213361bf057b0_5423_v2"
+          ],
+          "chunk_ids": [
+            "chk_f213361bf057b0_976_v2",
+            "chk_f213361bf057b0_977_v2",
+            "chk_f213361bf057b0_978_v2",
+            "chk_f213361bf057b0_979_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_976_v2",
+          "hit_text": "Just like other point estimates we have seen before, we can compute a standard error and test statistic for b1. We will generally label the test statistic using a T, since it follows the t-distribution.\n\nWe will rely on statistical software to compute the standard error and leave the explanation of how this standard error is determined to a second or third statistics course. Figure 8.20 shows software output for the least squares regression line in Figure 8.19. The row labeled unemp includes the point estimate and other hypothesis test information for the slope, which is the coeﬃcient of the unemployment variable.\n\nEstimate Std. Error t value Pr(>|t|) (Intercept) -7.3644 5.1553 -1.43 0.1646 unemp -0.8897 0.8350 -1.07 0.2961 df = 27\n\nFigure 8.20: Output from statistical software for the regression line modeling the midterm election losses for the President’s party as a response to unemployment.\n\nEXAMPLE 8.19 START Example problem: What do the ﬁrst and second columns of Figure 8.20 represent?\n\nSolution to the example: The entries in the ﬁrst column represent the least squares estimates, b0 and b1, and the values in the second column correspond to the standard errors of each estimate. Using the estimates, we could write the equation for the least square regression line as\n\nyˆ = −7.3644 − 0.8897x\n\nwhere yˆ in this case represents the predicted change in the number of seats for the president’s party, and x represents the unemployment rate.\n\nEXAMPLE 8.19 HAS ENDED.",
+          "hit_page_start": 371,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                423.025,
+                852.944,
+                451.643
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                453.215,
+                852.941,
+                526.174
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                300.132,
+                543.742,
+                699.873,
+                605.138
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                208.825,
+                620.232,
+                791.181,
+                647.907
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                683.643,
+                738.495,
+                716.206
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                733.816,
+                852.868,
+                776.585
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                418.6,
+                791.365,
+                581.17,
+                813.189
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                819.354,
+                852.881,
+                847.028
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                856.702,
+                372.092,
+                869.282
+              ],
+              "page": 371,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01486949080017116
+        },
+        {
+          "id": "exc_64ed84430ae3b2_258_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 6 Linear Regression and Correlation › Example 6.6 › 103",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "x (third exam score) | y (final exam score)\n71 | 159\n69 | 151\n69 | 159\n\nTable 6.2 Table showing the scores on the final exam based on scores from the third exam.\n\nFigure 6.7 Scatter plot showing the scores on the final exam based on scores from the third exam.\n\nThe third exam score, x, is the independent variable and the final exam score, y, is the dependent variable. We will plot a regression line that best \"fits\" the data. If each of you were to fit a line \"by eye\", you would draw different lines. We can use what is called a least-squares regression line to obtain the best fit line. Consider the following diagram. Each point of data is of the form (x, y) and each point of the line of best fit using least-squares linear regression has the form (x, ).\n\nThe is read \"y hat\" and is the estimated value of y. It is the value of y obtained using the regression line. It is not generally equal to y from data.",
+          "pages": [
+            110
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_1571_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_294_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_294_v1",
+          "hit_text": "x (third exam score) | y (final exam score)\n71 | 159\n69 | 151\n69 | 159\n\nTable 6.2 Table showing the scores on the final exam based on scores from the third exam.\n\nFigure 6.7 Scatter plot showing the scores on the final exam based on scores from the third exam.\n\nThe third exam score, x, is the independent variable and the final exam score, y, is the dependent variable. We will plot a regression line that best \"fits\" the data. If each of you were to fit a line \"by eye\", you would draw different lines. We can use what is called a least-squares regression line to obtain the best fit line. Consider the following diagram. Each point of data is of the form (x, y) and each point of the line of best fit using least-squares linear regression has the form (x, ).\n\nThe is read \"y hat\" and is the estimated value of y. It is the value of y obtained using the regression line. It is not generally equal to y from data.",
+          "hit_page_start": 110,
+          "hit_regions": [
+            {
+              "bbox": [
+                153.782,
+                69.386,
+                706.635,
+                248.424
+              ],
+              "page": 110,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                153.782,
+                249.982,
+                693.254,
+                284.276
+              ],
+              "page": 110,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.301,
+                545.171,
+                818.531,
+                558.757
+              ],
+              "page": 110,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                588.823,
+                828.385,
+                699.333
+              ],
+              "page": 110,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.049,
+                709.963,
+                797.225,
+                745.651
+              ],
+              "page": 110,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014840624596722158
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_358_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 2 › 14. Regression › Introduction to Linear Regression › Y",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Figure 2. A scatter plot of the example data. The black line consists of the predictions, the points are the actual data, and the vertical lines between the points and the black line represent errors of prediction.\n\nThe error of prediction for a point is the value of the point minus the predicted value (the value on the line). Table 2 shows the predicted values (Y') and the errors of prediction (Y-Y'). For example, the ﬁrst point has a Y of 1.00 and a predicted Y of 1.21. Therefore, its error of prediction is -0.21.\n\nTable 2. Example data.\n\nX | Y | Y' | Y-Y' | (Y-Y')2\n1 | 1 | 1.21 | -0.21 | 0.044\n2 | 2 | 1.635 | 0.365 | 0.133\n3 | 1.3 | 2.06 | -0.76 | 0.578\n4 | 3.75 | 2.485 | 1.265 | 1.6\n5 | 2.25 | 2.91 | -0.66 | 0.436\n\nYou may have noticed that we did not specify what is meant by “best-ﬁtting line.” By far the most commonly used criterion for the best-ﬁtting line is the line that minimizes the sum of the squared errors of prediction. That is the criterion that was\n\nused to ﬁnd the line in Figure 2. The last column in Table 2 shows the squared errors of prediction. The sum of the squared errors of prediction shown in Table 2 is lower than it would be for any other regression line.\n\nThe formula for a regression line is Y' = bX + A\n\nwhere Y' is the predicted score, b is the slope of the line, and A is the Y intercept. The equation for the line in Figure 2 is\n\nY' = 0.425X + 0.785\n\nFor X = 1,\n\nY' = (0.425)(1) + 0.785 = 1.21. For X = 2,\nY' = (0.425)(2) + 0.785 = 1.64.\n\nwhere Y' is the predicted score, b is the slope of the line, and A is the Y intercept. The equation for the line in Figure 2 is\n\nY' = 0.425X + 0.785\n\nFor X = 1,\n\nY' = (0.425)(1) + 0.785 = 1.21. For X = 2,\nY' = (0.425)(2) + 0.785 = 1.64.\n\nComputing the Regression Line In the age of computers, the regression line is typically computed with statistical software. However, the calculations are relatively easy are given here for anyone who is interested. The calculations are based on the statistics shown in Table 3. MX is the mean of X, MY is the mean of Y, sX is the standard deviation of X, sY is the standard deviation of Y, and r is the correlation between X and Y.\n\nTable 3. Statistics for computing the regression line\n\nMX | MY | sX | sY | r\nessio3 | n 2.06 | 1.581 | 1.072 | 0.627",
+          "pages": [
+            464,
+            465
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_5880_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_722_v1",
+            "chk_f97f47b7a1fd68_723_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_722_v1",
+          "hit_text": "Figure 2. A scatter plot of the example data. The black line consists of the predictions, the points are the actual data, and the vertical lines between the points and the black line represent errors of prediction.\n\nThe error of prediction for a point is the value of the point minus the predicted value (the value on the line). Table 2 shows the predicted values (Y') and the errors of prediction (Y-Y'). For example, the ﬁrst point has a Y of 1.00 and a predicted Y of 1.21. Therefore, its error of prediction is -0.21.\n\nTable 2. Example data.\n\nX | Y | Y' | Y-Y' | (Y-Y')2\n1 | 1 | 1.21 | -0.21 | 0.044\n2 | 2 | 1.635 | 0.365 | 0.133\n3 | 1.3 | 2.06 | -0.76 | 0.578\n4 | 3.75 | 2.485 | 1.265 | 1.6\n5 | 2.25 | 2.91 | -0.66 | 0.436\n\nYou may have noticed that we did not specify what is meant by “best-ﬁtting line.” By far the most commonly used criterion for the best-ﬁtting line is the line that minimizes the sum of the squared errors of prediction. That is the criterion that was\n\nused to ﬁnd the line in Figure 2. The last column in Table 2 shows the squared errors of prediction. The sum of the squared errors of prediction shown in Table 2 is lower than it would be for any other regression line.\n\nThe formula for a regression line is Y' = bX + A\n\nwhere Y' is the predicted score, b is the slope of the line, and A is the Y intercept. The equation for the line in Figure 2 is\n\nY' = 0.425X + 0.785\n\nFor X = 1,\n\nY' = (0.425)(1) + 0.785 = 1.21. For X = 2,\nY' = (0.425)(2) + 0.785 = 1.64.",
+          "hit_page_start": 464,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                426.864,
+                793.235,
+                489.995
+              ],
+              "page": 464,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                512.722,
+                876.908,
+                598.581
+              ],
+              "page": 464,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                621.308,
+                327.551,
+                638.985
+              ],
+              "page": 464,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                644.035,
+                738.562,
+                811.965
+              ],
+              "page": 464,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                835.955,
+                880.157,
+                899.086
+              ],
+              "page": 464,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                95.96,
+                864.186,
+                159.091
+              ],
+              "page": 465,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                164.141,
+                499.152,
+                217.172
+              ],
+              "page": 465,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                242.424,
+                859.333,
+                282.828
+              ],
+              "page": 465,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.346,
+                298.158,
+                460.172,
+                318.182
+              ],
+              "page": 465,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                343.434,
+                213.163,
+                361.111
+              ],
+              "page": 465,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                376.441,
+                624.905,
+                474.747
+              ],
+              "page": 465,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014828738512949038
+        },
+        {
+          "id": "exc_dd1e65de648fb2_999_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 15.2.1 Using the lm() function › 610",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "graphs",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "This looks promising. There’s two separate pieces of information here. Firstly, R is politely reminding us what the command was that we used to specify the model in the first place, which can be helpful. More importantly from our perspective, however, is the second part, in which R gives us the intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best-fitting regression line that I plotted in Figure 15.2 has this formula:\n\n𝑌𝑖̂ = −8.94 𝑋𝑖 + 125.96",
+          "pages": [
+            611
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1479_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1479_v1",
+          "hit_text": "This looks promising. There’s two separate pieces of information here. Firstly, R is politely reminding us what the command was that we used to specify the model in the first place, which can be helpful. More importantly from our perspective, however, is the second part, in which R gives us the intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best-fitting regression line that I plotted in Figure 15.2 has this formula:\n\n𝑌𝑖̂ = −8.94 𝑋𝑖 + 125.96",
+          "hit_page_start": 611,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                89.222,
+                866.116,
+                198.217
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                408.297,
+                151.876,
+                591.699,
+                246.27
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014705882352941176
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "search_id": "search_1",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_f213361bf057b0_566_v2",
+        "exc_0689cddaba206d_703_v2",
+        "exc_0689cddaba206d_728_v2",
+        "exc_f213361bf057b0_564_v2",
+        "exc_0689cddaba206d_705_v2"
+      ]
+    }
+  ],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2287,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

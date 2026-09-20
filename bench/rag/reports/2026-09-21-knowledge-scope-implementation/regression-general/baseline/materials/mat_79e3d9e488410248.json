@@ -1,0 +1,36 @@
+{
+ "id": "mat_79e3d9e488410248",
+ "kind": "note",
+ "title": "Simple Linear Regression: Concept and Worked Example",
+ "content": "# Simple Linear Regression — Study Note\n\n## What it is\nSimple linear regression fits a straight line to paired data (one explanatory variable *x*, one response variable *y*), assuming the data are scattered about a straight line. The **least squares regression line** is the line that minimizes the sum of squared errors (SSE) — the sum of the squared vertical distances between the observed points and the line. Any other line would have a higher SSE.\n\n## The model\n$$\\hat{y} = a + bx$$\n- **b (slope):** how *y* changes, on average, for every one-unit increase in *x*.\n- **a (intercept):** the predicted value of *y* when *x* = 0.\n\nFrom summary statistics, the slope can be estimated as $b = r\\,\\frac{s_y}{s_x}$ (where *r* is the correlation and *s_x*, *s_y* are the sample standard deviations), and since the point $(\\bar{x}, \\bar{y})$ always lies on the line, $a = \\bar{y} - b\\bar{x}$. In practice, software or a calculator computes *a* and *b* quickly.\n\n## Worked example: third exam vs final exam scores\nPredicting final exam score from third exam score, the least squares line is:\n\n$$\\hat{y} = -173.51 + 4.83x$$\n\n**Slope interpretation:** for a one-point increase in the third exam score, the final exam score increases by 4.83 points, on average.\n\n**Prediction (within the data's domain):** for a student scoring 73 on the third exam:\n$$\\hat{y} = -173.51 + 4.83(73) = 179.08$$\nso the predicted final exam score is about 179.\n\n**Extrapolation warning:** do *not* use the line for a third-exam score of 50 — the sample x-values run only from 65 to 75, and predictions outside that domain are not reliable.\n\n## Checklist before using the line\n1. Plot a scatter diagram first; confirm the relationship looks linear.\n2. Fit the line (minimizing SSE).\n3. Interpret the slope in plain English, in context.\n4. Predict only within the domain of the sample x-values.\n\n---\n*Sources: Principles of Business Statistics, Ch. 6 (Least Squares Criteria for Best Fit, Example 6.6).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_64ed84430ae3b2_261_v2",
+  "exc_64ed84430ae3b2_262_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "principles-of-business-statistics",
+    "title": "Principles of Business Statistics",
+    "authors": [
+     "Mihai Nica",
+     "Susan Dean",
+     "Barbara Illowsky"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18024",
+    "version": 2,
+    "excerptIds": [
+     "exc_64ed84430ae3b2_261_v2",
+     "exc_64ed84430ae3b2_262_v2"
+    ]
+   }
+  ]
+ },
+ "size": "493 tokens",
+ "edits": []
+}

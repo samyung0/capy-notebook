@@ -1,0 +1,4 @@
+{"type": "phase", "phase": "planning"}
+{"type": "ledger", "call": 1, "requests": [], "next_todo_id": 0, "todos": [], "materials": [], "progress": 0, "reads": [], "stored": {"requests": [], "next_todo_id": 0, "todos": [], "materials": []}}
+{"type": "error", "message": "The chat agent hit an internal error.", "code": "agent_failed", "detail": "ProviderError: {\"error\":{\"message\":\"Internal Server Error (ref: cf246b5e-3d12-490d-a17e-a356c7a6c6ca)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"}
+{"type": "run_saved", "id": "20260921-015843-a3f39e", "elapsed_seconds": 5.9, "usage": {"provider": "", "model": "", "inputTokens": 0, "outputTokens": 0, "embedTokens": 0, "calls": 0}}

@@ -1,0 +1,57 @@
+{
+ "id": "mat_dd0c039c46dbc621",
+ "kind": "note",
+ "title": "Simple Linear Regression by Hand: Formulas + Worked Example",
+ "content": "# Simple Linear Regression by Hand\n\nA concise, no-software walkthrough of fitting a least-squares regression line from summary statistics.\n\n## The idea\n\nSimple linear regression fits a line **ŷ = b₀ + b₁x** that minimizes the sum of squared residuals (vertical distances from points to the line). You never need the raw data if you have four summary statistics, because of two key properties of the least-squares line:\n\n1. **Slope:** b₁ = (s_y / s_x) · R, where R is the correlation between x and y, and s_x, s_y are the sample standard deviations of the explanatory and response variables.\n2. **Point of averages:** the line always passes through (x̄, ȳ), so b₀ = ȳ − b₁x̄.\n\n## Worked example: Elmhurst College gift aid\n\nPredicting gift aid (y, in $) from family income (x, in $). Summary statistics:\n\n| Statistic | Family income (x) | Gift aid (y) |\n|---|---|---|\n| Mean | x̄ = $101,780 | ȳ = $19,940 |\n| Std. dev. | s_x = $63,200 | s_y = $5,460 |\n\nCorrelation: **R = −0.499**\n\n### Step 1 — Compute the slope\n\nb₁ = (s_y / s_x) · R = (5,460 / 63,200) × (−0.499)\n= 0.08639 × (−0.499) ≈ **−0.0431**\n\n### Step 2 — Compute the intercept\n\nb₀ = ȳ − b₁x̄ = 19,940 − (−0.0431)(101,780)\n= 19,940 + 4,386.7 ≈ **24,327**\n\n### Step 3 — Write the line\n\n**aid-hat = 24,327 − 0.0431 × family income**\n\n(You can get the same result via point-slope form: y − 19,940 = −0.0431(x − 101,780), then expand and simplify. Software output for the same data gives intercept 24,319.3 and slope −0.0431 — matching up to rounding.)\n\n### Step 4 — Interpret the coefficients\n\n- **Slope (−0.0431):** for each additional $1,000 of family income, predicted gift aid drops by 0.0431 × $1,000 ≈ **$43.10**.\n- **Intercept (24,327):** predicted gift aid is about $24,300 when family income is $0. This is meaningful here (some students have $0 income), but in many problems the intercept is extrapolation beyond the data and has no practical interpretation.\n\n### Step 5 — Make a prediction\n\nA family earning $80,000: aid-hat = 24,327 − 0.0431 × 80,000 = 24,327 − 3,448 ≈ **$20,879**.\n\n## Before you trust the line\n\nCheck that the relationship is roughly linear, there are no obvious outliers, the spread around the line is roughly constant, and observations are independent. For the Elmhurst data, all of these hold.\n\n## Quick reference\n\n- Slope: b₁ = R · s_y / s_x\n- Intercept: b₀ = ȳ − b₁x̄\n- Line passes through (x̄, ȳ)\n- Slope = predicted change in y per one-unit increase in x\n- R² (square of R) = proportion of variation in y explained by the linear relationship; always between 0 and 1, and its sign never tells direction (use the slope's sign for that)",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_564_v2",
+  "exc_f213361bf057b0_566_v2",
+  "exc_0689cddaba206d_705_v2",
+  "exc_0689cddaba206d_728_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_705_v2",
+     "exc_0689cddaba206d_728_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v2",
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "656 tokens",
+ "edits": []
+}

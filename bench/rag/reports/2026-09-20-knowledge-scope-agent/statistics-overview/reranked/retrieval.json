@@ -1,0 +1,2460 @@
+{
+  "arm": "reranked",
+  "case": {
+    "id": "statistics-overview",
+    "query": "I want to learn statistics. Create one concise beginner study note explaining what statistics is and what it is useful for.",
+    "check": "Teaches statistics; does not turn the introduction into a software tutorial, epilogue or list of learning objectives."
+  },
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "what is statistics definition descriptive and inferential statistics why useful",
+      "topics": [],
+      "roles": [
+        "introduction"
+      ],
+      "seconds": 8.296,
+      "excerpts": [
+        {
+          "id": "exc_f97f47b7a1fd68_5_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction › Descriptive Statistics",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by Mikki Hebl Prerequisites\n\n• none Learning Objectives\n\n1. Deﬁne “descriptive statistics”\n2. Distinguish between descriptive statistics and inferential statistics\n\nDescriptive statistics are numbers that are used to summarize and describe data. The word “data” refers to the information that has been collected from an experiment, a survey, an historical record, etc. (By the way, “data” is plural. One piece of information is called a “datum.”) If we are analyzing birth certiﬁcates, for example, a descriptive statistic might be the percentage of certiﬁcates issued in New York State, or the average age of the mother. Any other number we choose to compute also counts as a descriptive statistic for the data from which the statistic is computed. Several descriptive statistics are often used at one time to give a full picture of the data.\n\nDescriptive statistics are just descriptive. They do not involve generalizing beyond the data at hand. Generalizing from our data to another set of cases is the business of inferential statistics, which you'll be studying in another section. Here we focus on (mere) descriptive statistics.\n\nSome descriptive statistics are shown in Table 1. The table shows the average salaries for various occupations in the United States in 1999.\n\nTable 1. Average salaries for various occupations in 1999.\n\nSome descriptive statistics are shown in Table 1. The table shows the average salaries for various occupations in the United States in 1999.\n\nTable 1. Average salaries for various occupations in 1999.\n\n$112,760 | pediatricians$106,130 | dentists\n$100,090 | podiatrists$76,140 | physicists\n$53,410 | architects,$49,720 | school, clinical, and counseling psychologists\n$47,910 | flight attendants$39,560 | elementary school teachers\n$38,710 | police officers$18,980 | floral designers\n\nDescriptive statistics like these offer insight into American society. It is interesting to note, for example, that we pay the people who educate our children and who protect our citizens a great deal less than we pay people who take care of our feet or our teeth.\n\nFor more descriptive statistics, consider Table 2. It shows the number of unmarried men per 100 unmarried women in U.S. Metro Areas in 1990. From this table we see that men outnumber women most in Jacksonville, NC, and women outnumber men most in Sarasota, FL. You can see that descriptive statistics can be useful if we are looking for an opposite-sex partner! (These data come from the Information Please Almanac.)\n\nTable 2. Number of unmarried men per 100 unmarried women in U.S. Metro Areas in 1990.\n\nCities with mostly men | Men per 100 Women | Cities with mostly women | Men per 100 Women\n1. Jacksonville, NC | 224 | 1. Sarasota, FL | 66\n2. Killeen-Temple, TX | 123 | 2. Bradenton, FL | 68\n3. Fayetteville, NC | 118 | 3. Altoona, PA | 69\n\nCities with mostly men | Men per 100 Women | Cities with mostly women | Men per 100 Women\n1. Jacksonville, NC | 224 | 1. Sarasota, FL | 66\n2. Killeen-Temple, TX | 123 | 2. Bradenton, FL | 68\n3. Fayetteville, NC | 118 | 3. Altoona, PA | 69\n\n4. Brazoria, TX | 117 | 4. Springfield, IL | 70\n5. Lawton, OK | 116 | 5. Jacksonville, TN | 70\n6. State College, PA | 113 | 6. Gadsden, AL | 70\n7. ClarksvilleHopkinsville, TN-KY | 113 | 7. Wheeling, WV | 70\n8. Anchorage, Alaska | 112 | 8. Charleston, WV | 71\n9. Salinas-SeasideMonterey, CA | 112 | 9. St. Joseph, MO | 71\n10. Bryan-College Station, TX | 111 | 10. Lynchburg, VA | 71\n\nNOTE: Unmarried includes never-married, widowed, and divorced persons, 15 years or older.\n\nThese descriptive statistics may make us ponder why the numbers are so disparate in these cities. One potential explanation, for instance, as to why there are more women in Florida than men may involve the fact that elderly individuals tend to move down to the Sarasota region and that women tend to outlive men. Thus, more women might live in Sarasota than men. However, in the absence of proper data, this is only speculation.\n\nThese descriptive statistics may make us ponder why the numbers are so disparate in these cities. One potential explanation, for instance, as to why there are more women in Florida than men may involve the fact that elderly individuals tend to move down to the Sarasota region and that women tend to outlive men. Thus, more women might live in Sarasota than men. However, in the absence of proper data, this is only speculation.\n\nYou probably know that descriptive statistics are central to the world of sports. Every sporting event produces numerous statistics such as the shooting percentage of players on a basketball team. For the Olympic marathon (a foot race of 26.2 miles), we possess data that cover more than a century of competition. (The ﬁrst modern Olympics took place in 1896.) The following table shows the winning times for both men and women (the latter have only been allowed to compete since 1984).\n\nTable 3. Winning Olympic marathon times.\n\nWomen\nYear | Winner | Country | Time\n1984 | Joan Benoit | USA | 2:24:52\n1988 | Rosa Mota | POR | 2:25:40\n\nYou probably know that descriptive statistics are central to the world of sports. Every sporting event produces numerous statistics such as the shooting percentage of players on a basketball team. For the Olympic marathon (a foot race of 26.2 miles), we possess data that cover more than a century of competition. (The ﬁrst modern Olympics took place in 1896.) The following table shows the winning times for both men and women (the latter have only been allowed to compete since 1984).\n\nTable 3. Winning Olympic marathon times.\n\nWomen\nYear | Winner | Country | Time\n1984 | Joan Benoit | USA | 2:24:52\n1988 | Rosa Mota | POR | 2:25:40\n\n1992 | Valentina Yegorova | UT | 2:32:41\n1996 | Fatuma Roba | ETH | 2:26:05\n2000 | Naoko Takahashi | JPN | 2:23:14\n2004 | Mizuki Noguchi | JPN | 2:26:20\nMen\nYear | Winner | Country | Time\n1896 | Spiridon Louis | GRE | 2:58:50\n1900 | Michel Theato | FRA | 2:59:45\n1904 | Thomas Hicks | USA | 3:28:53\n1906 | Billy Sherring | CAN | 2:51:23\n1908 | Johnny Hayes | USA | 2:55:18\n1912 | Kenneth McArthur | S. Afr. | 2:36:54\n1920 | Hannes Kolehmainen | FIN | 2:32:35\n1924 | Albin Stenroos | FIN | 2:41:22\n1928 | Boughra El Ouafi | FRA | 2:32:57\n1932 | Juan Carlos Zabala | ARG | 2:31:36\n1936 | Sohn Kee-Chung | JPN | 2:29:19\n1948 | Delfo Cabrera | ARG | 2:34:51\n1952 | Emil Ztopek | CZE | 2:23:03\n1956 | Alain Mimoun | FRA | 2:25:00\n1960 | Abebe Bikila | ETH | 2:15:16\n1964 | Abebe Bikila | ETH | 2:12:11\n1968 | Mamo Wolde | ETH | 2:20:26\n1972 | Frank Shorter | USA | 2:12:19\n1976 | Waldemar Cierpinski | E.Ger | 2:09:55\n1980 | Waldemar Cierpinski | E.Ger | 2:11:03\n1984 | Carlos Lopes | POR | 2:09:21\n1988 | Gelindo Bordin | ITA | 2:10:32\n\n1992 | Hwang Young-Cho | S. Kor | 2:13:23\n1996 | Josia Thugwane | S. Afr. | 2:12:36\n2000 | Gezahenge Abera | ETH | 2:10.10\n2004 | Stefano Baldini | ITA | 2:10:55\n\nThere are many descriptive statistics that we can compute from the data in the table. To gain insight into the improvement in speed over the years, let us divide the men's times into two pieces, namely, the ﬁrst 13 races (up to 1952) and the second 13 (starting from 1956). The mean winning time for the ﬁrst 13 races is 2 hours, 44 minutes, and 22 seconds (written 2:44:22). The mean winning time for the second 13 races is 2:13:18. This is quite a difference (over half an hour). Does this prove that the fastest men are running faster? Or is the difference just due to chance, no more than what often emerges from chance differences in performance from year to year? We can't answer this question with descriptive statistics alone. All we can afﬁrm is that the two means are “suggestive.”\n\nExamining Table 3 leads to many other questions. We note that Takahashi (the lead female runner in 2000) would have beaten the male runner in 1956 and all male runners in the ﬁrst 12 marathons. This fact leads us to ask whether the gender gap will close or remain constant. When we look at the times within each gender, we also wonder how far they will decrease (if at all) in the next century of the Olympics. Might we one day witness a sub-2 hour marathon? The study of statistics can help you make reasonable guesses about the answers to these questions.",
+          "pages": [
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_28_v1",
+            "chk_f97f47b7a1fd68_29_v1",
+            "chk_f97f47b7a1fd68_30_v1",
+            "chk_f97f47b7a1fd68_31_v1",
+            "chk_f97f47b7a1fd68_32_v1",
+            "chk_f97f47b7a1fd68_33_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_28_v1",
+          "hit_text": "by Mikki Hebl Prerequisites\n\n• none Learning Objectives\n\n1. Deﬁne “descriptive statistics”\n2. Distinguish between descriptive statistics and inferential statistics\n\nDescriptive statistics are numbers that are used to summarize and describe data. The word “data” refers to the information that has been collected from an experiment, a survey, an historical record, etc. (By the way, “data” is plural. One piece of information is called a “datum.”) If we are analyzing birth certiﬁcates, for example, a descriptive statistic might be the percentage of certiﬁcates issued in New York State, or the average age of the mother. Any other number we choose to compute also counts as a descriptive statistic for the data from which the statistic is computed. Several descriptive statistics are often used at one time to give a full picture of the data.\n\nDescriptive statistics are just descriptive. They do not involve generalizing beyond the data at hand. Generalizing from our data to another set of cases is the business of inferential statistics, which you'll be studying in another section. Here we focus on (mere) descriptive statistics.\n\nSome descriptive statistics are shown in Table 1. The table shows the average salaries for various occupations in the United States in 1999.\n\nTable 1. Average salaries for various occupations in 1999.",
+          "hit_page_start": 15,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                250.025,
+                185.606
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                185.585,
+                303.783,
+                248.232
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                253.283,
+                748.025,
+                293.687
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                305.051,
+                878.67,
+                504.545
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                509.596,
+                865.992,
+                595.455
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                600.505,
+                808.077,
+                640.909
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                95.96,
+                646.69,
+                113.636
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_45ecdb7da7734b_153_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Estimating unknown quantities from a sample",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "sampling",
+            "estimation"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Introduces statistical inference, distinguishing descriptive from inferential statistics. Notes that inference is traditionally divided into estimation and hypothesis testing, and that this chapter covers estimation theory after first developing sampling theory. The chapter divides into three sections on sampling theory and two sections on estimation.",
+          "pages": [
+            156
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_336_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_336_v2",
+          "hit_text": "At the start of the last chapter I highlighted the critical distinction between descriptive statistics and inferential statistics. As discussed in Chapter 4, the role of descriptive statistics is to concisely summarise what we do know. In contrast, the purpose of inferential statistics is to “learn what we do not know from what we do”.\n\nNow that we have a foundation in probability theory we are in a good position to think about the problem of statistical inference. What kinds of things would we like to learn about? And how do we learn them? These are the questions that lie at the heart of inferential statistics, and they are traditionally divided into two “big ideas”: estimation and hypothesis testing.\n\nThe goal in this chapter is to introduce the first of these big ideas, estimation theory, but I’m going to witter on about sampling theory first because estimation theory doesn’t make sense until you understand sampling. As a consequence, this chapter divides naturally into two parts, the first three sections are focused on sampling theory, and the last two sections make use of sampling theory to discuss how statisticians think about estimation.",
+          "hit_page_start": 156,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                413.711,
+                812.512,
+                482.632
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                488.431,
+                812.502,
+                573.957
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                579.756,
+                812.502,
+                681.886
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022722330941509022
+        },
+        {
+          "id": "exc_45ecdb7da7734b_139_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Introduction to probability",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "probability-basics",
+            "sampling"
+          ],
+          "confidence": 0.85,
+          "synopsis": "This chapter introduction motivates inferential statistics using a polling example: a random sample of 1000 NSW voters found 23% supporting the ALP, yet the true population proportion is unknown. It argues that intuition cannot judge how representative such a sample is, and that inferential statistics provides tools to answer these questions. It notes that statistical inference is built on probability theory, which the chapter will now cover as background material.",
+          "pages": [
+            134,
+            135
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_291_v2",
+            "chk_45ecdb7da7734b_292_v2",
+            "chk_45ecdb7da7734b_293_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_291_v2",
+          "hit_text": "[God] has afforded us only the twilight … of Probability.\n\n– John Locke\n\nUp to this point in the book we’ve discussed some of the key ideas in experimental design, and we’ve talked a little about how you can summarise a data set. To a lot of people this is all there is to statistics: collecting all the numbers, calculating averages, drawing pictures, and putting them all in a report somewhere. Kind of like stamp collecting but with numbers. However, statistics covers much more than that. In fact, descriptive statistics is one of the smallest parts of statistics and one of the least powerful. The bigger and more useful part of statistics is that it provides information that lets you make inferences about data.\n\nOnce you start thinking about statistics in these terms, that statistics is there to help us draw inferences from data, you start seeing examples of it everywhere. For instance, here’s a tiny extract from a newspaper article in the Sydney Morning Herald (30 Oct 2010):\n\n“I have a tough job,” the Premier said in response to a poll which found her government is now the most unpopular Labor administration in polling history, with a primary vote of just 23 per cent.",
+          "hit_page_start": 134,
+          "hit_regions": [
+            {
+              "bbox": [
+                199.491,
+                372.275,
+                590.108,
+                391.232
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                388.825,
+                297.543,
+                407.933
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                426.918,
+                812.502,
+                562.258
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                567.947,
+                812.502,
+                620.265
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                639.307,
+                769.262,
+                691.472
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021392190152801357
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_1_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction",
+          "roles": [
+            "introduction",
+            "exercise"
+          ],
+          "topic_ids": [
+            "percentiles",
+            "data-transformations"
+          ],
+          "confidence": 0.96,
+          "synopsis": "This chapter begins by discussing what statistics are and why the study of statistics is important. Subsequent sections cover a variety of topics all basic to the study of statistics. The only theme common to all of these sections is that they cover concepts and ideas important for other chapters in the book.\n\nA. What are Statistics?\nB. Importance of Statistics\nC. Descriptive Statistics\nD. Inferential Statistics\nE. Variables\nF. Percentiles\nG. Measurement\nH. Levels of Measurement\nI. Distributions\nJ. Summation Notation\nK. Linear Transformations\nL. Logarithms\nM.Exercises",
+          "pages": [
+            10
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_19_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_19_v1",
+          "hit_text": "This chapter begins by discussing what statistics are and why the study of statistics is important. Subsequent sections cover a variety of topics all basic to the study of statistics. The only theme common to all of these sections is that they cover concepts and ideas important for other chapters in the book.\n\nA. What are Statistics?\nB. Importance of Statistics\nC. Descriptive Statistics\nD. Inferential Statistics\nE. Variables\nF. Percentiles\nG. Measurement\nH. Levels of Measurement\nI. Distributions\nJ. Summation Notation\nK. Linear Transformations\nL. Logarithms\nM.Exercises",
+          "hit_page_start": 10,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                166.667,
+                876.85,
+                252.525
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                292.929,
+                364.31,
+                659.091
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021242977528089887
+        },
+        {
+          "id": "exc_45ecdb7da7734b_107_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Descriptive statistics › 4.5 Standard scores",
+          "roles": [
+            "introduction",
+            "worked_example",
+            "summary"
+          ],
+          "topic_ids": [
+            "normal",
+            "center",
+            "spread"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Introduces standard scores (z-scores) as a way to interpret a raw score relative to a distribution, using a grumpiness questionnaire example. Computes z = (35 − 17)/5 = 3.6 and compares it to an extraversion z-score of (2 − 13)/4 = −2.75, noting standardised scores allow comparison across different variables. Ends with a chapter summary listing central tendency, variability, skew and kurtosis, group descriptives, and standard scores.",
+          "pages": [
+            94,
+            95,
+            96
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_220_v2",
+            "chk_45ecdb7da7734b_221_v2",
+            "chk_45ecdb7da7734b_222_v2",
+            "chk_45ecdb7da7734b_223_v2",
+            "chk_45ecdb7da7734b_224_v2",
+            "chk_45ecdb7da7734b_225_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_224_v2",
+          "hit_text": "Calculating some basic descriptive statistics is one of the very first things you do when analysing real data, and descriptive statistics are much simpler to understand than inferential statistics, so like every other statistics textbook I’ve started with descriptives. In this chapter, we talked about the following topics:\n\n• Measures of central tendency. Broadly speaking, central tendency measures tell you where the data are. There’s three measures that are typically reported in the literature: the mean, median and mode.\n• Measures of variability. In contrast, measures of variability tell you about how “spread out” the data are. The key measures are: range, standard deviation, and interquartile range.\n• Skew and kurtosis. We also looked at assymetry in a variable’s distribution (skew) and thin or fat tailed distributions (kurtosis).\n• Descriptive statistics separately for each group. Since this book focuses on doing data analysis in jamovi, we spent a bit of time talking about how descriptive statistics are computed for different subgroups.\n• Standard scores. The z-score is a slightly unusual beast. It’s not quite a descriptive statistic, and not quite an inference. Make sure you understand this section. It’ll come up again later.",
+          "hit_page_start": 95,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                480.768,
+                843.752,
+                549.689
+              ],
+              "page": 95,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                211.611,
+                562.451,
+                843.759,
+                797.418
+              ],
+              "page": 95,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021051529116045246
+        },
+        {
+          "id": "exc_858bafa062c60b_24_v2",
+          "book_id": "introductory-business-statistics",
+          "book_title": "Introductory Business Statistics",
+          "section_path": "Chapter 1 Descriptive statistics and frequency distributions",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center",
+            "spread",
+            "graphs"
+          ],
+          "confidence": 0.93,
+          "synopsis": "Chapter 1 Descriptive statistics and frequency distributions covering center, spread, graphs.",
+          "pages": [
+            13
+          ],
+          "figure_ids": [
+            "fig_858bafa062c60b_119_v2"
+          ],
+          "chunk_ids": [
+            "chk_858bafa062c60b_33_v2"
+          ],
+          "hit_chunk_id": "chk_858bafa062c60b_33_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nThis chapter is about describing populations and samples, a subject known as descriptive statistics. This will all make more sense if you keep in mind that the information you want to produce is a description of the population or sample as a whole, not a description of one member of the population. The first topic in this chapter is a discussion of \"distributions\", essentially pictures of populations (or samples). Second will be the discussion of descriptive statistics. The topics are arranged in this order because the descriptive statistics can be thought of as ways to describe the picture of a population, the distribution.",
+          "hit_page_start": 13,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                167.704,
+                755.639,
+                199.753
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                211.166,
+                856.901,
+                359.087
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020375106564364878
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_6_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction › Inferential Statistics",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "data-types"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by Mikki Hebl Prerequisites\n\n• Chapter 1: Descriptive Statistics Learning Objectives\n\n1. Distinguish between a sample and a population\n2. Define inferential statistics\n3. Identify biased samples\n4. Distinguish between simple random sampling and stratified sampling\n5. Distinguish between random sampling and random assignment\n\nPopulations and samples In statistics, we often rely on a sample --- that is, a small subset of a larger set of data --- to draw inferences about the larger set. The larger set is known as the population from which the sample is drawn.\n\nExample #1: You have been hired by the National Election Commission to examine how the American people feel about the fairness of the voting procedures in the U.S. Who will you ask?\n\nIt is not practical to ask every single American how he or she feels about the fairness of the voting procedures. Instead, we query a relatively small number of Americans, and draw inferences about the entire country from their responses. The Americans actually queried constitute our sample of the larger population of all Americans. The mathematical procedures whereby we convert information about the sample into intelligent guesses about the population fall under the rubric of inferential statistics.\n\nIt is not practical to ask every single American how he or she feels about the fairness of the voting procedures. Instead, we query a relatively small number of Americans, and draw inferences about the entire country from their responses. The Americans actually queried constitute our sample of the larger population of all Americans. The mathematical procedures whereby we convert information about the sample into intelligent guesses about the population fall under the rubric of inferential statistics.\n\nA sample is typically a small subset of the population. In the case of voting attitudes, we would sample a few thousand Americans drawn from the hundreds of millions that make up the country. In choosing a sample, it is therefore crucial that it not over-represent one kind of citizen at the expense of others. For example, something would be wrong with our sample if it happened to be made up entirely of Florida residents. If the sample held only Floridians, it could not be used to infer",
+          "pages": [
+            20
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_34_v1",
+            "chk_f97f47b7a1fd68_35_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_34_v1",
+          "hit_text": "by Mikki Hebl Prerequisites\n\n• Chapter 1: Descriptive Statistics Learning Objectives\n\n1. Distinguish between a sample and a population\n2. Define inferential statistics\n3. Identify biased samples\n4. Distinguish between simple random sampling and stratified sampling\n5. Distinguish between random sampling and random assignment\n\nPopulations and samples In statistics, we often rely on a sample --- that is, a small subset of a larger set of data --- to draw inferences about the larger set. The larger set is known as the population from which the sample is drawn.\n\nExample #1: You have been hired by the National Election Commission to examine how the American people feel about the fairness of the voting procedures in the U.S. Who will you ask?\n\nIt is not practical to ask every single American how he or she feels about the fairness of the voting procedures. Instead, we query a relatively small number of Americans, and draw inferences about the entire country from their responses. The Americans actually queried constitute our sample of the larger population of all Americans. The mathematical procedures whereby we convert information about the sample into intelligent guesses about the population fall under the rubric of inferential statistics.",
+          "hit_page_start": 20,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                250.025,
+                185.606
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                185.585,
+                425.502,
+                248.232
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                248.107,
+                781.743,
+                348.491
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                368.057,
+                852.843,
+                462.879
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                496.845,
+                858.801,
+                556.824
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                596.717,
+                875.02,
+                750.758
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020261437908496733
+        },
+        {
+          "id": "exc_e49c11171c5f1c_269_v1",
+          "book_id": "evidence-based-software-engineering",
+          "book_title": "Evidence-based Software Engineering",
+          "section_path": "+ + + › Probability › 9.1 Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "probability-for-data-analysis"
+          ],
+          "confidence": 0.94,
+          "synopsis": "Probability is the mathematics used to answer this question.",
+          "pages": [
+            244,
+            245,
+            246
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_e49c11171c5f1c_1122_v1",
+            "chk_e49c11171c5f1c_1123_v1",
+            "chk_e49c11171c5f1c_1124_v1",
+            "chk_e49c11171c5f1c_1125_v1",
+            "chk_e49c11171c5f1c_1126_v1",
+            "chk_e49c11171c5f1c_1127_v1",
+            "chk_e49c11171c5f1c_1128_v1"
+          ],
+          "hit_chunk_id": "chk_e49c11171c5f1c_1123_v1",
+          "hit_text": "Probability makes inferences about individual events based on the characteristics of the population, while statistics makes inferences about the population based on the characteristics of a sample of the populationi.\n\nAnother way to compare the two is that probability makes use of deductive reasoning, while statistics makes use of inferential reasoning.\n\nProbability and statistics are intertwined in that ideas and techniques from probability, about individual events, may be used when solving problems involving statistics and results about the characteristics of a population, obtained from statistical analysis, may be used to help solve problems involving probability.\n\nPeople make use of various phrases to express their view of the likelihood of an event occurring, e.g., \"almost impossible\" and \"quite possible\". Studies have found large cultural and personal differences in the numeric probabilities assigned to such phrases; see ﬁg 6.7 and ﬁg 2.57.\n\nThis book is data driven, and so primarily makes use of statistical analysis. The following example is a problem for which possible answers can be suggested using a probability model (data on developer behavior would provide evidence).\n\nSay, a vendor of a static analysis tool wants to add support for detecting a newly discovered pattern of mistakes made by developers. An occurrence of this pattern, in code, is not always a mistake. What is the upper bound on the probability of generating a false positive, that keeps the likelihood of developers continuing to use the tool above some limit (say 90%)?ii",
+          "hit_page_start": 244,
+          "hit_regions": [
+            {
+              "bbox": [
+                71.429,
+                574.753,
+                666.667,
+                617.413
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                624.26,
+                666.667,
+                652.719
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                659.566,
+                666.667,
+                716.426
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                723.273,
+                666.667,
+                780.134
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                786.979,
+                666.667,
+                829.64
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                836.487,
+                666.667,
+                907.547
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02003798670465337
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_220_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 9. Sampling Distributions › Introduction to Sampling Distributions",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "sampling-distributions"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 1: Distributions\n• Chapter 1: Inferential Statistics Learning Objectives\n\n1. Deﬁne inferential statistics\n2. Graph a probability distribution for the mean of a discrete variable\n3. Describe a sampling distribution in terms of “all possible outcomes”\n4. Describe a sampling distribution in terms of repeated sampling\n5. Describe the role of sampling distributions in inferential statistics\n6. Deﬁne the standard error of the mean\n\nSuppose you randomly sampled 10 people from the population of women in Houston, Texas, between the ages of 21 and 35 years and computed the mean height of your sample. You would not expect your sample mean to be equal to the mean of all women in Houston. It might be somewhat lower or it might be somewhat higher, but it would not equal the population mean exactly. Similarly, if you took a second sample of 10 people from the same population, you would not expect the mean of this second sample to equal the mean of the ﬁrst sample.\n\nRecall that inferential statistics concern generalizing from a sample to a population. A critical part of inferential statistics involves determining how far sample statistics are likely to vary from each other and from the population parameter. (In this example, the sample statistics are the sample means and the population parameter is the population mean.) As the later portions of this chapter show, these determinations are based on sampling distributions.\n\nDiscrete Distributions We will illustrate the concept of sampling distributions with a simple example.\n\nRecall that inferential statistics concern generalizing from a sample to a population. A critical part of inferential statistics involves determining how far sample statistics are likely to vary from each other and from the population parameter. (In this example, the sample statistics are the sample means and the population parameter is the population mean.) As the later portions of this chapter show, these determinations are based on sampling distributions.\n\nDiscrete Distributions We will illustrate the concept of sampling distributions with a simple example.\n\nFigure 1 shows three pool balls, each with a number on it. Suppose two of the balls are selected randomly (with replacement) and the average of their numbers is computed. All possible outcomes are shown below in Table 1.\n\n1",
+          "pages": [
+            300,
+            301
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_457_v1",
+            "chk_f97f47b7a1fd68_458_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_457_v1",
+          "hit_text": "by David M. Lane Prerequisites\n\n• Chapter 1: Distributions\n• Chapter 1: Inferential Statistics Learning Objectives\n\n1. Deﬁne inferential statistics\n2. Graph a probability distribution for the mean of a discrete variable\n3. Describe a sampling distribution in terms of “all possible outcomes”\n4. Describe a sampling distribution in terms of repeated sampling\n5. Describe the role of sampling distributions in inferential statistics\n6. Deﬁne the standard error of the mean\n\nSuppose you randomly sampled 10 people from the population of women in Houston, Texas, between the ages of 21 and 35 years and computed the mean height of your sample. You would not expect your sample mean to be equal to the mean of all women in Houston. It might be somewhat lower or it might be somewhat higher, but it would not equal the population mean exactly. Similarly, if you took a second sample of 10 people from the same population, you would not expect the mean of this second sample to equal the mean of the ﬁrst sample.\n\nRecall that inferential statistics concern generalizing from a sample to a population. A critical part of inferential statistics involves determining how far sample statistics are likely to vary from each other and from the population parameter. (In this example, the sample statistics are the sample means and the population parameter is the population mean.) As the later portions of this chapter show, these determinations are based on sampling distributions.\n\nDiscrete Distributions We will illustrate the concept of sampling distributions with a simple example.",
+          "hit_page_start": 300,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                285.797,
+                185.606
+              ],
+              "page": 300,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                190.657,
+                417.569,
+                271.465
+              ],
+              "page": 300,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                276.515,
+                772.822,
+                407.828
+              ],
+              "page": 300,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                419.192,
+                869.129,
+                573.232
+              ],
+              "page": 300,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                578.283,
+                866.613,
+                709.596
+              ],
+              "page": 300,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                728.41,
+                837.505,
+                777.778
+              ],
+              "page": 300,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018947015425888666
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_37_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction › Exercises",
+          "roles": [
+            "introduction",
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "percentiles",
+            "spread",
+            "data-transformations"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Prerequisites\n\n• All material presented in Chapter: “Introduction”\n\n1. A teacher wishes to know whether the males in his/her class have more conservative attitudes than the females. A questionnaire is distributed assessing attitudes and the males and the females are compared. Is this an example of descriptive or inferential statistics?\n2. A cognitive psychologist is interested in comparing two ways of presenting stimuli on sub- sequent memory. Twelve subjects are presented with each method and a memory test is given. What would be the roles of descriptive and inferential statistics in the analysis of these data?\n3. If you are told only that you scored in the 80th percentile, do you know from that description exactly how it was calculated? Explain.\n4. A study is conducted to determine whether people learn better with spaced or massed practice. Subjects volunteer from an introductory psychology class. At the beginning of the semester 12 subjects volunteer and are assigned to the massed-practice condition. At the end of the semester 12 subjects volunteer and are assigned to the spaced-practice condition. This experiment involves two kinds of non-random sampling: (1) Subjects are not randomly sampled from some speciﬁed population and (2) subjects are not randomly assigned to conditions. Which of the problems relates to the generality of the results? Which of the problems relates to the validity of the results? Which problem is more serious?\n5. Give an example of an independent and a dependent variable.\n6.\n\nCategorize the following variables as being qualitative or quantitative: Rating of the quality of a movie on a 7-point scale Age Country you were born in Favorite Color Time to respond to a question\n\n7. Specify the level of measurement used for the items in Question 6.\n8. Which of the following are linear transformations? Converting from meters to kilometers Squaring each side to ﬁnd the area Converting from ounces to pounds Taking the square root of each person's height. Multiplying all numbers by 2 and then adding 5 Converting temperature from Fahrenheit to Centigrade\n9. The formula for ﬁnding each student’s test grade (g) from his or her raw score (s) on a test is as follows: g = 16 + 3s Is this a linear transformation? If a student got a raw score of 20, what is his test grade?\n10. For the numbers 1, 2, 4, 16, compute the following: ΣX ΣX2 (ΣX)2\n11. Which of the frequency polygons has a large positive skew? Which has a large negative skew?\n12. What is more likely to have a skewed distribution: time to solve an anagram problem (where the letters of a word or phrase are rearranged into another\n\nword or phrase like “dear” and “read” or “funeral” and “real fun”) or scores on a vocabulary test?\n\nQuestions from Case Studies\n\nAngry Moods (AM) case study\n\n13. (AM) Which variables are the participant variables? (They act as independent variables in this study.)\n14. (AM) What are the dependent variables?\n15. (AM) Is Anger-Out a quantitative or qualitative variable? Teacher Ratings (TR) case study\n16. (TR) What is the independent variable in this study? ADHD Treatment (AT) case study\n17. (AT) What is the independent variable of this experiment? How many levels does it have?\n18. (AT) What is the dependent variable? On what scale (nominal, ordinal, interval, ratio) was it measured?",
+          "pages": [
+            62,
+            63,
+            64
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_544_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_99_v1",
+            "chk_f97f47b7a1fd68_100_v1",
+            "chk_f97f47b7a1fd68_101_v1",
+            "chk_f97f47b7a1fd68_102_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_100_v1",
+          "hit_text": "1. A teacher wishes to know whether the males in his/her class have more conservative attitudes than the females. A questionnaire is distributed assessing attitudes and the males and the females are compared. Is this an example of descriptive or inferential statistics?\n2. A cognitive psychologist is interested in comparing two ways of presenting stimuli on sub- sequent memory. Twelve subjects are presented with each method and a memory test is given. What would be the roles of descriptive and inferential statistics in the analysis of these data?\n3. If you are told only that you scored in the 80th percentile, do you know from that description exactly how it was calculated? Explain.\n4. A study is conducted to determine whether people learn better with spaced or massed practice. Subjects volunteer from an introductory psychology class. At the beginning of the semester 12 subjects volunteer and are assigned to the massed-practice condition. At the end of the semester 12 subjects volunteer and are assigned to the spaced-practice condition. This experiment involves two kinds of non-random sampling: (1) Subjects are not randomly sampled from some speciﬁed population and (2) subjects are not randomly assigned to conditions. Which of the problems relates to the generality of the results? Which of the problems relates to the validity of the results? Which problem is more serious?\n5. Give an example of an independent and a dependent variable.\n6.",
+          "hit_page_start": 62,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                203.283,
+                881.405,
+                900.253
+              ],
+              "page": 62,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018925373134328356
+        },
+        {
+          "id": "exc_45ecdb7da7734b_20_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Why do we learn statistics › 1.1 On the psychology of statistics",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [],
+          "confidence": 0.9,
+          "synopsis": "This opening section argues that psychology students often dislike statistics, then asks why scientists rely on statistics rather than common sense. The answer given is that humans are susceptible to biases and frailties, so statistics serves as a safeguard against trusting gut instincts, verbal arguments, and human reasoning. It notes that language has biases and that gut instincts evolved for day-to-day problems, not scientific ones, and that reasoning requires induction influenced by distractors.",
+          "pages": [
+            20,
+            21
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_38_v2",
+            "chk_45ecdb7da7734b_39_v2",
+            "chk_45ecdb7da7734b_40_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_38_v2",
+          "hit_text": "To the surprise of many students, statistics is a fairly significant part of a psychological education. To the surprise of no-one, statistics is very rarely the favourite part of one’s psychological education. After all, if you really loved the idea of doing statistics, you’d probably be enrolled in a statistics class right now, not a psychology class. So, not surprisingly, there’s a pretty large proportion of the student base that isn’t happy about the fact that psychology has so much statistics in it. In view of this, I thought that the right place to start might be to answer some of the more common questions that people have about stats.\n\nA big part of this issue at hand relates to the very idea of statistics. What is it? What’s it there for? And why are scientists so bloody obsessed with it? These are all good questions, when you think about it. So let’s start with the last one. As a group, scientists seem to be bizarrely fixated on running statistical tests on everything. In fact, we use statistics so often that we sometimes forget to explain to people why we do. It’s a kind of article of faith among scientists – and especially social scientists – that your findings can’t be trusted until you’ve done some stats. Undergraduate students might be forgiven for thinking that we’re all completely mad, because no-one takes the time to answer one very simple question:\n\nWhy do you do statistics? Why don’t scientists just use common sense?\n\n©2025CC BY-SAD.R.4.0Foxcroft and D.J. Navarro, 5 https://doi.org/10.11647/OBP.0333.01",
+          "hit_page_start": 20,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                598.533,
+                812.505,
+                733.872
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                739.465,
+                812.502,
+                891.408
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                909.807,
+                711.932,
+                928.915
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                158.788,
+                944.807,
+                805.203,
+                969.343
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018610013175230568
+        },
+        {
+          "id": "exc_64ed84430ae3b2_5_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 1 Sampling and Data › 1.1 Sampling and Data: Introduction",
+          "roles": [
+            "reference",
+            "introduction"
+          ],
+          "topic_ids": [
+            "sampling",
+            "graphs",
+            "random-variables"
+          ],
+          "confidence": 0.96,
+          "synopsis": "1.1.1 Student Learning Outcomes  Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/). Learning Objectives • Recognize and differentiate between key terms. • Apply various types of sampling methods to data collection. • Create and interpret frequency tables.\n1.1.2 Introduction\n\nAvailable under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nYou are probably asking yourself the question, \"When and where will I use statistics?\". If you read any newspaper or watch television, or use the Internet, you will see statistical information. There are statistics about crime, sports, education, politics, and real estate. Typically, when you read a newspaper article or watch a news program on television, you are given sample information. With this information, you may make a decision about the correctness of a statement, claim, or \"fact.\" Statistical methods can help you make the \"best educated guess.\"\n\nSince you will undoubtedly be given statistical information at some point in your life, you need to know some techniques to analyze the information thoughtfully. Think about buying a house or managing a budget. Think about your chosen profession. The fields of economics, business, psychology, education, biology, law, computer science, police science, and early childhood development require at least one course in statistics.\n\nSince you will undoubtedly be given statistical information at some point in your life, you need to know some techniques to analyze the information thoughtfully. Think about buying a house or managing a budget. Think about your chosen profession. The fields of economics, business, psychology, education, biology, law, computer science, police science, and early childhood development require at least one course in statistics.\n\nIncluded in this chapter are the basic ideas and words of probability and statistics. You will soon understand that statistics and probability work together. You will also learn how data are gathered and what \"good\" data are.",
+          "pages": [
+            8
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_39_v1",
+            "fig_64ed84430ae3b2_40_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_22_v1",
+            "chk_64ed84430ae3b2_23_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_22_v1",
+          "hit_text": "1.1.1 Student Learning Outcomes  Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/). Learning Objectives • Recognize and differentiate between key terms. • Apply various types of sampling methods to data collection. • Create and interpret frequency tables.\n1.1.2 Introduction\n\nAvailable under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nYou are probably asking yourself the question, \"When and where will I use statistics?\". If you read any newspaper or watch television, or use the Internet, you will see statistical information. There are statistics about crime, sports, education, politics, and real estate. Typically, when you read a newspaper article or watch a news program on television, you are given sample information. With this information, you may make a decision about the correctness of a statement, claim, or \"fact.\" Statistical methods can help you make the \"best educated guess.\"\n\nSince you will undoubtedly be given statistical information at some point in your life, you need to know some techniques to analyze the information thoughtfully. Think about buying a house or managing a budget. Think about your chosen profession. The fields of economics, business, psychology, education, biology, law, computer science, police science, and early childhood development require at least one course in statistics.",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                184.507,
+                826.309,
+                396.341
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                407.406,
+                826.309,
+                439.455
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                450.868,
+                831.192,
+                580.083
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                590.714,
+                834.032,
+                701.223
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018596059113300492
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_0_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics",
+          "roles": [
+            "reference",
+            "introduction",
+            "summary"
+          ],
+          "topic_ids": [
+            "percentiles",
+            "center",
+            "spread",
+            "data-transformations"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Online Edition\n\nPrimary author and editor: David M. Lane1\n\nOther authors: David Scott1, Mikki Hebl1, Rudy Guerra1, Dan Osherson1, and Heidi Zimmer2\n\n1Rice University; 2University of Houston, Downtown Campus\n\nSection authors speciﬁed on each section.\n\nThis work is in the public domain. Therefore, it can be copied and reproduced without limitation.\n\n1Rice University; 2University of Houston, Downtown Campus\n\nSection authors speciﬁed on each section.\n\nThis work is in the public domain. Therefore, it can be copied and reproduced without limitation.\n\n1. Introduction ........................................................................................10 What Are Statistics .............................................................................................11 Importance of Statistics......................................................................................13 Descriptive Statistics...........................................................................................15 Inferential Statistics.............................................................................................20 Variables .............................................................................................................26 Percentiles...........................................................................................................29 Levels of Measurement ......................................................................................34 Distributions .......................................................................................................40 Summation Notation..........................................................................................52 Linear Transformations......................................................................................55\n\nLogarithms..........................................................................................................58 Statistical Literacy ..............................................................................................61 Exercises .............................................................................................................62\n2. Graphing Distributions.......................................................................65 Graphing Qualitative Variables..........................................................................66 Graphing Quantitative Variables .......................................................................75 Stem and Leaf Displays......................................................................................76 Histograms..........................................................................................................82 Frequency Polygons ............................................................................................86 Box Plots.............................................................................................................92 Bar Charts ........................................................................................................101 Line Graphs......................................................................................................105 Dot Plots...........................................................................................................109 Statistical Literacy .......................................................................................\n\n.....113 References.........................................................................................................115 Exercises ...........................................................................................................116\n3. Summarizing Distributions...............................................................123 What is Central Tendency? ..............................................................................124 Measures of Central Tendency ........................................................................131 Median and Mean............................................................................................134 Additional Measures of Central Tendency ......................................................136 Comparing Measures of Central Tendency.....................................................140 Measures of Variability ....................................................................................144\n\nShapes of Distributions ....................................................................................152 Effects of Linear Transformations....................................................................154 Variance Sum Law I.........................................................................................156 Statistical Literacy ............................................................................................158 Exercises ...........................................................................................................159\n4. Describing Bivariate Data.................................................................164 Introduction to Bivariate Data .........................................................................165 Values of the Pearson Correlation....................................................................170 Properties of Pearson's r...................................................................................175 Computing Pearson's r......................................................................................176 Variance Sum Law II........................................................................................178 Statistical Literacy ............................................................................................180 Exercises ...........................................................................................................181\n5.\n\nProbability.........................................................................................185 Remarks on the Concept of “Probability”.......................................................186 Basic Concepts..................................................................................................189 Permutations and Combinations......................................................................198 Binomial Distribution.......................................................................................203 Poisson Distribution..........................................................................................207 Multinomial Distribution..................................................................................208 Hypergeometric Distribution ...........................................................................210 Base Rates.........................................................................................................212 Statistical Literacy ............................................................................................215\n\nExercises ...........................................................................................................216\n6. Research Design................................................................................222 Scientiﬁc Method..............................................................................................223 Measurement....................................................................................................225 Basics of Data Collection .................................................................................231 Sampling Bias...................................................................................................235 Experimental Designs.......................................................................................238 Causation..........................................................................................................242 Statistical Literacy ............................................................................................245 References.........................................................................................................246 Exercises ...........................................................................................................247\n7.\n\nNormal Distributions........................................................................248 Introduction to Normal Distributions ..............................................................249 History of the Normal Distribution .................................................................252 Areas Under Normal Distributions..................................................................256 Standard Normal Distribution .........................................................................259 Normal Approximation to the Binomial..........................................................263 Statistical Literacy ............................................................................................266 Exercises ...........................................................................................................267\n8. Advanced Graphs .............................................................................272 Quantile-Quantile (q-q) Plots ...........................................................................273 Contour Plots....................................................................................................289 3D Plots ............................................................................................................292\n\nStatistical Literacy ............................................................................................297 Exercises ...........................................................................................................298\n9. Sampling Distributions .....................................................................299 Introduction to Sampling Distributions............................................................300 Sampling Distribution of the Mean .................................................................307 Sampling Distribution of Difference Between Means......................................311 Sampling Distribution of Pearson's r................................................................316 Figure 2. The sampling distribution of r for N = 12 and ρ = 0.90..................318 Sampling Distribution of p...............................................................................319 Statistical Literacy ............................................................................................322 Exercises ...........................................................................................................323\n10.\n\nEstimation.......................................................................................328 Introduction to Estimation ...............................................................................329 Degrees of Freedom .........................................................................................330 Characteristics of Estimators............................................................................333 Conﬁdence Intervals.........................................................................................336 Introduction to Conﬁdence Intervals ...............................................................337 t Distribution.....................................................................................................339 Conﬁdence Interval for the Mean....................................................................343 Difference between Means ...............................................................................349 Correlation .......................................................................................................356 Proportion.........................................................................................................358 Statistical Literacy ............................................................................................360\n\nExercises ...........................................................................................................362\n11. Logic of Hypothesis Testing ...........................................................369 Introduction......................................................................................................370 Signiﬁcance Testing..........................................................................................375 Type I and II Errors .........................................................................................377 One- and Two-Tailed Tests..............................................................................379 Interpreting Signiﬁcant Results ........................................................................383 Interpreting Non-Signiﬁcant Results................................................................385 Steps in Hypothesis Testing..............................................................................388 Signiﬁcance Testing and Conﬁdence Intervals.................................................389 Misconceptions.................................................................................................391 Statistical Literacy ............................................................................................392 References.........................................................................................................393 Exercises ...........................................................................................................394\n12.\n\nTesting Means.................................................................................398 Testing a Single Mean ......................................................................................399 Differences between Two Means (Independent Groups) .................................406 All Pairwise Comparisons Among Means........................................................412 Speciﬁc Comparisons (Independent Groups)...................................................418 Difference Between Two Means (Correlated Pairs)..........................................428 Speciﬁc Comparisons (Correlated Observations).............................................432 Pairwise Comparisons (Correlated Observations)............................................436 Statistical Literacy ............................................................................................438\n\nReferences.........................................................................................................439 Exercises ...........................................................................................................440\n13. Power...............................................................................................447 Introduction to Power.......................................................................................448 Example Calculations.......................................................................................450 Factors Affecting Power....................................................................................454 Statistical Literacy ............................................................................................458 Exercises ...........................................................................................................459\n14.\n\nRegression.......................................................................................461 Introduction to Linear Regression....................................................................462 Partitioning the Sums of Squares.....................................................................468 Standard Error of the Estimate........................................................................473 Inferential Statistics for b and r ........................................................................476 Inﬂuential Observations ...................................................................................482 Regression Toward the Mean...........................................................................487 Introduction to Multiple Regression.................................................................495 Statistical Literacy ............................................................................................507 References.........................................................................................................508 Exercises ...........................................................................................................509\n15.\n\nAnalysis of Variance .......................................................................515 Introduction......................................................................................................516 Analysis of Variance Designs............................................................................518 Between- and Within-Subjects Factors.............................................................519\n\nOne-Factor ANOVA (Between Subjects)..........................................................521 Multi-Factor Between-Subjects Designs...........................................................532 Unequal Sample Sizes......................................................................................544 Tests Supplementing ANOVA..........................................................................553 Within-Subjects ANOVA..................................................................................562 Statistical Literacy ............................................................................................569 Exercises ...........................................................................................................570\n16. Transformations..............................................................................576 Log Transformations........................................................................................577 Tukey Ladder of Powers...................................................................................580 Box-Cox Transformations ................................................................................588 Statistical Literacy ............................................................................................594 References.........................................................................................................595 Exercises ...........................................................................................................596\n17.\n\nChi Square......................................................................................597 Chi Square Distribution ...................................................................................598 One-Way Tables (Testing Goodness of Fit)......................................................601 Contingency Tables..........................................................................................605 Statistical Literacy ............................................................................................608 References.........................................................................................................609 Exercises ...........................................................................................................610\n18. Distribution-Free Tests....................................................................616 Beneﬁts .............................................................................................................617\n\nRandomization Tests: Two Conditions ............................................................618 Randomization Tests: Two or More Conditions..............................................620 Randomization Tests: Association (Pearson's r)................................................622 Randomization Tests: Contingency Tables: (Fisher's Exact Test) ....................624 Rank Randomization: Two Conditions (Mann-Whitney U, Wilcoxon Rank Sum)..................................................................................................................626 Rank Randomization: Two or More Conditions (Kruskal-Wallis)...................631 Rank Randomization for Association (Spearman's ρ)......................................633 Statistical Literacy ............................................................................................636 Exercises ...........................................................................................................637\n19.\n\nEffect Size........................................................................................639 Proportions .......................................................................................................640 Difference Between Two Means.......................................................................643 Proportion of Variance Explained ...................................................................647 References.........................................................................................................653 Statistical Literacy ............................................................................................654 Exercises ...........................................................................................................655\n20. Case Studies....................................................................................657\n21. Glossary...........................................................................................659",
+          "pages": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_0_v1",
+            "chk_f97f47b7a1fd68_1_v1",
+            "chk_f97f47b7a1fd68_2_v1",
+            "chk_f97f47b7a1fd68_3_v1",
+            "chk_f97f47b7a1fd68_4_v1",
+            "chk_f97f47b7a1fd68_5_v1",
+            "chk_f97f47b7a1fd68_6_v1",
+            "chk_f97f47b7a1fd68_7_v1",
+            "chk_f97f47b7a1fd68_8_v1",
+            "chk_f97f47b7a1fd68_9_v1",
+            "chk_f97f47b7a1fd68_10_v1",
+            "chk_f97f47b7a1fd68_11_v1",
+            "chk_f97f47b7a1fd68_12_v1",
+            "chk_f97f47b7a1fd68_13_v1",
+            "chk_f97f47b7a1fd68_14_v1",
+            "chk_f97f47b7a1fd68_15_v1",
+            "chk_f97f47b7a1fd68_16_v1",
+            "chk_f97f47b7a1fd68_17_v1",
+            "chk_f97f47b7a1fd68_18_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_1_v1",
+          "hit_text": "1Rice University; 2University of Houston, Downtown Campus\n\nSection authors speciﬁed on each section.\n\nThis work is in the public domain. Therefore, it can be copied and reproduced without limitation.\n\n1. Introduction ........................................................................................10 What Are Statistics .............................................................................................11 Importance of Statistics......................................................................................13 Descriptive Statistics...........................................................................................15 Inferential Statistics.............................................................................................20 Variables .............................................................................................................26 Percentiles...........................................................................................................29 Levels of Measurement ......................................................................................34 Distributions .......................................................................................................40 Summation Notation..........................................................................................52 Linear Transformations......................................................................................55",
+          "hit_page_start": 1,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                353.535,
+                687.587,
+                371.212
+              ],
+              "page": 1,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                398.99,
+                498.794,
+                416.667
+              ],
+              "page": 1,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                457.071,
+                830.582,
+                497.475
+              ],
+              "page": 1,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                527.393,
+                882.356,
+                904.04
+              ],
+              "page": 1,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01827478879502001
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_4_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction › Importance of Statistics",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by Mikki Hebl Learning Objectives\n\n1. Give examples of statistics encountered in everyday life\n2. Give examples of how statistics can lend credibility to an argument\n\nLike most people, you probably feel that it is important to “take control of your life.” But what does this mean? Partly, it means being able to properly evaluate the data and claims that bombard you every day. If you cannot distinguish good from faulty reasoning, then you are vulnerable to manipulation and to decisions that are not in your best interest. Statistics provides tools that you need in order to react intelligently to information you hear or read. In this sense, statistics is one of the most important things that you can study.\n\nTo be more speciﬁc, here are some claims that we have heard on several occasions. (We are not saying that each one of these claims is true!)\n\nLike most people, you probably feel that it is important to “take control of your life.” But what does this mean? Partly, it means being able to properly evaluate the data and claims that bombard you every day. If you cannot distinguish good from faulty reasoning, then you are vulnerable to manipulation and to decisions that are not in your best interest. Statistics provides tools that you need in order to react intelligently to information you hear or read. In this sense, statistics is one of the most important things that you can study.\n\nTo be more speciﬁc, here are some claims that we have heard on several occasions. (We are not saying that each one of these claims is true!)\n\n• 4 out of 5 dentists recommend Dentine.\n• Almost 85% of lung cancers in men and 45% in women are tobacco-related.\n• Condoms are effective 94% of the time.\n• Native Americans are signiﬁcantly more likely to be hit crossing the street than are people of other ethnicities.\n• People tend to be more persuasive when they look others directly in the eye and speak loudly and quickly.\n• Women make 75 cents to every dollar a man makes when they work the same job.\n• A surprising new study shows that eating egg whites can increase one's life span.\n• People predict that it is very unlikely there will ever be another baseball player with a batting average over 400.\n• There is an 80% chance that in a room full of 30 people that at least two people will share the same birthday.\n• 79.48% of all statistics are made up on the spot.\n\nAll of these claims are statistical in character. We suspect that some of them sound familiar; if not, we bet that you have heard other claims like them. Notice how diverse the examples are. They come from psychology, health, law, sports, business, etc. Indeed, data and data interpretation show up in discourse from virtually every facet of contemporary life.\n\nStatistics are often presented in an effort to add credibility to an argument or advice. You can see this by paying attention to television advertisements. Many of the numbers thrown about in this way do not represent careful statistical analysis. They can be misleading and push you into decisions that you might ﬁnd cause to regret. For these reasons, learning about statistics is a long step towards taking control of your life. (It is not, of course, the only step needed for this purpose.) The present electronic textbook is designed to help you learn statistical essentials. It will make you into an intelligent consumer of statistical claims.\n\nStatistics are often presented in an effort to add credibility to an argument or advice. You can see this by paying attention to television advertisements. Many of the numbers thrown about in this way do not represent careful statistical analysis. They can be misleading and push you into decisions that you might ﬁnd cause to regret. For these reasons, learning about statistics is a long step towards taking control of your life. (It is not, of course, the only step needed for this purpose.) The present electronic textbook is designed to help you learn statistical essentials. It will make you into an intelligent consumer of statistical claims.\n\nYou can take the ﬁrst step right away. To be an intelligent consumer of statistics, your ﬁrst reﬂex must be to question the statistics that you encounter. The British Prime Minister Benjamin Disraeli is quoted by Mark Twain as having said, “There are three kinds of lies -- lies, damned lies, and statistics.” This quote reminds us why it is so important to understand statistics. So let us invite you to reform your statistical habits from now on. No longer will you blindly accept numbers or ﬁndings. Instead, you will begin to think about the numbers, their sources, and most importantly, the procedures used to generate them.\n\nYou can take the ﬁrst step right away. To be an intelligent consumer of statistics, your ﬁrst reﬂex must be to question the statistics that you encounter. The British Prime Minister Benjamin Disraeli is quoted by Mark Twain as having said, “There are three kinds of lies -- lies, damned lies, and statistics.” This quote reminds us why it is so important to understand statistics. So let us invite you to reform your statistical habits from now on. No longer will you blindly accept numbers or ﬁndings. Instead, you will begin to think about the numbers, their sources, and most importantly, the procedures used to generate them.\n\nWe have put the emphasis on defending ourselves against fraudulent claims wrapped up as statistics. We close this section on a more positive note. Just as important as detecting the deceptive use of statistics is the appreciation of the proper use of statistics. You must also learn to recognize statistical evidence that supports a stated conclusion. Statistics are all around you, sometimes used well, sometimes not. We must learn how to distinguish the two cases.\n\nNow let us get to work!",
+          "pages": [
+            13,
+            14
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_23_v1",
+            "chk_f97f47b7a1fd68_24_v1",
+            "chk_f97f47b7a1fd68_25_v1",
+            "chk_f97f47b7a1fd68_26_v1",
+            "chk_f97f47b7a1fd68_27_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_27_v1",
+          "hit_text": "You can take the ﬁrst step right away. To be an intelligent consumer of statistics, your ﬁrst reﬂex must be to question the statistics that you encounter. The British Prime Minister Benjamin Disraeli is quoted by Mark Twain as having said, “There are three kinds of lies -- lies, damned lies, and statistics.” This quote reminds us why it is so important to understand statistics. So let us invite you to reform your statistical habits from now on. No longer will you blindly accept numbers or ﬁndings. Instead, you will begin to think about the numbers, their sources, and most importantly, the procedures used to generate them.\n\nWe have put the emphasis on defending ourselves against fraudulent claims wrapped up as statistics. We close this section on a more positive note. Just as important as detecting the deceptive use of statistics is the appreciation of the proper use of statistics. You must also learn to recognize statistical evidence that supports a stated conclusion. Statistics are all around you, sometimes used well, sometimes not. We must learn how to distinguish the two cases.\n\nNow let us get to work!",
+          "hit_page_start": 14,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                277.778,
+                877.789,
+                454.545
+              ],
+              "page": 14,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                459.596,
+                868.315,
+                590.909
+              ],
+              "page": 14,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                631.313,
+                334.294,
+                648.99
+              ],
+              "page": 14,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017551892551892552
+        },
+        {
+          "id": "exc_45ecdb7da7734b_106_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Descriptive statistics › 4.4 Descriptive statistics separately for each group",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "jamovi",
+            "center",
+            "spread"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Explains how to compute descriptive statistics split by a grouping variable in jamovi, using the clinicaltrial.csv data set with drug and therapy groups. Shows checking Std. deviation, Skewness and Kurtosis and transferring a variable into the 'Split by' box, and notes that splitting by multiple grouping variables can yield too few data per combination, producing 'NaN' or 'Inf'.",
+          "pages": [
+            92,
+            93
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_660_v2",
+            "fig_45ecdb7da7734b_665_v2",
+            "fig_45ecdb7da7734b_666_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_218_v2",
+            "chk_45ecdb7da7734b_219_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_218_v2",
+          "hit_text": "It is very commonly the case that you find yourself needing to look at descriptive statistics broken down by some grouping variable. This is pretty easy to do in jamovi. For instance, let’s say I want to look at the descriptive statistics for some clinical trial data, broken down separately by therapy type. This is a new data set, one that you’ve never seen before. The data is stored in the clinicaltrial.csv file and we’ll use it a lot later on in Chapter 13 (you can find a complete description of the data at the start of that chapter). Let’s load it and see what we’ve got (Figure 4.13).\n\nFigure 4.13. A screenshot of jamovi showing the variables stored in the clinicaltrial.csv file\n\nEvidently there were three drugs: a placebo, something called “anxifree” and something called “joyzepam”, and there were 6 people administered each drug. There were 9 people treated using cognitive behavioural therapy (CBT) and 9 people who received no psychological treatment. And we can see from looking at the ‘Descriptives’ of the mood.gain variable that most people did show a mood gain (𝑚𝑒𝑎𝑛 = 0.88), though without knowing what the scale is here it’s hard to say much more than that. Still, that’s not too bad. Overall I feel that I learned something from that.\n\nWe can also go ahead and look at some other descriptive statistics, and this time separately for each type of therapy. In jamovi, check Std. deviation, Skewness and Kurtosis in the ‘Statistics’ options. At the same time, transfer the therapy variable into the ‘Split by’ box, and you should get something like Figure 4.14.",
+          "hit_page_start": 92,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                278.839,
+                812.502,
+                397.574
+              ],
+              "page": 92,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                813.194,
+                812.498,
+                848.907
+              ],
+              "page": 92,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                98.644,
+                843.752,
+                224.364
+              ],
+              "page": 93,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                223.176,
+                843.752,
+                292.099
+              ],
+              "page": 93,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016508152173913042
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_219_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 9. Sampling Distributions",
+          "roles": [
+            "introduction",
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "sampling-distributions",
+            "correlation",
+            "proportions"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Prerequisites\n\n• none\n\nA. Introduction B. Sampling Distribution of the Mean C. Sampling Distribution of Difference Between Means D. Sampling Distribution of Pearson's r E. Sampling Distribution of a Proportion F. Exercises The concept of a sampling distribution is perhaps the most basic concept in inferential statistics. It is also a difﬁcult concept because a sampling distribution is a theoretical distribution rather than an empirical distribution.\n\nThe introductory section deﬁnes the concept and gives an example for both a discrete and a continuous distribution. It also discusses how sampling distributions are used in inferential statistics.\n\nThe remaining sections of the chapter concern the sampling distributions of important statistics: the Sampling Distribution of the Mean, the Sampling Distribution of the Difference Between Means, the Sampling Distribution of r, and the Sampling Distribution of a Proportion.",
+          "pages": [
+            299
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_456_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_456_v1",
+          "hit_text": "Prerequisites\n\n• none\n\nA. Introduction B. Sampling Distribution of the Mean C. Sampling Distribution of Difference Between Means D. Sampling Distribution of Pearson's r E. Sampling Distribution of a Proportion F. Exercises The concept of a sampling distribution is perhaps the most basic concept in inferential statistics. It is also a difﬁcult concept because a sampling distribution is a theoretical distribution rather than an empirical distribution.\n\nThe introductory section deﬁnes the concept and gives an example for both a discrete and a continuous distribution. It also discusses how sampling distributions are used in inferential statistics.\n\nThe remaining sections of the chapter concern the sampling distributions of important statistics: the Sampling Distribution of the Mean, the Sampling Distribution of the Difference Between Means, the Sampling Distribution of r, and the Sampling Distribution of a Proportion.",
+          "hit_page_start": 299,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                178.03,
+                237.946,
+                195.707
+              ],
+              "page": 299,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                200.758,
+                176.824,
+                219.697
+              ],
+              "page": 299,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                246.212,
+                871.712,
+                452.02
+              ],
+              "page": 299,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                457.071,
+                880.296,
+                520.202
+              ],
+              "page": 299,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                525.253,
+                872.954,
+                611.111
+              ],
+              "page": 299,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016338372270575663
+        },
+        {
+          "id": "exc_0689cddaba206d_28_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 1 › Exploring one-variable data and collecting data › 1.1 Introduction to data › Section summary",
+          "roles": [
+            "summary",
+            "introduction"
+          ],
+          "topic_ids": [
+            "data-types",
+            "sampling",
+            "estimation"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Summary of foundational concepts: statistics as an investigative process; population (N) versus sample (n); statistical studies; datum and data set; characteristics of investigative questions; data tables with rows as individuals and columns as variables; parameter versus statistic; and numerical (continuous or discrete) versus categorical variables.",
+          "pages": [
+            16
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_47_v2",
+            "chk_0689cddaba206d_48_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_47_v2",
+          "hit_text": "• Statistics can be understood as an investigative process that involves asking a valid statistical research question, collecting data, analyzing the data, and forming a conclusion.\n• A population is the entire group of interest. The population size is represented by N.\n• A sample is the subset of the population that a researcher collects data on. The number of item in the sample, called the sample size, is represented by n.\n• When data are collected from a sample to answer an investigative question about a population, we call this a statistical study. Statistical studies are necessary when it is too diﬃcult or expensive to collect data from every individual in the population.\n• A datum (singular form of data) is a piece of information about an individual. A collection of data is called a data set.\n• An investigative question for a statistical study should have a deﬁned purpose, should not change based on the data analysis or results, and should be posed so that the required data can be collected and analyzed.\n• Researchers often summarize data in a table, where the rows correspond to individuals, also called observational units or cases, and the columns correspond to the variables, the values of which are recorded for each individual.\n• A parameter is a numerical attribute or summary of a variable of interest for the entire population. Researchers take a sample from the population to estimate this unknown quantity. The estimate calculated from the sample is called the statistic. A statistic can vary from sample to sample, while a parameter is a ﬁxed number.",
+          "hit_page_start": 16,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                96.438,
+                852.948,
+                523.963
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016307862884597617
+        },
+        {
+          "id": "exc_45ecdb7da7734b_395_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Bayesian statistics",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "bayesian-inference"
+          ],
+          "confidence": 0.95,
+          "synopsis": "The chapter introduces Bayesian statistics as an alternative to frequentist inference. It notes that frequentist methods dominate psychology textbooks and scientific papers, so students need to understand them, but argues current practice is often misguided. The chapter has two parts: the first three sections cover the basic mathematical rules of Bayesian statistics and why the approach is useful; afterward, a brief overview of Bayesian 𝑡-tests is provided.",
+          "pages": [
+            432
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_913_v2",
+            "chk_45ecdb7da7734b_914_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_913_v2",
+          "hit_text": "In our reasonings concerning matter of fact, there are all imaginable degrees of assurance, from the highest certainty to the lowest species of moral evidence. A wise man, therefore, proportions his belief to the evidence.\n\n– David Hume189\n\nThe ideas I’ve presented to you in this book describe inferential statistics from the frequentist perspective. I’m not alone in doing this. In fact, almost every textbook given to undergraduate psychology students presents the opinions of the frequentist statistician as the theory of inferential statistics, the one true way to do things. I have taught this way for practical reasons. The frequentist view of statistics dominated the academic field of statistics for most of the 20th century, and this dominance is even more extreme among applied scientists. It was and is current practice among psychologists to use frequentist methods. Because frequentist methods are ubiquitous in scientific papers, every student of statistics needs to understand those methods, otherwise they will be unable to make sense of what those papers are saying! Unfortunately, in my opinion at least, the current practice in psychology is often misguided, and the reliance on frequentist methods is partly to blame. In this chapter I explain why I think this and provide an introduction to Bayesian statistics, an approach that I think is generally superior to the orthodox approach.",
+          "hit_page_start": 432,
+          "hit_regions": [
+            {
+              "bbox": [
+                199.491,
+                372.6,
+                769.245,
+                424.767
+              ],
+              "page": 432,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                421.683,
+                330.13,
+                441.467
+              ],
+              "page": 432,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                461.101,
+                812.502,
+                696.067
+              ],
+              "page": 432,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015952380952380954
+        },
+        {
+          "id": "exc_64ed84430ae3b2_55_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 2 Descriptive Statistics › 2.1 Descriptive Statistics: Introduction",
+          "roles": [
+            "reference",
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "graphs",
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "2.1.1 Student Learning Outcomes  Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/). Learning Objectives By the end of this chapter, the student should be able to: • Display data graphically and interpret graphs: stemplots, histograms and boxplots. • Recognize, describe, and calculate the measures of location of data: quartiles and percentiles. • Recognize, describe, and calculate the measures of the center of data: mean, median, and mode. • Recognize, describe, and calculate the measures of the spread of data: variance, standard deviation, and range.\n2.1.2 Introduction\n\nAvailable under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nOnce you have collected data, what will you do with it? Data can be described and presented in many different formats. For example, suppose you are interested in buying a house in a particular area. You may have no clue about the house prices, so you might ask your real estate agent to give you a sample data set of prices. Looking at all the prices in the sample often is overwhelming. A better way might be to look at the median price and the variation of prices. The median and variation are just two ways that you will learn to describe data. Your agent might also provide you with a graph of the data.\n\nOnce you have collected data, what will you do with it? Data can be described and presented in many different formats. For example, suppose you are interested in buying a house in a particular area. You may have no clue about the house prices, so you might ask your real estate agent to give you a sample data set of prices. Looking at all the prices in the sample often is overwhelming. A better way might be to look at the median price and the variation of prices. The median and variation are just two ways that you will learn to describe data. Your agent might also provide you with a graph of the data.\n\nIn this chapter, you will study numerical and graphical ways to describe and display your data. This area of statistics is called \"Descriptive Statistics\". You will learn to calculate, and even more importantly, to interpret these measurements and graphs.",
+          "pages": [
+            31
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_343_v1",
+            "fig_64ed84430ae3b2_344_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_79_v1",
+            "chk_64ed84430ae3b2_80_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_80_v1",
+          "hit_text": "Once you have collected data, what will you do with it? Data can be described and presented in many different formats. For example, suppose you are interested in buying a house in a particular area. You may have no clue about the house prices, so you might ask your real estate agent to give you a sample data set of prices. Looking at all the prices in the sample often is overwhelming. A better way might be to look at the median price and the variation of prices. The median and variation are just two ways that you will learn to describe data. Your agent might also provide you with a graph of the data.\n\nIn this chapter, you will study numerical and graphical ways to describe and display your data. This area of statistics is called \"Descriptive Statistics\". You will learn to calculate, and even more importantly, to interpret these measurements and graphs.",
+          "hit_page_start": 31,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                580.916,
+                862.353,
+                728.836
+              ],
+              "page": 31,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                739.467,
+                853.392,
+                793.86
+              ],
+              "page": 31,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01568471337579618
+        },
+        {
+          "id": "exc_e49c11171c5f1c_296_v1",
+          "book_id": "evidence-based-software-engineering",
+          "book_title": "Evidence-based Software Engineering",
+          "section_path": "+ + + › Statistics › 10.1 Introduction › 10.1.1 Statistical inference",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "statistics-for-software-data"
+          ],
+          "confidence": 0.94,
+          "synopsis": "Population Sample Figure 10.1: Example of a sample drawn from a population.",
+          "pages": [
+            265
+          ],
+          "figure_ids": [
+            "fig_e49c11171c5f1c_8774_v1"
+          ],
+          "chunk_ids": [
+            "chk_e49c11171c5f1c_1201_v1",
+            "chk_e49c11171c5f1c_1202_v1"
+          ],
+          "hit_chunk_id": "chk_e49c11171c5f1c_1201_v1",
+          "hit_text": "Population\n\nSample\n\nFigure 10.1: Example of a sample drawn from a population. Github–Local\n\nLifetime (years)\n\n1970 1975 1980 1985 1990 1995 2000\n\nYear introduced\n\nFigure 10.2: Date of introduction of a cpu against its commercial lifetime; processors ceasing production in 2000 or 2010 would appear along one of the lines. Data from Culver.419 Github–Local\n\nThe most commonly used statistical inference technique makes use of frequentist methods, i.e., how often events occur and long-run averages. All techniques have problems associates with their use and frequentist, being the most widely used, has the greatest number of detractors; a common problem is misuse of the concept of p-value; any widely used technique will have a common failure mode, simply because of varying skills of the people using it. The p-value is the fall-guy of the frequentist approach to statistical analysis.\n\nThe frequentist approach is the technique predominantly used in this book because it is commonly used in statistical books and articles; it is used by most R packages and readers are likely to encounter it when interacting with other people involved in analysing and using data.",
+          "hit_page_start": 265,
+          "hit_regions": [
+            {
+              "bbox": [
+                50.345,
+                530.901,
+                121.026,
+                543.259
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                205.332,
+                567.331,
+                256.585,
+                579.689
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                12.094,
+                665.827,
+                321.605,
+                688.477
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                13.375,
+                757.369,
+                27.98,
+                818.469
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                49.253,
+                882.866,
+                321.209,
+                893.192
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                141.524,
+                892.156,
+                228.938,
+                902.483
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                12.094,
+                913.75,
+                321.605,
+                958.884
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                333.333,
+                318.086,
+                928.571,
+                417.547
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                333.333,
+                425.261,
+                928.571,
+                482.121
+              ],
+              "page": 265,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01437847866419295
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "query": "what is statistics definition descriptive and inferential statistics why useful",
+      "ids": [
+        "exc_f97f47b7a1fd68_5_v1",
+        "exc_f97f47b7a1fd68_6_v1",
+        "exc_f97f47b7a1fd68_4_v1",
+        "exc_64ed84430ae3b2_5_v1",
+        "exc_0689cddaba206d_28_v2"
+      ]
+    }
+  ],
+  "rerank_calls": [
+    {
+      "seconds": 2.615,
+      "usage": {
+        "prompt_tokens": 15868,
+        "completion_tokens": 317,
+        "total_tokens": 16185,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_f97f47b7a1fd68_5_v1",
+            "reason": "Defines descriptive statistics with concrete examples and distinguishes it from inferential statistics."
+          },
+          {
+            "id": "exc_f97f47b7a1fd68_6_v1",
+            "reason": "Defines inferential statistics, populations and samples with an accessible voting example."
+          },
+          {
+            "id": "exc_f97f47b7a1fd68_4_v1",
+            "reason": "Explains why statistics is useful in everyday life, with diverse real-world claims."
+          },
+          {
+            "id": "exc_64ed84430ae3b2_5_v1",
+            "reason": "Directly answers 'when and where will I use statistics' for a beginner."
+          },
+          {
+            "id": "exc_0689cddaba206d_28_v2",
+            "reason": "Concise summary framing statistics as an investigative process with key terms (population, sample, parameter, statistic)."
+          }
+        ],
+        "gap": ""
+      },
+      "input_characters": 84528
+    }
+  ],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

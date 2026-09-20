@@ -1,0 +1,38 @@
+{
+ "id": "mat_3dbb6d3fef0669d5",
+ "kind": "note",
+ "title": "Historical Development of Chinese Contract Law",
+ "content": "# Historical Development of Chinese Contract Law\n\n*Based on the open textbook **Chinese Contract Law**, Chapter 1 (§1.2.2). The account reflects the book's 2009 perspective; statements such as \"the civil code is still being drafted\" are source-period claims, not current law.*\n\n## 1. Imperial China (pre-1911): no civil code\n- Whether Imperial China had \"civil law\" (as opposed to criminal law) is **debatable**: Liang Chichao (梁啟超) and Wang Boqi (王伯琦) argued it did not exist; Yang Honglie (楊鴻烈) held the opposite view.\n- Beyond dispute: **no civil code ever existed** in Imperial China, though there was separate legislation on **marriage and debt**.\n\n## 2. Late Qing: first draft civil code\n- **1902**: Emperor Guang Xu formed a team to draft a civil code modelled on Continental European codes.\n- Drafting ran **1908–1910**, producing the **Draft Civil Law of Great Qing (《大清民律草案》)** — the first civil code in China's history, though only in draft form.\n- **Never enacted**: the Qing Dynasty was overthrown shortly afterwards.\n\n## 3. Republican era: first enacted civil code\n- **April 1927**: National Government established; **December 1928**: Legislative Yuan put in charge of drafting.\n- **January 1929**: Drafting Committee of the Civil Code set up; compilation began February 1929.\n- **26 December 1930**: the **Civil Law of the Republic of China (《中華民國民法》)** promulgated — the first enacted civil code in China's history, containing **detailed contract law provisions**.\n\n## 4. PRC: failed codification, then piecemeal statutes\n- After 1949, drafting of a new civil code began in **1954**; a draft was completed in **December 1956**, but enactment was derailed by the antirightist movements and the Cultural Revolution.\n- Political unrest halted in **1978**; rather than revisit the old draft, China started over with **three separate contract statutes**, enacted piecemeal to meet the immediate needs of economic reform from 1979:\n  - **Economic Contract Law (1981)**\n  - **Foreign Economic Contract Law (1985)**\n  - **Technology Contract Law (1987)**\n- The **General Principles of Civil Law (GPCL, 1985)** is *not* a civil code — only \"general principles,\" like the introductory chapter of a code still in drafting.\n- The three statutes were not comprehensive: they contained **contradictory provisions** and **overlapping scopes**.\n\n## 5. The 1999 Contract Law\n- **1993**: drafting of a unified Contract Law began, intended to replace the three statutes; drafters were largely legal academics.\n- Extensive reference to international and comparative sources: **UNIDROIT PICC**, **CISG**, **Principles of European Contract Law (PECL)**, the **French and German civil codes**, and **English common law**.\n- **Passed 15 March 1999, effective 1 October 1999**; supplemented by the Supreme People's Court's *Interpretation on Several Issues Regarding the Application of the Contract Law (1)* and other judicial interpretations on technology and construction contracts.\n\n## Quick timeline\n| Year | Event |\n|---|---|\n| pre-1911 | No civil code; separate marriage/debt legislation only |\n| 1908–1910 | Draft Civil Law of Great Qing (never enacted) |\n| 1930 | Civil Law of the Republic of China promulgated |\n| 1954–1956 | PRC civil code draft (not enacted) |\n| 1981 / 1985 / 1987 | Economic / Foreign Economic / Technology Contract Laws |\n| 1985 | General Principles of Civil Law |\n| 1993 | New unified Contract Law drafting begins |\n| 1999 | Contract Law passed (15 Mar) and effective (1 Oct) |",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_3af200c915ae90_13_v2",
+  "exc_3af200c915ae90_14_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "chinese-contract-law",
+    "title": "Chinese Contract Law",
+    "authors": [
+     "Walter Lee",
+     "Jenny Chung",
+     "Caroline Leung",
+     "Dr Zhang Xiaoyang",
+     "Shi Xuemei"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+    "version": 2,
+    "excerptIds": [
+     "exc_3af200c915ae90_13_v2",
+     "exc_3af200c915ae90_14_v2"
+    ]
+   }
+  ]
+ },
+ "size": "891 tokens",
+ "edits": []
+}

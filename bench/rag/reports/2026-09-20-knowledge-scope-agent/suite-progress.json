@@ -1,0 +1,486 @@
+[
+  {
+    "case": "statistics-overview",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 47.08,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "statistics-overview",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 59.5,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 8,
+    "errors": []
+  },
+  {
+    "case": "statistics-overview",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 51.84,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "regression-general",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 44.91,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "regression-by-hand",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 36.25,
+    "materials": 0,
+    "searches": 1,
+    "model_calls": 3,
+    "errors": [
+      "ValueError: 'C:\\\\WEB\\\\capy-notebook\\\\bench\\\\rag\\\\reports\\\\2026-09-20-knowledge-scope-agent\\\\regression-by-hand\\\\baseline\\\\captures\\\\1.jpg' is not in the subpath of 'C:\\\\WEB\\\\capy-notebook\\\\lab\\\\playground\\\\local'"
+    ]
+  },
+  {
+    "case": "regression-by-hand",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 47.53,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "regression-by-hand",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 49.67,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "regression-r",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 46.17,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "regression-r",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 50.5,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "regression-r",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 51.16,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "independent-t-test",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 40.23,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "independent-t-test",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 35.72,
+    "materials": 0,
+    "searches": 1,
+    "model_calls": 2,
+    "errors": [
+      "ValueError: 'C:\\\\WEB\\\\capy-notebook\\\\bench\\\\rag\\\\reports\\\\2026-09-20-knowledge-scope-agent\\\\independent-t-test\\\\paged\\\\captures\\\\1.jpg' is not in the subpath of 'C:\\\\WEB\\\\capy-notebook\\\\lab\\\\playground\\\\local'"
+    ]
+  },
+  {
+    "case": "paired-t-test",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 39.22,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 4,
+    "errors": []
+  },
+  {
+    "case": "independent-t-test",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 52.55,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "paired-t-test",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 38.66,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 4,
+    "errors": []
+  },
+  {
+    "case": "paired-t-test",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 48.23,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "jamovi-t-test",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 35.39,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 4,
+    "errors": []
+  },
+  {
+    "case": "jamovi-t-test",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 48.3,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "jamovi-t-test",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 49.88,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "mean-median",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 39.17,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "mean-median",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 46.41,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "leadership-general",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 44.69,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "leadership-general",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 41.25,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "leadership-general",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 46.94,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "school-leadership",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 51.59,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "school-leadership",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 50.5,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "school-leadership",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 40.41,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "contracts-general",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 42.39,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "contracts-general",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 47.36,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "contracts-general",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 41.45,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "chinese-contract-history",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 35.17,
+    "materials": 1,
+    "searches": 0,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "chinese-contract-history",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 39.7,
+    "materials": 1,
+    "searches": 0,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "chinese-contract-history",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 60.72,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 8,
+    "errors": []
+  },
+  {
+    "case": "democracy-general",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 42.14,
+    "materials": 0,
+    "searches": 2,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "democracy-general",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 51.7,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 8,
+    "errors": []
+  },
+  {
+    "case": "democracy-general",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 45.44,
+    "materials": 0,
+    "searches": 2,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "athenian-democracy",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 51.28,
+    "materials": 0,
+    "searches": 3,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "athenian-democracy",
+    "arm": "paged",
+    "exit_code": 1,
+    "wall_seconds": 56.38,
+    "materials": 0,
+    "searches": 4,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "athenian-democracy",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 74.02,
+    "materials": 1,
+    "searches": 3,
+    "model_calls": 9,
+    "errors": []
+  },
+  {
+    "case": "bayesian-exercises",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 56.2,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 8,
+    "errors": []
+  },
+  {
+    "case": "bayesian-exercises",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 41.92,
+    "materials": 0,
+    "searches": 2,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "bayesian-exercises",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 47.14,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 6,
+    "errors": []
+  },
+  {
+    "case": "quantum-surface-codes",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 35.06,
+    "materials": 0,
+    "searches": 2,
+    "model_calls": 4,
+    "errors": []
+  },
+  {
+    "case": "quantum-surface-codes",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 33.27,
+    "materials": 0,
+    "searches": 2,
+    "model_calls": 3,
+    "errors": []
+  },
+  {
+    "case": "quantum-surface-codes",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 50.8,
+    "materials": 0,
+    "searches": 3,
+    "model_calls": 5,
+    "errors": []
+  },
+  {
+    "case": "distinct-regression-examples",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 35.45,
+    "materials": 1,
+    "searches": 1,
+    "model_calls": 4,
+    "errors": []
+  },
+  {
+    "case": "distinct-regression-examples",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 65.03,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 7,
+    "errors": []
+  },
+  {
+    "case": "distinct-regression-examples",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 89.58,
+    "materials": 1,
+    "searches": 2,
+    "model_calls": 7,
+    "errors": []
+  }
+]

@@ -1,0 +1,53 @@
+{
+ "id": "mat_1fe32f98bd3ebba2",
+ "kind": "note",
+ "title": "Simple Linear Regression in R with lm(): Fitting and Interpreting",
+ "content": "# Simple Linear Regression in R with `lm()`\n\n## 1. Fitting the model\n\n`lm()` needs only two arguments for a simple regression:\n\n- **`formula`** — of the form `outcome ~ predictor` (outcome on the left, predictor on the right; the intercept is included by default).\n- **`data`** — the data frame containing the variables.\n\nThe output is a complicated \"lm object\", so store it in a variable:\n\n```r\nregression_1 <- lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n```\n\nHere `danielle_grump` is the **outcome** and `danielle_sleep` is the **predictor** — always remember which is which.\n\n## 2. Viewing the coefficients\n\n`print()` (or just typing the object name) shows the model call and the estimated coefficients:\n\n```\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n\nCoefficients:\n (Intercept)  danielle_sleep\n      125.956          -8.937\n```\n\nThis gives the fitted least-squares line ŷ = a + bx = **125.956 − 8.937 · danielle_sleep** (the line that minimizes the sum of squared residuals, and which passes through (x̄, ȳ)).\n\n## 3. Interpreting the coefficients\n\n- **Intercept (a = 125.956):** the predicted value of the outcome when the predictor equals 0. Sometimes this has no reasonable interpretation — x = 0 may be beyond the range of the data (extrapolation), or it may be an impossible value (e.g., a negative height). Interpret it in context.\n- **Slope (b = −8.937):** the predicted **increase or decrease in the outcome for a one-unit increase in the predictor**. Here, each extra hour of sleep predicts about 8.9 fewer grumpiness points. The sign tells the direction of the association.\n- Both are **sample statistics** — estimates from the data, not fixed truths. Always interpret a, b, and R² with reference to the actual variables in context.\n\n## 4. The full picture: `summary()`\n\n`summary()` adds standard errors, t-tests, R², and the F-test:\n\n```r\nsummary(regression_1)\n```\n\nKey lines of the output and how to read them:\n\n| Output piece | What it tells you |\n|---|---|\n| **Residuals** (Min, 1Q, Median, 3Q, Max) | Quick check of the spread/symmetry of prediction errors |\n| **Coefficients table** | `Estimate` = coefficient; `Std. Error` = its uncertainty; `t value` = Estimate/Std. Error; `Pr(>|t|)` = p-value for testing that the coefficient is 0. Stars flag significance (`***` p < 0.001, `**` p < 0.01, `*` p < 0.05, `.` p < 0.1) |\n| **Residual standard error** | Typical size of a prediction error, with its degrees of freedom |\n| **Multiple R-squared** | The coefficient of determination: proportion of variation in the outcome explained by the model; ranges 0–1 (0–100%), higher = better fit. R² is always positive and cannot tell you the *direction* of the association — use the slope's sign (or a scatterplot) for that |\n| **Adjusted R-squared** | R² penalized for the number of predictors (matters when comparing models) |\n| **F-statistic** | Overall test that the model (all predictors together) explains anything; its p-value tests the model as a whole |\n\n## 5. Quick workflow\n\n```r\nmodel <- lm(y ~ x, data = mydata)   # fit\nprint(model)                        # coefficients → the line\nsummary(model)                      # tests, R², residual diagnostics\n```\n\nInterpretation checklist: state the fitted equation, interpret the slope as change-in-y per unit of x in context, check whether the intercept is meaningful, and report R² and the p-values for the slope and overall model.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_998_v1",
+  "exc_dd1e65de648fb2_1019_v1",
+  "exc_0689cddaba206d_728_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_728_v2"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1019_v1",
+     "exc_dd1e65de648fb2_998_v1"
+    ]
+   }
+  ]
+ },
+ "size": "863 tokens",
+ "edits": []
+}

@@ -1,0 +1,39 @@
+{
+ "id": "mat_6a700a6d29e92c11",
+ "kind": "note",
+ "title": "Independent-Samples t-Test in jamovi: Running and Interpreting",
+ "content": "# Independent-Samples t-Test in jamovi\n\n## When to use it\nCompare the means of **two independent groups** on a continuous outcome (e.g., grades of students taught by two different tutors).\n\n## Running the test\n1. Go to **Analyses → T-Tests → Independent Samples T-Test**.\n2. Move your outcome variable (e.g., `grade`) into the **Dependent Variables** box.\n3. Move your grouping variable (e.g., `tutor`) into the **Grouping Variable** box.\n4. Tick useful options: **Mean difference**, **95% confidence interval**, **Effect size (Cohen's d)**, and **Welch** (unequal variances) if you don't want to assume equal variances.\n\n## Reading the output\nThe results table reports, in order:\n- **Test statistic (t)** and **degrees of freedom (df)** — e.g., t(31) = 2.1\n- **p-value** — significant if p < .05 (for a two-sided test)\n- **Mean difference** and its **95% CI** — the CI is for the difference between the group means (mean 1 − mean 2). Example: means 74.53 vs 69.06, difference 5.48, 95% CI [0.20, 10.76]. A CI that excludes 0 matches a significant result.\n- **Effect size (Cohen's d)** — e.g., d = .74, a medium-to-large difference.\n\n**Sign note:** the sign of t depends on which group jamovi calls \"mean 1\" vs \"mean 2\" — that designation is arbitrary. Don't decode which group is larger from the sign of t; just look at the group means jamovi reports. When writing up, report t so its sign matches your wording: \"Anastasia's class had higher grades than Bernadette's (t(31) = 2.1, p = .04)\" vs \"Bernadette's class had lower grades than Anastasia's (t(31) = −2.1, p = .04)\". This sign-flipping trick applies only to t-tests, not to chi-square or F-tests.\n\n## Student vs Welch\n- **Student's t-test** assumes equal population variances; it is slightly more powerful when that assumption holds.\n- **Welch's test** drops that assumption and is generally preferred, since equal population variances are rarely believable. It is read exactly the same way, but df can be non-integer (e.g., t(23.02) = 2.03, p = .054).\n- If Student is significant and Welch is not (or vice versa), don't over-interpret it — the difference between p = .049 and p = .051 is almost certainly chance.\n\n## One-sided tests\nUnder the **Hypothesis** option you can specify a directional alternative (e.g., 'Group 1 > Group 2'). The t-statistic and df stay the same; the p-value changes (different rejection region) and the confidence interval becomes one-sided — a single bound rather than two.\n\n## Writing it up\nMinimum: *t*(31) = 2.1, *p* < .05. Better, include the CI and effect size:\n\n> The mean grade in Anastasia's class was 74.5% (SD = 9.0) versus 69.1% (SD = 5.8) in Bernadette's class. A Student's independent samples t-test showed this 5.4% difference was significant, *t*(31) = 2.1, *p* < .05, CI₉₅ = [0.2, 10.8], *d* = .74, suggesting a genuine difference in learning outcomes.\n\n## Assumptions to check\n- Continuous outcome, independent observations, roughly normal distributions within each group (Student's test additionally assumes equal variances — use Welch if in doubt).",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_241_v2",
+  "exc_45ecdb7da7734b_245_v2",
+  "exc_45ecdb7da7734b_242_v2",
+  "exc_45ecdb7da7734b_250_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_241_v2",
+     "exc_45ecdb7da7734b_242_v2",
+     "exc_45ecdb7da7734b_245_v2",
+     "exc_45ecdb7da7734b_250_v2"
+    ]
+   }
+  ]
+ },
+ "size": "764 tokens",
+ "edits": []
+}

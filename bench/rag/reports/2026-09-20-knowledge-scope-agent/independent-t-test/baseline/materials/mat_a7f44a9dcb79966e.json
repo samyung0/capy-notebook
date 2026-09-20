@@ -1,0 +1,51 @@
+{
+ "id": "mat_a7f44a9dcb79966e",
+ "kind": "note",
+ "title": "Independent-Samples t-Test: Explanation with Worked Examples",
+ "content": "# The Independent-Samples t-Test\n\n## What it is\nThe independent-samples t-test (Student's t-test) compares the means of **two separate groups** of observations — e.g., two different groups of participants, each in a different condition — and asks whether the two population means are the same. Each observation belongs to exactly one group, and the groups must be independent of each other.\n\n## Hypotheses\n- H₀: μ₁ − μ₂ = 0 (the two population means are equal)\n- Hₐ: μ₁ − μ₂ ≠ 0 (two-sided; or a one-sided \"greater/less than\" alternative)\n\n## Test statistic\nWith sample means x̄₁, x̄₂, standard deviations s₁, s₂ and sizes n₁, n₂:\n\n- Point estimate: x̄₁ − x̄₂\n- Standard error: SE = √(s₁²/n₁ + s₂²/n₂)\n- Test statistic: t = (x̄₁ − x̄₂ − 0) / SE\n\nDegrees of freedom (Welch): df ≈ 45.97-style fractional value from software; a conservative hand approximation is the smaller of n₁ − 1 and n₂ − 1. Compare t to a t-distribution with that df to get the p-value.\n\n## Assumptions\n1. **Independence** of observations within and between groups.\n2. **Approximately normal** distributions within each group (or large enough samples); no troubling outliers.\n3. Reasonably similar variances if using the pooled (Student) version; the Welch version does not require equal variances.\n\n## Worked example: two versions of a course exam (OpenIntro)\nTwo exam versions were randomly assigned to students. Summary statistics: version A: n_A = 30, x̄_A = 79.4, s_A = 14; version B: n_B = 27, x̄_B = 74.1, s_B = 20.\n\n1. **Hypotheses.** H₀: μ_A − μ_B = 0 (exams equally difficult on average); Hₐ: μ_A − μ_B ≠ 0.\n2. **Conditions.** Random assignment satisfies independence; summary statistics suggest roughly symmetric data with no concerning outliers.\n3. **Point estimate.** x̄_A − x̄_B = 79.4 − 74.1 = 5.3.\n4. **Standard error.** SE = √(14²/30 + 20²/27) = √(196/30 + 400/27) ≈ 4.62.\n5. **Test statistic.** T = (5.3 − 0)/4.62 ≈ 1.15.\n6. **Degrees of freedom.** df ≈ 45.97 by computer, or df = 26 using the smaller of n₁ − 1 and n₂ − 1.\n7. **Decision.** With df = 26, T = 1.15 is not in the rejection region (two-sided p > 0.05), so we fail to reject H₀: the data do not show a difference in average difficulty between the exams.\n\n## Worked example: tutors and grades (jamovi)\nStudents taught by Anastasia (mean 74.5, SD 9.0) vs Bernadette (mean 69.1, SD 5.8). A Student's independent-samples t-test on the 5.4-point difference gave t(31) = 2.1, p < .05, 95% CI for the difference [0.2, 10.8], d = .74 — a barely significant difference suggesting a genuine difference in learning outcomes.\n\n## Reporting\nAt minimum report t, df, and p — e.g., t(31) = 2.1, p < .05. Best practice also includes the 95% confidence interval for the mean difference and an effect size (Cohen's d), since these tell readers how large and how precisely estimated the difference is.\n\n---\nSources: Learning Statistics with jamovi (Navarro & Foxcroft), ch. 11; OpenIntro Statistics (Diez, Çetinkaya-Rundel, Barr), ch. 7.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_241_v2",
+  "exc_f213361bf057b0_489_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_241_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_489_v2"
+    ]
+   }
+  ]
+ },
+ "size": "743 tokens",
+ "edits": []
+}

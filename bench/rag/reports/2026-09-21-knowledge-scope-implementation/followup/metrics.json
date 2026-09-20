@@ -1,0 +1,132 @@
+{
+  "method": "Six targeted follow-ups after the Chinese source-period and AHSS source/answer backfills and the explicit partial-coverage prompt instruction. Same GLM 5.3 Flash low through local Ollama cloud endpoint, temperature zero, two concurrent turns, five returned excerpts and 40 retrieval candidates. One run per case. All start/end snapshots match the final 92-book version set. These selected reruns are separate from the original 17-case result and are not a held-out benchmark or a causal comparison.",
+  "summary": {
+    "runs": 6,
+    "nonempty_notes": 5,
+    "stalled": 1,
+    "median_seconds": 41.48,
+    "median_agent_input_tokens": 71888.0,
+    "median_model_calls": 7.0,
+    "total_input_tokens": 403485,
+    "total_output_tokens": 11286,
+    "successful_captures": 1,
+    "turns_with_refused_writes": 3,
+    "truncated_results": 0
+  },
+  "runs": [
+    {
+      "case": "regression-r",
+      "folder": "regression-r/baseline",
+      "seconds": 56.04,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 98687,
+      "agent_output_tokens": 4194,
+      "agent_model_calls": 8,
+      "successful_captures": 0,
+      "refused_writes": 2,
+      "truncated_results": 0,
+      "open_todos": 0,
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Correct R workflow and explicit separation from the source two-predictor summary. Still makes overbroad R-squared claims and asserts simple-model significance without reading its summary; no source-page capture."
+      }
+    },
+    {
+      "case": "leadership-general",
+      "folder": "leadership-general/baseline",
+      "seconds": 43.02,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 85910,
+      "agent_output_tokens": 1549,
+      "agent_model_calls": 8,
+      "successful_captures": 0,
+      "refused_writes": 2,
+      "truncated_results": 0,
+      "open_todos": 0,
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Opening and body now bound the note to school leadership and source period. Still turns sustained effort into a guarantee of effective leadership; copied numerical association was not captured."
+      }
+    },
+    {
+      "case": "chinese-contract-history",
+      "folder": "chinese-contract-history/baseline",
+      "seconds": 25.41,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 24859,
+      "agent_output_tokens": 1286,
+      "agent_model_calls": 4,
+      "successful_captures": 0,
+      "refused_writes": 0,
+      "truncated_results": 0,
+      "open_todos": 0,
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits_scope",
+        "note": "Opens with the 2009 source-period limit and reads linked Chinese history context. Scope improvement only: historical and legal claims were not independently fact-checked."
+      }
+    },
+    {
+      "case": "athenian-democracy",
+      "folder": "athenian-democracy/baseline",
+      "seconds": 56.2,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 78991,
+      "agent_output_tokens": 1965,
+      "agent_model_calls": 8,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "open_todos": 0,
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "unsupported",
+        "note": "A caveat acknowledges missing institutional history, but the body still adds Athenian assembly, citizenship exclusions and other details absent from the read passages."
+      }
+    },
+    {
+      "case": "bayesian-exercises",
+      "folder": "bayesian-exercises/baseline",
+      "seconds": 36.13,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 64785,
+      "agent_output_tokens": 1164,
+      "agent_model_calls": 6,
+      "successful_captures": 0,
+      "refused_writes": 0,
+      "truncated_results": 0,
+      "open_todos": 1,
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Uses two actual source exercises and labels added hints. Reads a different book, so this does not validate use of the new AHSS context links. The displayed formula is corrupted in extracted source text and the agent did not capture its page; a non-material find-sources todo remains open."
+      }
+    },
+    {
+      "case": "distinct-regression-examples",
+      "folder": "distinct-regression-examples/baseline",
+      "seconds": 39.93,
+      "stop": "curate_stall",
+      "nonempty_materials": 0,
+      "agent_input_tokens": 50253,
+      "agent_output_tokens": 1128,
+      "agent_model_calls": 6,
+      "successful_captures": 1,
+      "refused_writes": 0,
+      "truncated_results": 0,
+      "open_todos": 2,
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "stalled",
+        "note": "Finds two datasets, reads three excerpts and captures one page, then the unchanged stall guard ends the turn with no note or final explanation. Ledger includes a non-material research todo."
+      }
+    }
+  ]
+}

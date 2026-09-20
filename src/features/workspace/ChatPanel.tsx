@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { api, isApiError } from '@/api/client';
 import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
+import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type {
   ActivityBlock,
   ChatMessage,
@@ -27,6 +28,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPairDark } from '@/lib/userColor';
+import { chatInputLimit } from './chatInputLimit';
 import { curateToggleDisabled, curateToggleVisible } from './curateToggle';
 import type { TabAction } from './PanelTabRow';
 import { toolErrorMessage } from './toolErrorMessage';
@@ -419,6 +421,7 @@ export function ChatPanel({
   // TODO: show last-chat timestamps and rename/delete actions in chat history.
 
   const [text, setText] = useState('');
+  const inputLimit = chatInputLimit(text);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [selectId, setSelectId] = useState<string | null>(null);
   // A chat is curate or ordinary for its whole life; the toggle only opens a
@@ -445,7 +448,7 @@ export function ChatPanel({
 
   function submit() {
     const trimmed = text.trim();
-    if (!trimmed || streaming) return;
+    if (!trimmed || streaming || inputLimit.exceeded) return;
     setText('');
     void send(trimmed, curate);
   }
@@ -584,21 +587,22 @@ export function ChatPanel({
       </div>
 
       <div className="grow-0 p-3">
-        <div className="flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent">
+        <div
+          className={cn(
+            'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
+          )}
+        >
           <Textarea
+            aria-invalid={inputLimit.exceeded || undefined}
             aria-label={m.chat_placeholder()}
-            className="min-h-6 resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg placeholder:text-placeholder focus:border-0"
+            className={cn(
+              'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg placeholder:text-placeholder focus:border-0'
+            )}
             onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                submit();
-              }
-            }}
             placeholder={
               curate ? m.chat_curate_placeholder() : m.chat_placeholder()
             }
-            rows={1}
+            rows={2}
             value={text}
           />
           <div className="flex items-center gap-2">
@@ -632,14 +636,45 @@ export function ChatPanel({
                 </TooltipContent>
               </Tooltip>
             )}
+            <span className="ml-auto" />
+            {inputLimit.visible && (
+              <span
+                className={cn(
+                  't-meta whitespace-nowrap',
+                  inputLimit.exceeded ? 'text-solid-error' : 'text-fg-muted'
+                )}
+              >
+                {inputLimit.count}/{CHAT_CHARACTER_LIMIT}
+              </span>
+            )}
             <IconButton
-              className="ml-auto bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85"
-              icon={streaming ? 'x' : 'send'}
+              className="rounded-lg p-1.75"
+              disabled={!streaming && inputLimit.exceeded}
+              icon="send"
+              iconClassName={cn(
+                'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                streaming
+                  ? 'scale-25 opacity-0 blur-[2px]'
+                  : 'scale-100 opacity-100 blur-none'
+              )}
               label={streaming ? m.chat_stop() : m.chat_send()}
               onClick={streaming ? stop : submit}
               size="sm"
-              variant="ghost-hover"
-            />
+              strokeWidth={2.5}
+              variant="accent"
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                  streaming
+                    ? 'scale-100 opacity-100 blur-none'
+                    : 'scale-25 opacity-0 blur-[2px]'
+                )}
+              >
+                <Icon className="fill-current" name="stop" size={14} />
+              </span>
+            </IconButton>
           </div>
         </div>
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}

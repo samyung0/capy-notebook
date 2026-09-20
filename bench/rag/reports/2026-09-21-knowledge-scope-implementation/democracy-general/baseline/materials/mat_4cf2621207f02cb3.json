@@ -1,0 +1,40 @@
+{
+ "id": "mat_4cf2621207f02cb3",
+ "kind": "note",
+ "title": "What Democracy Means: An Introduction",
+ "content": "# What Does Democracy Mean?\n\n## Core Definition\nA **democracy** is a system of government in which citizens themselves engage — either directly or indirectly — in government. This distinguishes it from a **republic**, which is a form of government in which the country is a *public concern* rather than the private property of a ruling group (like a monarchy). Many states call themselves republics without being democratic; the two ideas are related but distinct.\n\n## Three Core Elements of Democracy\n1. **Individual sovereignty** — Political sovereignty resides at the level of the individual. A political community derives its supreme power and authority from the *consent of the people*. This right is public and shared: no single person or group can claim absolute rule, and it is not derived from divine or hereditary right. In a representative democracy, representatives wield power *on behalf of* citizens, but ultimate sovereignty stays with the people.\n2. **Political equality** — Citizens are equal in political standing. In practice, formal equality is often incomplete (e.g., representation systems where some citizens' votes count far more than others'), so equality remains an ideal that institutions imperfectly realize.\n3. **Democratic norms and values** — Abstract rules are not enough. Democracy requires norms and values that affirm popular rule: public understanding, deliberation, and civic engagement (voting, volunteering, local participation, community problem-solving). Without these, a society can go through the \"motions\" of democracy — a hollow, \"zombie\" democracy.\n\n## A Useful Distinction\n- A **democratic society** is marked by high civic engagement — collective action for the public betterment.\n- A **democratic form of government** is a set of rules and processes for democratic elections and governing.\n\nThe two reinforce each other, but a gap can exist: fair institutions with low participation, or vigorous activism blocked by undemocratic institutions.\n\n## Why Democracy? (Three Justifications)\n- **Aggregative** — it aggregates citizens' preferences into decisions.\n- **Deliberative** — public dialog produces reasoned consensus (though deep value conflicts may resist consensus).\n- **Radical** — it gives individuals power that makes government responsible and accountable to their needs, through direct citizen action (which need not mean violence or intimidation).\n\n## Key Takeaway\nDemocracy means rule derived from the people: shared individual sovereignty, political equality, and a living culture of participation and deliberation that gives democratic procedures their meaning.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_2bcaee6f65ce3f_148_v2",
+  "exc_2bcaee6f65ce3f_150_v2",
+  "exc_2bcaee6f65ce3f_151_v2",
+  "exc_2bcaee6f65ce3f_152_v2",
+  "exc_2bcaee6f65ce3f_161_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+    "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+    "authors": [
+     "Jay Steinmetz"
+    ],
+    "edition": "",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+    "version": 2,
+    "excerptIds": [
+     "exc_2bcaee6f65ce3f_148_v2",
+     "exc_2bcaee6f65ce3f_150_v2",
+     "exc_2bcaee6f65ce3f_151_v2",
+     "exc_2bcaee6f65ce3f_152_v2",
+     "exc_2bcaee6f65ce3f_161_v2"
+    ]
+   }
+  ]
+ },
+ "size": "656 tokens",
+ "edits": []
+}

@@ -1,0 +1,1729 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "quantum-surface-codes",
+    "query": "Create one concise study note explaining quantum error correction using surface codes.",
+    "check": "Evidence for quantum surface codes, or an honest coverage gap; classical error correction and programming exceptions are insufficient."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "surface code quantum error correction stabilizer qubits",
+      "topics": [],
+      "roles": [],
+      "seconds": 4.519,
+      "excerpts": [
+        {
+          "id": "exc_d6a5f3974008aa_636_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.38 Information Communication Problems › 337",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "6.38 Information Communication Problems: Data | Codeword 00 | 00000 01 | 01101 10 | 10111 11 | 11010 1. What is this code's efficiency? 2. Find the generator matrix G and parity-check matrix H for this code. 3. Give the decoding table for this code. How many patterns of 1, 2, and 3 errors are correctly decoded? 4. What is the block error probability (the probability of any number of errors occurring in the decoded … information from Rice engineers (no fear of the UT engineers). He decides to represent 3-bit data with 6-bit codewords in which none of the data bits appear explicitly.",
+          "pages": [
+            347
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_4202_v2",
+            "fig_d6a5f3974008aa_4203_v2",
+            "fig_d6a5f3974008aa_4204_v2",
+            "fig_d6a5f3974008aa_4205_v2",
+            "fig_d6a5f3974008aa_4206_v2",
+            "fig_d6a5f3974008aa_4207_v2",
+            "fig_d6a5f3974008aa_4208_v2",
+            "fig_d6a5f3974008aa_4209_v2",
+            "fig_d6a5f3974008aa_4210_v2",
+            "fig_d6a5f3974008aa_4212_v2",
+            "fig_d6a5f3974008aa_4213_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_787_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical binary source/channel coding, not quantum error correction. The first four questions complete Problem 6.22 from excerpt 635. Problem 6.23 supplies a nine-letter probability table, a specific (6,3) code and bit error probability 1/8. Problem 6.24 continues with all six code-bit equations in excerpt 637.",
+            "summary": "Exercises ask for efficiency, generator and parity-check matrices, decoding behavior and block-error probability of a length-5 code, then combine Huffman coding with a (6,3) channel code and introduce a hidden-data six-bit code.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_635_v2",
+              "exc_d6a5f3974008aa_637_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_787_v2",
+          "hit_text": "Data | Codeword\n00 | 00000\n01 | 01101\n10 | 10111\n11 | 11010\n\n1. What is this code's efficiency?\n2. Find the generator matrix G and parity-check matrix H for this code.\n3. Give the decoding table for this code. How many patterns of 1, 2, and 3 errors are correctly decoded?\n4. What is the block error probability (the probability of any number of errors occurring in the decoded codeword)?\n\nProblem 6.23: Digital Communication A digital source produces sequences of nine letters with the following probabilities. (a). Find a Huffman code that compresses this source. How does the resulting code compare with the best possible code? (b). A clever engineer proposes the following (6,3) code to correct errors after transmission through a digital channel. What is the error correction capability of this code? (c). The channel's bit error probability is 1/8. What kind of code should be used to transmit data over this channel?\nProblem 6.24: Overly Designed Error Correction Codes\n\nletter | a | b | c | d | e | f | g | h | i\nprobability |  |  |  |  |  |  |  |  |\n\nc1=d1 | \nc2=d2 | \nc3=d3 | c6=d1\n\nAn Aggie engineer wants not only to have codewords for his data, but also to hide the information from Rice engineers (no fear of the UT engineers). He decides to represent 3-bit data with 6-bit codewords in which none of the data bits appear explicitly.",
+          "hit_page_start": 347,
+          "hit_regions": [
+            {
+              "bbox": [
+                176.471,
+                58.697,
+                793.274,
+                282.272
+              ],
+              "page": 347,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                173.449,
+                292.04,
+                869.745,
+                402.55
+              ],
+              "page": 347,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                416.298,
+                843.877,
+                870.132
+              ],
+              "page": 347,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                470.663,
+                793.274,
+                546.375
+              ],
+              "page": 347,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                657.717,
+                793.274,
+                741.837
+              ],
+              "page": 347,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                880.762,
+                864.155,
+                953.861
+              ],
+              "page": 347,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02297794117647059
+        },
+        {
+          "id": "exc_d6a5f3974008aa_588_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.27 Error-Correcting Codes: Hamming Distance › Exercise 6.27.1 › 308",
+          "roles": [
+            "formal",
+            "exercise"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Exercise 6.27.1: In this (7,4) code, 24 = 16 of the 27 = 128 possible blocks at the channel decoder correspond to error-free transmission and reception. Error correction amounts to searching for the codeword c closest to the received block c in terms of the Hamming distance between the two. The error correction capability of a channel code is limited by how close together any two error-free blocks are. Bad codes would produce blocks … fewer than three bits, which means that dmin =3, and we have a channel coder that can correct all occurrences of one error within a received 7-bit block.",
+          "pages": [
+            318
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_3903_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_721_v2",
+            "chk_d6a5f3974008aa_722_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical binary linear block coding, not quantum error correction. The weight argument uses the specific (7,4) generator matrix introduced in excerpt 587. The general single-bit criterion applies to nearest-codeword decoding; the exercise asks the learner to generalize it to n-bit correction.",
+            "summary": "Defines minimum Hamming distance for a linear block code, states d_min>=3 for correction of every single-bit error, asks for the distance needed to correct n errors, and finds d_min=3 for the displayed (7,4) code by codeword weights.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_587_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_721_v2",
+          "hit_text": "In this (7,4) code, 24 = 16 of the 27 = 128 possible blocks at the channel decoder correspond to error-free transmission and reception.\n\nError correction amounts to searching for the codeword c closest to the received block c in terms of the Hamming distance between the two. The error correction capability of a channel code is limited by how close together any two error-free blocks are. Bad codes would produce blocks close together, which would result in ambiguity when assigning a block of data bits to a received block. The quantity to examine, therefore, in designing code error correction codes is the minimum distance between codewords.\n\n(6.56) To have a channel code that can correct all single-bit errors, dmin ≥ 3. Exercise 6.27.2\n\nSuppose we want a channel code to have an error-correction capability of n bits. What must the minimum Hamming distance between codewords dmin be?",
+          "hit_page_start": 318,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.412,
+                775.282,
+                99.498
+              ],
+              "page": 318,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                110.128,
+                835.98,
+                239.343
+              ],
+              "page": 318,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                276.696,
+                689.785,
+                349.963
+              ],
+              "page": 318,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                360.594,
+                831.756,
+                397.487
+              ],
+              "page": 318,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022727272727272728
+        },
+        {
+          "id": "exc_d6a5f3974008aa_637_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.38 Information Communication Problems › 338",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "communication-systems",
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "6.38 Information Communication Problems: c1 = d1 ⊕ d2 | c4 = d1 ⊕ d2 ⊕ d3 c2 = d2 ⊕ d3 | c5 = d1 ⊕ d2 c3 = d1 ⊕ d3 | c6 = d1 ⊕ d2 ⊕ d3 1. Find the generator matrix G and parity-check matrix H for this code. 2. Find a 3 × 6 matrix that recovers the data bits from the codeword. 3. What is the error correcting capability … be added to provide single-bit error correction on the most significant bits? 2. How large must the signal-to-noise ratio of the received signal be to insure reliable communication?",
+          "pages": [
+            348
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_4219_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_788_v2",
+            "chk_d6a5f3974008aa_789_v2",
+            "chk_d6a5f3974008aa_790_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical error-correcting codes, not quantum error correction. The opening equations complete Problem 6.24 from excerpt 636. Problem 6.25 uses the displayed (7,4) generator matrix. Problem 6.26 assumes an 8 kHz signal, 8-bit A/D conversion, BPSK and additive white noise; its output-SNR part continues in excerpt 638.",
+            "summary": "Exercises analyze a six-bit linear code, miscoding of double errors by a (7,4) Hamming decoder, and selective protection of the four most significant bits in sampled signals sent by BPSK over an additive white-noise channel.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_636_v2",
+              "exc_d6a5f3974008aa_638_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_788_v2",
+          "hit_text": "c1 = d1 ⊕ d2 | c4 = d1 ⊕ d2 ⊕ d3\nc2 = d2 ⊕ d3 | c5 = d1 ⊕ d2\nc3 = d1 ⊕ d3 | c6 = d1 ⊕ d2 ⊕ d3\n\n1. Find the generator matrix G and parity-check matrix H for this code.\n2. Find a 3 × 6 matrix that recovers the data bits from the codeword.\n3. What is the error correcting capability of the code?\n\nProblem 6.25: Error Correction? It is important to realize that when more transmission errors than can be corrected, error correction algorithms believe that a smaller number of errors have occurred and correct accordingly. For example, consider a (7,4) Hamming code having the generator matrix  This code corrects all single-bit error, but if a double bit error occurs, it corrects using a single-bit error correction approach. 1. How many double-bit errors can occur in a codeword? 2. For each double-bit error pattern, what is the result of channel decoding? Express your result as a binary error sequence for the data bits.\nProblem 6.26: Selective Error Correction",
+          "hit_page_start": 348,
+          "hit_regions": [
+            {
+              "bbox": [
+                138.655,
+                58.697,
+                755.459,
+                195.783
+              ],
+              "page": 348,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.634,
+                205.552,
+                718.05,
+                259.945
+              ],
+              "page": 348,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                273.694,
+                834.121,
+                650.088
+              ],
+              "page": 348,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02195225916453538
+        },
+        {
+          "id": "exc_d6a5f3974008aa_635_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.38 Information Communication Problems › 336",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "6.38 Information Communication Problems: Table 6.8 1. What is the average number of bits necessary to represent this alphabet? 2. Using a simple binary code for this alphabet, a two-bit block of data bits naturally emerges. Find an error correcting code for two-bit data blocks that corrects all single-bit errors. 3. How would you modify your code so that the probability of the letter a being confused with the letter d is minimized? If so, what … error occurring in the 11-digit code can be corrected? Problem 6.22: Error Correcting Codes A code maps pairs of information bits into codewords of length 5 as follows.",
+          "pages": [
+            346
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_4196_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_786_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical source and channel coding, not quantum error correction. Problem 6.20 requires the four letter probabilities in excerpt 634. The UPC questions use equal-width black/white bars and a per-bar read error probability pe. Problem 6.22 continues with its complete codeword table in excerpt 636.",
+            "summary": "Continues exercises on coding a four-symbol source, then poses a UPC barcode problem about digit representation, reverse reading, read-error probability and correction bars, and begins a length-5 binary error-correcting-code problem.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_634_v2",
+              "exc_d6a5f3974008aa_636_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_786_v2",
+          "hit_text": "Table 6.8\n\n1. What is the average number of bits necessary to represent this alphabet?\n2. Using a simple binary code for this alphabet, a two-bit block of data bits naturally emerges. Find an error correcting code for two-bit data blocks that corrects all single-bit errors.\n3. How would you modify your code so that the probability of the letter a being confused with the letter d is minimized? If so, what is your new code; if not, demonstrate that this goal cannot be achieved.\n\nProblem 6.21: Universal Product Code The Universal Product Code (UPC), often known as a bar code, labels virtually every sold good. An example (Figure 6.40) of a portion of the code is shown.  Figure 6.40 Here a sequence of black and white bars, each having width d, presents an 11-digit number (consisting of decimal digits) that uniquely identifes the product. In retail stores, laser scanners read this code, and after accessing a database of prices, enter the price into the cash register. 1. How many bars must be used to represent a single digit? 2. A complication of the laser scanning system is that the bar code must be read either forwards or backwards. Now how many bars are needed to represent each digit? 3. What is the probability that the 11-digit code is read correctly if the probability of reading a single bit incorrectly is pe? 4. How many error correcting bars would need to be present so that any single bar error occurring in the 11-digit code can be corrected?\nProblem 6.22: Error Correcting Codes A code maps pairs of information bits into codewords of length 5 as follows.",
+          "hit_page_start": 346,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                203.592,
+                76.54
+              ],
+              "page": 346,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.634,
+                87.171,
+                827.395,
+                216.386
+              ],
+              "page": 346,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                230.134,
+                831.929,
+                817.802
+              ],
+              "page": 346,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021776814734561216
+        },
+        {
+          "id": "exc_d6a5f3974008aa_587_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.27 Error-Correcting Codes: Hamming Distance › Exercise 6.27.1 › 307",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Exercise 6.27.1: In a (3,1) repetition code, only 2 of the possible 8 three-bit data blocks are codewords. We can represent these bit patterns geometrically with the axes being bit positions in the data block. In the left plot, the filled circles represent the codewords [0 0 0] and [1 1 1], the only possible codewords. The unflled ones correspond to the transmission. The center plot shows that the distance between codewords is 3. … of finding the codeword closest to any received dataword. A much better code than our (3,1) repetition code is the following (7,4) code. where the generator matrix is",
+          "pages": [
+            317
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_3889_v2",
+            "fig_d6a5f3974008aa_3891_v2",
+            "fig_d6a5f3974008aa_3892_v2",
+            "fig_d6a5f3974008aa_3893_v2",
+            "fig_d6a5f3974008aa_3894_v2",
+            "fig_d6a5f3974008aa_3895_v2",
+            "fig_d6a5f3974008aa_3896_v2",
+            "fig_d6a5f3974008aa_3897_v2",
+            "fig_d6a5f3974008aa_3899_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_719_v2",
+            "chk_d6a5f3974008aa_720_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical binary linear block coding, not quantum error correction. Distance counts bit flips along binary coordinates; the single-bit guarantee requires disjoint radius-one neighborhoods around codewords. The (7,4) generator matrix and efficiency discussion are specific to the displayed code.",
+            "summary": "Uses the (3,1) repetition code to explain Hamming distance, nearest-codeword decoding, and why correcting every single-bit error requires codewords separated by at least three bits, then introduces a more efficient (7,4) code.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_719_v2",
+          "hit_text": "In a (3,1) repetition code, only 2 of the possible 8 three-bit data blocks are codewords. We can represent these bit patterns geometrically with the axes being bit positions in the data block. In the left plot, the filled circles represent the codewords [0 0 0] and [1 1 1], the only possible codewords. The unflled ones correspond to the transmission. The center plot shows that the distance between codewords is 3. Because distance corresponds to flipping a bit, calculating the Hamming distance geometrically means following the axes rather than going \"as the crow flies\". The right plot shows the datawords that result when one error occurs as the codeword goes through the channel. The three datawords are unit distance from the original codeword. Note that the received dataword groups do not overlap, which means the code can correct all single-bit errors.\n\nTo perform decoding when errors occur, we want to find the codeword (one of the filled circles in Figure 6.22) that has the highest probability of occurring: the one closest to the one received. Note that if a dataword lies a distance of 1 from two codewords, it is impossible to determine which codeword was actu ally sent. This criterion means that if any two codewords are two bits apart, then the code cannot correct the channel-induced error. Thus, to have a code that can correct all singlebit errors, codewords must have a minimum separation of three. Our repetition code has this property.",
+          "hit_page_start": 317,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                63.211,
+                873.882,
+                224.796
+              ],
+              "page": 317,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                236.815,
+                865.99,
+                384.735
+              ],
+              "page": 317,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021342068691681558
+        }
+      ]
+    },
+    {
+      "query": "quantum computing qubits error correction",
+      "topics": [],
+      "roles": [],
+      "seconds": 5.095,
+      "excerpts": [
+        {
+          "id": "exc_d6a5f3974008aa_637_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.38 Information Communication Problems › 338",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "communication-systems",
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "6.38 Information Communication Problems: c1 = d1 ⊕ d2 | c4 = d1 ⊕ d2 ⊕ d3 c2 = d2 ⊕ d3 | c5 = d1 ⊕ d2 c3 = d1 ⊕ d3 | c6 = d1 ⊕ d2 ⊕ d3 1. Find the generator matrix G and parity-check matrix H for this code. 2. Find a 3 × 6 matrix that recovers the data bits from the codeword. 3. What is the error correcting capability … be added to provide single-bit error correction on the most significant bits? 2. How large must the signal-to-noise ratio of the received signal be to insure reliable communication?",
+          "pages": [
+            348
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_4219_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_788_v2",
+            "chk_d6a5f3974008aa_789_v2",
+            "chk_d6a5f3974008aa_790_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical error-correcting codes, not quantum error correction. The opening equations complete Problem 6.24 from excerpt 636. Problem 6.25 uses the displayed (7,4) generator matrix. Problem 6.26 assumes an 8 kHz signal, 8-bit A/D conversion, BPSK and additive white noise; its output-SNR part continues in excerpt 638.",
+            "summary": "Exercises analyze a six-bit linear code, miscoding of double errors by a (7,4) Hamming decoder, and selective protection of the four most significant bits in sampled signals sent by BPSK over an additive white-noise channel.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_636_v2",
+              "exc_d6a5f3974008aa_638_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_789_v2",
+          "hit_text": "Problem 6.25: Error Correction? It is important to realize that when more transmission errors than can be corrected, error correction algorithms believe that a smaller number of errors have occurred and correct accordingly. For example, consider a (7,4) Hamming code having the generator matrix  This code corrects all single-bit error, but if a double bit error occurs, it corrects using a single-bit error correction approach. 1. How many double-bit errors can occur in a codeword? 2. For each double-bit error pattern, what is the result of channel decoding? Express your result as a binary error sequence for the data bits.\nProblem 6.26: Selective Error Correction\n\nWe have found that digital transmission errors occur with a probability that remains constant no matter how \"important\" the bit may be. For example, in transmitting digitized signals, errors occur as frequently for the most significant bit as they do for the least significant bit. Yet, the former errors have a much larger impact on the overall signal-to-noise ratio than the latter. Rather than applying error correction to each sample value, why not concentrate the error correction on the most important bits? Assume that we sample an 8 kHz signal with an 8-bit A/D converter. We use single-bit error correction on the most significant four bits and none on the least significant four. Bits are transmitted using a modulated BPSK signal set over an additive white noise channel.",
+          "hit_page_start": 348,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                273.694,
+                834.121,
+                650.088
+              ],
+              "page": 348,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                660.719,
+                815.345,
+                846.05
+              ],
+              "page": 348,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_d6a5f3974008aa_635_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.38 Information Communication Problems › 336",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.95,
+          "synopsis": "6.38 Information Communication Problems: Table 6.8 1. What is the average number of bits necessary to represent this alphabet? 2. Using a simple binary code for this alphabet, a two-bit block of data bits naturally emerges. Find an error correcting code for two-bit data blocks that corrects all single-bit errors. 3. How would you modify your code so that the probability of the letter a being confused with the letter d is minimized? If so, what … error occurring in the 11-digit code can be corrected? Problem 6.22: Error Correcting Codes A code maps pairs of information bits into codewords of length 5 as follows.",
+          "pages": [
+            346
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_4196_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_786_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical source and channel coding, not quantum error correction. Problem 6.20 requires the four letter probabilities in excerpt 634. The UPC questions use equal-width black/white bars and a per-bar read error probability pe. Problem 6.22 continues with its complete codeword table in excerpt 636.",
+            "summary": "Continues exercises on coding a four-symbol source, then poses a UPC barcode problem about digit representation, reverse reading, read-error probability and correction bars, and begins a length-5 binary error-correcting-code problem.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_634_v2",
+              "exc_d6a5f3974008aa_636_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_786_v2",
+          "hit_text": "Table 6.8\n\n1. What is the average number of bits necessary to represent this alphabet?\n2. Using a simple binary code for this alphabet, a two-bit block of data bits naturally emerges. Find an error correcting code for two-bit data blocks that corrects all single-bit errors.\n3. How would you modify your code so that the probability of the letter a being confused with the letter d is minimized? If so, what is your new code; if not, demonstrate that this goal cannot be achieved.\n\nProblem 6.21: Universal Product Code The Universal Product Code (UPC), often known as a bar code, labels virtually every sold good. An example (Figure 6.40) of a portion of the code is shown.  Figure 6.40 Here a sequence of black and white bars, each having width d, presents an 11-digit number (consisting of decimal digits) that uniquely identifes the product. In retail stores, laser scanners read this code, and after accessing a database of prices, enter the price into the cash register. 1. How many bars must be used to represent a single digit? 2. A complication of the laser scanning system is that the bar code must be read either forwards or backwards. Now how many bars are needed to represent each digit? 3. What is the probability that the 11-digit code is read correctly if the probability of reading a single bit incorrectly is pe? 4. How many error correcting bars would need to be present so that any single bar error occurring in the 11-digit code can be corrected?\nProblem 6.22: Error Correcting Codes A code maps pairs of information bits into codewords of length 5 as follows.",
+          "hit_page_start": 346,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                203.592,
+                76.54
+              ],
+              "page": 346,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.634,
+                87.171,
+                827.395,
+                216.386
+              ],
+              "page": 346,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                230.134,
+                831.929,
+                817.802
+              ],
+              "page": 346,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022381756756756757
+        },
+        {
+          "id": "exc_d6a5f3974008aa_594_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.28 Error-Correcting Codes: Channel Decoding › Exercise 6.28.2 › 5. Select the data bits from the corrected word to produce the received bit sequence",
+          "roles": [
+            "formal",
+            "exercise"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.92,
+          "synopsis": "5. Select the data bits from the corrected word to produce the received bit sequence: The phrase minimal in the third item raises the point that a double (or triple or quadruple ...) error occurring during the transmission/reception of one codeword can create the same received word as a single-bit error or no error in another codeword. For example, (1, 0, 0, 0, 1, 0, 1)Tand (0, 1, 0, 0, 1, 1, 1)T are both codewords in the example (7,4) code. The second results when the first … the bit-error probability pe is small enough. Exercise 6.28.3 How small must pe be so that a single-bit error is more likely to occur than a triple-bit error?",
+          "pages": [
+            320
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_3937_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_728_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical binary (7,4) channel coding, not quantum error correction. The maximum-probability argument assumes a sufficiently small independent per-bit error probability pe. The phrase \"minimal\" refers to the syndrome-decoding lookup and correction sequence given in excerpts 592-593.",
+            "summary": "Explains why a decoder that chooses the minimal error pattern can mistake a three-bit corruption of one (7,4) codeword for a valid or one-bit-corrupted different codeword, then asks when one-bit errors are likelier than three-bit errors.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_592_v2",
+              "exc_d6a5f3974008aa_593_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_728_v2",
+          "hit_text": "The phrase minimal in the third item raises the point that a double (or triple or quadruple ...) error occurring during the transmission/reception of one codeword can create the same received word as a single-bit error or no error in another codeword. For example, (1, 0, 0, 0, 1, 0, 1)Tand (0, 1, 0, 0, 1, 1, 1)T are both codewords in the example (7,4) code. The second results when the first one experiences three bit errors (first, second, and sixth bits). Such an error pattern cannot be detected by our coding strategy, but such multiple error patterns are very unlikely to occur. Our receiver uses the principle of maximum probability: An error-free transmission is much more likely than one with three errors if the bit-error probability pe is small enough. Exercise 6.28.3\n\nHow small must pe be so that a single-bit error is more likely to occur than a triple-bit error?",
+          "hit_page_start": 320,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                158.268,
+                831.067,
+                358.162
+              ],
+              "page": 320,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                368.792,
+                820.15,
+                405.816
+              ],
+              "page": 320,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021739130434782608
+        },
+        {
+          "id": "exc_d6a5f3974008aa_597_v2",
+          "book_id": "fundamentals-of-electrical-engineering-i",
+          "book_title": "Fundamentals of Electrical Engineering I",
+          "section_path": "Chapter 6 Information Communication › 6.29 Error-Correcting Codes: Hamming Codes › 312",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "digital-communication-and-coding"
+          ],
+          "confidence": 0.92,
+          "synopsis": "6.29 Error-Correcting Codes: Hamming Codes: Figure 6.23 Probability of error occurring 4 4 The probability of an error occurring in transmitted K =4 data bits equals 1 − (1 − pe) equals the probability that the four bits are received without error. The upper curve displays how this probability of an error anywhere in the four-bit block varies with the signal-to-noise ratio. When a (7,4) single-bit error correcting code is used, the transmitter reduced the energy it … | 4 | 0.57 15 | 11 | 0.73 31 | 26 | 0.84 63 | 57 | 0.90 127 | 120 | 0.94 Table 6.3 Hamming Codes",
+          "pages": [
+            322,
+            323
+          ],
+          "figure_ids": [
+            "fig_d6a5f3974008aa_3951_v2",
+            "fig_d6a5f3974008aa_3958_v2",
+            "fig_d6a5f3974008aa_3960_v2"
+          ],
+          "chunk_ids": [
+            "chk_d6a5f3974008aa_731_v2",
+            "chk_d6a5f3974008aa_732_v2"
+          ],
+          "retrieval": {
+            "scope": "Classical binary channel coding, not quantum error correction. The plotted comparison assumes four data bits, a (7,4) single-bit-correcting code, fixed transmitter energy spread over seven bits, and the resulting coded-channel bit error probability p-prime_e. The table concerns Hamming-code parameter families and single-bit correction.",
+            "summary": "Compares uncoded and (7,4)-coded block-error probabilities under an energy-per-bit penalty, defines Hamming codes by the perfect-fit relation 2^(N-K)-1=N for single-bit error patterns, and tabulates their N, K and efficiencies.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_d6a5f3974008aa_731_v2",
+          "hit_text": "Figure 6.23 Probability of error occurring\n\n4\n\n4\n\nThe probability of an error occurring in transmitted K =4 data bits equals 1 − (1 − pe)\n\nequals the probability that the four bits are received without error. The upper curve displays how this probability of an error anywhere in the four-bit block varies with the signal-to-noise ratio. When a (7,4) single-bit error correcting code is used, the transmitter reduced the energy it expends during a single-bit transmission by 4/7, appending three extra bits for error correction. Now the probability of any bit in the seven-bit block being in error after error correction equals\n\nas (1 − pe)\n\nwhere p'e is the probability of a bit error occurring in the channel when channel coding occurs. Here\n\nequals the probability of exactly on in seven bits emerging from the channel in error; The channel decoder corrects this type of error, and all data bits in the block are received correctly.\n\nNote that our (7,4) code has the length and number of data bits that perfectly fts correcting single bit errors. This pleasant property arises because the number of error patterns that can be corrected, 2N−K − 1, equals the codeword length N. Codes that have 2N−K − 1= N are known as Hamming codes, and the following table (Table 6.3: Hamming Codes) provides the parameters of these codes. Hamming codes are the simplest single-bit error correction codes, and the generator/parity check matrix formalism for channel coding and decoding works for them.\n\nN | K | E (efficiency)\n3 | 1 | 0.33\n7 | 4 | 0.57\n15 | 11 | 0.73\n31 | 26 | 0.84\n63 | 57 | 0.90\n127 | 120 | 0.94",
+          "hit_page_start": 322,
+          "hit_regions": [
+            {
+              "bbox": [
+                337.924,
+                297.379,
+                624.576,
+                310.964
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                688.691,
+                342.151,
+                696.834,
+                353.714
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                773.501,
+                342.151,
+                781.644,
+                353.714
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                348.508,
+                688.691,
+                362.205
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                348.508,
+                834.598,
+                455.463
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                701.039,
+                348.508,
+                773.499,
+                362.205
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                477.28,
+                832.734,
+                513.993
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                534.42,
+                820.003,
+                588.815
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                599.444,
+                831.491,
+                737.164
+              ],
+              "page": 322,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                58.697,
+                793.274,
+                371.875
+              ],
+              "page": 323,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021578029642545772
+        },
+        {
+          "id": "exc_e49c11171c5f1c_202_v1",
+          "book_id": "evidence-based-software-engineering",
+          "book_title": "Evidence-based Software Engineering",
+          "section_path": "+ + + › Reliability › 6.5 Non-software causes of unreliability",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "software-reliability-faults"
+          ],
+          "confidence": 0.94,
+          "synopsis": "40nm SRAM, top mountain 65nm SRAM, under mountain 130nm SRAM, under mountain Cumulative bit−flips 5 10 15 Mbit hours x107 Figure 6.39: Number of bit-ﬂips in SRAM fabricated using various processes, with devices on top of, or under a mountain in the French Alps.",
+          "pages": [
+            177
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_e49c11171c5f1c_822_v1",
+            "chk_e49c11171c5f1c_823_v1",
+            "chk_e49c11171c5f1c_824_v1",
+            "chk_e49c11171c5f1c_825_v1",
+            "chk_e49c11171c5f1c_826_v1"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_e49c11171c5f1c_826_v1",
+          "hit_text": "The Cassini spacecraft experienced an average of 280 single bit memory errors per day1804 (in two identical ﬂight recorders containing 2.5G of DRAM); also see ﬁg 8.31. The rate of double-bit errors was higher than expected (between 1.5 and 4.5%) because the incoming radiation had enough energy to ﬂip more than one bit.\n\nUncorrected soft errors place a limit on the maximum number of computing nodes that can be usefully used by one application; at around 50,000 nodes, a system would spend half its time saving checkpoints, and restarting from previous checkpoints after an error occurred.1584\n\nError correcting memory reduces the probability of an uncorrected error by several orders of magnitude, but with modern systems containing terabytes the probability of an error adversely affecting the result remains high.880 The Cray Blue Waters system at the National Center for Supercomputing Applications experienced 28 uncorrected memory errors (ECC and Chipkill parity hardware checks corrected 722,526 single bit errors, and 309,359 two-bit errors, a 99.995% success rate).491 Studies1258 have investigated assigning variables deemed to be critical to a subset of memory that is protected with error correcting hardware, along with various other techniques.1173",
+          "hit_page_start": 177,
+          "hit_regions": [
+            {
+              "bbox": [
+                333.333,
+                719.366,
+                928.571,
+                777.68
+              ],
+              "page": 177,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                333.333,
+                785.04,
+                928.571,
+                841.9
+              ],
+              "page": 177,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                333.333,
+                849.259,
+                928.571,
+                962.922
+              ],
+              "page": 177,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021505376344086023
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

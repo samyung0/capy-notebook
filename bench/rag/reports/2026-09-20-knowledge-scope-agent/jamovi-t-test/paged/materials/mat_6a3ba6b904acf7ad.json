@@ -1,0 +1,39 @@
+{
+ "id": "mat_6a3ba6b904acf7ad",
+ "kind": "note",
+ "title": "Independent-Samples t-Test in jamovi: Running and Interpreting",
+ "content": "# Independent-Samples t-Test in jamovi\n\n## When to use it\nCompare the means of **two independent groups** on a continuous outcome (e.g., grades of students taught by two different tutors).\n\n## Running it in jamovi\n1. **Analyses → T-Tests → Independent Samples T-Test**\n2. Move your outcome variable (e.g., `grade`) into the **Dependent Variables** box.\n3. Move the grouping variable (e.g., `tutor`) into the **Grouping Variable** box.\n4. Under **Tests**, choose *Student's t-test* (assumes equal variances) or *Welch's t-test* (does not assume equal variances — safer when group SDs differ, which is common in real data).\n5. Under **Additional options**, tick useful extras: *Mean difference*, *Confidence interval*, *Effect size (Cohen's d)*, and *Descriptives*.\n6. For a directional hypothesis, set it under **Hypotheses** (e.g., Group 1 > Group 2). The t-statistic and df stay the same; only the p-value and CI change (a one-sided CI reports a single bound).\n\n## Reading the output\nThe results table reports, in order:\n- **t** — the test statistic (difference of group means ÷ standard error of that difference)\n- **df** — degrees of freedom (Student: n₁ + n₂ − 2; Welch: a fractional value, computed differently)\n- **p** — significance of the difference\n- **Mean difference and 95% CI** — a confidence interval for the *difference between the group means*, not for either mean alone. If the interval excludes 0, the difference is significant at that level.\n- **Effect size (Cohen's d)** — the size of the difference in standard-deviation units\n\n## Worked example (tutor/grade data)\n- Anastasia's class: mean = 74.53 (SD = 9.0); Bernadette's class: mean = 69.06 (SD = 5.8)\n- Difference between means = 5.48; 95% CI for the difference = [0.20, 10.76]\n- Result: **t(31) = 2.1, p < .05, CI₉₅ = [0.2, 10.8], d = .74** → a significant (just barely) difference in learning outcomes.\n\n## Writing it up\nMinimum: *t*(31) = 2.1, *p* < .05. Better practice — include the CI and effect size:\n\n> \"The mean grade in Anastasia's class was 74.5% (SD = 9.0) versus 69.1% (SD = 5.8) in Bernadette's class. A Student's independent samples t-test showed this 5.4% difference was significant (*t*(31) = 2.1, *p* < .05, CI₉₅ = [0.2, 10.8], *d* = .74), suggesting a genuine difference in learning outcomes.\"\n\n## Assumptions & alternatives\n- Normality within each group; independence of observations; equal variances (Student only — use Welch if violated).\n- Non-normal data: tick **Mann-Whitney U** under Tests in the same analysis (rank-based alternative; interpreted like t/z, rejecting H₀ for very large or very small U in a two-sided test).",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_241_v2",
+  "exc_45ecdb7da7734b_244_v2",
+  "exc_45ecdb7da7734b_250_v2",
+  "exc_45ecdb7da7734b_261_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_241_v2",
+     "exc_45ecdb7da7734b_244_v2",
+     "exc_45ecdb7da7734b_250_v2",
+     "exc_45ecdb7da7734b_261_v2"
+    ]
+   }
+  ]
+ },
+ "size": "656 tokens",
+ "edits": []
+}

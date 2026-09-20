@@ -1,0 +1,42 @@
+{
+ "id": "mat_0d0ce4b02127e453",
+ "kind": "note",
+ "title": "Historical Development of Chinese Contract Law",
+ "content": "# Historical Development of Chinese Contract Law\n\n## 1. Early foundations (comparative background)\n- **Code of Hammurabi** (c. 1792 BC): one of the earliest written laws; of its 282 articles, 150 (over 53%) dealt with contractual relationships (sales, leases, adoption, marriage). It applied fault liability through strict formalism and harsh enforcement.\n- **Roman law**: contract law was highly developed; it was the first system to distinguish breach of contract from tort (previously, as in ancient Greece, non-performance was simply treated as infringement). Roman law became the origin of modern Continental contract law.\n- **Continental codes**: the French Civil Code (1804) first established the principle of **freedom of contract**, now the core principle of modern contract law; the German Civil Code (BGB) was built on the same Roman-law foundations.\n- **England**: modern contract principles matured in the common law courts in the early 19th century; John Powell's *Essay upon the Law of Contracts and Agreements* was the first major treatise. Freedom of contract, traced to Adam Smith, was famously affirmed in *Printing and Numerical Registering Co. v. Sampson* (1875). Merchant customs (the *lex mercatoria*) were gradually absorbed into the common law by the 19th century.\n- **19th century → today**: freedom of contract was firmly established against the backdrop of the free economy (courts stopped examining the adequacy of consideration). The contemporary welfare state now regulates contractual freedom for social welfare, consumer safety and environmental protection.\n- **Internationalisation**: UNIDROIT began unifying sale-of-goods law in 1930; the 1964 Hague conventions led to the **CISG** (adopted 1980, in force 1 January 1988); the **UNIDROIT Principles** (1994) and the **Principles of European Contract Law (PECL)** followed.\n\n## 2. Developments in China\n- **Imperial China**: no civil code ever existed, though there was separate legislation on marriage and debt.\n- **Late Qing**: in 1902 Emperor Guang Xu ordered a civil code modelled on Continental European codes; drafting ran 1908–1910, producing the **Draft Civil Law of Great Qing (《大清民律草案》)** — China's first civil code, though only in draft. It was never enacted because the Qing Dynasty was overthrown.\n- **Republic of China**: the Legislative Yuan began codification in 1929; on **26 December 1930** the **Civil Law of the Republic of China (《中華民國民法》)** was promulgated — the first enacted civil code in Chinese history, containing detailed contract provisions.\n- **PRC, early attempts**: drafting of a new civil code began in 1954; a draft was completed in December 1956 but never enacted due to the antirightist movements and the Cultural Revolution.\n- **Reform era — three piecemeal contract statutes**: after 1978, China enacted the **Economic Contract Law (1981)**, the **Foreign Economic Contract Law (1985)** and the **Technology Contract Law (1987)**. These were not comprehensive: they responded to the immediate needs of economic reform, contained contradictory provisions and overlapped in scope. The **General Principles of Civil Law (GPCL, 1985)** is not a civil code — only its \"general principles\", like the introductory chapter of a code still in drafting.\n- **The 1999 Contract Law**: drafting of a unified law began in **1993**, led largely by legal academics, with extensive reference to the UNIDROIT Principles (PICC), the CISG, the PECL, the French and German civil codes, and English common law. It was **passed on 15 March 1999 and effective 1 October 1999**, replacing the three earlier statutes, and was supplemented by Supreme People's Court interpretations (including on technology and construction contracts).\n\n## 3. Key takeaways\n- Chinese contract law evolved from *no codified civil law* (imperial era) → *Continental-style codification attempts* (Qing draft, 1930 Republican code) → *piecemeal reform-era statutes* → *a unified, internationally informed Contract Law (1999)*.\n- The 1999 law reflects deliberate borrowing from international instruments (CISG, UNIDROIT Principles, PECL) and both civil-law and common-law traditions.\n- Context: in Western jurisdictions, merchants' concern for goodwill and long-term reputation — more than the court system — drove contract enforceability; in China, business ethics and judgment enforcement were still developing, so many commercial disputes were resolved by non-legal means.\n\n*Source: *Chinese Contract Law*, Chapter 1 (General principles of contract law), sections 1.2.1–1.2.2 (CC BY-SA 4.0).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_3af200c915ae90_11_v1",
+  "exc_3af200c915ae90_12_v1",
+  "exc_3af200c915ae90_14_v1",
+  "exc_3af200c915ae90_9_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "chinese-contract-law",
+    "title": "Chinese Contract Law",
+    "authors": [
+     "Walter Lee",
+     "Jenny Chung",
+     "Caroline Leung",
+     "Dr Zhang Xiaoyang",
+     "Shi Xuemei"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+    "version": 1,
+    "excerptIds": [
+     "exc_3af200c915ae90_11_v1",
+     "exc_3af200c915ae90_12_v1",
+     "exc_3af200c915ae90_14_v1",
+     "exc_3af200c915ae90_9_v1"
+    ]
+   }
+  ]
+ },
+ "size": "1151 tokens",
+ "edits": []
+}

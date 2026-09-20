@@ -1,0 +1,40 @@
+{
+ "id": "mat_8dc183d2dd75174f",
+ "kind": "note",
+ "title": "Democracy in Ancient Athens",
+ "content": "# Democracy in Ancient Athens — Study Note\n\n## What it was\nAthens (5th–4th century BCE) is the classic historical example of **direct democracy**: a system in which citizens themselves engage *directly* in government, rather than through elected representatives. The word *demokratia* means \"rule of the people\" — political sovereignty was not reserved for a king, a hereditary class, or a divine right, but dispersed among individual citizens of the political community.\n\n## Core features\n- **Direct participation**: citizens voted on laws and policy themselves in the Assembly, rather than delegating power to representatives.\n- **Political equality as an ideal**: each citizen formally counted as an equal member of the sovereign community — the same democratic ideal of political equality among citizens that defines democracy in theory today.\n- **Civic engagement as a duty**: democracy depends not just on formal procedures but on norms and values that affirm rule by the people — public deliberation and active participation give the system its meaning. Athenian public life embodied this participatory ideal.\n\n## Important limits\n- **A narrow citizen body**: citizenship was a legal status conferring membership in the state, and in Athens it was restricted. Women, enslaved people, and foreign residents (metics) were excluded from political rights — a reminder that equality *among citizens* can coexist with sharp exclusion of non-citizens.\n- **Contemporary critics**: Plato, in *The Republic*, attacked democratic freedom. In his account, a democracy maximizes individual liberty; in its late stage the fulfillment of every appetite leads to licentiousness and chaos, out of which a tyrant rises promising order — so, for Plato, tyranny emerges from runaway democratic freedom. He contrasted this *negative liberty* (freedom from external constraint) with *positive liberty*: self-mastery guided by reason, which for him justified rule by the wise (the Philosopher King) rather than the many.\n\n## Why it matters\nAthens shows democracy in its purest participatory form — and also its built-in tensions: equality limited to a narrow citizen body, and the ancient debate (Plato vs. the democrats) over whether mass rule produces wisdom or chaos. Later thinkers such as Aristotle developed *classical republicanism* from this Greek tradition, emphasizing the community's rights and politics as a shared civic activity — a line of thought distinct from, and in tension with, modern individual-rights-based liberalism.\n\n---\n*Scope note: this note is built from a political-theory textbook's treatment of democracy's definition, Plato's critique, and classical republicanism. It does not include detailed Athenian institutional history (e.g., Cleisthenes' reforms, the Council of 500, ostracism), which the source library does not cover.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_2bcaee6f65ce3f_148_v2",
+  "exc_2bcaee6f65ce3f_150_v2",
+  "exc_2bcaee6f65ce3f_152_v2",
+  "exc_2bcaee6f65ce3f_153_v2",
+  "exc_2bcaee6f65ce3f_179_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+    "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+    "authors": [
+     "Jay Steinmetz"
+    ],
+    "edition": "",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+    "version": 2,
+    "excerptIds": [
+     "exc_2bcaee6f65ce3f_148_v2",
+     "exc_2bcaee6f65ce3f_150_v2",
+     "exc_2bcaee6f65ce3f_152_v2",
+     "exc_2bcaee6f65ce3f_153_v2",
+     "exc_2bcaee6f65ce3f_179_v2"
+    ]
+   }
+  ]
+ },
+ "size": "711 tokens",
+ "edits": []
+}

@@ -1,0 +1,2131 @@
+{
+  "arm": "reranked",
+  "case": {
+    "id": "contracts-general",
+    "query": "Create one concise study note on how contracts are formed, as a general academic introduction.",
+    "check": "Does not silently universalize one jurisdiction's legal requirements; qualifies source-bound examples or states the scope gap."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "contract formation offer acceptance consideration capacity legality elements of a valid contract",
+      "topics": [],
+      "roles": [],
+      "seconds": 9.181,
+      "excerpts": [
+        {
+          "id": "exc_1c619222c448be_186_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: 1. Find out when the Uniform Commercial Code (UCC) is the appropriate law to apply and when the common law is the appropriate law. 2. Learn the elements of common-law contracts. 3. Identify the difference between common-law contracts and contracts between merchants. A contract is a legally enforceable promise.",
+          "pages": [
+            152,
+            153
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_446_v1",
+            "chk_1c619222c448be_447_v1",
+            "chk_1c619222c448be_448_v1",
+            "chk_1c619222c448be_449_v1",
+            "chk_1c619222c448be_450_v1",
+            "chk_1c619222c448be_451_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_448_v1",
+          "hit_text": "The elements of common-law contract formation include offer, acceptance, and consideration. Offer and acceptance together form mutual assent. Additionally, to be\n\nenforceable, the contract must be for a legal purpose and parties to the contract must have capacity to enter into the contract.\n\nAn offer gives power of acceptance to another party, and it includes the agreement’s essential elements, which must be definite and certain. For example, if an offeror says to you, “I offer to sell you my scooter for four hundred dollars,” then that offer is valid. It contains the price, the person to whom the offer is made, and the object of the offer (i.e., the scooter). It creates a power of acceptance in you, the offeree.",
+          "hit_page_start": 152,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                905.317,
+                822.245,
+                941.005
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                869.43,
+                95.246
+              ],
+              "page": 153,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                105.876,
+                870.435,
+                197.681
+              ],
+              "page": 153,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02445795875198308
+        },
+        {
+          "id": "exc_1c619222c448be_196_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › Hyperlink: Coach Mike Leach › 152",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › Hyperlink: Coach Mike Leach › 152: defenses include formation problems, lack of capacity, illegality of subject matter, impossibility, duress, unconscionability, undue influence, violation of the Statute of Frauds requirement that certain types of contracts must be in writing to be enforceable against the defendant, exceeding the statute of limitations, mistake, misrepresentation, fraud, commercial impracticability, andfrustration of purpose.",
+          "pages": [
+            162,
+            163
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_473_v1",
+            "chk_1c619222c448be_474_v1",
+            "chk_1c619222c448be_475_v1",
+            "chk_1c619222c448be_476_v1",
+            "chk_1c619222c448be_477_v1",
+            "chk_1c619222c448be_478_v1",
+            "chk_1c619222c448be_479_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_474_v1",
+          "hit_text": "Formation problems in common-law contracts relate to whether the offer, acceptance, and consideration were valid. For example, if the offer did not contain the essential terms in definite and certain form, then that offer will not be valid. If I offered to sell you my house for a fair price, it would not be a sufficient offer because the price term is an essential element, and in this offer it is vague. To say that a house will be sold “for a fair price” is not specific. Likewise, in a common-law contract, if the acceptance is not a mirror image of the offer, then the acceptance will not be valid. Similarly, if consideration does not firmly commit the parties to the deal, then consideration will fail, as is the case with an illusory promise. For example, if I offered to sell you my house for $150,000, and you agreed to buy it “if you like it,” then that is not a firm commitment. Consideration will fail, and the contract has not formed. As a practical matter, how can this defense be used? The defendant simply needs to show that the contract was never formed in the first place, due to one or more deficiencies in formation. Keep in mind, however, that if the Uniform Commercial Code (UCC) is the relevant type of law, formation is much simpler than in common law. For example, all essential elements do not need to be stated in definite and certain terms (but quantity must be stated), and acceptance does not need to be a mirror image of the offer. Accordingly, in contracts in which the UCC is the relevant type of law, this defense can be more challenging to successfully mount.",
+          "hit_page_start": 162,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                292.931,
+                835.462,
+                777.55
+              ],
+              "page": 162,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024065540194572452
+        },
+        {
+          "id": "exc_1c619222c448be_187_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES › 144",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES › 144: Specifically, it is a promise to sell the scooter in exchange for a promise to buy the scooter for four hundred dollars. Since this is a promise for a promise, then this is a bilateral contract. A unilateral contract is one in which the accepting party may only accept through an action.",
+          "pages": [
+            154,
+            155
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_452_v1",
+            "chk_1c619222c448be_453_v1",
+            "chk_1c619222c448be_454_v1",
+            "chk_1c619222c448be_455_v1",
+            "chk_1c619222c448be_456_v1",
+            "chk_1c619222c448be_457_v1",
+            "chk_1c619222c448be_458_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_456_v1",
+          "hit_text": "Additionally, for a contract to be valid, the subject matter of the contract must be for a legal purpose. If a distributor of illegal drugs hires a pilot to fly his illegal cargo to a particular place in exchange for payment, this is a contract for an illegal subject matter. If the drug dealer fails to honor his agreement to pay, or if the pilot fails to honor his agreement to transport the cargo, neither aggrieved party will find a remedy in our courts, even if the elements of contract are all present and perfectly formed.\n\nMoreover, the parties to contract must have capacity to enter into the contract for its terms to be enforceable against them. Adults of sound mind have capacity. Minors lack legal capacity, but they may enter into contracts that they may cancel at their sole option. In other words, a minor who enters into a contract with a party who has capacity may void the contract, but the other party may not. This means that any contract with a minor is voidable by the minor under the infancy doctrine.",
+          "hit_page_start": 155,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                218.109,
+                872.607,
+                328.619
+              ],
+              "page": 155,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                339.249,
+                868.672,
+                449.759
+              ],
+              "page": 155,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02263099219620959
+        },
+        {
+          "id": "exc_1c619222c448be_190_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › KEY TAKEAWAYS",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › KEY TAKEAWAYS: A contract is a legally enforceable promise. Common law and the UCC are different sources of contract law. Common law is the appropriate type of law for service contracts and contracts that do not fall under the UCC, like real estate contracts. The UCC governs contracts involving the sale of goods with a price of five hundred dollars or more and in contracts between merchants.",
+          "pages": [
+            157
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_462_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_462_v1",
+          "hit_text": "A contract is a legally enforceable promise. Common law and the UCC are different sources of contract law. Common law is the appropriate type of law for service contracts and contracts that do not fall under the UCC, like real estate contracts. The UCC governs contracts involving the sale of goods with a price of five hundred dollars or more and in contracts between merchants. Common-law contract formation requires a valid offer, acceptance, and consideration. The parties must have capacity, and the subject matter must be a legal purpose. The UCC relaxes formation requirements by allowing the use of gap fillers for undefined or conflicting terms and by allowing a contract to be formed by any manner that shows agreement to contract. Quantity is a required term for contracts governed by the UCC.",
+          "hit_page_start": 157,
+          "hit_regions": [
+            {
+              "bbox": [
+                190.336,
+                409.246,
+                801.894,
+                649.299
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022388059701492536
+        },
+        {
+          "id": "exc_1c619222c448be_182_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: After reading this chapter, you should understand what a contract is, how a contract is formed, the types of law that govern contracts, the elements of common-law contract formation, and defenses to contracts. You will learn about performance and discharge, breach, and remedies. You will also understand important differences between common-law contracts and contracts between merchants under the Uniform Commercial Code (UCC).",
+          "pages": [
+            149
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_435_v1",
+            "chk_1c619222c448be_436_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_435_v1",
+          "hit_text": "After reading this chapter, you should understand what a contract is, how a contract is formed, the types of law that govern contracts, the elements of common-law contract formation, and defenses to contracts.\n\nYou will learn about performance and discharge, breach, and remedies. You will also understand important differences between common-law contracts and contracts between merchants under the Uniform Commercial Code (UCC). You will recognize commonly used clauses in contracts and their importance. You will also learn about assignment, delegation, and parol evidence. At the conclusion of this chapter, you should be able to answer the following questions:\n\n1. What is a contract?\n2. How is a contract formed?\n3. When does common law govern contract formation, and when is the UCC relevant?\n4. What are the defenses to performance of a contract?\n5. What does it mean to breach a contract, and what are the consequences of breach?\n6. What are remedies for breach of contract?\n7. What common clauses can be used to accomplish certain goals, such as ensuring expediency, limiting liability, or restricting assignment?",
+          "hit_page_start": 149,
+          "hit_regions": [
+            {
+              "bbox": [
+                190.336,
+                207.232,
+                837.418,
+                260.23
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                190.336,
+                272.255,
+                814.99,
+                400.076
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                185.22,
+                415.664,
+                842.812,
+                674.423
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02010233918128655
+        },
+        {
+          "id": "exc_1c619222c448be_202_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: 1. Learn about assignment and delegation. 2. Examine novation. 3. Explore restrictions on assignment, exculpatory clauses, noncompete clauses, mandatory arbitration clauses, acceleration clauses, and liquidated damages clauses. 4. Explore the parol evidence rule. What if you formed a contract with a rock ’n’ roll band for its services?",
+          "pages": [
+            167
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_491_v1",
+            "chk_1c619222c448be_492_v1",
+            "chk_1c619222c448be_493_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_492_v1",
+          "hit_text": "What if you formed a contract with a rock ’n’ roll band for its services? Specifically, you wanted the band to play at your nightclub, because you thought that your customers would enjoy the band enough to pay to see it perform. You hired this specific band because you heard that it drew large crowds of paying customers. Imagine your surprise when, as you anticipate the band’s performance, you discover that another band—one you have never heard of—has come to play instead of the original contracting band. On inquiry, you learn that the original band transferred its duties to perform to a lesser known band. Can it do that?\n\nContract elements—the terms of the contract—are important. They may, among other things, foreclose your ability to bring a complaint in court, they may render you unable to be hired in your profession (at least within certain boundaries), or they may limit liability to a party that had a role in causing injury to you. If you are not aware of these elements, then you may face an unpleasant surprise if you act in a way contrary to the restrictions imposed by those terms. Likewise, contracts possess certain qualities that prohibit parties from acting in certain ways, unless those qualities are expressly waived. This section identifies common properties of contracts, as well as commonly used elements of contracts. If you are negotiating a contract and you do not like a term, then you should not agree to it. In law, there is a presumption that you have read, understood, and agreed to each and every term of any contract to which you are a party. Arguing that you did not understand or that you did not approve of a particular term in the contract will not be a valid excuse to performance. You should know what you can expect when you enter into a contract. Are you getting the band that you wanted to hire to play in your nightclub, or are you really getting any band that the original band happens to transfer its duties to?",
+          "hit_page_start": 167,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                385.127,
+                866.024,
+                533.048
+              ],
+              "page": 167,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                543.678,
+                872.941,
+                841.242
+              ],
+              "page": 167,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019583333333333335
+        },
+        {
+          "id": "exc_1c619222c448be_188_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES › 146",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES › 146: enforceable contracts? Such a burden might cause commerce to come to a screeching halt. Or it might lead to many contracts disputes. The UCC also embodies some elements of the Statute of Frauds. The Statute of Frauds requires certain types of contracts to be in writing to be enforceable.",
+          "pages": [
+            156
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_459_v1",
+            "chk_1c619222c448be_460_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_460_v1",
+          "hit_text": "The primary differences between common-law contracts and the UCC are in the UCC’s relaxation of various common-law contract formation requirements. See Table 6.1 \"Differences between Contract Formations by Type of Law\" for a comparison between common-law and UCC contract formation requirements. When a battle of the forms ensues between merchants, for example, the conflicting terms are not fatal to the contract. This is a major departure from the mirror image rule required by commonlaw contracts. For the UCC, the primary issue is whether the parties intended to enter into a binding agreement. New or additional terms included in an offer will become part of the contract on acceptance. Terms that conflict with each other will “fall out” of the contract and be replaced by UCC gap fillers, which can create the terms of the contract. Likewise, terms that are left open will be filled in. Gap fillers are terms provided by the UCC, and they can be inserted into a contract when those terms are not definite. While prices, delivery dates, warranties, and other terms can be “filled in” by the UCC gap fillers, quantity cannot. Quantity, therefore, is an essential term that must be specified in the contract for it to be binding.",
+          "hit_page_start": 156,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                414.071,
+                831.351,
+                692.93
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018688628444726005
+        },
+        {
+          "id": "exc_3af200c915ae90_29_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.2 › 13",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains the court's rejection of contractual intent in the kow-tow case, identifies intent and legal significance as essential elements, and contrasts Chinese law's approach with common-law consideration.",
+          "pages": [
+            16
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_47_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_47_v1",
+          "hit_text": "It was held that by asking the claimant to greet him as gandie and kowtow, the defendant’s intent was just to embarrass the claimant. However, the claimant’s conduct was also in lack of good faith. As the defendant did not deliver possession of the car to the claimant, nor did he register the transfer, the alleged contract of gift between the parties was invalid. In accordance with article 55 of the General Principles of Civil Law, and articles 5, 186 and 187 of the Contract Law, the claimant’s claim was dismissed. Obviously the parties did not intend to create any contract in such circumstances.\n\nThere are two essential elements of a contract under Chinese law: (1) an expression of intent; (2) the expression of intent having legal significance. A simple test is whether the act is embodied with civil rights and obligations. At common law, the equivalent question is whether there is any intention to create legal relations.\n\nAt common law, consideration is an essential element of a contract, but there is no equivalent concept in Chinese law. In Case Study above, assuming that common law applied, the court would have held that the promise did not constitute a contract due to the lack of consideration. In Chinese law, on the contrary, the court has to rely on the ground of lack of expression of intent with legal significance.",
+          "hit_page_start": 16,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                834.42,
+                207.479
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                218.109,
+                832.869,
+                291.208
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                301.838,
+                824.222,
+                393.643
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018186410709775197
+        },
+        {
+          "id": "exc_3af200c915ae90_4_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope",
+            "chinese-contract-doctrines",
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces the graduate course and its focus on the 1999 PRC Contract Law, business practice, freedom of contract in a socialist market economy, contract definitions, scope, doctrines, interpretation, transaction policy, and privity; lists the unit learning outcomes.",
+          "pages": [
+            5
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_8_v1",
+            "chk_3af200c915ae90_9_v1",
+            "chk_3af200c915ae90_10_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_9_v1",
+          "hit_text": "In this course, we will discuss the basic structure of Chinese contract law, including the legislation known as the Contract Law of the People’s Republic of China, and other related laws and regulations. Throughout the course, when we refer to ‘the Contract Law’ with an upper case ‘C’ and ‘L’ we mean the Contract Law of the People’s Republic of China. The ‘contract law’ in small letters refers to the law relating to contracts in China generally. Through this course, you will gain a good grasp of the key concepts and principles of contract law from the perspective of business practice. Upon completion of this course, you should have developed the necessary analytical skills for resolving contract law issues in real life cases.\n\nThe hallmark of contract law in capitalist economies is the concept of freedom of contract. In this course, we will examine the interplay between this concept and the socialist market economy with Chinese characteristics. In this first unit, we will examine the key concepts of the Chinese contract law together with some background information, including the characteristics of the system and its historical development and application. We will look at the legal concept of a contract and various approaches for defining a contract under law. We will also take a brief look at the scope of application of contract law in China. There are a number of fundamental doctrines underlying Chinese contract law. These include principles such as equality, freedom of contract and good faith, and we will examine these in detail later in the unit. Following that, we will look at various ways of categorizing contracts, and the principles of interpretation of contractual terms. Finally, we will discuss the two main policy considerations underlying the contract law. These are the policy to encourage transactions, and privity of contract. In short, this unit:",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                322.508,
+                871.301,
+                489.134
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                499.765,
+                872.042,
+                814.253
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01767676767676768
+        },
+        {
+          "id": "exc_3af200c915ae90_45_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 1.6 Doctrines of contract law › 1.6.1 Freedom of contract › 20",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-doctrines"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Lists the freedoms to contract, choose parties and terms, select form and dispute resolution, then explains mandatory duties, standard-form constraints, and protections for consumers, employees, and other vulnerable groups.",
+          "pages": [
+            23
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_69_v1",
+            "chk_3af200c915ae90_70_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_70_v1",
+          "hit_text": "The essential elements of the doctrine of freedom of contract under Chinese law include: (1) the freedom to make a contract or not to make any contract; (2) the freedom to choose with whom one should contract; (3) the freedom to decide the contents of the contract; (4) the freedom to decide the mode in which the contract is to be made; and (5) the freedom to decide the dispute resolution mechanism to be stipulated into the contract.\n\nThe freedom of contract is often subject to various restrictions, for example:\n\n• Mandatory obligations: In order to safeguard the legal interests and social and public interests of vulnerable groups, the contracting parties are sometimes required to observe certain mandatory obligations. For example, public utilities in China, such as water supply, electricity, gas, public transport, are prohibited from refusing consumers’ offers.\n• Standard form contracts: The use of standard form contracts by business operators greatly restricts the choice of customers, who are in the weaker bargaining position. Most service providers such as banks, telecommunications operators and insurance companies insist on adopting pre-printed standard form contracts. The inequality in bargaining power is adjusted by legislation.\n• Protection of vulnerable groups generally: The typical example is consumers and employees (see, for example, the Consumer Protection Law, the Labour Law and the Labour Contract Law).",
+          "hit_page_start": 23,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                339.249,
+                859.743,
+                450.292
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                462.448,
+                788.042,
+                479.43
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                181.6,
+                490.061,
+                869.692,
+                736.219
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01762632197414806
+        },
+        {
+          "id": "exc_1c619222c448be_191_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › KEY TAKEAWAYS › 148",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › KEY TAKEAWAYS › 148: 1. If a contract was not entered in good faith, do you think that fact alone should matter? Consider Locke v. Warner Bros. Inc., which was discussed in the introduction to this chapter. All essential elements of the contract appear to have existed, and the parties performed as required by the wording of the contract.",
+          "pages": [
+            158
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_463_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_463_v1",
+          "hit_text": "1. If a contract was not entered in good faith, do you think that fact alone should matter? Consider Locke v. Warner Bros. Inc., which was discussed in the introduction to this chapter. All essential elements of the contract appear to have existed, and the parties performed as required by the wording of the contract. How can lack of good faith be shown?\n2. Has anyone ever broken a promise to you? Were those promises legally enforceable promises? Why or why not? Be sure to analyze the agreement by checking to see if all elements of contract formation were present. Remember to first determine whether the promise was one governed by the UCC or by common law.\n3. What are the dangers inherent to making a counteroffer? Imagine that you really wanted to sell your house. You receive an attractive offer, but you wondered whether you might be able to sell the house for a little more money. What types of things should you think about before submitting a counteroffer?",
+          "hit_page_start": 158,
+          "hit_regions": [
+            {
+              "bbox": [
+                148.941,
+                100.16,
+                776.803,
+                421.8
+              ],
+              "page": 158,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017289635247381727
+        },
+        {
+          "id": "exc_1c619222c448be_203_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES › 158",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES › 158: delegation, unless the contract expressly restricts delegation, or there is a substantial interest in personal performance by the original party to the contract, or if delegation would violate public policy. In the case of a band hired to perform at a nightclub, an argument couldbe made that the original band cannot delegate its duties under the contract because there was a substantial interest in personal performance by the original band.",
+          "pages": [
+            168,
+            169
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_494_v1",
+            "chk_1c619222c448be_495_v1",
+            "chk_1c619222c448be_496_v1",
+            "chk_1c619222c448be_497_v1",
+            "chk_1c619222c448be_498_v1",
+            "chk_1c619222c448be_499_v1",
+            "chk_1c619222c448be_500_v1",
+            "chk_1c619222c448be_501_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_501_v1",
+          "hit_text": "Of course, there are additional common elements to contracts. This is not an exhaustive study of possible provisions, though it is a list of commonly encountered elements. For example, time of performance is often included as a separate provision. However, time for performance is an essential element in common-law contract formation, and without it, the contract may fail due to lack of definite and certain terms in formation.",
+          "hit_page_start": 169,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                833.608,
+                869.837,
+                944.118
+              ],
+              "page": 169,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016973886328725037
+        },
+        {
+          "id": "exc_1c619222c448be_183_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES › 140",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES › 140: would receive $250,000 per year for three years. Second, the contract was a$750,000 “pay or play” deal, which gave Warner Bros. a choice between using Locke’s services as a director and paying Locke a fee. Though Locke did not know this, Eastwood agreed to reimburse Warner Bros.",
+          "pages": [
+            150,
+            151
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_437_v1",
+            "chk_1c619222c448be_438_v1",
+            "chk_1c619222c448be_439_v1",
+            "chk_1c619222c448be_440_v1",
+            "chk_1c619222c448be_441_v1",
+            "chk_1c619222c448be_442_v1",
+            "chk_1c619222c448be_443_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_442_v1",
+          "hit_text": "1. Locke v. Warner Bros. Inc., 57 Cal. App. 4th 354 (1997).\n\npromises is an important part of business that provides necessary stability, regardless of whether keeping the promise makes economic sense or not.\n\nIf you had a business, would you breach a contract to save money? Why or why not? Contracts are agreements between two or more parties. Generally speaking, contracts are a form of private law, because the terms of the contract are binding on those parties but not on everyone. The contract represents mutual assent to a bargained-for exchange between parties.\n\nGenerally speaking, in the United States parties may enter into contracts for whatever they wish and under any terms that they agree on. In other words, parties may assent to agreements even if those agreements represent bad bargains. However, there are certain external restrictions on our abilities to form contracts. Additionally, certain internal (to the contract) restrictions may exist on our abilities to exercise rights or to engage in other contracts.\n\nLegal restrictions, external to the contract, limit our ability to bargain. For example, if you wanted to hire someone to work for your company, you could not contract with that person to work one hundred- hour workweeks at twenty-five cents per hour. Even if you could find someone to work under those conditions and even if you both agreed to those terms of the contract, our statutory and regulatory laws prohibit you from entering into a contract with those terms. Such wages would violate minimum wage laws.",
+          "hit_page_start": 150,
+          "hit_regions": [
+            {
+              "bbox": [
+                129.785,
+                943.409,
+                454.008,
+                955.297
+              ],
+              "page": 150,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                868.849,
+                95.246
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                105.876,
+                871.884,
+                206.588
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                217.219,
+                866.96,
+                327.728
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                338.359,
+                873.489,
+                467.574
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01649981460882462
+        },
+        {
+          "id": "exc_1c619222c448be_207_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › EXERCISES › 6.4 Concluding Thoughts",
+          "roles": [
+            "exercise",
+            "summary"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › EXERCISES › 6.4 Concluding Thoughts: Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/). Contracts are an integral part of business. Without contracts, promises would not be enforceable, which would wreak havoc on our financial stability, both individually and professionally. The law presumes that people who sign contracts have read the contract and understood its terms.",
+          "pages": [
+            170,
+            171
+          ],
+          "figure_ids": [
+            "fig_1c619222c448be_1220_v1"
+          ],
+          "chunk_ids": [
+            "chk_1c619222c448be_505_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_505_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nContracts are an integral part of business. Without contracts, promises would not be enforceable, which would wreak havoc on our financial stability, both individually and professionally.\n\nThe law presumes that people who sign contracts have read the contract and understood its terms. Of course, contract language includes many terms of art, and simply reading a contract alone may not be enough to fully understand its implications. Contracts for important matters should be reviewed and explained by attorneys, so that parties who enter into contracts do not do so without understanding the agreement.\n\nIt’s important to understand the implications of making promises. If those promises carry legal duties, then, barring a defense, the promise will need to be performed so that the obligation or duties arising under that promise can be discharged. If the promise is not performed, and if there are no defenses, then the contract has been breached. Breach is an actionable claim, with the goal of recovering the loss and placing the nonbreaching party back to the position that he or she would have been in if the contract had not been breached.\n\nRecognizing fundamental elements of contracts and how to incorporate considerations important to you when entering into them can go far toward ensuring business success. Likewise, the failure to recognize the traps and tricks that can be incorporated into contracts can derail a good business idea.",
+          "hit_page_start": 170,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                709.361,
+                717.824,
+                741.41
+              ],
+              "page": 170,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                752.823,
+                825.545,
+                807.216
+              ],
+              "page": 170,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                817.847,
+                808.956,
+                928.356
+              ],
+              "page": 170,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                870.649,
+                188.773
+              ],
+              "page": 171,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                199.404,
+                862.108,
+                272.502
+              ],
+              "page": 171,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015881577370250508
+        },
+        {
+          "id": "exc_1c619222c448be_193_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: 1. Learn what constitutes performance. 2. Understand what it means to discharge obligations in a contract. 3. Explore different standards of performance. 4. Examine breach. 5. Explore defenses to breach. 6. Learn about equitable remedies. A contract is an enforceable promise. When the promise is fulfilled, then the contract terms have been satisfied.",
+          "pages": [
+            158,
+            159
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_465_v1",
+            "chk_1c619222c448be_466_v1",
+            "chk_1c619222c448be_467_v1",
+            "chk_1c619222c448be_468_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_465_v1",
+          "hit_text": "1. Learn what constitutes performance.\n2. Understand what it means to discharge obligations in a contract.\n3. Explore different standards of performance.\n4. Examine breach.\n5. Explore defenses to breach.\n6. Learn about equitable remedies.\n\nA contract is an enforceable promise. When the promise is fulfilled, then the contract terms have been satisfied. This means that the parties are discharged from the contract, because they have already fulfilled their legal duties under it. That is, they have satisfactorily performed their obligations under the contract. Performance simply means undertaking the legal duties imposed on us by the terms of the contract. This is certainly what parties hope for when they enter into a contract—the successful execution of the terms of the contract and subsequent discharge from it.\n\nBut how do we know whether the contract terms have been performed? Sometimes it’s easy to determine. For instance, if I offer to sell you my scooter for four hundred dollars, you agree to buy my scooter for four hundred dollars, and we exchange those items, then we have fulfilled our obligations under the terms of the contract. We formed a contract, we fully performed our obligations under it (known as complete performance), and we are subsequently discharged from further duties arising under that contract.",
+          "hit_page_start": 158,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.405,
+                601.734,
+                746.161,
+                773.201
+              ],
+              "page": 158,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                788.537,
+                821.733,
+                917.752
+              ],
+              "page": 158,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                868.23,
+                188.773
+              ],
+              "page": 159,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015844218674407353
+        },
+        {
+          "id": "exc_3af200c915ae90_18_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Online discussion 1.1 › 1.3 Features of Chinese contract law › 1.3.1 The concept of a contract",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Compares continental intent-based and common-law enforceability-based definitions, then presents Article 2's Chinese definition of contracts as agreements between equal parties affecting civil rights and obligations.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_107_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_33_v1",
+            "chk_3af200c915ae90_34_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_33_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nIn traditional Continental civil law system, the two essential elements of a contract are the parties’ intent and the expression of such intent by the parties. Article 1101 of the French Civil Code (Code Civil des Franςais) states: “A contract is an agreement by which one or several persons bind themselves, towards one or several others, to transfer, to do or not to do something”. This reveals that the traditional civil law approaches the contract law from the perspective of the law of obligations. The common law jurisdictions, on the other hand, view contract from a different perspective. According to the Encyclopaedia Britannica, a contract is “a promise\n\nenforceable by law.”“The making of a contract requires the mutual assent of two or more persons … If one of the parties fails to keep the promise, the other is entitled to legal recourse.”\n\nWhen the common law and Continental civil law definitions of contract are compared, the definition of contract in Continental civil law is more abstract. It is based on expression of the parties’ intent (or translated as “expression of will”). The common law, on the other hand, defines it from the perspective of enforceability in a court of law. This reflects the pragmatic approach of the common law, a tradition that can also be seen in the common law of tort and other subjects.",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                513.137,
+                826.308,
+                545.185
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                556.599,
+                829.551,
+                714.702
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                717.901,
+                800.504,
+                771.808
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                783.093,
+                829.763,
+                894.014
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015277777777777779
+        },
+        {
+          "id": "exc_1c619222c448be_185_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › Key Takeaways › 6.1 Formation",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).",
+          "pages": [
+            152
+          ],
+          "figure_ids": [
+            "fig_1c619222c448be_1090_v1"
+          ],
+          "chunk_ids": [
+            "chk_1c619222c448be_445_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_445_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).",
+          "hit_page_start": 152,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                113.369,
+                717.824,
+                145.418
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014705882352941176
+        },
+        {
+          "id": "exc_35ff02e3fbebc0_246_v1",
+          "book_id": "intermediate-financial-accounting-2021-a-volume-1",
+          "book_title": "Intermediate Financial Accounting - 2021-A Volume 1",
+          "section_path": "Intermediate Financial Accounting › with Open Texts › Chapter 5 › 5.2 Revenue Recognition › 5.2.1 Identify the Contract",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "revenue-recognition-ifrs15"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Covers Intermediate Financial Accounting › with Open Texts › Chapter 5 › 5.2 Revenue Recognition › 5.2.1 Identify the Contract: The contract must be approved by both parties and must clearly identify both the goods and services that will be transferred and the price to be paid for these goods and services. The contract must be one of commercial substance, and there must be reasonable expectation that the…",
+          "pages": [
+            163
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_35ff02e3fbebc0_388_v1"
+          ],
+          "hit_chunk_id": "chk_35ff02e3fbebc0_388_v1",
+          "hit_text": "The contract must be approved by both parties and must clearly identify both the goods and services that will be transferred and the price to be paid for these goods and services. The contract must be one of commercial substance, and there must be reasonable expectation that the ultimate amount owing from the customer will be collected. This collectability criterion will prevent a situation where revenue is recognized and then a provision is immediately made for an uncollectible account. Under this criterion, the contract cannot be recognized until the collection is probable. If these conditions are not present, the contract can be continually reassessed to see if its status changes. The standard also applies guidance on how to deal with contract modiﬁcations. Depending on the circumstances, the modiﬁcations may be treated\n\nas either a change to the existing contract or as a completely new contract. A new contract would exist if the scope of the contract increases due to the addition of distinct goods or services, and the price of the contract increases by an amount that reﬂects the entity’s standalone selling prices of the additional goods or services.",
+          "hit_page_start": 163,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                672.443,
+                882.613,
+                832.52
+              ],
+              "page": 163,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                836.534,
+                882.456,
+                905.399
+              ],
+              "page": 163,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014149504195270786
+        },
+        {
+          "id": "exc_1c619222c448be_189_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES › UCC Common Law",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Any manner that shows agreement to contract (e.g., words, Mirror image acceptance required Quantity term required; other terms may be filled in with gap fillers Essential terms must be definite Contracts between merchants; contracts for sale of goods priced at $500 or more Contracts for services and for interest in real property Table 6.1: Differences between Contract Formations by Type of Law",
+          "pages": [
+            157
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_461_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_461_v1",
+          "hit_text": "Any manner that shows agreement to contract (e.g., words,\n\nMirror image acceptance required\n\nQuantity term required; other terms may be filled in with gap fillers\n\nEssential terms must be definite\n\nContracts between merchants; contracts for sale of goods priced at $500 or more\n\nContracts for services and for interest in real property\n\nTable 6.1: Differences between Contract Formations by Type of Law",
+          "hit_page_start": 157,
+          "hit_regions": [
+            {
+              "bbox": [
+                196.639,
+                119.935,
+                506.044,
+                154.228
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                560.771,
+                119.935,
+                736.783,
+                154.228
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                196.639,
+                184.068,
+                514.921,
+                218.361
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                560.771,
+                184.068,
+                772.889,
+                218.361
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                196.639,
+                248.201,
+                508.003,
+                301.2
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                560.771,
+                248.201,
+                758.296,
+                301.2
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                318.569,
+                789.408,
+                334.157
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013888888888888888
+        },
+        {
+          "id": "exc_54fcd12a32565e_365_v1",
+          "book_id": "business-government-and-society",
+          "book_title": "Business, Government, and Society",
+          "section_path": "Chapter 5 CSR (Corporate Social Responsibility) › 5.2 Three Views of CSR (Corporate Social Responsibility) › 5.2.2 The Social Contract between Business and Society",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "corporate-social-responsibility",
+            "socio-technical-systems"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Chapter 5 CSR (Corporate Social Responsibility) › 5.2 Three Views of CSR (Corporate Social Responsibility) › 5.2.2 The Social Contract between Business and Society: Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEvery contract is built on the basis of three conditions (1) free and informed consent, (2) a quid pro quo, and (3) the rational self interest of the contracting parties.\n\nAvailable under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEvery contract is built on the basis of three conditions (1) free and informed consent, (2) a quid pro quo, and (3) the rational self interest of the contracting parties.\n\n• Free and Informed Consent: No contract is legitimate that is based on force, fraud or deception. The parties must enter into this agreement freely and without compulsion. They must understand the terms of the contract which excludes deception and fraud. In short, the contract presupposes the uncoerced participation of all the parties. To enter into the contract they must understand all the key issues and consent to the constitutive exchange.\n• Quid Pro Quo: Quid Pro Quo literally means something in exchange for something. Every contract is built around a mutually beneficial exchange. I give you my baseball cap in exchange your ice cream. Most exchanges are simultaneous. But some are what Hobbes calls \"covenants.\" Here I give you my baseball cap with the understanding that later this afternoon you will pass by your refrigerator, get my ice cream cone and give it to me. I give you my part now and trust you to carry out your part later.\n• Rational Self Interest: Each of us should know the value of the items to be exchanged. (That is one reason why a contract requires free and informed consent.) This knowledge is determined, in part, by the preference schedules that we have developed as rationally self-interested beings. So a legitimate contract assumes that I have interests, that I am capable of determining what promotes these interests, and that I am rational enough to determine means to promote them and avoid other means that interfere with them.",
+          "pages": [
+            142
+          ],
+          "figure_ids": [
+            "fig_54fcd12a32565e_1264_v1"
+          ],
+          "chunk_ids": [
+            "chk_54fcd12a32565e_460_v1",
+            "chk_54fcd12a32565e_461_v1"
+          ],
+          "hit_chunk_id": "chk_54fcd12a32565e_461_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEvery contract is built on the basis of three conditions (1) free and informed consent, (2) a quid pro quo, and (3) the rational self interest of the contracting parties.\n\n• Free and Informed Consent: No contract is legitimate that is based on force, fraud or deception. The parties must enter into this agreement freely and without compulsion. They must understand the terms of the contract which excludes deception and fraud. In short, the contract presupposes the uncoerced participation of all the parties. To enter into the contract they must understand all the key issues and consent to the constitutive exchange.\n• Quid Pro Quo: Quid Pro Quo literally means something in exchange for something. Every contract is built around a mutually beneficial exchange. I give you my baseball cap in exchange your ice cream. Most exchanges are simultaneous. But some are what Hobbes calls \"covenants.\" Here I give you my baseball cap with the understanding that later this afternoon you will pass by your refrigerator, get my ice cream cone and give it to me. I give you my part now and trust you to carry out your part later.\n• Rational Self Interest: Each of us should know the value of the items to be exchanged. (That is one reason why a contract requires free and informed consent.) This knowledge is determined, in part, by the preference schedules that we have developed as rationally self-interested beings. So a legitimate contract assumes that I have interests, that I am capable of determining what promotes these interests, and that I am rational enough to determine means to promote them and avoid other means that interfere with them.",
+          "hit_page_start": 142,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                207.164,
+                826.309,
+                239.213
+              ],
+              "page": 142,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                250.626,
+                811.603,
+                305.019
+              ],
+              "page": 142,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.785,
+                315.65,
+                834.489,
+                688.036
+              ],
+              "page": 142,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013465447154471545
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "query": "contract formation offer acceptance consideration capacity legality elements of a valid contract",
+      "ids": [
+        "exc_1c619222c448be_186_v1",
+        "exc_1c619222c448be_187_v1",
+        "exc_1c619222c448be_190_v1",
+        "exc_1c619222c448be_188_v1",
+        "exc_1c619222c448be_196_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [
+    {
+      "seconds": 2.106,
+      "usage": {
+        "prompt_tokens": 8515,
+        "completion_tokens": 321,
+        "total_tokens": 8836,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_1c619222c448be_186_v1",
+            "reason": "Core teaching of common-law formation elements: offer, acceptance, consideration, legality, capacity, with a concrete offer example."
+          },
+          {
+            "id": "exc_1c619222c448be_187_v1",
+            "reason": "Explains legality of subject matter and capacity (including the infancy doctrine) with examples."
+          },
+          {
+            "id": "exc_1c619222c448be_190_v1",
+            "reason": "Key takeaways summarizing formation requirements and the common law vs. UCC distinction."
+          },
+          {
+            "id": "exc_1c619222c448be_188_v1",
+            "reason": "Explains UCC relaxation of formation rules (gap fillers, battle of the forms, quantity requirement), useful contrast for a general intro."
+          },
+          {
+            "id": "exc_1c619222c448be_196_v1",
+            "reason": "Worked examples of formation failures (vague terms, mirror image rule, illusory promises) reinforcing the elements."
+          }
+        ],
+        "gap": "Excerpts are US-focused (common law/UCC); no coverage of other jurisdictions' formation doctrines such as intention to create legal relations."
+      },
+      "input_characters": 38507
+    }
+  ],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

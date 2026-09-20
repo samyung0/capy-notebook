@@ -1,0 +1,59 @@
+{
+ "id": "mat_84da8ee908a60e0e",
+ "kind": "note",
+ "title": "Simple Linear Regression by Hand: Formulas + Worked Example",
+ "content": "# Simple Linear Regression by Hand\n\n**Goal:** fit the line ŷ = a + bx to a small dataset using only arithmetic — no software.\n\n## The idea\nThe least-squares regression line is the line that minimizes the sum of squared residuals (the vertical gaps between the points and the line). You never need to do that minimization yourself, because the line has two properties that give you the answer directly:\n\n1. **Slope:** b = r · (s_y / s_x), where r is the correlation between x and y, and s_x, s_y are the sample standard deviations of the explanatory and response variables.\n2. **Point of averages:** the line always passes through (x̄, ȳ), so the intercept is a = ȳ − b·x̄.\n\n## Worked example: study hours vs. quiz score\n\nFive students, x = hours studied, y = quiz score (out of 100):\n\n| Student | x | y |\n|---|---|---|\n| A | 1 | 55 |\n| B | 2 | 60 |\n| C | 3 | 65 |\n| D | 4 | 70 |\n| E | 5 | 80 |\n\n**Step 1 — Means.**\nx̄ = (1+2+3+4+5)/5 = 3, ȳ = (55+60+65+70+80)/5 = 66.\n\n**Step 2 — Standard deviations** (sample, divide by n − 1 = 4).\nDeviations of x from 3: −2, −1, 0, 1, 2 → squared: 4, 1, 0, 1, 4 → sum = 10 → s_x = √(10/4) = √2.5 ≈ 1.5811.\nDeviations of y from 66: −11, −6, −1, 4, 14 → squared: 121, 36, 1, 16, 196 → sum = 370 → s_y = √(370/4) = √92.5 ≈ 9.6177.\n\n**Step 3 — Correlation.**\nr = [Σ(x−x̄)(y−ȳ)] / [(n−1)·s_x·s_y].\nProducts of deviations: (−2)(−11)=22, (−1)(−6)=6, (0)(−1)=0, (1)(4)=4, (2)(14)=28 → sum = 60.\nr = 60 / (4 · 1.5811 · 9.6177) = 60 / 60.831 ≈ 0.9863.\n\n**Step 4 — Slope.**\nb = r · s_y / s_x = 0.9863 · 9.6177 / 1.5811 ≈ 0.9863 · 6.0828 ≈ **6.0** points per extra hour of study.\n\n**Step 5 — Intercept.**\na = ȳ − b·x̄ = 66 − 6.0·3 = **48**.\n\n**Fitted line:** ŷ = 48 + 6x.\n\n**Step 6 — Check with residuals.**\nFor student E (x = 5): ŷ = 48 + 30 = 78, actual y = 80, residual = +2. For student A (x = 1): ŷ = 54, actual 55, residual = +1. Small residuals confirm the fit.\n\n## Interpreting the coefficients\n- **Slope b = 6:** each additional hour of study is associated with a predicted increase of 6 points on the quiz.\n- **Intercept a = 48:** the predicted score for a student who studies 0 hours. This is meaningful here only because x = 0 is within (or near) the observed data; in many datasets the intercept is an extrapolation and has little or no practical value.\n- **R² = r² ≈ 0.973:** about 97% of the variation in quiz scores is explained by the linear relationship with study hours. R² is always between 0 and 1 and never tells you the direction — the sign comes from the slope (or the scatterplot).\n\n## Before you fit a line, check\n- The trend in the scatterplot looks linear.\n- No obvious outliers.\n- The spread of points around the line is roughly constant.\n- Observations are not a time series.\n\n## Quick reference\n- b = r · s_y / s_x\n- a = ȳ − b·x̄  (because (x̄, ȳ) is always on the line)\n- ŷ = a + bx; residual = y − ŷ; R² = r²",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_566_v2",
+  "exc_0689cddaba206d_703_v2",
+  "exc_0689cddaba206d_705_v2",
+  "exc_0689cddaba206d_728_v2",
+  "exc_f213361bf057b0_564_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_703_v2",
+     "exc_0689cddaba206d_705_v2",
+     "exc_0689cddaba206d_728_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v2",
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "717 tokens",
+ "edits": []
+}

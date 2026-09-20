@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "built_on": "2026-09-19",
-  "purpose": "Areas and subjects of the shared knowledge library. Areas group subjects on the builder dashboard only. Subjects are course-sized fields with learner-language aliases; the scraper assigns one subject per book, the topics stage keeps at most 64 topics per subject, and the curate tool description lists only subjects that hold tagged excerpts. Topics are derived per book from its table of contents and are not in this file.",
+  "purpose": "Areas and subjects of the shared knowledge library. Areas group subjects on the builder dashboard only. Subjects are course-sized fields with learner-language aliases; the scraper assigns one subject per book, the topics stage keeps at most 96 topics per subject, and the curate tool description lists only subjects that hold tagged excerpts. Topics are derived per book from its table of contents and are not in this file.",
   "sources": [
     {
       "catalog": "otl",

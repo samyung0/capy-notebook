@@ -1,0 +1,51 @@
+{
+ "id": "mat_d976e589efcddbd6",
+ "kind": "note",
+ "title": "What Is Statistics? — A Beginner's Note",
+ "content": "# What Is Statistics? — A Beginner's Note\n\n## The big idea\n**Statistics** is the science of collecting, organizing, summarizing, and interpreting **data** — the information gathered from experiments, surveys, records, and observations. It turns raw numbers into insight.\n\n## The two branches\n1. **Descriptive statistics** — numbers that *summarize and describe* the data you actually have. Examples: the average age of mothers on birth certificates, the percentage of certificates issued in a state, a basketball player's shooting percentage, the mean winning time of Olympic marathons. They give a clear picture of the data at hand, but they **do not generalize beyond it**.\n2. **Inferential statistics** — the bigger, more powerful part. Its purpose is to *\"learn what we do not know from what we do.\"* You use a **sample** (e.g., 1,000 randomly polled voters, 23% supporting a party) to draw conclusions about a whole **population** (all ~4.6 million voters). Inference is traditionally split into two big ideas:\n   - **Estimation** — estimating unknown quantities, like the true population proportion.\n   - **Hypothesis testing** — deciding whether an observed pattern (e.g., marathon winning times dropping by over half an hour between two eras) is real or just chance.\n\n## Why statistics is useful\n- **Summarizing**: condense large, messy datasets into a few meaningful numbers (averages, spreads, percentages).\n- **Describing the world**: salaries across occupations, sports records, demographics — descriptive statistics offer insight into society.\n- **Going beyond the data**: intuition alone can't judge how representative a sample is (would 24% be surprising? 29%? 37%?); inferential statistics provides the tools to generalize carefully.\n- **Answering \"is it real or chance?\"**: a difference between two group means may be \"suggestive,\" but only inference can tell you whether it's likely more than chance.\n- **Making reasonable predictions**: e.g., whether the gender gap in marathon times will close, or whether a sub-2-hour marathon might one day happen.\n\n## Key vocabulary\n- **Data**: collected information (plural; one piece is a *datum*).\n- **Descriptive statistic**: any number computed to summarize data.\n- **Population vs. sample**: the whole group you care about vs. the part you actually measure.\n- **Inference**: generalizing from sample to population, built on probability theory.\n\n## One-sentence takeaway\nStatistics is the discipline that lets you describe what you know from data — and, more importantly, infer what you don't know yet.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_5_v1",
+  "exc_45ecdb7da7734b_153_v2",
+  "exc_45ecdb7da7734b_139_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_139_v2",
+     "exc_45ecdb7da7734b_153_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_5_v1"
+    ]
+   }
+  ]
+ },
+ "size": "641 tokens",
+ "edits": []
+}

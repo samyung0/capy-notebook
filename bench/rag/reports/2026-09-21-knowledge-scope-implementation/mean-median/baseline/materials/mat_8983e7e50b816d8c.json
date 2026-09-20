@@ -1,0 +1,52 @@
+{
+ "id": "mat_8983e7e50b816d8c",
+ "kind": "note",
+ "title": "Mean vs. Median: A Beginner's Guide",
+ "content": "# Mean vs. Median — What's the Difference?\n\n## The two ideas in one line each\n- **Mean** = the average. Add up all the values, then divide by how many there are. It uses *every* number in the data.\n- **Median** = the middle value. Line the numbers up from smallest to largest and take the one in the middle (if there are two, average them). It only uses the *order* of the data.\n\n## A tiny concrete example\nThree friends are at a table. Their incomes:\n\n| Person | Income |\n|---|---|\n| Bob | $50,000 |\n| Kate | $60,000 |\n| Jane | $65,000 |\n\n- Mean = (50,000 + 60,000 + 65,000) ÷ 3 = **$58,333**\n- Median = the middle value = **$60,000**\n\nNow Bill sits down with them, earning **$100,000,000**:\n\n- Mean = (50,000 + 60,000 + 65,000 + 100,000,000) ÷ 4 = **$25,043,750**\n- Median = halfway between $60,000 and $65,000 = **$62,500**\n\nOne extreme value dragged the mean up by millions, but barely moved the median.\n\n## Why it matters\n- The **mean follows the tail**: in a right-skewed distribution (a few very large values), the mean is pulled higher than the median; in a left-skewed one, lower than the median.\n- The **mean uses all the information** in the data — good when values are well-behaved — but it is very **sensitive to outliers**.\n- The **median is robust**: it depends only on where the middle falls, so extreme values barely affect it.\n- Rule of thumb: for a *typical* value in skewed data (like incomes), prefer the **median**; for roughly symmetric data, the mean and median will be close, and the mean is usually the default choice.\n\n*Adapted from the income example in \"Learning Statistics with jamovi\" (Navarro & Foxcroft), section 4.1.4, with the skew/robustness summary from \"Advanced High School Statistics\", section 1.4.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_95_v3",
+  "exc_0689cddaba206d_111_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 3,
+    "excerptIds": [
+     "exc_0689cddaba206d_111_v3"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 3,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_95_v3"
+    ]
+   }
+  ]
+ },
+ "size": "435 tokens",
+ "edits": []
+}

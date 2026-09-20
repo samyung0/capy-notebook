@@ -50,7 +50,15 @@ from knowledge_base_realtime import run as run_normal
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "pipeline"))
 WORKSPACE = "knowledge_pilot"
-ROLES = {"introduction", "formal", "worked_example", "exercise", "summary", "reference"}
+ROLES = {
+    "introduction",
+    "formal",
+    "worked_example",
+    "exercise",
+    "summary",
+    "reference",
+    "non_teaching",
+}
 # Chat-completions endpoints for the model stages; `key` names the secret in
 # the secrets file (None: the local Ollama daemon takes no key).
 PROVIDERS = {
@@ -559,12 +567,48 @@ async def index_books(manifest: dict, config: dict, run: Path) -> None:
     from psycopg.types.json import Jsonb
 
     from pipeline.retrieval.chunking import tokenize_for_search
+    from pipeline.retrieval.knowledge_metadata import indexed_text, validate_metadata
     from pipeline.retrieval.lang import TS_CONFIG, detect_lang
     from pipeline.retrieval.store import vector_literal
 
     corpus = corpora(manifest, run)
+    tags_path = run / "tags.json"
+    tags = read_json(tags_path)["tags"] if tags_path.exists() else {}
+    notes_path = run / "reviewed-notes.json"
+    if notes_path.exists():
+        for excerpt_id, note in read_json(notes_path)["tags"].items():
+            if (
+                "retrieval" in note
+                and tags.get(excerpt_id, {}).get("retrieval") != note["retrieval"]
+            ):
+                raise PilotError(
+                    f"Final tags lost or changed reviewed retrieval metadata: {excerpt_id}"
+                )
+            if "retrieval" in note and tags.get(excerpt_id, {}).get(
+                "synopsis"
+            ) != note.get("synopsis"):
+                raise PilotError(
+                    f"Final tags lost or changed full reviewed notes: {excerpt_id}"
+                )
+    for book in corpus:
+        excerpt_ids = {e["id"] for e in book["excerpts"]}
+        for excerpt_id in excerpt_ids:
+            metadata = tags.get(excerpt_id, {}).get("retrieval")
+            if metadata is not None:
+                validate_metadata(metadata, excerpt_id, excerpt_ids)
+        for chunk in book["chunks"]:
+            chunk["indexed_text"] = indexed_text(
+                chunk["indexed_text"],
+                tags.get(chunk["excerpt_id"], {}).get("retrieval"),
+            )
     identity = digest(
-        {"corpus": [(c["source_id"], c["content_hash"]) for c in corpus], "pin": PIN}
+        {
+            "corpus": [(c["source_id"], c["content_hash"]) for c in corpus],
+            "pin": PIN,
+            "retrieval": {
+                key: tag["retrieval"] for key, tag in tags.items() if "retrieval" in tag
+            },
+        }
     )
     manifest_books = {b["id"]: b for b in manifest["books"]}
     with psycopg.connect(config["database_url"]) as conn:
@@ -790,11 +834,15 @@ def tag_outputs(outputs: dict, excerpts: dict, topics: set) -> tuple[dict, list]
     model outputs keyed by excerpt id. The builder's tag stage feeds this
     too, so `tags.json` has one shape whichever stage tagged the book."""
     tags, review = {}, []
+    from pipeline.retrieval.knowledge_metadata import validate_metadata
+
     for key, value in outputs.items():
         if (
             not isinstance(value.get("roles"), list)
             or not value["roles"]
             or not set(value["roles"]) <= ROLES
+            or len(set(value["roles"])) != len(value["roles"])
+            or ("non_teaching" in value["roles"] and value["roles"] != ["non_teaching"])
             or not isinstance(value.get("topic_ids"), list)
             or not set(value["topic_ids"]) <= topics
             or len(value["topic_ids"]) > 5
@@ -803,12 +851,14 @@ def tag_outputs(outputs: dict, excerpts: dict, topics: set) -> tuple[dict, list]
             or not isinstance(value.get("synopsis"), str)
         ):
             raise PilotError(f"Invalid classification schema for {key}")
+        if "retrieval" in value:
+            validate_metadata(value["retrieval"], key, set(excerpts))
         supported = evidence_verified(value.get("evidence"), excerpts[key]["text"])
         if (
             not supported
             or value["confidence"] < 0.8
             or value.get("proposed_topic")
-            or not value["topic_ids"]
+            or (not value["topic_ids"] and value["roles"] != ["non_teaching"])
         ):
             review.append(
                 {

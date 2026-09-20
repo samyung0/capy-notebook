@@ -1,0 +1,2729 @@
+{
+  "arm": "reranked",
+  "case": {
+    "id": "paired-t-test",
+    "query": "Create one concise study note explaining a paired-samples t-test with a worked example.",
+    "check": "Matched or repeated observations and differences; independent-groups procedures alone do not answer it."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "paired samples t-test dependent means worked example",
+      "topics": [],
+      "roles": [
+        "formal",
+        "worked_example"
+      ],
+      "seconds": 8.396,
+      "excerpts": [
+        {
+          "id": "exc_45ecdb7da7734b_249_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.6.2 What is the paired samples 𝑡-test? › 11.6.3 Doing the test in jamovi",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "jamovi"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Describes doing a paired samples t-test in jamovi, either by creating a difference variable and running a one sample t-test, or by using the jamovi 'Paired Samples T-Test' analysis. Reports an average improvement of 1.4% from test 1 to test 2, significantly different from 0 (t(19) = 6.48, p < .001). Notes the paired samples t-test is a one sample test under the hood, so results are identical.",
+          "pages": [
+            259
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1979_v2",
+            "fig_45ecdb7da7734b_1981_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_573_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_573_v2",
+          "hit_text": "How do you do a paired samples 𝑡-test in jamovi? One possibility is to follow the process I outlined above. That is, create a “difference” variable and then run a one sample 𝑡-test on that. Since we’ve already created a variable called “improvement”, let’s do that and see what we get, Figure 11.15.\n\nFigure 11.15. Results showing a one sample 𝑡-test on paired difference scores The output shown in Figure 11.15 is (obviously) formatted exactly the same was as it was the last time we used the one-sample 𝑡-test analysis (Section 11.2), and it confirms our intuition. There’s an average improvement of 1.4% from test 1 to test 2, and this is significantly different from 0 (𝑡(19) = 6.48,𝑝 < .001). However, suppose you’re lazy and you don’t want to go to all the effort of creating a new variable. Or perhaps you just want to keep the difference between one-sample and paired samples tests clear in your head. If so, you can use the jamovi ‘Paired Samples T-Test’ analysis, getting the results shown in Figure 11.16.\nFigure 11.16. Results showing a paired sample 𝑡-test. Compare with Figure 11.15\n\nThe numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood.",
+          "hit_page_start": 259,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                96.746,
+                843.752,
+                225.382
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                297.539,
+                843.752,
+                686.538
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                641.989,
+                843.74,
+                737.415
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021155347384855583
+        },
+        {
+          "id": "exc_858bafa062c60b_68_v2",
+          "book_id": "introductory-business-statistics",
+          "book_title": "Introductory Business Statistics",
+          "section_path": "Chapter 5 The t-test › 5.5 A third t-test: do these (paired) samples come from the sample population?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "t-distribution"
+          ],
+          "confidence": 0.97,
+          "synopsis": "5.5 A third t-test: do these (paired) samples come from the sample population? covering paired-data, t-tests.",
+          "pages": [
+            57
+          ],
+          "figure_ids": [
+            "fig_858bafa062c60b_710_v2",
+            "fig_858bafa062c60b_714_v2",
+            "fig_858bafa062c60b_717_v2",
+            "fig_858bafa062c60b_719_v2"
+          ],
+          "chunk_ids": [
+            "chk_858bafa062c60b_151_v2",
+            "chk_858bafa062c60b_152_v2"
+          ],
+          "hit_chunk_id": "chk_858bafa062c60b_151_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nManagers are often interested in \"before and after\" questions. As a manager or researcher you will often want to look at \"longitudinal\" studies, studies that ask about what has happened to an individual as a result of some treatment or across time. Are they different after than they were before? For example, if your firm has conducted a training program you will want to know if the workers who participated became more productive. If the work area has been re-arranged, do workers produce more than before? Though you can use the difference of means test developed earlier, this is a different situation. Earlier, you had two samples that were chosen independently of each other; you might have a sample of workers who received the training and a sample of workers who had not. The situation for this test is different; now you have a sample of workers and for each worker you have measured their productivity before the training or re-arrangement of the work space and you have measured their productivity after. For each worker you have a pair of measures, before and after. Another way to look at this is that for each member of the sample you have a difference between before and after.\n\nYou can test to see if these differences equal zero, or any other value, because a statistic based on these differences follows the t-distribution for n-1 df when you have n matched pairs. That statistic is:\n\nwhere: = the mean of the differences in the pairs in the sample",
+          "hit_page_start": 57,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                373.633,
+                755.639,
+                405.682
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                417.095,
+                869.148,
+                695.954
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                706.584,
+                868.689,
+                760.977
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                825.943,
+                698.062,
+                842.925
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01818181818181818
+        },
+        {
+          "id": "exc_0689cddaba206d_743_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › Exercise solutions › 4 Inference for numerical data: means",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "sampling-distributions",
+            "t-tests",
+            "paired-data",
+            "confidence-intervals",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Exercise solutions covering sampling distributions and the Central Limit Theorem, normal and t-based inference for means, margin of error, confidence intervals, hypothesis test setup and p-value decisions, and paired versus independent data. Includes worked calculations of Z and T statistics, degrees of freedom, t⋆ values, and interpretations of intervals and tests.",
+          "pages": [
+            490,
+            491
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1256_v2",
+            "chk_0689cddaba206d_1257_v2",
+            "chk_0689cddaba206d_1258_v2",
+            "chk_0689cddaba206d_1259_v2",
+            "chk_0689cddaba206d_1260_v2",
+            "chk_0689cddaba206d_1261_v2",
+            "chk_0689cddaba206d_1262_v2",
+            "chk_0689cddaba206d_1263_v2",
+            "chk_0689cddaba206d_1264_v2",
+            "chk_0689cddaba206d_1265_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1262_v2",
+          "hit_text": "4.19 (a) Since it’s the same students at the beginning and the end of the semester, there is a pairing between the datasets, for a given student their beginning and end of semester grades are dependent. (b) Since the subjects were sampled randomly, each observation in the men’s group does not have a special correspondence with exactly one observation in the other (women’s) group. (c) Since it’s the same subjects at the beginning and the end of the study, there is a pairing between the datasets, for a subject student their beginning and end of semester artery thickness are dependent. (d) Since it’s the same subjects at the beginning and the end of the study, there is a pairing between the datasets, for a subject student their beginning and end of semester weights are dependent.\n\n4.21 False. While it is true that paired analysis requires equal sample sizes, only having the equal sample sizes isn’t, on its own, suﬃcient for doing a paired test. Paired tests require that there be a special correspondence between each pair of observations in the two groups.\n\n4.23 (a) The sample size of 197 is well over 30, so this condition is met. However, we must assume that locations were randomly sampled and that there are more than 1970 total locations from which we could sample. (b) (0.87, 4.93), with df = 196 (c) We are 90% conﬁdent that there was an increase of 0.87 to\n\n4.93 in the average number of days that hit 90°F in 2018 relative to 1948 for NOAA stations. (d) Yes, since the interval lies entirely above 0.",
+          "hit_page_start": 491,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                235.72,
+                491.868,
+                476.912
+              ],
+              "page": 491,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                480.817,
+                491.868,
+                571.061
+              ],
+              "page": 491,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                574.966,
+                491.866,
+                665.21
+              ],
+              "page": 491,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                666.865,
+                491.866,
+                710.494
+              ],
+              "page": 491,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017468313292167695
+        },
+        {
+          "id": "exc_dd1e65de648fb2_885_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.3 Doing the test in R, part 1 › Descriptive statistics:",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "r-programming",
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.96,
+          "synopsis": "improvement mean 1.405 std dev. 0.970\n\nHypotheses: null: population mean equals 0 alternative: population mean not equal to 0\n\nTest results: t-statistic: 6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [0.951, 1.859] estimated effect size (Cohen's d): 1.448\n\nThe output here is (obviously) formatted exactly the same way as it was the last time we used the oneSampleTTest() function (Section 13.2), and it confirms our intuition. There’s an average improvement of 1.4% from test 1 to test 2, and this is significantly different from 0 (𝑡(19) = 6.48,𝑝 < .001).\n\nHowever, suppose you’re lazy and you don’t want to go to all the effort of creating a new variable. Or perhaps you just want to keep the difference between one-sample and pairedsamples tests clear in your head. If so, you can use the pairedSamplesTTest() function, also in the lsr package. Let’s assume that your data are organised like they are in the chico data frame, where there are two separate variables, one for each measurement. The way to run the test is to input a one-sided formula, just like you did when running a test of association using the associationTest() function in Categorical data analysis. For the chico data frame, the formula that you need would be ~ grade_test2 + grade_test1. As usual, you’ll also need to input the name of the data frame too. So the command just looks like this:\n\npairedSamplesTTest( formula = ~ grade_test2 + grade_test1, # one-sided formula listing the two variables data = chico # data frame containing the two variables\n\n)\n\nPaired samples t-test Variables: grade_test2 , grade_test1\n\ngrade_test2 grade_test1 difference mean 58.385 56.980 1.405 std dev. 6.406 6.616 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: 6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [0.951, 1.859] estimated effect size (Cohen's d): 1.448\n\nThe output is shown above. The numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood. However, the output is a bit more detailed: this time around the descriptive statistics block shows you the means and standard deviations for the original variables, as well as for the difference variable (notice that it always defines the difference as the first listed variable minus the second listed one). The null hypothesis and the alternative hypothesis are now framed in terms of the original variables rather than the difference score, but you should keep in mind that in a paired samples test it’s still the difference score being tested. The statistical information at the bottom about the test result is of course the same as before.",
+          "pages": [
+            539,
+            540
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1310_v1",
+            "chk_dd1e65de648fb2_1311_v1",
+            "chk_dd1e65de648fb2_1312_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1312_v1",
+          "hit_text": "grade_test2 grade_test1 difference mean 58.385 56.980 1.405 std dev. 6.406 6.616 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: 6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [0.951, 1.859] estimated effect size (Cohen's d): 1.448\n\nThe output is shown above. The numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood. However, the output is a bit more detailed: this time around the descriptive statistics block shows you the means and standard deviations for the original variables, as well as for the difference variable (notice that it always defines the difference as the first listed variable minus the second listed one). The null hypothesis and the alternative hypothesis are now framed in terms of the original variables rather than the difference score, but you should keep in mind that in a paired samples test it’s still the difference score being tested. The statistical information at the bottom about the test result is of course the same as before.",
+          "hit_page_start": 540,
+          "hit_regions": [
+            {
+              "bbox": [
+                164.438,
+                107.544,
+                566.845,
+                159.477
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                174.717,
+                725.936,
+                226.65
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                241.889,
+                379.678,
+                310.615
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                325.855,
+                632.353,
+                377.788
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                370.943,
+                866.116,
+                560.833
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016129032258064516
+        },
+        {
+          "id": "exc_dd1e65de648fb2_882_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.2 What is the paired samples 𝑡-test?",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "sampling"
+          ],
+          "confidence": 0.96,
+          "synopsis": "In light of the previous exploration, let’s think about how to construct an appropriate 𝑡 test. One possibility would be to try to run an independent samples 𝑡-test using grade_test1 and grade_test2 as the variables of interest. However, this is clearly the wrong thing to do: the independent samples 𝑡-test assumes that there is no particular relationship between the two samples. Yet clearly that’s not true in this case, because of the repeated measures structure to the data. To use the language that I introduced in the last section, if we were to try to do an independent samples 𝑡-test, we would be conflating the within subject differences (which is what we’re interested in testing) with the between subject variability (which we are not).\n\nThe solution to the problem is obvious, I hope, since we already did all the hard work in the previous section. Instead of running an independent samples 𝑡-test on grade_test1 and grade_test2, we run a one-sample 𝑡-test on the within-subject difference variable, improvement. To formalise this slightly, if 𝑋𝑖1 is the score that the 𝑖-th participant obtained on the first variable, and 𝑋𝑖2 is the score that the same person obtained on the second one,",
+          "pages": [
+            537
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1307_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1307_v1",
+          "hit_text": "In light of the previous exploration, let’s think about how to construct an appropriate 𝑡 test. One possibility would be to try to run an independent samples 𝑡-test using grade_test1 and grade_test2 as the variables of interest. However, this is clearly the wrong thing to do: the independent samples 𝑡-test assumes that there is no particular relationship between the two samples. Yet clearly that’s not true in this case, because of the repeated measures structure to the data. To use the language that I introduced in the last section, if we were to try to do an independent samples 𝑡-test, we would be conflating the within subject differences (which is what we’re interested in testing) with the between subject variability (which we are not).\n\nThe solution to the problem is obvious, I hope, since we already did all the hard work in the previous section. Instead of running an independent samples 𝑡-test on grade_test1 and grade_test2, we run a one-sample 𝑡-test on the within-subject difference variable, improvement. To formalise this slightly, if 𝑋𝑖1 is the score that the 𝑖-th participant obtained on the first variable, and 𝑋𝑖2 is the score that the same person obtained on the second one,",
+          "hit_page_start": 537,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                549.121,
+                867.113,
+                742.951
+              ],
+              "page": 537,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                711.643,
+                866.124,
+                854.15
+              ],
+              "page": 537,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015873015873015872
+        },
+        {
+          "id": "exc_0689cddaba206d_607_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 4 › Inference for numerical data: means › 4.3 Hypothesis testing for a population mean › 4.3.4 Technology: the one-sample t-interval and t-test for µ › CASIO FX-9750GII: 1-SAMPLE T-TEST",
+          "roles": [
+            "reference",
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Provides calculator steps for performing a one-sample t-test and summarizes the procedure: hypotheses H0: µ = µ0 with one- or two-sided alternatives, conditions (independence; n ≥ 30 or nearly normal population), test statistic T = (x̄ − µ0)/(s/√n) with df = n − 1, p-value interpretation, and formal decision comparing p-value to α. Notes that matched pairs designs use a one-sample t-test on differences with µd, x̄d, sd, and nd.",
+          "pages": [
+            389,
+            390
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1013_v2",
+            "chk_0689cddaba206d_1014_v2",
+            "chk_0689cddaba206d_1015_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1014_v2",
+          "hit_text": "• The appropriate hypothesis testing procedure for a population mean µ with unknown population standard deviation σ is a one-sample t-test for a population mean µ. The parameter µ should be identiﬁed in context.\n• For a matched pairs design, the appropriate analysis calculates diﬀerences between pairs of values to produce one sample of diﬀerences. The hypothesis testing procedure for a matched pairs design is a one-sample t-test for a population mean diﬀerence, where we use µd for the population mean diﬀerence, x¯d for the mean of sample diﬀerences, sd for the standard deviation of sample diﬀerences, and nd for the number of sample diﬀerences.\n• The null hypotheses for a one-sample t-test for a population mean µ is: H0: µ = µ0, where µ0 is the null hypothesized value for the population mean.\n• The alternative hypothesis may be one-sided (< or >) or two-sided (≠). HA: µ < µ0. The p-value will correspond to a lower tail. HA: µ > µ0. The p-value will correspond to an upper tail. HA: µ ≠ µ0. The p-value will correspond to both tails.\n• The one-sample t-test for a population mean or mean diﬀerence has the same conditions as the one-sample t-interval. We check that the following conditions are met. 1. Independence: The data come from a random sample or random process. When sampling without replacement, check that the sample size is less than 10% of the population size. 2. Large sample or normal population: n ≥ 30 or population distribution is nearly normal.",
+          "hit_page_start": 390,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                96.438,
+                852.949,
+                872.241
+              ],
+              "page": 390,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015816454113528382
+        },
+        {
+          "id": "exc_dd1e65de648fb2_888_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.4 Doing the test in R, part 2 › 541",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "r-programming",
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.96,
+          "synopsis": "we did previously. But that’s sort of defeating the point, and besides, there’s an easier way. Let’s think about how the chico2 data frame is structured: there are three variables here, and they all matter. The outcome measure is stored as the grade, and we effectively have two “groups” of measurements (test 1 and test 2) that are defined by the time points at which a test is given. Finally, because we want to keep track of which measurements should be paired together, we need to know which student obtained each grade, which is what the id variable gives us. So, when your data are presented to you in long form, we would want to specify a two-sided formula and a data frame, in the same way that we do for an independent samples 𝑡-test: the formula specifies the outcome variable and the groups, so in this case it would be grade ~ time, and the data frame is chico2. However, we also need to tell it the id variable, which in this case is boringly called id. So our command is:\n\npairedSamplesTTest( formula = grade ~ time, # two sided formula: outcome ~ group data = chico2, # data frame id = \"id\" # name of the id variable\n\n)\n\nPaired samples t-test\n\nOutcome variable: grade Grouping variable: time ID variable: id\n\nDescriptive statistics:\n\ntest1 test2 difference mean 56.980 58.385 -1.405 std dev. 6.616 6.406 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: -6.475 degrees of freedom: 19 p-value: <.001\n\ntest1 test2 difference mean 56.980 58.385 -1.405 std dev. 6.616 6.406 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: -6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [-1.859, -0.951] estimated effect size (Cohen's d): 1.448\n\nNote that the name of the id variable is \"id\" and not id. Note that the id variable must",
+          "pages": [
+            542
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1316_v1",
+            "chk_dd1e65de648fb2_1317_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1317_v1",
+          "hit_text": "test1 test2 difference mean 56.980 58.385 -1.405 std dev. 6.616 6.406 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: -6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [-1.859, -0.951] estimated effect size (Cohen's d): 1.448\n\nNote that the name of the id variable is \"id\" and not id. Note that the id variable must",
+          "hit_page_start": 542,
+          "hit_regions": [
+            {
+              "bbox": [
+                164.438,
+                528.414,
+                473.261,
+                580.347
+              ],
+              "page": 542,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                595.586,
+                725.936,
+                647.519
+              ],
+              "page": 542,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                662.759,
+                379.678,
+                731.485
+              ],
+              "page": 542,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                746.723,
+                651.069,
+                798.657
+              ],
+              "page": 542,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                807.74,
+                864.121,
+                827.616
+              ],
+              "page": 542,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015625
+        },
+        {
+          "id": "exc_f213361bf057b0_660_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 9 › Multiple and logistic regression › Exercise solutions › 6 Inference for categorical data › 437",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "anova",
+            "hypothesis-tests",
+            "sampling-distributions"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Exercise solutions covering paired t-tests, two-sample t-tests, ANOVA with post-hoc comparisons, sampling distributions, standard error, power and sample size, and confidence intervals. Solutions state hypotheses, test statistics, degrees of freedom, p-values, decisions, and interpretations, including checks of independence, normality, and constant variance.",
+          "pages": [
+            438,
+            439
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_1175_v2",
+            "chk_f213361bf057b0_1176_v2",
+            "chk_f213361bf057b0_1177_v2",
+            "chk_f213361bf057b0_1178_v2",
+            "chk_f213361bf057b0_1179_v2",
+            "chk_f213361bf057b0_1180_v2",
+            "chk_f213361bf057b0_1181_v2",
+            "chk_f213361bf057b0_1182_v2",
+            "chk_f213361bf057b0_1183_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_1181_v2",
+          "hit_text": "7.47 H0 : µT = µC. HA : µT = µC. T = 2.24, df = 21 → p-value = 0.036. Since p-value < 0.05, reject H0. The data provide strong evidence that the average food consumption by the patients in the treatment and control groups are diﬀerent. Furthermore, the data indicate patients in the distracted eating (treatment) group consume more food than patients in the control group.\n\n7.49 False. While it is true that paired analysis requires equal sample sizes, only having the equal sample sizes isn’t, on its own, suﬃcient for doing a paired test. Paired tests require that there be a special correspondence between each pair of observations in the two groups.\n\n7.51 (a) We are building a distribution of sample statistics, in this case the sample mean. Such a distribution is called a sampling distribution. (b) Because we are dealing with the distribution of sample means, we need to check to see if the Central Limit Theorem applies. Our sample size is greater than 30,\n\nand we are told that random sampling is employed. With these conditions met, we expect that the distribution of the sample mean will be nearly normal and therefore symmetric. (c) Because we are dealing with a sampling distribution, we measure its variability with the standard error. SE = 18.2/√45 = 2.713. (d) The sample means will be more variable with the smaller sample size.\n\n7.53 (a) We should set 1.0% equal to 2.8 standard errors: 2.8 × SEdesired = 1.0% (see Example 7.37 on page 319 for details). This means the standard error should be about SE = 0.36% to achieve the desired statistical power.",
+          "hit_page_start": 439,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                507.428,
+                491.866,
+                627.861
+              ],
+              "page": 439,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                631.766,
+                491.868,
+                722.01
+              ],
+              "page": 439,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                725.915,
+                491.868,
+                816.158
+              ],
+              "page": 439,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                69.543,
+                852.946,
+                186.529
+              ],
+              "page": 439,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                195.047,
+                852.949,
+                270.196
+              ],
+              "page": 439,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015367161716171616
+        },
+        {
+          "id": "exc_0689cddaba206d_599_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 4 › Inference for numerical data: means › 4.3 Hypothesis testing for a population mean › 4.3.3 Summary and worked examples › EXAMPLE 4.35 START",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.95,
+          "synopsis": "A worked example tests a company's claim that SAT scores improve by over 100 points on average. Using paired differences from 30 students (mean 135.9, SD 82.2), the four-step framework identifies a one-sample t-test for µd with H0: µd = 100 versus HA: µd > 100 at α = 0.05. Conditions are checked, T = 2.4 with df = 29, p-value = 0.012, so the null is rejected and the claim is supported.",
+          "pages": [
+            383
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1003_v2",
+            "chk_0689cddaba206d_1004_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1003_v2",
+          "hit_text": "Example problem: An SAT preparation company claims that its students’ scores improve by over 100 points on average after their course. A consumer group would like to evaluate this claim, and they collect data on a random sample of 30 students who took the class. Each of these students took the SAT before and after taking the company’s course, so we have a diﬀerence in scores for each student. We will examine these diﬀerences x1 = 57, x2 = 133, ..., x30 = 140. The distribution of the diﬀerences has a mean of 135.9, a standard deviation of 82.2, and is shown below. Do the data provide convincing evidence to back up the company’s claim? Use the four-step framework to organize your work.\n\n10\n\n5\n\n0\n\n−100 0 100 200 300\n\nDifferences\n\nSolution to the example:\n\nIdentify: Because we have paired data and the parameter of interest is a mean of diﬀerences, we will use a one-sample t-test for a population mean µd. Here µd is the true mean of (SAT score after course − SAT score before course) for all students who would take the company’s SAT prep course. We will test the following hypotheses at the α = 0.05 level.\n\nH0: µd = 100. On average, student scores improve by 100 points. HA: µd > 100. On average, student scores improve by more than 100 points.\n\nCheck: We have a random sample of students and have paired data on them. We will assume that this sample of size 30 represents less than 10% of the total population of such students. Finally, the number of diﬀerences is nd = 30 ≥ 30, so we can proceed with the one-sample t-test.",
+          "hit_page_start": 383,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.881,
+                207.366
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                350.288,
+                216.374,
+                366.655,
+                229.521
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                358.469,
+                253.907,
+                366.652,
+                267.056
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                358.469,
+                291.441,
+                366.652,
+                304.588
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                369.606,
+                305.782,
+                643.768,
+                318.929
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                471.842,
+                325.572,
+                545.835,
+                338.72
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                371.074,
+                321.895,
+                383.654
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                403.391,
+                852.873,
+                489.268
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                223.405,
+                460.242,
+                767.845,
+                528.457
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                513.024,
+                852.877,
+                583.806
+              ],
+              "page": 383,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015190691661279898
+        },
+        {
+          "id": "exc_0689cddaba206d_596_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 4 › Inference for numerical data: means › 4.3 Hypothesis testing for a population mean › 4.3.3 Summary and worked examples › HYPOTHESIS TEST FOR A MEAN",
+          "roles": [
+            "formal",
+            "summary"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "hypothesis-tests",
+            "paired-data"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Presents the complete procedure for a hypothesis test about a population mean: identify the one-sample t-test, parameter, significance level, and hypotheses; check independence and normality conditions; calculate the t-statistic, df, and p-value; and conclude by comparing the p-value to α. Notes that paired numerical data use the same procedure to test whether the mean population difference µd is zero, using the mean and standard deviation of sample differences.",
+          "pages": [
+            381
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_998_v2",
+            "chk_0689cddaba206d_999_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_998_v2",
+          "hit_text": "To carry out a complete hypothesis test to evaluate a claim about a population mean, Identify: Identify the test procedure, parameter, signiﬁcance level, and hypotheses.\n\nUse a one-sample t-test for a population mean µ. Deﬁne the population mean µ in words, referencing the population of interest. Choose a signiﬁcance level (α) and test the following hypotheses.\n\nH0: µ = µ0 HA: µ ≠ µ0; µ > µ0; or µ < µ0 (µ0 is the null or hypothesized mean)\n\nWhen there is paired numerical data, use this same procedure to test whether µd, the mean of the population diﬀerences, is zero. In this case, use the mean and standard deviation of the sample diﬀerences, x¯d and sd, and the number of sample diﬀerences, nd, when calculating the test statistic.\n\nCheck: Check conditions for the test statistic to have a t-distribution, assuming H0 is true.\n\n1. Independence: Data come from a random sample or random process. When sampling without replacement, check that sample size is less than 10% of the population size.\n2. Large sample or normal population: n ≥ 30 or the population distribution is nearly normal. If the sample size is less than 30 and the population distribution is unknown, check and conﬁrm that there is no strong skew or outliers in the data in order to reasonably assume that the population distribution is nearly normal.\n\nCalculate: Calculate the t-statistic, df, and p-value.\n\nT = point SEestimateof estimate− null value, df = n − 1 point estimate: x¯, the sample mean SE of estimate: √sn null value: µ0\n\np-value = (based on the t-statistic, the df, and the direction of HA)",
+          "hit_page_start": 381,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.338,
+                141.715,
+                777.77,
+                184.484
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                204.034,
+                193.484,
+                836.663,
+                236.253
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                225.74,
+                240.66,
+                773.152,
+                311.391
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                204.034,
+                294.505,
+                836.663,
+                352.369
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.338,
+                367.463,
+                820.794,
+                380.985
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                202.75,
+                389.043,
+                836.67,
+                482.129
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.338,
+                494.707,
+                542.392,
+                507.287
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                204.034,
+                509.852,
+                493.515,
+                600.749
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                204.034,
+                612.385,
+                688.471,
+                625.907
+              ],
+              "page": 381,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01493453355155483
+        },
+        {
+          "id": "exc_45ecdb7da7734b_248_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.6.2 What is the paired samples 𝑡-test?",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains why an independent samples t-test is inappropriate for repeated measures data, since it conflates within-subject differences with between-subject variability. Introduces the difference score D_i = X_i1 − X_i2, defines the population mean difference μ_D = μ1 − μ2, states the null and alternative hypotheses (H0: μ_D = 0 vs H1: μ_D ≠ 0), and gives the t-statistic D̄ / SE(D̄) with N − 1 degrees of freedom. Concludes the paired samples t-test is a one-sample t-test on differences.",
+          "pages": [
+            258
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_570_v2",
+            "chk_45ecdb7da7734b_571_v2",
+            "chk_45ecdb7da7734b_572_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_572_v2",
+          "hit_text": "This is assuming we’re talking about a two-sided test here. This is more or less identical to the way we described the hypotheses for the one-sample 𝑡-test. The only difference is that the specific value that the null hypothesis predicts is 0. And so our 𝑡-statistic is defined in more or less the same way too. If we let 𝐷̄ denote the mean of the difference scores, then:\n\n𝐷̄ 𝑆𝐸(𝐷)̄\n\n𝑡 =\n\n𝐷̄\n\n𝑡 =\n\nwhich is:\n\n√𝜎̂𝐷 𝑁\n\nwhere𝜎̂𝐷 isthestandarddeviationofthedifferencescores. Sincethisisjustanordinary, one-sample 𝑡-test, with nothing special about it, the degrees of freedom are still 𝑁 − 1. And that’s it. The paired samples 𝑡-test really isn’t a new test at all. It’s a one-sample 𝑡-test, but applied to the difference between two variables. It’s actually very simple. The only reason it merits a discussion as long as the one we’ve just gone through is that you need to be able to recognise when a paired samples test is appropriate, and to understand why it’s better than an independent samples 𝑡-test.",
+          "hit_page_start": 258,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                584.631,
+                812.491,
+                713.267
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                471.939,
+                647.199,
+                527.328,
+                766.742
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                439.328,
+                660.317,
+                464.842,
+                755.743
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                492.146,
+                713.254,
+                507.066,
+                812.039
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                453.472,
+                726.372,
+                478.986,
+                821.799
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                738.492,
+                224.535,
+                757.6
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                488.158,
+                747.068,
+                510.08,
+                827.092
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                774.057,
+                812.512,
+                969.11
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014925373134328358
+        },
+        {
+          "id": "exc_0689cddaba206d_584_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 4 › Inference for numerical data: means › 4.2 Conﬁdence intervals for a population mean › 4.2.8 Summary and worked examples › EXAMPLE 4.24 HAS ENDED.",
+          "roles": [
+            "worked_example",
+            "summary"
+          ],
+          "topic_ids": [
+            "confidence-intervals",
+            "paired-data",
+            "t-tests",
+            "sampling-distributions"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Worked examples construct a 95% one-sample t-interval for the mean SAT score change using paired data (x¯d = 135.9, sd = 82.2, nd = 30, t⋆ = 2.045), yielding (105.2, 166.6), and caution that the interval estimates the average increase, not an individual's increase. A bulleted summary reviews t-distributions, degrees of freedom, conditions for one-sample t-intervals for µ and µd, standard error, margin of error, confidence level interpretation, and effects of confidence level and sample size on interval width.",
+          "pages": [
+            370,
+            371,
+            372
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_971_v2",
+            "chk_0689cddaba206d_972_v2",
+            "chk_0689cddaba206d_973_v2",
+            "chk_0689cddaba206d_974_v2",
+            "chk_0689cddaba206d_975_v2",
+            "chk_0689cddaba206d_976_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_974_v2",
+          "hit_text": "• t-distributions form a family of symmetric, bell-shaped, standardized distributions and are identiﬁed using a parameter known as the degrees of freedom (df), which is based on the sample size(s). When the degrees of freedom are small, the t-distribution has a much narrower peak and fatter tails than a normal distribution. As the degrees of freedom increase, the t-distributions more closely resemble the standard normal distribution.\n• t-distributions are used for ﬁnding critical values and test statistics for inferences about a population mean µ when the population standard deviation σ is unknown and the sample standard deviation s must be used instead.\n• The appropriate conﬁdence interval for a population mean µ with unknown population standard deviation σ is a one-sample t-interval for a population mean µ. The parameter µ should be identiﬁed in context.\n• Paired data can come from a random sample or a matched pairs experiment. For a matched pairs design, the appropriate analysis calculates diﬀerences between pairs of values to produce one sample of diﬀerences. The conﬁdence interval procedure for the matched pairs design is a one-sample t-interval for a population mean diﬀerence µd. Use x¯d for the sample mean diﬀerence, sd for the standard deviation of sample diﬀerences, and nd for the number of sample diﬀerences.\n• The one-sample t-interval for µ or µd requires the following conditions are met. 1. Independence: The data come from a random sample or random process. When sampling without replacement, check that the sample size is less than 10% of the population size. 2.",
+          "hit_page_start": 372,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                96.438,
+                852.948,
+                954.53
+              ],
+              "page": 372,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014395194697597348
+        },
+        {
+          "id": "exc_dd1e65de648fb2_883_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.2 What is the paired samples 𝑡-test? › 537",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests",
+            "sampling",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "𝐷𝑖 = 𝑋𝑖1 − 𝑋𝑖2 Notice that the difference score is variable 1 minus variable 2 and not the other way around, so if we want improvement to correspond to a positive valued difference, we actually want “test 2” to be our “variable 1”. Equally, we would say that 𝜇𝐷 = 𝜇1 − 𝜇2 is the population mean for this difference variable. So, to convert this to a hypothesis test, our null hypothesis is that this mean difference is zero; the alternative hypothesis is that it is not:\n\nthen the difference score is:\n\n0 = 0 𝐻1 ∶ 𝜇𝐷 ≠ 0\n\n(this is assuming we’re talking about a two-sided test here). This is more or less identical to the way we described the hypotheses for the one-sample 𝑡-test: the only difference is that the specific value that the null hypothesis predicts is 0. And so our 𝑡-statistic is defined in more or less the same way too. If we let 𝐷̄ denote the mean of the difference scores, then\n\n𝐷̄ SE(𝐷)̄\n\n𝑡 =\n\n𝐷̄ 𝜎̂𝐷/\n\n√\n\n𝑡 =\n\nwhich is\n\n𝑁\n\nwhere 𝜎̂𝐷 is the standard deviation of the difference scores. Since this is just an ordinary, one-sample 𝑡-test, with nothing special about it, the degrees of freedom are still 𝑁 − 1. And that’s it: the paired samples 𝑡-test really isn’t a new test at all: it’s a one-sample 𝑡-test, but applied to the difference between two variables. It’s actually very simple; the only reason it merits a discussion as long as the one we’ve just gone through is that you need to be able to recognise when a paired samples test is appropriate, and to understand why it’s better than an independent samples 𝑡 test.",
+          "pages": [
+            538
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1308_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1308_v1",
+          "hit_text": "𝐷𝑖 = 𝑋𝑖1 − 𝑋𝑖2 Notice that the difference score is variable 1 minus variable 2 and not the other way around, so if we want improvement to correspond to a positive valued difference, we actually want “test 2” to be our “variable 1”. Equally, we would say that 𝜇𝐷 = 𝜇1 − 𝜇2 is the population mean for this difference variable. So, to convert this to a hypothesis test, our null hypothesis is that this mean difference is zero; the alternative hypothesis is that it is not:\n\nthen the difference score is:\n\n0 = 0 𝐻1 ∶ 𝜇𝐷 ≠ 0\n\n(this is assuming we’re talking about a two-sided test here). This is more or less identical to the way we described the hypotheses for the one-sample 𝑡-test: the only difference is that the specific value that the null hypothesis predicts is 0. And so our 𝑡-statistic is defined in more or less the same way too. If we let 𝐷̄ denote the mean of the difference scores, then\n\n𝐷̄ SE(𝐷)̄\n\n𝑡 =\n\n𝐷̄ 𝜎̂𝐷/\n\n√\n\n𝑡 =\n\nwhich is\n\n𝑁\n\nwhere 𝜎̂𝐷 is the standard deviation of the difference scores. Since this is just an ordinary, one-sample 𝑡-test, with nothing special about it, the degrees of freedom are still 𝑁 − 1. And that’s it: the paired samples 𝑡-test really isn’t a new test at all: it’s a one-sample 𝑡-test, but applied to the difference between two variables. It’s actually very simple; the only reason it merits a discussion as long as the one we’ve just gone through is that you need to be able to recognise when a paired samples test is appropriate, and to understand why it’s better than an independent samples 𝑡 test.",
+          "hit_page_start": 538,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.918,
+                72.818,
+                864.119,
+                223.501
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                89.222,
+                349.021,
+                108.741
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                447.593,
+                196.427,
+                552.394,
+                304.718
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                134.278,
+                261.199,
+                863.637,
+                386.598
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                489.729,
+                322.149,
+                540.477,
+                436.378
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                457.569,
+                334.684,
+                482.809,
+                425.869
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                483.815,
+                383.487,
+                522.448,
+                498.453
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                515.358,
+                395.61,
+                530.206,
+                486.794
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                451.637,
+                396.023,
+                476.877,
+                487.207
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                406.774,
+                198.681,
+                426.293
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                530.206,
+                407.269,
+                544.52,
+                498.453
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                430.258,
+                866.126,
+                624.087
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014285714285714285
+        },
+        {
+          "id": "exc_dd1e65de648fb2_884_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.3 Doing the test in R, part 1",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "paired-data",
+            "sampling"
+          ],
+          "confidence": 0.96,
+          "synopsis": "How do you do a paired samples 𝑡-test in R? One possibility is to follow the process I outlined above: create a “difference” variable and then run a one sample 𝑡-test on that. Since we’ve already created a variable called chico$improvement, let’s do that:\n\noneSampleTTest(chico$improvement, mu = 0)\n\nOne sample t-test Data variable: chico$improvement",
+          "pages": [
+            538
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1309_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1309_v1",
+          "hit_text": "How do you do a paired samples 𝑡-test in R? One possibility is to follow the process I outlined above: create a “difference” variable and then run a one sample 𝑡-test on that. Since we’ve already created a variable called chico$improvement, let’s do that:\n\noneSampleTTest(chico$improvement, mu = 0)\n\nOne sample t-test Data variable: chico$improvement",
+          "hit_page_start": 538,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                612.928,
+                863.655,
+                721.22
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                716.398,
+                520.052,
+                734.745
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                768.828,
+                454.529,
+                820.761
+              ],
+              "page": 538,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014084507042253521
+        },
+        {
+          "id": "exc_dd1e65de648fb2_877_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "t-tests",
+            "paired-data",
+            "sampling",
+            "experiments"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Regardless of whether we’re talking about the Student test or the Welch test, an independent samples 𝑡-test is intended to be used in a situation where you have two samples that are, well, independent of one another. This situation arises naturally when participants are assigned randomly to one of two experimental conditions, but it provides a very poor approximation to other sorts of research designs. In particular, a repeated measures design – in which each participant is measured (with respect to the same outcome variable) in both experimental conditions – is not suited for analysis using independent samples 𝑡-tests. For example, we might be interested in whether listening to music reduces people’s working memory capacity. To that end, we could measure each person’s working memory capacity in two conditions: with music, and without music. In an experimental design such as this one,12 each participant appears in both groups. This requires us to approach the problem in a different way; by using the paired samples 𝑡-test.",
+          "pages": [
+            534
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1300_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1300_v1",
+          "hit_text": "Regardless of whether we’re talking about the Student test or the Welch test, an independent samples 𝑡-test is intended to be used in a situation where you have two samples that are, well, independent of one another. This situation arises naturally when participants are assigned randomly to one of two experimental conditions, but it provides a very poor approximation to other sorts of research designs. In particular, a repeated measures design – in which each participant is measured (with respect to the same outcome variable) in both experimental conditions – is not suited for analysis using independent samples 𝑡-tests. For example, we might be interested in whether listening to music reduces people’s working memory capacity. To that end, we could measure each person’s working memory capacity in two conditions: with music, and without music. In an experimental design such as this one,12 each participant appears in both groups. This requires us to approach the problem in a different way; by using the paired samples 𝑡-test.",
+          "hit_page_start": 534,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                249.997,
+                867.131,
+                512.258
+              ],
+              "page": 534,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013888888888888888
+        },
+        {
+          "id": "exc_858bafa062c60b_66_v2",
+          "book_id": "introductory-business-statistics",
+          "book_title": "Introductory Business Statistics",
+          "section_path": "Chapter 5 The t-test › 5.4 Another t-test: do these two (independent) samples come from populations with the same mean?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "t-distribution"
+          ],
+          "confidence": 0.97,
+          "synopsis": "5.4 Another t-test: do these two (independent) samples come from populations with the same mean? covering t-tests.",
+          "pages": [
+            55
+          ],
+          "figure_ids": [
+            "fig_858bafa062c60b_667_v2",
+            "fig_858bafa062c60b_671_v2",
+            "fig_858bafa062c60b_673_v2",
+            "fig_858bafa062c60b_675_v2",
+            "fig_858bafa062c60b_678_v2",
+            "fig_858bafa062c60b_679_v2",
+            "fig_858bafa062c60b_681_v2"
+          ],
+          "chunk_ids": [
+            "chk_858bafa062c60b_146_v2",
+            "chk_858bafa062c60b_147_v2"
+          ],
+          "hit_chunk_id": "chk_858bafa062c60b_146_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nOne of the other statistics that has a sampling distribution that follows the t-distribution is the difference between two sample means. If samples of one size (n1) are taken from one normal population and samples of another size (n2) are taken from another normal population (and the populations have the same standard deviation), then a statistic based on the difference between the sample means and the\n\ndifference between the population means is distributed like t with n1 + n2 −2 degrees of freedom. These samples are independent because the members in one sample do not affect which members are in the other sample. You can choose the samples independently of each other, and the two samples do not need to be the same size. The t-statistic is:\n\nwhere: = the mean of sample i\n\n= the mean of population i\n\ns2 = the pooled variance ni = the size of sample i.\n\nThe usual case is to test to see if the samples come from populations with the same mean, the case where . The pooled variance is simply a weighted average of the two sample variances, with the weights based on the sample sizes. This means that you will have to calculate the pooled variance before you calculate the t-score. The formula for pooled variance is:",
+          "hit_page_start": 55,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                140.091,
+                755.639,
+                172.14
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                183.553,
+                872.166,
+                277.476
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                279.2,
+                861.929,
+                372.063
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                444.153,
+                434.617,
+                461.137
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                246.951,
+                462.859,
+                464.328,
+                479.842
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                228.044,
+                481.418,
+                425.771,
+                522.71
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                533.195,
+                869.696,
+                624.999
+              ],
+              "page": 55,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013419216317767043
+        },
+        {
+          "id": "exc_0689cddaba206d_744_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › Exercise solutions › 4 Inference for numerical data: means › 491",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "hypothesis-tests",
+            "errors-power",
+            "sampling-distributions"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Exercise solutions covering paired data tests (H0: µd = 0), two-sample t-intervals and tests for µ1 − µ2, sampling distributions of x̄ and x̄2 − x̄1, and Type 1 Error interpretation. Includes worked calculations of SE, T, df, p-values, and conclusions about rejecting H0.",
+          "pages": [
+            492,
+            493
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1266_v2",
+            "chk_0689cddaba206d_1267_v2",
+            "chk_0689cddaba206d_1268_v2",
+            "chk_0689cddaba206d_1269_v2",
+            "chk_0689cddaba206d_1270_v2",
+            "chk_0689cddaba206d_1271_v2",
+            "chk_0689cddaba206d_1272_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1270_v2",
+          "hit_text": "→ p-value = 0.036. Since p-value < 0.05, reject H0. The data provide strong evidence that the average food consumption by the patients in the treatment and control groups are diﬀerent. Furthermore, the data indicate patients in the distracted eating (treatment) group consume more food than patients in the control group.\n\n4.45 (a) We are building a distribution of sample statistics, in this case the sample mean. Such a distribution is called a sampling distribution for the sample mean. (b) Because we are dealing with the distribution of sample means, we need to check to see if the Central Limit Theorem applies. Our sample size is greater than 30, and we are told that random sampling is employed. With these conditions met, we expect that the distribution of the sample mean will be nearly normal and therefore symmetric. (c) Because we are dealing with a sampling distribution of a sample mean, we measure its variability with the stan-\n\n√45 = 2.713. (d) The sample means will be more variable with the smaller sample size.\n\ndard deviation of x¯. σx¯ = 18.2/\n\n4.47 Paired, data are recorded in the same cities at two diﬀerent time points. The air quality in a city at one point is not independent of the air quality in the same city at another time point.\n\n4.49 t⋆19 is 1.73 for a one-tail. We want the lower tail, so set -1.73 equal to the T-score, then solve for x¯: 56.91.\n\n4.51 (a) These data are paired. For example, the Friday the 13th in say, September 1991, would probably be more similar to the Friday the 6th in September 1991 than to Friday the 6th in another month or year.",
+          "hit_page_start": 493,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                75.66,
+                491.868,
+                186.529
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                190.434,
+                491.868,
+                371.247
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                356.67,
+                491.868,
+                416.533
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                366.043,
+                350.851,
+                411.52
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                420.437,
+                491.866,
+                480.491
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                479.631,
+                491.868,
+                529.355
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                533.26,
+                491.866,
+                608.409
+              ],
+              "page": 493,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013284720476070742
+        },
+        {
+          "id": "exc_f213361bf057b0_659_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 9 › Multiple and logistic regression › Exercise solutions › 6 Inference for categorical data › 435",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chi-square",
+            "proportions",
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Exercise solutions covering chi-square tests of independence and goodness of fit, inference for proportions, one-sample and paired t-tests, confidence intervals, and hypothesis-testing decisions. Includes expected counts, test statistics, p-values, and interpretations.",
+          "pages": [
+            436,
+            437
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_1166_v2",
+            "chk_f213361bf057b0_1167_v2",
+            "chk_f213361bf057b0_1168_v2",
+            "chk_f213361bf057b0_1169_v2",
+            "chk_f213361bf057b0_1170_v2",
+            "chk_f213361bf057b0_1171_v2",
+            "chk_f213361bf057b0_1172_v2",
+            "chk_f213361bf057b0_1173_v2",
+            "chk_f213361bf057b0_1174_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_1172_v2",
+          "hit_text": "7.17 (a) Since it’s the same students at the beginning and the end of the semester, there is a pairing between the datasets, for a given student their beginning and end of semester grades are dependent.\n\n(b) Since the subjects were sampled randomly, each observation in the men’s group does not have a special correspondence with exactly one observation in the other (women’s) group. (c) Since it’s the same subjects at the beginning and the end of the study, there is a pairing between the datasets, for a subject student their beginning and end of semester artery thickness are dependent. (d) Since it’s the same subjects at the beginning and the end of the study, there is a pairing between the datasets, for a subject student their beginning and end of semester weights are dependent.\n\n7.19 (a) For each observation in one data set, there is exactly one specially corresponding observation in the other data set for the same geographic location. The data are paired. (b) H0 : µdiﬀ = 0 (There is no diﬀerence in average number of days exceeding 90°F\n\nin 1948 and 2018 for NOAA stations.) HA : µdiﬀ = 0 (There is a diﬀerence.) (c) Locations were randomly sampled, so independence is reasonable.\n\nThe sample size is at least 30, so we’re just looking for particularly extreme outliers: none are present (the observation oﬀ left in the histogram would be considered a clear outlier, but not a particularly extreme one). Therefore, the conditions are satisﬁed.",
+          "hit_page_start": 437,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                612.326,
+                491.866,
+                672.38
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                676.153,
+                491.868,
+                853.519
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                859.184,
+                491.861,
+                935.148
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                69.543,
+                852.946,
+                186.53
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                69.543,
+                852.946,
+                186.53
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013157894736842105
+        },
+        {
+          "id": "exc_dd1e65de648fb2_879_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.1 The data › 534",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "r-programming",
+            "t-tests",
+            "paired-data",
+            "confidence-intervals"
+          ],
+          "confidence": 0.96,
+          "synopsis": "-- Name -- -- Class -- -- Size -chico data.frame 20 x 3\n\n$id factor 20$grade_test1 numeric 20 $grade_test2 numeric 20\n\nThe data frame chico contains three variables: an id variable that identifies each student in the class, the grade_test1 variable that records the student grade for the first test, and the grade_test2 variable that has the grades for the second test. Here’s the first six students:\n\nhead(chico)\n\nid grade_test1 grade_test2\n\n1 student1 42.9 44.6\n2 student2 51.8 54.0\n3 student3 71.7 72.3\n4 student4 51.6 53.4\n5 student5 63.5 63.8\n6 student6 58.0 59.3\n\nAt a glance, it does seem like the class is a hard one (most grades are between 50% and 60%), but it does look like there’s an improvement from the first test to the second one. If we take a quick look at the descriptive statistics describe(chico)\n\nvars n mean sd median trimmed mad min max range skew id* 1 20 10.50 5.92 10.5 10.50 7.41 1.0 20.0 19.0 0.00\n\ngrade_test1 2 20 56.98 6.62 57.7 56.92 7.71 42.9 71.7 28.8 0.05\ngrade_test2 3 20 58.38 6.41 59.7 58.35 6.45 44.6 72.3 27.7 -0.05 kurtosis se\n\nid* -1.38 1.32 grade_test1 -0.35 1.48 grade_test2 -0.39 1.43\n\ngrade_test1 2 20 56.98 6.62 57.7 56.92 7.71 42.9 71.7 28.8 0.05\ngrade_test2 3 20 58.38 6.41 59.7 58.35 6.45 44.6 72.3 27.7 -0.05 kurtosis se\n\nid* -1.38 1.32 grade_test1 -0.35 1.48 grade_test2 -0.39 1.43\n\nwe see that this impression seems to be supported. Across all 20 students14 the mean grade for the first test is 57%, but this rises to 58% for the second test. Although, given that the standard deviations are 6.6% and 6.4% respectively, it’s starting to feel like maybe the improvement is just illusory; maybe just random variation. This impression is reinforced when you see the means and confidence intervals plotted in Figure 13.10a. If we were to rely on this plot alone, we’d come to the same conclusion that we got from looking at the descriptive statistics that\n\n14This is obviously a class being taught at a very small or very expensive university, or else is a postgraduate class. I’ve never taught an intro stats class with less than 350 students.",
+          "pages": [
+            535
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1302_v1",
+            "chk_dd1e65de648fb2_1303_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1302_v1",
+          "hit_text": "-- Name -- -- Class -- -- Size -chico data.frame 20 x 3\n\n$id factor 20$grade_test1 numeric 20 $grade_test2 numeric 20\n\nThe data frame chico contains three variables: an id variable that identifies each student in the class, the grade_test1 variable that records the student grade for the first test, and the grade_test2 variable that has the grades for the second test. Here’s the first six students:\n\nhead(chico)\n\nid grade_test1 grade_test2\n\n1 student1 42.9 44.6\n2 student2 51.8 54.0\n3 student3 71.7 72.3\n4 student4 51.6 53.4\n5 student5 63.5 63.8\n6 student6 58.0 59.3\n\nAt a glance, it does seem like the class is a hard one (most grades are between 50% and 60%), but it does look like there’s an improvement from the first test to the second one. If we take a quick look at the descriptive statistics describe(chico)\n\nvars n mean sd median trimmed mad min max range skew id* 1 20 10.50 5.92 10.5 10.50 7.41 1.0 20.0 19.0 0.00\n\ngrade_test1 2 20 56.98 6.62 57.7 56.92 7.71 42.9 71.7 28.8 0.05\ngrade_test2 3 20 58.38 6.41 59.7 58.35 6.45 44.6 72.3 27.7 -0.05 kurtosis se\n\nid* -1.38 1.32 grade_test1 -0.35 1.48 grade_test2 -0.39 1.43",
+          "hit_page_start": 535,
+          "hit_regions": [
+            {
+              "bbox": [
+                164.438,
+                90.751,
+                538.771,
+                125.577
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                173.797,
+                124.023,
+                463.905,
+                175.956
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                185.515,
+                863.631,
+                239.606
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                255.473,
+                239.306,
+                273.821
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                211.23,
+                289.497,
+                454.546,
+                307.845
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.363,
+                305.976,
+                454.546,
+                408.288
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.704,
+                417.847,
+                866.114,
+                506.153
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                521.83,
+                810.162,
+                556.655
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                555.101,
+                810.162,
+                607.034
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                605.48,
+                370.304,
+                657.414
+              ],
+              "page": 535,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01282051282051282
+        },
+        {
+          "id": "exc_45ecdb7da7734b_239_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.2 The one-sample 𝑡-test › 11.2.3 Assumptions of the one sample 𝑡-test › 11.3.2 Introducing the test",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Introduces the independent samples t-test, distinguishing Student's and Welch's forms. Defines independent samples and states the null hypothesis that two population means are equal (𝜇1 = 𝜇2) versus the alternative that they differ (𝜇1 ≠ 𝜇2). Describes constructing a t-statistic based on the difference between sample means divided by a standard error estimate, noting the standard error calculation is more involved than in one-sample tests.",
+          "pages": [
+            247,
+            248
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_548_v2",
+            "chk_45ecdb7da7734b_549_v2",
+            "chk_45ecdb7da7734b_550_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_548_v2",
+          "hit_text": "The independent samples 𝑡-test comes in two different forms, Student’s and Welch’s. The original Student 𝑡-test, which is the one I’ll describe in this section, is the simpler of the two but relies on much more restrictive assumptions than the Welch 𝑡-test. Assuming for the moment that you want to run a two-sided test, the goal is to determine whether two “independent samples” of data are drawn from populations with the same mean (the null hypothesis) or different means (the alternative hypothesis). When we say “independent” samples, what we really mean here is that there’s no special relationship between observations in the two samples. This probably doesn’t make a lot of sense right now, but it will be clearer when we come to talk about the paired samples 𝑡test later on. For now, let’s just point out that if we have an experimental design where participants are randomly allocated to one of two groups, and we want to compare the two groups’ mean performance on some outcome measure, then an independent samples 𝑡-test (rather than a paired samples 𝑡-test) is what we’re after.\n\nOkay, so let’s let 𝜇1 denote the true population mean for group 1 (e.g., Anastasia’s students), and 𝜇2 will be the true population mean for group 2 (e.g., Bernadette’s students),105 and as usual we’ll let 𝑋1̄ and 𝑋2̄ denote the observed sample means for both of these groups. Our null hypothesis states that the two population means are identical (𝜇1 = 𝜇2) and the alternative to this is that they are not (𝜇1 ≠ 𝜇2) (Figure 11.8). Written in mathematical-ese, this is:\n\n= 𝜇 𝐻0 ∶ 𝜇1 ≠ 𝜇2",
+          "hit_page_start": 247,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                673.686,
+                843.759,
+                968.365
+              ],
+              "page": 247,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                62.521,
+                812.516,
+                224.364
+              ],
+              "page": 248,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                434.436,
+                162.147,
+                533.45,
+                282.479
+              ],
+              "page": 248,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01275811209439528
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "query": "paired samples t-test dependent means worked example",
+      "ids": [
+        "exc_dd1e65de648fb2_883_v1",
+        "exc_0689cddaba206d_599_v2",
+        "exc_858bafa062c60b_68_v2",
+        "exc_dd1e65de648fb2_885_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [
+    {
+      "seconds": 3.005,
+      "usage": {
+        "prompt_tokens": 13111,
+        "completion_tokens": 319,
+        "total_tokens": 13430,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_dd1e65de648fb2_883_v1",
+            "reason": "Formal definition: difference scores, hypotheses, t-statistic formula, df = N−1, and why paired test beats independent test."
+          },
+          {
+            "id": "exc_0689cddaba206d_599_v2",
+            "reason": "Complete worked example (SAT prep) with four-step framework, hypotheses, conditions, T = 2.4, df = 29, p = 0.012."
+          },
+          {
+            "id": "exc_858bafa062c60b_68_v2",
+            "reason": "Explains the before/after paired setting and the t-distribution basis for testing mean differences with n−1 df."
+          },
+          {
+            "id": "exc_dd1e65de648fb2_885_v1",
+            "reason": "Second worked example with full output: means, SDs, t(19) = 6.48, CI, and effect size, reinforcing the one-sample-on-differences logic."
+          }
+        ],
+        "gap": ""
+      },
+      "input_characters": 49409
+    }
+  ],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

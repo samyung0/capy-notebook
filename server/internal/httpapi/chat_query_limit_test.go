@@ -5,20 +5,21 @@ import (
 	"testing"
 )
 
-func TestChatQueryLimitKeepsAboutFiveThousandEnglishWords(t *testing.T) {
-	query := strings.Repeat("word ", 5_000)
-	if chatQueryTooLong(query) {
-		t.Fatal("five thousand ordinary English words should fit")
+func TestChatQueryCharacterLimit(t *testing.T) {
+	for _, character := range []string{"a", "光", "😀"} {
+		t.Run(character, func(t *testing.T) {
+			if chatQueryTooLong(strings.Repeat(character, 5_000)) {
+				t.Fatal("exactly 5,000 Unicode code points should fit")
+			}
+			if !chatQueryTooLong(strings.Repeat(character, 5_001)) {
+				t.Fatal("5,001 Unicode code points must be rejected")
+			}
+		})
 	}
 }
 
-func TestChatQueryLimitRejectsEstimatedTokenOverflow(t *testing.T) {
-	english := strings.Repeat("word ", 7_000)
-	if !chatQueryTooLong(english) {
-		t.Fatal("query above the estimated token limit was accepted")
-	}
-	cjk := strings.Repeat("光", chatQueryMaxEstimatedTokens+1)
-	if !chatQueryTooLong(cjk) {
-		t.Fatal("CJK query above the estimated token limit was accepted")
+func TestChatQueryLimitRejectsInvalidUTF8(t *testing.T) {
+	if !chatQueryTooLong(string([]byte{0xff})) {
+		t.Fatal("invalid UTF-8 must be rejected")
 	}
 }

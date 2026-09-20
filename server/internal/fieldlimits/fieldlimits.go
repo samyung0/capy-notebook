@@ -2,7 +2,7 @@
 // lengths. Request schemas derive from these constants through the named
 // types in httpapi/apimodel, Postgres CHECK constraints repeat them as
 // literals in migrations/0001_init.sql and TestColumnLimits asserts the two
-// agree, and cmd/openapi renders them for the Python pipeline.
+// agree, and cmd/openapi renders selected limits for TypeScript and Python.
 package fieldlimits
 
 import (
@@ -19,6 +19,7 @@ const (
 	FileName             = 120
 	MaterialTitle        = FileName
 	ConversationTitle    = 60
+	ChatMessage          = 5_000
 	EventTitle           = 60
 	EventLocation        = 100
 	TaskTitle            = 80

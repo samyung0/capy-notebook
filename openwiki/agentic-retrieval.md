@@ -998,7 +998,7 @@ one committed fixture, `lab/knowledge/subjects.json` (12 areas, 116 subjects
 with learner aliases, assembled from the Open Textbook Library, OpenStax and
 LibreTexts subject menus); areas only group subjects on the builder dashboard
 and are a column on `library_subjects`, never a filter. Topics are derived per
-book from its table of contents by the builder's topics stage (at most 64 per
+book from its table of contents by the builder's topics stage (at most 96 per
 subject), carry `subject_id`, and live library-wide: a publish upserts the
 topics its book uses under the book's subject, then drops every topic no
 tagged excerpt on a current or retained book version references, so a
@@ -1028,14 +1028,16 @@ version, and `retire` drops a retained version's content rows.
   whose excerpt carries a verified tag (evidence quote found in the body,
   confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching every
   requested facet; hits fold into excerpts by best chunk, so `top_k` counts
-  excerpts rather than chunks, each returning with synopsis, roles, topics,
-  pages, figure ids and the hit chunk.
+  excerpts rather than chunks, each returning with a compact reviewed teaching
+  description and scope, roles, topics, pages, figure ids and the hit chunk.
+  Non-teaching excerpts are excluded. Repeated identical hit text within one
+  book is collapsed; similarity alone does not collapse different books.
   An empty result under a role filter carries the verified counts by role
   for the same topics, so the model relaxes on purpose — only when topics were
   given, because without them those counts are the whole library's and say
   nothing about the query.
 - `browse_subject(subject_id)` returns `{"subject", "topics"}`, the subject's
-  topics with their tagged-excerpt counts; `browse(topic_id, page)` returns
+  topics with their searchable verified-excerpt counts; `browse(topic_id, page)` returns
   verified excerpt counts by role and by book, then a page of excerpts ordered
   by book and first page; the by-role numbers are role assignments: an excerpt
   tagged both `formal` and `reference` counts in both, so they do not sum to
@@ -1047,7 +1049,7 @@ version, and `retire` drops a retained version's content rows.
   catalog (`unknown topic id`, `unknown subject id`). The loader keeps new
   collisions out: a topic whose id is a subject id refuses the publish naming
   both.
-- `catalog(conn)`: the subjects that hold at least one tagged excerpt on a
+- `catalog(conn)`: the subjects that hold at least one searchable verified excerpt on a
   current book version, `[{id, label, aliases, area, excerpts}]` sorted by
   label, for the `browse_knowledge` description. It is read once at curate
   admission, which is also how a configured but unreachable library becomes a
@@ -1061,6 +1063,9 @@ version, and `retire` drops a retained version's content rows.
   one) when more remain — chunk indexes of the book, exactly the unit
   `read_document` pages a workspace file in. The read header shows the
   excerpt's own chunk range.
+  `read_knowledge` includes the full reviewed synopsis on the first page and
+  shows scope and source-context links. A link can be conditional on a
+  particular exercise or claim, as explained by scope; it is not a prerequisite.
 - `provenance(excerpt_ids)`: one entry per source book (id, title, authors,
   edition, licence, licence url, source url, the book version read and the
   excerpt ids used), which is what a curated material stores and its
@@ -1076,6 +1081,23 @@ version, and `retire` drops a retained version's content rows.
   an expected role 58 of 110 times; role wording in the query does not move
   that; tag predicates do, and expose gaps. Curate mode (below) is what
   offers these as `search_knowledge`, `browse_knowledge` and `read_knowledge`.
+
+Delegated Sol reviews follow `lab/knowledge/review.md`. The optional `retrieval`
+object holds a description of at most 400 characters, applicability of at most
+600 characters, and up to eight same-book context IDs. These supplement full
+notes sent to topic generation. The builder indexes the description and scope
+with the source passage in both the embedding and lexical inputs, preserving
+the quoted source text. Publishing refuses an index that does not match the
+reviewed inputs and versions context links with their book. Unreviewed metadata
+is explicitly unknown. `non_teaching` is a successful role classification used
+alone and excluded from search and retrieval coverage counts. Classification
+confidence and extraction quality remain separate.
+
+Curate may search directly without browsing first, retains user constraints
+when searching across topics, and reads scope before using a source. Its prompt
+requires explicit applicability and distinguishes source exercises from adapted
+practice. The ledger shows responses remaining under the existing stall guard;
+the guard's thresholds are unchanged. Search continuation caching is absent.
 
 The loader (`bench/rag/scripts/knowledge_base_library.py`) publishes a
 completed run. `schema` creates `LIBRARY_SCHEMA` and loads the subjects
@@ -1102,11 +1124,10 @@ figures without captures; a run without the pilot's priced `usage-summary.json`
 gets its model-run receipts from each `models/<stage>/state.json` (the
 `realtime/` one when present) and its embedding receipt from
 `embedding-usage.jsonl`. `status` lists books with their history plus the
-subjects that hold topics, with topic and excerpt counts. The schema has no
-migration path: a change means dropping the database (`DROP SCHEMA public
-CASCADE`, recreate it, re-grant `USAGE` to `capy_library_reader`, recreate the
-`vector` extension, re-apply the reader's default privileges from
-`deploy/library-db-init.sh`) and publishing every book again.
+subjects that hold topics, with topic and excerpt counts. The loader owns
+additive schema updates. Applying the schema adds nullable
+`library_excerpts.retrieval` metadata to existing versions without replacing
+source data. NULL means the excerpt's scope has not been reviewed.
 
 The local knowledge-base builder (`lab/knowledge/`, plan
 `artifacts/2026-09-19-knowledge-builder-plan.md`, agent instructions and
@@ -1122,7 +1143,7 @@ at admission, enforced again before publication. Titles and filenames containing
 `Free Courseware` are rejected. Page fetches request HTML explicitly and
 same-catalog `rel=next` pagination preserves crawl depth; its ingestion
 worker runs one-book manifests through parse, figures, topics (TOC-derived,
-two to three per chapter, merged with the subject's library topics, at most 64,
+two to three per chapter, merged with the subject's library topics, at most 96,
 never an id that equals a subject id), transcribe, tag, index and publish
 (source PDF uploaded to the knowledge-base bucket first). The transcribe stage
 sends one request per page image (the developer's page-description prompt,
@@ -1159,7 +1180,13 @@ TokenHub is gone from the builder. Receipts live in the builder's SQLite
 run directory (`topics.json`, one `transcribe-<timestamp>.json` and
 `tag-<timestamp>.json` per run, `transcribe.json` for the held ledger); model
 directories of replaced stages move to `<run>/archive/` so a version records
-this run's stages only. First live book through the whole path, 2026-09-19:
+this run's stages only. The dashboard's Library tab reads the live library
+per subject (books, topics and tagged excerpts of current versions as shares
+of the library, each subject expandable to its books and topics with their
+shares of the subject's excerpts) through
+`GET /api/library/coverage`, cached a minute and outside the state poll; a
+book's subject is the one its topics were published under, and tags and
+queued books are not counted. First live book through the whole path, 2026-09-19:
 OpenStax *Physics* (CC BY 4.0), 3,053 searchable chunks, 2,416 excerpts, 23
 topics under the `physics` subject. Its 2026-09-20 rerun under the transcribe
 and tag stages: 858 pages transcribed (1.03M prompt, 0.60M output tokens),
@@ -1171,13 +1198,19 @@ The 2026-09-20 held-chunk repair also tests delegated recovery and tagging.
 The developer selected Sol medium after an initial Terra high trial, with
 agents completing bounded scopes autonomously and delivering saved artifacts
 for one final consistency/import pass. The Codex heartbeat
-`knowledge-builder-intake` checks every five minutes and can automatically
-admit eligible downloads after Physics v2 is published and verified. It
+`kb` uses its configured schedule, currently every fifteen minutes, and remains
+paused until resumed. When active it automatically admits eligible downloads. It
 preserves the licence/metadata gates and pauses the ordinary ingest worker
 before delegated processing to avoid racing the Alibaba stages. This is a
 review-first workflow: parse and figures, Sol source correction and excerpt
-roles/synopses/evidence, GLM topics using all reviewed notes, then final topic-ID
-assignment. Summaries are not compacted. Completed books progress through
+roles/synopses/evidence and source-backed retrieval scope, then topic proposals
+and final topic-ID assignment by the same Sol owner. `topics.py --export-context`
+refreshes the subject catalog and supplies all full reviewed notes; `--proposal`
+validates the owner's artifact, merges IDs/aliases and enforces the topic cap
+without a GLM call. Split-book owners assemble all review scopes before topics.
+Full notes and retrieval metadata
+are retained in `reviewed-notes.json` and final tags; indexing refuses their loss.
+Summaries are not compacted. Completed books progress through
 publication automatically; revised versions are verified before old versions
 are retired. The heartbeat is a
 Codex task automation, not a replacement of the dashboard's default runner.
@@ -1228,8 +1261,14 @@ current pending changes applied. Embedded source instructions remain untrusted.
    row. Python receives `query` once, plus `assistantMessageId` and the optional
    rolling checkpoint. Locale and model are server-owned. A missing preference
    or unresolvable pin fails the turn as `model_unavailable`. Go rejects the
-   query before persistence when it exceeds 8,192 estimated tokens or 65,536
-   UTF-8 bytes. The current query is never clipped or summarized.
+   query before persistence when it exceeds 5,000 Unicode code points, counting
+   spaces and newlines. Python repeats the character check; the 8,192 estimated-token
+   and 65,536 UTF-8-byte safeguards remain. The composer counts code points too,
+   shows its counter at 4,000, and disables Send above 5,000 while keeping Stop usable.
+   `fieldlimits.ChatMessage` owns the cap; `pnpm gen:openapi` and Air generate
+   `src/api/limits.generated.ts` and `pipeline/pipeline/generated/limits.py`.
+   Chat streaming stays on raw Chi and outside the OpenAPI operation list.
+   The current query is never clipped or summarized.
 2. The first model call has no retrieval yet. The agent searches with
    `search_workspace` when the question needs sources. At most one
    `search_workspace` per model response; a later response in the same turn may
@@ -1611,7 +1650,7 @@ A curate turn builds materials instead of answering:
 | `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `search_knowledge` | none | Curate mode only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
-| `browse_knowledge` | none | Curate mode only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with tagged-excerpt counts, one line each. A topic id: verified excerpt counts by role and by book, then a page of excerpts with section paths and synopses. The library's subject list is appended to this description at runtime. Retains nothing |
+| `browse_knowledge` | none | Curate mode only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
 | `read_knowledge` | none | Curate mode only. One excerpt's chunks from chunk index `start`, with the excerpt's chunk range in the header and a next-start marker. Retains nothing |
 | `create_ledger` | none | Curate mode only. Writes the turn's plan: `body` plus one to twelve `todos`. Required before any write; one call per user message, appended to the conversation's ledger, and a second call in the same turn is refused. Retains nothing |
 | `capture_knowledge_page` | none | Curate mode only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. Curate mode has no per-turn capture cap. Adds no citation. Retains nothing |

@@ -1,0 +1,49 @@
+{
+ "id": "mat_e3f6cce46f6996f0",
+ "kind": "note",
+ "title": "Mean vs. Median: A Beginner's Guide",
+ "content": "# Mean vs. Median — What's the Difference?\n\nBoth are measures of **center**: a single number that describes a \"typical\" value in a data set. But they define \"typical\" in two different ways.\n\n## The mean\n- The **average**: add up all the values, then divide by how many there are.\n- Formula: mean = (x₁ + x₂ + ... + xₙ) / n\n- Think of it as the **balance point** (or \"centre of gravity\") of the data — the point where the distribution would balance on a see-saw.\n- Uses every value in the data, so it's efficient — but that also makes it **sensitive to extreme values (outliers)**.\n\n## The median\n- The **middle value** when the data are sorted from smallest to largest.\n- If n is odd, it's the middle number; if n is even, it's the average of the two middle numbers.\n- Depends only on the **order** of the data, so it is **robust** — outliers barely move it.\n\n## When do they differ?\n- **Symmetric data** (like a bell curve): mean and median are the same. Example: 1, 3, 4, 5, 6, 7, 9 — both are 5.\n- **Skewed data**: the **mean follows the tail**. With a right (positive) skew, the mean is pulled *above* the median; with a left skew, the mean falls *below* the median. The median stays near the \"body\" of the data.\n\n## A concrete example: incomes at a table\nBob ($50,000), Kate ($60,000), and Jane ($65,000) sit at a table.\n- Mean = (50,000 + 60,000 + 65,000) / 3 = **$58,333**\n- Median = **$60,000**\n\nNow Bill, a billionaire, joins them ($100,000,000).\n- Mean jumps to **$25,043,750**\n- Median rises only to **$62,500**\n\nOne extreme value dragged the mean up by millions, while the median barely moved. If you want the *overall* income at the table (including Bill), the mean is right; if you want a *typical* person's income, the median is the better choice. That's why news reports usually quote **median** salaries and house prices.\n\n## Quick rules of thumb\n- Data have outliers or are skewed → prefer the **median**.\n- Data are fairly symmetric and you want to use all the information → the **mean** is fine.\n- When in doubt, report both.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_95_v2",
+  "exc_f97f47b7a1fd68_69_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_95_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_69_v1"
+    ]
+   }
+  ]
+ },
+ "size": "512 tokens",
+ "edits": []
+}

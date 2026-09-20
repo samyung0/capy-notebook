@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS library_excerpts (
   PRIMARY KEY (content_id, id)
 );
 CREATE INDEX IF NOT EXISTS library_excerpts_id_idx ON library_excerpts (id);
+-- NULL explicitly means scope has not been reviewed. Full synopses are retained.
+ALTER TABLE library_excerpts ADD COLUMN IF NOT EXISTS retrieval jsonb;
 CREATE TABLE IF NOT EXISTS library_figures (
   content_id text NOT NULL REFERENCES rag_contents, id text NOT NULL, book_id text NOT NULL, page int NOT NULL,
   bbox int[] NOT NULL, caption_bbox int[], space text NOT NULL, geometry_kind text NOT NULL, block_index int NOT NULL,

@@ -1,0 +1,1223 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "chinese-contract-history",
+    "query": "Create one concise study note on the historical development of Chinese contract law, based on the available textbooks.",
+    "check": "Chinese jurisdiction and historical framing; source-period material is not described as current legal advice."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "historical development of Chinese contract law",
+      "topics": [],
+      "roles": [],
+      "seconds": 5.344,
+      "excerpts": [
+        {
+          "id": "exc_3af200c915ae90_4_v2",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope",
+            "chinese-contract-doctrines",
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces the graduate course and its focus on the 1999 PRC Contract Law, business practice, freedom of contract in a socialist market economy, contract definitions, scope, doctrines, interpretation, transaction policy, and privity; lists the unit learning outcomes.",
+          "pages": [
+            5
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_8_v2",
+            "chk_3af200c915ae90_9_v2",
+            "chk_3af200c915ae90_10_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_3af200c915ae90_10_v2",
+          "hit_text": "• describes the historical development of Chinese contract law;\n• analyses the general principle of contract law;\n• illustrates the relationship between contract law and other related branches of law;\n• assesses the scope of contract law;\n• categorizes different forms of contract; and",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                181.6,
+                824.884,
+                846.98,
+                935.393
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02370478983382209
+        },
+        {
+          "id": "exc_3af200c915ae90_11_v2",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 1.2 Historical development of Chinese contract law › 1.2.1 Historical developments in other jurisdictions",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Surveys contractual rules in Hammurabi's code, Roman law, continental civil codes, English common law, freedom of contract, consideration, and the emergence of contractual liberty.",
+          "pages": [
+            9
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_73_v2"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_21_v2",
+            "chk_3af200c915ae90_22_v2",
+            "chk_3af200c915ae90_23_v2"
+          ],
+          "retrieval": {
+            "scope": "Historical comparative background across ancient Mesopotamia, Roman law, Continental Europe, and England. It is not an account of China's legal development or current law. The final English case quotation continues in excerpt 12.",
+            "summary": "Surveys Hammurabi, Roman contract and tort distinctions, French and German codification, English common law, and the rise of freedom of contract.",
+            "context_excerpt_ids": [
+              "exc_3af200c915ae90_12_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_3af200c915ae90_23_v2",
+          "hit_text": "Roman law for the first time distinguished breaches of contract from tortious acts. Prior to that, as in ancient Greece, non-performance was simply regarded as infringement. Various provisions of the Roman law have become the origin of modern contract law in Continental Europe, based on which the French Civil Code (Code Civil des Franςais 1804) and the German Civil Code (Bürgerliches Gesetzbuch) were drafted. The French Civil Code established for the first time the principle of freedom of contract, which has become the core principle of modern contract law.\n\nIn England, the principles of modern contract law were well developed in common law courts in the early 19th century. The first important treatise expounding the English law of contract was arguably John Powell’s Essay upon the Law of Contracts and Agreements. The concept of freedom of contract, originating in the work of Adam Smith, was well summed up in the words of a judge in 1875 in the case of Printing and Numerical Registering Co. v. Sampson (1875) LR 19 Eq 462:",
+          "hit_page_start": 9,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                612.504,
+                869.333,
+                741.761
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                752.392,
+                870.082,
+                862.901
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022989889263360617
+        },
+        {
+          "id": "exc_3af200c915ae90_14_v2",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › 1.2.2 Historical developments in China › 8",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Traces Chinese civil and contract law from the late Qing draft civil code through the Republican civil code, post-1949 drafting, the 1980s economic contract statutes, and the 1999 unified Contract Law informed by international and comparative sources.",
+          "pages": [
+            11
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_27_v2",
+            "chk_3af200c915ae90_28_v2",
+            "chk_3af200c915ae90_29_v2"
+          ],
+          "retrieval": {
+            "scope": "Historical account centered on China through the 2009 textbook's 1999 Contract Law framework. Its claim that the GPCL was enacted in 1985 and its description of a civil code as still being drafted are preserved as source-period statements, not current law. Excerpt 13 supplies the opening debate over civil law in Imperial China.",
+            "summary": "Traces China's civil and contract-law history from the late Qing draft and 1930 Republican code through failed PRC codification, piecemeal 1980s statutes, and the 1999 Contract Law.",
+            "context_excerpt_ids": [
+              "exc_3af200c915ae90_13_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_3af200c915ae90_29_v2",
+          "hit_text": "The three pieces of legislation on contract law were not intended to be a comprehensive set. They were enacted piecemeal to solve the immediate needs of the economic reform starting from 1979. They contained contradictory provisions, and the scope of each of them overlapped. In 1993, the drafting process of a new Contract Law started, which was intended to replace the three pieces of legislation. It is believed that the drafters of the new Contract Law, consisting of many legal academics this time, had made extensive reference to various sources, such as the UNIDROIT Principles of International Commercial Contracts (PICC) (http://www.unidroit.org/english/principles/contracts/main.htm),the United Nations Convention on Contracts for International Sale of Goods (CISG) (http://www.uncitral.org/uncitral/en/uncitral_texts/sale_goods.html), the Principles of European Contract Law (PECL) (http://frontpage.cbs.dk/law/commission_on_european_contract_law/), the civil codes of France and Germany, and the English common law. It was passed on 15 March 1999, effective 1 October 1999, and was supplemented by the Interpretation on Several Issues Regarding the Application of the Contract Law (1) (http://www.sjzmbc.gov.cn/en/public/englishshow.jsp?id=20060904158511) issued by the Supreme People’s Court and some other judicial interpretations on technology contract and construction contract.",
+          "hit_page_start": 11,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                600.363,
+                872.995,
+                916.633
+              ],
+              "page": 11,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022722330941509022
+        },
+        {
+          "id": "exc_3af200c915ae90_9_v2",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 5",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Continues the history of merchant dispute resolution through lex mercatoria, specialized tribunals, common-law absorption, and the practical limits of formal enforcement in commercial relationships.",
+          "pages": [
+            8
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_18_v2",
+            "chk_3af200c915ae90_19_v2"
+          ],
+          "retrieval": {
+            "scope": "Historical comparative background, not a chronology of Chinese legislation. Claims that business ethics in China had yet to be cultivated, judgment enforcement was immature, and many disputes used non-legal means are the 2009 textbook's characterizations, not current findings.",
+            "summary": "Explains how merchant tribunals and lex mercatoria entered English and U.S. common law, then contrasts reputation-based enforcement in Western jurisdictions with the source's assessment of commercial dispute resolution in China.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_3af200c915ae90_19_v2",
+          "hit_text": "In the US, merchants had tried to avoid the time-consuming court procedures for resolving commercial disputes until the end of the 18th century. Similar to the situation in England, the outcome of the competition between courts of law and merchants’ tribunals was that the customs of merchants were absorbed by judges and integrated into the common law.\n\nThe experience in Western jurisdictions shows that merchants’ concern about their goodwill and long-term reputation, rather than the effectiveness of the court system, is probably the biggest driving force behind the enforceability of contracts. In China, however, business ethics have yet to be cultivated. The deterrent force of peer pressure on contract breakers remains to be seen. Coupled with the immature system of the enforcement of court judgments, it is hardly surprising that many commercial disputes in China are resolved by non-legal means.\n\nIn the next section of the unit, you will find out more about the key milestones in the historical development of Chinese contract law.",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                451.482,
+                835.074,
+                543.286
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                553.917,
+                833.751,
+                683.132
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                693.762,
+                818.15,
+                729.45
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021351575456053068
+        },
+        {
+          "id": "exc_3af200c915ae90_42_v2",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 18",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Concludes that the hospital bears a public-law obligation regardless of acceptance, poses a rural-land self-test about authority and discharge, and introduces statutory, judicial, administrative, and transactional sources of Chinese contract law.",
+          "pages": [
+            21
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_216_v2"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_62_v2",
+            "chk_3af200c915ae90_63_v2",
+            "chk_3af200c915ae90_64_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_3af200c915ae90_64_v2",
+          "hit_text": "In Continental civil law jurisdictions such as Germany, Japan, France, Switzerland and Italy, the contract law is found within the civil code or the code of obligations. Contract law, tort law and the law of unjust enrichment are all regarded as part of the law of obligations.\n\nAt the time of writing, China’s civil code is still in the drafting stage. The General Principles of Civil Law and the Contract Law remain the sources of Chinese contract law. In addition, the Sino-foreign Equity Joint Venture Law and the Sino-Foreign Cooperative Joint Venture Law contain specific provisions on Sino-foreign joint venture contracts.\n\nAdministrative rules and regulations also constitute sources of the Chinese contract law. Furthermore, according to article 125 of the Contract Law, ‘transaction practices’ may also be the so urces of contract law.",
+          "hit_page_start": 21,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                688.423,
+                870.084,
+                761.521
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                772.152,
+                872.36,
+                863.956
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                874.587,
+                857.766,
+                928.98
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02119938884644767
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 4
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 2
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 4
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 2
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

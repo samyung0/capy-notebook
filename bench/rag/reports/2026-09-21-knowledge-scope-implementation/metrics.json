@@ -1,0 +1,431 @@
+{
+  "summary": {
+    "runs": 17,
+    "nonempty_notes": 15,
+    "stalled": 1,
+    "median_seconds": 44.52,
+    "median_agent_input_tokens": 54580,
+    "median_model_calls": 6,
+    "total_input_tokens": 888161,
+    "total_output_tokens": 32963,
+    "successful_captures": 5,
+    "turns_with_capture": 4,
+    "turns_with_refused_writes": 14,
+    "truncated_results": 0
+  },
+  "prior_baseline_summary": {
+    "runs": 17,
+    "nonempty_notes": 14,
+    "stalled": 2,
+    "median_seconds": 36.56,
+    "median_total_input_tokens": 45559,
+    "median_agent_input_tokens": 45559,
+    "median_rerank_input_tokens": 0,
+    "median_model_calls": 6,
+    "total_input_tokens": 797503,
+    "total_output_tokens": 27066,
+    "continuations": 0,
+    "capture_calls": 0,
+    "turns_with_refused_writes": 9,
+    "truncated_results": 1
+  },
+  "method": "17 original cases, baseline arm, two concurrent turns, GLM 5.3 Flash via local Ollama cloud endpoint, low reasoning, temperature zero; one run per case. Source-scope annotations were selected using earlier cases, so this is diagnostic and in-sample, not a held-out quality benchmark. Both snapshots verified against the same 92-book version set. Targeted follow-up publications and reruns are reported separately.",
+  "runs": [
+    {
+      "case": "statistics-overview",
+      "folder": "statistics-overview/baseline",
+      "seconds": 39.07,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 50770,
+      "agent_output_tokens": 2016,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 5,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9688
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "Source-supported conceptual overview; no software workflow."
+      }
+    },
+    {
+      "case": "regression-general",
+      "folder": "regression-general/baseline",
+      "seconds": 58.99,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 57897,
+      "agent_output_tokens": 1682,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 7,
+      "successful_captures": 1,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9763
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "One-predictor exam example fits, but the added coefficient formulas are absent from its attached/read passages."
+      }
+    },
+    {
+      "case": "regression-by-hand",
+      "folder": "regression-by-hand/baseline",
+      "seconds": 62.0,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 56077,
+      "agent_output_tokens": 2576,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 6,
+      "successful_captures": 1,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9763
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "Hand-followable Elmhurst calculation. Rounding explanation could be clearer."
+      }
+    },
+    {
+      "case": "regression-r",
+      "folder": "regression-r/baseline",
+      "seconds": 58.69,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 74669,
+      "agent_output_tokens": 2502,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 7,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 2,
+      "search_output_characters": [
+        9268,
+        10593
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "R workflow fits; F and baby-sleep p-values are explicitly labeled multiple-model results. R-squared in the simple walkthrough remains ambiguous and an exact p-value is unsupported."
+      }
+    },
+    {
+      "case": "independent-t-test",
+      "folder": "independent-t-test/baseline",
+      "seconds": 57.58,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 71615,
+      "agent_output_tokens": 2606,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 7,
+      "successful_captures": 1,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9532
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "Correct independent groups and coherent pooled-variance calculation."
+      }
+    },
+    {
+      "case": "paired-t-test",
+      "folder": "paired-t-test/baseline",
+      "seconds": 36.9,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 42590,
+      "agent_output_tokens": 2105,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 5,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9994
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "Matched observations, difference scores and consistent output."
+      }
+    },
+    {
+      "case": "jamovi-t-test",
+      "folder": "jamovi-t-test/baseline",
+      "seconds": 46.45,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 54580,
+      "agent_output_tokens": 2305,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 6,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9879
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits_with_caveat",
+        "note": "Correct software and test variant; learning-outcomes wording is too broad."
+      }
+    },
+    {
+      "case": "mean-median",
+      "folder": "mean-median/baseline",
+      "seconds": 38.64,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 38139,
+      "agent_output_tokens": 1447,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 5,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        11662
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "General conceptual explanation and correct numerical example."
+      }
+    },
+    {
+      "case": "leadership-general",
+      "folder": "leadership-general/baseline",
+      "seconds": 47.6,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 57606,
+      "agent_output_tokens": 1698,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 6,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 2,
+      "search_output_characters": [
+        10852,
+        10883
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "School source disclosed at the end, but several school-specific recommendations are generalized in the body."
+      }
+    },
+    {
+      "case": "school-leadership",
+      "folder": "school-leadership/baseline",
+      "seconds": 42.15,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 48513,
+      "agent_output_tokens": 2266,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 5,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        10821
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "Requested school scope; managerial split labeled an author proposal."
+      }
+    },
+    {
+      "case": "contracts-general",
+      "folder": "contracts-general/baseline",
+      "seconds": 51.0,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 57445,
+      "agent_output_tokens": 2532,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 6,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        8949
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "U.S. source scope explicitly stated in opening and closing; legal correctness not independently audited."
+      }
+    },
+    {
+      "case": "chinese-contract-history",
+      "folder": "chinese-contract-history/baseline",
+      "seconds": 55.71,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 67953,
+      "agent_output_tokens": 2759,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 8,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 2,
+      "search_output_characters": [
+        5175,
+        7112
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Historical chronology, but 2009 source-present claims appear without a clear period limit. Targeted follow-up review requested."
+      }
+    },
+    {
+      "case": "democracy-general",
+      "folder": "democracy-general/baseline",
+      "seconds": 42.05,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 37384,
+      "agent_output_tokens": 1624,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 5,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        9234
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "fits",
+        "note": "General definition and varieties; no single-country system silently substituted."
+      }
+    },
+    {
+      "case": "athenian-democracy",
+      "folder": "athenian-democracy/baseline",
+      "seconds": 44.52,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 54981,
+      "agent_output_tokens": 1814,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 6,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "truncated_results": 0,
+      "search_calls": 2,
+      "search_output_characters": [
+        9911,
+        8739
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "unsupported",
+        "note": "Assembly, juries and citizenship exclusions are not established by the read passages, which chiefly concern general political theory."
+      }
+    },
+    {
+      "case": "bayesian-exercises",
+      "folder": "bayesian-exercises/baseline",
+      "seconds": 30.83,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 46269,
+      "agent_output_tokens": 1394,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 5,
+      "successful_captures": 0,
+      "refused_writes": 0,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        10056
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Actual source exercise plus reconstruction from an answer key. Values grounded, but second task lacks original population context and added tasks are not clearly marked adapted. Targeted source/answer linkage review requested."
+      }
+    },
+    {
+      "case": "quantum-surface-codes",
+      "folder": "quantum-surface-codes/baseline",
+      "seconds": 20.8,
+      "stop": "answer",
+      "nonempty_materials": 0,
+      "agent_input_tokens": 20220,
+      "agent_output_tokens": 342,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 3,
+      "successful_captures": 0,
+      "refused_writes": 0,
+      "truncated_results": 0,
+      "search_calls": 2,
+      "search_output_characters": [
+        11335,
+        10890
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "honest_gap",
+        "note": "Declines to substitute classical coding for quantum surface codes."
+      }
+    },
+    {
+      "case": "distinct-regression-examples",
+      "folder": "distinct-regression-examples/baseline",
+      "seconds": 40.69,
+      "stop": "curate_stall",
+      "nonempty_materials": 0,
+      "agent_input_tokens": 51453,
+      "agent_output_tokens": 1295,
+      "cached_read_tokens": 0,
+      "agent_model_calls": 6,
+      "successful_captures": 2,
+      "refused_writes": 0,
+      "truncated_results": 0,
+      "search_calls": 1,
+      "search_output_characters": [
+        10423
+      ],
+      "snapshot_verified": true,
+      "review": {
+        "verdict": "stalled",
+        "note": "Found two distinct datasets, read excerpts and captured two pages, then stopped without a material or final explanation."
+      }
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "subject_id": "contract-law",
+  "topics": [
+    {
+      "id": "chinese-contract-concept-and-scope",
+      "label": "Concept and scope of contracts under Chinese law",
+      "aliases": [
+        "definition of contract China",
+        "Article 2 Contract Law",
+        "reward advertisements",
+        "unilateral act",
+        "scope of Contract Law application",
+        "invitation to treat China"
+      ],
+      "scope": "Covers the Chinese definition of a contract under Article 2, contract-like acts (covenant, unilateral and multi-lateral acts), reward advertisements, and what relationships the 1999 Contract Law applies to (excluding marriage and personal-status relationships, state sovereign acts, and property-law transfers); excludes the general doctrines and interpretation of terms.",
+      "source_sections": "1.3 Features of Chinese contract law; 1.3.1 The concept of a contract (including covenant, multi-lateral act, unilateral act); 1.3.2 Advertisements of rewards; 1.3.3 Approaches for defining contracts; 1.4 Application of contract law (including 1.4.1–1.4.4); Case Studies 1.1–1.3; Self-tests 1.1–1.2; Activity 1.3"
+    },
+    {
+      "id": "chinese-contract-doctrines",
+      "label": "Doctrines of Chinese contract law",
+      "aliases": [
+        "freedom of contract China",
+        "pacta sunt servanda",
+        "good faith doctrine",
+        "public policy contract",
+        "fundamental change of circumstances",
+        "frustration China"
+      ],
+      "scope": "Covers the guiding doctrines of articles 3–7 of the PRC Contract Law: freedom of contract and its limits, pacta sunt servanda with force majeure and fundamental change of circumstances, good faith duties, and public policy; excludes contract formation and remedies for breach.",
+      "source_sections": "1.6 Doctrines of contract law; 1.6.1 Freedom of contract; 1.6.2 Pacta sunt servanda; 1.6.3 Doctrine of good faith; 1.6.4 Public policy; Online discussion 1.2; Example 1.1; Case Studies 1.4–1.5; Self-test 1.4"
+    },
+    {
+      "id": "chinese-contract-law-history",
+      "label": "Historical development of Chinese contract law",
+      "aliases": [
+        "PRC contract law history",
+        "Chinese contract law development",
+        "1999 Contract Law origins",
+        "comparative contract law history"
+      ],
+      "scope": "Covers the evolution of contract law from Hammurabi, Roman law and common law through late Qing, Republican and post-1949 China to the 1999 unified PRC Contract Law; excludes substantive doctrines and current application.",
+      "source_sections": "Chapter 1 General principles of contract law › 1.1 Contract law: some background; 1.2 Historical development of Chinese contract law; 1.2.1 Historical developments in other jurisdictions; 1.2.2 Historical developments in China; Online discussion 1.1"
+    }
+  ],
+  "reused": [
+    "chinese-contract-concept-and-scope",
+    "chinese-contract-doctrines",
+    "chinese-contract-law-history"
+  ],
+  "proposed": [],
+  "mapped": [],
+  "renamed": [],
+  "subject_total": 3,
+  "model": {
+    "model": "gpt-5.6-sol",
+    "endpoint": "codex-subagent",
+    "request_id": "/root/sol_topics_trial",
+    "reasoning_effort": "medium",
+    "usage": null,
+    "proposal_sha256": "d11ee83c07da97e6e9ea9de4de568d63594fc6817dfe7f8dba25516215d20516",
+    "input": {
+      "book_id": "chinese-contract-law",
+      "subject_id": "contract-law",
+      "source_sha256": "6d7582f965c330db2e3e85e8787a38a9c73be92b22ce6a2dbe0f333b2c807913",
+      "corpus_sha256": "fbc12eb16e7a8535c120cafd124d88460d4bc7d2dafdd6972104e9ebbe4718c8",
+      "review_sha256": "4bbcad12826b9542659eb538331e63bb52d4be51ed75d85be129e2882c00607d"
+    }
+  },
+  "input_context": "reviewed-excerpts"
+}

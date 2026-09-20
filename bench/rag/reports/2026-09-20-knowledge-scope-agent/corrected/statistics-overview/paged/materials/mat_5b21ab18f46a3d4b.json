@@ -1,0 +1,74 @@
+{
+ "id": "mat_5b21ab18f46a3d4b",
+ "kind": "note",
+ "title": "What Is Statistics? A Beginner's Introduction",
+ "content": "# What Is Statistics? — A Beginner's Note\n\n## The big idea\n**Statistics is the science of learning from data.** It is an investigative process: ask a clear statistical question, collect relevant data, analyze the data, and form a conclusion — then let the conclusion prompt the next question. Data (singular: *datum*) are pieces of information collected from an experiment, a survey, or a record.\n\n## Two branches\n1. **Descriptive statistics** — numbers and graphs that *summarize and describe* the data you have: an average, a percentage, a table. They do not generalize beyond the data at hand.\n2. **Inferential statistics** — methods for *generalizing beyond your data*: \"learning what we do not know from what we do.\" This is the bigger, more powerful part of statistics, and it traditionally splits into two big ideas: **estimation** (estimating an unknown quantity) and **hypothesis testing** (deciding whether a claim is supported).\n\n## Population vs. sample\n- **Population**: the entire group you want to draw conclusions about (size *N*) — often too large, expensive, or impossible to measure completely.\n- **Sample**: the subset you actually collect data from (size *n*). When sample data answer a question about a population, that's a **statistical study**.\n- A **parameter** is a summary number for the whole population (e.g., the true average) — usually unknown, the thing you *want to learn about*.\n- A **statistic** is the corresponding number computed from your sample — what you *can calculate* — used to estimate the parameter. Statistics vary from sample to sample; a parameter is fixed. (Example: if the population mean IQ is 100, a random sample of 100 people might have a mean of 98.5 — close, but not identical.)\n\n## Why statistics is useful\n- **Summarizing**: condense thousands of numbers into a few meaningful figures (averages, percentages, spreads).\n- **Inference**: poll a few thousand voters to estimate how an entire country feels; test 60 swordfish to estimate mercury levels across the whole Atlantic population.\n- **Deciding under uncertainty**: statistics helps judge whether an observed difference (e.g., faster marathon times, a new drug's effect) is real or just chance — descriptive numbers alone can only be \"suggestive.\"\n- **Everyday relevance**: sports stats, opinion polls, medical studies, salaries, climate science — statistics turns speculation into reasonable, data-based guesses.\n\n## One-sentence takeaway\nStatistics turns raw data into summaries you can understand and careful conclusions you can trust about a wider world you never measured directly.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_5_v1",
+  "exc_f97f47b7a1fd68_6_v1",
+  "exc_0689cddaba206d_18_v2",
+  "exc_0689cddaba206d_28_v2",
+  "exc_45ecdb7da7734b_153_v2",
+  "exc_45ecdb7da7734b_159_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_18_v2",
+     "exc_0689cddaba206d_28_v2"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_153_v2",
+     "exc_45ecdb7da7734b_159_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_5_v1",
+     "exc_f97f47b7a1fd68_6_v1"
+    ]
+   }
+  ]
+ },
+ "size": "650 tokens",
+ "edits": []
+}

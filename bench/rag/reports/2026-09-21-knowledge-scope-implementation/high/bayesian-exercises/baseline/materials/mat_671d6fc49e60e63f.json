@@ -1,0 +1,54 @@
+{
+ "id": "mat_671d6fc49e60e63f",
+ "kind": "note",
+ "title": "Bayesian Inference: Two Practice Exercises",
+ "content": "# Study Note: Bayesian Inference — Two Practice Exercises\n\n**What Bayesian inference is.** From a Bayesian perspective, statistical inference is belief revision: you start with candidate hypotheses *h* and prior beliefs about how plausible each is, observe data *d*, and revise those beliefs. Data consistent with a hypothesis strengthen it; data inconsistent with it weaken it. The revision follows Bayes' rule:\n\n$$P(h \\mid d) = \\frac{P(d \\mid h)\\,P(h)}{P(d)}$$\n\n- **Prior** *P(h)* — what you believed before seeing the data.\n- **Likelihood** *P(d | h)* — your theory about how likely the data are under each hypothesis.\n- **Posterior** *P(h | d)* — your revised belief after seeing the data. The denominator *P(d)* is the marginal probability of the data, found by summing the joint probabilities *P(d | h)·P(h)* across all hypotheses.\n\nBoth exercises below are grounded in exercises from the library textbooks named under each task.\n\n---\n\n## Exercise 1 — Disease testing and base rates\n*(adapted from Online Statistics Education, \"Introduction to Statistics\", Probability chapter, Exercise 8)*\n\nA test correctly identifies a disease in **95%** of people who have it (sensitivity, *P(T | D) = 0.95*). It correctly identifies no disease in **94%** of people who do not have it, so the false-positive rate is *P(T | D′) = 0.06*. In the population, **3%** of people have the disease, so the prior is *P(D) = 0.03* and *P(D′) = 0.97*.\n\n**Question:** What is the probability that you have the disease if you tested positive, *P(D | T)*?\n\n**Solution.** Using the form of Bayes' theorem for a positive test:\n\n$$P(D \\mid T) = \\frac{P(T \\mid D)\\,P(D)}{P(T \\mid D)\\,P(D) + P(T \\mid D')\\,P(D')}$$\n\n- True positives: 0.95 × 0.03 = 0.0285\n- False positives: 0.06 × 0.97 = 0.0582\n- Marginal *P(T)*: 0.0285 + 0.0582 = 0.0867\n\n$$P(D \\mid T) = \\frac{0.0285}{0.0867} \\approx 0.329$$\n\nEven with a highly accurate test, a positive result means only about a **33%** chance of disease — the low base rate dominates. This is why the prior cannot be ignored.\n\n---\n\n## Exercise 2 — The umbrella problem: updating beliefs about rain\n*(the reasoning problem posed and solved in \"Learning Statistics with R\", §17.1 \"Probabilistic reasoning by rational agents\")*\n\nSomeone says: *\"I'm carrying an umbrella. Do you think it will rain?\"* The data are *d* = umbrella; the hypotheses are *h* = rainy day vs. dry day.\n\n**Givens** (from the book's example, set in Adelaide in January):\n\n| Prior *P(h)* | | Likelihood *P(d \\| h)* — carrying an umbrella | |\n|---|---|---|---|\n| Rainy day | 0.15 | Rainy day | 0.30 |\n| Dry day | 0.85 | Dry day | 0.05 |\n\n**Question:** Compute the posterior probability of rain given the umbrella, *P(rain | umbrella)*.\n\n**Solution.** Multiply each prior by its likelihood to get the joint probabilities:\n\n- *P(rainy, umbrella)* = 0.30 × 0.15 = **0.045**\n- *P(dry, umbrella)* = 0.05 × 0.85 = **0.0425**\n- Marginal *P(umbrella)* = 0.045 + 0.0425 = **0.0875**\n\nThen normalize:\n\n$$P(\\text{rain} \\mid \\text{umbrella}) = \\frac{0.045}{0.0875} \\approx 0.514$$\n\nSo the umbrella raises your belief in rain from a 15% prior to about a **51.4%** posterior (with 48.6% on a dry day) — the book's own answer. Notice the pattern: the data favored \"rain\" (0.30 vs 0.05), but the strong prior toward \"dry\" (0.85 vs 0.15) pulled the posterior only barely past even.\n\n---\n\n**Takeaways**\n1. Write down the prior and the likelihood separately; the posterior is their product, renormalized over all hypotheses.\n2. Low base rates (Exercise 1) or strong priors (Exercise 2) can keep the posterior far from 1 even when the data clearly favor one hypothesis.\n\n*Scope note: both exercises use the assumed numbers given in their source examples (a hypothetical test and the book's illustrative Adelaide-rain assumptions); they are conceptual, with no software dependency.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_158_v2",
+  "exc_dd1e65de648fb2_1199_v2",
+  "exc_dd1e65de648fb2_1200_v2",
+  "exc_dd1e65de648fb2_1201_v2",
+  "exc_dd1e65de648fb2_1206_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 2,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1199_v2",
+     "exc_dd1e65de648fb2_1200_v2",
+     "exc_dd1e65de648fb2_1201_v2",
+     "exc_dd1e65de648fb2_1206_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 2,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_158_v2"
+    ]
+   }
+  ]
+ },
+ "size": "960 tokens",
+ "edits": []
+}

@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException
 
 from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
+from ..generated.limits import CHAT_CHARACTER_LIMIT
 from ..prompts import generate as generate_prompts
 from ..prompts import quiz as quiz_prompts
 from ..retrieval import (
@@ -368,7 +369,8 @@ async def _relay_until_disconnect(
 
 async def _chat_events(req: ChatStreamReq, request: Request):
     if (
-        len(req.query.encode("utf-8")) > QUERY_MAX_BYTES
+        len(req.query) > CHAT_CHARACTER_LIMIT
+        or len(req.query.encode("utf-8")) > QUERY_MAX_BYTES
         or estimate_tokens(req.query) > QUERY_MAX_ESTIMATED_TOKENS
     ):
         yield _sse(

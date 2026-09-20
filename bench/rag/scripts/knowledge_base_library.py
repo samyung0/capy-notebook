@@ -21,9 +21,8 @@ refused. After a book's excerpts are written, and again when a version is
 retired, topics no tagged excerpt of a current or retained version references
 are dropped.
 
-`schema` creates the schema as it is written. There is no migration path: a
-changed `LIBRARY_SCHEMA` means dropping the library database and publishing
-every book again, which costs a loader run and no model calls.
+`schema` creates the schema and adds the nullable reviewed retrieval metadata
+column to existing libraries. It preserves published source data and versions.
 
 Run it in the pipeline's environment, which owns psycopg and boto3:
 `uv run --project pipeline python bench/rag/scripts/knowledge_base_library.py
@@ -116,13 +115,18 @@ def corpus_identity(book_corpus: dict, pin: dict, tags: dict) -> str:
             "chunker_version": book_corpus["chunker_version"],
             "release_sha": book_corpus["release_sha"],
             "pin": pin,
-            "tags": {e["id"]: tags["tags"].get(e["id"]) for e in book_corpus["excerpts"]},
+            "tags": {
+                e["id"]: tags["tags"].get(e["id"]) for e in book_corpus["excerpts"]
+            },
         }
     )
 
 
 def excerpt_rows(corpus: dict, tags: dict) -> list[dict]:
     """Excerpts joined with their tag outcome; a failed tag keeps its excerpt."""
+    from pipeline.retrieval.knowledge_metadata import validate_metadata
+
+    excerpt_ids = {e["id"] for e in corpus["excerpts"]}
     reviews = {}
     for item in tags["review_items"]:
         reviews.setdefault(item["excerpt_id"], []).append(item["reason"])
@@ -132,6 +136,9 @@ def excerpt_rows(corpus: dict, tags: dict) -> list[dict]:
         failed = excerpt["id"] in tags["failed_tags"]
         if tag is None and not failed:
             raise PilotError(f"Excerpt {excerpt['id']} has no tag outcome")
+        metadata = tag.get("retrieval") if tag else None
+        if metadata is not None:
+            validate_metadata(metadata, excerpt["id"], excerpt_ids)
         rows.append(
             {
                 "id": excerpt["id"],
@@ -151,6 +158,7 @@ def excerpt_rows(corpus: dict, tags: dict) -> list[dict]:
                 "synopsis": tag["synopsis"] if tag else "",
                 "proposed_topic": tag.get("proposed_topic") if tag else None,
                 "review_reasons": sorted(set(reviews.get(excerpt["id"], []))),
+                "retrieval": metadata,
             }
         )
     return rows
@@ -198,7 +206,9 @@ def model_run_rows(run: Path) -> list[dict]:
     usage = read_json(priced) if priced.exists() else {"stages": {}}
     rows = []
     models = run / "models"
-    stages = sorted(d for d in models.iterdir() if d.is_dir()) if models.exists() else []
+    stages = (
+        sorted(d for d in models.iterdir() if d.is_dir()) if models.exists() else []
+    )
     for directory in stages:
         state = read_json(directory / "state.json")
         summary = usage["stages"].get(directory.name)
@@ -265,7 +275,12 @@ def sync_subjects(conn, subjects: dict[str, dict]) -> None:
         conn.execute(
             "INSERT INTO library_subjects VALUES(%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
             "area=EXCLUDED.area, label=EXCLUDED.label, aliases=EXCLUDED.aliases",
-            (subject["id"], subject["area"], subject["label"], Jsonb(subject["aliases"])),
+            (
+                subject["id"],
+                subject["area"],
+                subject["label"],
+                Jsonb(subject["aliases"]),
+            ),
         )
     ids = list(subjects)
     conn.execute(
@@ -344,9 +359,7 @@ def apply_schema() -> dict:
     """Create the library schema exactly as `LIBRARY_SCHEMA` writes it and load
     the subjects fixture.
 
-    Every statement is CREATE ... IF NOT EXISTS, so this is a no-op against a
-    live library. Changing the schema means dropping the database and
-    republishing every book; the loader carries no migration path.
+    The additive retrieval metadata column preserves existing book versions.
     """
     with connect() as conn:
         conn.execute(SCHEMA)
@@ -421,6 +434,18 @@ def publish_book(
     meta = {c["id"]: (c["excerpt_id"], c["reference"]) for c in book_corpus["chunks"]}
     if {r[0] for r in rows} != set(meta):
         raise PilotError(f"Pilot database chunks differ from corpus.json for {book_id}")
+    from pipeline.retrieval.knowledge_metadata import indexed_text
+
+    expected_text = {
+        c["id"]: indexed_text(
+            c["indexed_text"], tags["tags"].get(c["excerpt_id"], {}).get("retrieval")
+        )
+        for c in book_corpus["chunks"]
+    }
+    if any(row[4] != expected_text[row[0]] for row in rows):
+        raise PilotError(
+            f"Index is stale for {book_id}; run index after changing reviewed metadata"
+        )
     with target.transaction():
         target.execute(
             "INSERT INTO files(id,name) VALUES(%s,%s) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name",
@@ -455,7 +480,7 @@ def publish_book(
         )
         excerpts = excerpt_rows(book_corpus, tags)
         target.cursor().executemany(
-            "INSERT INTO library_excerpts VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            "INSERT INTO library_excerpts VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             [
                 (
                     content_id,
@@ -476,6 +501,17 @@ def publish_book(
                     e["synopsis"],
                     e["proposed_topic"],
                     e["review_reasons"],
+                    Jsonb(
+                        {
+                            **e["retrieval"],
+                            "context_excerpt_ids": [
+                                versioned(i, version)
+                                for i in e["retrieval"]["context_excerpt_ids"]
+                            ],
+                        }
+                    )
+                    if e["retrieval"] is not None
+                    else None,
                 )
                 for e in excerpts
             ],
@@ -814,7 +850,14 @@ def status() -> dict:
         "books": [
             dict(
                 zip(
-                    ("id", "title", "version", "content_id", "searchable_chunks", "excerpts"),
+                    (
+                        "id",
+                        "title",
+                        "version",
+                        "content_id",
+                        "searchable_chunks",
+                        "excerpts",
+                    ),
                     book,
                 )
             )
@@ -937,11 +980,17 @@ def check() -> None:
     import tempfile
 
     book = {"id": "b", "subject_id": "statistics"}
-    subjects = {"statistics": {"label": "Statistics"}, "probability": {"label": "Probability"}}
+    subjects = {
+        "statistics": {"label": "Statistics"},
+        "probability": {"label": "Probability"},
+    }
     catalog = [{"id": "t1", "label": "T", "aliases": [], "scope": "s"}]
     with tempfile.TemporaryDirectory() as tmp:
         run = Path(tmp)
-        assert book_topics(run, {"topics": catalog}, book, subjects)[0]["subject_id"] == "statistics"
+        assert (
+            book_topics(run, {"topics": catalog}, book, subjects)[0]["subject_id"]
+            == "statistics"
+        )
         try:
             book_topics(run, {}, book, subjects)
             raise AssertionError("a run without topics.json needs manifest topics")
@@ -955,7 +1004,9 @@ def check() -> None:
             assert "topic 'probability' (Probability rules)" in str(exc)
             assert "subject 'probability' (Probability)" in str(exc)
         save_json(run / "topics.json", {"subject_id": "statistics", "topics": catalog})
-        assert book_topics(run, {}, book, subjects) == [catalog[0] | {"subject_id": "statistics"}]
+        assert book_topics(run, {}, book, subjects) == [
+            catalog[0] | {"subject_id": "statistics"}
+        ]
         try:
             book_topics(run, {}, book | {"subject_id": "algebra"}, subjects)
             raise AssertionError("topics.json for another subject must be refused")
@@ -975,18 +1026,32 @@ def check() -> None:
             pass
         # Receipts without the pilot's priced summary come from the stage state.
         (run / "models/tags/realtime").mkdir(parents=True)
-        save_json(run / "models/tags/state.json", {"model": "m", "transport": "normal-api"})
+        save_json(
+            run / "models/tags/state.json", {"model": "m", "transport": "normal-api"}
+        )
         save_json(
             run / "models/tags/realtime/state.json",
-            {"normal_requests": 3, "collection": {"success": 3}, "usage": {"prompt_tokens": 9}},
+            {
+                "normal_requests": 3,
+                "collection": {"success": 3},
+                "usage": {"prompt_tokens": 9},
+            },
         )
         (run / "embedding-usage.jsonl").write_text(
             '{"stage":"b","inputs":2,"usage":{"embedTokens":50,"calls":1}}\n', "utf-8"
         )
         rows = {r["stage"]: r for r in model_run_rows(run)}
-        assert rows["tags"]["attempts"] == 3 and rows["tags"]["usage"] == {"prompt_tokens": 9}
-        assert rows["tags"]["model"] == "m" and rows["tags"]["approximate_cost_usd"] is None
-        assert rows["embeddings"]["usage"] == {"tokens": 50} and rows["embeddings"]["attempts"] == 1
+        assert rows["tags"]["attempts"] == 3 and rows["tags"]["usage"] == {
+            "prompt_tokens": 9
+        }
+        assert (
+            rows["tags"]["model"] == "m"
+            and rows["tags"]["approximate_cost_usd"] is None
+        )
+        assert (
+            rows["embeddings"]["usage"] == {"tokens": 50}
+            and rows["embeddings"]["attempts"] == 1
+        )
     assert "statistics" in load_subjects(), "the pilot books name this subject"
 
     # Two versions of one book must not share chunk ids: the builder derives
@@ -1001,14 +1066,20 @@ def check() -> None:
         "release_sha": "sha",
         "excerpts": [{"id": "e1"}, {"id": "e2"}],
     }
-    tagged = {"tags": {"e1": {"roles": ["formal"], "topic_ids": ["t1"]}}, "failed_tags": {"e2": {}}}
-    assert corpus_identity(base, pin, tagged) == corpus_identity(dict(base), pin, dict(tagged)), (
-        "an unchanged corpus must keep its identity so a republish is refused"
-    )
+    tagged = {
+        "tags": {"e1": {"roles": ["formal"], "topic_ids": ["t1"]}},
+        "failed_tags": {"e2": {}},
+    }
+    assert corpus_identity(base, pin, tagged) == corpus_identity(
+        dict(base), pin, dict(tagged)
+    ), "an unchanged corpus must keep its identity so a republish is refused"
     assert corpus_identity(base, pin, tagged) != corpus_identity(
         base | {"parser_fingerprint": "fp2"}, pin, tagged
     )
-    retagged = {"tags": {"e1": {"roles": ["formal"], "topic_ids": ["t2"]}}, "failed_tags": {}}
+    retagged = {
+        "tags": {"e1": {"roles": ["formal"], "topic_ids": ["t2"]}},
+        "failed_tags": {},
+    }
     assert corpus_identity(base, pin, tagged) != corpus_identity(base, pin, retagged), (
         "a retag or topic rename changes the excerpt rows, so it is a new version"
     )
@@ -1019,9 +1090,7 @@ def check() -> None:
 
     present = {"books/" + "a" * 64 + ".pdf"}
     original = blobstore.library_object_info
-    blobstore.library_object_info = lambda key: (
-        {"size": 1} if key in present else None
-    )
+    blobstore.library_object_info = lambda key: {"size": 1} if key in present else None
     try:
         assert verify_object("a" * 64) == "books/" + "a" * 64 + ".pdf"
         try:
@@ -1031,13 +1100,15 @@ def check() -> None:
             pass
     finally:
         blobstore.library_object_info = original
-    print("Library excerpt/figure assembly, summary, topics, receipts, identity, id versioning and object checks passed")
+    print(
+        "Library excerpt/figure assembly, summary, topics, receipts, identity, id versioning and object checks passed"
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("schema", help="create the library schema (no migration path)")
+    sub.add_parser("schema", help="create or update the library-owned schema")
     p = sub.add_parser("publish", help="load a run's books as their next version")
     p.add_argument("--run", type=Path, required=True)
     p.add_argument(
@@ -1061,7 +1132,10 @@ def main() -> None:
     p = sub.add_parser("rollback", help="point a book back at a retained version")
     p.add_argument("--book", required=True)
     p.add_argument("--version", type=int, required=True)
-    p = sub.add_parser("retire", help="drop a retained version's content rows and the topics only it kept")
+    p = sub.add_parser(
+        "retire",
+        help="drop a retained version's content rows and the topics only it kept",
+    )
     p.add_argument("--book", required=True)
     p.add_argument("--version", type=int, required=True)
     sub.add_parser("status")

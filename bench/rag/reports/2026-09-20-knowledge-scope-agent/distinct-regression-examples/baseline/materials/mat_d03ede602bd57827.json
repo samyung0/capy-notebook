@@ -1,0 +1,51 @@
+{
+ "id": "mat_d03ede602bd57827",
+ "kind": "note",
+ "title": "Simple Linear Regression: Two Worked Examples",
+ "content": "# Simple Linear Regression — Two Worked Examples\n\n**The model:** ŷ = b₀ + b₁x, where b₁ is the slope and b₀ the intercept. Two properties of the least squares line let you find them from summary statistics:\n\n- **Slope:** b₁ = (s_y / s_x) · R, where R is the correlation between x and y, and s_x, s_y are the sample standard deviations of the explanatory and response variables.\n- **Point of averages:** the point (x̄, ȳ) always lies on the least squares line, so b₀ = ȳ − b₁x̄.\n\n---\n\n## Worked Example 1 — Elmhurst College: gift aid from family income\n*(OpenIntro Statistics, Example 8.10)*\n\n**Data:** n = 100 first-year students; x = family income ($), y = gift aid ($).\n**Summary statistics:** x̄ = 101,780; ȳ = 19,940; s_x = 63,200; s_y = 5,460; R = −0.499.\n\n**Step 1 — Slope:**\nb₁ = (s_y / s_x) · R = (5,460 / 63,200) × (−0.499) = **−0.0431**\n\n**Step 2 — Intercept via the point of averages (point-slope form):**\ny − ȳ = b₁(x − x̄)\ny − 19,940 = −0.0431(x − 101,780)\ny − 19,940 = −0.0431x + 4,386.7\ny = 24,327 − 0.0431x\n\n**Fitted line:** **âid = 24,327 − 0.0431 × family income**\n(Software output confirms: intercept 24,319.3, slope −0.0431 — minor rounding difference.)\n\n**Interpretation:**\n- Slope: each additional $1,000 of family income predicts about **$43.10 less** gift aid.\n- Intercept: predicted aid is $24,327 when family income is $0 — meaningful here because some students have $0 income.\n\n---\n\n## Worked Example 2 — parenthood.csv: grumpiness from hours of sleep\n*(Learning Statistics with jamovi, Section 12.4.1)*\n\n**Data:** x = dani.sleep (hours of sleep per night), y = dani.grump (grumpiness score, 0–100), over 100 days.\n\n**Step 1 — Fit in software:** run *Regression → Linear Regression* in jamovi, with dani.grump as the dependent variable and dani.sleep as the covariate.\n\n**Step 2 — Read the estimates from the output:**\n- Intercept: b̂₀ = **125.96**\n- Slope: b̂₁ = **−8.94**\n\n**Fitted line:** **ŷ = 125.96 − 8.94x**, i.e. grumpiness = 125.96 − 8.94 × (hours of sleep)\n\n**Interpretation:**\n- Slope: each extra hour of sleep predicts a drop of about **8.94 points** in grumpiness.\n- Intercept: predicted grumpiness of 125.96 with zero hours of sleep — an extrapolation outside the observed data, so treat it as a mathematical anchor rather than a realistic prediction.\n\n---\n\n## Key takeaways\n- Both fits are negative-slope lines, but they come from different routes: Example 1 computes b₁ and b₀ **by hand from summary statistics**; Example 2 reads them **from software output**.\n- Always put a \"hat\" on the predicted variable (âid, ŷ) — the line predicts, it doesn't observe.\n- Interpret the slope as the average change in y per one-unit change in x; interpret the intercept only when x = 0 is within (or near) the data range.\n- Before trusting a fit, check the conditions: roughly linear trend, no obvious outliers, roughly constant variance, and independent (non-time-series) observations.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_566_v2",
+  "exc_45ecdb7da7734b_279_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_279_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "729 tokens",
+ "edits": []
+}

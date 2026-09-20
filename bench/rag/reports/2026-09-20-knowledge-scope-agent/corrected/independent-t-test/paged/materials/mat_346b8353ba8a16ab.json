@@ -1,0 +1,65 @@
+{
+ "id": "mat_346b8353ba8a16ab",
+ "kind": "note",
+ "title": "Independent-Samples t-Test: Concept and Worked Example",
+ "content": "# The Independent-Samples t-Test\n\n## What it is\nThe **independent-samples t-test** (Student's t-test for two groups) asks whether two *independent* samples — samples with no special relationship between observations, e.g. people randomly assigned to two different groups — come from populations with the same mean. It comes in two forms: **Student's** (assumes equal population variances) and **Welch's** (does not).\n\n## Hypotheses\n- H₀: μ₁ = μ₂ (the two population means are identical, so μ₁ − μ₂ = 0)\n- H₁: μ₁ ≠ μ₂ (two-sided; one-sided versions test μ₁ > μ₂ or μ₁ < μ₂)\n\n## The test statistic\nIf H₀ is true, the difference between sample means X̄₁ − X̄₂ should be close to zero. We standardize that difference by its standard error:\n\n$$t = \\frac{\\bar{X}_1 - \\bar{X}_2}{SE}$$\n\nFor Student's version, the standard error uses the **pooled variance** s² — a weighted average of the two sample variances, weighted by sample size — so compute the pooled variance first:\n\n$$s^2 = \\frac{(n_1-1)s_1^2 + (n_2-1)s_2^2}{n_1+n_2-2}$$\n\nDegrees of freedom: **df = n₁ + n₂ − 2**. The samples need not be the same size.\n\n## Assumptions\n- The outcome is measured on a scale with meaningful means (interval/ratio).\n- Each population is approximately **normal**.\n- **Independence** of observations within and between groups.\n- For Student's test: **equal population variances** (Welch's test relaxes this, at the cost of a more complicated formula and reduced df).\n\n## Worked example: Do the two tutors' students differ?\nQuestion: students were taught by either Anastasia or Bernadette. Do the two groups' grades differ?\n\n**Descriptive statistics**\n\n| Group | Mean | Std. dev. |\n|---|---|---|\n| Anastasia | 74.533 | 8.999 |\n| Bernadette | 69.056 | 5.775 |\n\n**Step 1 — Hypotheses.** H₀: μ₁ = μ₂; H₁: μ₁ ≠ μ₂ (two-sided).\n\n**Step 2 — Pooled variance.**\ns² = [(15−1)(8.999²) + (18−1)(5.775²)] / (15+18−2) = [14(80.98) + 17(33.35)] / 31 ≈ (1133.7 + 567.0)/31 ≈ 54.86, so s ≈ 7.41.\n\n**Step 3 — t-statistic.**\nSE = 7.41 × √(1/15 + 1/18) ≈ 7.41 × 0.351 ≈ 2.60\nt = (74.533 − 69.056)/2.60 ≈ **2.115**\n\n**Step 4 — Decision.** df = 15 + 18 − 2 = **31**; two-sided p = **0.043**. Since p < 0.05, reject H₀: there is a statistically significant difference in mean grades between the two tutors.\n\n**Step 5 — Interpret.** The 95% CI for the mean difference is [0.197, 10.759] (excludes 0, consistent with the test), and Cohen's d ≈ **0.74**, a medium-to-large effect. Anastasia's students average about 5.5 grade points higher.\n\n## Reporting template\n\"An independent-samples t-test showed that grades differed by tutor, t(31) = 2.115, p = .043, d = 0.74, 95% CI [0.20, 10.76].\"",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_239_v2",
+  "exc_858bafa062c60b_66_v2",
+  "exc_dd1e65de648fb2_867_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "introductory-business-statistics",
+    "title": "Introductory Business Statistics",
+    "authors": [
+     "Thomas K. Tiemann"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/33086",
+    "version": 2,
+    "excerptIds": [
+     "exc_858bafa062c60b_66_v2"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_867_v1"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_239_v2"
+    ]
+   }
+  ]
+ },
+ "size": "662 tokens",
+ "edits": []
+}

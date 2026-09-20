@@ -1,0 +1,40 @@
+{
+ "id": "mat_382fc9e7277c2060",
+ "kind": "note",
+ "title": "Historical Development of Chinese Contract Law",
+ "content": "# Historical Development of Chinese Contract Law\n\n## Imperial China (pre-1911)\n- Whether Imperial China had \"civil law\" (as opposed to criminal law) is **debatable**: scholars such as **Liang Chichao (梁啟超)** and **Wang Boqi (王伯琦)** argued it did not exist, while **Yang Honglie (楊鴻烈)** held the opposite view.\n- What is beyond dispute: **no civil code ever existed** in Imperial China, though there was **separate legislation on marriage and debt**.\n\n## Late Qing: first draft civil code\n- **1902**: Emperor Guang Xu formed a team to draft a civil code modelled on **Continental European codes**.\n- Drafting ran **1908–1910**, producing the **Draft Civil Law of Great Qing (《大清民律草案》)** — the first civil code in China's history, though only in draft form.\n- It was **never enacted**: the Qing Dynasty was overthrown shortly afterwards.\n\n## Republican era: first enacted civil code\n- **April 1927**: National Government established; **December 1928**: the Legislative Yuan took charge of drafting.\n- **January 1929**: Drafting Committee of the Civil Code set up; compilation began **February 1929**.\n- **26 December 1930**: the **Civil Law of the Republic of China (《中華民國民法》)** was promulgated — the first enacted civil code in Chinese history, containing **detailed contract law provisions**.\n\n## People's Republic of China (post-1949)\n- **1954**: drafting of a new civil code began; a draft was completed in **December 1956**, but it was never enacted due to the **antirightist movements and the Cultural Revolution**; political unrest ended in **1978**.\n- Rather than revive the old draft, China legislated on contract law **piecemeal** to serve the economic reform starting in 1979:\n  - **Economic Contract Law (1981)**\n  - **Foreign Economic Contract Law (1985)**\n  - **Technology Contract Law (1987)**\n- The **General Principles of Civil Law (GPCL, 1985)** is **not a civil code** — only \"general principles\", like the introductory chapter of a still-unfinished code.\n- The three contract statutes were **not comprehensive**: they contained **contradictory provisions** with **overlapping scopes**.\n\n## The 1999 unified Contract Law\n- **1993**: drafting of a new Contract Law began, intended to replace the three statutes.\n- The drafters (largely legal academics) drew extensively on international and comparative sources: the **UNIDROIT Principles of International Commercial Contracts (PICC)**, the **CISG**, the **Principles of European Contract Law (PECL)**, the **French and German civil codes**, and **English common law**.\n- **Passed 15 March 1999, effective 1 October 1999**; supplemented by Supreme People's Court judicial interpretations (including on technology and construction contracts).\n- The 1999 Contract Law remained unrevised as of the source text's writing.\n\n## Timeline at a glance\n| Year | Milestone |\n|---|---|\n| 1902–1910 | Draft Civil Law of Great Qing (never enacted) |\n| 1930 | Civil Law of the Republic of China promulgated |\n| 1954–1956 | PRC civil code draft (not enacted) |\n| 1981 / 1985 / 1987 | Economic, Foreign Economic, Technology Contract Laws |\n| 1985 | General Principles of Civil Law |\n| 1993 | Drafting of unified Contract Law begins |\n| 1999 | Unified PRC Contract Law (effective 1 Oct 1999) |",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_3af200c915ae90_13_v1",
+  "exc_3af200c915ae90_14_v1",
+  "exc_3af200c915ae90_15_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "chinese-contract-law",
+    "title": "Chinese Contract Law",
+    "authors": [
+     "Walter Lee",
+     "Jenny Chung",
+     "Caroline Leung",
+     "Dr Zhang Xiaoyang",
+     "Shi Xuemei"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+    "version": 1,
+    "excerptIds": [
+     "exc_3af200c915ae90_13_v1",
+     "exc_3af200c915ae90_14_v1",
+     "exc_3af200c915ae90_15_v1"
+    ]
+   }
+  ]
+ },
+ "size": "826 tokens",
+ "edits": []
+}

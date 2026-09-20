@@ -1,0 +1,88 @@
+{
+  "artifact_type": "sol-topics-trial-role-verification",
+  "book_id": "chinese-contract-law",
+  "source_sha256": "6d7582f965c330db2e3e85e8787a38a9c73be92b22ce6a2dbe0f333b2c807913",
+  "inspected_pages": [
+    {
+      "pdf_page": 1,
+      "rendered_page_path": "data/knowledge-base/runs/chinese-contract-law/source-review-sol/pages/001.jpg",
+      "observation": "Front cover with the book title, publisher branding, open-textbook slogans, and CC BY-SA mark; no teaching content."
+    },
+    {
+      "pdf_page": 2,
+      "rendered_page_path": "data/knowledge-base/runs/chinese-contract-law/source-review-sol/pages/002.jpg",
+      "observation": "Copyright year and CC BY-SA licence statement only; no teaching content."
+    },
+    {
+      "pdf_page": 3,
+      "rendered_page_path": "data/knowledge-base/runs/chinese-contract-law/source-review-sol/pages/003.jpg",
+      "observation": "One-page contents list naming sections, activities, cases, and self-tests; it does not teach or ask any of those exercises."
+    },
+    {
+      "pdf_page": 4,
+      "rendered_page_path": "data/knowledge-base/runs/chinese-contract-law/source-review-sol/pages/004.jpg",
+      "observation": "Course credits, production attribution, copyright, licence, and institutional address only; no teaching content."
+    },
+    {
+      "pdf_page": 5,
+      "rendered_page_path": "data/knowledge-base/runs/chinese-contract-law/source-review-sol/pages/005.jpg",
+      "observation": "The page begins with the chapter heading and licence banner, followed by the substantive introduction. Corpus excerpt 3 contains only the licence banner; excerpt 4 contains the introduction and remains teaching content."
+    },
+    {
+      "pdf_page": 6,
+      "rendered_page_path": "data/knowledge-base/runs/chinese-contract-law/source-review-sol/pages/006.jpg",
+      "observation": "The page starts with the final learning-objective bullet, then section 1.1 begins. Corpus excerpt 5 contains only that objective; excerpt 6 contains the substantive section and remains teaching content."
+    }
+  ],
+  "role_corrections": [
+    {
+      "excerpt_id": "exc_3af200c915ae90_0",
+      "pdf_pages": [1, 2],
+      "before_roles": ["reference"],
+      "after_roles": ["non_teaching"],
+      "after_topic_ids": []
+    },
+    {
+      "excerpt_id": "exc_3af200c915ae90_1",
+      "pdf_pages": [3],
+      "before_roles": ["exercise", "introduction", "reference"],
+      "after_roles": ["non_teaching"],
+      "after_topic_ids": []
+    },
+    {
+      "excerpt_id": "exc_3af200c915ae90_2",
+      "pdf_pages": [4],
+      "before_roles": ["reference"],
+      "after_roles": ["non_teaching"],
+      "after_topic_ids": []
+    },
+    {
+      "excerpt_id": "exc_3af200c915ae90_3",
+      "pdf_pages": [5],
+      "before_roles": ["reference"],
+      "after_roles": ["non_teaching"],
+      "after_topic_ids": []
+    },
+    {
+      "excerpt_id": "exc_3af200c915ae90_5",
+      "pdf_pages": [6],
+      "before_roles": ["introduction"],
+      "after_roles": ["non_teaching"],
+      "after_topic_ids": []
+    }
+  ],
+  "ambiguities": [
+    "Physical pages 5 and 6 mix administrative or objective-only material with teaching content, but the canonical corpus already separates those spans into excerpts 3/4 and 5/6 respectively, so the role corrections do not remove the adjacent teaching passages."
+  ],
+  "validation": {
+    "helper": "bench.rag.scripts.knowledge_base_pilot.tag_outputs",
+    "candidate_tag_count": 58,
+    "review_item_count": 0,
+    "all_evidence_verified": true,
+    "teaching_role_topic_contract": true,
+    "synopses_preserved": true,
+    "evidence_preserved": true,
+    "retrieval_fields_preserved": true,
+    "topic_assignment_mismatches": []
+  }
+}

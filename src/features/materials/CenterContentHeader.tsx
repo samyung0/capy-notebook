@@ -210,7 +210,6 @@ export function Header({
   readOnly: boolean;
   workspaceId: string;
 }) {
-  // TODO: magic wand for summary/AI related stuff, then some tool box? same action menu
   const {
     file,
     icon,
@@ -232,11 +231,18 @@ export function Header({
     <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
       {leading}
       {leading && (
-        <span className="shrink-0 font-semibold text-line-strong">/</span>
+        <span className="shrink-0 font-normal text-line-strong text-xl leading-none">
+          /
+        </span>
       )}
-      <div className="flex min-w-0 items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1 sm:ml-1">
         <FileIcon className="size-4.5 shrink-0" name={icon} />
-        <h2 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
+        <h2
+          className={cn(
+            'ml-1 min-w-0 flex-1 truncate',
+            leading ? 't-body font-semibold' : 't-subtitle translate-y-px'
+          )}
+        >
           {title ?? '--'}
         </h2>
         {statusLabel && (
@@ -344,7 +350,10 @@ export function Header({
                 ]
               : []
           }
-          menuIconContainerClassName="shrink-0"
+          menuIconContainerClassName={cn(
+            'shrink-0',
+            leading && 'px-1 py-2.5 text-fg-muted [&>svg]:size-4.25'
+          )}
           onDeleted={onDeleted}
           readOnly={readOnly}
           renameFieldLabel={m.files_file_name()}

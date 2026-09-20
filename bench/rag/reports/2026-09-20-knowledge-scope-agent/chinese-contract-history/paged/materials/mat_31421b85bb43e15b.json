@@ -1,0 +1,40 @@
+{
+ "id": "mat_31421b85bb43e15b",
+ "kind": "note",
+ "title": "Historical Development of Chinese Contract Law",
+ "content": "# Historical Development of Chinese Contract Law\n\n## 1. Before modern codes: Imperial China\n- No civil code ever existed in Imperial China, but there was **separate legislation on marriage and debt**.\n\n## 2. Late Qing dynasty: first draft code\n- **1902**: Emperor Guang Xu formed a team to draft a civil code modelled on Continental European codes.\n- Drafting ran **1908–1910**, producing the **Draft Civil Law of Great Qing (《大清民律草案》)** — the first civil code in China's history, though only in draft form.\n- Never enacted: the Qing Dynasty was overthrown shortly afterwards.\n\n## 3. Republican era: first enacted civil code\n- **April 1927**: National Government established; **December 1928**: the Legislative Yuan took charge of drafting.\n- **January 1929**: Drafting Committee of the Civil Code set up; compilation began February 1929.\n- **26 December 1930**: the **Civil Law of the Republic of China (《中華民國民法》)** promulgated — the first civil code in China's history, containing detailed contract law provisions.\n\n## 4. PRC era: failed codification, then piecemeal statutes\n- After 1949, drafting of a new civil code began in **1954**; a draft was completed in **December 1956**, but enactment was blocked by the antirightist movements and the Cultural Revolution.\n- Political unrest ended in **1978**; rather than revive the old draft, China legislated piecemeal to meet the needs of economic reform (from 1979):\n  - **Economic Contract Law (1981)**\n  - **Foreign Economic Contract Law (1985)**\n  - **Technology Contract Law (1987)**\n- The **General Principles of Civil Law (GPCL, 1985)** is not a civil code — only \"general principles\", like the introductory chapter of a still-unfinished code.\n\n## 5. The 1999 unified Contract Law\n- The three 1980s statutes were not comprehensive: they contained **contradictory provisions** and **overlapping scopes**.\n- **1993**: drafting of a new Contract Law began to replace all three. Drafters — largely legal academics — drew extensively on:\n  - UNIDROIT Principles of International Commercial Contracts (PICC)\n  - UN Convention on Contracts for the International Sale of Goods (CISG)\n  - Principles of European Contract Law (PECL)\n  - French and German civil codes, and English common law\n- **Passed 15 March 1999, effective 1 October 1999**; supplemented by the Supreme People's Court's Interpretation on Several Issues Regarding the Application of the Contract Law (1) and other judicial interpretations (technology and construction contracts).\n\n## 6. Comparative context (why the 1999 law looks the way it does)\n- **Code of Hammurabi (c. 1792 BC)**: 282 articles, over 53% on contractual relationships (sales, leases, adoption, marriage); fault liability, strict formalism, harsh enforcement.\n- **Roman law**: first to distinguish breach of contract from tort; origin of modern Continental contract law, underlying the **French Civil Code (1804)** — which first established **freedom of contract** — and the **German Civil Code (BGB)**.\n- **England**: modern contract principles developed in common law courts in the early 19th century (John Powell's *Essay upon the Law of Contracts and Agreements*); freedom of contract traced to Adam Smith, famously stated in *Printing and Numerical Registering Co. v. Sampson* (1875). In the Middle Ages contract validity turned on a \"fair price\"; by the 19th century freedom of contract was firmly established and courts no longer examined the adequacy of consideration.\n- **Modern trends**: freedom of contract now regulated by welfare-state, consumer-protection and environmental concerns; **internationalisation** of contract law (Hague uniform laws 1964 → CISG formulated 1978, adopted 1980, effective 1988; UNIDROIT Principles 1994; PECL in the EU) — the very sources the 1999 Chinese drafters consulted.\n\n## Key takeaway\nChinese contract law evolved from separate imperial legislation on marriage and debt → a never-enacted Qing draft code → the 1930 Republican civil code → post-1949 failed codification and three piecemeal 1980s statutes → the unified **1999 Contract Law**, heavily informed by international instruments and comparative civil and common law.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_3af200c915ae90_14_v1",
+  "exc_3af200c915ae90_11_v1",
+  "exc_3af200c915ae90_12_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "chinese-contract-law",
+    "title": "Chinese Contract Law",
+    "authors": [
+     "Walter Lee",
+     "Jenny Chung",
+     "Caroline Leung",
+     "Dr Zhang Xiaoyang",
+     "Shi Xuemei"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+    "version": 1,
+    "excerptIds": [
+     "exc_3af200c915ae90_11_v1",
+     "exc_3af200c915ae90_12_v1",
+     "exc_3af200c915ae90_14_v1"
+    ]
+   }
+  ]
+ },
+ "size": "1049 tokens",
+ "edits": []
+}

@@ -53,9 +53,11 @@ ENV_KEYS = (
 LOG = logging.getLogger("builder")
 PILOT_CONFIG = store.REPO / "data/knowledge-base-pilot-v4/config.json"
 UI = Path(__file__).resolve().parent / "ui.html"
-SUBJECTS = json.loads(
+TAXONOMY = json.loads(
     (Path(__file__).resolve().parent / "subjects.json").read_text(encoding="utf-8")
-)["subjects"]
+)
+SUBJECTS = TAXONOMY["subjects"]
+AREAS = TAXONOMY["areas"]
 # Required at the manual gate; `edition` is optional and the licence evidence
 # is either a URL or a PDF page, as in the manifest.
 MANIFEST_FIELDS = (
@@ -94,11 +96,12 @@ def ensure_config() -> None:
 # --- library ------------------------------------------------------------------
 
 _keys: tuple[float, set[str] | None] = (0.0, None)
+_coverage: tuple[float, dict | None] = (0.0, None)
 
 
-def library_query(sql: str) -> set[str] | None:
-    """First column of one read-only library query; None when the library
-    cannot be reached."""
+def library_fetch(*sqls: str) -> list[list[tuple]] | None:
+    """The rows of read-only library queries over one connection; None when
+    the library cannot be reached."""
     url = os.environ.get("LIBRARY_DATABASE_URL")
     if not url:
         return None
@@ -107,9 +110,16 @@ def library_query(sql: str) -> set[str] | None:
 
         ensure_tunnel((LIBRARY_PORT,))
         with psycopg.connect(url, connect_timeout=5) as conn:
-            return {r[0] for r in conn.execute(sql).fetchall()}
+            return [conn.execute(sql).fetchall() for sql in sqls]
     except Exception:  # noqa: BLE001 - the dashboard shows the library as unreachable
         return None
+
+
+def library_query(sql: str) -> set[str] | None:
+    """First column of one read-only library query; None when the library
+    cannot be reached."""
+    rows = library_fetch(sql)
+    return None if rows is None else {r[0] for r in rows[0]}
 
 
 def library_object_keys() -> set[str] | None:
@@ -123,6 +133,64 @@ def library_object_keys() -> set[str] | None:
     )
     _keys = (time.time(), keys)
     return keys
+
+
+# Tagged excerpts of current book versions joined to their topics' subjects:
+# the unit the Library tab counts. A book's subject is the one its topics were
+# published under.
+_PAIRS = """
+WITH pairs AS (
+  SELECT e.book_id, e.id AS excerpt_id, t.id AS topic_id, t.subject_id
+  FROM library_excerpts e
+  JOIN library_books b ON b.content_id = e.content_id
+  CROSS JOIN unnest(e.topic_ids) AS x(topic_id)
+  JOIN library_topics t ON t.id = x.topic_id
+  WHERE e.tag_status = 'tagged'
+)"""
+
+
+def library_coverage() -> dict | None:
+    """Books, topics and tagged excerpts per subject, with each subject's books
+    and topics; None when the library cannot be reached. Cached for a minute."""
+    global _coverage
+    if time.time() - _coverage[0] < 60:
+        return _coverage[1]
+    rows = library_fetch(
+        _PAIRS
+        + """
+        SELECT s.area, s.id, s.label,
+               (SELECT count(*) FROM library_topics t WHERE t.subject_id = s.id),
+               count(DISTINCT p.book_id), count(DISTINCT p.excerpt_id)
+        FROM library_subjects s LEFT JOIN pairs p ON p.subject_id = s.id
+        GROUP BY s.area, s.id, s.label ORDER BY s.label""",
+        _PAIRS
+        + """
+        SELECT p.subject_id, b.id, b.title, b.version, count(DISTINCT p.excerpt_id)
+        FROM pairs p JOIN library_books b ON b.id = p.book_id
+        GROUP BY p.subject_id, b.id, b.title, b.version ORDER BY b.title""",
+        _PAIRS
+        + """
+        SELECT t.subject_id, t.id, t.label, count(DISTINCT p.excerpt_id)
+        FROM library_topics t LEFT JOIN pairs p ON p.topic_id = t.id
+        GROUP BY t.subject_id, t.id, t.label ORDER BY t.label""",
+    )
+    coverage = rows and {
+        "checked_at": time.time(),
+        "areas": AREAS,
+        "subjects": [
+            dict(zip(("area", "id", "label", "topics", "books", "excerpts"), r))
+            for r in rows[0]
+        ],
+        "subject_books": [
+            dict(zip(("subject_id", "id", "title", "version", "excerpts"), r))
+            for r in rows[1]
+        ],
+        "subject_topics": [
+            dict(zip(("subject_id", "id", "label", "excerpts"), r)) for r in rows[2]
+        ],
+    }
+    _coverage = (time.time(), coverage)
+    return coverage
 
 
 # --- sources ------------------------------------------------------------------
@@ -423,6 +491,13 @@ def build_app():
     @app.get("/api/state")
     def get_state(held: str | None = None):
         return state(held)
+
+    @app.get("/api/library/coverage")
+    def get_coverage():
+        coverage = library_coverage()
+        if coverage is None:
+            raise HTTPException(503, "the library is unreachable")
+        return coverage
 
     @app.post("/api/workflows/{workflow}/{action}")
     def switch(workflow: str, action: str):

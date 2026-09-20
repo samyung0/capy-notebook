@@ -1,0 +1,59 @@
+{
+ "id": "mat_79ed13be067d48c4",
+ "kind": "note",
+ "title": "Simple Linear Regression (with Worked Example)",
+ "content": "# Simple Linear Regression — Study Note\n\n## What it is\nSimple linear regression models the relationship between one **explanatory variable** x and one **response variable** y with a straight line:\n\n**ŷ = a + b·x**\n\n- **b (slope):** the predicted change in y for a one-unit increase in x.\n- **a (intercept):** the predicted value of y when x = 0 (only meaningful if x = 0 is plausible or observed).\n- The line is called the **least-squares regression line (LSRL)** because it is fit by minimizing the sum of the squared residuals (the vertical distances between the points and the line).\n- The line always passes through the **point of averages (x̄, ȳ)**.\n\n## Finding the line from summary statistics\n1. **Slope:** b = r · (s_y / s_x), where r is the correlation between x and y, and s_x, s_y are the sample standard deviations of x and y.\n2. **Intercept:** since (x̄, ȳ) lies on the line, a = ȳ − b·x̄.\n\n## Coefficient of determination R²\n- R² = r² is the **proportion of variation in y explained** by the linear relationship with x.\n- It ranges from 0 to 1 (or 0%–100%); higher = better fit. It is always positive, so it cannot tell you the *direction* of the association — use the scatterplot or the slope's sign for that.\n\n## Conditions for fitting a line\n- The trend should be roughly linear, with no obvious outliers.\n- The variability around the line should be roughly constant.\n- Observations should be independent (e.g., not a time series).\n\n## Worked example: predicting gift aid from family income (Elmhurst College)\nSummary statistics (x = family income, y = gift aid, in dollars):\n\n- x̄ = $101,780, ȳ = $19,940\n- s_x = $63,200, s_y = $5,460, correlation R = −0.499\n\n**Step 1 — slope:**\n\nb₁ = (s_y / s_x) · R = (5,460 / 63,200) · (−0.499) = **−0.0431**\n\n**Step 2 — intercept, using the point of averages:**\n\na = ȳ − b₁·x̄ = 19,940 − (−0.0431)(101,780) ≈ **24,327**\n\n**Fitted line:** aid = 24,327 − 0.0431 × family income\n\n(Computer output confirms: intercept ≈ 24,319.3, slope = −0.0431, minor rounding differences.)\n\n**Interpretation:**\n- **Slope:** each additional $1,000 of family income is associated with about **$43.10 less** predicted gift aid.\n- **Intercept:** predicted gift aid is about **$24.3 thousand** for a family income of $0 — meaningful here because some students have $0 income; in other datasets the intercept may be an unreasonable extrapolation.\n\n## Key takeaways\n- ŷ = a + b·x; slope b = r·s_y/s_x; intercept a = ȳ − b·x̄.\n- The LSRL minimizes squared residuals and passes through (x̄, ȳ).\n- Interpret slope, intercept, and R² **in context**, and check the conditions before trusting the fit.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_566_v2",
+  "exc_0689cddaba206d_703_v2",
+  "exc_0689cddaba206d_728_v2",
+  "exc_f213361bf057b0_564_v2",
+  "exc_0689cddaba206d_705_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_703_v2",
+     "exc_0689cddaba206d_705_v2",
+     "exc_0689cddaba206d_728_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v2",
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "657 tokens",
+ "edits": []
+}

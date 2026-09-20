@@ -72,6 +72,7 @@ export function FilesPanel({
   beforeReplace,
   onRenameChapter,
   renderTabRow,
+  contentClassName,
 }: {
   workspaceId: string;
   readOnly: boolean;
@@ -82,6 +83,7 @@ export function FilesPanel({
   beforeReplace: () => boolean;
   onRenameChapter: (chapter: Chapter) => void;
   renderTabRow: (actions: TabAction[]) => ReactNode;
+  contentClassName?: string;
 }) {
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
@@ -378,7 +380,12 @@ export function FilesPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       {renderTabRow(actions)}
-      <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-2">
+      <div
+        className={cn(
+          'min-h-0 flex-1 overflow-auto px-2.5 pb-2',
+          contentClassName
+        )}
+      >
         {!chapters && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
         )}

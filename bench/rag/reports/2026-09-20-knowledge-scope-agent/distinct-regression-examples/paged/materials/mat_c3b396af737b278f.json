@@ -1,0 +1,72 @@
+{
+ "id": "mat_c3b396af737b278f",
+ "kind": "note",
+ "title": "Simple Linear Regression: Two Worked Examples",
+ "content": "# Simple Linear Regression — Two Worked Examples\n\n**Model:** ŷ = b₀ + b₁x, fitted by least squares (minimizing the sum of squared residuals).\n\n**Key facts used in both examples:**\n- Slope from summary statistics: **b₁ = (s_y / s_x) · R**, where R is the correlation and s_x, s_y the sample standard deviations.\n- The point of averages **(x̄, ȳ) always lies on the least squares line**, so with point–slope form y − ȳ = b₁(x − x̄) we get **b₀ = ȳ − b₁x̄**.\n\n---\n\n## Example 1 — Predicting gift aid from family income (Elmhurst College data)\n\n*Source: OpenIntro Statistics, Ch. 8 (Example 8.10, Guided Practice 8.9)*\n\n**Given summary statistics** (x = family income, y = gift aid, both in $):\n- x̄ = 101,780, ȳ = 19,940\n- s_x = 63,200, s_y = 5,460\n- R = −0.499\n\n**Step 1 — Slope:**\n\nb₁ = (s_y / s_x) · R = (5,460 / 63,200) × (−0.499) = **−0.0431**\n\n**Step 2 — Intercept via the point of averages** (point–slope form with (101,780, 19,940)):\n\ny − 19,940 = −0.0431(x − 101,780)\ny − 19,940 = −0.0431x + 4,386.7\n**âid = 24,327 − 0.0431 × family income**\n\n(Computer output confirms: intercept 24,319.3, slope −0.0431 — small rounding differences.)\n\n**Interpretation:**\n- *Slope:* each additional $1,000 of family income predicts **$43.10 less** gift aid.\n- *Intercept:* predicted aid is $24,327 when family income is $0 — meaningful here because some families truly have $0 income.\n\n---\n\n## Example 2 — Predicting grumpiness from sleep (parenthood dataset)\n\n*Source: Learning Statistics with jamovi, Ch. 12 (Section 12.4.1)*\n\n**Setup:** x = dani.sleep (hours of sleep), y = dani.grump (grumpiness rating), n = 100 days. Fitted in jamovi via Regression → Linear Regression.\n\n**Software output (Model Coefficients):**\n\n| Predictor | Estimate | SE | t | p |\n|---|---|---|---|---|\n| Intercept | 125.96 | 3.02 | 41.78 | <0.0001 |\n| dani.sleep | −8.94 | 0.43 | −20.85 | <0.0001 |\n\n**Fitted line:**\n\nŶᵢ = 125.96 + (−8.94) Xᵢ\n\nModel fit: R = 0.90, R² = 0.82 — sleep explains about 82% of the variation in grumpiness.\n\n**Interpretation:**\n- *Slope:* each extra hour of sleep predicts about **8.94 fewer grumpiness points** on average.\n- *Intercept:* predicted grumpiness is 125.96 with zero hours of sleep — an extrapolation far outside the observed data, so treat it as a mathematical anchor rather than a realistic prediction.\n\n---\n\n## Takeaways\n- Both fits are computed the same way: slope from (s_y/s_x)R (or software), intercept from b₀ = ȳ − b₁x̄.\n- Always put a \"hat\" on the predicted variable (âid, Ŷ).\n- Interpret the slope as the average change in y per unit change in x; interpret the intercept only when x = 0 is within (or near) the data range.\n\n```mermaid\nmindmap\n  root((Simple linear regression))\n    Model ŷ = b0 + b1x\n      Least squares minimizes squared residuals\n      Slope b1 = sy/sx × R\n      Intercept b0 = ȳ − b1x̄\n    Example 1 Elmhurst aid\n      x family income, y gift aid\n      b1 = −0.0431\n      aid = 24,327 − 0.0431 × income\n      +$1k income → −$43.10 aid\n    Example 2 parenthood sleep\n      x sleep, y grumpiness\n      Ŷ = 125.96 − 8.94X\n      R² = 0.82\n      +1 hr sleep → −8.94 grump\n    Interpretation\n      Slope: change in y per unit x\n      Intercept: only if x = 0 is realistic\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_566_v2",
+  "exc_f213361bf057b0_564_v2",
+  "exc_45ecdb7da7734b_279_v2",
+  "exc_0689cddaba206d_705_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_705_v2"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_279_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v2",
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "802 tokens",
+ "edits": []
+}

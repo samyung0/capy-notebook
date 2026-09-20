@@ -1,0 +1,35 @@
+{
+ "id": "mat_44245df91b1af96a",
+ "kind": "note",
+ "title": "Independent-Samples t-Test in jamovi: Running and Interpreting",
+ "content": "# Independent-Samples t-Test in jamovi\n\n## What it tests\nWhether the means of two independent groups differ. The t-statistic is the difference between the sample means divided by the standard error of that difference:\n\nt = (X̄₁ − X̄₂) / SE(X̄₁ − X̄₂)\n\n## Running it in jamovi\n1. Go to **Analyses → T-Tests → Independent Samples T-Test**.\n2. Move your outcome variable (e.g. `grade`) into the **Dependent Variables** box.\n3. Move your grouping variable (e.g. `tutor`) into the **Grouping Variable** box.\n4. Under options, check the results you want: the test statistic, a confidence interval for the mean difference, and an effect size (Cohen's d). Also consider:\n   - **Welch's test** (unequal variances): the Student test assumes both groups share the same standard deviation — rarely true in practice. Welch's version drops that assumption and computes the standard error and degrees of freedom differently (df need not be a whole number). It is available as an option in the same jamovi analysis.\n   - **One-sided test**: under 'Hypotheses', specify a directional alternative. The t-statistic and df stay the same, but the p-value changes and the confidence interval becomes one-sided (a single bound).\n   - **Mann-Whitney U**: a rank-based alternative if normality is in doubt.\n\n## Reading the output\n- **Test name and dependent variable** — confirms what was run.\n- **t-statistic, degrees of freedom, p-value** — the core test result. A small p-value (e.g. p < .05) means the group difference is statistically significant.\n- **95% confidence interval** — this is a CI for the *difference between the group means*, not for either mean alone. If it excludes 0, the difference is significant at that level. E.g. a CI of [0.20, 10.76] means that across repeated studies, 95% of the time the true difference in means would fall in that range.\n- **Effect size (d)** — how large the difference is in standard-deviation units.\n\n## Worked example\nAnastasia's students: mean grade 74.53; Bernadette's: 69.06; difference = 5.48, 95% CI [0.20, 10.76]. The difference is significant (just barely).\n\n## Writing it up\n> The mean grade in Anastasia's class was 74.5% (SD = 9.0), whereas the mean in Bernadette's class was 69.1% (SD = 5.8). A Student's independent samples t-test showed that this 5.4% difference was significant (t(31) = 2.1, p < .05, CI₉₅ = [0.2, 10.8], d = .74), suggesting a genuine difference in learning outcomes.\n\nAt minimum report t, df, and p: **t(31) = 2.1, p < .05**. Best practice is to also include the confidence interval and effect size — check what your audience or journal expects.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_241_v2",
+  "exc_45ecdb7da7734b_244_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_241_v2",
+     "exc_45ecdb7da7734b_244_v2"
+    ]
+   }
+  ]
+ },
+ "size": "651 tokens",
+ "edits": []
+}

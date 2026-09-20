@@ -1,0 +1,38 @@
+{
+ "id": "mat_a0d363eb2cb8bd0b",
+ "kind": "note",
+ "title": "Simple Linear Regression in R with lm(): Fitting and Interpreting",
+ "content": "# Fitting and Interpreting Simple Linear Regression in R with `lm()`\n\n**Scope:** This note covers R-specific simple linear regression — one outcome, one predictor, with an intercept — using `lm()` and `summary()`, following the *Learning Statistics with R* parenthood example (`danielle_grump ~ danielle_sleep`). The `summary()` layout is illustrated with the book's two-predictor output so every column can be explained; the fitted simple-regression numbers shown are from the one-predictor model. Multiple regression, model comparison, and full diagnostics are out of scope.\n\n## 1. Fitting the model\n\n`lm()` has many arguments, but only two matter here:\n\n- **`formula`** — specifies the model. For simple linear regression (one predictor plus an intercept) it takes the form `outcome ~ predictor`.\n- **`data`** — the data frame containing the variables.\n\n`lm()` returns a complicated object with technical information buried under the hood, and other functions use that information, so store the result in a variable:\n\n```r\nregression_1 <- lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n```\n\n- The formula `outcome ~ predictor` puts the **outcome** (`danielle_grump`) on the left and the **predictor** (`danielle_sleep`) on the right — always remember which is which.\n- The intercept is included **by default**; you never type it into the formula.\n- The result is an \"lm object\" (class `\"lm\"`).\n\n## 2. Quick look: `print()`\n\n```r\nprint(regression_1)\n```\n\n```\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n\nCoefficients:\n(Intercept)  danielle_sleep\n    125.956          -8.937\n```\n\nThe `Call:` line reminds you what model you fitted. The coefficients give the best-fitting regression line:\n\n$$\\hat{Y_i} = -8.94\\,X_i + 125.96$$\n\ni.e. intercept $\\hat{b}_0 = 125.96$ and slope $\\hat{b}_1 = -8.94$.\n\n## 3. Full output: `summary()`\n\n`summary()` on a fitted model produces the dense output you actually interpret. Its structure (illustrated here with the book's two-predictor model, `regression_2`, so every section appears):\n\n```\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nResiduals:\n     Min       1Q   Median       3Q      Max\n-11.0345  -2.2198  -0.4016   2.6775   11.7496\n\nCoefficients:\n              Estimate Std. Error t value Pr(>|t|)\n(Intercept)   125.96557    3.04095  41.423  <2e-16 ***\ndanielle_sleep -8.95025    0.55346 -16.172  <2e-16 ***\nbaby_sleep      0.01052    0.27106   0.039    0.969\n---\nSignif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 4.354 on 97 degrees of freedom\nMultiple R-squared: 0.8161,  Adjusted R-squared: 0.8123\nF-statistic: 215.2 on 2 and 97 DF,  p-value: < 2.2e-16\n```\n\n## 4. Reading the output, section by section\n\n**Residuals.** A quick-and-dirty check that the model is okay. The model assumes residuals are normally distributed with mean 0, so check that the **median is close to 0** and the **1st and 3rd quartiles are about the same size**. If they look badly off, the regression assumptions are probably violated. (This is a rough check, not full diagnostics.)\n\n**Coefficients table.** One row per coefficient: the intercept first, then each predictor. Four columns:\n\n| Column | Meaning |\n|---|---|\n| `Estimate` | the coefficient estimate $\\hat{b}$ (e.g. 125.96 for the intercept, −8.9 for the sleep predictor) |\n| `Std. Error` | the standard error of the estimate, $\\widehat{SE}(b)$ |\n| `t value` | the t-statistic; note $t = \\hat{b}\\,/\\,\\widehat{SE}(b)$ every time |\n| `Pr(>|t|)` | the p-value for the test of that coefficient |\n\nThe t-test degrees of freedom are not shown in the table; they are always $N - K - 1$ (sample size minus predictors minus 1) and appear just below. The `***` stars are significance codes (0 `***`, 0.001 `**`, 0.01 `*`, 0.05 `.`, 0.1 blank).\n\n**Model-level statistics** (below the table):\n\n- **Residual standard error** with its degrees of freedom — typical size of prediction error.\n- **Multiple R-squared** — the proportion of variability in the outcome the model accounts for (e.g. $R^2 = .816$ means 81.6% of the variability is explained).\n- **F-statistic** — tests whether the model as a whole performs better than chance (e.g. $F(2, 97) = 215.2$, $p < .001$).\n\n## 5. Interpreting the example\n\n- The slope of −8.94 means grumpiness drops as sleep increases; the intercept 125.96 is the fitted value at zero sleep (often not substantively interesting on its own).\n- A significant F-test plus a large $R^2$ says the model works overall; the per-coefficient t-tests say *which* predictors are doing the work. In the book's two-predictor run, `baby_sleep` had $p = .969$ (no effect) while `danielle_sleep` did all the work — evidence that the simpler one-predictor model (`regression_1`) was the better model for those data.\n\n## Key takeaways\n\n1. Store the fit: `model <- lm(outcome ~ predictor, data = df)`.\n2. `print(model)` for the fitted line; `summary(model)` for tests and fit statistics.\n3. Check residual quartiles for a rough assumption check.\n4. Read coefficients as estimate / SE / t (= estimate ÷ SE) / p-value, with df $= N - K - 1$.\n5. Use $R^2$ and the F-test for the model as a whole; use the t-tests for individual predictors.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_998_v2",
+  "exc_dd1e65de648fb2_999_v2",
+  "exc_dd1e65de648fb2_1019_v2",
+  "exc_dd1e65de648fb2_1020_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 2,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1019_v2",
+     "exc_dd1e65de648fb2_1020_v2",
+     "exc_dd1e65de648fb2_998_v2",
+     "exc_dd1e65de648fb2_999_v2"
+    ]
+   }
+  ]
+ },
+ "size": "1309 tokens",
+ "edits": []
+}

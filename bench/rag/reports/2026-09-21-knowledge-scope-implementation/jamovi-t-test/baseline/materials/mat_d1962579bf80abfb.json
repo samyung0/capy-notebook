@@ -1,0 +1,39 @@
+{
+ "id": "mat_d1962579bf80abfb",
+ "kind": "note",
+ "title": "Independent-Samples t-Test in jamovi: How to Run and Interpret It",
+ "content": "# Independent-Samples t-Test in jamovi\n\n**Use it when:** you want to compare the means of a numeric outcome between **two independent groups** (different people/units in each group). Example from the source: comparing student grades between two tutors' classes.\n\n## 1. Running the test in jamovi\n1. Go to **Analyses → T-Tests → Independent Samples T-Test**.\n2. Move your outcome variable (e.g. `grade`) into the **Dependent Variables** box.\n3. Move your two-level grouping variable (e.g. `tutor`) into the **Grouping Variable** box.\n4. In the options, tick the extras you want: the **confidence interval** for the mean difference, **effect size** (Cohen's d), and — if variances may be unequal — the **Welch test** checkbox.\n\n## 2. Reading the output\nThe output reports, in order:\n- **Test statistic:** the *t* value.\n- **Degrees of freedom (df):** for Student's test, df = n₁ + n₂ − 2 (e.g. 31 in the example).\n- **p-value:** significance of the difference.\n- **95% confidence interval** — note carefully: this is a CI for the **difference between the group means**, not for either mean. In the example, means were 74.53 vs 69.06 (difference = 5.48), and the CI [0.20, 10.76] means that across repeated studies, 95% of such intervals would contain the true difference in population means.\n- **Effect size** (Cohen's d): the standardized size of the difference.\n\n**Decision rule:** if p < your alpha (usually .05) — equivalently, if the 95% CI for the mean difference excludes 0 — the group difference is statistically significant.\n\n## 3. Reporting the result\nMinimum: the t-statistic, df, and p-value, e.g. *t*(31) = 2.1, *p* < .05. Best practice is to also report the CI and effect size:\n\n> The mean grade in Anastasia's class was 74.5% (SD = 9.0) versus 69.1% (SD = 5.8) in Bernadette's. A Student's independent samples t-test showed this 5.4% difference was significant (*t*(31) = 2.1, *p* < .05, CI₉₅ = [0.2, 10.8], *d* = .74), suggesting a genuine difference in learning outcomes.\n\n## 4. Practical notes\n- **Student vs Welch:** the default is Student's equal-variance test. If you tick the Welch option, you read the output the same way, but df becomes non-integer (e.g. *t*(23.02) = 2.03, *p* = .054 in the same data). Don't over-interpret a p-value flip near .05 (e.g. .049 vs .051) — that's usually chance. Student's test is slightly more powerful when variances truly are equal, but Welch is safer because equal population variances are rarely believable.\n- **One-sided tests:** under the *Hypothesis* option you can specify a directional alternative (e.g. 'Group 1 > Group 2'); the t-statistic and df stay the same, but the p-value changes and the CI becomes one-sided (a single bound). Decide direction in advance.\n- **Not for paired data:** if the same cases are measured twice, use the Paired Samples T-Test instead.\n- **Non-normal data:** for two independent groups with substantially non-normal outcomes, tick the **Mann-Whitney U** option in the same dialog; its statistic is interpreted qualitatively like *t* (reject for very large or very small values in a two-sided test).",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_241_v3",
+  "exc_45ecdb7da7734b_245_v3",
+  "exc_45ecdb7da7734b_250_v3",
+  "exc_45ecdb7da7734b_261_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 3,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_241_v3",
+     "exc_45ecdb7da7734b_245_v3",
+     "exc_45ecdb7da7734b_250_v3",
+     "exc_45ecdb7da7734b_261_v3"
+    ]
+   }
+  ]
+ },
+ "size": "774 tokens",
+ "edits": []
+}

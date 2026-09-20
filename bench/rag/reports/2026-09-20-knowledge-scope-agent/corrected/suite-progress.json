@@ -1,0 +1,81 @@
+[
+  {
+    "case": "regression-by-hand",
+    "arm": "baseline",
+    "exit_code": 0,
+    "wall_seconds": 65.09,
+    "stop": "answer",
+    "tools": {
+      "create_ledger": 1,
+      "search_knowledge": 1,
+      "read_knowledge": 4,
+      "create_material": 2
+    }
+  },
+  {
+    "case": "independent-t-test",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 75.49,
+    "stop": "answer",
+    "tools": {
+      "create_ledger": 1,
+      "search_knowledge": 1,
+      "read_knowledge": 3,
+      "capture_knowledge_page": 1,
+      "create_material": 2
+    }
+  },
+  {
+    "case": "statistics-overview",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 75.35,
+    "stop": "answer",
+    "tools": {
+      "create_ledger": 1,
+      "browse_knowledge": 1,
+      "search_knowledge": 2,
+      "read_knowledge": 7,
+      "create_material": 2
+    }
+  },
+  {
+    "case": "regression-general",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 54.96,
+    "stop": "answer",
+    "tools": {
+      "create_ledger": 1,
+      "search_knowledge": 1,
+      "create_material": 2,
+      "read_knowledge": 5
+    }
+  },
+  {
+    "case": "contracts-general",
+    "arm": "reranked",
+    "exit_code": 0,
+    "wall_seconds": 63.41,
+    "stop": "answer",
+    "tools": {
+      "create_ledger": 1,
+      "search_knowledge": 1,
+      "read_knowledge": 4,
+      "create_material": 2
+    }
+  },
+  {
+    "case": "continuation-mechanics",
+    "arm": "paged",
+    "exit_code": 0,
+    "wall_seconds": 60.45,
+    "stop": "curate_stall",
+    "tools": {
+      "create_ledger": 1,
+      "search_knowledge": 4,
+      "read_knowledge": 3
+    }
+  }
+]

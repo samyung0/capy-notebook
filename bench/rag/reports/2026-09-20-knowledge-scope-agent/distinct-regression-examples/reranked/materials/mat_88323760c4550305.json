@@ -1,0 +1,52 @@
+{
+ "id": "mat_88323760c4550305",
+ "kind": "note",
+ "title": "Simple Linear Regression: Two Worked Examples",
+ "content": "# Simple Linear Regression — Two Worked Examples\n\n**The model:** ŷ = b₀ + b₁x, where b₁ is the slope and b₀ the intercept. The least squares line minimizes the sum of squared prediction errors, Σ(Y − ŷ)². Two equivalent ways to get the line:\n\n- **Slope from summary statistics:** b₁ = (s_y / s_x) · R, then b₀ = ȳ − b₁x̄ (the point (x̄, ȳ) always lies on the line).\n- **Prediction:** plug any x into the fitted equation.\n\n---\n\n## Example 1 — Small five-point dataset (Online Statistics Education)\n\n**Data:**\n\n| X | Y | ŷ | Y − ŷ | (Y − ŷ)² |\n|---|-----|------|--------|--------|\n| 1 | 1.00 | 1.21 | −0.21 | 0.044 |\n| 2 | 2.00 | 1.635 | 0.365 | 0.133 |\n| 3 | 1.30 | 2.06 | −0.76 | 0.578 |\n| 4 | 3.75 | 2.485 | 1.265 | 1.600 |\n| 5 | 2.25 | 2.91 | −0.66 | 0.436 |\n\n**Summary statistics:** M_X = 3, M_Y = 2.06, s_X = 1.581, s_Y = 1.072, r = 0.627.\n\n**Step 1 — Slope:**\nb = (s_Y / s_X) · r = (1.072 / 1.581)(0.627) ≈ **0.425**\n\n**Step 2 — Intercept:**\nA = M_Y − b·M_X = 2.06 − (0.425)(3) ≈ **0.785**\n\n**Fitted line:** ŷ = 0.425X + 0.785\n\n**Check with predictions:** for X = 1, ŷ = 0.425(1) + 0.785 = 1.21; for X = 2, ŷ = 0.425(2) + 0.785 = 1.64 — matching the table. The squared errors in the last column sum to a value smaller than any other line could achieve: this is the least squares line.\n\n---\n\n## Example 2 — Elmhurst College financial aid vs. family income (OpenIntro Statistics)\n\n**Goal:** predict financial aid (in $) from family income (in $) for first-year students.\n\n**Summary statistics:** x̄ = 101,780, ȳ = 19,940, s_x = 63,200, s_y = 5,460, R = −0.499.\n\n**Step 1 — Slope:**\nb₁ = (s_y / s_x) · R = (5,460 / 63,200)(−0.499) ≈ **−0.0431**\n\n**Step 2 — Intercept via the point-slope equation** using the point (x̄, ȳ) = (101,780; 19,940):\n\ny − 19,940 = −0.0431(x − 101,780)\ny − 19,940 = −0.0431x + 4,387\nŷ = **24,327 − 0.0431 × family income**\n\nSoftware regression output confirms this (minor rounding): intercept 24,319.3, slope −0.0431.\n\n**Interpretation:**\n- Slope b₁ = −0.0431: each additional $1,000 of family income is associated with about $1,000 × (−0.0431) = **−$43.10** in aid on average.\n- Intercept b₀ ≈ 24,319: average aid for a family with zero income — meaningful here because some students have $0 family income.\n- Caution: the data are observational, so this shows **association, not causation**.\n\n---\n\n## Takeaways\n\n- Both examples use the same two-step recipe: slope from (s_y/s_x)·R, intercept from ȳ − b₁x̄.\n- Always write the final equation with a \"hat\" (ŷ) on the predicted variable.\n- Interpret the slope in the units of the problem, and check whether the intercept is meaningful (is x ≈ 0 actually observed?).",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_358_v1",
+  "exc_f213361bf057b0_566_v2",
+  "exc_f213361bf057b0_569_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_358_v1"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_566_v2",
+     "exc_f213361bf057b0_569_v2"
+    ]
+   }
+  ]
+ },
+ "size": "660 tokens",
+ "edits": []
+}

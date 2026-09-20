@@ -1,0 +1,57 @@
+{
+ "id": "mat_61c5f6325f71ab6f",
+ "kind": "note",
+ "title": "Democracy in Ancient Athens",
+ "content": "# Democracy in Ancient Athens\n\n## What it was\nAthens (5th–4th century BCE) is the classic historical example of **direct democracy** — rule (*kratos*) by the people (*demos*) — in which citizens themselves exercised political power rather than electing representatives to do it for them. This fits the general definition of democratic sovereignty: supreme political authority is not reserved for a monarch, a hereditary class, or a divine right, but is dispersed among the individuals of the political community.\n\n## Key features\n- **Direct citizen participation**: citizens voted directly in the Assembly on laws, war, and public spending — no professional politicians standing between the citizen and the decision. (A democracy, as opposed to a republic, is a system in which citizens themselves engage *directly or indirectly* in government; Athens exemplified the direct form.)\n- **Political equality among citizens**: the democratic ideal that all citizens count equally in deciding who exercises power. Citizenship was a legal status conferring formal membership in the sovereign community; in Athens this equality applied *only* to adult male citizens — women, enslaved people, and resident foreigners were excluded from political rights. Political equality is an ideal that real regimes realize only partially.\n- **Civic norms and engagement**: democracy depends not just on procedures but on shared values — public acknowledgement, understanding, and deliberation about why citizens govern themselves. Athenian public life (assembly debate, jury service, public office) embodied this participatory culture; without it, a democracy is mere motion without meaning.\n\n## Critiques from the era\n- **Plato** argued that democracy maximizes individual liberty to the point of licentiousness: unchecked appetites produce social chaos, out of which a tyrant promising order emerges. He contrasted this *negative liberty* (freedom from external constraint) with *positive liberty* — self-rule guided by reason — which for him justified rule by the wise rather than the many.\n- Later theorists such as **Rousseau** echoed the Athenian model: citizens roughly equal in wealth and absolutely equal in political power should rule *directly*, because representation itself creates political inequality; guided by the common good, their decisions form the General Will.\n\n## Why it matters\nAthens shows both the promise and the limits of democracy: genuine dispersal of power among citizens, but a narrow definition of citizenship — a reminder that political equality is an ideal, not an automatic fact.\n\n---\n*Sources: Politics, Power, and Purpose: An Orientation to Political Science (Ch. 5 Theories of Democracy; Ch. 6 Political Theory); Modern Philosophy (Hume, Enquiry Concerning Human Understanding).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_2bcaee6f65ce3f_148_v2",
+  "exc_2bcaee6f65ce3f_150_v2",
+  "exc_2bcaee6f65ce3f_152_v2",
+  "exc_2bcaee6f65ce3f_179_v2",
+  "exc_2bcaee6f65ce3f_194_v2",
+  "exc_1ab346b9350488_312_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "modern-philosophy",
+    "title": "Modern Philosophy",
+    "authors": [
+     "Walter Ott",
+     "Alexander Dunn"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/33060",
+    "version": 2,
+    "excerptIds": [
+     "exc_1ab346b9350488_312_v2"
+    ]
+   },
+   {
+    "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+    "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+    "authors": [
+     "Jay Steinmetz"
+    ],
+    "edition": "",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+    "version": 2,
+    "excerptIds": [
+     "exc_2bcaee6f65ce3f_148_v2",
+     "exc_2bcaee6f65ce3f_150_v2",
+     "exc_2bcaee6f65ce3f_152_v2",
+     "exc_2bcaee6f65ce3f_179_v2",
+     "exc_2bcaee6f65ce3f_194_v2"
+    ]
+   }
+  ]
+ },
+ "size": "700 tokens",
+ "edits": []
+}

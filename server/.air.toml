@@ -6,7 +6,7 @@ tmp_dir = "tmp"
 [build]
   cmd = "go build -o ./tmp/api ./cmd/api"
   bin = "./tmp/api"
-  post_cmd = ["go run ./cmd/openapi -o ../openapi.yaml"]
+  post_cmd = ["go run ./cmd/openapi -o ../openapi.yaml -python-limits ../pipeline/pipeline/generated/limits.py -typescript-limits ../src/api/limits.generated.ts"]
   include_ext = ["go"]
   exclude_dir = ["tmp", "data", "migrations"]
   delay = 500

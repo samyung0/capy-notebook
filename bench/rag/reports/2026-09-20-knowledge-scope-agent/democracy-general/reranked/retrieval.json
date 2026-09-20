@@ -1,0 +1,1822 @@
+{
+  "arm": "reranked",
+  "case": {
+    "id": "democracy-general",
+    "query": "Create one concise introductory study note explaining what democracy means.",
+    "check": "General concept and varieties; a single country's system or historical example does not silently define all democracy."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "definition of democracy core elements",
+      "topics": [
+        "democratic-theory"
+      ],
+      "roles": [
+        "introduction",
+        "summary"
+      ],
+      "seconds": 4.053,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_167_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "confidence": 0.9,
+          "synopsis": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. Which do you think is more important and why? In the second section of this book, we will take an in-depth look at the major sub-disciplines in political science, with the aim of both introducing students to the discipline and learning more about how to analyze and understand political behavior, thought, and institution",
+          "pages": [
+            127
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_244_v1",
+            "chk_2bcaee6f65ce3f_245_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_244_v1",
+          "hit_text": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. We made some distinction between democracies and republics, while identifying some important connections between the two. We reviewed the concept of democratization—the transition from a non-democratic to a democratic regime—and identified some approaches to studying this important phenomenon. Lastly, we considered justifications for democracy—in asking why should we choose democracy, we arrive at three possible answers: aggregative, deliberative, and radical. Which do you think is more important and why? How exactly does democratic society and democratic governance effect your life?",
+          "hit_page_start": 127,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                157.077,
+                856.833,
+                449.431
+              ],
+              "page": 127,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        }
+      ]
+    },
+    {
+      "query": "democracy definition rule of the people core elements",
+      "topics": [
+        "democratic-theory"
+      ],
+      "roles": [],
+      "seconds": 4.988,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_148_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Let’s consider three core elements of what constitutes a democracy—individual sovereignty, equality amongst citizens, and democratic norms and values. Democracy is essentially the idea that political sovereignty resides at the level of the individual. In this sense, a political community derives its supreme power and authority from the consent of the people within that community. Individuals may hold the sovereign right of political rule in … some citizens hold greater weight than others. According to Robert Dahl, a U.S citizen in Alaska has a vote 54 times greater than the vote of a Californian. 1 Likewise, in the selection of",
+          "pages": [
+            112,
+            113
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_216_v1",
+            "chk_2bcaee6f65ce3f_217_v1",
+            "chk_2bcaee6f65ce3f_218_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_216_v1",
+          "hit_text": "Let’s consider three core elements of what constitutes a democracy—individual sovereignty, equality amongst citizens, and democratic norms and values. Democracy is essentially the idea that political sovereignty resides at the level of the individual. In this sense, a political community derives its supreme power and authority from the consent of the people within that community. Individuals may hold the sovereign right of political rule in a democratic country, but it is a public and shared right—no one individual can claim absolute sovereign power and authority. Some\n\n106 | We the People: Democratic Theory and Practice\n\nindividuals may have greater political power, however. In a representative democracy, for example, representatives typically wield political power on behalf of citizens and some representatives may have greater or lesser political power relative to other representatives. But if we define sovereignty as the absolute authority and supreme power of political rule, democratic sovereignty is not reserved for particular groups or individuals, nor is it derived from a divine or hereditary right, but rather a general right dispersed at the level of individuals within a political community.",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                681.547,
+                856.833,
+                882.399
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                914.379,
+                455.758,
+                945.926
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.833,
+                318.877
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02445795875198308
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_150_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy? › 1. Robert Dahl, How Democratic is the American Constitution? 2nd edition, Yale University Press: 2003, pp. 47. › We the People: Democratic Theory and Practice | 107",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Democratic Party voter in Kansas or a conservative Republican Party voter in California can be a frustrating experience—very often such citizens feel as though their vote doesn’t matter, and this sense of a “wasted vote” can have an overall negative effect on voter turnout. Imagine a democratic political community that simply went through the motions of a Characteristics of a democracy. Volunteering, participating in local government, and attending community events all help bring about a vibrant",
+          "pages": [
+            114
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_566_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_220_v1",
+            "chk_2bcaee6f65ce3f_221_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_221_v1",
+          "hit_text": "The third element of democracy constitutes ideas that strengthen and reinforce the elements above: norms, values, and rules that affirm and solidify individual sovereignty and political equality amongst citizens. This last element suggests that abstract concepts such as sovereignty and equality are not enough—democracy requires a set of norms and values that affirm its place in society. Imagine a democratic political community that simply went through the motions of a\n\nCharacteristics of a democracy.\n\ndemocratic process but did not necessarily value democracy nor develop any positive norms regarding the rule of the people. What’s missing here? In this Zombie Democracy, citizens become mere automatons, acting out the motions of the democratic process with no articulation or understanding of its value. In this respect, democracy requires public acknowledgement, understanding, and deliberation on why we choose democracy and what specific forms a democracy should take. Civic engagement and civic participation is not just about voting or formal democratic processes, but rather include a wide range of political and non-political activities in which individuals or groups come together to solve problems and better their community. Volunteering, participating in local government, and attending community events all help bring about a vibrant",
+          "hit_page_start": 114,
+          "hit_regions": [
+            {
+              "bbox": [
+                522.727,
+                209.531,
+                856.833,
+                593.387
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                564.284,
+                429.712,
+                580.394
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                598.42,
+                856.831,
+                890.773
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024069737184491284
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_151_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy? › 1. Robert Dahl, How Democratic is the American Constitution? 2nd edition, Yale University Press: 2003, pp. 47. › 108 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "public sphere. Placing value on these activities is a vital foundation of democracy. Lastly, a useful distinction can be drawn between a democratic society and a democratic form of government. High levels of civic engagement—individuals engaged in collective action for the public betterment—point to a strong democratic society. A democratic form government, on the other hand, implies a set of rules and processes for democratic … and yet the institutions of government contain powerful obstacles to democratic governing. Although the United States of America is considered as having a democratic form of government and a democratic society, there is sometimes",
+          "pages": [
+            115
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_222_v1",
+            "chk_2bcaee6f65ce3f_223_v1",
+            "chk_2bcaee6f65ce3f_224_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_223_v1",
+          "hit_text": "Lastly, a useful distinction can be drawn between a democratic society and a democratic form of government. High levels of civic engagement—individuals engaged in collective action for the public betterment—point to a strong democratic society. A democratic form government, on the other hand, implies a set of rules and processes for democratic elections and democratic governing. These concepts, of course, go hand in hand and are mutually reinforcing: rules and processes that limit democratic forms of government can have a deleterious effect on civic engagement. Conversely, strong institutions of democratic government can facilitate and encourage active community participation in the public’s well being. There can, however, be a gap between the relative strength of a democratic society in relation to a democratic form of government. We can imagine a scenario in which rules and processes of democratic elections and governance are transparent and fair, yet voter turnout is abysmally low; letters can be written to representatives, government meetings can be free for anyone to attend, yet most of the public do not contact representatives nor attend any meetings, preferring instead to go about their private lives. Conversely, we can also imagine a scenario in which there is robust political activism, civic engagement, and collective action to solve public concerns, and yet the institutions of government contain powerful obstacles to democratic governing.",
+          "hit_page_start": 115,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                140.904,
+                856.831,
+                799.27
+              ],
+              "page": 115,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02266725352112676
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_158_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Let’s explore three justifications as to why democracy is a worthy political goal—aggregative, deliberative, and radical. “Well let’s put it to a vote,” is an ideal solution for those who value democracy because it clearly demonstrates the aggregate preference of a political community. A disadvantage to the aggregative view of democracy is that such a view does not necessary bring about consensus, compromise,",
+          "pages": [
+            120
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_233_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_233_v1",
+          "hit_text": "Let’s explore three justifications as to why democracy is a worthy political goal—aggregative, deliberative, and radical. First, we may choose democracy because it is an effective system for aggregating political preferences. In short, democracy allows us to vote and state our preferences in such a way that we can tally up choices—a numerical aggregation of votes—to determine the best course of action on policies. “Well let’s put it to a vote,” is an ideal solution for those who value democracy because it clearly demonstrates the aggregate preference of a political community. An advantage to this aggregative view of democracy is that it can give a clear indication of majority preference and thus a clear determination of the best course of action. In short, aggregative democracy gives clear determined outcomes: in theory, majority decisions provide definite answers to political problems.\n\nA disadvantage to the aggregative view of democracy is that such a view does not necessary bring about consensus, compromise,",
+          "hit_page_start": 120,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                527.822,
+                856.831,
+                843.052
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                848.083,
+                856.803,
+                888.804
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022518382352941176
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_166_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › It’s A Wonderful (Democratic?) Life › We the People: Democratic Theory and Practice | 119",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27 Imagine if George was not a human but democracy itself. Let’s take democracy out of your life entirely. Let’s go further and assume that, unlike George Bailey and Bedford Falls, your life is exactly the same. Your past is the same, your present is the … absence of a democracy in you life. Use at least two of aggregative, deliberative, and radical conceptions as examples of the kinds of experiences that may be missing in a life without democracy. For",
+          "pages": [
+            126
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_623_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_243_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_243_v1",
+          "hit_text": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27\n\nImagine if George was not a human but democracy itself. Let’s take democracy out of your life entirely. Let’s go further and assume that, unlike George Bailey and Bedford Falls, your life is exactly the same. Your past is the same, your present is the same, and your future is the same. You have the same family, same jobs, same schools, same car. The only difference is that you do not live in a democracy. Does this matter? Why or why not? Write a minimum 3-page paper reflecting on the absence of a democracy in you life. Use at least two of aggregative, deliberative, and radical conceptions as examples of the kinds of experiences that may be missing in a life without democracy. For students who do not live in a democracy, reverse the assignment—imagine that your life is the same but you do live in a democracy. Does this matter? Why or why not?",
+          "hit_page_start": 126,
+          "hit_regions": [
+            {
+              "bbox": [
+                201.119,
+                430.861,
+                788.247,
+                492.925
+              ],
+              "page": 126,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                558.281,
+                856.833,
+                850.636
+              ],
+              "page": 126,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022068511198945984
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_167_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "confidence": 0.9,
+          "synopsis": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. Which do you think is more important and why? In the second section of this book, we will take an in-depth look at the major sub-disciplines in political science, with the aim of both introducing students to the discipline and learning more about how to analyze and understand political behavior, thought, and institution",
+          "pages": [
+            127
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_244_v1",
+            "chk_2bcaee6f65ce3f_245_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_244_v1",
+          "hit_text": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. We made some distinction between democracies and republics, while identifying some important connections between the two. We reviewed the concept of democratization—the transition from a non-democratic to a democratic regime—and identified some approaches to studying this important phenomenon. Lastly, we considered justifications for democracy—in asking why should we choose democracy, we arrive at three possible answers: aggregative, deliberative, and radical. Which do you think is more important and why? How exactly does democratic society and democratic governance effect your life?",
+          "hit_page_start": 127,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                157.077,
+                856.833,
+                449.431
+              ],
+              "page": 127,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02187812187812188
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_161_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › 116 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27 This film reveals the value of deliberation. Had the jurors simply voted their preferences after hearing all the evidence and testimony, they likely would not have arrived at the best possible conclusion. In short, we value democracy because it provides a venue for a deliberative … makes government responsible and accountable to their needs. In the radical view of democracy, power is won on the streets, through direct action of citizens who demand action or recognition from government. In the",
+          "pages": [
+            123
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_237_v1",
+            "chk_2bcaee6f65ce3f_238_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_238_v1",
+          "hit_text": "The third justification for democracy is radical. In this view, we value democracy not because we arrive at clear solutions (aggregative), nor because it provides some reasoned consensus through dialog (deliberative) but because democracy gives individuals power to that makes government responsible and accountable to their needs. In the radical view of democracy, power is won on the streets, through direct action of citizens who demand action or recognition from government. In the extreme sense, we may imagine riots, street violence, burning cars, and broken windows, but a radical conception of democracy does not necessarily mean violence or intimidation at all. Rather, a radical",
+          "hit_page_start": 123,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                649.727,
+                856.813,
+                896.328
+              ],
+              "page": 123,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021748400852878463
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_159_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › 114 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "or understanding—it simply tallies individuals preferences and determines what the numerical majority is. This view might be criticized for turning democracy into a cold and calculating machine, devoid of deliberation or ethical regard. Take for example the famous debates on slavery between Abraham Lincoln and Stephen Douglas in 1858. Douglas argued, in effect, that the question of slavery has a fairly simple answer—just put it … aggregative, of preferences, deliberative democracy values the process of deliberating as much if not more than the conclusion itself. In Sydney Lumet’s 1957 film 12 Angry Men, jurors retire to a deliberation room to",
+          "pages": [
+            121
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_234_v1",
+            "chk_2bcaee6f65ce3f_235_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_235_v1",
+          "hit_text": "A second justification for democracy is deliberative. Deliberative democracy suggests that we value self-rule because it provides an area for discussion, compromise, and consensus. The ideal of deliberative democracy is not that a majority number of votes will clearly determine an answer, but that through transparent and fair deliberation, we should arrive at something close to unanimous consensus, even if that consensus is a compromise in which no one individual gets everything they want. A deliberative democracy is one in which citizens and representatives justify their decisions in an open and transparent arena, using reason to arrive at a best possible conclusion while leaving open the possibility that the conclusion could be revised or changed in the future. Process is key to deliberation—it is a back and forth dialog among individuals engaged in the task of finding solutions to political problems of a community. Where aggregative democracy is centered on the end result, or aggregative, of preferences, deliberative democracy values the process of deliberating as much if not more than the conclusion itself.\n\nIn Sydney Lumet’s 1957 film 12 Angry Men, jurors retire to a deliberation room to determine whether or not a young boy murdered his father. All but one of the jurors (played by Henry Fonda) are fairly certain the boy is guilty. But as the discussion",
+          "hit_page_start": 121,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                392.538,
+                856.833,
+                799.27
+              ],
+              "page": 121,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                804.162,
+                856.833,
+                890.877
+              ],
+              "page": 121,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021390937829293993
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_152_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "It is often said that the United States of America is not a democracy but a constitutional republic. What exactly is the difference between a republic and a democracy? A republic is a form of government in which the country itself is a public concern, not a private entity owned by a particular ruling group, such as a monarchy. Public ownership over the country does … exactly democratic, citizens were nonetheless able to participate in government through these popular assemblies. Much of the evolution of the term republic is a variation on mixed government and civic participation in governance. During",
+          "pages": [
+            116
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_225_v1",
+            "chk_2bcaee6f65ce3f_226_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_225_v1",
+          "hit_text": "It is often said that the United States of America is not a democracy but a constitutional republic. What exactly is the difference between a republic and a democracy? A republic is a form of government in which the country itself is a public concern, not a private entity owned by a particular ruling group, such as a monarchy. Public ownership over the country does not, however, necessarily imply a democracy. The vast majority of sovereign states today use the word republic in their official names but many of these are not democratic. A republic is a form of government defining the ownership of a country as a public matter, whereas a democracy is a system of government in which citizens themselves engage either directly or indirectly in\n\nWhat exactly is the differenc e between a republic and a democra cy?\n\ngovernment.",
+          "hit_page_start": 116,
+          "hit_regions": [
+            {
+              "bbox": [
+                344.311,
+                157.077,
+                856.833,
+                518.059
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                183.568,
+                214.397,
+                279.167,
+                461.0
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                523.09,
+                276.859,
+                540.935
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021241830065359478
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_147_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "What is a democracy? Why should we choose democracy? In this chapter we will develop theories of and theoretical justifications for democratic governance and a democratic political society. We will also consider some of the similarities and differences between a republic and a democracy. Lastly, this chapter will consider causes and conditions of democratization and the influence the development of democracy has on economic reform. At the end of this chapter, students will write a reflection paper on the ways in which democratic society influences their lives.",
+          "pages": [
+            112
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_215_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_215_v1",
+          "hit_text": "What is a democracy? Why should we choose democracy?\n\nIn this chapter we will develop theories of and theoretical justifications for democratic governance and a democratic political society. We will also consider some of the similarities and differences between a republic and a democracy. Lastly, this chapter will consider causes and conditions of democratization and the influence the development of democracy has on economic reform. At the end of this chapter, students will write a reflection paper on the ways in which democratic society influences their lives.",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                201.119,
+                263.534,
+                703.826,
+                304.253
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                363.257,
+                856.811,
+                564.106
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020933822110746673
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_153_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics › 110 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "contrasted with monarchies, were not particularly democratic, and often emphasized citizen participation and mobilization in defense of the city-state. The French political philosopher Montesquieu took this idea of mixed government and emptied it of economic classes, instead theorizing on an institutional separation of powers among legislative, executive, and judicial lines. As discussed in Chapter 3, America’s republican form of government also includes federalism—a system of local, state,",
+          "pages": [
+            117
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_227_v1",
+            "chk_2bcaee6f65ce3f_228_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_228_v1",
+          "hit_text": "Perhaps the most important historical development in republican rule is the adopted of the US Constitution and creation of the American republican experiment, which today remains the oldest continuously running constitution in the world. The framers of the U.S. Constitution sought to blend Lockean liberal ideals of rights and property with republicanism’s commitment to enlightened rule and mixed government. In this context, the American republican form of government is characterized by a separation and balance of powers in legislative, executive, and judicial institutions of government. As discussed in Chapter 3, America’s republican form of government also includes federalism—a system of local, state,",
+          "hit_page_start": 117,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                644.172,
+                856.816,
+                890.773
+              ],
+              "page": 117,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_164_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › 2. Frederick Douglass, \"What to a Slave is the Fourth of July?\" › 118 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "deliberative, and radical. This is a tricky question, for one student may say, “let’s vote on which justification of democracy is best for us,” they would clearly be valuing an aggregative conception more than others. If a third student were then to counter that they should resist the question (and all assignments in the class) and engage in academic disobedience to pressure the professor into responding to the student’s needs, they would clearly be favoring a radical conception of democratic power (full disclosure: the professor does not advocate for this third option).",
+          "pages": [
+            125
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_241_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_241_v1",
+          "hit_text": "deliberative, and radical. Which do you prefer? If we had to come to a conclusion on which of these three conceptions of democracy we should value most in this classroom, right now, how should we collectively arrive at an answer? This is a tricky question, for one student may say, “let’s vote on which justification of democracy is best for us,” they would clearly be valuing an aggregative conception more than others. Likewise, if another student countered that it would be best to reach consensus after a reasonable debate on the matter, they would clearly be favoring a deliberative conception. If a third student were then to counter that they should resist the question (and all assignments in the class) and engage in academic disobedience to pressure the professor into responding to the student’s needs, they would clearly be favoring a radical conception of democratic power (full disclosure: the professor does not advocate for this third option).",
+          "hit_page_start": 125,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.831,
+                433.257
+              ],
+              "page": 125,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01956596035543404
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_162_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › We the People: Democratic Theory and Practice | 117",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "view of democracy suggests that dissent and resistance can form the bulwark of democratic power. For Thoreau, the act of voting strips individuals of political conscience, rendering the fate of gross injustices such as slavery to a mathematical game of who has the most votes. “The time for argument has passed,” thundered Douglass, “[a]t a time like this, scorching irony is needed, not argument… For it is not light that is needed, but fire.” 2 Reflect on these three justifications for democracy: aggregative,",
+          "pages": [
+            124
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_615_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_239_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_239_v1",
+          "hit_text": "view of democracy suggests that dissent and resistance can form the bulwark of democratic power.\n\nReturning to the issue of slavery in the 1850s, if Douglas advocated for a form of aggregative democracy to the question of slavery, and Lincoln a incremental form of reasoned deliberation on the moral question of slavery, Henry David Thoreau provided a clear radical argument of resistance and civil disobedience. For Thoreau, the act of voting strips individuals of political conscience, rendering the fate of gross injustices such as slavery to a mathematical game of who has the most votes. Likewise, in his seminal speech “What to a Slave is the Fourth of July?” Frederick Douglass forcefully rejects the notion that abolitionists should engage in rational debate over whether slaves were humans deserving of freedom. “The time for argument has passed,” thundered Douglass, “[a]t a time like this, scorching irony is needed, not argument… For it is not light that is needed, but fire.”\n\n2\n\nReflect on these three justifications for democracy: aggregative,",
+          "hit_page_start": 124,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.811,
+                135.871
+              ],
+              "page": 124,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                140.904,
+                856.831,
+                456.132
+              ],
+              "page": 124,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                321.576,
+                430.799,
+                333.146,
+                447.717
+              ],
+              "page": 124,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                769.155,
+                856.793,
+                786.998
+              ],
+              "page": 124,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019444444444444445
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_154_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics › We the People: Democratic Theory and Practice | 111",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "and federal governments that are distinct, if interrelated and and overlapping at times (this is discussed in Chapter 3).",
+          "pages": [
+            118
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_229_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_229_v1",
+          "hit_text": "and federal governments that are distinct, if interrelated and and overlapping at times (this is discussed in Chapter 3).",
+          "hit_page_start": 118,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.808,
+                135.871
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018682324233643435
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_160_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › We the People: Democratic Theory and Practice | 115",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "unfolds, little by little doubt over the boy’s guilt begins to grow. Deliberation, communication, and reason guide the jurors away from prejudice (the boy is Puerto Rican, and as the last hold-out admits toward the end of the film, “you now how those people are … not a one of them is any good!”) and toward a reasonable consensus on the verdict. By the end … directed at Puerto Ricans, the others jurors began to physically leave the table, standing up and turning toward the windows. These movements are a symbolic rejection of prejudice and a lack of deliberative reason.",
+          "pages": [
+            122
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_606_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_236_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_236_v1",
+          "hit_text": "unfolds, little by little doubt over the boy’s guilt begins to grow. Deliberation, communication, and reason guide the jurors away from prejudice (the boy is Puerto Rican, and as the last hold-out admits toward the end of the film, “you now how those people are … not a one of them is any good!”) and toward a reasonable consensus on the verdict. By the end of the film, all 12 jurors realize that the guilt of the boy is far from beyond a reasonable doubt. The film takes place entirely in one room, and is confined to dialog that is centered on the best course of action, specifically a verdict in the case. The table in the room is a symbol of deliberation. Indeed, as the climax of the film nears and the last hold-out begins openly spewing prejudice directed at Puerto Ricans, the others jurors began to physically leave the table, standing up and turning toward the windows. These movements are a symbolic rejection of prejudice and a lack of deliberative reason. As Henry Fonda begins to respond to the prejudiced man, speaking about the need for reason to guide a deliberative process, members of the juror slowly begin returning to the table.",
+          "hit_page_start": 122,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.833,
+                501.884
+              ],
+              "page": 122,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01793754538852578
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_165_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › It’s A Wonderful (Democratic?) Life",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "George Bailey is trapped in the small town of Bedford Falls, unsatisfied with his seemingly dead end existence in the classic Hollywood film It’s a Wonderful Life (1946, dir. No one would have been alive to save his brother from a fall in the ice or to save the Bailey Building and Loan from Mr. As George ponders what his world would have been without him, his guardian angel says it best: “You see, George, you really have lived a wonderful life.”",
+          "pages": [
+            125
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_242_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_242_v1",
+          "hit_text": "George Bailey is trapped in the small town of Bedford Falls, unsatisfied with his seemingly dead end existence in the classic Hollywood film It’s a Wonderful Life (1946, dir. Frank Capra). Driving out to a bridge on Christmas Eve with the intent of taking his own life, George is instead met by his own guardian angel, who proceeds to show George what life would really be like had he never been born. No one would have been alive to save his brother from a fall in the ice or to save the Bailey Building and Loan from Mr. Potter, the rich and conniving banker of Bedford Falls. Indeed, the entire town is renamed Pottersville and driven to poverty and vice had George Bailey not been born. As George ponders what his world would have been without him, his guardian angel says it best: “You see, George, you really have lived a wonderful life.”",
+          "hit_page_start": 125,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                550.698,
+                856.813,
+                843.155
+              ],
+              "page": 125,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01744186046511628
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "query": "definition of democracy core elements",
+      "ids": [
+        "exc_2bcaee6f65ce3f_167_v1"
+      ]
+    },
+    {
+      "query": "democracy definition rule of the people core elements",
+      "ids": [
+        "exc_2bcaee6f65ce3f_148_v1",
+        "exc_2bcaee6f65ce3f_150_v1",
+        "exc_2bcaee6f65ce3f_151_v1",
+        "exc_2bcaee6f65ce3f_152_v1",
+        "exc_2bcaee6f65ce3f_167_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [
+    {
+      "seconds": 1.142,
+      "usage": {
+        "prompt_tokens": 517,
+        "completion_tokens": 79,
+        "total_tokens": 596,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_2bcaee6f65ce3f_167_v1",
+            "reason": "Provides a concise definition of democracy centered on citizen sovereignty and equality, suitable for an introductory study note."
+          }
+        ],
+        "gap": "Only one candidate; a fuller note could benefit from additional excerpts covering core elements like elections, rights, and institutions."
+      },
+      "input_characters": 1825
+    },
+    {
+      "seconds": 2.367,
+      "usage": {
+        "prompt_tokens": 6324,
+        "completion_tokens": 309,
+        "total_tokens": 6633,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_2bcaee6f65ce3f_148_v1",
+            "reason": "Directly defines democracy and its three core elements (individual sovereignty, equality, norms), matching the request's scope."
+          },
+          {
+            "id": "exc_2bcaee6f65ce3f_150_v1",
+            "reason": "Explains the third core element—democratic norms and values—completing the definition for an introductory note."
+          },
+          {
+            "id": "exc_2bcaee6f65ce3f_151_v1",
+            "reason": "Distinguishes democratic society from democratic government, a useful clarifying point for an introductory definition."
+          },
+          {
+            "id": "exc_2bcaee6f65ce3f_152_v1",
+            "reason": "Clarifies what democracy is by contrasting it with a republic, useful for a concise introductory note."
+          },
+          {
+            "id": "exc_2bcaee6f65ce3f_167_v1",
+            "reason": "Chapter summary restating the full definition of democracy in one sentence—ideal for a study note."
+          }
+        ],
+        "gap": "Excerpts focus on one textbook's framework; alternative definitions (e.g., Dahl's procedural criteria) are only touched on indirectly."
+      },
+      "input_characters": 29278
+    }
+  ],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

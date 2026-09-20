@@ -1,0 +1,1357 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "mean-median",
+    "query": "Create one concise beginner study note explaining the difference between the mean and median, with a small concrete example.",
+    "check": "General explanation; specialized books and incidental dataset contexts are acceptable; a objectives list alone is insufficient."
+  },
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "mean vs median difference skewed data example",
+      "topics": [],
+      "roles": [
+        "introduction",
+        "summary"
+      ],
+      "seconds": 5.705,
+      "excerpts": [
+        {
+          "id": "exc_f97f47b7a1fd68_75_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Comparing Measures of Central Tendency",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency\n• Chapter 3: Mean and Median Learning Objectives\n\n1. Understand how the difference between the mean and median is affected by skew\n2. State how the measures differ in symmetric distributions\n3. State which measure(s) should be used to describe the center of a skewed distribution\n\nHow do the various measures of central tendency compare with each other? For symmetric distributions, the mean, median, trimean, and trimmed mean are equal, as is the mode except in bimodal distributions. Differences among the measures occur with skewed distributions. Figure 1 shows the distribution of 642 scores on an introductory psychology test. Notice this distribution has a slight positive skew.\n\n150\n\nFrequency\n\n100\n\n50\n\n39.5 49.5 59.5 69.5 79.5 89.5 99.5 109.5 119.5 129.5 139.5 149.5 159.5 169.5\n\nFigure 1. A distribution with a positive skew.\n\nMeasures of central tendency are shown in Table 1. Notice they do not differ greatly, with the exception that the mode is considerably lower than the other measures. When distributions have a positive skew, the mean is typically higher than the median, although it may not be in bimodal distributions. For these data, the mean of 91.58 is higher than the median of 90. Typically the trimean and trimmed mean will fall between the median and the mean, although in this case, the trimmed mean is slightly lower than the median. The geometric mean is lower than all measures except the mode.\n\nMeasures of central tendency are shown in Table 1. Notice they do not differ greatly, with the exception that the mode is considerably lower than the other measures. When distributions have a positive skew, the mean is typically higher than the median, although it may not be in bimodal distributions. For these data, the mean of 91.58 is higher than the median of 90. Typically the trimean and trimmed mean will fall between the median and the mean, although in this case, the trimmed mean is slightly lower than the median. The geometric mean is lower than all measures except the mode.\n\nTable 1. Measures of central tendency for the test scores.\n\nMeasure | Value\nMode Median Geometric Mean Trimean Mean trimmed 50% Mean | 84.00 90.00 89.70 90.25 89.81 91.58\n\nThe distribution of baseball salaries (in 1994) shown in Figure 2 has a much more pronounced skew than the distribution in Figure 1.\n\nFigure 2. A distribution with a very large positive skew. This histogram shows the salaries of major league baseball players (in thousands of dollars: 250 equals 250,000).\n\nTable 2 shows the measures of central tendency for these data. The large skew results in very different values for these measures. No single measure of central\n\nFigure 2. A distribution with a very large positive skew. This histogram shows the salaries of major league baseball players (in thousands of dollars: 250 equals 250,000).\n\nTable 2 shows the measures of central tendency for these data. The large skew results in very different values for these measures. No single measure of central\n\ntendency is sufﬁcient for data such as these. If you were asked the very general question: “So, what do baseball players make?” and answered with the mean of $1,183,000, you would not have told the whole story since only about one third of baseball players make that much. If you answered with the mode of$250,000 or the median of $500,000, you would not be giving any indication that some players make many millions of dollars. Fortunately, there is no need to summarize a distribution with a single number. When the various measures differ, our opinion is that you should report the mean, median, and either the trimean or the mean trimmed 50%. Sometimes it is worth reporting the mode as well. In the media, the median is usually reported to summarize the center of skewed distributions. You will hear about median salaries and median prices of houses sold, etc. This is better than reporting only the mean, but it would be informative to hear more statistics.\n\nTable 2. Measures of central tendency for baseball salaries (in thousands of dollars).\n\nMeasure | Value\nMode Median Geometric Mean Trimean Mean trimmed 50% Mean | 250 500 555 792 619 1,183",
+          "pages": [
+            140,
+            141,
+            142,
+            143
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_1333_v1",
+            "fig_f97f47b7a1fd68_1339_v1",
+            "fig_f97f47b7a1fd68_1340_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_182_v1",
+            "chk_f97f47b7a1fd68_183_v1",
+            "chk_f97f47b7a1fd68_184_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_182_v1",
+          "hit_text": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency\n• Chapter 3: Mean and Median Learning Objectives\n\n1. Understand how the difference between the mean and median is affected by skew\n2. State how the measures differ in symmetric distributions\n3. State which measure(s) should be used to describe the center of a skewed distribution\n\nHow do the various measures of central tendency compare with each other? For symmetric distributions, the mean, median, trimean, and trimmed mean are equal, as is the mode except in bimodal distributions. Differences among the measures occur with skewed distributions. Figure 1 shows the distribution of 642 scores on an introductory psychology test. Notice this distribution has a slight positive skew.\n\n150\n\nFrequency\n\n100\n\n50\n\n39.5 49.5 59.5 69.5 79.5 89.5 99.5 109.5 119.5 129.5 139.5 149.5 159.5 169.5\n\nFigure 1. A distribution with a positive skew.\n\nMeasures of central tendency are shown in Table 1. Notice they do not differ greatly, with the exception that the mode is considerably lower than the other measures. When distributions have a positive skew, the mean is typically higher than the median, although it may not be in bimodal distributions. For these data, the mean of 91.58 is higher than the median of 90. Typically the trimean and trimmed mean will fall between the median and the mean, although in this case, the trimmed mean is slightly lower than the median. The geometric mean is lower than all measures except the mode.",
+          "hit_page_start": 140,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                285.797,
+                185.606
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                190.657,
+                513.377,
+                339.646
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                344.697,
+                840.466,
+                453.283
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                464.646,
+                872.864,
+                573.232
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                157.029,
+                109.183,
+                179.44,
+                123.432
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                115.167,
+                215.229,
+                136.641,
+                272.91
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                157.029,
+                207.817,
+                179.44,
+                222.064
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.5,
+                305.04,
+                179.44,
+                319.289
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                185.163,
+                417.448,
+                882.292,
+                431.697
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                440.814,
+                528.565,
+                458.491
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                480.271,
+                866.82,
+                658.302
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02393753200204813
+        },
+        {
+          "id": "exc_45ecdb7da7734b_95_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Descriptive statistics › 4.1 Measures of central tendency › 4.1.4 Mean or median? What’s the difference?",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "center",
+            "data-types"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains how to interpret the mean versus the median and when to use each. The mean is the 'centre of gravity' of the data; the median is the middle observation. Guidance is given by measurement scale: nominal data suit the mode; ordinal data suit the median; interval and ratio data accept either, with the mean using all information but being sensitive to extreme values. Skewness makes the mean shift toward the tail while the median stays near the body, illustrated with an income example.",
+          "pages": [
+            78,
+            79
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_554_v2",
+            "fig_45ecdb7da7734b_555_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_186_v2",
+            "chk_45ecdb7da7734b_187_v2",
+            "chk_45ecdb7da7734b_188_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_188_v2",
+          "hit_text": "• If your data are ordinal scale you’re more likely to want to use the median than the mean. The median only makes use of the order information in your data (i.e., which numbers are bigger) but doesn’t depend on the precise numbers involved. That’s exactly the situation that applies when your data are ordinal scale. The mean, on the other hand, makes use of the precise numeric values assigned to the observations, so it’s not really appropriate for ordinal data.\n• For interval and ratio scale data either one is generally acceptable. Which one you pick depends a bit on what you’re trying to achieve. The mean has the advantage that it uses all the information in the data (which is useful when you don’t have a lot of data). But it’s very sensitive to extreme, outlying values.\n\nLet’s expand on that last part a little. One consequence is that there are systematic differences between the mean and the median when the histogram is asymmetric (Skew and kurtosis). This is illustrated in Figure 4.4. Notice that the median (right-hand side) is located closer to the “body” of the histogram, whereas the mean (left-hand side) gets dragged towards the “tail” (where the extreme values are). To give a concrete example, suppose Bob (income $50,000), Kate (income$60,000) and Jane (income $65,000) are sitting at a table. The average income at the table is$58,333 and the median income is $60,000. Then Bill sits down with them (income$100,000,000). The average income has now jumped to $25,043,750 but the median rises only to$62,500. If you’re interested in looking at the overall income at the table the mean might be the right answer. But if you’re interested in what counts as a typical income at the table the median would be a better choice here.",
+          "hit_page_start": 79,
+          "hit_regions": [
+            {
+              "bbox": [
+                211.611,
+                98.644,
+                843.752,
+                267.192
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                286.828,
+                843.752,
+                488.583
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02370478983382209
+        },
+        {
+          "id": "exc_0689cddaba206d_111_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 1 › Exploring one-variable data and collecting data › 1.4 Numerical summaries and box plots › Section summary",
+          "roles": [
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "center",
+            "spread",
+            "graphs"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Summary of numerical summaries: mean and median as measures of center, mean following the tail in skewed distributions, percentiles and quartiles, standard deviation and IQR as measures of spread, effects of adding or multiplying by a constant, outlier rules of thumb, robust versus nonresistant measures, box plots and the five-number summary, comparing distributions graphically, and Z-scores.",
+          "pages": [
+            57
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_159_v2",
+            "chk_0689cddaba206d_160_v2",
+            "chk_0689cddaba206d_161_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_159_v2",
+          "hit_text": "• The mean and the median are measures of center. – The mean is the sum of all the observations divided by the number of observations, n. x¯ = n1 ∑xi = ∑x i n = x 1+x2+...+xn n – In an ordered data set, the median is the middle number when n is odd. When n is even, the median is the average of the two middle numbers.\n• The mean follows the tail. In a right skewed distribution, the mean is greater than the median. Analogously, in a left skewed distribution, the mean is less than the median.\n• The pth percentile of a data set is the value that has p% of the data less than or equal to it when the data set is ordered from smallest to largest. The ﬁrst quartile (Q1) is the 25th percentile, the median (Q2) is the 50th percentile, and the third quartile (Q3) is the 75th percentile.\n• Standard deviation (SD)and Interquartile range (IQR) are measures of spread. SD measures the typical spread from the mean, whereas IQR measures the spread of the middle 50% of the data. Range is also sometimes used as a measure of spread. – Standard deviation is the square root of the variance. s X = √ 1 n−1 ∑(xi − x¯)2 – IQR = Q3 − Q1, i.e. the diﬀerence between the third quartile and the ﬁrst quartile. – Range = max−min, i.e. the diﬀerence between the maximum value and minimum value.\n• Changing units. Adding a constant to every value in a data set shifts the mean but does not aﬀect the standard deviation. Multiplying the values in a data set by a constant multiplies the mean and the standard deviation by that constant, except that the standard deviation must always remain positive.",
+          "hit_page_start": 57,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                96.438,
+                852.948,
+                894.902
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022058823529411763
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_69_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Median and Mean",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency Learning Objectives\n\n1. State when the mean and median are the same\n2. State whether it is the mean or median that minimizes the mean absolute deviation\n3. State whether it is the mean or median that minimizes the mean squared deviation\n4. State whether it is the mean or median that is the balance point on a balance scale\n\nIn the section “What is central tendency,” we saw that the center of a distribution could be deﬁned three ways: (1) the point on which a distribution would balance, (2) the value whose average absolute deviation from all the other values is minimized, and (3) the value whose squared difference from all the other values is minimized. The mean is the point on which a distribution would balance, the median is the value that minimizes the sum of absolute deviations, and the mean is the value that minimizes the sum of the squared deviations.\n\nTable 1 shows the absolute and squared deviations of the numbers 2, 3, 4, 9, and 16 from their median of 4 and their mean of 6.8. You can see that the sum of absolute deviations from the median (20) is smaller than the sum of absolute deviations from the mean (22.8). On the other hand, the sum of squared deviations from the median (174) is larger than the sum of squared deviations from the mean (134.8).\n\nTable 1. Absolute and squared deviations from the median of 4 and the mean of 6.8.\n\nTable 1 shows the absolute and squared deviations of the numbers 2, 3, 4, 9, and 16 from their median of 4 and their mean of 6.8. You can see that the sum of absolute deviations from the median (20) is smaller than the sum of absolute deviations from the mean (22.8). On the other hand, the sum of squared deviations from the median (174) is larger than the sum of squared deviations from the mean (134.8).\n\nTable 1. Absolute and squared deviations from the median of 4 and the mean of 6.8.\n\nValue | Absolute Deviation from Median | Absolute Deviation from Mean | Squared Deviation from Median | Squared Deviation from Mean\n2 | 2 | 4.8 | 4 | 23.04\n3 | 1 | 3.8 | 1 | 14.44\n4 | 0 | 2.8 | 0 | 7.84\n9 | 5 | 2.2 | 25 | 4.84\n16 | 12 | 9.2 | 144 | 84.64\nTotal | 20 | 22.8 | 174 | 134.8\n\nFigure 1 shows that the distribution balances at the mean of 6.8 and not at the median of 4. The relative advantages and disadvantages of the mean and median are discussed in the section “Comparing Measures” later in this chapter.\n\nFigure 1. The distribution balances at the mean of 6.8 and not at the median of 4.0.\n\nWhen a distribution is symmetric, then the mean and the median are the same. Consider the following distribution: 1, 3, 4, 5, 6, 7, 9. The mean and median are both 5. The mean, median, and mode are identical in the bell-shaped normal distribution.",
+          "pages": [
+            134,
+            135
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_1254_v1",
+            "fig_f97f47b7a1fd68_1255_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_174_v1",
+            "chk_f97f47b7a1fd68_175_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_175_v1",
+          "hit_text": "Table 1 shows the absolute and squared deviations of the numbers 2, 3, 4, 9, and 16 from their median of 4 and their mean of 6.8. You can see that the sum of absolute deviations from the median (20) is smaller than the sum of absolute deviations from the mean (22.8). On the other hand, the sum of squared deviations from the median (174) is larger than the sum of squared deviations from the mean (134.8).\n\nTable 1. Absolute and squared deviations from the median of 4 and the mean of 6.8.\n\nValue | Absolute Deviation from Median | Absolute Deviation from Mean | Squared Deviation from Median | Squared Deviation from Mean\n2 | 2 | 4.8 | 4 | 23.04\n3 | 1 | 3.8 | 1 | 14.44\n4 | 0 | 2.8 | 0 | 7.84\n9 | 5 | 2.2 | 25 | 4.84\n16 | 12 | 9.2 | 144 | 84.64\nTotal | 20 | 22.8 | 174 | 134.8\n\nFigure 1 shows that the distribution balances at the mean of 6.8 and not at the median of 4. The relative advantages and disadvantages of the mean and median are discussed in the section “Comparing Measures” later in this chapter.\n\nFigure 1. The distribution balances at the mean of 6.8 and not at the median of 4.0.\n\nWhen a distribution is symmetric, then the mean and the median are the same. Consider the following distribution: 1, 3, 4, 5, 6, 7, 9. The mean and median are both 5. The mean, median, and mode are identical in the bell-shaped normal distribution.",
+          "hit_page_start": 134,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                601.01,
+                872.426,
+                732.323
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                95.96,
+                844.68,
+                136.364
+              ],
+              "page": 135,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                155.303,
+                882.353,
+                405.112
+              ],
+              "page": 135,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                417.739,
+                853.407,
+                480.87
+              ],
+              "page": 135,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                604.351,
+                809.658,
+                644.755
+              ],
+              "page": 135,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                667.482,
+                847.848,
+                753.341
+              ],
+              "page": 135,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021351575456053068
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_98_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Variance Sum law I › = + › = + › Exercises",
+          "roles": [
+            "introduction",
+            "exercise"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Prerequisites\n\n• All material presented in the Summarizing Distributions chapter\n\n1. Make up a dataset of 12 numbers with a positive skew. Use a statistical program to compute the skew. Is the mean larger than the median as it usually is for distributions with a positive skew? What is the value for skew?\n2. Repeat Problem 1 only this time make the dataset have a negative skew.\n3. Make up three data sets with 5 numbers each that have: (a) the same mean but different standard deviations. (b) the same mean but different medians. (c) the same median but different means.\n4. Find the mean and median for the following three variables:\n5. A sample of 30 distance scores measured in yards has a mean of 10, a variance of 9, and a standard deviation of 3 (a) You want to convert all your distances from yards to feet, so you multiply each score in the sample by 3. What are the new mean, variance, and standard deviation? (b) You then decide that you only want to look at the distance past a certain point. Thus, after multiplying the original scores by 3, you decide to subtract 4 feet from each of the scores. Now what are the new mean, variance, and standard deviation?\n6. You recorded the time in seconds it took for 8 participants to solve a puzzle. These times appear below. However, when the data was entered into the statistical program, the score that was supposed to be 22.1 was entered as 21.2.\n\nYou had calculated the following measures of central tendency: the mean, the median, and the mean trimmed 25%. Which of these measures of central tendency will change when you correct the recording error?\n\n7. For the test scores in question #6, which measures of variability (range, standard deviation, variance) would be changed if the 22.1 data point had been erroneously recorded as 21.2?\n8. You know the minimum, the maximum, and the 25th, 50th, and 75th percentiles of a distribution. Which of the following measures of central tendency or variability can you determine? mean, median, mode, trimean, geometric mean, range, interquartile range, variance, standard deviation\n9. For the numbers 1, 3, 4, 6, and 12: Find the value (v) for which Σ(X-v)2 is minimized. Find the value (v) for which Σ|x-v| is minimized.\n10. Your younger brother comes home one day after taking a science test. He says that some- one at school told him that “60% of the students in the class scored above the median test grade.” What is wrong with this statement? What if he had said “60% of the students scored below the mean?”\n11. An experiment compared the ability of three groups of participants to remember brieﬂy- presented chess positions. The data are shown below. The numbers represent the number of pieces correctly remembered from three chess\n\npositions. Compare the performance of each group. Consider spread as well as central tendency.\n\n12. True/False: A bimodal distribution has two modes and two medians.\n13. True/False: The best way to describe a skewed distribution is to report the mean.\n14. True/False: When plotted on the same graph, a distribution with a mean of 50 and a standard deviation of 10 will look more spread out than will a distribution with a mean of 60 and a standard deviation of 5.\n15. Compare the mean, median, trimean in terms of their sensitivity to extreme scores.\n16. If the mean time to respond to a stimulus is much higher than the median time to respond, what can you say about the shape of the distribution of response times?\n17. A set of numbers is transformed by taking the log base 10 of each number. The mean of the transformed data is 1.65. What is the geometric mean of the untransformed data?\n18. Which measure of central tendency is most often used for returns on investment?\n\n19. The histogram is in balance on the fulcrum. What are the mean, median, and mode of the distribution (approximate where necessary)? Questions from Case Studies Angry Moods (AM) case study\n20. (AM) Does Anger-Out have a positive skew, a negative skew, or no skew?\n21. (AM) What is the range of the Anger-In scores? What is the interquartile range?\n22. (AM) What is the overall mean Control-Out score? What is the mean ControlOut score for the athletes? What is the mean Control-Out score for the nonathletes?\n23. (AM) What is the variance of the Control-In scores for the athletes? What is the variance of the Control-In scores for the non-athletes? Flatulence (F) case study\n24. (F) Based on a histogram of the variable “perday”, do you think the mean or median of this variable is larger? Calculate the mean and median to see if you are right.\n\nStroop (S) case study\n\n25.(S) Compute the mean for “words”.\n26. (S#2) Compute the mean and standard deviation for “colors”. Physicians’ Reactions (PR) case study\n27.(PR) What is the mean expected time spent for the average-weight patients? What is the mean expected time spent for the overweight patients?\n28.(PR) What is the difference in means between the groups? By approximately how many standard deviations do the means differ? Smiles and Leniency (SL) case study\n29.(SL) Find the mean, median, standard deviation, and interquartile range for the leniency scores of each of the four groups. ADHD Treatment (AT) case study\n30.(AT) What is the mean number of correct responses of the participants after taking the placebo (0 mg/kg)?\n31.(AT) What are the standard deviation and the interquartile range of the d0 condition?",
+          "pages": [
+            159,
+            160,
+            161,
+            162,
+            163
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_1705_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_215_v1",
+            "chk_f97f47b7a1fd68_216_v1",
+            "chk_f97f47b7a1fd68_217_v1",
+            "chk_f97f47b7a1fd68_218_v1",
+            "chk_f97f47b7a1fd68_219_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_215_v1",
+          "hit_text": "Prerequisites\n\n• All material presented in the Summarizing Distributions chapter\n\n1. Make up a dataset of 12 numbers with a positive skew. Use a statistical program to compute the skew. Is the mean larger than the median as it usually is for distributions with a positive skew? What is the value for skew?\n2. Repeat Problem 1 only this time make the dataset have a negative skew.\n3. Make up three data sets with 5 numbers each that have: (a) the same mean but different standard deviations. (b) the same mean but different medians. (c) the same median but different means.\n4. Find the mean and median for the following three variables:\n5. A sample of 30 distance scores measured in yards has a mean of 10, a variance of 9, and a standard deviation of 3 (a) You want to convert all your distances from yards to feet, so you multiply each score in the sample by 3. What are the new mean, variance, and standard deviation? (b) You then decide that you only want to look at the distance past a certain point. Thus, after multiplying the original scores by 3, you decide to subtract 4 feet from each of the scores. Now what are the new mean, variance, and standard deviation?\n6. You recorded the time in seconds it took for 8 participants to solve a puzzle. These times appear below. However, when the data was entered into the statistical program, the score that was supposed to be 22.1 was entered as 21.2.",
+          "hit_page_start": 159,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                140.152,
+                237.946,
+                157.828
+              ],
+              "page": 159,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                162.879,
+                719.964,
+                181.818
+              ],
+              "page": 159,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                203.283,
+                874.041,
+                893.308
+              ],
+              "page": 159,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020027744061036933
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

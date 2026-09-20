@@ -1,0 +1,63 @@
+{
+ "id": "mat_15968f09846c32f5",
+ "kind": "note",
+ "title": "Effective School Leadership: An Introductory Overview",
+ "content": "# Effective School Leadership — An Introduction\n\n## What is effective leadership?\nDefinitions vary among experts, but a widely used one (Kouzes & Posner, 1995) describes effective leadership as **\"the art of mobilizing others to want to struggle for shared aspirations.\"** Effectiveness can be measured with instruments such as the Leadership Practices Inventory, which reflects five practices of effective leaders:\n\n1. **Model the way**\n2. **Inspire a shared vision**\n3. **Challenge the process**\n4. **Enable others to act**\n5. **Encourage the heart**\n\n## From manager to leader\n- Principals are no longer strictly **managers**; they are expected to be **leaders** who raise academic achievement so that all students succeed and all teachers engage students in learning.\n- Becoming a leader means leaving behind purely **bureaucratic management styles** and redefining oneself as a **moral leader**.\n- Effective principals let **teachers be leaders** in developing curriculum that meets the needs of all students — they learn to **serve their staff, not just manage it**.\n\n## Servant leadership (Sergiovanni, 2000)\nBy serving the needs of the staff rather than one's own needs, a principal can create real change in the school. Three practices:\n- **Purposing** — keeping the school focused on shared goals\n- **Empowerment** — giving staff real responsibility and voice\n- **Leadership by outrage** — speaking out against conditions that harm students and learning\n\n## Key takeaways\n- Effective leadership is about **mobilizing people around shared aspirations**, not commanding them.\n- The principal's shift is from **manager → moral/servant leader**.\n- Valuing teacher input and cooperation is central to moving a school forward.\n\n```mermaid\nmindmap\n  root((Effective School Leadership))\n    Definition\n      Mobilizing others toward shared aspirations\n      Kouzes & Posner five practices\n        Model the way\n        Inspire a shared vision\n        Challenge the process\n        Enable others to act\n        Encourage the heart\n    Manager to Leader\n      Leave bureaucratic management behind\n      Become a moral leader\n      Raise achievement for all students\n    Servant Leadership\n      Serve the staff, not yourself\n      Purposing\n      Empowerment\n      Leadership by outrage\n    Teacher Leadership\n      Teachers as curriculum leaders\n      Cooperation and valuing input\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f1615397c20971_15_v1",
+  "exc_a35c627f0c0b82_20_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "21st-century-theories-of-education-administration",
+    "title": "21st Century Theories of Education Administration",
+    "authors": [
+     "Joseph Makolandra",
+     "Forest Jones",
+     "Kevin G. Bezy",
+     "Cindy Delp",
+     "Brad E. Bizzell",
+     "Caroline Wray",
+     "Guylene Wood-Setzer",
+     "Nancy Leonard",
+     "Dawn Hutton",
+     "Asia Jones",
+     "Seydric Williams",
+     "Janet Womack"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/17658",
+    "version": 1,
+    "excerptIds": [
+     "exc_f1615397c20971_15_v1"
+    ]
+   },
+   {
+    "id": "introduction-to-school-leadership",
+    "title": "Introduction to School Leadership",
+    "authors": [
+     "Angus MacNeil",
+     "Alena McClanahan",
+     "Melissa Patin",
+     "Michael Yelvington",
+     "Valerie maclin"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/27314",
+    "version": 1,
+    "excerptIds": [
+     "exc_a35c627f0c0b82_20_v1"
+    ]
+   }
+  ]
+ },
+ "size": "597 tokens",
+ "edits": []
+}

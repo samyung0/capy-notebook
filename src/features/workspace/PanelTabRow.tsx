@@ -74,8 +74,10 @@ export function PanelTabRow({
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center gap-1 pt-2.5 pr-3 pl-4.5',
-        title && 'h-12'
+        'relative flex shrink-0 items-center gap-1 pt-2.5 pr-3 pl-4.5',
+        title
+          ? 'h-12'
+          : 'before:pointer-events-none before:absolute before:right-3 before:bottom-0 before:left-4.5 before:h-px before:bg-divider'
       )}
     >
       {title ? (
@@ -84,21 +86,18 @@ export function PanelTabRow({
         tabs
       )}
       <div
-        className={cn(
-          'flex shrink-0 items-center gap-[3px]',
-          !title && 'mb-1.5'
-        )}
+        className={cn('flex shrink-0 items-center gap-0.5', !title && 'mb-1.5')}
       >
         {!compact &&
           actions.map((action) => (
             <IconButton
-              className={'text-fg-muted'}
+              className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
               disabled={action.disabled}
               icon={action.icon}
               key={action.label}
               label={action.label}
               onClick={action.onClick}
-              size="xs"
+              size="sm"
               tooltip
               variant="ghost-hover"
             />
@@ -108,10 +107,11 @@ export function PanelTabRow({
             items={addItems}
             trigger={
               <IconButton
-                className={'text-fg-muted'}
+                className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
                 icon="plusCircle"
                 label={m.action_add_file()}
-                size="xs"
+                size="sm"
+                tooltip
                 variant="ghost-hover"
               />
             }
@@ -123,10 +123,10 @@ export function PanelTabRow({
                 items={folded}
                 trigger={
                   <IconButton
-                    className={'text-fg-muted'}
+                    className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
                     icon="moreVertical"
                     label={m.a11y_more_actions()}
-                    size="xs"
+                    size="sm"
                     variant="ghost-hover"
                   />
                 }
@@ -134,11 +134,11 @@ export function PanelTabRow({
             )
           : onOpenSettings && (
               <IconButton
-                className={'text-fg-muted'}
+                className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
                 icon="settings"
                 label={m.workspace_settings()}
                 onClick={onOpenSettings}
-                size="xs"
+                size="sm"
                 tooltip
                 variant="ghost-hover"
               />

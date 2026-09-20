@@ -1,0 +1,1360 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "paired-t-test",
+    "query": "Create one concise study note explaining a paired-samples t-test with a worked example.",
+    "check": "Matched or repeated observations and differences; independent-groups procedures alone do not answer it."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "paired samples t-test dependent means worked example",
+      "topics": [],
+      "roles": [
+        "formal",
+        "worked_example"
+      ],
+      "seconds": 7.969,
+      "excerpts": [
+        {
+          "id": "exc_45ecdb7da7734b_249_v3",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.6.2 What is the paired samples 𝑡-test? › 11.6.3 Doing the test in jamovi",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "jamovi"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Describes doing a paired samples t-test in jamovi, either by creating a difference variable and running a one sample t-test, or by using the jamovi 'Paired Samples T-Test' analysis. Reports an average improvement of 1.4% from test 1 to test 2, significantly different from 0 (t(19) = 6.48, p < .001). Notes the paired samples t-test is a one sample test under the hood, so results are identical.",
+          "pages": [
+            259
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1979_v3",
+            "fig_45ecdb7da7734b_1981_v3"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_573_v3"
+          ],
+          "retrieval": {
+            "scope": "Jamovi-specific implementation for paired grades from the same students. The equivalence relies on testing the within-pair difference scores against zero. It does not apply to two independent groups.",
+            "summary": "Shows two equivalent jamovi implementations of a paired t-test: test a constructed difference variable with a one-sample t-test, or use Paired Samples T-Test; both give mean improvement 1.4 and t(19)=6.48, p<.001.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_45ecdb7da7734b_573_v3",
+          "hit_text": "How do you do a paired samples 𝑡-test in jamovi? One possibility is to follow the process I outlined above. That is, create a “difference” variable and then run a one sample 𝑡-test on that. Since we’ve already created a variable called “improvement”, let’s do that and see what we get, Figure 11.15.\n\nFigure 11.15. Results showing a one sample 𝑡-test on paired difference scores The output shown in Figure 11.15 is (obviously) formatted exactly the same was as it was the last time we used the one-sample 𝑡-test analysis (Section 11.2), and it confirms our intuition. There’s an average improvement of 1.4% from test 1 to test 2, and this is significantly different from 0 (𝑡(19) = 6.48,𝑝 < .001). However, suppose you’re lazy and you don’t want to go to all the effort of creating a new variable. Or perhaps you just want to keep the difference between one-sample and paired samples tests clear in your head. If so, you can use the jamovi ‘Paired Samples T-Test’ analysis, getting the results shown in Figure 11.16.\nFigure 11.16. Results showing a paired sample 𝑡-test. Compare with Figure 11.15\n\nThe numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood.",
+          "hit_page_start": 259,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                96.746,
+                843.752,
+                225.382
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                297.539,
+                843.752,
+                686.538
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                641.989,
+                843.74,
+                737.415
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023746383799421407
+        },
+        {
+          "id": "exc_45ecdb7da7734b_248_v3",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.6.2 What is the paired samples 𝑡-test?",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains why an independent samples t-test is inappropriate for repeated measures data, since it conflates within-subject differences with between-subject variability. Introduces the difference score D_i = X_i1 − X_i2, defines the population mean difference μ_D = μ1 − μ2, states the null and alternative hypotheses (H0: μ_D = 0 vs H1: μ_D ≠ 0), and gives the t-statistic D̄ / SE(D̄) with N − 1 degrees of freedom. Concludes the paired samples t-test is a one-sample t-test on differences.",
+          "pages": [
+            258
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_570_v3",
+            "chk_45ecdb7da7734b_571_v3",
+            "chk_45ecdb7da7734b_572_v3"
+          ],
+          "retrieval": {
+            "scope": "Software-independent method for paired or repeated-measures observations. The sign of each difference depends on variable order. It tests a mean within-pair difference and should not be substituted for an independent-samples test on unrelated groups.",
+            "summary": "Derives the paired-samples t-test as a one-sample t-test on within-person differences, with D_i=X_i1-X_i2, H0: mu_D=0, t=mean(D)/SE(mean(D)), and df=N-1.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_45ecdb7da7734b_572_v3",
+          "hit_text": "This is assuming we’re talking about a two-sided test here. This is more or less identical to the way we described the hypotheses for the one-sample 𝑡-test. The only difference is that the specific value that the null hypothesis predicts is 0. And so our 𝑡-statistic is defined in more or less the same way too. If we let 𝐷̄ denote the mean of the difference scores, then:\n\n𝐷̄ 𝑆𝐸(𝐷)̄\n\n𝑡 =\n\n𝐷̄\n\n𝑡 =\n\nwhich is:\n\n√𝜎̂𝐷 𝑁\n\nwhere𝜎̂𝐷 isthestandarddeviationofthedifferencescores. Sincethisisjustanordinary, one-sample 𝑡-test, with nothing special about it, the degrees of freedom are still 𝑁 − 1. And that’s it. The paired samples 𝑡-test really isn’t a new test at all. It’s a one-sample 𝑡-test, but applied to the difference between two variables. It’s actually very simple. The only reason it merits a discussion as long as the one we’ve just gone through is that you need to be able to recognise when a paired samples test is appropriate, and to understand why it’s better than an independent samples 𝑡-test.",
+          "hit_page_start": 258,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                584.631,
+                812.491,
+                713.267
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                471.939,
+                647.199,
+                527.328,
+                766.742
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                439.328,
+                660.317,
+                464.842,
+                755.743
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                492.146,
+                713.254,
+                507.066,
+                812.039
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                453.472,
+                726.372,
+                478.986,
+                821.799
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                738.492,
+                224.535,
+                757.6
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                488.158,
+                747.068,
+                510.08,
+                827.092
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                774.057,
+                812.512,
+                969.11
+              ],
+              "page": 258,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021554834054834056
+        },
+        {
+          "id": "exc_dd1e65de648fb2_882_v2",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.2 What is the paired samples 𝑡-test?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "paired-data"
+          ],
+          "confidence": 0.96,
+          "synopsis": "In light of the previous exploration, let’s think about how to construct an appropriate 𝑡 test. One possibility would be to try to run an independent samples 𝑡-test using grade_test1 and grade_test2 as the variables of interest. However, this is clearly the wrong thing to do: the independent samples 𝑡-test assumes that there is no particular relationship between the two samples. Yet clearly that’s not true in this case, because of the repeated measures structure to the data. To use the language that I introduced in the last section, if we were to try to do an independent samples 𝑡-test, we would be conflating the within subject differences (which is what we’re interested in testing) with the between subject variability (which we are not).\n\nThe solution to the problem is obvious, I hope, since we already did all the hard work in the previous section. Instead of running an independent samples 𝑡-test on grade_test1 and grade_test2, we run a one-sample 𝑡-test on the within-subject difference variable, improvement. To formalise this slightly, if 𝑋𝑖1 is the score that the 𝑖-th participant obtained on the first variable, and 𝑋𝑖2 is the score that the same person obtained on the second one,",
+          "pages": [
+            537
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1307_v2"
+          ],
+          "retrieval": {
+            "scope": "Applies to matched or repeated measurements where each value in one condition corresponds to a value in the other. The Chico grades supply context; the difference-score definition, hypotheses, statistic, and degrees of freedom continue in excerpt 883.",
+            "summary": "Explains why repeated measurements violate the independence premise of an independent-samples t-test and motivates a paired test as a one-sample t-test on within-participant differences.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_881_v2",
+              "exc_dd1e65de648fb2_883_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_dd1e65de648fb2_1307_v2",
+          "hit_text": "In light of the previous exploration, let’s think about how to construct an appropriate 𝑡 test. One possibility would be to try to run an independent samples 𝑡-test using grade_test1 and grade_test2 as the variables of interest. However, this is clearly the wrong thing to do: the independent samples 𝑡-test assumes that there is no particular relationship between the two samples. Yet clearly that’s not true in this case, because of the repeated measures structure to the data. To use the language that I introduced in the last section, if we were to try to do an independent samples 𝑡-test, we would be conflating the within subject differences (which is what we’re interested in testing) with the between subject variability (which we are not).\n\nThe solution to the problem is obvious, I hope, since we already did all the hard work in the previous section. Instead of running an independent samples 𝑡-test on grade_test1 and grade_test2, we run a one-sample 𝑡-test on the within-subject difference variable, improvement. To formalise this slightly, if 𝑋𝑖1 is the score that the 𝑖-th participant obtained on the first variable, and 𝑋𝑖2 is the score that the same person obtained on the second one,",
+          "hit_page_start": 537,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                549.121,
+                867.113,
+                742.951
+              ],
+              "page": 537,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                711.643,
+                866.124,
+                854.15
+              ],
+              "page": 537,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015625
+        },
+        {
+          "id": "exc_dd1e65de648fb2_885_v2",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.5 The paired-samples 𝑡-test › 13.5.3 Doing the test in R, part 1 › Descriptive statistics:",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.96,
+          "synopsis": "improvement mean 1.405 std dev. 0.970\n\nHypotheses: null: population mean equals 0 alternative: population mean not equal to 0\n\nTest results: t-statistic: 6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [0.951, 1.859] estimated effect size (Cohen's d): 1.448\n\nThe output here is (obviously) formatted exactly the same way as it was the last time we used the oneSampleTTest() function (Section 13.2), and it confirms our intuition. There’s an average improvement of 1.4% from test 1 to test 2, and this is significantly different from 0 (𝑡(19) = 6.48,𝑝 < .001).\n\nHowever, suppose you’re lazy and you don’t want to go to all the effort of creating a new variable. Or perhaps you just want to keep the difference between one-sample and pairedsamples tests clear in your head. If so, you can use the pairedSamplesTTest() function, also in the lsr package. Let’s assume that your data are organised like they are in the chico data frame, where there are two separate variables, one for each measurement. The way to run the test is to input a one-sided formula, just like you did when running a test of association using the associationTest() function in Categorical data analysis. For the chico data frame, the formula that you need would be ~ grade_test2 + grade_test1. As usual, you’ll also need to input the name of the data frame too. So the command just looks like this:\n\npairedSamplesTTest( formula = ~ grade_test2 + grade_test1, # one-sided formula listing the two variables data = chico # data frame containing the two variables\n\n)\n\nPaired samples t-test Variables: grade_test2 , grade_test1\n\ngrade_test2 grade_test1 difference mean 58.385 56.980 1.405 std dev. 6.406 6.616 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: 6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [0.951, 1.859] estimated effect size (Cohen's d): 1.448\n\nThe output is shown above. The numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood. However, the output is a bit more detailed: this time around the descriptive statistics block shows you the means and standard deviations for the original variables, as well as for the difference variable (notice that it always defines the difference as the first listed variable minus the second listed one). The null hypothesis and the alternative hypothesis are now framed in terms of the original variables rather than the difference score, but you should keep in mind that in a paired samples test it’s still the difference score being tested. The statistical information at the bottom about the test result is of course the same as before.",
+          "pages": [
+            539,
+            540
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1310_v2",
+            "chk_dd1e65de648fb2_1311_v2",
+            "chk_dd1e65de648fb2_1312_v2"
+          ],
+          "retrieval": {
+            "scope": "R and lsr specific. The opening output belongs to the oneSampleTTest call in excerpt 884; the later command is the paired test for wide-form repeated measures. Variable order fixes the sign of the difference. The example has 20 paired students, t=6.475, df=19, p<.001.",
+            "summary": "Interprets the Chico improvement test, then runs pairedSamplesTTest on wide-form grade_test2 and grade_test1 data and explains why its result matches a one-sample test of the difference scores.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_884_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_dd1e65de648fb2_1312_v2",
+          "hit_text": "grade_test2 grade_test1 difference mean 58.385 56.980 1.405 std dev. 6.406 6.616 0.970\n\nHypotheses: null: population means equal for both measurements alternative: different population means for each measurement\n\nTest results: t-statistic: 6.475 degrees of freedom: 19 p-value: <.001\n\nOther information: two-sided 95% confidence interval: [0.951, 1.859] estimated effect size (Cohen's d): 1.448\n\nThe output is shown above. The numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood. However, the output is a bit more detailed: this time around the descriptive statistics block shows you the means and standard deviations for the original variables, as well as for the difference variable (notice that it always defines the difference as the first listed variable minus the second listed one). The null hypothesis and the alternative hypothesis are now framed in terms of the original variables rather than the difference score, but you should keep in mind that in a paired samples test it’s still the difference score being tested. The statistical information at the bottom about the test result is of course the same as before.",
+          "hit_page_start": 540,
+          "hit_regions": [
+            {
+              "bbox": [
+                164.438,
+                107.544,
+                566.845,
+                159.477
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                174.717,
+                725.936,
+                226.65
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                241.889,
+                379.678,
+                310.615
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                325.855,
+                632.353,
+                377.788
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                370.943,
+                866.116,
+                560.833
+              ],
+              "page": 540,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015384615384615385
+        },
+        {
+          "id": "exc_858bafa062c60b_68_v2",
+          "book_id": "introductory-business-statistics",
+          "book_title": "Introductory Business Statistics",
+          "section_path": "Chapter 5 The t-test › 5.5 A third t-test: do these (paired) samples come from the sample population?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "t-distribution"
+          ],
+          "confidence": 0.97,
+          "synopsis": "5.5 A third t-test: do these (paired) samples come from the sample population? covering paired-data, t-tests.",
+          "pages": [
+            57
+          ],
+          "figure_ids": [
+            "fig_858bafa062c60b_710_v2",
+            "fig_858bafa062c60b_714_v2",
+            "fig_858bafa062c60b_717_v2",
+            "fig_858bafa062c60b_719_v2"
+          ],
+          "chunk_ids": [
+            "chk_858bafa062c60b_151_v2",
+            "chk_858bafa062c60b_152_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_858bafa062c60b_151_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nManagers are often interested in \"before and after\" questions. As a manager or researcher you will often want to look at \"longitudinal\" studies, studies that ask about what has happened to an individual as a result of some treatment or across time. Are they different after than they were before? For example, if your firm has conducted a training program you will want to know if the workers who participated became more productive. If the work area has been re-arranged, do workers produce more than before? Though you can use the difference of means test developed earlier, this is a different situation. Earlier, you had two samples that were chosen independently of each other; you might have a sample of workers who received the training and a sample of workers who had not. The situation for this test is different; now you have a sample of workers and for each worker you have measured their productivity before the training or re-arrangement of the work space and you have measured their productivity after. For each worker you have a pair of measures, before and after. Another way to look at this is that for each member of the sample you have a difference between before and after.\n\nYou can test to see if these differences equal zero, or any other value, because a statistic based on these differences follows the t-distribution for n-1 df when you have n matched pairs. That statistic is:\n\nwhere: = the mean of the differences in the pairs in the sample",
+          "hit_page_start": 57,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                373.633,
+                755.639,
+                405.682
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                417.095,
+                869.148,
+                695.954
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                706.584,
+                868.689,
+                760.977
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                825.943,
+                698.062,
+                842.925
+              ],
+              "page": 57,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014705882352941176
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

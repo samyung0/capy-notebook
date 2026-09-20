@@ -366,6 +366,13 @@ async def _run_turn(
             # if a turn ever fails on that margin.
             image_tokens = capture.image_tokens(ctx.captures, messages)
             ledger_message = _ledger_message(ctx, query, final=tools_off)
+            if ledger_message and ctx.curate and not tools_off:
+                remaining = stall_limit - stalled
+                ledger_message["content"] += (
+                    f"\nResponses remaining without completing a todo: {remaining}. "
+                    "Batch needed reads and page captures, then write from the evidence "
+                    "already read. Searching does not reset this allowance."
+                )
             ledger_tokens = (
                 estimate_tokens(str(ledger_message["content"])) if ledger_message else 0
             )

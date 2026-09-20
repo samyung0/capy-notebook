@@ -1,0 +1,26 @@
+{
+  "book_id": "chinese-contract-law",
+  "excerpts": 58,
+  "reused_topics": 3,
+  "proposed_topics": 0,
+  "roles_corrected_in_candidate": [
+    "exc_3af200c915ae90_0",
+    "exc_3af200c915ae90_1",
+    "exc_3af200c915ae90_2",
+    "exc_3af200c915ae90_3",
+    "exc_3af200c915ae90_5"
+  ],
+  "non_teaching_candidates": 6,
+  "preserved_full_notes_evidence_and_retrieval": true,
+  "canonical_book_unchanged": true,
+  "published": false,
+  "files_sha256": {
+    "context.json": "fc90d0f86fcf2eefc043b4f0ecb106795686da2eac92482b3525eb0ddebef821",
+    "review-context.json": "4bbcad12826b9542659eb538331e63bb52d4be51ed75d85be129e2882c00607d",
+    "proposal.json": "d11ee83c07da97e6e9ea9de4de568d63594fc6817dfe7f8dba25516215d20516",
+    "topics-candidate.json": "262b14d31bd8786ab93dfd4ee60d47847cec71f8fde4cc64c778ba4c97bde7fe",
+    "assignments.json": "baae5a960b0033d57f53c95d35c4576c6631172146d2e460587460d2823d6ce9",
+    "candidate-tags.json": "ba408c7051c9f691d231982e3ed033d2690691b99133eebbb006a1f74d477340",
+    "verification.json": "38368e7a0c7cbeaa52eb45318f4860973fd916aff3137b8be479b2caf81a0bfd"
+  }
+}

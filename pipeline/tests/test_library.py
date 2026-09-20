@@ -263,6 +263,24 @@ async def test_empty_role_filter_reports_what_the_topic_holds(library_db):
     assert result.available_roles == {"introduction": 1, "worked_example": 1}
 
 
+async def test_duplicate_hit_does_not_hide_a_later_distinct_hit_of_its_excerpt(
+    library_db,
+):
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_chunks SET text=(SELECT text FROM library_chunks WHERE id='c_intro') WHERE id='c_worked_a'"
+        )
+        conn.execute(
+            "UPDATE library_excerpts SET roles='{worked_example,worked_example}' WHERE id='e_worked'"
+        )
+    result = await library.search("regression", vector=_unit_vector(0), top_k=2)
+    assert [(e.id, e.hit_chunk_id) for e in result.excerpts] == [
+        ("e_intro", "c_intro"),
+        ("e_worked", "c_worked_b"),
+    ]
+    assert (await library.browse("linear-regression")).by_role["worked_example"] == 1
+
+
 async def test_a_role_filter_without_topics_counts_nothing(library_db):
     """The whole library's role counts say nothing about the query."""
     result = await library.search(
@@ -283,7 +301,7 @@ async def test_catalog_lists_subjects_that_hold_tagged_excerpts(library_db):
             "label": "Statistics",
             "aliases": ["stats"],
             "area": "mathematics",
-            "excerpts": 3,
+            "excerpts": 2,
         }
     ]
 
@@ -292,7 +310,7 @@ async def test_browse_subject_lists_its_topics_with_tagged_excerpt_counts(librar
     listing = await library.browse_subject("statistics")
     assert listing["subject"]["label"] == "Statistics"
     topics = listing["topics"]
-    assert [(t["id"], t["excerpts"]) for t in topics] == [("linear-regression", 3)]
+    assert [(t["id"], t["excerpts"]) for t in topics] == [("linear-regression", 2)]
     assert topics[0]["scope"] == "Fitting lines"
     assert (await library.browse_subject("algebra"))["topics"] == [
         {
@@ -336,6 +354,39 @@ async def test_browse_counts_verified_excerpts_by_role_and_book(library_db):
     assert result.by_book == {"ahss": 2} and result.total == 2
     assert [e.id for e in result.items] == ["e_intro", "e_worked"]
     assert result.items[0].synopsis == "synopsis" and result.items[0].hit_chunk_id == ""
+
+
+async def test_reviewed_scope_and_teaching_eligibility_agree_across_search_and_counts(
+    library_db,
+):
+    from psycopg.types.json import Jsonb
+
+    metadata = {
+        "summary": "A fitted line",
+        "scope": "One predictor; independent of software.",
+        "context_excerpt_ids": ["e_worked"],
+    }
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_excerpts SET retrieval=%s WHERE id='e_intro'",
+            (Jsonb(metadata),),
+        )
+        conn.execute(
+            "UPDATE library_excerpts SET roles='{non_teaching}' WHERE id='e_worked'"
+        )
+    found = await library.search("regression", vector=_unit_vector(1))
+    assert [e.id for e in found.excerpts] == ["e_intro"]
+    assert found.excerpts[0].retrieval == metadata
+    assert (await library.read_excerpt("e_intro")).excerpt.synopsis == "synopsis"
+    assert (await library.browse_subject("statistics"))["topics"][0]["excerpts"] == 1
+    assert (await library.browse("linear-regression")).total == 1
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute("UPDATE library_chunks SET searchable=false WHERE id='c_intro'")
+    assert (await library.search("regression", vector=_unit_vector(1))).excerpts == []
+    assert (await library.browse("linear-regression")).total == 0
+    db = await library.pool()
+    async with db.connection() as conn:
+        assert await library.catalog(conn) == []
 
 
 async def test_browse_pages_within_bounds_and_refuses_bad_ones(library_db):

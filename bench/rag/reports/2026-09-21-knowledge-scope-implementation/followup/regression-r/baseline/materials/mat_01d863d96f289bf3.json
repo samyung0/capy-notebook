@@ -1,0 +1,72 @@
+{
+ "id": "mat_01d863d96f289bf3",
+ "kind": "note",
+ "title": "Simple Linear Regression in R with lm(): Fit and Interpret",
+ "content": "# Fitting and Interpreting Simple Linear Regression in R with `lm()`\n\n## 1. Fitting the model\n\n`lm()` takes two key arguments:\n\n- **`formula`** — the model, written `outcome ~ predictor` (outcome on the left, predictor on the right). The intercept is included by default; you never type it.\n- **`data`** — the data frame containing the variables.\n\nThe output is a complicated \"lm object\", so store it in a variable:\n\n```r\nregression_1 <- lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n```\n\nHere `danielle_grump` is the outcome and `danielle_sleep` the predictor — always keep track of which is which.\n\n## 2. Quick look: `print()`\n\n```r\nprint(regression_1)\n```\n```\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\nCoefficients:\n(Intercept)  danielle_sleep\n    125.956          -8.937\n```\n\nThis gives just the fitted coefficients: ŷ = 125.956 − 8.937·x.\n\n## 3. Full output: `summary()`\n\n```r\nsummary(regression_1)\n```\n\nThe summary is dense but every part is useful:\n\n- **Call** — reminds you which model you fitted.\n- **Residuals** — Min, 1Q, Median, 3Q, Max. A quick-and-rough check: the median should be near 0 and the 1st and 3rd quartiles roughly symmetric in size; badly off values suggest the regression assumptions are violated.\n- **Coefficients table** — one row per coefficient (intercept first, then each predictor). Columns:\n  - `Estimate`: the fitted coefficient b̂ (e.g., intercept 125.96, slope −8.9).\n  - `Std. Error`: the standard error of that estimate.\n  - `t value`: the t-statistic, and note that t = b̂ / SE(b̂) every time.\n  - `Pr(>|t|)`: the p-value for the test that the coefficient is zero, with significance stars (`***` p < 0.001, `**` p < 0.01, `*` p < 0.05, `.` p < 0.1).\n- **Residual standard error** — typical size of the residuals, with degrees of freedom (N − K − 1).\n- **Multiple R-squared / Adjusted R-squared** — model fit.\n- **F-statistic** — overall test that the model (all predictors jointly) explains the outcome.\n\n## 4. Interpreting the coefficients\n\n- **Slope (b₁)**: the predicted change in the response for a one-unit increase in the predictor. In the example, each extra hour of sleep predicts about 8.9 fewer grumpiness points. The slope's sign gives the direction of the association.\n- **Intercept (b₀)**: the predicted response when the predictor equals 0. Be careful: if x = 0 is outside the observed data range (extrapolation) or gives an impossible response (e.g., negative height), the intercept may not be meaningful in context even though it is needed for the line.\n- The coefficients are **statistics** — estimates from a sample — so the standard errors, t statistics and p-values tell you how much uncertainty surrounds them.\n- Always interpret a, b and R² in context, referencing the actual variables.\n\n## 5. Interpreting R²\n\n- R² is the **coefficient of determination**: the proportion of variation in the response explained by the linear relationship with the predictor. It ranges from 0 to 1 (0%–100%); higher = better fit.\n- R² is always positive and **cannot tell you the direction** of the association — use the slope or the scatterplot for that (r = ±√R²).\n- R² applies to any type of model and can be used to compare fits among models.\n\n## Worked example (parenthood data)\n\nFitting `danielle_grump ~ danielle_sleep` gives intercept 125.96 and slope −8.94, so the fitted line is ŷ = 125.96 − 8.94·x. The slope is highly significant (tiny p-value), and the model's R² is large, meaning most of the variation in grumpiness is explained by sleep. (The full `summary()` output shown in the source is for the two-predictor extension of this model; the simple-regression summary has the same structure with one predictor row.)\n\n*Scope note: this note covers R's `lm()` for simple linear regression (one predictor plus intercept). Multiple regression uses the same functions with a longer formula, but its interpretation details are not covered here.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_998_v2",
+  "exc_dd1e65de648fb2_1019_v2",
+  "exc_dd1e65de648fb2_1020_v2",
+  "exc_0689cddaba206d_728_v4",
+  "exc_45ecdb7da7734b_279_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 4,
+    "excerptIds": [
+     "exc_0689cddaba206d_728_v4"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 2,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1019_v2",
+     "exc_dd1e65de648fb2_1020_v2",
+     "exc_dd1e65de648fb2_998_v2"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 3,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_279_v3"
+    ]
+   }
+  ]
+ },
+ "size": "987 tokens",
+ "edits": []
+}

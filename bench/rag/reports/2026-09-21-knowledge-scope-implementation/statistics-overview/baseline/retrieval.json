@@ -1,0 +1,1407 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "statistics-overview",
+    "query": "I want to learn statistics. Create one concise beginner study note explaining what statistics is and what it is useful for.",
+    "check": "Teaches statistics; does not turn the introduction into a software tutorial, epilogue or list of learning objectives."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "what is statistics definition uses descriptive inferential",
+      "topics": [],
+      "roles": [
+        "introduction"
+      ],
+      "seconds": 6.294,
+      "excerpts": [
+        {
+          "id": "exc_f97f47b7a1fd68_5_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction › Descriptive Statistics",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by Mikki Hebl Prerequisites\n\n• none Learning Objectives\n\n1. Deﬁne “descriptive statistics”\n2. Distinguish between descriptive statistics and inferential statistics\n\nDescriptive statistics are numbers that are used to summarize and describe data. The word “data” refers to the information that has been collected from an experiment, a survey, an historical record, etc. (By the way, “data” is plural. One piece of information is called a “datum.”) If we are analyzing birth certiﬁcates, for example, a descriptive statistic might be the percentage of certiﬁcates issued in New York State, or the average age of the mother. Any other number we choose to compute also counts as a descriptive statistic for the data from which the statistic is computed. Several descriptive statistics are often used at one time to give a full picture of the data.\n\nDescriptive statistics are just descriptive. They do not involve generalizing beyond the data at hand. Generalizing from our data to another set of cases is the business of inferential statistics, which you'll be studying in another section. Here we focus on (mere) descriptive statistics.\n\nSome descriptive statistics are shown in Table 1. The table shows the average salaries for various occupations in the United States in 1999.\n\nTable 1. Average salaries for various occupations in 1999.\n\nSome descriptive statistics are shown in Table 1. The table shows the average salaries for various occupations in the United States in 1999.\n\nTable 1. Average salaries for various occupations in 1999.\n\n$112,760 | pediatricians$106,130 | dentists\n$100,090 | podiatrists$76,140 | physicists\n$53,410 | architects,$49,720 | school, clinical, and counseling psychologists\n$47,910 | flight attendants$39,560 | elementary school teachers\n$38,710 | police officers$18,980 | floral designers\n\nDescriptive statistics like these offer insight into American society. It is interesting to note, for example, that we pay the people who educate our children and who protect our citizens a great deal less than we pay people who take care of our feet or our teeth.\n\nFor more descriptive statistics, consider Table 2. It shows the number of unmarried men per 100 unmarried women in U.S. Metro Areas in 1990. From this table we see that men outnumber women most in Jacksonville, NC, and women outnumber men most in Sarasota, FL. You can see that descriptive statistics can be useful if we are looking for an opposite-sex partner! (These data come from the Information Please Almanac.)\n\nTable 2. Number of unmarried men per 100 unmarried women in U.S. Metro Areas in 1990.\n\nCities with mostly men | Men per 100 Women | Cities with mostly women | Men per 100 Women\n1. Jacksonville, NC | 224 | 1. Sarasota, FL | 66\n2. Killeen-Temple, TX | 123 | 2. Bradenton, FL | 68\n3. Fayetteville, NC | 118 | 3. Altoona, PA | 69\n\nCities with mostly men | Men per 100 Women | Cities with mostly women | Men per 100 Women\n1. Jacksonville, NC | 224 | 1. Sarasota, FL | 66\n2. Killeen-Temple, TX | 123 | 2. Bradenton, FL | 68\n3. Fayetteville, NC | 118 | 3. Altoona, PA | 69\n\n4. Brazoria, TX | 117 | 4. Springfield, IL | 70\n5. Lawton, OK | 116 | 5. Jacksonville, TN | 70\n6. State College, PA | 113 | 6. Gadsden, AL | 70\n7. ClarksvilleHopkinsville, TN-KY | 113 | 7. Wheeling, WV | 70\n8. Anchorage, Alaska | 112 | 8. Charleston, WV | 71\n9. Salinas-SeasideMonterey, CA | 112 | 9. St. Joseph, MO | 71\n10. Bryan-College Station, TX | 111 | 10. Lynchburg, VA | 71\n\nNOTE: Unmarried includes never-married, widowed, and divorced persons, 15 years or older.\n\nThese descriptive statistics may make us ponder why the numbers are so disparate in these cities. One potential explanation, for instance, as to why there are more women in Florida than men may involve the fact that elderly individuals tend to move down to the Sarasota region and that women tend to outlive men. Thus, more women might live in Sarasota than men. However, in the absence of proper data, this is only speculation.\n\nThese descriptive statistics may make us ponder why the numbers are so disparate in these cities. One potential explanation, for instance, as to why there are more women in Florida than men may involve the fact that elderly individuals tend to move down to the Sarasota region and that women tend to outlive men. Thus, more women might live in Sarasota than men. However, in the absence of proper data, this is only speculation.\n\nYou probably know that descriptive statistics are central to the world of sports. Every sporting event produces numerous statistics such as the shooting percentage of players on a basketball team. For the Olympic marathon (a foot race of 26.2 miles), we possess data that cover more than a century of competition. (The ﬁrst modern Olympics took place in 1896.) The following table shows the winning times for both men and women (the latter have only been allowed to compete since 1984).\n\nTable 3. Winning Olympic marathon times.\n\nWomen\nYear | Winner | Country | Time\n1984 | Joan Benoit | USA | 2:24:52\n1988 | Rosa Mota | POR | 2:25:40\n\nYou probably know that descriptive statistics are central to the world of sports. Every sporting event produces numerous statistics such as the shooting percentage of players on a basketball team. For the Olympic marathon (a foot race of 26.2 miles), we possess data that cover more than a century of competition. (The ﬁrst modern Olympics took place in 1896.) The following table shows the winning times for both men and women (the latter have only been allowed to compete since 1984).\n\nTable 3. Winning Olympic marathon times.\n\nWomen\nYear | Winner | Country | Time\n1984 | Joan Benoit | USA | 2:24:52\n1988 | Rosa Mota | POR | 2:25:40\n\n1992 | Valentina Yegorova | UT | 2:32:41\n1996 | Fatuma Roba | ETH | 2:26:05\n2000 | Naoko Takahashi | JPN | 2:23:14\n2004 | Mizuki Noguchi | JPN | 2:26:20\nMen\nYear | Winner | Country | Time\n1896 | Spiridon Louis | GRE | 2:58:50\n1900 | Michel Theato | FRA | 2:59:45\n1904 | Thomas Hicks | USA | 3:28:53\n1906 | Billy Sherring | CAN | 2:51:23\n1908 | Johnny Hayes | USA | 2:55:18\n1912 | Kenneth McArthur | S. Afr. | 2:36:54\n1920 | Hannes Kolehmainen | FIN | 2:32:35\n1924 | Albin Stenroos | FIN | 2:41:22\n1928 | Boughra El Ouafi | FRA | 2:32:57\n1932 | Juan Carlos Zabala | ARG | 2:31:36\n1936 | Sohn Kee-Chung | JPN | 2:29:19\n1948 | Delfo Cabrera | ARG | 2:34:51\n1952 | Emil Ztopek | CZE | 2:23:03\n1956 | Alain Mimoun | FRA | 2:25:00\n1960 | Abebe Bikila | ETH | 2:15:16\n1964 | Abebe Bikila | ETH | 2:12:11\n1968 | Mamo Wolde | ETH | 2:20:26\n1972 | Frank Shorter | USA | 2:12:19\n1976 | Waldemar Cierpinski | E.Ger | 2:09:55\n1980 | Waldemar Cierpinski | E.Ger | 2:11:03\n1984 | Carlos Lopes | POR | 2:09:21\n1988 | Gelindo Bordin | ITA | 2:10:32\n\n1992 | Hwang Young-Cho | S. Kor | 2:13:23\n1996 | Josia Thugwane | S. Afr. | 2:12:36\n2000 | Gezahenge Abera | ETH | 2:10.10\n2004 | Stefano Baldini | ITA | 2:10:55\n\nThere are many descriptive statistics that we can compute from the data in the table. To gain insight into the improvement in speed over the years, let us divide the men's times into two pieces, namely, the ﬁrst 13 races (up to 1952) and the second 13 (starting from 1956). The mean winning time for the ﬁrst 13 races is 2 hours, 44 minutes, and 22 seconds (written 2:44:22). The mean winning time for the second 13 races is 2:13:18. This is quite a difference (over half an hour). Does this prove that the fastest men are running faster? Or is the difference just due to chance, no more than what often emerges from chance differences in performance from year to year? We can't answer this question with descriptive statistics alone. All we can afﬁrm is that the two means are “suggestive.”\n\nExamining Table 3 leads to many other questions. We note that Takahashi (the lead female runner in 2000) would have beaten the male runner in 1956 and all male runners in the ﬁrst 12 marathons. This fact leads us to ask whether the gender gap will close or remain constant. When we look at the times within each gender, we also wonder how far they will decrease (if at all) in the next century of the Olympics. Might we one day witness a sub-2 hour marathon? The study of statistics can help you make reasonable guesses about the answers to these questions.",
+          "pages": [
+            15,
+            16,
+            17,
+            18,
+            19
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_28_v2",
+            "chk_f97f47b7a1fd68_29_v2",
+            "chk_f97f47b7a1fd68_30_v2",
+            "chk_f97f47b7a1fd68_31_v2",
+            "chk_f97f47b7a1fd68_32_v2",
+            "chk_f97f47b7a1fd68_33_v2"
+          ],
+          "retrieval": {
+            "scope": "Conceptual introduction with historical U.S. examples. Salary data are from 1999, metro-area counts from 1990, and Olympic results run through 2004; use them to learn descriptive summaries, not as current facts. The marathon example compares two groups of 13 men's races.",
+            "summary": "Defines descriptive statistics, separates description from inference, and illustrates summaries with occupation salaries, metro-area sex ratios, and Olympic marathon means.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_f97f47b7a1fd68_28_v2",
+          "hit_text": "by Mikki Hebl Prerequisites\n\n• none Learning Objectives\n\n1. Deﬁne “descriptive statistics”\n2. Distinguish between descriptive statistics and inferential statistics\n\nDescriptive statistics are numbers that are used to summarize and describe data. The word “data” refers to the information that has been collected from an experiment, a survey, an historical record, etc. (By the way, “data” is plural. One piece of information is called a “datum.”) If we are analyzing birth certiﬁcates, for example, a descriptive statistic might be the percentage of certiﬁcates issued in New York State, or the average age of the mother. Any other number we choose to compute also counts as a descriptive statistic for the data from which the statistic is computed. Several descriptive statistics are often used at one time to give a full picture of the data.\n\nDescriptive statistics are just descriptive. They do not involve generalizing beyond the data at hand. Generalizing from our data to another set of cases is the business of inferential statistics, which you'll be studying in another section. Here we focus on (mere) descriptive statistics.\n\nSome descriptive statistics are shown in Table 1. The table shows the average salaries for various occupations in the United States in 1999.\n\nTable 1. Average salaries for various occupations in 1999.",
+          "hit_page_start": 15,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                250.025,
+                185.606
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                185.585,
+                303.783,
+                248.232
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                253.283,
+                748.025,
+                293.687
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                305.051,
+                878.67,
+                504.545
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                509.596,
+                865.992,
+                595.455
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                600.505,
+                808.077,
+                640.909
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                95.96,
+                646.69,
+                113.636
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_45ecdb7da7734b_153_v3",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Estimating unknown quantities from a sample",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "sampling",
+            "estimation"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Introduces statistical inference, distinguishing descriptive from inferential statistics. Notes that inference is traditionally divided into estimation and hypothesis testing, and that this chapter covers estimation theory after first developing sampling theory. The chapter divides into three sections on sampling theory and two sections on estimation.",
+          "pages": [
+            156
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_336_v3"
+          ],
+          "retrieval": {
+            "scope": "Chapter-level conceptual orientation. It outlines the relationship among sampling, estimation, and hypothesis testing but does not define an estimator, calculate an estimate, or present a test.",
+            "summary": "Introduces statistical inference as learning about unknowns from observed data and divides it into estimation and hypothesis testing, with sampling theory presented as the basis for estimation.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_45ecdb7da7734b_336_v3",
+          "hit_text": "At the start of the last chapter I highlighted the critical distinction between descriptive statistics and inferential statistics. As discussed in Chapter 4, the role of descriptive statistics is to concisely summarise what we do know. In contrast, the purpose of inferential statistics is to “learn what we do not know from what we do”.\n\nNow that we have a foundation in probability theory we are in a good position to think about the problem of statistical inference. What kinds of things would we like to learn about? And how do we learn them? These are the questions that lie at the heart of inferential statistics, and they are traditionally divided into two “big ideas”: estimation and hypothesis testing.\n\nThe goal in this chapter is to introduce the first of these big ideas, estimation theory, but I’m going to witter on about sampling theory first because estimation theory doesn’t make sense until you understand sampling. As a consequence, this chapter divides naturally into two parts, the first three sections are focused on sampling theory, and the last two sections make use of sampling theory to discuss how statisticians think about estimation.",
+          "hit_page_start": 156,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                413.711,
+                812.512,
+                482.632
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                488.431,
+                812.502,
+                573.957
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                579.756,
+                812.502,
+                681.886
+              ],
+              "page": 156,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023119392684610076
+        },
+        {
+          "id": "exc_45ecdb7da7734b_139_v3",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Introduction to probability",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "probability-basics",
+            "sampling"
+          ],
+          "confidence": 0.85,
+          "synopsis": "This chapter introduction motivates inferential statistics using a polling example: a random sample of 1000 NSW voters found 23% supporting the ALP, yet the true population proportion is unknown. It argues that intuition cannot judge how representative such a sample is, and that inferential statistics provides tools to answer these questions. It notes that statistical inference is built on probability theory, which the chapter will now cover as background material.",
+          "pages": [
+            134,
+            135
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_291_v3",
+            "chk_45ecdb7da7734b_292_v3",
+            "chk_45ecdb7da7734b_293_v3"
+          ],
+          "retrieval": {
+            "scope": "Conceptual introduction to inference and probability. The polling numbers are an imagined illustration based on a 2010 news report, not a worked estimate or current political evidence. It raises representativeness and uncertainty questions without yet supplying inferential methods.",
+            "summary": "Motivates inferential statistics with a hypothetical poll of 1,000 NSW voters, asking how a sample result of 23% can support conclusions about millions of voters and why probability theory is needed.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_45ecdb7da7734b_291_v3",
+          "hit_text": "[God] has afforded us only the twilight … of Probability.\n\n– John Locke\n\nUp to this point in the book we’ve discussed some of the key ideas in experimental design, and we’ve talked a little about how you can summarise a data set. To a lot of people this is all there is to statistics: collecting all the numbers, calculating averages, drawing pictures, and putting them all in a report somewhere. Kind of like stamp collecting but with numbers. However, statistics covers much more than that. In fact, descriptive statistics is one of the smallest parts of statistics and one of the least powerful. The bigger and more useful part of statistics is that it provides information that lets you make inferences about data.\n\nOnce you start thinking about statistics in these terms, that statistics is there to help us draw inferences from data, you start seeing examples of it everywhere. For instance, here’s a tiny extract from a newspaper article in the Sydney Morning Herald (30 Oct 2010):\n\n“I have a tough job,” the Premier said in response to a poll which found her government is now the most unpopular Labor administration in polling history, with a primary vote of just 23 per cent.",
+          "hit_page_start": 134,
+          "hit_regions": [
+            {
+              "bbox": [
+                199.491,
+                372.275,
+                590.108,
+                391.232
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                388.825,
+                297.543,
+                407.933
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                426.918,
+                812.502,
+                562.258
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                567.947,
+                812.502,
+                620.265
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                639.307,
+                769.262,
+                691.472
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022885789014821273
+        },
+        {
+          "id": "exc_e49c11171c5f1c_269_v1",
+          "book_id": "evidence-based-software-engineering",
+          "book_title": "Evidence-based Software Engineering",
+          "section_path": "+ + + › Probability › 9.1 Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "probability-for-data-analysis"
+          ],
+          "confidence": 0.94,
+          "synopsis": "Probability is the mathematics used to answer this question.",
+          "pages": [
+            244,
+            245,
+            246
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_e49c11171c5f1c_1122_v1",
+            "chk_e49c11171c5f1c_1123_v1",
+            "chk_e49c11171c5f1c_1124_v1",
+            "chk_e49c11171c5f1c_1125_v1",
+            "chk_e49c11171c5f1c_1126_v1",
+            "chk_e49c11171c5f1c_1127_v1",
+            "chk_e49c11171c5f1c_1128_v1"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_e49c11171c5f1c_1123_v1",
+          "hit_text": "Probability makes inferences about individual events based on the characteristics of the population, while statistics makes inferences about the population based on the characteristics of a sample of the populationi.\n\nAnother way to compare the two is that probability makes use of deductive reasoning, while statistics makes use of inferential reasoning.\n\nProbability and statistics are intertwined in that ideas and techniques from probability, about individual events, may be used when solving problems involving statistics and results about the characteristics of a population, obtained from statistical analysis, may be used to help solve problems involving probability.\n\nPeople make use of various phrases to express their view of the likelihood of an event occurring, e.g., \"almost impossible\" and \"quite possible\". Studies have found large cultural and personal differences in the numeric probabilities assigned to such phrases; see ﬁg 6.7 and ﬁg 2.57.\n\nThis book is data driven, and so primarily makes use of statistical analysis. The following example is a problem for which possible answers can be suggested using a probability model (data on developer behavior would provide evidence).\n\nSay, a vendor of a static analysis tool wants to add support for detecting a newly discovered pattern of mistakes made by developers. An occurrence of this pattern, in code, is not always a mistake. What is the upper bound on the probability of generating a false positive, that keeps the likelihood of developers continuing to use the tool above some limit (say 90%)?ii",
+          "hit_page_start": 244,
+          "hit_regions": [
+            {
+              "bbox": [
+                71.429,
+                574.753,
+                666.667,
+                617.413
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                624.26,
+                666.667,
+                652.719
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                659.566,
+                666.667,
+                716.426
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                723.273,
+                666.667,
+                780.134
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                786.979,
+                666.667,
+                829.64
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                836.487,
+                666.667,
+                907.547
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0216602646180111
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_6_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 1. Introduction › Inferential Statistics",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "sampling",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by Mikki Hebl Prerequisites\n\n• Chapter 1: Descriptive Statistics Learning Objectives\n\n1. Distinguish between a sample and a population\n2. Define inferential statistics\n3. Identify biased samples\n4. Distinguish between simple random sampling and stratified sampling\n5. Distinguish between random sampling and random assignment\n\nPopulations and samples In statistics, we often rely on a sample --- that is, a small subset of a larger set of data --- to draw inferences about the larger set. The larger set is known as the population from which the sample is drawn.\n\nExample #1: You have been hired by the National Election Commission to examine how the American people feel about the fairness of the voting procedures in the U.S. Who will you ask?\n\nIt is not practical to ask every single American how he or she feels about the fairness of the voting procedures. Instead, we query a relatively small number of Americans, and draw inferences about the entire country from their responses. The Americans actually queried constitute our sample of the larger population of all Americans. The mathematical procedures whereby we convert information about the sample into intelligent guesses about the population fall under the rubric of inferential statistics.\n\nIt is not practical to ask every single American how he or she feels about the fairness of the voting procedures. Instead, we query a relatively small number of Americans, and draw inferences about the entire country from their responses. The Americans actually queried constitute our sample of the larger population of all Americans. The mathematical procedures whereby we convert information about the sample into intelligent guesses about the population fall under the rubric of inferential statistics.\n\nA sample is typically a small subset of the population. In the case of voting attitudes, we would sample a few thousand Americans drawn from the hundreds of millions that make up the country. In choosing a sample, it is therefore crucial that it not over-represent one kind of citizen at the expense of others. For example, something would be wrong with our sample if it happened to be made up entirely of Florida residents. If the sample held only Floridians, it could not be used to infer",
+          "pages": [
+            20
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_34_v2",
+            "chk_f97f47b7a1fd68_35_v2"
+          ],
+          "retrieval": {
+            "scope": "Introductory conceptual passage with a U.S. election example. It defines inference from a sample to a population but ends during the biased-sample example. Fetch excerpt 7 only for that continuation or for the later sampling-design and random-assignment objectives; those methods are not taught in this excerpt.",
+            "summary": "Defines populations, samples, and inferential statistics through a U.S. election-opinion example, then begins explaining why representative sampling matters.",
+            "context_excerpt_ids": [
+              "exc_f97f47b7a1fd68_7_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_f97f47b7a1fd68_34_v2",
+          "hit_text": "by Mikki Hebl Prerequisites\n\n• Chapter 1: Descriptive Statistics Learning Objectives\n\n1. Distinguish between a sample and a population\n2. Define inferential statistics\n3. Identify biased samples\n4. Distinguish between simple random sampling and stratified sampling\n5. Distinguish between random sampling and random assignment\n\nPopulations and samples In statistics, we often rely on a sample --- that is, a small subset of a larger set of data --- to draw inferences about the larger set. The larger set is known as the population from which the sample is drawn.\n\nExample #1: You have been hired by the National Election Commission to examine how the American people feel about the fairness of the voting procedures in the U.S. Who will you ask?\n\nIt is not practical to ask every single American how he or she feels about the fairness of the voting procedures. Instead, we query a relatively small number of Americans, and draw inferences about the entire country from their responses. The Americans actually queried constitute our sample of the larger population of all Americans. The mathematical procedures whereby we convert information about the sample into intelligent guesses about the population fall under the rubric of inferential statistics.",
+          "hit_page_start": 20,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                250.025,
+                185.606
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                185.585,
+                425.502,
+                248.232
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                248.107,
+                781.743,
+                348.491
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                368.057,
+                852.843,
+                462.879
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                496.845,
+                858.801,
+                556.824
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                596.717,
+                875.02,
+                750.758
+              ],
+              "page": 20,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021645021645021648
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

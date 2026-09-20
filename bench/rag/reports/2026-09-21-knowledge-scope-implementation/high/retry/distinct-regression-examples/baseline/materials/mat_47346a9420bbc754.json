@@ -1,0 +1,56 @@
+{
+ "id": "mat_47346a9420bbc754",
+ "kind": "note",
+ "title": "Simple Linear Regression: Two Worked Examples",
+ "content": "# Simple Linear Regression: Two Worked Examples\n\n**The idea.** Linear regression fits the straight line that minimizes the sum of squared errors (SSE) between the observed points and the line — the **least squares regression line**. Two facts make it easy to find by hand from summary statistics:\n\n- **Slope:** b₁ = (s_y / s_x) · R, where R is the correlation between x and y, and s_x, s_y are the sample standard deviations of the explanatory and response variables.\n- **Intercept:** the line always passes through the point of means (x̄, ȳ), so b₀ = ȳ − b₁x̄ (equivalently, apply the point-slope equation y − ȳ = b₁(x − x̄) and simplify).\n\nAlways plot a scatter diagram first: only use the line to predict y for x-values **within the domain of the sample data**.\n\n---\n\n## Worked Example 1 — Third exam vs. final exam scores (Principles of Business Statistics)\n\n**Dataset:** Students' scores on a third exam (x, explanatory) and final exam (y, response). The scatter plot shows the points scattered about a straight line, so a least squares line is reasonable. The x-values in the sample range from 65 to 75.\n\n**Fitted line (from the source):**\n\nŷ = −173.51 + 4.83x\n\n**Interpreting the slope:** For each one-point increase in the third exam score, the final exam score increases by 4.83 points, on average.\n\n**Prediction within the domain:** For a student who scored 73 on the third exam:\n\nŷ = −173.51 + 4.83 × 73 = −173.51 + 352.59 ≈ **179 points** on the final exam.\n\n**Extrapolation warning (from the source):** Do *not* use the line to predict the final exam score for a third-exam grade of 50 — 50 lies outside the sample domain of 65–75.\n\n---\n\n## Worked Example 2 — Elmhurst College gift aid vs. family income (OpenIntro Statistics)\n\n**Dataset:** For a sample of Elmhurst College first-year students, predict gift aid (y, in dollars) from family income (x, in dollars). The trend is linear with no obvious outliers and roughly constant variance, so least squares regression applies.\n\n**Summary statistics (Figure 8.13):** x̄ = $101,780, ȳ = $19,940, s_x = $63,200, s_y = $5,460, R = −0.499.\n\n**Step 1 — Slope from summary statistics:**\n\nb₁ = (s_y / s_x) · R = (5,460 / 63,200) × (−0.499) = **−0.0431**\n\n**Step 2 — Intercept from the point of means.** The sample means are (x̄, ȳ) = (101,780; 19,940). Applying the point-slope equation:\n\ny − 19,940 = −0.0431 (x − 101,780)\n\nExpanding and adding 19,940 to both sides:\n\n**âid = 24,327 − 0.0431 × family income**\n\n**Step 3 — Check against software.** A software summary table for the same one-predictor fit gives (Intercept) 24,319.3 and family income −0.0431 — matching the hand calculation up to minor rounding.\n\n**Interpretation:** Each additional dollar of family income is associated with about 4.3 cents *less* gift aid, on average. (This is an association in this sample, not a causal claim.)\n\n---\n\n## Takeaways\n\n| | Example 1: exam scores | Example 2: Elmhurst aid |\n|---|---|---|\n| Explanatory x | third exam score | family income ($) |\n| Response y | final exam score | gift aid ($) |\n| Slope | 4.83 | −0.0431 |\n| Intercept | −173.51 | 24,327 (hand) / 24,319.3 (software) |\n| Fitted line | ŷ = −173.51 + 4.83x | âid = 24,327 − 0.0431 × income |\n\nBoth examples use the same machinery — slope from (s_y/s_x)R, intercept from the point of means — on different datasets, one with a positive and one with a negative relationship. Predict only within the observed range of x.\n\n*Scope note: the fitted numbers belong to these specific sample datasets; the exam-score example is an incidental dataset from a business statistics text, and the Elmhurst fit is a one-predictor regression, not a multiple regression or causal result.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_64ed84430ae3b2_261_v2",
+  "exc_64ed84430ae3b2_262_v2",
+  "exc_f213361bf057b0_566_v3",
+  "exc_f213361bf057b0_564_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 3,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v3",
+     "exc_f213361bf057b0_566_v3"
+    ]
+   },
+   {
+    "id": "principles-of-business-statistics",
+    "title": "Principles of Business Statistics",
+    "authors": [
+     "Mihai Nica",
+     "Susan Dean",
+     "Barbara Illowsky"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18024",
+    "version": 2,
+    "excerptIds": [
+     "exc_64ed84430ae3b2_261_v2",
+     "exc_64ed84430ae3b2_262_v2"
+    ]
+   }
+  ]
+ },
+ "size": "922 tokens",
+ "edits": []
+}

@@ -1,0 +1,1270 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "democracy-general",
+    "query": "Create one concise introductory study note explaining what democracy means.",
+    "check": "General concept and varieties; a single country's system or historical example does not silently define all democracy."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "what democracy means core elements definition",
+      "topics": [
+        "democratic-theory"
+      ],
+      "roles": [
+        "introduction",
+        "summary"
+      ],
+      "seconds": 4.343,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_167_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "confidence": 0.9,
+          "synopsis": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. Which do you think is more important and why? In the second section of this book, we will take an in-depth look at the major sub-disciplines in political science, with the aim of both introducing students to the discipline and learning more about how to analyze and understand political behavior, thought, and institution",
+          "pages": [
+            127
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_244_v1",
+            "chk_2bcaee6f65ce3f_245_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_244_v1",
+          "hit_text": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. We made some distinction between democracies and republics, while identifying some important connections between the two. We reviewed the concept of democratization—the transition from a non-democratic to a democratic regime—and identified some approaches to studying this important phenomenon. Lastly, we considered justifications for democracy—in asking why should we choose democracy, we arrive at three possible answers: aggregative, deliberative, and radical. Which do you think is more important and why? How exactly does democratic society and democratic governance effect your life?",
+          "hit_page_start": 127,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                157.077,
+                856.833,
+                449.431
+              ],
+              "page": 127,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        }
+      ]
+    },
+    {
+      "query": "core elements of democracy definition sovereignty citizens equality",
+      "topics": [
+        "democratic-theory"
+      ],
+      "roles": [],
+      "seconds": 5.468,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_148_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Let’s consider three core elements of what constitutes a democracy—individual sovereignty, equality amongst citizens, and democratic norms and values. Democracy is essentially the idea that political sovereignty resides at the level of the individual. In this sense, a political community derives its supreme power and authority from the consent of the people within that community. Individuals may hold the sovereign right of political rule in … some citizens hold greater weight than others. According to Robert Dahl, a U.S citizen in Alaska has a vote 54 times greater than the vote of a Californian. 1 Likewise, in the selection of",
+          "pages": [
+            112,
+            113
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_216_v1",
+            "chk_2bcaee6f65ce3f_217_v1",
+            "chk_2bcaee6f65ce3f_218_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_216_v1",
+          "hit_text": "Let’s consider three core elements of what constitutes a democracy—individual sovereignty, equality amongst citizens, and democratic norms and values. Democracy is essentially the idea that political sovereignty resides at the level of the individual. In this sense, a political community derives its supreme power and authority from the consent of the people within that community. Individuals may hold the sovereign right of political rule in a democratic country, but it is a public and shared right—no one individual can claim absolute sovereign power and authority. Some\n\n106 | We the People: Democratic Theory and Practice\n\nindividuals may have greater political power, however. In a representative democracy, for example, representatives typically wield political power on behalf of citizens and some representatives may have greater or lesser political power relative to other representatives. But if we define sovereignty as the absolute authority and supreme power of political rule, democratic sovereignty is not reserved for particular groups or individuals, nor is it derived from a divine or hereditary right, but rather a general right dispersed at the level of individuals within a political community.",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                681.547,
+                856.833,
+                882.399
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                914.379,
+                455.758,
+                945.926
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.833,
+                318.877
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024329950559458757
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_150_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy? › 1. Robert Dahl, How Democratic is the American Constitution? 2nd edition, Yale University Press: 2003, pp. 47. › We the People: Democratic Theory and Practice | 107",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Democratic Party voter in Kansas or a conservative Republican Party voter in California can be a frustrating experience—very often such citizens feel as though their vote doesn’t matter, and this sense of a “wasted vote” can have an overall negative effect on voter turnout. Imagine a democratic political community that simply went through the motions of a Characteristics of a democracy. Volunteering, participating in local government, and attending community events all help bring about a vibrant",
+          "pages": [
+            114
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_566_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_220_v1",
+            "chk_2bcaee6f65ce3f_221_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_221_v1",
+          "hit_text": "The third element of democracy constitutes ideas that strengthen and reinforce the elements above: norms, values, and rules that affirm and solidify individual sovereignty and political equality amongst citizens. This last element suggests that abstract concepts such as sovereignty and equality are not enough—democracy requires a set of norms and values that affirm its place in society. Imagine a democratic political community that simply went through the motions of a\n\nCharacteristics of a democracy.\n\ndemocratic process but did not necessarily value democracy nor develop any positive norms regarding the rule of the people. What’s missing here? In this Zombie Democracy, citizens become mere automatons, acting out the motions of the democratic process with no articulation or understanding of its value. In this respect, democracy requires public acknowledgement, understanding, and deliberation on why we choose democracy and what specific forms a democracy should take. Civic engagement and civic participation is not just about voting or formal democratic processes, but rather include a wide range of political and non-political activities in which individuals or groups come together to solve problems and better their community. Volunteering, participating in local government, and attending community events all help bring about a vibrant",
+          "hit_page_start": 114,
+          "hit_regions": [
+            {
+              "bbox": [
+                522.727,
+                209.531,
+                856.833,
+                593.387
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                564.284,
+                429.712,
+                580.394
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                598.42,
+                856.831,
+                890.773
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024193548387096774
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_167_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "confidence": 0.9,
+          "synopsis": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. Which do you think is more important and why? In the second section of this book, we will take an in-depth look at the major sub-disciplines in political science, with the aim of both introducing students to the discipline and learning more about how to analyze and understand political behavior, thought, and institution",
+          "pages": [
+            127
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_244_v1",
+            "chk_2bcaee6f65ce3f_245_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_244_v1",
+          "hit_text": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. We made some distinction between democracies and republics, while identifying some important connections between the two. We reviewed the concept of democratization—the transition from a non-democratic to a democratic regime—and identified some approaches to studying this important phenomenon. Lastly, we considered justifications for democracy—in asking why should we choose democracy, we arrive at three possible answers: aggregative, deliberative, and radical. Which do you think is more important and why? How exactly does democratic society and democratic governance effect your life?",
+          "hit_page_start": 127,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                157.077,
+                856.833,
+                449.431
+              ],
+              "page": 127,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023076923076923078
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_166_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › It’s A Wonderful (Democratic?) Life › We the People: Democratic Theory and Practice | 119",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27 Imagine if George was not a human but democracy itself. Let’s take democracy out of your life entirely. Let’s go further and assume that, unlike George Bailey and Bedford Falls, your life is exactly the same. Your past is the same, your present is the … absence of a democracy in you life. Use at least two of aggregative, deliberative, and radical conceptions as examples of the kinds of experiences that may be missing in a life without democracy. For",
+          "pages": [
+            126
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_623_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_243_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_243_v1",
+          "hit_text": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27\n\nImagine if George was not a human but democracy itself. Let’s take democracy out of your life entirely. Let’s go further and assume that, unlike George Bailey and Bedford Falls, your life is exactly the same. Your past is the same, your present is the same, and your future is the same. You have the same family, same jobs, same schools, same car. The only difference is that you do not live in a democracy. Does this matter? Why or why not? Write a minimum 3-page paper reflecting on the absence of a democracy in you life. Use at least two of aggregative, deliberative, and radical conceptions as examples of the kinds of experiences that may be missing in a life without democracy. For students who do not live in a democracy, reverse the assignment—imagine that your life is the same but you do live in a democracy. Does this matter? Why or why not?",
+          "hit_page_start": 126,
+          "hit_regions": [
+            {
+              "bbox": [
+                201.119,
+                430.861,
+                788.247,
+                492.925
+              ],
+              "page": 126,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                558.281,
+                856.833,
+                850.636
+              ],
+              "page": 126,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022058823529411763
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_152_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "It is often said that the United States of America is not a democracy but a constitutional republic. What exactly is the difference between a republic and a democracy? A republic is a form of government in which the country itself is a public concern, not a private entity owned by a particular ruling group, such as a monarchy. Public ownership over the country does … exactly democratic, citizens were nonetheless able to participate in government through these popular assemblies. Much of the evolution of the term republic is a variation on mixed government and civic participation in governance. During",
+          "pages": [
+            116
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_225_v1",
+            "chk_2bcaee6f65ce3f_226_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_225_v1",
+          "hit_text": "It is often said that the United States of America is not a democracy but a constitutional republic. What exactly is the difference between a republic and a democracy? A republic is a form of government in which the country itself is a public concern, not a private entity owned by a particular ruling group, such as a monarchy. Public ownership over the country does not, however, necessarily imply a democracy. The vast majority of sovereign states today use the word republic in their official names but many of these are not democratic. A republic is a form of government defining the ownership of a country as a public matter, whereas a democracy is a system of government in which citizens themselves engage either directly or indirectly in\n\nWhat exactly is the differenc e between a republic and a democra cy?\n\ngovernment.",
+          "hit_page_start": 116,
+          "hit_regions": [
+            {
+              "bbox": [
+                344.311,
+                157.077,
+                856.833,
+                518.059
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                183.568,
+                214.397,
+                279.167,
+                461.0
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                523.09,
+                276.859,
+                540.935
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02163561076604555
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

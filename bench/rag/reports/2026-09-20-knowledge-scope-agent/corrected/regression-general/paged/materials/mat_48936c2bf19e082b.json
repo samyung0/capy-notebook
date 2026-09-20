@@ -1,0 +1,59 @@
+{
+ "id": "mat_48936c2bf19e082b",
+ "kind": "note",
+ "title": "Simple Linear Regression: Concepts and Worked Example",
+ "content": "# Simple Linear Regression — Study Note\n\n## What it is\nSimple linear regression models the relationship between one **explanatory variable** x and one **response variable** y with a straight line:\n\n**ŷ = a + b·x**\n\n- **b (slope):** the predicted change in y for a one-unit increase in x.\n- **a (intercept):** the predicted value of y when x = 0 (only meaningful if x = 0 is plausible or near the data).\n- The line is the **least-squares regression line (LSRL)**: it is chosen to minimize the sum of the squared residuals (the vertical gaps between the points and the line).\n- The line always passes through the **point of averages (x̄, ȳ)**.\n\n## How to find the line from summary statistics\n1. **Slope:** b = r · (s_y / s_x), where r is the correlation between x and y, and s_x, s_y are the sample standard deviations of x and y.\n2. **Intercept:** since (x̄, ȳ) is on the line, a = ȳ − b·x̄.\n\n## Goodness of fit: R²\n- **R² = r²** is the *coefficient of determination*: the proportion of variation in y explained by the linear relationship with x.\n- R² is always between 0 and 1 (or 0%–100%); higher = better fit. It is always positive, so it cannot tell you the *direction* of the association — use the sign of r or the slope for that.\n\n## Conditions to check before fitting\n- The trend in the scatterplot is roughly linear.\n- No obvious outliers.\n- Roughly constant variability of points around the line.\n- Observations are independent (not a time series).\n\n## Worked example: gift aid vs. family income (Elmhurst College)\nPredict college gift aid (in $) from family income (in $). Summary statistics:\n- r = −0.499, s_x = $63,200, s_y = $5,460, x̄ = $101,780, ȳ = $19,940\n\n**Step 1 — slope:**\nb = r · (s_y / s_x) = −0.499 × (5,460 / 63,200) ≈ **−0.0431**\n\n**Step 2 — intercept (point-slope form through (x̄, ȳ)):**\ny − 19,940 = −0.0431(x − 101,780) → a = 19,940 − (−0.0431)(101,780) ≈ **24,327**\n\n**Regression line:**  aid̂ = 24,327 − 0.0431 × family income\n\n**Interpretation:**\n- *Slope:* each additional $1,000 of family income predicts about $43.10 **less** gift aid.\n- *Intercept:* a family with $0 income is predicted to receive about $24,300 in aid — meaningful here because some families truly have $0 income; in other datasets an intercept at x = 0 may be extrapolation and not worth interpreting.\n\n**Prediction:** a family earning $120,000 → aid̂ = 24,327 − 0.0431 × 120,000 ≈ **$19,100**.\n\n*(Software output for the same data gives intercept 24,319.3 and slope −0.0431, matching the hand calculation up to rounding.)*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_566_v2",
+  "exc_0689cddaba206d_703_v2",
+  "exc_0689cddaba206d_728_v2",
+  "exc_f213361bf057b0_564_v2",
+  "exc_0689cddaba206d_705_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_703_v2",
+     "exc_0689cddaba206d_705_v2",
+     "exc_0689cddaba206d_728_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v2",
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "632 tokens",
+ "edits": []
+}

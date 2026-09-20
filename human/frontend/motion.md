@@ -12,3 +12,5 @@
 - Developer approved (2026-09-17) matching dropdown and submenu animations to Popover through a shared recipe: fade, 97% entry scale, 2px entry blur and directional 16px entry slide; 99% exit scale, 250ms open and 150ms close. src/styles/tokens/motion.css src/components/ui/DropdownMenu.tsx src/components/ui/Popover.tsx
 
 - Developer approved (2026-09-18) migrating TagSelect to the shared Popover with input-focused autocomplete behavior and combobox accessibility; retain PopupMotion for editor overlays. src/components/ui/TagSelect.tsx
+- Developer requested (2026-09-21) chat send/stop uses the transitions.dev icon-swap fade, blur and scale transition in Tailwind, with a slightly smaller solid stop glyph. src/features/workspace/ChatPanel.tsx
+- Developer requested (2026-09-21) preserve the chat send icon's original stroke weight during its send/stop animation; use the shared Icon default instead of strokeWidth 4. src/features/workspace/ChatPanel.tsx

@@ -59,7 +59,8 @@ func estimateChatQueryTokens(text string) int {
 }
 
 func chatQueryTooLong(text string) bool {
-	return len(text) > chatQueryMaxBytes ||
+	return utf8.RuneCountInString(text) > fieldlimits.ChatMessage ||
+		len(text) > chatQueryMaxBytes ||
 		estimateChatQueryTokens(text) > chatQueryMaxEstimatedTokens ||
 		!utf8.ValidString(text)
 }
@@ -121,15 +122,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	req.Text = strings.TrimSpace(req.Text)
-	if req.Text == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
-		return
-	}
 	if chatQueryTooLong(req.Text) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"code": "query_too_long", "message": "The message is too long. Shorten it and try again.",
 		})
+		return
+	}
+	req.Text = strings.TrimSpace(req.Text)
+	if req.Text == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
 	// Curate reads the shared library to write materials. Without edit access

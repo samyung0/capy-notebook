@@ -1,0 +1,36 @@
+{
+ "id": "mat_860de784c4cd2c16",
+ "kind": "note",
+ "title": "What Democracy Means: An Introduction",
+ "content": "# What Does Democracy Mean?\n\n**Democracy** — from the Greek *demos* (the people) and *kratos* (rule) — is a system of government in which supreme political authority rests with the people themselves, either directly or through elected representatives.\n\n## The Three Core Elements of Democracy\n\n1. **Individual sovereignty** — Political sovereignty resides at the level of the individual. A political community derives its supreme power and authority from the *consent of the people*. This right is public and shared: no single person, group, dynasty, or divine claim holds absolute rule. In a representative democracy, representatives exercise power *on behalf of* citizens, but ultimate authority stays dispersed among the people.\n\n2. **Political equality among citizens** — Citizenship is the legal status recognizing someone as a member of a sovereign state. In a democracy, citizens enjoy the political rights to determine who exercises power, and each citizen's standing is ideally equal. In practice this equality is often incomplete — e.g., in the U.S. Senate, two senators per state mean some citizens' votes carry more weight (Robert Dahl estimated an Alaskan's Senate vote counts about 54 times a Californian's).\n\n3. **Democratic norms and values** — Institutions alone are not enough. A democracy needs a society that genuinely values rule by the people: public understanding, deliberation about why democracy is chosen, and active civic engagement (voting, volunteering, participating in local government and community life). Without these, a community risks becoming a \"zombie democracy\" — going through the motions without understanding their value.\n\n## Democracy vs. Republic\n\n- A **republic** (Latin *res publica*, \"public thing\") is a form of government in which the country is a *public concern*, not the private property of a ruler (as in a monarchy). Most sovereign states call themselves republics, but many are not democratic.\n- A **democracy** is a system in which citizens themselves engage — directly or indirectly — in government. The two ideas are related but distinct: public ownership of the state does not automatically mean rule by the people.\n\n## Key Takeaway\n\nDemocracy means sovereignty resting with equal individual citizens, sustained by a society that actively affirms the norms and values of popular rule.\n\n```mermaid\nmindmap\n  root((Democracy))\n    Individual sovereignty\n      Power from consent of the people\n      No absolute ruler\n      Representatives act on behalf of citizens\n    Political equality\n      Citizenship confers political rights\n      Equal standing ideally\n      Real-world limits (e.g. Senate apportionment)\n    Norms and values\n      Public understanding and deliberation\n      Civic engagement and participation\n      Avoiding \"zombie democracy\"\n    Related idea: republic\n      Country as public concern\n      Not automatically democratic\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_2bcaee6f65ce3f_148_v1",
+  "exc_2bcaee6f65ce3f_150_v1",
+  "exc_2bcaee6f65ce3f_152_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+    "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+    "authors": [
+     "Jay Steinmetz"
+    ],
+    "edition": "",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+    "version": 1,
+    "excerptIds": [
+     "exc_2bcaee6f65ce3f_148_v1",
+     "exc_2bcaee6f65ce3f_150_v1",
+     "exc_2bcaee6f65ce3f_152_v1"
+    ]
+   }
+  ]
+ },
+ "size": "727 tokens",
+ "edits": []
+}

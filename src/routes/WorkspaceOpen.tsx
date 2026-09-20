@@ -231,7 +231,7 @@ export default function WorkspaceOpen() {
       };
   const tabs = (
     <Tabs
-      className="min-w-0 flex-1 shrink"
+      className="relative inset-shadow-none min-w-0 flex-1 shrink"
       onChange={(value) => showTab(value as PanelTab)}
       tabs={railTabs.map((t) => ({ label: tabLabel(t), value: t }))}
       value={railTab}
@@ -249,6 +249,7 @@ export default function WorkspaceOpen() {
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
       beforeReplace={confirmViewerReplacement}
+      contentClassName={layout === 'two' ? 'pt-2' : undefined}
       generating={generating}
       onOpenItem={setOpenItem}
       onRenameChapter={(ch) =>
@@ -319,7 +320,7 @@ export default function WorkspaceOpen() {
           item={openItem}
           leading={
             <>
-              <div className="mr-1 flex items-center gap-1">
+              <div className="mr-4 flex items-center gap-1">
                 <IconButton
                   className="px-1 text-fg-muted"
                   icon="navigationBack"

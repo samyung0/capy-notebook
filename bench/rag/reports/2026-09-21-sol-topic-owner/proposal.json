@@ -1,0 +1,20 @@
+{
+  "input": {
+    "book_id": "chinese-contract-law",
+    "source_sha256": "6d7582f965c330db2e3e85e8787a38a9c73be92b22ce6a2dbe0f333b2c807913",
+    "corpus_sha256": "fbc12eb16e7a8535c120cafd124d88460d4bc7d2dafdd6972104e9ebbe4718c8",
+    "review_sha256": "4bbcad12826b9542659eb538331e63bb52d4be51ed75d85be129e2882c00607d",
+    "subject_id": "contract-law"
+  },
+  "model_provenance": {
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "agent_id": "/root/sol_topics_trial"
+  },
+  "reused": [
+    "chinese-contract-concept-and-scope",
+    "chinese-contract-doctrines",
+    "chinese-contract-law-history"
+  ],
+  "proposed": []
+}

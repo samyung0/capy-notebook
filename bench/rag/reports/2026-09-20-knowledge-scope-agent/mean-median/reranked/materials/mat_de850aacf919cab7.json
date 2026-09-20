@@ -1,0 +1,35 @@
+{
+ "id": "mat_de850aacf919cab7",
+ "kind": "note",
+ "title": "Mean vs. Median: A Beginner's Guide",
+ "content": "# Mean vs. Median — What's the Difference?\n\nBoth are measures of **central tendency**: single numbers that summarize the \"center\" of a data set. But they describe the center in different ways.\n\n## The mean: the \"centre of gravity\"\nThe mean is the ordinary average: add up all the values and divide by how many there are.\n\n- It uses **every value** in the data, which is great when you don't have much data.\n- But because every value counts, one extreme value (an **outlier**) can drag the mean toward it — like a see-saw tipping when a heavy person sits at one end.\n\n## The median: the \"middle value\"\nThe median is the middle observation once the data are sorted in order. Half the values are smaller, half are larger.\n\n- Sort the values; if there's an odd number, take the middle one. If there's an even number, take the average of the two middle values.\n- It only depends on the **order** of the data, so extreme values barely move it.\n\n## Concrete example: incomes at a table\nBob ($50,000), Kate ($60,000) and Jane ($65,000) sit at a table.\n\n- Mean income: (50,000 + 60,000 + 65,000) / 3 = **$58,333**\n- Median income: **$60,000**\n\nNow Bill sits down with them, earning **$100,000,000**.\n\n- Mean income jumps to **$25,043,750** — wildly misleading about anyone actually at the table.\n- Median rises only slightly, to **$62,500** — still a sensible \"typical\" income.\n\n## When to use which?\n- **Skewed data or outliers present** (like incomes): the median is usually the better description of a \"typical\" value. The mean gets pulled toward the tail; the median stays near the body of the data.\n- **Roughly symmetric data, no big outliers**: the mean is fine and uses all the information.\n- **If you care about the total/overall level** (e.g., total income at the table), the mean is the right tool.\n- **Ordinal data** (rankings, ratings): prefer the median, since only order is meaningful.\n- **Nominal data** (categories): use the mode instead — neither mean nor median makes sense.\n\n**Rule of thumb:** mean = balance point of the data; median = halfway point of the data. When they differ a lot, outliers or skew are at work — and the median is usually the more honest summary.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_95_v2",
+  "exc_45ecdb7da7734b_94_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_94_v2",
+     "exc_45ecdb7da7734b_95_v2"
+    ]
+   }
+  ]
+ },
+ "size": "545 tokens",
+ "edits": []
+}

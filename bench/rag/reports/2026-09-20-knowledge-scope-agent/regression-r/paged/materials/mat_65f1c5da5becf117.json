@@ -1,0 +1,55 @@
+{
+ "id": "mat_65f1c5da5becf117",
+ "kind": "note",
+ "title": "Simple Linear Regression in R with lm()",
+ "content": "# Simple Linear Regression in R with `lm()`\n\n## 1. Fitting the model\n\n`lm()` takes two key arguments:\n\n- **formula** — `outcome ~ predictor` (outcome on the left, predictor on the right; the intercept is included by default)\n- **data** — the data frame containing the variables\n\n```r\nmodel <- lm(formula = y ~ x, data = mydata)\nmodel          # prints the Call and the coefficients\nsummary(model) # full output: residuals, coefficients table, fit statistics\n```\n\nStore the result in a variable — the \"lm object\" holds technical information other functions (e.g. `summary()`, `abline()`, `predict()`) use.\n\n## 2. Reading `summary(model)` output\n\n```\nCall: lm(formula = y ~ x, data = mydata)\n\nResiduals:\n    Min      1Q  Median      3Q     Max\n -11.03   -2.22   -0.40    2.68   11.75\n\nCoefficients:\n            Estimate Std. Error t value Pr(>|t|)\n(Intercept)  125.966      3.041   41.42   <2e-16 ***\nx             -8.950      0.553  -16.17   <2e-16 ***\n---\nSignif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 4.354 on 97 degrees of freedom\nMultiple R-squared: 0.8161,  Adjusted R-squared: 0.8123\nF-statistic: 215.2 on 2 and 97 DF,  p-value: < 2.2e-16\n```\n\n- **Call** — the model you fit.\n- **Residuals** — five-number summary of prediction errors (observed − fitted).\n- **Coefficients table** — `Estimate` (the fitted intercept and slope), `Std. Error` (uncertainty of each estimate), `t value` (Estimate / Std. Error), and `Pr(>|t|)` (p-value for the test that the coefficient is 0). Stars flag significance levels.\n- **Residual standard error** — typical size of a prediction error, on the residual degrees of freedom (n − 2 for simple regression).\n- **Multiple R-squared** — the proportion of variation in the outcome explained by the linear relationship with the predictor; always between 0 and 1, higher = better fit. It cannot tell you the *direction* of the association — use the slope's sign for that.\n- **F-statistic / p-value** — overall test that the model (the slope) is useful.\n\n## 3. Interpreting the coefficients\n\nThe fitted line is **ŷ = a + bx** (least-squares line, found by minimizing the sum of squared residuals; it passes through (x̄, ȳ)).\n\n- **Slope (b)** — the predicted change in the outcome for a one-unit increase in the predictor. Example: slope −8.95 for grumpiness ~ sleep means each additional hour of sleep predicts 8.95 fewer grumpiness points. A negative slope means a negative association.\n- **Intercept (a)** — the predicted outcome when x = 0. Sometimes this is not meaningful (x = 0 may be impossible or far outside the data — extrapolation), so interpret it only when x = 0 makes sense in context.\n- **p-value on the slope** — tests H₀: b = 0 (no linear relationship). Small p-value (e.g. < 0.05) → evidence of a real linear association.\n- **R²** — e.g. R² = 0.816 means about 82% of the variation in the outcome is explained by the predictor.\n\n## 4. Quick visualization and checks\n\n```r\nplot(mydata$x, mydata$y)          # scatterplot\nabline(model, col = \"red\")        # add the fitted line\nhist(model$residuals)             # residuals roughly normal?\nplot(mydata$x, model$residuals)   # residual plot: look for patterns\nabline(h = 0)\n```\n\n## 5. Notes\n\n- Coefficients are **statistics** estimated from your sample — they carry uncertainty (hence the standard errors).\n- `lm()` extends naturally to multiple regression: `lm(y ~ x1 + x2, data = mydata)`.\n- Correlation and slope share a sign; r = ±√R² (sign from the slope or scatterplot).",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_998_v1",
+  "exc_dd1e65de648fb2_1019_v1",
+  "exc_0689cddaba206d_719_v2",
+  "exc_0689cddaba206d_728_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_719_v2",
+     "exc_0689cddaba206d_728_v2"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1019_v1",
+     "exc_dd1e65de648fb2_998_v1"
+    ]
+   }
+  ]
+ },
+ "size": "879 tokens",
+ "edits": []
+}

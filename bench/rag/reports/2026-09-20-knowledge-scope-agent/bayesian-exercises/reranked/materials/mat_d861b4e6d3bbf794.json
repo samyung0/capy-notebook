@@ -1,0 +1,52 @@
+{
+ "id": "mat_d861b4e6d3bbf794",
+ "kind": "note",
+ "title": "Bayesian Inference: Practice Exercises",
+ "content": "# Bayesian Inference: Updating Beliefs with Bayes' Rule\n\n**Core idea.** Bayesian inference combines a *prior* belief about a hypothesis with a *likelihood* of the observed data to produce a *posterior*:\n\nP(h | d) = P(d | h) · P(h) / P(d)\n\nwhere P(d) is the total probability of the data, found by summing P(d | h)·P(h) over all hypotheses.\n\n**Worked reference (umbrella example).** Prior: P(rainy) = 0.15, P(dry) = 0.85. Likelihoods: P(umbrella | rainy) = 0.30, P(umbrella | dry) = 0.05. Joint probabilities: rainy & umbrella = 0.045, dry & umbrella = 0.0425, so P(umbrella) = 0.0875. Posterior: P(rainy | umbrella) = 0.045 / 0.0875 ≈ 0.514 — the observation of the umbrella roughly triples the probability of rain from 15% to about 51%.\n\n---\n\n## Exercise 1 — The umbrella problem, continued\n\nUsing the same setup as above (P(rainy) = 0.15, P(umbrella | rainy) = 0.30, P(umbrella | dry) = 0.05), suppose instead you observe that Danielle is **not** carrying an umbrella.\n\n1. Build the full joint probability table for the four possibilities (rainy/dry × umbrella/no-umbrella) and verify the row and column totals sum to 1.\n2. Compute P(no-umbrella).\n3. Use Bayes' rule to find the posterior P(rainy | no-umbrella). Does the observation lower or raise your belief that it is raining, compared with the prior of 0.15?\n\n**Solution sketch.** Joint table: rainy & umbrella = 0.045, rainy & no-umbrella = 0.105, dry & umbrella = 0.0425, dry & no-umbrella = 0.8075. P(no-umbrella) = 0.105 + 0.8075 = 0.9125. Posterior: P(rainy | no-umbrella) = 0.105 / 0.9125 ≈ 0.115 — the observation lowers the probability of rain below the prior.\n\n## Exercise 2 — Medical test (base-rate reasoning)\n\nA test correctly identifies a disease in 95% of people who have it, and correctly identifies no disease in 94% of people who do not have it. In the population, 3% of people have the disease. What is the probability that you have the disease if you test positive?\n\n**Solution sketch.** Let D = has disease, + = positive test. Prior P(D) = 0.03; likelihoods P(+ | D) = 0.95, P(+ | no D) = 0.06. Then P(+) = 0.95 × 0.03 + 0.06 × 0.97 = 0.0285 + 0.0582 = 0.0867, so P(D | +) = 0.0285 / 0.0867 ≈ 0.329. Despite the accurate test, only about a third of positive results are true positives — a classic demonstration of why the prior (base rate) matters in Bayesian inference.\n\n---\n\n**Takeaway.** In both exercises the pattern is identical: multiply each prior by its likelihood, normalize by the total probability of the data, and read off the posterior. Surprising data (an umbrella on a dry day, a positive test for a rare disease) can still leave the posterior far from certain.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_1205_v1",
+  "exc_dd1e65de648fb2_1203_v1",
+  "exc_dd1e65de648fb2_1201_v1",
+  "exc_f97f47b7a1fd68_158_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1201_v1",
+     "exc_dd1e65de648fb2_1203_v1",
+     "exc_dd1e65de648fb2_1205_v1"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_158_v1"
+    ]
+   }
+  ]
+ },
+ "size": "664 tokens",
+ "edits": []
+}

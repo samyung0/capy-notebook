@@ -1,0 +1,3024 @@
+{
+  "arm": "paged",
+  "case": {
+    "id": "democracy-general",
+    "query": "Create one concise introductory study note explaining what democracy means.",
+    "check": "General concept and varieties; a single country's system or historical example does not silently define all democracy."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "what democracy means definition core principles",
+      "topics": [],
+      "roles": [
+        "introduction"
+      ],
+      "seconds": 6.144,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_4_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "what-is-politics"
+          ],
+          "confidence": 0.9,
+          "synopsis": "This textbook is intended to orient students to the study of politics and the discipline of political science. By the end of this course, students will gain comprehensive understanding of political behavior, political institutions, and normative ideas of political theory. This textbook is composed of two parts with five chapters in each of these parts. In Part I, we will analyze, conceptualize, and describe what … this second part of the textbook is orienting students into a political science major or minor degree, giving comprehensive understanding to the state of the discipline and its value to the world outside academia.",
+          "pages": [
+            7
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_4_v1",
+            "chk_2bcaee6f65ce3f_5_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_4_v1",
+          "hit_text": "This textbook is intended to orient students to the study of politics and the discipline of political science. By the end of this course, students will gain comprehensive understanding of political behavior, political institutions, and normative ideas of political theory. This textbook is composed of two parts with five chapters in each of these parts. In Part I, we will analyze, conceptualize, and describe what politics is by defining key political terms such as justice, freedom, equality, and democracy. As we shall see, each of these concepts has different and sometimes competing conceptions that often inform one’s foundational political beliefs. For example, when we talk about equality it is important to make distinctions between comprehensive equality (such as the principle that are humans are created equal), equality of outcomes (that individuals ought to be afforded an equal distribution of material goods), and equal opportunity (that government ought to ensure equal protection under the law and basic fairness in a free economic marketplace). One’s level of commitment to these different conceptions of equality goes a long way toward shaping political belief.",
+          "hit_page_start": 7,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                181.426,
+                856.831,
+                611.034
+              ],
+              "page": 7,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01639344262295082
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_0_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [],
+          "confidence": 0.9,
+          "synopsis": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "pages": [
+            1
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_0_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_0_v1",
+          "hit_text": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "hit_page_start": 1,
+          "hit_regions": [
+            {
+              "bbox": [
+                182.245,
+                231.047,
+                817.707,
+                284.564
+              ],
+              "page": 1,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016129032258064516
+        },
+        {
+          "id": "exc_bedce6262f6213_446_v1",
+          "book_id": "information-systems",
+          "book_title": "Information Systems",
+          "section_path": "Information Systems › Chapter 13 Opportunities for new organizational forms › Learning objectives › 13.8 Open source and related models › 284",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "new-organizational-forms"
+          ],
+          "confidence": 0.94,
+          "synopsis": "It should be noted that this model is really only possible given the existence of the internet. Without such resilient, extensive, and virtually effortless communication the open source community simply would not have been able to develop as far as it did. The arrival of Linux coincided with the point at which the Internet, as a key component of everyday life for a significant and rapidly growing proportion of people, was taking up its central role as the communications technology par excellence. The bazaar model, with its ‘great babbling ... of differing agendas and approaches’, demands constantly available and extensive means of communication and co-ordination. Raymond recognizes this in asserting that: ‘Provided the development coordinator has a communications medium at least as good as the Internet, and knows how to lead without coercion, many heads are inevitably better than one.’ The importance of the internet is not that it allows individuals to talk to each other on an individual basis, but that it affords a forum for exchange and co-operation; with both asynchronous and synchronous interactions.\n\nIt should also be noted that this grouping might include co-developers, suppliers, users and advisers. In fact anyone who feels that might have some thing to contribute to the specific task or project. In this case the organization is virtual not merely in the sense of being on-line and taking advantage of ICT, but in the sense of not really existing. Outsourcing and other forms of virtual organization still have an existence as organizations, but at this end of the scale a bazaar-like organization may well have only a fleeting existence for as long as the project or task is relevant.\n\nA further look at Fayol’s five functions indicates how the open source model is distinctive – at least in its most extreme form.\n\n• Planning; any planning is restricted to the extremely short-term.\n• Organizing; this is most definitely accomplished in an informal and bottom-up fashion – similar in some regards to the very small, informal organization mentioned at the start of this chapter.\n• Co-ordinating; again this is done on the smallest of scales, based on direct interaction with other members.\n• Deciding; there is no single, central decision-making; individuals make decisions and these then contribute to the overall development of the loose alliance,\n• Controlling; there is no single point of control.\n\n• Planning; any planning is restricted to the extremely short-term.\n• Organizing; this is most definitely accomplished in an informal and bottom-up fashion – similar in some regards to the very small, informal organization mentioned at the start of this chapter.\n• Co-ordinating; again this is done on the smallest of scales, based on direct interaction with other members.\n• Deciding; there is no single, central decision-making; individuals make decisions and these then contribute to the overall development of the loose alliance,\n• Controlling; there is no single point of control.\n\nThree of Raymond’s maxims, taken together, summarize the position. ‘The next best thing to having good ideas is recognizing good ideas from your users. Sometimes the latter is better.’ [#11] ‘Often, the most striking and innovative solutions come from realizing that your concept of the problem was wrong.’ [#12] And even more insightfully he states that – ‘Given a large enough beta-tester and co-developer base, almost every problem will be characterized quickly and the fix obvious to someone.’ [#8]\n\nTaken together these offer an outline of a form of organization that is best seen as a loose alliance of interested and motivated people, acting together in ways that may achieve both expected and unexpected purposes and results.\n\nAn example of this model, with which you may be familiar, is the Wiki, particularly in the form of Wikipedia. The term Wiki seems to have several meanings and derivations.\n\nTaken together these offer an outline of a form of organization that is best seen as a loose alliance of interested and motivated people, acting together in ways that may achieve both expected and unexpected purposes and results.\n\nAn example of this model, with which you may be familiar, is the Wiki, particularly in the form of Wikipedia. The term Wiki seems to have several meanings and derivations.\n\nThe word itself means ‘quick’ or ‘fast’ in Hawaiian, and the slogan WikiWiki is apparently used by the shuttle bus company at Honolulu International Airport. It is also claimed that Wiki is an acronym for ‘What I Know Is’. Hence the term has come to denote collaborative efforts where people come together to pool their knowledge and expertise with a minimum of fuss and formality. In many regards the Wiki principles are more easily understood from stating what the Wiki movement is not, rather than what the Wiki movement actually is. Hence the following headings from the Wikipedia entry on Wikipedia itself;\n\nThe word itself means ‘quick’ or ‘fast’ in Hawaiian, and the slogan WikiWiki is apparently used by the shuttle bus company at Honolulu International Airport. It is also claimed that Wiki is an acronym for ‘What I Know Is’. Hence the term has come to denote collaborative efforts where people come together to pool their knowledge and expertise with a minimum of fuss and formality. In many regards the Wiki principles are more easily understood from stating what the Wiki movement is not, rather than what the Wiki movement actually is. Hence the following headings from the Wikipedia entry on Wikipedia itself;\n\n• What Wikipedia is not ◦ Wikipedia is not a paper encyclopedia\n• Wikipedia is not a dictionary\n• Wikipedia is not a publisher of original thought\n• Wikipedia is not a soapbox\n• Wikipedia is not a mirror or a repository of links, images, or media files\n• Wikipedia is not a free host, blog, or webspace provider\n• Wikipedia is not an indiscriminate collection of information\n• Wikipedia is not a crystal ball\n• Wikipedia is not censored for the protection of minors\n• What the Wikipedia community is not ◦ Wikipedia is not a battleground\n• Wikipedia is not an experiment in anarchy\n• Wikipedia is not a democracy\n• Wikipedia is not a bureaucracy\n\n• What Wikipedia is not ◦ Wikipedia is not a paper encyclopedia\n• Wikipedia is not a dictionary\n• Wikipedia is not a publisher of original thought\n• Wikipedia is not a soapbox\n• Wikipedia is not a mirror or a repository of links, images, or media files\n• Wikipedia is not a free host, blog, or webspace provider\n• Wikipedia is not an indiscriminate collection of information\n• Wikipedia is not a crystal ball\n• Wikipedia is not censored for the protection of minors\n• What the Wikipedia community is not ◦ Wikipedia is not a battleground\n• Wikipedia is not an experiment in anarchy\n• Wikipedia is not a democracy\n• Wikipedia is not a bureaucracy\n\nIn fact the Wikipedia organizational model relies on a sufficient number of people feeling motivated and enthused to contribute and participate; exactly the same prerequisites that Drucker identifies for volunteers or associates, and that Raymond describes for the Linux participants. Moreover the Wiki philosophy is best seen as cultivation as opposed to construction. The Wiki model and the open source model share a view of organization that is chaotic and disordered, but also more extensive, more accessible, more visible, and more speedily updated and corrected than standard command-and-control centralized organizations.\n\nMany of you will be familiar with Wikipedia, but there are numerous other forms of 'on-line bazaar', with people contributing voluntarily - you can probably name several, and may well already be signed up to sites such as MySpace and Facebook.",
+          "pages": [
+            294,
+            295
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_bedce6262f6213_840_v1",
+            "chk_bedce6262f6213_841_v1",
+            "chk_bedce6262f6213_842_v1",
+            "chk_bedce6262f6213_843_v1",
+            "chk_bedce6262f6213_844_v1",
+            "chk_bedce6262f6213_845_v1"
+          ],
+          "hit_chunk_id": "chk_bedce6262f6213_844_v1",
+          "hit_text": "The word itself means ‘quick’ or ‘fast’ in Hawaiian, and the slogan WikiWiki is apparently used by the shuttle bus company at Honolulu International Airport. It is also claimed that Wiki is an acronym for ‘What I Know Is’. Hence the term has come to denote collaborative efforts where people come together to pool their knowledge and expertise with a minimum of fuss and formality. In many regards the Wiki principles are more easily understood from stating what the Wiki movement is not, rather than what the Wiki movement actually is. Hence the following headings from the Wikipedia entry on Wikipedia itself;\n\n• What Wikipedia is not ◦ Wikipedia is not a paper encyclopedia\n• Wikipedia is not a dictionary\n• Wikipedia is not a publisher of original thought\n• Wikipedia is not a soapbox\n• Wikipedia is not a mirror or a repository of links, images, or media files\n• Wikipedia is not a free host, blog, or webspace provider\n• Wikipedia is not an indiscriminate collection of information\n• Wikipedia is not a crystal ball\n• Wikipedia is not censored for the protection of minors\n• What the Wikipedia community is not ◦ Wikipedia is not a battleground\n• Wikipedia is not an experiment in anarchy\n• Wikipedia is not a democracy\n• Wikipedia is not a bureaucracy",
+          "hit_page_start": 295,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                869.059,
+                207.479
+              ],
+              "page": 295,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                181.6,
+                218.109,
+                780.592,
+                503.203
+              ],
+              "page": 295,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015873015873015872
+        },
+        {
+          "id": "exc_54fcd12a32565e_32_v1",
+          "book_id": "business-government-and-society",
+          "book_title": "Business, Government, and Society",
+          "section_path": "",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [],
+          "confidence": 0.96,
+          "synopsis": "Some Key Definitions for a Rights Framework",
+          "pages": [
+            18
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_54fcd12a32565e_62_v1"
+          ],
+          "hit_chunk_id": "chk_54fcd12a32565e_62_v1",
+          "hit_text": "Some Key Definitions for a Rights Framework",
+          "hit_page_start": 18,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                936.933,
+                523.582,
+                953.916
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015625
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_3_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "Contents",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [],
+          "confidence": 0.9,
+          "synopsis": "Introduction 1 Part I. Part I: What is Politics? Chapter 1: Conceptualizing Politics 7 Chapter 2: Ideologies of the Individual 24 1. Chapter 3: An Institutional View of Politics 56 2. Chapter 4: How Public Law Structures Politics 77 3. Chapter 5: Theories of Democracy 106 Part II. Part II: Understanding the Discipline of Political Science 4. Chapter 6: Political Theory 125 5. Chapter 7: International Relations 153 6. Chapter 8: Comparative Politics 174 7. Chapter 9: American Politics and Public Policy/ Administration 193 8. Chapter 10: Methods 218 Appendix 233",
+          "pages": [
+            5
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_3_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_3_v1",
+          "hit_text": "Introduction 1\n\nPart I. Part I: What is Politics?\n\nChapter 1: Conceptualizing Politics 7\nChapter 2: Ideologies of the Individual 24\n\n1. Chapter 3: An Institutional View of Politics 56\n2. Chapter 4: How Public Law Structures Politics 77\n3. Chapter 5: Theories of Democracy 106 Part II. Part II: Understanding the Discipline of Political Science\n4. Chapter 6: Political Theory 125\n5. Chapter 7: International Relations 153\n6. Chapter 8: Comparative Politics 174\n7. Chapter 9: American Politics and Public Policy/ Administration 193\n8. Chapter 10: Methods 218\n\nAppendix 233",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                214.745,
+                240.209,
+                856.818,
+                258.052
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                214.745,
+                289.654,
+                534.856,
+                311.291
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                214.745,
+                338.886,
+                856.816,
+                383.935
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                178.068,
+                393.297,
+                856.816,
+                723.199
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                214.745,
+                750.209,
+                856.831,
+                768.052
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015384615384615385
+        },
+        {
+          "id": "exc_bedce6262f6213_158_v1",
+          "book_id": "information-systems",
+          "book_title": "Information Systems",
+          "section_path": "Information Systems › Chapter 5 Information systems methodologies › Learning objectives › 5.1 Introduction › 5.1.5 Methodologies basic structure",
+          "roles": [
+            "introduction",
+            "worked_example",
+            "reference",
+            "formal"
+          ],
+          "topic_ids": [
+            "information-systems-development"
+          ],
+          "confidence": 0.94,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nMethodologies usually have the same basic structure and share common terminologies. The basic structure of most methodologies will have the following three components:\n\n• Principlesare the guiding rules, standards and beliefs of the methodology. The collection of these principles makes up the philosophy and the aims of the methodology.\n• Processesexpress the ‘principle’ in the form of stages, steps, and tasks. The processes expound the principles. They contain advice and recommendations on how to proceed and complete deliverables using different techniques.\n• Services: This component may include different formats, they may include detailed documents to elucidate the ‘process’ and ‘principle’ expressed by practical examples, case studies, illustration, guiding templates, documentations, etc. They contribute to the understanding and learning of the user. Services may also include various tools to assist user in completing processes or provide advice and assistance.\n\nFig. 5.6: Methodologies are basically collections of three elements",
+          "pages": [
+            113
+          ],
+          "figure_ids": [
+            "fig_bedce6262f6213_1106_v1",
+            "fig_bedce6262f6213_1110_v1",
+            "fig_bedce6262f6213_1111_v1"
+          ],
+          "chunk_ids": [
+            "chk_bedce6262f6213_326_v1"
+          ],
+          "hit_chunk_id": "chk_bedce6262f6213_326_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nMethodologies usually have the same basic structure and share common terminologies. The basic structure of most methodologies will have the following three components:\n\n• Principlesare the guiding rules, standards and beliefs of the methodology. The collection of these principles makes up the philosophy and the aims of the methodology.\n• Processesexpress the ‘principle’ in the form of stages, steps, and tasks. The processes expound the principles. They contain advice and recommendations on how to proceed and complete deliverables using different techniques.\n• Services: This component may include different formats, they may include detailed documents to elucidate the ‘process’ and ‘principle’ expressed by practical examples, case studies, illustration, guiding templates, documentations, etc. They contribute to the understanding and learning of the user. Services may also include various tools to assist user in completing processes or provide advice and assistance.\n\nFig. 5.6: Methodologies are basically collections of three elements",
+          "hit_page_start": 113,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                387.538,
+                755.639,
+                419.587
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                431.0,
+                873.136,
+                485.393
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                181.6,
+                499.587,
+                871.334,
+                742.627
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                287.183,
+                936.189,
+                747.116,
+                949.776
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015151515151515152
+        },
+        {
+          "id": "exc_1ab346b9350488_37_v1",
+          "book_id": "modern-philosophy",
+          "book_title": "Modern Philosophy",
+          "section_path": "Chapter 3 Background to Modern Philosophy › 3.4 Aristotle’s Posterior Analytics › 3.4.3 Book Two",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "aristotelian-and-scholastic-background"
+          ],
+          "confidence": 0.96,
+          "synopsis": "3.4.3 Book Two: Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/). Now that we know what makes something a demonstration, we need to know what the first principles of a demonstration are. Thisis the burden of Book Two, Chapter Eight (Page 19) below. We … of ultimate principles is indemonstrable. The necessityof this fact is obvious, for if one must needs know the antecedent principles and those on which the … the first principles of a demonstration. How, then, do we arrive at them? This is the burden of Book Two, Chapter Nineteen (Page 20) below.",
+          "pages": [
+            29
+          ],
+          "figure_ids": [
+            "fig_1ab346b9350488_258_v1"
+          ],
+          "chunk_ids": [
+            "chk_1ab346b9350488_90_v1"
+          ],
+          "hit_chunk_id": "chk_1ab346b9350488_90_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nNow that we know what makes something a demonstration, we need to know what the first principles of a demonstration are. Thisis the burden of Book Two, Chapter Eight (Page 19)\n\nbelow.\n\nWe also need to know how to get them. Earlier (Posterior Analytics Book One, Chapter Three), Aristotle writes, ‘We …Holdthat not every form of knowledge is demonstrative, but that the knowledge of ultimate principles is indemonstrable. The necessityof this fact is obvious, for if one must needs know the antecedent principles and those on which the demonstration rests, and if inthis process we at last reach ultimates, these ultimates must necessarily be indemonstrable. Our view then is not only that knowledgeexists, but that there is something prior to science by means of which we acquire knowledge of these ultimates.’ So we cannotdemonstrate the first principles of a demonstration. How, then, do we arrive at them? This is the burden of Book Two, Chapter Nineteen (Page 20) below.",
+          "hit_page_start": 29,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                450.309,
+                755.639,
+                482.357
+              ],
+              "page": 29,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                493.771,
+                871.113,
+                529.458
+              ],
+              "page": 29,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                168.45,
+                531.182,
+                218.78,
+                548.164
+              ],
+              "page": 29,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                558.795,
+                863.829,
+                725.463
+              ],
+              "page": 29,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014925373134328358
+        },
+        {
+          "id": "exc_6dad36dba54383_52_v1",
+          "book_id": "open-research",
+          "book_title": "Open Research",
+          "section_path": "INTRODUCTION › Commentary",
+          "roles": [
+            "exercise",
+            "worked_example",
+            "introduction"
+          ],
+          "topic_ids": [
+            "research-ethics-open"
+          ],
+          "confidence": 0.98,
+          "synopsis": "Networked, digital and open technologies present us with new possibilities for thought and action. It’s become much easier to do make decisions that can affect a lot of people, as we saw in the Facebook example.\n\nIt is essential that the open researcher understands how to evaluate the ethical significance of their work. The simplest way to do this is to understand the principles of research ethics. A simple list of these principles is provided in Farrow (2016)[1] as:\n\n• Respect for participant autonomy\n• Avoid harm / minimize risk\n• Full disclosure\n• Privacy & data security\n• Integrity\n• Independence\n• Informed consent\n\nHow ethical principles are applied is context sensitive, so it’s important to keep reflecting on how these inform your work. An important element of ethical judgment is familiarity with ethical issues and how they are usually dealt with. Sharing your experiences with other researchers can be helpful. If you’re working without formal support you will need to strike a balance between the exciting\n\nETHICS IN THE OPEN / OPEN RESEARCH 35\n\npossibilities of ‘guerilla research’ and the need to exercise good ethical judgement throughout the research process.\n\nHow ethical principles are applied is context sensitive, so it’s important to keep reflecting on how these inform your work. An important element of ethical judgment is familiarity with ethical issues and how they are usually dealt with. Sharing your experiences with other researchers can be helpful. If you’re working without formal support you will need to strike a balance between the exciting\n\nETHICS IN THE OPEN / OPEN RESEARCH 35\n\npossibilities of ‘guerilla research’ and the need to exercise good ethical judgement throughout the research process.\n\nSometimes the impulse to be open can be in tension with our ethical expectations. One course participant raised the example of making research data available openly while protecting the right to privacy of participants. The more raw data is released, the greater the risk to privacy. But as more data is redacted the reuse value is reduced. Because the full implications of being open are often not known until the future, it’s necessary to keep reflecting throughout the research process and into dissemination.\n\nIn essence, working outside institutions means that researchers must effectively function as their own review panel. It becomes even more important to engage in ethical reflection and develop a working knowledge of ethical risk management and strategies for amelioration.\n\nMost of the rules concerning how research is conducted in institutions are based on several key assumptions. These include:\n\nIn essence, working outside institutions means that researchers must effectively function as their own review panel. It becomes even more important to engage in ethical reflection and develop a working knowledge of ethical risk management and strategies for amelioration.\n\nMost of the rules concerning how research is conducted in institutions are based on several key assumptions. These include:\n\n• The researcher has some degree of control over the research process, and thus has a responsibility for what happens – but can’t necessarily anticipate every possible outcome\n• There is an expectation that all reasonable efforts will be taken to minimise potential harm to participants\n• The responsibilities of the researcher don’t end with the study since there is an ongoing requirement to manage collected data at most institutions (typically a matter of legal compliance)\n• There may also be rules regarding how the research is disseminated, who it can be shared with, and so on",
+          "pages": [
+            38,
+            39
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_6dad36dba54383_60_v1",
+            "chk_6dad36dba54383_61_v1",
+            "chk_6dad36dba54383_62_v1"
+          ],
+          "hit_chunk_id": "chk_6dad36dba54383_60_v1",
+          "hit_text": "Networked, digital and open technologies present us with new possibilities for thought and action. It’s become much easier to do make decisions that can affect a lot of people, as we saw in the Facebook example.\n\nIt is essential that the open researcher understands how to evaluate the ethical significance of their work. The simplest way to do this is to understand the principles of research ethics. A simple list of these principles is provided in Farrow (2016)[1] as:\n\n• Respect for participant autonomy\n• Avoid harm / minimize risk\n• Full disclosure\n• Privacy & data security\n• Integrity\n• Independence\n• Informed consent\n\nHow ethical principles are applied is context sensitive, so it’s important to keep reflecting on how these inform your work. An important element of ethical judgment is familiarity with ethical issues and how they are usually dealt with. Sharing your experiences with other researchers can be helpful. If you’re working without formal support you will need to strike a balance between the exciting\n\nETHICS IN THE OPEN / OPEN RESEARCH 35\n\npossibilities of ‘guerilla research’ and the need to exercise good ethical judgement throughout the research process.",
+          "hit_page_start": 38,
+          "hit_regions": [
+            {
+              "bbox": [
+                137.612,
+                293.145,
+                863.012,
+                381.15
+              ],
+              "page": 38,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                137.612,
+                388.479,
+                862.995,
+                476.483
+              ],
+              "page": 38,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                140.244,
+                492.175,
+                515.877,
+                695.583
+              ],
+              "page": 38,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                137.612,
+                711.274,
+                863.017,
+                842.765
+              ],
+              "page": 38,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                113.25,
+                66.23,
+                887.371,
+                76.743
+              ],
+              "page": 39,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                137.612,
+                227.072,
+                862.945,
+                271.591
+              ],
+              "page": 39,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014705882352941176
+        },
+        {
+          "id": "exc_d0b9f7e2db1f65_60_v1",
+          "book_id": "basic-income-tax-second-edition",
+          "book_title": "Basic Income Tax, Second Edition",
+          "section_path": "Chapter 1 The Government Raises Money: Introduction to Some Basic Concepts of Taxes and Taxing Income › Three Principles to Guide Us Through Every Question of Income Tax",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "income-definition-haig-simons"
+          ],
+          "confidence": 0.94,
+          "synopsis": "Chapter 1 The Government Raises Money: Introduction to Some Basic Concepts of Taxes and Taxing Income › Three Principles to Guide Us Through Every Question of Income Tax: There are three principles (which are less than rules but close enough): 1. We tax income of a particular taxpayer once and only once. 2. There are exceptions to Principle #1, but we usually must find those exceptions explicitly defined in the Code itself. 3. If there is an exception to Principle #1, we treat the untaxed income as if it had been taxed and we accomplish this by making",
+          "pages": [
+            34
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_d0b9f7e2db1f65_109_v1"
+          ],
+          "hit_chunk_id": "chk_d0b9f7e2db1f65_109_v1",
+          "hit_text": "There are three principles (which are less than rules but close enough):\n\n1. We tax income of a particular taxpayer once and only once.\n2. There are exceptions to Principle #1, but we usually must find those exceptions explicitly defined in the Code itself.\n3. If there is an exception to Principle #1, we treat the untaxed income as if it had been taxed and we accomplish this by making appropriate adjustments to “basis.”\n\nKnow these principles.\n\nFocus for now only on additions to “the store of property rights” that a taxpayer may accumulate during a relevant period and not on the consumption element of the SHS definition. By taxing increments to savings and investment, we actually tax a taxpayer’s additions to his/her unexercised power to consume. Taxation of income is therefore the taxation of consumption and additional increments to the power to consume.",
+          "hit_page_start": 34,
+          "hit_regions": [
+            {
+              "bbox": [
+                153.782,
+                287.042,
+                694.134,
+                321.335
+              ],
+              "page": 34,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                148.941,
+                333.36,
+                747.086,
+                442.475
+              ],
+              "page": 34,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                153.782,
+                457.618,
+                357.097,
+                473.205
+              ],
+              "page": 34,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                495.222,
+                824.556,
+                605.732
+              ],
+              "page": 34,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014492753623188406
+        },
+        {
+          "id": "exc_1ab346b9350488_35_v1",
+          "book_id": "modern-philosophy",
+          "book_title": "Modern Philosophy",
+          "section_path": "Chapter 3 Background to Modern Philosophy › 3.4 Aristotle’s Posterior Analytics › 3.4.1 Book One, Chapter Two › What Knowing is, what Demonstration is, and of what it consists.",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "aristotelian-and-scholastic-background"
+          ],
+          "confidence": 0.96,
+          "synopsis": "What Knowing is, what Demonstration is, and of what it consists.: We suppose ourselves to know anything absolutely and not accidentally after the manner of the sophists, when we consider ourselves to know that the ground from which the thing arises is the ground of it, and that the fact cannot be otherwise. … us know. If then the definition of knowledge be such as we have stated, the premises of demonstrative knowledge must be true, primary, immediate, better … to be explanatory; Previously known not only in our second sense, viz. That their meaning is understood, but that one",
+          "pages": [
+            28
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1ab346b9350488_87_v1",
+            "chk_1ab346b9350488_88_v1"
+          ],
+          "hit_chunk_id": "chk_1ab346b9350488_88_v1",
+          "hit_text": "Hence it follows that everything which admits of absolute knowledge is necessary. We will discuss later the question as to whether there is any other manner of knowing a thing, but at any rate we hold that that ‘knowledge comes through demonstration.’ By ‘demonstration’ I mean a scientific syllogism, and by ‘scientific’ a syllogism the mere possession of which makes us know.\n\nIf then the definition of knowledge be such as we have stated, the premises of demonstrative knowledge must be true, primary, immediate, better known than, anterior to, and the cause of, the conclusion, for under these conditions the principles will also be appropriate to the conclusion. One may, indeed, have a syllogism without these conditions, but not a demonstration, for it will not produce scientific knowledge. The premises must be true, because it is impossible to know that which is not, e.g., that the diagonal of a square is commensurate with the side. The conclusion must proceed from primary premises that are indemonstrable premises, for one cannot know things of which one can give no demonstration, since to know demonstrable things in any real sense is just to have a demonstration of them. The premises must be Prior, Explanatory, Better known [to us] and Previously cognized; Explanatory, because we only know a thing when we have learned its explanation; Prior, if they are to be explanatory; Previously known not only in our second sense, viz. That their meaning is understood, but that one knows that they are true.",
+          "hit_page_start": 28,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                465.074,
+                828.333,
+                556.878
+              ],
+              "page": 28,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                567.508,
+                831.42,
+                827.662
+              ],
+              "page": 28,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014084507042253521
+        },
+        {
+          "id": "exc_6e045b04241181_113_v1",
+          "book_id": "understanding-music-past-and-present",
+          "book_title": "Understanding Music: Past and Present",
+          "section_path": "5MusicoftheClassicalPeriod › 5.3 INTRODUCTION AND HISTORICAL CONTEXT",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "classical-era-music"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Of all the musical periods, the Classical period is the shortest, spanning less than a century. Figure 5.1 | Benjamin Franklin, 1759 Author | Benjamin Wilson Source | Wikimedia Commons License | Public Domain Up until the mid-1700s art, including music, was under the direct control or patronage of the monarchy/aristocracy, the class whose unquestioned rule was founded on divine hereditary right. These sources provide us with reviews of concerts and published music and capture eighteenth century impressions of and responses to music.",
+          "pages": [
+            121,
+            122,
+            123
+          ],
+          "figure_ids": [
+            "fig_6e045b04241181_1137_v1"
+          ],
+          "chunk_ids": [
+            "chk_6e045b04241181_261_v1",
+            "chk_6e045b04241181_262_v1",
+            "chk_6e045b04241181_263_v1",
+            "chk_6e045b04241181_264_v1",
+            "chk_6e045b04241181_265_v1",
+            "chk_6e045b04241181_266_v1",
+            "chk_6e045b04241181_267_v1",
+            "chk_6e045b04241181_268_v1"
+          ],
+          "hit_chunk_id": "chk_6e045b04241181_264_v1",
+          "hit_text": "son and common sense in order to provide liberty and justice for all. Many Enlightenment thinkers challenged blind and unconditional following of the authority of religious traditions and institutions and emphasized what they saw as “universal human goods and rights.” They believed that if humankind would simply act with common sense—found in ideas such as “the golden rule”—then societies might advance with greater universal justice and liberty.\n\nBeing able to solve and understand many of the mysteries of the universe in a quantifiable manner using math and reason, was empowering. Much of the educated middle class applied these learned principles to improve society. Enlightenment ideals lead to political revolutions throughout the Western world. Governmental changes such as Britain’s embrace of constitutional democratic form of government and later the United States of America’s establishment of democratic republic completely changed the outlook of the function of a nation/state. The overall well-being and prosperity of all in society became the mission of governance.\n\nFigure 5.1 | Benjamin Franklin, 1759\n\nAuthor | Benjamin Wilson Source | Wikimedia Commons License | Public Domain\n\nUp until the mid-1700s art, including music, was",
+          "hit_page_start": 122,
+          "hit_regions": [
+            {
+              "bbox": [
+                176.471,
+                88.968,
+                823.529,
+                199.472
+              ],
+              "page": 122,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.471,
+                202.635,
+                604.877,
+                426.806
+              ],
+              "page": 122,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                619.608,
+                375.64,
+                771.987,
+                402.119
+              ],
+              "page": 122,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                619.608,
+                405.318,
+                798.68,
+                444.467
+              ],
+              "page": 122,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                205.876,
+                429.968,
+                604.894,
+                445.75
+              ],
+              "page": 122,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013888888888888888
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_84_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "1. Chapter 3: An Institutional View of Politics",
+          "roles": [
+            "worked_example",
+            "introduction"
+          ],
+          "topic_ids": [
+            "political-institutions"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Learning Objectives In this chapter we will look more closely at a view of politics through institutions. This revolution sought to explain politics in a very 56 | Chapter 3: An Institutional View of Politics Beginning in the 1930s, however, the discipline experiences a behavioralist revolution that emerged in American academia in particular. Since the behavioralist turn in the 20th century, there have been a",
+          "pages": [
+            62,
+            63
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_118_v1",
+            "chk_2bcaee6f65ce3f_119_v1",
+            "chk_2bcaee6f65ce3f_120_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_120_v1",
+          "hit_text": "Let’s take an example: how do democracies emerge out of nondemocratic political communities? Answering such a question may take a behavioralist approach, focusing on actors, such as democratic activists or social movements, politicians or bureaucrats. Or it may take an institutional focus, such as looking at the structures of government or economic systems conducive to democratic development. There is clearly an objective approach to answering this question—simply explaining when democracies arise out of non-democracies—but it may also have a normative component to it: how should democracy develop out of nondemocratic political communities?\n\nSince the behavioralist turn in the 20th century, there have been a",
+          "hit_page_start": 63,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                613.804,
+                856.818,
+                860.614
+              ],
+              "page": 63,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                165.891,
+                865.647,
+                856.833,
+                883.49
+              ],
+              "page": 63,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0136986301369863
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_6_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "Introduction › Introduction | 1",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "what-is-politics"
+          ],
+          "confidence": 0.9,
+          "synopsis": "often considered the first political scientist. This Italian diplomat and theorist writing on the cusp of modernity wrote a classic text on the practical ways in which a ruler gets and keeps power—The Prince. Machiavelli claimed this work was intended as a practical guide for monarchical rulers, and because of this, he “thought it proper to represent things as they are in a real truth, … may see politics as a ruthless zero-sum game of endless conflict but nonetheless think politics should be more deliberative and cooperative. You therefore may seek certain policies or rules that mitigate conflict-based politics and",
+          "pages": [
+            8
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_7_v1",
+            "chk_2bcaee6f65ce3f_8_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_8_v1",
+          "hit_text": "As Socrates reminds us at the end of Book I in Plato’s Republic, humans don’t want merely to live a life predicated on the necessities of survival, we want to live well. What does it mean to live life well? This we may say is the art of politics—law, leadership, and rule that seeks the betterment of society and individuals. In other words, politics is necessary because we want to live well, not merely survive. What this suggests is that normative theories of what politics should be are informed by and deeply intertwined with our perceptions of reality. Or in other words, if x is how real power operates, then we should do y in order to best advance the interests of society. Reflect on your own perceptions of politics. How do you understand the relationship between what you think politics is versus what it should be? For example, you may see politics as a ruthless zero-sum game of endless conflict but nonetheless think politics should be more deliberative and cooperative. You therefore may seek certain policies or rules that mitigate conflict-based politics and ensure greater compromise and cooperation. As this example suggests, what politics is and what it ought to be are not the same thing, but they are importantly interconnected.\n\n2 | Introduction",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                461.232,
+                856.833,
+                891.397
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                922.222,
+                299.197,
+                938.083
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013513513513513514
+        },
+        {
+          "id": "exc_6dad36dba54383_51_v1",
+          "book_id": "open-research",
+          "book_title": "Open Research",
+          "section_path": "INTRODUCTION › Activity 7: Ethical Implications of Openness (1 hour) › Consider the following text from Wikipedia on the dePnition of ‘open research’:",
+          "roles": [
+            "exercise",
+            "introduction"
+          ],
+          "topic_ids": [
+            "research-ethics-open"
+          ],
+          "confidence": 0.98,
+          "synopsis": "Open research is research conducted in the spirit of free and open source software. Much like open source schemes that are built around a source code that is made public, the central theme of open research is to make clear accounts of the methodology freely available via the internet, along with any data or results extracted or derived from them. This permits a massively distributed collaboration, and one in which anyone may participate at any level of the project.” (Source)\n\nNow consider the suggestions for an open research process available here.\n\nDo you think that there are potential ethical issues raised by the suggestions made for ‘open research’? Would they be covered by the principles outlined in the previous activity? If not, are there new principles that we need to use when working ‘in the open’ (without institutional rules)? What might they be?",
+          "pages": [
+            37
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_6dad36dba54383_59_v1"
+          ],
+          "hit_chunk_id": "chk_6dad36dba54383_59_v1",
+          "hit_text": "Open research is research conducted in the spirit of free and open source software. Much like open source schemes that are built around a source code that is made public, the central theme of open research is to make clear accounts of the methodology freely available via the internet, along with any data or results extracted or derived from them. This permits a massively distributed collaboration, and one in which anyone may participate at any level of the project.” (Source)\n\nNow consider the suggestions for an open research process available here.\n\nDo you think that there are potential ethical issues raised by the suggestions made for ‘open research’? Would they be covered by the principles outlined in the previous activity? If not, are there new principles that we need to use when working ‘in the open’ (without institutional rules)? What might they be?",
+          "hit_page_start": 37,
+          "hit_regions": [
+            {
+              "bbox": [
+                178.899,
+                351.217,
+                886.207,
+                489.127
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                178.899,
+                516.044,
+                886.171,
+                560.563
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                178.899,
+                567.892,
+                886.235,
+                677.639
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013333333333333334
+        },
+        {
+          "id": "exc_63eb4072e8d6be_2_v1",
+          "book_id": "basic-political-concepts",
+          "book_title": "Basic Political Concepts",
+          "section_path": "Basic Political Concepts › Towards a Systematic Conceptualization of Politics",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "what-is-politics"
+          ],
+          "confidence": 1.0,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nPolitical science is the systematic study of governments, of the methods by which governments seek to control people, and of the techniques through which people try to influence government. It is a science that attempts to connect the \"micro\" level of individual lives and actions with the \"macro\" level of collective circumstances and consequences.\n\nLike the other social sciences, political science focuses on all three basic types of social power: the pen, the purse, and the sword. Unlike the other social sciences, it gives special attention to the power of the sword: wielded collectively in the form of war and threats of war, wielded against individuals—ideally— in the more civilized form of laws.\n\nEvery body of knowledge has at least a few basic words that students had better understand in the fullest possible sense. For the physicist, \"force\" must equal mass times acceleration. Accountants must understand that \"assets\" are equal to liabilities plus owners' equity (capital) and must be able to classify particular transactions into the proper categories. Music theorists must know the difference between a second inversion and a secondary dominant. Political science is no exception to this general need for fundamental concepts.\n\nEvery body of knowledge has at least a few basic words that students had better understand in the fullest possible sense. For the physicist, \"force\" must equal mass times acceleration. Accountants must understand that \"assets\" are equal to liabilities plus owners' equity (capital) and must be able to classify particular transactions into the proper categories. Music theorists must know the difference between a second inversion and a secondary dominant. Political science is no exception to this general need for fundamental concepts.\n\nUnfortunately, political scientists and lawyers—the two main professions concerned with analyzing government —have not identified a small set of simple, core concepts whose permutations and combinations get to the essence of the matter. Instead, both professions are blessed (or cursed!) with a great multiplicity of terms and concepts, all of roughly equal importance, whose mutual relations and meanings are extremely complex.\n\nAs a result of its lack of fundamental conceptual clarity, political science increasingly suffers from an inferiority complex. Chemistry and physics have produced a continuous and accelerating stream of spectacular accomplishments which are reflected, for better or for worse, in the everyday material environment: computers, synthetic fabrics, lasers, microwave ovens, TV, atomic bombs, pesticides. . . . A similar takeoff in biological science appears to be shaping up. But where do we see any signs that political science is having an impact on the world?\n\nAs a result of its lack of fundamental conceptual clarity, political science increasingly suffers from an inferiority complex. Chemistry and physics have produced a continuous and accelerating stream of spectacular accomplishments which are reflected, for better or for worse, in the everyday material environment: computers, synthetic fabrics, lasers, microwave ovens, TV, atomic bombs, pesticides. . . . A similar takeoff in biological science appears to be shaping up. But where do we see any signs that political science is having an impact on the world?\n\nIt is true that in the political sphere, too, many new techniques and institutions have appeared, but our professional inferiority complex is nevertheless based on an embarrassing fact. Major innovations in 20th century government have not originated in political science. The pattern is quite unlike that in the natural sciences, where breakthroughs in fundamental analysis (e.g. Einstein's E = mc squared) are placed on a practical basis by the engineers (e.g. the Manhattan Project). In public life, by contrast, the breakthroughs are made by the \"engineers\" (active politicians: elected officials,\n\nadministrators, revolutionaries) and later, often much later, political scientists get around to noticing them, describing them, and criticizing them.\n\nIt is true that in the political sphere, too, many new techniques and institutions have appeared, but our professional inferiority complex is nevertheless based on an embarrassing fact. Major innovations in 20th century government have not originated in political science. The pattern is quite unlike that in the natural sciences, where breakthroughs in fundamental analysis (e.g. Einstein's E = mc squared) are placed on a practical basis by the engineers (e.g. the Manhattan Project). In public life, by contrast, the breakthroughs are made by the \"engineers\" (active politicians: elected officials,\n\nadministrators, revolutionaries) and later, often much later, political scientists get around to noticing them, describing them, and criticizing them.\n\nThe goal of Basic Political Concepts is to provide exactly what the title suggests: a small set of carefully defined and interrelated words that can be used to describe and analyze a wide range of political phenomena and issues. Chapter 1 focuses on concepts useful in analyzing individual decisions and actions, which surely are the basic \"stuff\" of politics. Chapter 2 introduces concepts related to associations, the relationships between individuals that are created by their actions. Chapter 3, \"Developing Conceptual Acuity\", illustrates some ways in which we can systematically increase our ability to think systematically about politics. It is an invitation for the student to think creatively, to join in the continual rethinking of political issues that is a prerequisite of progress.",
+          "pages": [
+            4,
+            5
+          ],
+          "figure_ids": [
+            "fig_63eb4072e8d6be_26_v1"
+          ],
+          "chunk_ids": [
+            "chk_63eb4072e8d6be_6_v1",
+            "chk_63eb4072e8d6be_7_v1",
+            "chk_63eb4072e8d6be_8_v1",
+            "chk_63eb4072e8d6be_9_v1"
+          ],
+          "hit_chunk_id": "chk_63eb4072e8d6be_6_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nPolitical science is the systematic study of governments, of the methods by which governments seek to control people, and of the techniques through which people try to influence government. It is a science that attempts to connect the \"micro\" level of individual lives and actions with the \"macro\" level of collective circumstances and consequences.\n\nLike the other social sciences, political science focuses on all three basic types of social power: the pen, the purse, and the sword. Unlike the other social sciences, it gives special attention to the power of the sword: wielded collectively in the form of war and threats of war, wielded against individuals—ideally— in the more civilized form of laws.\n\nEvery body of knowledge has at least a few basic words that students had better understand in the fullest possible sense. For the physicist, \"force\" must equal mass times acceleration. Accountants must understand that \"assets\" are equal to liabilities plus owners' equity (capital) and must be able to classify particular transactions into the proper categories. Music theorists must know the difference between a second inversion and a secondary dominant. Political science is no exception to this general need for fundamental concepts.",
+          "hit_page_start": 4,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                167.704,
+                717.824,
+                199.753
+              ],
+              "page": 4,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                211.166,
+                822.069,
+                302.97
+              ],
+              "page": 4,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                313.601,
+                835.338,
+                405.405
+              ],
+              "page": 4,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                416.036,
+                820.939,
+                545.251
+              ],
+              "page": 4,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013157894736842105
+        },
+        {
+          "id": "exc_1c619222c448be_27_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 1 Introduction to Law › LEARNING OBJECTIVES › 20",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "rule-of-law-for-business"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Rule of law is a system of published laws under which the people and the government are bound, which allows predictability and restraint of government action. A rule of law system allows people to understand what is expected of them. It provides a system that allows many people with different beliefs and cultures to live together in peace, by providing methods by which conflicts can be resolved. The U.S. rule of law system contains many elements of prior rule of law systems.",
+          "pages": [
+            30
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_100_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_100_v1",
+          "hit_text": "Rule of law is a system of published laws under which the people and the government are bound, which allows predictability and restraint of government action. A rule of law system allows people to understand what is expected of them. It provides a system that allows many people with different beliefs and cultures to live together in peace, by providing methods by which conflicts can be resolved. The U.S. rule of law system contains many elements of prior rule of law systems.",
+          "hit_page_start": 30,
+          "hit_regions": [
+            {
+              "bbox": [
+                152.521,
+                95.707,
+                757.497,
+                242.233
+              ],
+              "page": 30,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.012987012987012988
+        },
+        {
+          "id": "exc_d0b9f7e2db1f65_54_v1",
+          "book_id": "basic-income-tax-second-edition",
+          "book_title": "Basic Income Tax, Second Edition",
+          "section_path": "Chapter 1 The Government Raises Money: Introduction to Some Basic Concepts of Taxes and Taxing Income › Enforcement of the Tax Laws and Court Review › 1.8 Some Income Tax Policy and Some Income Tax Principles",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "tax-formula-and-rates"
+          ],
+          "confidence": 0.94,
+          "synopsis": "Chapter 1 The Government Raises Money: Introduction to Some Basic Concepts of Taxes and Taxing Income › Enforcement of the Tax Laws and Court Review › 1.8 Some Income Tax Policy and Some Income Tax Principles: Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/). The United States has adopted an income tax code, and the discussion now zeroes in on the income tax that Congress has adopted. Fairness and Equity: Issues of fairness as between those who must pay an income tax arise. A reduction in one taxpayer’s taxable income of course produces a reduction in that",
+          "pages": [
+            31
+          ],
+          "figure_ids": [
+            "fig_d0b9f7e2db1f65_300_v1"
+          ],
+          "chunk_ids": [
+            "chk_d0b9f7e2db1f65_99_v1",
+            "chk_d0b9f7e2db1f65_100_v1"
+          ],
+          "hit_chunk_id": "chk_d0b9f7e2db1f65_99_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nThe United States has adopted an income tax code, and the discussion now zeroes in on the income tax that Congress has adopted.\n\nFairness and Equity: Issues of fairness as between those who must pay an income tax arise. A reduction in one taxpayer’s taxable income of course produces a reduction in that taxpayer’s taxes. If the government is to raise a certain amount of money through an income tax, a reduction in one taxpayer’s tax liability necessarily means that someone else’s taxes must increase. This is why the reduction of some taxpayers’ tax liability is a matter of concern for everyone else. The government may choose to discriminate in its assessment of tax liability. The policy considerations that justify reducing one taxpayer’s tax liability but not another’s are the essence of tax policy.\n\nThree Guiding Principles: This leads us to observe that there are three norms against which we measure income tax rules:",
+          "hit_page_start": 31,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                307.55,
+                755.639,
+                339.599
+              ],
+              "page": 31,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                351.012,
+                861.084,
+                386.7
+              ],
+              "page": 31,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                397.33,
+                873.066,
+                545.251
+              ],
+              "page": 31,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                555.881,
+                842.941,
+                591.569
+              ],
+              "page": 31,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01282051282051282
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_32_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "Chapter 2: Ideologies of the Individual",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "political-ideologies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Learning Objectives This chapter will give you a better understanding of ideology in political thought. In order to do so, we will consider classical and modern variants of liberalism, conservatism, and socialism by analyzing the ways in which these ideologies value equality and freedom. We will also attempt to define a conception of justice that aligns with each of these ideologies. At the end of this chapter, you will take an ideologies quiz that will give you some determination of your own ideological beliefs.",
+          "pages": [
+            30
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_45_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_45_v1",
+          "hit_text": "Learning Objectives\n\nThis chapter will give you a better understanding of ideology in political thought. In order to do so, we will consider classical and modern variants of liberalism, conservatism, and socialism by analyzing the ways in which these ideologies value equality and freedom. We will also attempt to define a conception of justice that aligns with each of these ideologies. At the end of this chapter, you will take an ideologies quiz that will give you some determination of your own ideological beliefs.",
+          "hit_page_start": 30,
+          "hit_regions": [
+            {
+              "bbox": [
+                179.528,
+                264.01,
+                364.576,
+                280.32
+              ],
+              "page": 30,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                183.568,
+                357.737,
+                810.134,
+                558.587
+              ],
+              "page": 30,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.012658227848101266
+        },
+        {
+          "id": "exc_a35c627f0c0b82_36_v1",
+          "book_id": "introduction-to-school-leadership",
+          "book_title": "Introduction to School Leadership",
+          "section_path": "Attributions",
+          "roles": [
+            "introduction",
+            "reference"
+          ],
+          "topic_ids": [
+            "educational-leadership-theory-practice",
+            "democratic-school-community",
+            "school-culture-and-climate",
+            "shared-distributed-leadership",
+            "parent-involvement-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nCollection: Introduction to School Leadership Edited by: Angus MacNeil URL: http://cnx.org/content/col10293/1.2/ License: http://creativecommons.org/licenses/by/2.0/ Module: \"Building a Learning Community: Democratic Values\" By: Angus MacNeil, Valerie maclin\n\nURL: http://cnx.org/content/m12921/1.2/ Pages: 3-5 Copyright: Angus MacNeil, Valerie maclin License: http://creativecommons.org/licenses/by/2.0/ Module: \"Building a Learning Community: The Culture and Climate of Schools\" By: Angus MacNeil, Valerie maclin\nURL: http://cnx.org/content/m12922/1.2/ Pages: 7-9 Copyright: Angus MacNeil, Valerie maclin License: http://creativecommons.org/licenses/by/2.0/ Module: \"Shared Leadership\" By: Angus MacNeil, Alena McClanahan\nURL: http://cnx.org/content/m12923/1.2/ Pages: 11-13 Copyright: Angus MacNeil, Alena McClanahan License: http://creativecommons.org/licenses/by/2.0/ Module: \"The Principalship: Manager to Leader\" By: Angus MacNeil, Michael Yelvington\nURL: http://cnx.org/content/m12924/1.2/ Pages: 15-18 Copyright: Angus MacNeil, Michael Yelvington License: http://creativecommons.org/licenses/by/2.0/",
+          "pages": [
+            25
+          ],
+          "figure_ids": [
+            "fig_a35c627f0c0b82_231_v1"
+          ],
+          "chunk_ids": [
+            "chk_a35c627f0c0b82_57_v1"
+          ],
+          "hit_chunk_id": "chk_a35c627f0c0b82_57_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nCollection: Introduction to School Leadership Edited by: Angus MacNeil URL: http://cnx.org/content/col10293/1.2/ License: http://creativecommons.org/licenses/by/2.0/ Module: \"Building a Learning Community: Democratic Values\" By: Angus MacNeil, Valerie maclin\n\nURL: http://cnx.org/content/m12921/1.2/ Pages: 3-5 Copyright: Angus MacNeil, Valerie maclin License: http://creativecommons.org/licenses/by/2.0/ Module: \"Building a Learning Community: The Culture and Climate of Schools\" By: Angus MacNeil, Valerie maclin\nURL: http://cnx.org/content/m12922/1.2/ Pages: 7-9 Copyright: Angus MacNeil, Valerie maclin License: http://creativecommons.org/licenses/by/2.0/ Module: \"Shared Leadership\" By: Angus MacNeil, Alena McClanahan\nURL: http://cnx.org/content/m12923/1.2/ Pages: 11-13 Copyright: Angus MacNeil, Alena McClanahan License: http://creativecommons.org/licenses/by/2.0/ Module: \"The Principalship: Manager to Leader\" By: Angus MacNeil, Michael Yelvington\nURL: http://cnx.org/content/m12924/1.2/ Pages: 15-18 Copyright: Angus MacNeil, Michael Yelvington License: http://creativecommons.org/licenses/by/2.0/",
+          "hit_page_start": 25,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                127.621,
+                755.639,
+                159.67
+              ],
+              "page": 25,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                171.083,
+                669.807,
+                326.129
+              ],
+              "page": 25,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                336.76,
+                804.365,
+                933.612
+              ],
+              "page": 25,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0125
+        },
+        {
+          "id": "exc_1c619222c448be_26_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 1 Introduction to Law › LEARNING OBJECTIVES › 18",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "rule-of-law-for-business"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 1 Introduction to Law › LEARNING OBJECTIVES › 18: often had different rights than women. Slaves were a different legal class than those who were free, and indentured servants were often a different classification altogether. When people are held to the same standards, we can see systems of fairness (that is, equal justice under the law) emerging, at least for those within the same class.",
+          "pages": [
+            28,
+            29
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_93_v1",
+            "chk_1c619222c448be_94_v1",
+            "chk_1c619222c448be_95_v1",
+            "chk_1c619222c448be_96_v1",
+            "chk_1c619222c448be_97_v1",
+            "chk_1c619222c448be_98_v1",
+            "chk_1c619222c448be_99_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_99_v1",
+          "hit_text": "The U.S. Constitution is the foundation on which the U.S. federal rule of law system rests. It asserts the supremacy of law. “We the people” is a very important part of the preamble, because it confers power on the people as well as on the states. Notably, unlike the Magna Carta and the English Bill of Rights of 1689, it does not focus on individual rights. Of course, the Bill of Rights does focus on individual rights, but those amendments were passed after the Constitution was written. (That is why they are called amendments to the constitution.) The U.S. Constitution implemented the supremacy of law using structure and processes. The Founding Fathers were particularly concerned about giving the government the power to do its job without encouraging tyranny. They built in processes to ensure the supremacy of law. Indeed, ours is “a government of laws and not of men,” John Adams wrote in the Massachusetts Constitution. Thomas Paine noted the same sentiment in Common Sense, when he wrote, “the law is king.”",
+          "hit_page_start": 29,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                618.941,
+                867.313,
+                860.388
+              ],
+              "page": 29,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.012345679012345678
+        }
+      ]
+    },
+    {
+      "query": "democracy definition rule by the people types direct representative",
+      "topics": [],
+      "roles": [],
+      "seconds": 9.011,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_148_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Let’s consider three core elements of what constitutes a democracy—individual sovereignty, equality amongst citizens, and democratic norms and values. Democracy is essentially the idea that political sovereignty resides at the level of the individual. In this sense, a political community derives its supreme power and authority from the consent of the people within that community. Individuals may hold the sovereign right of political rule in … some citizens hold greater weight than others. According to Robert Dahl, a U.S citizen in Alaska has a vote 54 times greater than the vote of a Californian. 1 Likewise, in the selection of",
+          "pages": [
+            112,
+            113
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_216_v1",
+            "chk_2bcaee6f65ce3f_217_v1",
+            "chk_2bcaee6f65ce3f_218_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_216_v1",
+          "hit_text": "Let’s consider three core elements of what constitutes a democracy—individual sovereignty, equality amongst citizens, and democratic norms and values. Democracy is essentially the idea that political sovereignty resides at the level of the individual. In this sense, a political community derives its supreme power and authority from the consent of the people within that community. Individuals may hold the sovereign right of political rule in a democratic country, but it is a public and shared right—no one individual can claim absolute sovereign power and authority. Some\n\n106 | We the People: Democratic Theory and Practice\n\nindividuals may have greater political power, however. In a representative democracy, for example, representatives typically wield political power on behalf of citizens and some representatives may have greater or lesser political power relative to other representatives. But if we define sovereignty as the absolute authority and supreme power of political rule, democratic sovereignty is not reserved for particular groups or individuals, nor is it derived from a divine or hereditary right, but rather a general right dispersed at the level of individuals within a political community.",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                681.547,
+                856.833,
+                882.399
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                914.379,
+                455.758,
+                945.926
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.833,
+                318.877
+              ],
+              "page": 113,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021601775956284153
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_150_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy? › 1. Robert Dahl, How Democratic is the American Constitution? 2nd edition, Yale University Press: 2003, pp. 47. › We the People: Democratic Theory and Practice | 107",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Democratic Party voter in Kansas or a conservative Republican Party voter in California can be a frustrating experience—very often such citizens feel as though their vote doesn’t matter, and this sense of a “wasted vote” can have an overall negative effect on voter turnout. Imagine a democratic political community that simply went through the motions of a Characteristics of a democracy. Volunteering, participating in local government, and attending community events all help bring about a vibrant",
+          "pages": [
+            114
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_566_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_220_v1",
+            "chk_2bcaee6f65ce3f_221_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_221_v1",
+          "hit_text": "The third element of democracy constitutes ideas that strengthen and reinforce the elements above: norms, values, and rules that affirm and solidify individual sovereignty and political equality amongst citizens. This last element suggests that abstract concepts such as sovereignty and equality are not enough—democracy requires a set of norms and values that affirm its place in society. Imagine a democratic political community that simply went through the motions of a\n\nCharacteristics of a democracy.\n\ndemocratic process but did not necessarily value democracy nor develop any positive norms regarding the rule of the people. What’s missing here? In this Zombie Democracy, citizens become mere automatons, acting out the motions of the democratic process with no articulation or understanding of its value. In this respect, democracy requires public acknowledgement, understanding, and deliberation on why we choose democracy and what specific forms a democracy should take. Civic engagement and civic participation is not just about voting or formal democratic processes, but rather include a wide range of political and non-political activities in which individuals or groups come together to solve problems and better their community. Volunteering, participating in local government, and attending community events all help bring about a vibrant",
+          "hit_page_start": 114,
+          "hit_regions": [
+            {
+              "bbox": [
+                522.727,
+                209.531,
+                856.833,
+                593.387
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                564.284,
+                429.712,
+                580.394
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                598.42,
+                856.831,
+                890.773
+              ],
+              "page": 114,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020027744061036933
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_158_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Let’s explore three justifications as to why democracy is a worthy political goal—aggregative, deliberative, and radical. “Well let’s put it to a vote,” is an ideal solution for those who value democracy because it clearly demonstrates the aggregate preference of a political community. A disadvantage to the aggregative view of democracy is that such a view does not necessary bring about consensus, compromise,",
+          "pages": [
+            120
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_233_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_233_v1",
+          "hit_text": "Let’s explore three justifications as to why democracy is a worthy political goal—aggregative, deliberative, and radical. First, we may choose democracy because it is an effective system for aggregating political preferences. In short, democracy allows us to vote and state our preferences in such a way that we can tally up choices—a numerical aggregation of votes—to determine the best course of action on policies. “Well let’s put it to a vote,” is an ideal solution for those who value democracy because it clearly demonstrates the aggregate preference of a political community. An advantage to this aggregative view of democracy is that it can give a clear indication of majority preference and thus a clear determination of the best course of action. In short, aggregative democracy gives clear determined outcomes: in theory, majority decisions provide definite answers to political problems.\n\nA disadvantage to the aggregative view of democracy is that such a view does not necessary bring about consensus, compromise,",
+          "hit_page_start": 120,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                527.822,
+                856.831,
+                843.052
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                848.083,
+                856.803,
+                888.804
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017919385110376263
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_152_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "It is often said that the United States of America is not a democracy but a constitutional republic. What exactly is the difference between a republic and a democracy? A republic is a form of government in which the country itself is a public concern, not a private entity owned by a particular ruling group, such as a monarchy. Public ownership over the country does … exactly democratic, citizens were nonetheless able to participate in government through these popular assemblies. Much of the evolution of the term republic is a variation on mixed government and civic participation in governance. During",
+          "pages": [
+            116
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_225_v1",
+            "chk_2bcaee6f65ce3f_226_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_225_v1",
+          "hit_text": "It is often said that the United States of America is not a democracy but a constitutional republic. What exactly is the difference between a republic and a democracy? A republic is a form of government in which the country itself is a public concern, not a private entity owned by a particular ruling group, such as a monarchy. Public ownership over the country does not, however, necessarily imply a democracy. The vast majority of sovereign states today use the word republic in their official names but many of these are not democratic. A republic is a form of government defining the ownership of a country as a public matter, whereas a democracy is a system of government in which citizens themselves engage either directly or indirectly in\n\nWhat exactly is the differenc e between a republic and a democra cy?\n\ngovernment.",
+          "hit_page_start": 116,
+          "hit_regions": [
+            {
+              "bbox": [
+                344.311,
+                157.077,
+                856.833,
+                518.059
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                183.568,
+                214.397,
+                279.167,
+                461.0
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                523.09,
+                276.859,
+                540.935
+              ],
+              "page": 116,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016129032258064516
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_167_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "confidence": 0.9,
+          "synopsis": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. Which do you think is more important and why? In the second section of this book, we will take an in-depth look at the major sub-disciplines in political science, with the aim of both introducing students to the discipline and learning more about how to analyze and understand political behavior, thought, and institution",
+          "pages": [
+            127
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_244_v1",
+            "chk_2bcaee6f65ce3f_245_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_244_v1",
+          "hit_text": "In this chapter we defined democracy as sovereignty residing at the level of individual citizens who are equal to one another and who live in a society that affirms the norms and values of individual sovereignty and citizen equality. We made some distinction between democracies and republics, while identifying some important connections between the two. We reviewed the concept of democratization—the transition from a non-democratic to a democratic regime—and identified some approaches to studying this important phenomenon. Lastly, we considered justifications for democracy—in asking why should we choose democracy, we arrive at three possible answers: aggregative, deliberative, and radical. Which do you think is more important and why? How exactly does democratic society and democratic governance effect your life?",
+          "hit_page_start": 127,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                157.077,
+                856.833,
+                449.431
+              ],
+              "page": 127,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015873015873015872
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_159_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › 114 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "or understanding—it simply tallies individuals preferences and determines what the numerical majority is. This view might be criticized for turning democracy into a cold and calculating machine, devoid of deliberation or ethical regard. Take for example the famous debates on slavery between Abraham Lincoln and Stephen Douglas in 1858. Douglas argued, in effect, that the question of slavery has a fairly simple answer—just put it … aggregative, of preferences, deliberative democracy values the process of deliberating as much if not more than the conclusion itself. In Sydney Lumet’s 1957 film 12 Angry Men, jurors retire to a deliberation room to",
+          "pages": [
+            121
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_234_v1",
+            "chk_2bcaee6f65ce3f_235_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_235_v1",
+          "hit_text": "A second justification for democracy is deliberative. Deliberative democracy suggests that we value self-rule because it provides an area for discussion, compromise, and consensus. The ideal of deliberative democracy is not that a majority number of votes will clearly determine an answer, but that through transparent and fair deliberation, we should arrive at something close to unanimous consensus, even if that consensus is a compromise in which no one individual gets everything they want. A deliberative democracy is one in which citizens and representatives justify their decisions in an open and transparent arena, using reason to arrive at a best possible conclusion while leaving open the possibility that the conclusion could be revised or changed in the future. Process is key to deliberation—it is a back and forth dialog among individuals engaged in the task of finding solutions to political problems of a community. Where aggregative democracy is centered on the end result, or aggregative, of preferences, deliberative democracy values the process of deliberating as much if not more than the conclusion itself.\n\nIn Sydney Lumet’s 1957 film 12 Angry Men, jurors retire to a deliberation room to determine whether or not a young boy murdered his father. All but one of the jurors (played by Henry Fonda) are fairly certain the boy is guilty. But as the discussion",
+          "hit_page_start": 121,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                392.538,
+                856.833,
+                799.27
+              ],
+              "page": 121,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                804.162,
+                856.833,
+                890.877
+              ],
+              "page": 121,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015552584670231729
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_147_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "What is a democracy? Why should we choose democracy? In this chapter we will develop theories of and theoretical justifications for democratic governance and a democratic political society. We will also consider some of the similarities and differences between a republic and a democracy. Lastly, this chapter will consider causes and conditions of democratization and the influence the development of democracy has on economic reform. At the end of this chapter, students will write a reflection paper on the ways in which democratic society influences their lives.",
+          "pages": [
+            112
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_215_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_215_v1",
+          "hit_text": "What is a democracy? Why should we choose democracy?\n\nIn this chapter we will develop theories of and theoretical justifications for democratic governance and a democratic political society. We will also consider some of the similarities and differences between a republic and a democracy. Lastly, this chapter will consider causes and conditions of democratization and the influence the development of democracy has on economic reform. At the end of this chapter, students will write a reflection paper on the ways in which democratic society influences their lives.",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                201.119,
+                263.534,
+                703.826,
+                304.253
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                363.257,
+                856.811,
+                564.106
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015384615384615385
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_161_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › 116 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27 This film reveals the value of deliberation. Had the jurors simply voted their preferences after hearing all the evidence and testimony, they likely would not have arrived at the best possible conclusion. In short, we value democracy because it provides a venue for a deliberative … makes government responsible and accountable to their needs. In the radical view of democracy, power is won on the streets, through direct action of citizens who demand action or recognition from government. In the",
+          "pages": [
+            123
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_237_v1",
+            "chk_2bcaee6f65ce3f_238_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_238_v1",
+          "hit_text": "The third justification for democracy is radical. In this view, we value democracy not because we arrive at clear solutions (aggregative), nor because it provides some reasoned consensus through dialog (deliberative) but because democracy gives individuals power to that makes government responsible and accountable to their needs. In the radical view of democracy, power is won on the streets, through direct action of citizens who demand action or recognition from government. In the extreme sense, we may imagine riots, street violence, burning cars, and broken windows, but a radical conception of democracy does not necessarily mean violence or intimidation at all. Rather, a radical",
+          "hit_page_start": 123,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                649.727,
+                856.813,
+                896.328
+              ],
+              "page": 123,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015151515151515152
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_151_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › What is Democracy? › 1. Robert Dahl, How Democratic is the American Constitution? 2nd edition, Yale University Press: 2003, pp. 47. › 108 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "public sphere. Placing value on these activities is a vital foundation of democracy. Lastly, a useful distinction can be drawn between a democratic society and a democratic form of government. High levels of civic engagement—individuals engaged in collective action for the public betterment—point to a strong democratic society. A democratic form government, on the other hand, implies a set of rules and processes for democratic … and yet the institutions of government contain powerful obstacles to democratic governing. Although the United States of America is considered as having a democratic form of government and a democratic society, there is sometimes",
+          "pages": [
+            115
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_222_v1",
+            "chk_2bcaee6f65ce3f_223_v1",
+            "chk_2bcaee6f65ce3f_224_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_223_v1",
+          "hit_text": "Lastly, a useful distinction can be drawn between a democratic society and a democratic form of government. High levels of civic engagement—individuals engaged in collective action for the public betterment—point to a strong democratic society. A democratic form government, on the other hand, implies a set of rules and processes for democratic elections and democratic governing. These concepts, of course, go hand in hand and are mutually reinforcing: rules and processes that limit democratic forms of government can have a deleterious effect on civic engagement. Conversely, strong institutions of democratic government can facilitate and encourage active community participation in the public’s well being. There can, however, be a gap between the relative strength of a democratic society in relation to a democratic form of government. We can imagine a scenario in which rules and processes of democratic elections and governance are transparent and fair, yet voter turnout is abysmally low; letters can be written to representatives, government meetings can be free for anyone to attend, yet most of the public do not contact representatives nor attend any meetings, preferring instead to go about their private lives. Conversely, we can also imagine a scenario in which there is robust political activism, civic engagement, and collective action to solve public concerns, and yet the institutions of government contain powerful obstacles to democratic governing.",
+          "hit_page_start": 115,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                140.904,
+                856.831,
+                799.27
+              ],
+              "page": 115,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014705882352941176
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_97_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "1. Chapter 3: An Institutional View of Politics › The Law Makers › 66 | Chapter 3: An Institutional View of Politics",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "branches-of-government"
+          ],
+          "confidence": 0.9,
+          "synopsis": "democracies, legislators are usually voted into office, either through popular or indirect elections, although in some cases they may be appointed by another branch or institution of government (this was the case in the United States Senate, whose members were appointed by state legislatures until the passage of the 17th Amendment in 1913). Take, for example, the two main legislative bodies of Germany—the Bundestag and Bundesrat. For the framers of the US Constitution, for example, one of the aims of the United States Senate was to provide some stability to law making in government—senators serve 6 year terms (as opposed",
+          "pages": [
+            73
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_141_v1",
+            "chk_2bcaee6f65ce3f_142_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_141_v1",
+          "hit_text": "democracies, legislators are usually voted into office, either through popular or indirect elections, although in some cases they may be appointed by another branch or institution of government (this was the case in the United States Senate, whose members were appointed by state legislatures until the passage of the 17th Amendment in 1913). In popular elections, representatives are voted into office directly by the people. In indirect elections, voters typically vote for people who will then choose the representatives (the process for selecting the US president, the Electoral College, is an example of an indirect election).",
+          "hit_page_start": 73,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.833,
+                318.877
+              ],
+              "page": 73,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014492753623188406
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_164_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Why Should We Choose Democracy? › 2. Frederick Douglass, \"What to a Slave is the Fourth of July?\" › 118 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "deliberative, and radical. This is a tricky question, for one student may say, “let’s vote on which justification of democracy is best for us,” they would clearly be valuing an aggregative conception more than others. If a third student were then to counter that they should resist the question (and all assignments in the class) and engage in academic disobedience to pressure the professor into responding to the student’s needs, they would clearly be favoring a radical conception of democratic power (full disclosure: the professor does not advocate for this third option).",
+          "pages": [
+            125
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_241_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_241_v1",
+          "hit_text": "deliberative, and radical. Which do you prefer? If we had to come to a conclusion on which of these three conceptions of democracy we should value most in this classroom, right now, how should we collectively arrive at an answer? This is a tricky question, for one student may say, “let’s vote on which justification of democracy is best for us,” they would clearly be valuing an aggregative conception more than others. Likewise, if another student countered that it would be best to reach consensus after a reasonable debate on the matter, they would clearly be favoring a deliberative conception. If a third student were then to counter that they should resist the question (and all assignments in the class) and engage in academic disobedience to pressure the professor into responding to the student’s needs, they would clearly be favoring a radical conception of democratic power (full disclosure: the professor does not advocate for this third option).",
+          "hit_page_start": 125,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.831,
+                433.257
+              ],
+              "page": 125,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014285714285714285
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_170_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion › Media Attributions › 122 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "reference",
+            "summary"
+          ],
+          "topic_ids": [],
+          "confidence": 0.9,
+          "synopsis": "PART II",
+          "pages": [
+            129
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_248_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_248_v1",
+          "hit_text": "PART II",
+          "hit_page_start": 129,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                92.095,
+                267.717,
+                119.141
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014084507042253521
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_166_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › It’s A Wonderful (Democratic?) Life › We the People: Democratic Theory and Practice | 119",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27 Imagine if George was not a human but democracy itself. Let’s take democracy out of your life entirely. Let’s go further and assume that, unlike George Bailey and Bedford Falls, your life is exactly the same. Your past is the same, your present is the … absence of a democracy in you life. Use at least two of aggregative, deliberative, and radical conceptions as examples of the kinds of experiences that may be missing in a life without democracy. For",
+          "pages": [
+            126
+          ],
+          "figure_ids": [
+            "fig_2bcaee6f65ce3f_623_v1"
+          ],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_243_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_243_v1",
+          "hit_text": "A YouTube element has been excluded from this version of the text. You can view it online here: https://fhsu.pressbooks.pub/ orientationpolisci/?p=27\n\nImagine if George was not a human but democracy itself. Let’s take democracy out of your life entirely. Let’s go further and assume that, unlike George Bailey and Bedford Falls, your life is exactly the same. Your past is the same, your present is the same, and your future is the same. You have the same family, same jobs, same schools, same car. The only difference is that you do not live in a democracy. Does this matter? Why or why not? Write a minimum 3-page paper reflecting on the absence of a democracy in you life. Use at least two of aggregative, deliberative, and radical conceptions as examples of the kinds of experiences that may be missing in a life without democracy. For students who do not live in a democracy, reverse the assignment—imagine that your life is the same but you do live in a democracy. Does this matter? Why or why not?",
+          "hit_page_start": 126,
+          "hit_regions": [
+            {
+              "bbox": [
+                201.119,
+                430.861,
+                788.247,
+                492.925
+              ],
+              "page": 126,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                143.164,
+                558.281,
+                856.833,
+                850.636
+              ],
+              "page": 126,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013513513513513514
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_168_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion › Media Attributions",
+          "roles": [
+            "reference",
+            "summary"
+          ],
+          "topic_ids": [],
+          "confidence": 0.9,
+          "synopsis": "• Democracy © Jay Steinmetz is licensed under a CC BY",
+          "pages": [
+            127
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_246_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_246_v1",
+          "hit_text": "• Democracy © Jay Steinmetz is licensed under a CC BY",
+          "hit_page_start": 127,
+          "hit_regions": [
+            {
+              "bbox": [
+                159.306,
+                864.258,
+                759.846,
+                882.101
+              ],
+              "page": 127,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013157894736842105
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_154_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics › We the People: Democratic Theory and Practice | 111",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "and federal governments that are distinct, if interrelated and and overlapping at times (this is discussed in Chapter 3).",
+          "pages": [
+            118
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_229_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_229_v1",
+          "hit_text": "and federal governments that are distinct, if interrelated and and overlapping at times (this is discussed in Chapter 3).",
+          "hit_page_start": 118,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.808,
+                135.871
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01282051282051282
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_153_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Democracies and Republics › 110 | We the People: Democratic Theory and Practice",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "democratic-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "contrasted with monarchies, were not particularly democratic, and often emphasized citizen participation and mobilization in defense of the city-state. The French political philosopher Montesquieu took this idea of mixed government and emptied it of economic classes, instead theorizing on an institutional separation of powers among legislative, executive, and judicial lines. As discussed in Chapter 3, America’s republican form of government also includes federalism—a system of local, state,",
+          "pages": [
+            117
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_227_v1",
+            "chk_2bcaee6f65ce3f_228_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_228_v1",
+          "hit_text": "Perhaps the most important historical development in republican rule is the adopted of the US Constitution and creation of the American republican experiment, which today remains the oldest continuously running constitution in the world. The framers of the U.S. Constitution sought to blend Lockean liberal ideals of rights and property with republicanism’s commitment to enlightened rule and mixed government. In this context, the American republican form of government is characterized by a separation and balance of powers in legislative, executive, and judicial institutions of government. As discussed in Chapter 3, America’s republican form of government also includes federalism—a system of local, state,",
+          "hit_page_start": 117,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                644.172,
+                856.816,
+                890.773
+              ],
+              "page": 117,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.012658227848101266
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_169_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "3. Chapter 5: Theories of Democracy › Conclusion › Media Attributions › We the People: Democratic Theory and Practice | 121",
+          "roles": [
+            "reference",
+            "summary"
+          ],
+          "topic_ids": [],
+          "confidence": 0.9,
+          "synopsis": "(Attribution) license • 800px-Hong_Kong’s_Umbrella_Revolution_umbrellarevolution_-umbrellamovement_-gm1_-lumix_occupyhk_(15223465970) © Pasu Au Yeung is licensed under a CC BY (Attribution) license • Justifications for democracy © Jay Steinmetz is licensed under a CC BY (Attribution) license",
+          "pages": [
+            128
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_247_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_247_v1",
+          "hit_text": "(Attribution) license\n• 800px-Hong_Kong’s_Umbrella_Revolution_umbrellarevolution_-umbrellamovement_-gm1_-lumix_occupyhk_(15223465970) © Pasu Au Yeung is licensed under a CC BY (Attribution) license\n• Justifications for democracy © Jay Steinmetz is licensed under a CC BY (Attribution) license",
+          "hit_page_start": 128,
+          "hit_regions": [
+            {
+              "bbox": [
+                159.306,
+                95.152,
+                848.604,
+                250.25
+              ],
+              "page": 128,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0125
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_129_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "2. Chapter 4: How Public Law Structures Politics › SASR › 92 | Introducing Public Law: How Law Structures Political Activity",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "us-constitution"
+          ],
+          "confidence": 0.9,
+          "synopsis": "contested a few times in history (is this a right to or a requirement for a republican form of government? Republics from Chapter 3). Article V states that “no State, without its Consent, shall be deprived of its equal Suffrage in the Senate.” This effectively means that an amendment to change equal representation in the Senate (2 senators per state) must be unanimously affirmed by state legislatures, a highly likely event",
+          "pages": [
+            99
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_188_v1",
+            "chk_2bcaee6f65ce3f_189_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_188_v1",
+          "hit_text": "contested a few times in history (is this a right to or a requirement for a republican form of government? If a state does not have a republican form of government, is that unconstitutional?). This is the only instance in which the Constitution refers directly to a republican form of government and is one example in which the Constitution affirms some form of democratic principles (see Democracies vs. Republics from Chapter 3). The phrase “We the People” from the preamble and a “Republican Form of Government” in Article IV, Section 4 are the most prominent examples in which the Constitution indicates eludes to a democracy.\n\nArticle V details the process for amending the Constitution, and",
+          "hit_page_start": 99,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                95.152,
+                856.833,
+                318.877
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                165.891,
+                323.91,
+                856.808,
+                341.753
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.012048192771084338
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_198_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "4. Chapter 6: Political Theory › Marx v. Mill › Chapter 6: Political Theory | 145",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "modern-justice-theory"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Marx also seeks social betterment but regards a wide degree of individual liberty as the basis of a fragmented community in which self-interest brings about “the separation of man from man.” Social betterment is obviously desired by the community, but the material conditions of our world often thwart these aims, in particular an economic system in trade and industry are controlled by private persons who accumulate wealth at the expense of commonly held resources. Democracy can and should be the tool through which the community asserts its rights over the self-interests of individuals. Both Locke and Mill affirm majority-based or",
+          "pages": [
+            152
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_296_v1",
+            "chk_2bcaee6f65ce3f_297_v1",
+            "chk_2bcaee6f65ce3f_298_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_298_v1",
+          "hit_text": "Although Mill also supports democracy, he does so with important reservations. The danger of democracy lies in a majority restricting the rights of minorities—a so-called tyranny of the majority. Mill suggests that a rights-based conception to society is more just than valuing democracy as an end in itself. Reflect on some similarities between Locke and Mill, on the one hand, and Rousseau and Marx on the other. Both Locke and Mill affirm majority-based or democratic systems, but place higher value on the rights of individuals (for Locke, a majority government is “constrained” by",
+          "hit_page_start": 152,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                689.923,
+                856.831,
+                890.773
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.011904761904761904
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_289_v1",
+          "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+          "book_title": "Politics, Power, and Purpose: An Orientation to Political Science",
+          "section_path": "7. Chapter 9: American Politics and Public Policy/ Administration › Conclusion",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "american-government-institutions",
+            "public-policy-and-administration",
+            "campaigns-elections-parties-media"
+          ],
+          "confidence": 0.9,
+          "synopsis": "In this chapter we provided an overview of American political institutions, particularly the federal government’s constitutionally designed branches of legislative, executive, and judicial power. When states design and implement similar policies, political scientists and policymakers can compare, contrast, and analyze their effects, assessing the degree to which policy successfully identifies and responds to public problems. New media is privately owned and largely unregulated, but in a democracy, the expectation is that profit-motive should rest alongside and not undermine civic responsibilities news media have to the public, namely to provide an electoral forum, inform the public, and be a watchdog on",
+          "pages": [
+            222
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_2bcaee6f65ce3f_427_v1",
+            "chk_2bcaee6f65ce3f_428_v1"
+          ],
+          "hit_chunk_id": "chk_2bcaee6f65ce3f_428_v1",
+          "hit_text": "We then looked at campaigns and elections, an important dimension of American politics that is often more visible to the public than the day-today practice of governing. The American democratic system has both direct and indirect representation within a federalist system, which requires 50 state governments and a federal government to coordinate and interact in order to govern for the benefit of the public. Lastly, we looked at two mediating institutions that have a profound effect on American politics—political parties and media. Party organizations govern the process of selecting, financing, and supporting candidates for public office. New media is privately owned and largely unregulated, but in a democracy, the expectation is that profit-motive should rest alongside and not undermine civic responsibilities news media have to the public, namely to provide an electoral forum, inform the public, and be a watchdog on government and its actions.",
+          "hit_page_start": 222,
+          "hit_regions": [
+            {
+              "bbox": [
+                143.164,
+                545.966,
+                856.831,
+                884.072
+              ],
+              "page": 222,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.011627906976744186
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "search_id": "search_1",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_2bcaee6f65ce3f_4_v1",
+        "exc_2bcaee6f65ce3f_0_v1",
+        "exc_bedce6262f6213_446_v1",
+        "exc_54fcd12a32565e_32_v1",
+        "exc_2bcaee6f65ce3f_3_v1"
+      ]
+    },
+    {
+      "search_id": "search_2",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_2bcaee6f65ce3f_148_v1",
+        "exc_2bcaee6f65ce3f_150_v1",
+        "exc_2bcaee6f65ce3f_158_v1",
+        "exc_2bcaee6f65ce3f_152_v1",
+        "exc_2bcaee6f65ce3f_167_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 4487,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

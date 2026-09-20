@@ -1,0 +1,55 @@
+{
+ "id": "mat_9a65d8de0ca59bc7",
+ "kind": "note",
+ "title": "Simple Linear Regression by Hand: Concepts + Worked Example",
+ "content": "# Simple Linear Regression — A Hand-Worked Study Note\n\n## 1. The idea\n\nSimple linear regression fits a straight line to paired data so you can predict a **response** variable y from an **explanatory** variable x:\n\n  ŷ = b₀ + b₁x\n\nThe \"least squares\" line is the one that minimizes the sum of squared errors (SSE) — the squared vertical distances between the data points and the line. Any other line would have a higher SSE.\n\n## 2. The two formulas you need (no software required)\n\nYou can build the line from just four summary statistics: the means x̄ and ȳ, the standard deviations sₓ and s_y, and the correlation R.\n\n**Slope:**\n  b₁ = (s_y / sₓ) · R\n\n**Intercept:** the point of averages (x̄, ȳ) always lies on the least squares line, so plug it into the line equation and solve:\n  b₀ = ȳ − b₁x̄\n\n## 3. Worked example: predicting college gift aid from family income\n\n**Givens** (summary statistics for the Elmhurst College sample, both variables in dollars):\n\n| Statistic | Family income (x) | Gift aid (y) |\n|---|---|---|\n| mean | x̄ = $101,780 | ȳ = $19,940 |\n| sd | sₓ = $63,200 | s_y = $5,460 |\n\nCorrelation: R = −0.499\n\n**Step 1 — Slope.**\n  b₁ = (s_y / sₓ) · R = (5,460 / 63,200) × (−0.499)\n     = 0.08639 × (−0.499) ≈ **−0.0431**\n\nInterpretation: each additional dollar of family income is associated with about 4.3 cents *less* gift aid, on average.\n\n**Step 2 — Intercept.** Use b₀ = ȳ − b₁x̄:\n  b₀ = 19,940 − (−0.0431)(101,780)\n     = 19,940 + 4,386.7 ≈ **24,327**\n\n**Step 3 — Write the line.**\n  **âid = 24,327 − 0.0431 × family income**\n\n**Step 4 — Check and use it.**\n- Sanity check: the line must pass through the means. At x = 101,780: ŷ = 24,327 − 0.0431(101,780) = 19,940 ✓\n- Prediction for a family income of $100,000:\n  âid = 24,327 − 0.0431(100,000) = 24,327 − 4,310 = **$20,017**\n\n(These hand values match the software output for this fit — intercept 24,319.3, slope −0.0431 — up to rounding.)\n\n## 4. Cautions\n\n- The line is only valid **within the range of the observed x values**; don't extrapolate to incomes far outside the sample.\n- A negative slope with R = −0.499 describes **association**, not causation.\n- Before trusting the fit, check the conditions: the relationship should look roughly linear, with no obvious outliers, roughly constant spread of residuals, and independent (non-time-series) observations.\n\n## 5. Quick recipe to memorize\n\n1. Compute x̄, ȳ, sₓ, s_y, R.\n2. b₁ = (s_y/sₓ)R.\n3. b₀ = ȳ − b₁x̄.\n4. ŷ = b₀ + b₁x; verify (x̄, ȳ) is on the line before predicting.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_564_v3",
+  "exc_f213361bf057b0_566_v3",
+  "exc_0689cddaba206d_703_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 3,
+    "excerptIds": [
+     "exc_0689cddaba206d_703_v3"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 3,
+    "excerptIds": [
+     "exc_f213361bf057b0_564_v3",
+     "exc_f213361bf057b0_566_v3"
+    ]
+   }
+  ]
+ },
+ "size": "627 tokens",
+ "edits": []
+}

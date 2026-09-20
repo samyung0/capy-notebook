@@ -1,0 +1,71 @@
+{
+ "id": "mat_e58300d95f85326c",
+ "kind": "note",
+ "title": "Simple Linear Regression: Concepts and Worked Example",
+ "content": "# Simple Linear Regression — Study Note\n\n## What it is\nSimple linear regression fits a straight line through paired data (one explanatory variable x, one response variable y) to predict y from x. The \"best\" line is the **least squares line**: the one that minimizes the sum of the *squared* errors of prediction (residuals). Squaring penalizes large misses more than proportionally, so no other line has a smaller total squared error.\n\n## The equation\n**ŷ = b x + a**  (also written ŷ = b₀ + b₁x)\n\n- **ŷ** — predicted value of y (the \"hat\" marks a prediction)\n- **b (b₁)** — slope: expected change in y per one-unit increase in x\n- **a (b₀)** — intercept: predicted y when x = 0 (only meaningful if x near 0 is observed)\n\n## Computing the line from summary statistics\nGiven the means (x̄, ȳ), standard deviations (sₓ, s_y), and correlation r:\n\n- **Slope:** b = r · (s_y / sₓ)\n- **Intercept:** a = ȳ − b·x̄  (because the point of averages (x̄, ȳ) always lies on the line)\n\n## Worked example\nFive data points: (1, 1), (2, 2), (3, 1.3), (4, 3.75), (5, 2.25).\n\nSummary statistics: x̄ = 3, ȳ = 2.06, sₓ = 1.581, s_y = 1.072, r = 0.627.\n\n1. **Slope:** b = 0.627 × (1.072 / 1.581) ≈ **0.425**\n2. **Intercept:** a = 2.06 − 0.425 × 3 ≈ **0.785**\n3. **Line:** ŷ = 0.425x + 0.785\n\nPredictions and residuals (error = Y − ŷ):\n\n| X | Y | ŷ | Y − ŷ | (Y − ŷ)² |\n|---|-----|-------|--------|--------|\n| 1 | 1.00 | 1.21 | −0.21 | 0.044 |\n| 2 | 2.00 | 1.64 | 0.365 | 0.133 |\n| 3 | 1.30 | 2.06 | −0.76 | 0.578 |\n| 4 | 3.75 | 2.49 | 1.265 | 1.600 |\n| 5 | 2.25 | 2.91 | −0.66 | 0.436 |\n\nThe sum of the squared errors (≈ 2.79) is smaller than for any other line — that is what makes this the least squares line.\n\n**Using the line:** for x = 2, ŷ = 0.425(2) + 0.785 = 1.64.\n\n## Interpreting coefficients (caution)\n- The slope says: each one-unit increase in x is associated with a 0.425-unit change in y, on average.\n- Regression shows **association, not causation** — with observational data, a change in x may not *cause* the change in y.\n- The intercept is only practically meaningful when some observations have x near zero.\n\n## Key takeaways\n- Least squares = minimize the sum of squared residuals.\n- Slope from r and the standard deviations; intercept from the point of averages.\n- Always write predictions with a hat (ŷ) and interpret slope/intercept in context.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_358_v1",
+  "exc_0689cddaba206d_703_v2",
+  "exc_f213361bf057b0_566_v2",
+  "exc_f213361bf057b0_569_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_703_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_358_v1"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_566_v2",
+     "exc_f213361bf057b0_569_v2"
+    ]
+   }
+  ]
+ },
+ "size": "587 tokens",
+ "edits": []
+}

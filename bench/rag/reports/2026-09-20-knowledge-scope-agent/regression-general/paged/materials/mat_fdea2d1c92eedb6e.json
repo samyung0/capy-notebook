@@ -1,0 +1,34 @@
+{
+ "id": "mat_fdea2d1c92eedb6e",
+ "kind": "note",
+ "title": "Simple Linear Regression (with Worked Example)",
+ "content": "# Simple Linear Regression — Study Note\n\n## What it is\nSimple linear regression fits a straight line to predict a **response variable** y from a single **explanatory variable** x. The line is chosen to minimize the sum of the squared residuals (the vertical distances between the data points and the line), which is why it is called the **least-squares regression line (LSRL)**.\n\n## The equation\nŷ = b₀ + b₁x\n\n- **b₁ (slope):** the predicted change in y for a one-unit increase in x.\n- **b₀ (intercept):** the predicted value of y when x = 0. It may be meaningless if no data are near x = 0 (extrapolation).\n- Both are **statistics** computed from the sample; the population parameters are β₀ and β₁.\n\n## Finding the line from summary statistics\nTwo properties of the least-squares line:\n1. **Slope:** b₁ = (s_y / s_x) · R, where R is the correlation between x and y, and s_x, s_y are the sample standard deviations.\n2. **Point of averages:** the line always passes through (x̄, ȳ).\n\nSo the intercept is b₀ = ȳ − b₁x̄.\n\n## Worked example — Elmhurst College gift aid\nPredicting gift aid (in $) from family income (in $). Summary statistics: x̄ = 101,780, ȳ = 19,940, s_x = 63,200, s_y = 5,460, R = −0.499.\n\n**Step 1 — slope:**\nb₁ = (5,460 / 63,200) × (−0.499) = −0.0431\n\n**Step 2 — intercept:**\nb₀ = 19,940 − (−0.0431)(101,780) ≈ 24,327\n\n**Step 3 — equation:**\naid̂ = 24,327 − 0.0431 × family income\n\n(Computer output for the same data gives intercept 24,319.3 and slope −0.0431 — matching up to rounding.)\n\n## Interpreting the coefficients\n- **Slope (−0.0431):** for each additional $1,000 of family income, predicted gift aid drops by about $43.10.\n- **Intercept (24,327):** predicted gift aid is about $24,300 for a family with $0 income — meaningful here because some families have $0 income, but often not interpretable in other datasets.\n\n## Good practice\n- Check conditions first: linear trend, no obvious outliers, roughly constant variance, independent observations.\n- Always write the prediction with a \"hat\" (ŷ or aid̂) to signal it is a predicted value.\n- R² (the coefficient of determination) tells the proportion of variation in y explained by the linear relationship; it ranges from 0 to 1 and does not indicate direction.\n\n---\n*Sources: OpenIntro Statistics (Ch. 8, Least squares regression); Advanced High School Statistics (Ch. 5, Regression Analysis).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f213361bf057b0_566_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_566_v2"
+    ]
+   }
+  ]
+ },
+ "size": "593 tokens",
+ "edits": []
+}

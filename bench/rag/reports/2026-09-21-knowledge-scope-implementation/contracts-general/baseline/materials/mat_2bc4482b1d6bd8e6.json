@@ -1,0 +1,36 @@
+{
+ "id": "mat_2bc4482b1d6bd8e6",
+ "kind": "note",
+ "title": "How Contracts Are Formed — A General Introduction",
+ "content": "# How Contracts Are Formed — A General Introduction\n\n*A concise academic overview of contract formation, based on U.S. business-law sources (common law and the UCC).*\n\n## 1. What a Contract Is\nA **contract** is a **legally enforceable promise**. Not every promise is a contract: promising to be \"best friends forever\" is not enforceable, but promising a bank to repay a loan is. Formation analysis asks whether the elements of a valid contract exist — if they do not, the contract may be **void** or **voidable**.\n\n## 2. Two Sources of Contract Law\n- **Common law** — governs contracts for **services** and contracts not covered by the UCC (e.g., real estate). Its formation requirements are the more stringent ones.\n- **Uniform Commercial Code (UCC), Article 2** — governs the **sale of goods** (moveable things, not money, securities, land, or houses) and contracts **between merchants**. It relaxes common-law formation rules to fit real business practice (purchase orders, invoices, boilerplate — the \"battle of the forms\").\n\nContract law is state law; the UCC becomes law only when state legislatures adopt it (all fifty states have adopted some version).\n\n## 3. Elements of Common-Law Formation\nThe elements are **offer, acceptance, and consideration**; offer + acceptance together form **mutual assent**. In addition, the contract must have a **legal purpose**, and the parties must have **capacity**.\n\n### Offer\n- Gives the offeree a **power of acceptance**.\n- Must contain the agreement's **essential terms, definite and certain** (e.g., \"I offer to sell you my scooter for four hundred dollars\" — price, offeree, subject matter). A vague essential term defeats the offer: selling a house \"for a fair price\" is not a valid offer.\n- An **advertisement is not an offer** — it is an **invitation to bargain**; the merchant retains the power of acceptance.\n- An offer ends by **rejection, counteroffer, revocation, or expiration** of its stated time limit. A **counteroffer is a rejection** of the original offer.\n\n### Acceptance\n- In common law, acceptance must be a **mirror image** of the offer — precisely the same terms.\n- **Bilateral contract**: a promise for a promise (both parties make promises).\n- **Unilateral contract**: accepted only by **performance** (an action), e.g., \"I will sell this scooter to the first person who puts $400 cash in my hands.\"\n\n### Consideration\n- A **bargained-for exchange** of acts or promises, where **both parties incur a new legal detriment or obligation**.\n- An **illusory promise** (a promise with a built-in way out, e.g., \"I'll buy it if I don't find one I like better\") is not valid consideration — the other party cannot rely on it.\n- Example: a noncompete signed after employment begins, with nothing given in return, likely fails for lack of consideration; adding something of value (e.g., extra salary) can cure it.\n\n### Legal Purpose\n- The subject matter must be **lawful**. A contract for an illegal object (e.g., transporting illegal cargo) gives **no remedy in court** to either party, even if perfectly formed.\n\n### Capacity\n- Parties must have **capacity**: adults of sound mind do; **minors** generally do not. Under the **infancy doctrine**, a minor may **void** (disaffirm) the contract at their sole option, while the adult party cannot. Profound cognitive impairment can also defeat capacity; voluntary intoxication usually does not.\n\n## 4. How the UCC Differs\n- Formation is **simpler and more flexible**: essential terms need not all be definite and certain (**quantity** is the required term), and acceptance need **not** be a mirror image of the offer.\n- **Gap fillers** supply undefined or conflicting terms; a contract can be formed **in any manner showing agreement** to contract.\n\n## 5. Why Formation Matters\nIf a defendant shows the contract was **never validly formed** (defective offer, non-mirror acceptance, failed consideration), that is a defense to performance. Under the UCC, this defense is harder to mount because formation requirements are relaxed. Where all elements are missing but injustice would result, courts may use equitable substitutes — **quasi-contract** (preventing unjust enrichment; damages measured by *quantum meruit*) and **promissory estoppel** (enforcing a promise that was detrimentally relied upon).\n\n> **Scope note:** This is a general U.S. academic introduction; contract law varies by state, and this is not legal advice.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_1c619222c448be_186_v2",
+  "exc_1c619222c448be_187_v2",
+  "exc_1c619222c448be_190_v2",
+  "exc_1c619222c448be_196_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "the-legal-and-ethical-environment-of-business",
+    "title": "The Legal and Ethical Environment of Business",
+    "authors": [],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+    "version": 2,
+    "excerptIds": [
+     "exc_1c619222c448be_186_v2",
+     "exc_1c619222c448be_187_v2",
+     "exc_1c619222c448be_190_v2",
+     "exc_1c619222c448be_196_v2"
+    ]
+   }
+  ]
+ },
+ "size": "1109 tokens",
+ "edits": []
+}

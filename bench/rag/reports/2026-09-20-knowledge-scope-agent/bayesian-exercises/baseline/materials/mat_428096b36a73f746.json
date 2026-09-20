@@ -1,0 +1,36 @@
+{
+ "id": "mat_428096b36a73f746",
+ "kind": "note",
+ "title": "Bayesian Inference: Two Practice Exercises",
+ "content": "# Bayesian Inference: Belief Revision in Two Exercises\n\nBayesian inference is belief revision: you start with a prior belief about each hypothesis h, observe data d, and update to a posterior using Bayes' rule. The building blocks:\n\n- **Prior**: P(h) — what you believe before seeing data.\n- **Likelihood**: P(d|h) — how probable the data is if the hypothesis is true.\n- **Joint probability**: P(d, h) = P(d|h) × P(h)\n- **Posterior**: P(h|d) = P(d, h) / P(d), where P(d) is the sum of the joint probabilities over all hypotheses (the column total in the joint table).\n\nThe umbrella example from the source: prior P(rainy) = 0.15, likelihood P(umbrella|rainy) = 0.30, giving joint P(rainy, umbrella) = 0.045. Filling in all four cells and adding totals gives P(umbrella) = 0.0875, so seeing an umbrella raises P(rainy) from 0.15 to 0.045/0.0875 ≈ 0.514.\n\n---\n\n## Exercise 1 — Build the joint probability table\n\nA doctor knows that 2% of patients have the flu (prior). If a patient has the flu, a rapid test comes back positive with probability 0.90. If a patient does not have the flu, the test is positive with probability 0.10.\n\n(a) Compute the joint probability P(positive, flu) and P(positive, no flu).\n(b) Fill in the full 2×2 joint probability table (flu / no flu × positive / negative test) and verify that all four cells sum to 1.\n(c) What is the total probability of a positive test, P(positive)?\n\n**Solution sketch**\n- P(positive, flu) = 0.90 × 0.02 = 0.018; P(positive, no flu) = 0.10 × 0.98 = 0.098.\n- Negative cells: P(negative, flu) = 0.10 × 0.02 = 0.002; P(negative, no flu) = 0.90 × 0.98 = 0.882. Row totals recover the priors (0.02 and 0.98) — a good sanity check, just as the row totals in the umbrella table recover the priors.\n- P(positive) = 0.018 + 0.098 = 0.116.\n\n## Exercise 2 — Update beliefs with Bayes' rule\n\nUsing the table from Exercise 1, a patient's test comes back positive.\n\n(a) Compute the posterior P(flu | positive).\n(b) Compare the posterior with the prior of 0.02: did the data strengthen or weaken your belief that the patient has the flu? Why, intuitively?\n(c) The doctor tests the patient again (independent test, same error rates) and it is positive again. Using your answer to (a) as the new prior, compute the posterior after the second positive test.\n\n**Solution sketch**\n- (a) P(flu | positive) = 0.018 / 0.116 ≈ 0.155.\n- (b) Belief strengthened: 0.155 > 0.02, because the data (a positive test) is much more likely under \"flu\" (0.90) than under \"no flu\" (0.10). But it is still low — the rare-disease base rate dominates, which is exactly why the umbrella example's surprising observation (P(umbrella) = 0.0875) still only moved P(rainy) to about 0.514.\n- (c) New prior 0.155: P(positive, flu) = 0.90 × 0.155 ≈ 0.1395; P(positive, no flu) = 0.10 × 0.845 ≈ 0.0845; posterior = 0.1395 / 0.224 ≈ 0.623. Repeated consistent data drives belief toward the hypothesis with the higher likelihood.\n\n---\n\n*Grounded in the umbrella example and joint-probability/Bayes'-rule exercises of \"Learning Statistics with R\", Ch. 17 (Probabilistic reasoning by rational agents).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_1203_v1",
+  "exc_dd1e65de648fb2_1205_v1",
+  "exc_dd1e65de648fb2_1199_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1199_v1",
+     "exc_dd1e65de648fb2_1203_v1",
+     "exc_dd1e65de648fb2_1205_v1"
+    ]
+   }
+  ]
+ },
+ "size": "777 tokens",
+ "edits": []
+}

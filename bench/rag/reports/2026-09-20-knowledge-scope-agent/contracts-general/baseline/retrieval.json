@@ -1,0 +1,1201 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "contracts-general",
+    "query": "Create one concise study note on how contracts are formed, as a general academic introduction.",
+    "check": "Does not silently universalize one jurisdiction's legal requirements; qualifies source-bound examples or states the scope gap."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "contract formation offer acceptance consideration elements",
+      "topics": [],
+      "roles": [],
+      "seconds": 6.967,
+      "excerpts": [
+        {
+          "id": "exc_1c619222c448be_186_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: 1. Find out when the Uniform Commercial Code (UCC) is the appropriate law to apply and when the common law is the appropriate law. 2. Learn the elements of common-law contracts. 3. Identify the difference between common-law contracts and contracts between merchants. A contract is a legally enforceable promise.",
+          "pages": [
+            152,
+            153
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_446_v1",
+            "chk_1c619222c448be_447_v1",
+            "chk_1c619222c448be_448_v1",
+            "chk_1c619222c448be_449_v1",
+            "chk_1c619222c448be_450_v1",
+            "chk_1c619222c448be_451_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_448_v1",
+          "hit_text": "The elements of common-law contract formation include offer, acceptance, and consideration. Offer and acceptance together form mutual assent. Additionally, to be\n\nenforceable, the contract must be for a legal purpose and parties to the contract must have capacity to enter into the contract.\n\nAn offer gives power of acceptance to another party, and it includes the agreement’s essential elements, which must be definite and certain. For example, if an offeror says to you, “I offer to sell you my scooter for four hundred dollars,” then that offer is valid. It contains the price, the person to whom the offer is made, and the object of the offer (i.e., the scooter). It creates a power of acceptance in you, the offeree.",
+          "hit_page_start": 152,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                905.317,
+                822.245,
+                941.005
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                869.43,
+                95.246
+              ],
+              "page": 153,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                105.876,
+                870.435,
+                197.681
+              ],
+              "page": 153,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024329950559458757
+        },
+        {
+          "id": "exc_1c619222c448be_196_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › Hyperlink: Coach Mike Leach › 152",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › Hyperlink: Coach Mike Leach › 152: defenses include formation problems, lack of capacity, illegality of subject matter, impossibility, duress, unconscionability, undue influence, violation of the Statute of Frauds requirement that certain types of contracts must be in writing to be enforceable against the defendant, exceeding the statute of limitations, mistake, misrepresentation, fraud, commercial impracticability, andfrustration of purpose.",
+          "pages": [
+            162,
+            163
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_473_v1",
+            "chk_1c619222c448be_474_v1",
+            "chk_1c619222c448be_475_v1",
+            "chk_1c619222c448be_476_v1",
+            "chk_1c619222c448be_477_v1",
+            "chk_1c619222c448be_478_v1",
+            "chk_1c619222c448be_479_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_474_v1",
+          "hit_text": "Formation problems in common-law contracts relate to whether the offer, acceptance, and consideration were valid. For example, if the offer did not contain the essential terms in definite and certain form, then that offer will not be valid. If I offered to sell you my house for a fair price, it would not be a sufficient offer because the price term is an essential element, and in this offer it is vague. To say that a house will be sold “for a fair price” is not specific. Likewise, in a common-law contract, if the acceptance is not a mirror image of the offer, then the acceptance will not be valid. Similarly, if consideration does not firmly commit the parties to the deal, then consideration will fail, as is the case with an illusory promise. For example, if I offered to sell you my house for $150,000, and you agreed to buy it “if you like it,” then that is not a firm commitment. Consideration will fail, and the contract has not formed. As a practical matter, how can this defense be used? The defendant simply needs to show that the contract was never formed in the first place, due to one or more deficiencies in formation. Keep in mind, however, that if the Uniform Commercial Code (UCC) is the relevant type of law, formation is much simpler than in common law. For example, all essential elements do not need to be stated in definite and certain terms (but quantity must be stated), and acceptance does not need to be a mirror image of the offer. Accordingly, in contracts in which the UCC is the relevant type of law, this defense can be more challenging to successfully mount.",
+          "hit_page_start": 162,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                292.931,
+                835.462,
+                777.55
+              ],
+              "page": 162,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024193548387096774
+        },
+        {
+          "id": "exc_1c619222c448be_190_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › KEY TAKEAWAYS",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › KEY TAKEAWAYS: A contract is a legally enforceable promise. Common law and the UCC are different sources of contract law. Common law is the appropriate type of law for service contracts and contracts that do not fall under the UCC, like real estate contracts. The UCC governs contracts involving the sale of goods with a price of five hundred dollars or more and in contracts between merchants.",
+          "pages": [
+            157
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_462_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_462_v1",
+          "hit_text": "A contract is a legally enforceable promise. Common law and the UCC are different sources of contract law. Common law is the appropriate type of law for service contracts and contracts that do not fall under the UCC, like real estate contracts. The UCC governs contracts involving the sale of goods with a price of five hundred dollars or more and in contracts between merchants. Common-law contract formation requires a valid offer, acceptance, and consideration. The parties must have capacity, and the subject matter must be a legal purpose. The UCC relaxes formation requirements by allowing the use of gap fillers for undefined or conflicting terms and by allowing a contract to be formed by any manner that shows agreement to contract. Quantity is a required term for contracts governed by the UCC.",
+          "hit_page_start": 157,
+          "hit_regions": [
+            {
+              "bbox": [
+                190.336,
+                409.246,
+                801.894,
+                649.299
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021848739495798318
+        },
+        {
+          "id": "exc_1c619222c448be_182_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: After reading this chapter, you should understand what a contract is, how a contract is formed, the types of law that govern contracts, the elements of common-law contract formation, and defenses to contracts. You will learn about performance and discharge, breach, and remedies. You will also understand important differences between common-law contracts and contracts between merchants under the Uniform Commercial Code (UCC).",
+          "pages": [
+            149
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_435_v1",
+            "chk_1c619222c448be_436_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_435_v1",
+          "hit_text": "After reading this chapter, you should understand what a contract is, how a contract is formed, the types of law that govern contracts, the elements of common-law contract formation, and defenses to contracts.\n\nYou will learn about performance and discharge, breach, and remedies. You will also understand important differences between common-law contracts and contracts between merchants under the Uniform Commercial Code (UCC). You will recognize commonly used clauses in contracts and their importance. You will also learn about assignment, delegation, and parol evidence. At the conclusion of this chapter, you should be able to answer the following questions:\n\n1. What is a contract?\n2. How is a contract formed?\n3. When does common law govern contract formation, and when is the UCC relevant?\n4. What are the defenses to performance of a contract?\n5. What does it mean to breach a contract, and what are the consequences of breach?\n6. What are remedies for breach of contract?\n7. What common clauses can be used to accomplish certain goals, such as ensuring expediency, limiting liability, or restricting assignment?",
+          "hit_page_start": 149,
+          "hit_regions": [
+            {
+              "bbox": [
+                190.336,
+                207.232,
+                837.418,
+                260.23
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                190.336,
+                272.255,
+                814.99,
+                400.076
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                185.22,
+                415.664,
+                842.812,
+                674.423
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021351575456053068
+        },
+        {
+          "id": "exc_1c619222c448be_202_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-performance-breach-remedies"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: 1. Learn about assignment and delegation. 2. Examine novation. 3. Explore restrictions on assignment, exculpatory clauses, noncompete clauses, mandatory arbitration clauses, acceleration clauses, and liquidated damages clauses. 4. Explore the parol evidence rule. What if you formed a contract with a rock ’n’ roll band for its services?",
+          "pages": [
+            167
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_491_v1",
+            "chk_1c619222c448be_492_v1",
+            "chk_1c619222c448be_493_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_492_v1",
+          "hit_text": "What if you formed a contract with a rock ’n’ roll band for its services? Specifically, you wanted the band to play at your nightclub, because you thought that your customers would enjoy the band enough to pay to see it perform. You hired this specific band because you heard that it drew large crowds of paying customers. Imagine your surprise when, as you anticipate the band’s performance, you discover that another band—one you have never heard of—has come to play instead of the original contracting band. On inquiry, you learn that the original band transferred its duties to perform to a lesser known band. Can it do that?\n\nContract elements—the terms of the contract—are important. They may, among other things, foreclose your ability to bring a complaint in court, they may render you unable to be hired in your profession (at least within certain boundaries), or they may limit liability to a party that had a role in causing injury to you. If you are not aware of these elements, then you may face an unpleasant surprise if you act in a way contrary to the restrictions imposed by those terms. Likewise, contracts possess certain qualities that prohibit parties from acting in certain ways, unless those qualities are expressly waived. This section identifies common properties of contracts, as well as commonly used elements of contracts. If you are negotiating a contract and you do not like a term, then you should not agree to it. In law, there is a presumption that you have read, understood, and agreed to each and every term of any contract to which you are a party. Arguing that you did not understand or that you did not approve of a particular term in the contract will not be a valid excuse to performance. You should know what you can expect when you enter into a contract. Are you getting the band that you wanted to hire to play in your nightclub, or are you really getting any band that the original band happens to transfer its duties to?",
+          "hit_page_start": 167,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                385.127,
+                866.024,
+                533.048
+              ],
+              "page": 167,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                543.678,
+                872.941,
+                841.242
+              ],
+              "page": 167,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020362828582006665
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

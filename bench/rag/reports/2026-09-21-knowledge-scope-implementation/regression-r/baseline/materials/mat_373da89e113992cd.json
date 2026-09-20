@@ -1,0 +1,55 @@
+{
+ "id": "mat_373da89e113992cd",
+ "kind": "note",
+ "title": "Simple Linear Regression in R with lm()",
+ "content": "# Simple Linear Regression in R with `lm()`\n\n## 1. Fitting the model\n\n`lm()` takes two key arguments:\n\n- **`formula`** — the model, written `outcome ~ predictor` (outcome on the left, predictor on the right; the intercept is included by default).\n- **`data`** — the data frame containing the variables.\n\nThe output is a complicated \"lm object\", so store it in a variable:\n\n```r\nregression_1 <- lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n```\n\nHere `danielle_grump` is the **outcome** and `danielle_sleep` is the **predictor** — always remember which is which.\n\n## 2. Viewing the coefficients\n\nPrinting the model shows the fitted least-squares line (the line that minimizes the sum of squared residuals, and passes through the point (x̄, ȳ)):\n\n```r\nprint(regression_1)\n# Coefficients:\n# (Intercept)  danielle_sleep\n#     125.956          -8.937\n```\n\nSo the fitted model is:\n\n$$\\hat{Y} = 125.956 - 8.937\\,X$$\n\n## 3. Interpreting the coefficients\n\n- **Slope (−8.937):** for each one-unit increase in the predictor (one extra hour of sleep), the predicted outcome (grumpiness) **decreases by about 8.94 points**. The slope is the predicted change in *y* per one-unit change in *x*.\n- **Intercept (125.956):** the predicted value of *y* when *x* = 0. This is only meaningful if the model is valid at *x* = 0 and zero lies within (or near) the observed data range; otherwise it is extrapolation, or may even be an impossible value (e.g., a negative height). Always interpret both coefficients in context, referencing the actual variables.\n\n## 4. Getting the full picture with `summary()`\n\n```r\nsummary(regression_1)\n```\n\nThe output has four parts:\n\n1. **Call** — reminds you which model was fit.\n2. **Residuals** — a quick, rough check of the assumption that residuals are roughly normal with mean 0: the median should be near 0 and the 1st and 3rd quartiles about equal in size. (This is a quick check, not full diagnostics.)\n3. **Coefficients table** — for each coefficient: the **Estimate** (b̂), the **Std. Error** (SE(b̂)), the **t value** (always t = b̂ / SE(b̂)), and the **p-value** for the test that the coefficient is zero. Significance stars (`***`, `**`, `*`) mark conventional p-value thresholds. The t-test degrees of freedom are N − K − 1 (N observations, K predictors), shown below the table.\n4. **Model fit** — the **Residual standard error**, **Multiple R-squared** (proportion of variation in the outcome explained by the model; here R² = .816 means the model accounts for 81.6% of the variability in grumpiness), **Adjusted R²**, and the overall **F-statistic** testing whether the model as a whole beats chance (e.g., F(2, 97) = 215.2, p < .001 in the two-predictor version of this example).\n\n## 5. Reading the results together\n\n- A significant slope with a small p-value (e.g., p < 2e-16 for `danielle_sleep`) is evidence that the predictor really is related to the outcome.\n- A non-significant predictor (e.g., `baby_sleep`, p = .969 in the two-predictor model) suggests it adds nothing — in that example the right move was to drop it and keep the simple one-predictor model.\n- R² tells you how much variation is explained, but not the *direction* of the association — read that from the slope's sign or a scatterplot.\n\n## Quick recipe\n\n```r\nmodel <- lm(y ~ x, data = mydata)   # fit\nprint(model)                        # coefficients\nsummary(model)                      # tests, R², F\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_998_v2",
+  "exc_dd1e65de648fb2_1020_v2",
+  "exc_0689cddaba206d_705_v3",
+  "exc_0689cddaba206d_728_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 3,
+    "excerptIds": [
+     "exc_0689cddaba206d_705_v3",
+     "exc_0689cddaba206d_728_v3"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 2,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1020_v2",
+     "exc_dd1e65de648fb2_998_v2"
+    ]
+   }
+  ]
+ },
+ "size": "857 tokens",
+ "edits": []
+}

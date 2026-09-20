@@ -1,0 +1,1762 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "bayesian-exercises",
+    "query": "Create a short study note containing two practice exercises on Bayesian inference, grounded in exercises from the library.",
+    "check": "Finds the requested exercise role, or reports its absence; does not silently substitute general knowledge or unrelated probability exercises."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "Bayesian inference posterior probability exercise",
+      "topics": [],
+      "roles": [
+        "exercise"
+      ],
+      "seconds": 4.934,
+      "excerpts": [
+        {
+          "id": "exc_f213361bf057b0_175_v3",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 3 › Probability › 3.2 Conditional probability › 3.2.3 Deﬁning conditional probability › GUIDED PRACTICE 3.31 HAS ENDED.",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "conditional",
+            "experiments"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Worked computations of conditional probabilities from ratios of joint to marginal probabilities, including a complement rule for conditional probabilities. Guided Practice 3.32 asks for the probability an inoculated person died from smallpox and comparison with a prior result. Guided Practice 3.33 asks whether the Boston inoculation study was observational or experimental, whether causal inference is possible, and potential confounding variables.",
+          "pages": [
+            111,
+            112
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_306_v3"
+          ],
+          "retrieval": {
+            "scope": "The photo-classification ratios illustrate conditional probability. The smallpox questions concern 6,224 people exposed in Boston in 1721; the required count/proportion tables are in excerpt 174. Inoculation was self-selected, so this is an observational study and the data do not support a causal effect without addressing confounding.",
+            "summary": "Works conditional probabilities from joint and marginal proportions, explains the conditional complement rule, and asks learners to calculate death after inoculation and assess causality and confounding in the 1721 Boston smallpox data.",
+            "context_excerpt_ids": [
+              "exc_f213361bf057b0_174_v3"
+            ]
+          },
+          "hit_chunk_id": "chk_f213361bf057b0_306_v3",
+          "hit_text": "P(mach learn is pred fashion and truth is fashion) = 0.1081 and P(truth is fashion) = 0.1696. Then the ratio represents the conditional probability: 0.1081/0.1696 = 0.6374.\n\n27(a) This probability is P(mach learnP(istruthpredisnotfashion, truth) is fashion) = 00..16960615 = 0.3626. (b) The total equals 1. (c) Under the condition the photo is about fashion, the ML algorithm must have either predicted it was about fashion or predicted it was not about fashion. The complement still works for conditional probabilities, provided the probabilities are conditioned on the same information.\n28P(result = died | inoculated = no) = P(result P=(inoculateddied and inoculated= no) = no) = 00..13569608 = 0.1411.\n\nGUIDED PRACTICE 3.32 START Determine the probability that an inoculated person died from smallpox. How does this result compare with the result of Guided Practice 3.31?29 Go to the preceding footnote link for the Guided Practice solution. GUIDED PRACTICE 3.32 HAS ENDED. GUIDED PRACTICE 3.33 START The people of Boston self-selected whether or not to be inoculated. (a) Is this study observational or was this an experiment? (b) Can we infer any causal connection using these data? (c) What are some potential confounding variables that might inﬂuence whether someone lived or died and also aﬀect whether that person was inoculated?30 Go to the preceding footnote link for the Guided Practice solution.\nGUIDED PRACTICE 3.33 HAS ENDED.",
+          "hit_page_start": 111,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                798.097,
+                743.366,
+                820.112
+              ],
+              "page": 111,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                821.181,
+                852.941,
+                893.841
+              ],
+              "page": 111,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                852.877,
+                291.49
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02119938884644767
+        },
+        {
+          "id": "exc_0689cddaba206d_332_v4",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 2 › Probability, random variables, and probability distributions › Chapter exercises",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "probability-basics",
+            "conditional",
+            "normal",
+            "random-variables"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A set of chapter exercises covering probability distributions, contingency tables, conditional probability, normal distribution calculations, expected values, and probability models. Problems include validating probability distributions, computing probabilities from tables, applying Bayes' rule, and finding percentages and cutoffs using the normal distribution.",
+          "pages": [
+            197,
+            198,
+            199
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_2730_v4"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_538_v4",
+            "chk_0689cddaba206d_539_v4",
+            "chk_0689cddaba206d_540_v4",
+            "chk_0689cddaba206d_541_v4",
+            "chk_0689cddaba206d_542_v4",
+            "chk_0689cddaba206d_543_v4",
+            "chk_0689cddaba206d_544_v4",
+            "chk_0689cddaba206d_545_v4",
+            "chk_0689cddaba206d_546_v4"
+          ],
+          "retrieval": {
+            "scope": "For Exercise 2.53 only, use the figures stated for an individual from Eswatini in this source: 25.9% population prevalence, 99.7% accuracy among carriers, and 92.6% accuracy among non-carriers. They are source-period, population-specific givens, not a generic screened-population prior. Fetch exc_0689cddaba206d_740 only when the answer or probability tree is needed.",
+            "summary": "Exercises 2.51-2.66 ask learners to assess probability distributions, use tables and conditional probability, distinguish independence, and solve expected-value and normal-model problems.",
+            "context_excerpt_ids": [
+              "exc_0689cddaba206d_740_v4"
+            ]
+          },
+          "hit_chunk_id": "chk_0689cddaba206d_543_v4",
+          "hit_text": "(a, b, c, d). Robin has not studied for the quiz at all, and decides to randomly guess the answers. What is the probability that (a) the ﬁrst question she gets right is the 3rd question? (b) she gets exactly 3 or exactly 4 questions right? (c) she gets the majority of the questions right?\n\n66A simulated data set based on real population summaries at nces.ed.gov/pubs2001/2001126.pdf. 67S. Johnson and D. Murray. “Empirical Analysis of Truck and Automobile Speeds on Rural Interstates: Impact\n\nof Posted Speed Limits”. In: Transportation Research Board 89th Annual Meeting. 2010.",
+          "hit_page_start": 198,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.222,
+                710.479,
+                852.946,
+                787.212
+              ],
+              "page": 198,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.609,
+                913.678,
+                852.935,
+                937.828
+              ],
+              "page": 198,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                939.715,
+                690.1,
+                949.779
+              ],
+              "page": 198,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020646020646020648
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_158_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 5. Probability › (n - r)! › C › = › Exercises",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "probability-basics",
+            "binomial"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Prerequisites\n\n• All material presented in the Probability Chapter\n\n1. (a) What is the probability of rolling a pair of dice and obtaining a total score of 9 or more? (b) What is the probability of rolling a pair of dice and obtaining a total score of 7?\n2. A box contains four black pieces of cloth, two striped pieces, and six dotted pieces. A piece is selected randomly and then placed back in the box. A second piece is selected randomly. What is the probability that: a. both pieces are dotted? b. the ﬁrst piece is black and the second piece is dotted? c. one piece is black and one piece is striped?\n3. A card is drawn at random from a deck. (a) What is the probability that it is an ace or a king? (b) What is the probability that it is either a red card or a black card?\n4. The probability that you will win a game is 0.45. (a) If you play the game 80 times, what is the most likely number of wins? (b) What are the mean and variance of a binomial distribution with p = 0.45 and N = 80?\n5. A fair coin is ﬂipped 9 times. What is the probability of getting exactly 6 heads?\n6.When Susan and Jessica play a card game, Susan wins 60% of the time. If they play 9 games, what is the probability that Jessica will have won more games than Susan?\n7.You ﬂip a coin three times. (a) What is the probability of getting heads on only one of your ﬂips? (b) What is the probability of getting heads on at least one ﬂip?\n8. A test correctly identiﬁes a disease in 95% of people who have it. It correctly identiﬁes no disease in 94% of people who do not have it. In the population, 3% of the people have the disease.\n\nWhat is the probability that you have the disease if you tested positive?\n\n9. A jar contains 10 blue marbles, 5 red marbles, 4 green marbles, and 1 yellow marble. Two marbles are chosen (without replacement). (a) What is the probability that one will be green and the other red? (b) What is the probability that one will be blue and the other yellow?\n10. You roll a fair die ﬁve times, and you get a 6 each time. What is the probability that you get a 6 on the next roll?\n11. You win a game if you roll a die and get a 2 or a 5. You play this game 60 times. a. What is the probability that you win between 5 and 10 times (inclusive)? b. What is the probability that you will win the game at least 15 times? c. What is the probability that you will win the game at least 40 times? d. What is the most likely number of wins. e. What is the probability of obtaining the number of wins in d? Explain how you got each answer or show your work.\n12. In a baseball game, Tommy gets a hit 30% of the time when facing this pitcher. Joey gets a hit 25% of the time. They are both coming up to bat this inning. a. What is the probability that Joey or Tommy will get a hit? b. What is the probability that neither player gets a hit? c. What is the probability that they both get a hit?\n13. An unfair coin has a probability of coming up heads of 0.65. The coin is ﬂipped 50 times. What is the probability it will come up heads 25 or fewer times? (Give answer to at least 3 decimal places).\n14.You draw two cards from a deck, what is the probability that: a. both of them are face cards (king, queen, or jack)? b. you draw two cards from a deck and both of them are hearts?\n15.\n\nTrue/False: You are more likely to get a pattern of HTHHHTHTTH than HHHHHHHHTT when you ﬂip a coin 10 times.\n\n16. True/False: Suppose that at your regular physical exam you test positive for a relatively rare disease. You will need to start taking medicine if you have the disease, so you ask your doc- tor about the accuracy of the test. It turns out that the test is 98% accurate. The probability that you have Disease X is therefore 0.98 and the probability that you do not have it is .02. Explain your answer. Questions from Case Studies Diet and Health (DH) case study\n17. (DH) a. What percentage of people on the AHA diet had some sort of illness or death? b. What is the probability that if you randomly selected a person on the AHA diet, he or she would have some sort of illness or death? c. If 3 people on the AHA diet are chosen at random, what is the probability that they will all be healthy?\n18. (DH)\n\na. What percentage of people on the Mediterranean diet had some sort of illness or death?\nb. What is the probability that if you randomly selected a person on the Mediterranean diet, he or she would have some sort of illness or death?\nc. What is the probability that if you randomly selected a person on the Mediterranean diet, he or she would have cancer?\nd. If you randomly select ﬁve people from the Mediterranean diet, what is the probability that they would all be healthy?\n\nThe following questions are from ARTIST (reproduced with permission)",
+          "pages": [
+            216,
+            217,
+            218
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_316_v2",
+            "chk_f97f47b7a1fd68_317_v2",
+            "chk_f97f47b7a1fd68_318_v2",
+            "chk_f97f47b7a1fd68_319_v2",
+            "chk_f97f47b7a1fd68_320_v2",
+            "chk_f97f47b7a1fd68_321_v2"
+          ],
+          "retrieval": {
+            "scope": "Learner tasks covering the full Probability chapter. Questions 17-18 require Diet and Health case-study counts that are not printed here; excerpt 521 contains the relevant outcome table. No worked solutions are included.",
+            "summary": "Probability exercises on dice, cards, coins, binomial counts, independence, Bayes/base rates, sampling without replacement, and diet-and-health case-study proportions.",
+            "context_excerpt_ids": [
+              "exc_f97f47b7a1fd68_521_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_f97f47b7a1fd68_317_v2",
+          "hit_text": "1. (a) What is the probability of rolling a pair of dice and obtaining a total score of 9 or more? (b) What is the probability of rolling a pair of dice and obtaining a total score of 7?\n2. A box contains four black pieces of cloth, two striped pieces, and six dotted pieces. A piece is selected randomly and then placed back in the box. A second piece is selected randomly. What is the probability that: a. both pieces are dotted? b. the ﬁrst piece is black and the second piece is dotted? c. one piece is black and one piece is striped?\n3. A card is drawn at random from a deck. (a) What is the probability that it is an ace or a king? (b) What is the probability that it is either a red card or a black card?\n4. The probability that you will win a game is 0.45. (a) If you play the game 80 times, what is the most likely number of wins? (b) What are the mean and variance of a binomial distribution with p = 0.45 and N = 80?\n5. A fair coin is ﬂipped 9 times. What is the probability of getting exactly 6 heads?\n6.When Susan and Jessica play a card game, Susan wins 60% of the time. If they play 9 games, what is the probability that Jessica will have won more games than Susan?\n7.You ﬂip a coin three times. (a) What is the probability of getting heads on only one of your ﬂips? (b) What is the probability of getting heads on at least one ﬂip?\n8. A test correctly identiﬁes a disease in 95% of people who have it. It correctly identiﬁes no disease in 94% of people who do not have it. In the population, 3% of the people have the disease.",
+          "hit_page_start": 216,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                203.283,
+                879.444,
+                902.778
+              ],
+              "page": 216,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020436507936507937
+        },
+        {
+          "id": "exc_0689cddaba206d_223_v4",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 2 › Probability, random variables, and probability distributions › 2.3 Conditional probability, intersections, and unions › 2.3.3 Deﬁning conditional probability › GUIDED PRACTICE 2.29 HAS ENDED.",
+          "roles": [
+            "worked_example",
+            "exercise"
+          ],
+          "topic_ids": [
+            "conditional",
+            "experiments"
+          ],
+          "confidence": 0.85,
+          "synopsis": "The smallpox data set from 1721 Boston contains 6,224 individuals with variables inoculated (yes/no) and result (lived/died), summarized in contingency tables of counts and proportions. Guided Practice exercises ask students to write conditional probabilities in formal notation, compute them, and consider whether the observational self-selected inoculation study supports causal conclusions and what confounding variables might exist.",
+          "pages": [
+            129,
+            130,
+            131
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_1685_v4",
+            "fig_0689cddaba206d_1689_v4"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_366_v4",
+            "chk_0689cddaba206d_367_v4",
+            "chk_0689cddaba206d_368_v4"
+          ],
+          "retrieval": {
+            "scope": "Historical observational dataset with 244 inoculated and 5,980 uninoculated people. Pair calculations with this table: P(died | not inoculated)=0.1411. Self-selection can confound the comparison, so differences are associations, not proof that inoculation caused the outcome. The extracted text duplicates some answer fragments.",
+            "summary": "Uses a 1721 Boston smallpox table of 6,224 people to calculate conditional death probabilities and ask why self-selected inoculation data do not support a causal conclusion.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_0689cddaba206d_367_v4",
+          "hit_text": "22(a) If the photo is about fashion and the ML algorithm prediction was correct, then the ML algorithm my have a value of pred fashion: P(mach learn is pred fashion ∣ truth is fashion) (b) The equation for conditional probability indicates we should ﬁrst ﬁnd P(mach learn is pred fashion and truth is fashion)= 0.1081 and P(truth is not)= 0.1696. Then the ratio represents the conditional probability: 0.1081/0.1696 = 0.6374.\n23(a) This probability is P(mach learnP(istruthpredisnotfashion, truth) is fashion) = 00..06151696 = 0.3626. (b) The total equals 1. (c) Under\n\nthe condition the photo is about fashion, the ML algorithm must have either predicted it was about fashion or predicted it was not about fashion. The complement still works for conditional probabilities, provided the probabilities are conditioned on the same information.\n\n24Fenner F. 1988. Smallpox and Its Eradication (History of International Public Health, No. 6). Geneva: World Health Organization. ISBN 92-4-156110-6.\n\nGUIDED PRACTICE 2.30 START\n\nWrite out, in formal notation, the probability a randomly selected person who was not inoculated died from smallpox, and ﬁnd this probability.25 Go to the preceding footnote link for the Guided Practice solution.\n\nGUIDED PRACTICE 2.30 HAS ENDED.\n\n25P(result = died ∣ not inoculated)= P(result P=(notdiedinoculatedand not inoculated) ) = 00..13569608 = 0.1411.\n\nGUIDED PRACTICE 2.31 START",
+          "hit_page_start": 129,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                752.744,
+                852.948,
+                837.308
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                819.08,
+                852.941,
+                853.044
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                853.316,
+                852.943,
+                877.206
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                366.118,
+                83.359
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.876,
+                131.891
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                134.407,
+                448.613,
+                146.986
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.609,
+                930.352,
+                712.975,
+                972.047
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                366.118,
+                83.359
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020300751879699246
+        },
+        {
+          "id": "exc_f213361bf057b0_294_v3",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 4 › Distributions of random variables › 4.3 Binomial distribution › Exercises",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "binomial",
+            "probability-basics",
+            "random-variables"
+          ],
+          "confidence": 0.95,
+          "synopsis": "A set of exercises on the binomial distribution. Problems ask students to judge when the binomial model is appropriate, compute probabilities of exact, at-most, and at-least counts, and find expected value and standard deviation. Contexts include underage drinking, chickenpox, dreidel spins, arachnophobia, eye color, sickle cell anemia, permutations, and male children. Some parts also involve the geometric distribution and the addition rule for disjoint outcomes.",
+          "pages": [
+            175,
+            176
+          ],
+          "figure_ids": [
+            "fig_f213361bf057b0_2590_v3"
+          ],
+          "chunk_ids": [
+            "chk_f213361bf057b0_472_v3",
+            "chk_f213361bf057b0_473_v3",
+            "chk_f213361bf057b0_474_v3",
+            "chk_f213361bf057b0_475_v3",
+            "chk_f213361bf057b0_476_v3",
+            "chk_f213361bf057b0_477_v3",
+            "chk_f213361bf057b0_478_v3",
+            "chk_f213361bf057b0_479_v3"
+          ],
+          "retrieval": {
+            "scope": "Use the binomial model only where the stated sample has a fixed number of trials, two outcomes per trial, constant success probability and independence or a reasonable approximation. Populations and rates vary by problem: US 18-20-year-olds, American adults, teenagers, children of specified parents, employees and dreidel spins. The permutation item is not binomial.",
+            "summary": "A mixed exercise set applies binomial probabilities, expected counts and standard deviations, geometric first-success reasoning, permutations and disjoint-outcome addition across health, behavior, games and family examples.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_f213361bf057b0_476_v3",
+          "hit_text": "4.22 Arachnophobia. A Gallup Poll found that 7% of teenagers (ages 13 to 17) suﬀer from arachnophobia and are extremely afraid of spiders. At a summer camp there are 10 teenagers sleeping in each tent. Assume that these 10 teenagers are independent of each other.33 (a) Calculate the probability that at least one of them suﬀers from arachnophobia. (b) Calculate the probability that exactly 2 of them suﬀer from arachnophobia. (c) Calculate the probability that at most 1 of them suﬀers from arachnophobia. (d) If the camp counselor wants to make sure no more than 1 teenager in each tent is afraid of spiders, does it seem reasonable for him to randomly assign teenagers to tents?\n4.23 Eye color, Part II. Exercise 4.13 introduces a husband and wife with brown eyes who have 0.75 probability of having children with brown eyes, 0.125 probability of having children with blue eyes, and 0.125 probability of having children with green eyes. (a) What is the probability that their ﬁrst child will have green eyes and the second will not? (b) What is the probability that exactly one of their two children will have green eyes? (c) If they have six children, what is the probability that exactly two will have green eyes? (d) If they have six children, what is the probability that at least one will have green eyes? (e) What is the probability that the ﬁrst green eyed child will be the 4th child? (f) Would it be considered unusual if only 2 out of their 6 children had brown eyes?\n4.24 Sickle cell anemia.",
+          "hit_page_start": 176,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.222,
+                67.29,
+                852.948,
+                702.932
+              ],
+              "page": 176,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01859083191850594
+        }
+      ]
+    },
+    {
+      "query": "Bayes' theorem prior probability update posterior diagnostic test",
+      "topics": [],
+      "roles": [
+        "exercise",
+        "worked_example"
+      ],
+      "seconds": 7.136,
+      "excerpts": [
+        {
+          "id": "exc_f97f47b7a1fd68_154_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 5. Probability › (n - r)! › C › = › Base Rates",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "probability-basics",
+            "conditional"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 5: Basic Concepts Learning Objectives\n\n1. Compute the probability of a condition from hits, false alarms, and base rates using a tree diagram\n2. Compute the probability of a condition from hits, false alarms, and base rates using Bayes' Theorem\n\nSuppose that at your regular physical exam you test positive for Disease X. Although Disease X has only mild symptoms, you are concerned and ask your doctor about the accuracy of the test. It turns out that the test is 95% accurate. It would appear that the probability that you have Disease X is therefore 0.95. However, the situation is not that simple.\n\nFor one thing, more information about the accuracy of the test is needed because there are two kinds of errors the test can make: misses and false positives. If you actually have Disease X and the test failed to detect it, that would be a miss. If you did not have Disease X and the test indicated you did, that would be a false positive. The miss and false positive rates are not necessarily the same. For example, suppose that the test accurately indicates the disease in 99% of the people who have it and accurately indicates no disease in 91% of the people who do not have it. In other words, the test has a miss rate of 0.01 and a false positive rate of 0.09. This might lead you to revise your judgment and conclude that your chance of having the disease is 0.91. This would not be correct since the probability depends on the proportion of people having the disease. This proportion is called the base rate.\n\nAssume that Disease X is a rare disease, and only 2% of people in your situation have it. How does that affect the probability that you have it? Or, more generally, what is the probability that someone who tests positive actually has the disease? Let's consider what would happen if one million people were tested. Out of these one million people, 2% or 20,000 people would have the disease. Of these 20,000 with the disease, the test would accurately detect it in 99% of them. This means that 19,800 cases would be accurately identiﬁed. Now let's consider the\n\n98% of the one million people (980,000) who do not have the disease. Since the false positive rate is 0.09, 9% of these 980,000 people will test positive for the disease. This is a total of 88,200 people incorrectly diagnosed.\n\nTo sum up, 19,800 people who tested positive would actually have the disease and 88,200 people who tested positive would not have the disease. This means that of all those who tested positive, only\n\n19,800/(19,800 + 88,200) = 0.1833\n\nof them would actually have the disease. So the probability that you have the disease is not 0.95, or 0.91, but only 0.1833.\n\nThese results are summarized in Table 1. The numbers of people diagnosed with the disease are shown in red. Of the one million people tested, the test was correct for 891,800 of those without the disease and for 19,800 with the disease; the test was correct 91% of the time. However, if you look only at the people testing positive (shown in red), only 19,800 (0.1833) of the 88,200 + 19,800 = 108,000 testing positive actually have the disease.\n\nThese results are summarized in Table 1. The numbers of people diagnosed with the disease are shown in red. Of the one million people tested, the test was correct for 891,800 of those without the disease and for 19,800 with the disease; the test was correct 91% of the time. However, if you look only at the people testing positive (shown in red), only 19,800 (0.1833) of the 88,200 + 19,800 = 108,000 testing positive actually have the disease.\n\nTable 1. Diagnosing Disease X.\n\nTrue Condition\nNo Disease 980,000 | Disease 20,000\nTest Result | Test Result\nPositive 88,200 | Negative 891,800 | Positive 19,800 | Negative 200\n\nBayes' Theorem This same result can be obtained using Bayes' theorem. Bayes' theorem considers both the prior probability of an event and the diagnostic value of a test to determine the posterior probability of the event. For the current example, the event is that you have Disease X. Let's call this Event D. Since only 2% of people in your situation have Disease X, the prior probability of Event D is 0.02. Or, more formally, P(D) = 0.02. If D' represents the probability that Event D is false, then P(D') = 1 - P(D) = 0.98.\n\nBayes' Theorem This same result can be obtained using Bayes' theorem. Bayes' theorem considers both the prior probability of an event and the diagnostic value of a test to determine the posterior probability of the event. For the current example, the event is that you have Disease X. Let's call this Event D. Since only 2% of people in your situation have Disease X, the prior probability of Event D is 0.02. Or, more formally, P(D) = 0.02. If D' represents the probability that Event D is false, then P(D') = 1 - P(D) = 0.98.\n\nTo deﬁne the diagnostic value of the test, we need to deﬁne another event: that you test positive for Disease X. Let's call this Event T. The diagnostic value of the test depends on the probability you will test positive given that you actually have the disease, written as P(T|D), and the probability you test positive given that you do not have the disease, written as P(T|D'). Bayes' theorem shown below allows you to calculate P(D|T), the probability that you have the disease given that you test positive for it.\n\n= (1 )!\n\n= (1 )!",
+          "pages": [
+            212,
+            213,
+            214
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_309_v2",
+            "chk_f97f47b7a1fd68_310_v2",
+            "chk_f97f47b7a1fd68_311_v2",
+            "chk_f97f47b7a1fd68_312_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_f97f47b7a1fd68_312_v2",
+          "hit_text": "Bayes' Theorem This same result can be obtained using Bayes' theorem. Bayes' theorem considers both the prior probability of an event and the diagnostic value of a test to determine the posterior probability of the event. For the current example, the event is that you have Disease X. Let's call this Event D. Since only 2% of people in your situation have Disease X, the prior probability of Event D is 0.02. Or, more formally, P(D) = 0.02. If D' represents the probability that Event D is false, then P(D') = 1 - P(D) = 0.98.\n\nTo deﬁne the diagnostic value of the test, we need to deﬁne another event: that you test positive for Disease X. Let's call this Event T. The diagnostic value of the test depends on the probability you will test positive given that you actually have the disease, written as P(T|D), and the probability you test positive given that you do not have the disease, written as P(T|D'). Bayes' theorem shown below allows you to calculate P(D|T), the probability that you have the disease given that you test positive for it.\n\n= (1 )!\n\n= (1 )!",
+          "hit_page_start": 213,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                682.956,
+                881.827,
+                868.687
+              ],
+              "page": 213,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                95.96,
+                874.601,
+                250.0
+              ],
+              "page": 214,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                270.139,
+                109.231,
+                441.072,
+                130.832
+              ],
+              "page": 214,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                326.497,
+                196.726,
+                497.645,
+                218.444
+              ],
+              "page": 214,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_573_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "7 References › 21. Glossary › / › Positive Association",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "hypothesis-tests",
+            "probability-basics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "There is a positive association between variables X and Y if smaller values of X are associated with smaller values of Y and larger values of X are associated with larger values of Y.\n\nPosterior Probability The posterior probability of an event is the probability of the event computed following the collection of new data. One begins with a prior probability of an event and revises it in the light of new data. For example, if 0.01 of a population has schizophrenia then the probability that a person drawn at random would have schizophrenia is 0.01. This is the prior probability. If you then learn that that their score on a personality test suggests the person is schizophrenic, you would adjust your probability accordingly. The adjusted probability is the posterior probability.\n\nPower In signiﬁcance testing, power is the probability of rejecting a false null hypothesis.\n\nPrecision A statistic's precision concerns to how close it is expected to be to the parameter it is estimating. Precise statistics are vary less from sample to sample. The precision of a statistic is usually deﬁned in terms of it standard error.\n\nPredictor A predictor variable is a variable used in regression to predict another variable. It is sometimes referred to as an independent variable if it is manipulated rather than just measured.\n\nPrior Probability The prior probability of an event is the probability of the event computed before the collection of new data. One begins with a prior probability of an event and revises it in\n\nPredictor A predictor variable is a variable used in regression to predict another variable. It is sometimes referred to as an independent variable if it is manipulated rather than just measured.\n\nPrior Probability The prior probability of an event is the probability of the event computed before the collection of new data. One begins with a prior probability of an event and revises it in\n\nthe light of new data. For example, if 0.01 of a population has schizophrenia then the probability that a person drawn at random would have schizophrenia is 0.01. This is the prior probability. If you then learn that that there score on a personality test suggests the person is schizophrenic, you would adjust your probability accordingly. The adjusted probability is the posterior probability.\n\nProbability Density For a discrete random variable, a probability distribution contains the probability of each possible outcome. However, for a continuous random variable, the probability of any one outcome is zero (if you specify it to enough decimal places). A probability density function is a formula that can be used to compute probabilities of a range of outcomes for a continuous random variable. The sum of all densities is always 1.0 and the value of the function is always greater or equal to zero.",
+          "pages": [
+            679,
+            680
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_1104_v2",
+            "chk_f97f47b7a1fd68_1105_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_f97f47b7a1fd68_1104_v2",
+          "hit_text": "There is a positive association between variables X and Y if smaller values of X are associated with smaller values of Y and larger values of X are associated with larger values of Y.\n\nPosterior Probability The posterior probability of an event is the probability of the event computed following the collection of new data. One begins with a prior probability of an event and revises it in the light of new data. For example, if 0.01 of a population has schizophrenia then the probability that a person drawn at random would have schizophrenia is 0.01. This is the prior probability. If you then learn that that their score on a personality test suggests the person is schizophrenic, you would adjust your probability accordingly. The adjusted probability is the posterior probability.\n\nPower In signiﬁcance testing, power is the probability of rejecting a false null hypothesis.\n\nPrecision A statistic's precision concerns to how close it is expected to be to the parameter it is estimating. Precise statistics are vary less from sample to sample. The precision of a statistic is usually deﬁned in terms of it standard error.\n\nPredictor A predictor variable is a variable used in regression to predict another variable. It is sometimes referred to as an independent variable if it is manipulated rather than just measured.\n\nPrior Probability The prior probability of an event is the probability of the event computed before the collection of new data. One begins with a prior probability of an event and revises it in",
+          "hit_page_start": 679,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                378.948,
+                830.466,
+                439.394
+              ],
+              "page": 679,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                448.904,
+                868.703,
+                611.742
+              ],
+              "page": 679,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                621.253,
+                808.551,
+                659.091
+              ],
+              "page": 679,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                668.601,
+                828.802,
+                748.106
+              ],
+              "page": 679,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                757.616,
+                838.412,
+                837.121
+              ],
+              "page": 679,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                846.631,
+                856.794,
+                905.303
+              ],
+              "page": 679,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023449131513647643
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_562_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "7 References › 21. Glossary › Average",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "effect-size"
+          ],
+          "confidence": 0.96,
+          "synopsis": "(i) The (arithmetic) mean\n(ii) Any measure of central tendency\n\nBar Chart A graphical method of presenting data. A bar is drawn for each level of a variable. The height of each bar contains the value of the variable. Bar charts are useful for displaying things such as frequency counts and percent increases. They are not recommended for displaying means (despite the widespread practice) since box plots present more information in the same amount of space.\n\nBase Rate The true proportion of a population having some condition, attribute or disease. For example, the proportion of people with schizophrenia is about 0.01. It is very important to consider the base rate when classifying people. As the saying goes, “if you hear hoofs, think horse not zebra” since you are more likely to encounter a horse than a zebra (at least in most places.)\n\nBayes' Theorem Bayes' theorem considers both the prior probability of an event and the diagnostic value of a test to determine the posterior probability of the event. The theorem is shown below:\n\n\"= N#(1$#) P(D |T)=\n\nP(T | D)P(D) P(T | D)P(D)+ P(T | D')P(D')\n\nwhere P(D|T) is the posterior probability of condition D given test result T, P(T|D) is the conditional probability of T given D, P(D) is the prior probability of D, P(T|D') is the conditional probability of T given not D, and P(D') is the probability of not D'.\n\nBeta weight A standardized regression coefﬁcient.\n\nwhere P(D|T) is the posterior probability of condition D given test result T, P(T|D) is the conditional probability of T given D, P(D) is the prior probability of D, P(T|D') is the conditional probability of T given not D, and P(D') is the probability of not D'.\n\nBeta weight A standardized regression coefﬁcient.\n\nBetween-Subjects Factor/Variable Between-subject variables are independent variables or factors in which a different group of subjects is used for each level of the variable. If an experiment is conducted comparing four methods of teaching vocabulary and if a different group of subjects is used for each of the four teaching methods, then teaching method is a between-subjects variable.",
+          "pages": [
+            659,
+            660
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_1068_v2",
+            "chk_f97f47b7a1fd68_1069_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_f97f47b7a1fd68_1068_v2",
+          "hit_text": "(i) The (arithmetic) mean\n(ii) Any measure of central tendency\n\nBar Chart A graphical method of presenting data. A bar is drawn for each level of a variable. The height of each bar contains the value of the variable. Bar charts are useful for displaying things such as frequency counts and percent increases. They are not recommended for displaying means (despite the widespread practice) since box plots present more information in the same amount of space.\n\nBase Rate The true proportion of a population having some condition, attribute or disease. For example, the proportion of people with schizophrenia is about 0.01. It is very important to consider the base rate when classifying people. As the saying goes, “if you hear hoofs, think horse not zebra” since you are more likely to encounter a horse than a zebra (at least in most places.)\n\nBayes' Theorem Bayes' theorem considers both the prior probability of an event and the diagnostic value of a test to determine the posterior probability of the event. The theorem is shown below:\n\n\"= N#(1$#) P(D |T)=\n\nP(T | D)P(D) P(T | D)P(D)+ P(T | D')P(D')\n\nwhere P(D|T) is the posterior probability of condition D given test result T, P(T|D) is the conditional probability of T given D, P(D) is the prior probability of D, P(T|D') is the conditional probability of T given not D, and P(D') is the probability of not D'.\n\nBeta weight A standardized regression coefﬁcient.",
+          "hit_page_start": 659,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                582.862,
+                426.585,
+                630.051
+              ],
+              "page": 659,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                639.561,
+                866.972,
+                760.732
+              ],
+              "page": 659,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                770.242,
+                864.157,
+                891.414
+              ],
+              "page": 659,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                90.949,
+                880.773,
+                149.621
+              ],
+              "page": 660,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                120.291,
+                125.051,
+                284.739,
+                188.497
+              ],
+              "page": 660,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                235.4,
+                155.436,
+                551.103,
+                204.535
+              ],
+              "page": 660,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                213.223,
+                877.129,
+                273.669
+              ],
+              "page": 660,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                283.179,
+                434.098,
+                321.018
+              ],
+              "page": 660,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023335702440180052
+        },
+        {
+          "id": "exc_45ecdb7da7734b_400_v3",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Bayesian statistics › 16.1 Probabilistic reasoning by rational agents › 16.1.4 Updating beliefs using Bayes’ rule",
+          "roles": [
+            "introduction",
+            "worked_example",
+            "formal"
+          ],
+          "topic_ids": [
+            "conditional",
+            "bayesian-inference"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Using the rainy day problem, the text revises a joint probability table after learning that an umbrella is being carried, setting the no-umbrella column to zero and normalizing so the umbrella column sums to 1. It computes the posterior probability of rain as 0.045/0.0875 = 51.4%, then expresses the posterior as joint probability divided by marginal probability of the data, substituting prior times likelihood to state Bayes’ rule.",
+          "pages": [
+            436,
+            437
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_922_v3",
+            "chk_45ecdb7da7734b_923_v3",
+            "chk_45ecdb7da7734b_924_v3",
+            "chk_45ecdb7da7734b_925_v3"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_45ecdb7da7734b_924_v3",
+          "hit_text": "What this table is telling you is that, after being told that I’m carrying an umbrella, you believe that there’s a 51.4% chance that today will be a rainy day, and a 48.6% chance that it won’t. That’s the answer to our problem! The posterior probability of rain 𝑃(ℎ‖𝑑) given that I am carrying an umbrella is 51.4%.\n\nHow did I calculate these numbers? You can probably guess. To work out that there was a 0.514 probability of “rain”, all I did was take the 0.045 probability of “rain and umbrella” and divide it by the 0.0875 chance of “umbrella”. This produces a table that satisfies our need to have everything sum to 1, and our need not to interfere with the relative plausibility of the two events that are actually consistent with the data. To say the same thing using fancy statistical jargon, what I’ve done here is divide the joint probability of the hypothesis and the data 𝑃(𝑑,ℎ) by the marginal probability of the data 𝑃(𝑑), and this is what gives us the posterior probability of the hypothesis given the data that have been observed. To write this as an equation:195\n\nHowever, remember what I said at the start of the last section, namely that the joint probability, 𝑃(𝑑,ℎ), is calculated by multiplying the prior, 𝑃(ℎ), by the likelihood, 𝑃(𝑑|ℎ). In real life, the things we actually know how to write down are the priors and the likelihood, so let’s substitute those back into the equation. This gives us the following formula for the posterior probability:\n\n𝑃(𝑑|ℎ)𝑃(ℎ) 𝑃(𝑑)\n\n𝑃(ℎ|𝑑) =",
+          "hit_page_start": 437,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                457.612,
+                843.752,
+                553.039
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                515.728,
+                843.757,
+                710.781
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                673.471,
+                843.757,
+                785.501
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.396,
+                753.231,
+                600.182,
+                868.307
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                428.991,
+                762.992,
+                501.3,
+                858.418
+              ],
+              "page": 437,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021335629544584768
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1206_v2",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents › 17.1.4 Updating beliefs using Bayes’ rule › 736",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "bayesian-inference",
+            "conditional",
+            "probability-basics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Rainy 0 Dry 0 Total 1 0\n\nIn other words, the facts have eliminated any possibility of “no umbrella”, so we have to put zeros into any cell in the table that implies that I’m not carrying an umbrella. Also, you know for a fact that I am carrying an umbrella, so the column sum on the left must be 1 to correctly describe the fact that 𝑃(umbrella) = 1.\n\nWhat two numbers should we put in the empty cells? Again, let’s not worry about the maths, and instead think about our intuitions. When we wrote out our table the first time, it turned out that those two cells had almost identical numbers, right? We worked out that the joint probability of “rain and umbrella” was 4.5%, and the joint probability of “dry and umbrella” was 4.25%. In other words, before I told you that I am in fact carrying an umbrella, you’d have said that these two events were almost identical in probability, yes? But notice that both of these possibilities are consistent with the fact that I actually am carrying an umbrella. From the perspective of these two possibilities, very little has changed. I hope you’d agree that it’s still true that these two possibilities are equally plausible. So what we expect to see in our final table is some numbers that preserve the fact that “rain and umbrella” is slightly more plausible than “dry and umbrella”, while still ensuring that the numbers in the table add up. Something like this, perhaps?\n\nUmbrella No-umbrella\n\nRainy 0.514 0 Dry 0.486 0 Total 1 0\n\nWhat this table is telling you is that, after being told that I’m carrying an umbrella, you believe that there’s a 51.4% chance that today will be a rainy day, and a 48.6% chance that it won’t. That’s the answer to our problem! The posterior probability of rain 𝑃(ℎ|𝑑) given that I am carrying an umbrella is 51.4%.\n\nHow did I calculate these numbers? You can probably guess. To work out that there was a 0.514 probability of “rain”, all I did was take the 0.045 probability of “rain and umbrella” and divide it by the 0.0875 chance of “umbrella”. This produces a table that satisfies our need to have everything sum to 1, and our need not to interfere with the relative plausibility of the two events that are actually consistent with the data. To say the same thing using fancy statistical jargon, what I’ve done here is divide the joint probability of the hypothesis and the data 𝑃(𝑑,ℎ) by the marginal probability of the data 𝑃(𝑑), and this is what gives us the",
+          "pages": [
+            737
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1802_v2",
+            "chk_dd1e65de648fb2_1803_v2"
+          ],
+          "retrieval": {
+            "scope": "Example-specific Bayesian update using the assumed prior and likelihood from excerpts 1200 and 1201. The 51.4% result is 0.045 divided by the 0.0875 umbrella marginal. The general posterior equation and Bayes rule continue in excerpt 1207.",
+            "summary": "Renormalizes the rain-and-umbrella joint probabilities after observing an umbrella, yielding posterior probabilities 0.514 for rain and 0.486 for dry.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200_v2",
+              "exc_dd1e65de648fb2_1201_v2",
+              "exc_dd1e65de648fb2_1203_v2",
+              "exc_dd1e65de648fb2_1207_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_dd1e65de648fb2_1803_v2",
+          "hit_text": "What this table is telling you is that, after being told that I’m carrying an umbrella, you believe that there’s a 51.4% chance that today will be a rainy day, and a 48.6% chance that it won’t. That’s the answer to our problem! The posterior probability of rain 𝑃(ℎ|𝑑) given that I am carrying an umbrella is 51.4%.\n\nHow did I calculate these numbers? You can probably guess. To work out that there was a 0.514 probability of “rain”, all I did was take the 0.045 probability of “rain and umbrella” and divide it by the 0.0875 chance of “umbrella”. This produces a table that satisfies our need to have everything sum to 1, and our need not to interfere with the relative plausibility of the two events that are actually consistent with the data. To say the same thing using fancy statistical jargon, what I’ve done here is divide the joint probability of the hypothesis and the data 𝑃(𝑑,ℎ) by the marginal probability of the data 𝑃(𝑑), and this is what gives us the",
+          "hit_page_start": 737,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.454,
+                607.577,
+                864.119,
+                699.465
+              ],
+              "page": 737,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                684.561,
+                864.297,
+                844.879
+              ],
+              "page": 737,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020535714285714286
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 4
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 2
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 4
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 2
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

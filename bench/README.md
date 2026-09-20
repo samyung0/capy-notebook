@@ -59,7 +59,7 @@ computational questions, findings in
 
 ### rag
 
-`rag/scripts/rag_eval.py` is the one live tool here: a retrieval diagnostic that
+`rag/scripts/rag_eval.py` is a live retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline
 image. Its question sets in `rag/fixtures/` are keyed to `CHUNKER_VERSION` and to
 a corpus that is **not tracked in Git**: 16 real documents across six languages at
@@ -89,6 +89,20 @@ confounded by everything that changed in between.
 ```sh
 docker compose exec retrieval python bench/rag/scripts/rag_eval.py <workspace_id>
 ```
+
+[`knowledge_scope_agent_eval.py`](rag/scripts/knowledge_scope_agent_eval.py)
+compares current knowledge-library search, cached continuation pages and
+request-scope reranking through the real curate loop. It uses local Ollama,
+the read-only live library and locally saved materials. `--thinking low|high`
+selects the agent and optional reranker effort (default: low). The
+[September 20 report](rag/reports/2026-09-20-knowledge-scope-agent.md) documents
+the cases, costs, harness limitations and reproduction commands.
+The [September 21 follow-up](rag/reports/2026-09-21-knowledge-scope-implementation.md)
+records the Sol source-review trial, targeted metadata backfill and the updated
+retrieval workflow's agent results.
+The [Sol topic-owner trial](rag/reports/2026-09-21-sol-topic-owner.md) tests keeping
+topic proposals and final tagging with the source-review agent, without a GLM
+handoff in the delegated builder workflow.
 
 The four subdirectories are frozen experiments, each with its own README,
 reproduction steps, and report. They describe completed runs on a preserved lab

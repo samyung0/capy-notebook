@@ -7,6 +7,8 @@ like a quality problem rather than a bug.
 
 from __future__ import annotations
 
+import pytest
+
 from pipeline.prompts import curate as curate_prompts
 from pipeline.registry import ModelConfig
 from pipeline.retrieval import contract, library, models, tools, workflows
@@ -233,7 +235,7 @@ def test_subject_list_rides_on_browse_knowledge_only(monkeypatch):
     assert "statistics" not in described["search_knowledge"], (
         "the list is long; it is listed once"
     )
-    assert "browsing a subject" in described["search_knowledge"]
+    assert "omit it for a direct or cross-topic search" in described["search_knowledge"]
     assert "statistics" not in described["read_knowledge"]
     assert "statistics" not in contract.DEFINITIONS["browse_knowledge"]["description"]
 
@@ -283,6 +285,12 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
         subject_topics={"statistics": [{"id": "linear-regression", "excerpts": 3}]},
     )
     excerpt = _excerpt()
+    excerpt.retrieval = {
+        "summary": "Fitting a line",
+        "scope": "One predictor; no software is required for the explanation.",
+        "context_excerpt_ids": ["e_2"],
+    }
+    excerpt.synopsis = "Complete reviewed notes " * 1000
     excerpt.hit_text = "The least squares line minimises the sum of squared residuals."
     looked_up: list[list[str]] = []
 
@@ -316,6 +324,8 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
     )
     assert "roles: introduction" in text and "figures: fig_8_1" in text
     assert "least squares line" in text and "Fitting a line" in text
+    assert "One predictor" in text and "e_2" in text
+    assert "Complete reviewed notes" not in text
     assert looked_up == [], "a browsed topic id is known without a query"
 
     refused = await tools._search_knowledge({"query": "x", "topics": ["algebra"]}, ctx)
@@ -1015,7 +1025,8 @@ async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
         await service._generate(req)
 
 
-async def test_pipeline_chat_defense_rejects_query_token_overflow():
+@pytest.mark.parametrize("character", ["a", "光", "😀"])
+async def test_pipeline_chat_defense_rejects_query_character_overflow(character):
     import json
 
     from pipeline.retrieve import service
@@ -1027,7 +1038,7 @@ async def test_pipeline_chat_defense_rejects_query_token_overflow():
         userId="u_1",
         paidBy="platform",
         thinking="instant",
-        query="光" * (service.QUERY_MAX_ESTIMATED_TOKENS + 1),
+        query=character * (service.CHAT_CHARACTER_LIMIT + 1),
         workspaceId="ws_1",
         contractVersion=contract.VERSION,
         operations=[],

@@ -2,6 +2,94 @@
   "schema_version": 1,
   "books": [
     {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "authors": [
+        "Joseph Makolandra",
+        "Forest Jones",
+        "Kevin G. Bezy",
+        "Cindy Delp",
+        "Brad E. Bizzell",
+        "Caroline Wray",
+        "Guylene Wood-Setzer",
+        "Nancy Leonard",
+        "Dawn Hutton",
+        "Asia Jones",
+        "Seydric Williams",
+        "Janet Womack"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17658",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/7/7301/pdf/21st_Century_Theories_of_Education_Administration_7301_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17658",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ )",
+      "attribution_reviewed": false,
+      "attribution": "21st Century Theories of Education Administration, Joseph Makolandra, Forest Jones, Kevin G. Bezy, Cindy Delp, Brad E. Bizzell, Caroline Wray, Guylene Wood-Setzer, Nancy Leonard, Dawn Hutton, Asia Jones, Seydric Williams, Janet Womack. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/17658",
+      "pdf_path": "data/knowledge-base/sources/78fd135f0bb4a8692f4d5df230e7a0622975e3dec0630a9aa1c1a6253b241fd7.pdf",
+      "sha256": "78fd135f0bb4a8692f4d5df230e7a0622975e3dec0630a9aa1c1a6253b241fd7",
+      "bytes": 4337996,
+      "pages": 55,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "authors": [
+        "Serhat Beyenir"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33089",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/28/28883/pdf/A_Brief_Introduction_to_Engineering_Computation_with_MATLAB_28883.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33089",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "A Brief Introduction to Engineering Computation with MATLAB, Serhat Beyenir. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33089",
+      "pdf_path": "data/knowledge-base/sources/73a7bdfff522fdc6b25e1b21b7cc1b21beb6a874a5bfa0f97b8b2a69b4c98232.pdf",
+      "sha256": "73a7bdfff522fdc6b25e1b21b7cc1b21beb6a874a5bfa0f97b8b2a69b4c98232",
+      "bytes": 15067882,
+      "pages": 157,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "The source landing page states CC BY-SA 4.0. Physical PDF page 2 states Creative Commons-ShareAlike 4.0 International and credits Serhat Beyenir."
+      ],
+      "subject_id": "introductory-engineering",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "authors": [
+        "Mark Pettinelli"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17748",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/7/7277/pdf/A_Cognitive_Perspective_on_Emotion_7277_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17748",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "A Cognitive Perspective on Emotion, Mark Pettinelli. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/17748",
+      "pdf_path": "data/knowledge-base/sources/34103ea6784988bb35c776d91816d95f5e63804bfe3a07ac057992d7dca1190e.pdf",
+      "sha256": "34103ea6784988bb35c776d91816d95f5e63804bfe3a07ac057992d7dca1190e",
+      "bytes": 2777533,
+      "pages": 110,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "psychology",
+      "version": 1
+    },
+    {
       "id": "a-first-course-in-electrical-and-computer-engineering",
       "title": "A First Course in Electrical and Computer Engineering",
       "authors": [
@@ -98,7 +186,8 @@
       "first_content_page": 27,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "linguistics"
+      "subject_id": "linguistics",
+      "version": 1
     },
     {
       "id": "a-grammar-of-papuan-malay",
@@ -122,7 +211,8 @@
       "first_content_page": 31,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "linguistics"
+      "subject_id": "linguistics",
+      "version": 1
     },
     {
       "id": "a-grammar-of-pite-saami",
@@ -146,7 +236,8 @@
       "first_content_page": 17,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "linguistics"
+      "subject_id": "linguistics",
+      "version": 1
     },
     {
       "id": "a-grammar-of-yakkha",
@@ -170,7 +261,8 @@
       "first_content_page": 19,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "linguistics"
+      "subject_id": "linguistics",
+      "version": 1
     },
     {
       "id": "a-grammar-of-yauyos-quechua",
@@ -194,7 +286,88 @@
       "first_content_page": 21,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "linguistics"
+      "subject_id": "linguistics",
+      "version": 1
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "authors": [
+        "Gary E. Martin",
+        "Angus MacNeil"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39705",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/38/38067/pdf/A_Learning_Approach_to_School_Discipline_Problem_Solving_Instead_of_Punishing_38067_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39705",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing, Gary E. Martin, Angus MacNeil. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39705",
+      "pdf_path": "data/knowledge-base/sources/3791e0b419025c24c85bd9cf82c6de644fcd169dcac41f02eb1efe948517e659.pdf",
+      "sha256": "3791e0b419025c24c85bd9cf82c6de644fcd169dcac41f02eb1efe948517e659",
+      "bytes": 2907284,
+      "pages": 72,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "The source landing page states CC BY-SA 4.0. Physical PDF page 2 states Creative Commons-ShareAlike 4.0 International and credits Gary E. Martin and Angus MacNeil; the original Connexions source notice is retained."
+      ],
+      "subject_id": "curriculum-instruction",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "authors": [
+        "Various Authors"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27140",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/19/19324/pdf/Accountancy_19324.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/f6db0217d9e335fdc681b3390218859752576fdd4547410e53a184971d8c2279.pdf#page=2",
+      "license_evidence_quote": "This work is licensed under a Creative Commons-ShareAlike 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "Accountancy, Various Authors. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27140",
+      "pdf_path": "data/knowledge-base/sources/f6db0217d9e335fdc681b3390218859752576fdd4547410e53a184971d8c2279.pdf",
+      "sha256": "f6db0217d9e335fdc681b3390218859752576fdd4547410e53a184971d8c2279",
+      "bytes": 3732434,
+      "pages": 97,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "accounting",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "authors": [
+        "Roger H. Hermanson",
+        "James D. Edwards",
+        "Michael W. Maher"
+      ],
+      "edition": "First Global Text Edition, Volume 1: Financial Accounting",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/accounting-principles-a-business-perspective",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/466",
+      "license": "CC BY 3.0",
+      "license_url": "https://creativecommons.org/licenses/by/3.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/98efd1b36e391457962f213aa0fce06e6df53405bed7156c6f915dc84180b9e8.pdf#page=1",
+      "license_evidence_quote": "This book is licensed under a Creative Commons Attribution 3.0 License",
+      "attribution_reviewed": false,
+      "attribution": "Accounting Principles: A Business Perspective, Roger H. Hermanson, James D. Edwards, Michael W. Maher, First Global Text Edition, Volume 1: Financial Accounting. CC BY 3.0. https://open.umn.edu/opentextbooks/textbooks/accounting-principles-a-business-perspective",
+      "pdf_path": "data/knowledge-base/sources/98efd1b36e391457962f213aa0fce06e6df53405bed7156c6f915dc84180b9e8.pdf",
+      "sha256": "98efd1b36e391457962f213aa0fce06e6df53405bed7156c6f915dc84180b9e8",
+      "bytes": 7991863,
+      "pages": 1004,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "accounting",
+      "version": 1
     },
     {
       "id": "ahss4",
@@ -231,7 +404,33 @@
         "PDF page 18 iris photo credits Ryan Claussen, http://flic.kr/p/6QTcuX, CC BY-SA 2.0.",
         "Shares source lineage with OpenIntro Statistics; these are deliberately overlapping books, not independent corroboration.",
         "Screen-reader PDF pagination differs from print; no AP exam alignment is targeted."
-      ]
+      ],
+      "version": 4
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "authors": [
+        "WikiBooks"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18124",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/12/12647/pdf/Applied_Ecology_12647.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18124",
+      "license_evidence_quote": "This book is licensed under a Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Applied Ecology, WikiBooks. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18124",
+      "pdf_path": "data/knowledge-base/sources/7d10d1c013d87f19ba1a113e54e549725b4ab54e4b7159b108cfae7883ff4be5.pdf",
+      "sha256": "7d10d1c013d87f19ba1a113e54e549725b4ab54e4b7159b108cfae7883ff4be5",
+      "bytes": 6431348,
+      "pages": 114,
+      "first_content_page": 6,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "ecology-evolution",
+      "version": 1
     },
     {
       "id": "bad-ideas-about-writing",
@@ -260,6 +459,58 @@
       "version": 1
     },
     {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "authors": [
+        "William P. Kratzke"
+      ],
+      "edition": "Second Edition",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/26787",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/18/18182/pdf/Basic_Income_Tax_Second_Edition_18182.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/26787",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareALike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Basic Income Tax, Second Edition, William P. Kratzke, Second Edition. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/26787",
+      "pdf_path": "data/knowledge-base/sources/24377a2e09ecde61537ecf1eff03590d66429afa3d6f2a389b30b709257fe265.pdf",
+      "sha256": "24377a2e09ecde61537ecf1eff03590d66429afa3d6f2a389b30b709257fe265",
+      "bytes": 4677309,
+      "pages": 454,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "finance",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "authors": [
+        "Paul deLespinasse"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33059",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/27/27932/pdf/Basic_Political_Concepts_27932.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33059",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": true,
+      "attribution": "Basic Political Concepts, Paul deLespinasse. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33059",
+      "pdf_path": "data/knowledge-base/sources/28c4b0639094a3526bc4674aecd4d03fc8ea4e3df36fcff87351567e9927f904.pdf",
+      "sha256": "28c4b0639094a3526bc4674aecd4d03fc8ea4e3df36fcff87351567e9927f904",
+      "bytes": 2127286,
+      "pages": 42,
+      "first_content_page": 4,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "PDF page 2 states © 2008 by Paul deLespinasse, CC BY-SA 4.0, and Original source: Global Text."
+      ],
+      "subject_id": "political-science",
+      "version": 1
+    },
+    {
       "id": "becoming-a-change-facilitator",
       "title": "Becoming a Change Facilitator",
       "authors": [
@@ -283,6 +534,31 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "management",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "authors": [
+        "Benjamin Crowell"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39710",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/33/33298/pdf/Brief_Calculus_33298.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39710",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Brief Calculus, Benjamin Crowell. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39710",
+      "pdf_path": "data/knowledge-base/sources/af488abb028e627030ecb2e13ab13f91fa229412fa0f561682cf84fd19a029c9.pdf",
+      "sha256": "af488abb028e627030ecb2e13ab13f91fa229412fa0f561682cf84fd19a029c9",
+      "bytes": 6766538,
+      "pages": 235,
+      "first_content_page": 12,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "calculus",
       "version": 1
     },
     {
@@ -339,6 +615,247 @@
       "version": 1
     },
     {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "authors": [
+        "Jose A. Cruz-Cruz",
+        "William Frey"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18036",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/10/10678/pdf/Business_Government_and_Society_10678_r.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18036",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution 4.0 license ( http://creativecommons.org/licenses/by/4.0/ ).",
+      "attribution_reviewed": true,
+      "attribution": "Business, Government, and Society, Jose A. Cruz-Cruz, William Frey. CC BY 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18036",
+      "pdf_path": "data/knowledge-base/sources/18baf03ed8a93318d7ed58057151c5ac3a13a5adb0c83049019a2f7a2ebf66cb.pdf",
+      "sha256": "18baf03ed8a93318d7ed58057151c5ac3a13a5adb0c83049019a2f7a2ebf66cb",
+      "bytes": 3064553,
+      "pages": 237,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "The publisher landing page states CC BY 4.0 and is the canonical license evidence. PDF page 2 states Creative Commons Attribution-ShareAlike 4.0; both notices are retained as provenance."
+      ],
+      "subject_id": "business-law-ethics",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "authors": [
+        "Ulric J. Gelinas Jr.",
+        "Steve G. Sutton",
+        "Jane Federowicz"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27218",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/25/25212/pdf/Business_Processes_and_Information_Technology_25212.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27218",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution 4.0 license (http://creativecommons.org/licenses/by/4.0/).",
+      "attribution_reviewed": false,
+      "attribution": "Business Processes and Information Technology, Ulric J. Gelinas Jr., Steve G. Sutton, Jane Federowicz. CC BY 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27218",
+      "pdf_path": "data/knowledge-base/sources/4920e6f8efe3494daabab469556ad38ea39467d492f0b5890011921deab9ea9f.pdf",
+      "sha256": "4920e6f8efe3494daabab469556ad38ea39467d492f0b5890011921deab9ea9f",
+      "bytes": 29405855,
+      "pages": 680,
+      "first_content_page": 22,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "information-systems",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "authors": [
+        "Walter Lee",
+        "Jenny Chung",
+        "Caroline Leung",
+        "Dr Zhang Xiaoyang",
+        "Shi Xuemei"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/11/11558/pdf/Chinese_Contract_Law_11558.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Chinese Contract Law, Walter Lee, Jenny Chung, Caroline Leung, Dr Zhang Xiaoyang, Shi Xuemei. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+      "pdf_path": "data/knowledge-base/sources/6d7582f965c330db2e3e85e8787a38a9c73be92b22ce6a2dbe0f333b2c807913.pdf",
+      "sha256": "6d7582f965c330db2e3e85e8787a38a9c73be92b22ce6a2dbe0f333b2c807913",
+      "bytes": 2163088,
+      "pages": 30,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "contract-law",
+      "version": 2
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "authors": [
+        "Wikibooks.org"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18065",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/14/14618/pdf/Communication_Theory_14618.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18065",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Communication Theory, Wikibooks.org. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18065",
+      "pdf_path": "data/knowledge-base/sources/d1eae9d0a61adba37f470c726df3a9efbf748e9dc14ae2fa9888d8a647fe69db.pdf",
+      "sha256": "d1eae9d0a61adba37f470c726df3a9efbf748e9dc14ae2fa9888d8a647fe69db",
+      "bytes": 2492867,
+      "pages": 129,
+      "first_content_page": 8,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "communication-media",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "authors": [
+        "Laura Getty",
+        "Kyounghye Kwon"
+      ],
+      "edition": "",
+      "source_url": "https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "download_url": "https://ung.edu/university-press/_uploads/files/Compact Anthology of World Literature-Part 1.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "license_evidence_quote": "Copyright License: CC BY-SA 4.0 International",
+      "attribution_reviewed": false,
+      "attribution": "Compact Anthology of World Literature - Part 1, Laura Getty, Kyounghye Kwon. CC BY-SA 4.0. https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "pdf_path": "data/knowledge-base/sources/685dd8bd8f43bb1d0ad91f26f617e1a4ea29ea6782807305724bed59faaa459c.pdf",
+      "sha256": "685dd8bd8f43bb1d0ad91f26f617e1a4ea29ea6782807305724bed59faaa459c",
+      "bytes": 7206631,
+      "pages": 906,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "authors": [
+        "Laura Getty",
+        "Kyounghye Kwon"
+      ],
+      "edition": "",
+      "source_url": "https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "download_url": "https://ung.edu/university-press/_uploads/files/Compact Anthology of World Literature-Part 2.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "license_evidence_quote": "Copyright License: CC BY-SA 4.0 International",
+      "attribution_reviewed": false,
+      "attribution": "Compact Anthology of World Literature - Part 2, Laura Getty, Kyounghye Kwon. CC BY-SA 4.0. https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "pdf_path": "data/knowledge-base/sources/25b16e8feb19b34e29ee0e9ce6c0560fef60d7ad77bab34a1ae0df6b909aa656.pdf",
+      "sha256": "25b16e8feb19b34e29ee0e9ce6c0560fef60d7ad77bab34a1ae0df6b909aa656",
+      "bytes": 13039520,
+      "pages": 608,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "authors": [
+        "Laura Getty",
+        "Kyounghye Kwon"
+      ],
+      "edition": "",
+      "source_url": "https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "download_url": "https://ung.edu/university-press/_uploads/files/Compact Anthology of World Literature-Part 3.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "license_evidence_quote": "Copyright License: CC BY-SA 4.0 International",
+      "attribution_reviewed": false,
+      "attribution": "Compact Anthology of World Literature - Part 3, Laura Getty, Kyounghye Kwon. CC BY-SA 4.0. https://ung.edu/university-press/books/compact-anthology-world-literature.php",
+      "pdf_path": "data/knowledge-base/sources/ad5c76ef35f7b5e8ba02d330dfe4690ff528a3ba5aea9e3589ac9053c8a6a2b3.pdf",
+      "sha256": "ad5c76ef35f7b5e8ba02d330dfe4690ff528a3ba5aea9e3589ac9053c8a6a2b3",
+      "bytes": 16066542,
+      "pages": 450,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "authors": [
+        "Olivier Bonaventure"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18032",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/3/3547/pdf/Computer_Networking_Principles_Protocols_and_Practice_3547.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18032",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Computer Networking: Principles, Protocols and Practice, Olivier Bonaventure. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18032",
+      "pdf_path": "data/knowledge-base/sources/211d4b5a74368315cb9a15903c85c6ffb7002374ceb824749a7845c115591a2f.pdf",
+      "sha256": "211d4b5a74368315cb9a15903c85c6ffb7002374ceb824749a7845c115591a2f",
+      "bytes": 19827627,
+      "pages": 371,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "computer-science-foundations",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "authors": [
+        "Samantha Fowler",
+        "Rebecca Roush",
+        "James Wise"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39711",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/34/34471/pdf/Concepts_Of_Biology_34471.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39711",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": true,
+      "attribution": "Concepts of Biology, Samantha Fowler, Rebecca Roush, and James Wise. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39711",
+      "pdf_path": "data/knowledge-base/sources/fb60fb121013f61353d096e1f1a71692db62257ae55a89c44b6ddab33537be50.pdf",
+      "sha256": "fb60fb121013f61353d096e1f1a71692db62257ae55a89c44b6ddab33537be50",
+      "bytes": 190453729,
+      "pages": 963,
+      "first_content_page": 34,
+      "figure_exclusions": [],
+      "rights_notes": [
+        "The source PDF title page (PDF page 30) spells the first author Samantha Fowler. The Open Textbooks HK landing metadata supplied Samantha Fowle; the canonical attribution follows the source PDF while retaining this note."
+      ],
+      "subject_id": "general-biology",
+      "version": 1
+    },
+    {
       "id": "core-concepts-of-marketing",
       "title": "Core Concepts of Marketing",
       "authors": [
@@ -389,6 +906,89 @@
       "version": 1
     },
     {
+      "id": "database-design",
+      "title": "Database Design",
+      "authors": [
+        "Adrienne Watt",
+        "Nelson Eng"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33150",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/30/30632/pdf/Database_Design_30632.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33150",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Database Design, Adrienne Watt, Nelson Eng. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33150",
+      "pdf_path": "data/knowledge-base/sources/78b82b8bb453614e33728696ec720a45180b30360f55ee6c70b8b9211b1129c4.pdf",
+      "sha256": "78b82b8bb453614e33728696ec720a45180b30360f55ee6c70b8b9211b1129c4",
+      "bytes": 4234379,
+      "pages": 73,
+      "first_content_page": 6,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "databases",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "authors": [
+        "Tony Bush",
+        "Theodore Creighton",
+        "Frederick Dembowski",
+        "Celina Echols",
+        "Thomas Glass",
+        "John Hoyle",
+        "Zach Kelehear",
+        "National Council of Professors of Educational Administration"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33153",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/18/18122/pdf/Educational_Administration_The_Roles_of_Leadership_and_Management_18122_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33153",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Educational Administration: The Roles of Leadership and Management, Tony Bush, Theodore Creighton, Frederick Dembowski, Celina Echols, Thomas Glass, John Hoyle, Zach Kelehear, National Council of Professors of Educational Administration. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33153",
+      "pdf_path": "data/knowledge-base/sources/afa42d82224c02651168b58067697ba28316fcb475910781749c2f6f5c7a7e9d.pdf",
+      "sha256": "afa42d82224c02651168b58067697ba28316fcb475910781749c2f6f5c7a7e9d",
+      "bytes": 3075424,
+      "pages": 159,
+      "first_content_page": 8,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "authors": [
+        "Kelvin Seifert"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17745",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/6/6118/pdf/Educational_Psychology_6118_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17745",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Educational Psychology, Kelvin Seifert. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/17745",
+      "pdf_path": "data/knowledge-base/sources/2836f004e4ee1e7a8df5038a53742449f4a70265f9875df7e7818805afbc5c80.pdf",
+      "sha256": "2836f004e4ee1e7a8df5038a53742449f4a70265f9875df7e7818805afbc5c80",
+      "bytes": 5846397,
+      "pages": 455,
+      "first_content_page": 16,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "human-development",
+      "version": 1
+    },
+    {
       "id": "electromagnetics-volume-1",
       "title": "Electromagnetics, Volume 1",
       "authors": [
@@ -414,6 +1014,84 @@
       "version": 1
     },
     {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "authors": [
+        "Steven W. Ellingson"
+      ],
+      "edition": "",
+      "source_url": "https://vtechworks.lib.vt.edu/items/a8b62b35-3d88-4136-92be-f309749b1c67",
+      "download_url": "https://vtechworks.lib.vt.edu/bitstreams/0a2690e9-be2c-4b50-802d-c74d6e77560f/download",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/8ea26b70012ed07906c43724d5b3e211cf7b4f76d7912ca46e9fe8fd688748c9.pdf#page=5",
+      "license_evidence_quote": "This textbook is licensed with a Creative Commons Attribution Share-Alike 4.0 license:",
+      "attribution_reviewed": true,
+      "attribution": "Electromagnetics, Volume 2, Steven W. Ellingson. CC BY-SA 4.0. https://vtechworks.lib.vt.edu/items/a8b62b35-3d88-4136-92be-f309749b1c67",
+      "pdf_path": "data/knowledge-base/sources/8ea26b70012ed07906c43724d5b3e211cf7b4f76d7912ca46e9fe8fd688748c9.pdf",
+      "sha256": "8ea26b70012ed07906c43724d5b3e211cf7b4f76d7912ca46e9fe8fd688748c9",
+      "bytes": 5612340,
+      "pages": 230,
+      "first_content_page": 14,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "electrical-engineering",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "authors": [
+        "Richard T. Watson",
+        "Pierre Berthon",
+        "Leyland F. Pitt",
+        "George M. Zinkhan"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27264",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/24/24988/pdf/Electronic_Commerce_The_Strategic_Perspective_24988.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27264",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Electronic Commerce: The Strategic Perspective, Richard T. Watson, Pierre Berthon, Leyland F. Pitt, George M. Zinkhan. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27264",
+      "pdf_path": "data/knowledge-base/sources/ecb882c0209b1d6498614394e241dadff0673532980861839a331a792e6dd3d2.pdf",
+      "sha256": "ecb882c0209b1d6498614394e241dadff0673532980861839a331a792e6dd3d2",
+      "bytes": 3071102,
+      "pages": 147,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "information-systems",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "authors": [
+        "Jose C. Sanchez-Garcia"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/26841",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/17/17418/pdf/Entrepreneurship_Education_and_Training_17418.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/26841",
+      "license_evidence_quote": "This selection and arrangement of content is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Entrepreneurship Education and Training, Jose C. Sanchez-Garcia. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/26841",
+      "pdf_path": "data/knowledge-base/sources/e729cbafef7b3ed78a2e8e0d374aa34adb91b85cf7467b7494afff0411284dfb.pdf",
+      "sha256": "e729cbafef7b3ed78a2e8e0d374aa34adb91b85cf7467b7494afff0411284dfb",
+      "bytes": 4208490,
+      "pages": 341,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "entrepreneurship",
+      "version": 1
+    },
+    {
       "id": "evidence-based-software-engineering",
       "title": "Evidence-based Software Engineering",
       "authors": [
@@ -436,6 +1114,31 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "computer-science-foundations",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "authors": [
+        "William Judge"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/33084",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/26/26956/pdf/Focusing_on_Organizational_Change_26956.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/system/files/export/26/26956/pdf/Focusing_on_Organizational_Change_26956.pdf",
+      "license_evidence_quote": "This work is licensed under a Creative Commons-ShareAlike 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "Focusing on Organizational Change, William Judge. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/33084",
+      "pdf_path": "data/knowledge-base/sources/7b91059f81ca9b10771e672271c19613b5f22ff0dfb6cc81898d02f26ca252e2.pdf",
+      "sha256": "7b91059f81ca9b10771e672271c19613b5f22ff0dfb6cc81898d02f26ca252e2",
+      "bytes": 3967286,
+      "pages": 130,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "management",
       "version": 1
     },
     {
@@ -486,6 +1189,31 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "electrical-engineering",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "authors": [
+        "Mark Pettinelli"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39688",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/35/35562/pdf/How_does_Cognition_Influence_Emotion_35562_r2_0.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39688",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "How does Cognition Influence Emotion?, Mark Pettinelli. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39688",
+      "pdf_path": "data/knowledge-base/sources/4b40fe533ba772a52b48a5abb47c215aab3f88069d0bff567b6536904ee06cfa.pdf",
+      "sha256": "4b40fe533ba772a52b48a5abb47c215aab3f88069d0bff567b6536904ee06cfa",
+      "bytes": 6058137,
+      "pages": 112,
+      "first_content_page": 6,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "psychology",
       "version": 1
     },
     {
@@ -512,6 +1240,31 @@
       "rights_notes": [],
       "subject_id": "communication-media",
       "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "authors": [
+        "Richard T. Watson"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33152",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/25/25994/pdf/Information_Systems_25994.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33152",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Information Systems, Richard T. Watson. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33152",
+      "pdf_path": "data/knowledge-base/sources/c9f0d5a3f196becd0079946b6dd214bea7f1934ede240899ddf0caeac54abcc7.pdf",
+      "sha256": "c9f0d5a3f196becd0079946b6dd214bea7f1934ede240899ddf0caeac54abcc7",
+      "bytes": 9498104,
+      "pages": 343,
+      "first_content_page": 13,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "information-systems",
+      "version": 1
     },
     {
       "id": "information-systems-for-business-and-beyond",
@@ -593,6 +1346,35 @@
       "version": 1
     },
     {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "authors": [
+        "Matthias Felleisen",
+        "Phokion Kolaitis",
+        "Ian Barland",
+        "John Greiner",
+        "Moshe Vardi"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18066",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/9/9508/pdf/Intro_to_Logic_9508_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18066",
+      "license_evidence_quote": "under the Creative Commons Attribution-ShareAlike 4.0 International License ( http://creativecommons.org/licenses/by-sa/4.0/ )",
+      "attribution_reviewed": false,
+      "attribution": "Intro to Logic, Matthias Felleisen, Phokion Kolaitis, Ian Barland, John Greiner, Moshe Vardi. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18066",
+      "pdf_path": "data/knowledge-base/sources/4ab2f5301efd72c6762df89418d1e9c6efa11d75b4902714646e475633d9083a.pdf",
+      "sha256": "4ab2f5301efd72c6762df89418d1e9c6efa11d75b4902714646e475633d9083a",
+      "bytes": 5042375,
+      "pages": 189,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "philosophy",
+      "version": 1
+    },
+    {
       "id": "introducing-marketing",
       "title": "Introducing Marketing",
       "authors": [
@@ -616,6 +1398,60 @@
       "rights_notes": [],
       "subject_id": "marketing",
       "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "authors": [
+        "Eduardo Perez"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18127",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/8/8091/pdf/Introduction_to_G_Programming_8091_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18127",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to G Programming, Eduardo Perez. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18127",
+      "pdf_path": "data/knowledge-base/sources/6a6e7464ae7ae0377b7f59a31ca2ee5e8ad780c981c25a6365299b8284bbe36d.pdf",
+      "sha256": "6a6e7464ae7ae0377b7f59a31ca2ee5e8ad780c981c25a6365299b8284bbe36d",
+      "bytes": 11251995,
+      "pages": 85,
+      "first_content_page": 8,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "authors": [
+        "Angus MacNeil",
+        "Alena McClanahan",
+        "Melissa Patin",
+        "Michael Yelvington",
+        "Valerie maclin"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27314",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/14/14958/pdf/Introduction_to_School_Leadership_14958.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27314",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to School Leadership, Angus MacNeil, Alena McClanahan, Melissa Patin, Michael Yelvington, Valerie maclin. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27314",
+      "pdf_path": "data/knowledge-base/sources/4a35d6138bf36e744c97190ef4ce8ccb8b40c32815a3ab9fc86a690e08d3e42e.pdf",
+      "sha256": "4a35d6138bf36e744c97190ef4ce8ccb8b40c32815a3ab9fc86a690e08d3e42e",
+      "bytes": 2070122,
+      "pages": 26,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 1
     },
     {
       "id": "introductory-business-statistics",
@@ -669,6 +1505,58 @@
       "version": 1
     },
     {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "authors": [
+        "Danielle Navarro"
+      ],
+      "edition": "0.7.0 (2026-07-18)",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/891",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "",
+      "license_evidence_quote": "I decided that it would be most useful for everyone if I released the work under a permissive creative commons licence, CC BY-SA 4.0, so that anyone could expand on it, reuse it, and adapt it to other contexts.",
+      "attribution_reviewed": false,
+      "attribution": "Learning Statistics with R, Danielle Navarro, 0.7.0 (2026-07-18). CC BY-SA 4.0. https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+      "pdf_path": "data/knowledge-base/sources/043d04dc04cc06d4e5eef11e59687a919c7891620d38f35f4b404feb2544bc69.pdf",
+      "sha256": "043d04dc04cc06d4e5eef11e59687a919c7891620d38f35f4b404feb2544bc69",
+      "bytes": 3624304,
+      "pages": 792,
+      "first_content_page": 19,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics",
+      "license_evidence_pdf_page": 17,
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "authors": [
+        "Robin Sager",
+        "AnaMaria Seglie"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39669",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/35/35218/pdf/Literary_Skills_and_the_Archive_35218_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39669",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Literary Skills and the Archive, Robin Sager, AnaMaria Seglie. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39669",
+      "pdf_path": "data/knowledge-base/sources/4348fa93c4ff636c8148044c2e67a9a897b464a911f236eff28350b65cc3adad.pdf",
+      "sha256": "4348fa93c4ff636c8148044c2e67a9a897b464a911f236eff28350b65cc3adad",
+      "bytes": 9111426,
+      "pages": 25,
+      "first_content_page": 4,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature",
+      "version": 1
+    },
+    {
       "id": "lsj",
       "subject_id": "statistics",
       "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
@@ -699,7 +1587,8 @@
       "rights_notes": [
         "Author-hosted latest build is pinned by SHA256; may differ from 2025 publisher PDF.",
         "Preserve original figure credits; no generated image captions."
-      ]
+      ],
+      "version": 3
     },
     {
       "id": "managing-for-productivity-in-the-hospitality-industry",
@@ -777,6 +1666,82 @@
       "version": 1
     },
     {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "authors": [
+        "Various authors"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27318",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/22/22844/pdf/Methodologies_Tools_and_New_Developments_for_ELearning_22844.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27318",
+      "license_evidence_quote": "This selection and arrangement of content is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Methodologies, Tools and New Developments for E-Learning, Various authors. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27318",
+      "pdf_path": "data/knowledge-base/sources/b170cdfb9fd04e8bc7db26245fa0e233be53a91c0dda13d978663a9dc79b33af.pdf",
+      "sha256": "b170cdfb9fd04e8bc7db26245fa0e233be53a91c0dda13d978663a9dc79b33af",
+      "bytes": 20189135,
+      "pages": 444,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "educational-technology",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "authors": [
+        "Walter Ott",
+        "Alexander Dunn"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33060",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/27/27443/pdf/Modern_Philosophy_27443.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/33060",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Modern Philosophy, Walter Ott, Alexander Dunn. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/33060",
+      "pdf_path": "data/knowledge-base/sources/e8a9198f2f61f0e05a9e5208ceaae69357079b2b2120861396d830a8d8cf66db.pdf",
+      "sha256": "e8a9198f2f61f0e05a9e5208ceaae69357079b2b2120861396d830a8d8cf66db",
+      "bytes": 3333783,
+      "pages": 346,
+      "first_content_page": 14,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "authors": [
+        "Lisa White-McNulty"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39706",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/39/39495/pdf/Motivation_and_the_Learning_Environment_39495_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39706",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Motivation and the Learning Environment, Lisa White-McNulty. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39706",
+      "pdf_path": "data/knowledge-base/sources/b9f86ff6d2a4c829f10f0551f0c83007b390b07222e06eab0c36f15a11706ca6.pdf",
+      "sha256": "b9f86ff6d2a4c829f10f0551f0c83007b390b07222e06eab0c36f15a11706ca6",
+      "bytes": 2728264,
+      "pages": 47,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 2
+    },
+    {
       "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
       "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
       "authors": [
@@ -827,6 +1792,56 @@
       "version": 1
     },
     {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "authors": [
+        "Catherine Schmidt-Jones"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17833",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/14/14436/pdf/Music_Inquiry_14436_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/17833",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Music Inquiry, Catherine Schmidt-Jones. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/17833",
+      "pdf_path": "data/knowledge-base/sources/3219ed69457f8e4bb378e647366f2f83903fd5fd6a3a8b868f6369a0b26dd2de.pdf",
+      "sha256": "3219ed69457f8e4bb378e647366f2f83903fd5fd6a3a8b868f6369a0b26dd2de",
+      "bytes": 2554073,
+      "pages": 109,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "music",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "authors": [
+        "David M. Lane"
+      ],
+      "edition": "",
+      "source_url": "https://onlinestatbook.com/2/index.html",
+      "download_url": "https://onlinestatbook.com/Online_Statistics_Education.pdf",
+      "license": "public domain",
+      "license_url": "https://onlinestatbook.com/2/index.html",
+      "license_evidence_url": "https://onlinestatbook.com/2/index.html",
+      "license_evidence_quote": "This work is in the public domain. Therefore, it can be copied and reproduced without limitation.",
+      "attribution_reviewed": false,
+      "attribution": "Online Statistics Education: An Interactive Multimedia Course of Study, David M. Lane. public domain. https://onlinestatbook.com/2/index.html",
+      "pdf_path": "data/knowledge-base/sources/bb7f569da1981e8ee28d36e8d13cf5addfb58d991f82e9845374119421cef054.pdf",
+      "sha256": "bb7f569da1981e8ee28d36e8d13cf5addfb58d991f82e9845374119421cef054",
+      "bytes": 34118287,
+      "pages": 692,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics",
+      "version": 2
+    },
+    {
       "id": "open-logic-project",
       "title": "Open Logic Project",
       "authors": [
@@ -855,6 +1870,34 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "discrete-mathematics",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "authors": [
+        "Rebecca Pitt",
+        "Beatriz de los Arcos",
+        "Rob Farrow",
+        "Martin Weller"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/open-research",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/631",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/formats/631#page=2",
+      "license_evidence_quote": "Open Research by OER Hub is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Open Research, Rebecca Pitt, Beatriz de los Arcos, Rob Farrow, Martin Weller. CC BY-SA 4.0. https://open.umn.edu/opentextbooks/textbooks/open-research",
+      "pdf_path": "data/knowledge-base/sources/ee3cf0acef0dfa2e800b0b4e71c15c372b9791dd6afd66af510353d28a19da64.pdf",
+      "sha256": "ee3cf0acef0dfa2e800b0b4e71c15c372b9791dd6afd66af510353d28a19da64",
+      "bytes": 5488666,
+      "pages": 79,
+      "first_content_page": 5,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "library-information-science",
       "version": 1
     },
     {
@@ -890,6 +1933,41 @@
       "version": 2
     },
     {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "authors": [
+        "Robert Beach",
+        "James E. Berry",
+        "Bonnie Beyer",
+        "Tony Bush",
+        "Rebecca M. Bustamante",
+        "Ed Cox",
+        "Francis M. Duffy",
+        "Ronald Lindahl",
+        "Jane McDonald",
+        "National Council of Professors of Educational Administration",
+        "William Sharp"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27317",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/17/17172/pdf/Organizational_Change_in_the_Field_of_Education_Administration_17172_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/27317",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Organizational Change in the Field of Education Administration, Robert Beach, James E. Berry, Bonnie Beyer, Tony Bush, Rebecca M. Bustamante, Ed Cox, Francis M. Duffy, Ronald Lindahl, Jane McDonald, National Council of Professors of Educational Administration, William Sharp. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/27317",
+      "pdf_path": "data/knowledge-base/sources/611914afe0f06453c88124f1dc5f2a611acd1a5335825692f9207b0ed66591b4.pdf",
+      "sha256": "611914afe0f06453c88124f1dc5f2a611acd1a5335825692f9207b0ed66591b4",
+      "bytes": 3714976,
+      "pages": 149,
+      "first_content_page": 25,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 1
+    },
+    {
       "id": "os4",
       "subject_id": "statistics",
       "title": "OpenIntro Statistics",
@@ -922,7 +2000,8 @@
         "Author captions and source credits remain attached. PDF page 22 iris photo credits Ryan Claussen, http://flic.kr/p/6QTcuX, CC BY-SA 2.0.",
         "Screen-reader PDF pagination differs from print; use this PDF page coordinate and section title.",
         "OpenIntro title/logo must not brand derivative study materials as endorsed products."
-      ]
+      ],
+      "version": 3
     },
     {
       "id": "phylogenetic-comparative-methods-learning-from-trees",
@@ -946,7 +2025,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "ecology-evolution"
+      "subject_id": "ecology-evolution",
+      "version": 1
     },
     {
       "id": "physics",
@@ -977,6 +2057,85 @@
       "version": 3
     },
     {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "authors": [
+        "Jay Steinmetz"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/5512",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/5a0ab4b4aa32445142b4573faacb8d6367efbb9f58aea1a756477b616679c152.pdf#page=4",
+      "license_evidence_quote": "Politics, Power, and Purpose: An Orientation to Political Science by Jay Steinmetz is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Politics, Power, and Purpose: An Orientation to Political Science, Jay Steinmetz. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+      "pdf_path": "data/knowledge-base/sources/5a0ab4b4aa32445142b4573faacb8d6367efbb9f58aea1a756477b616679c152.pdf",
+      "sha256": "5a0ab4b4aa32445142b4573faacb8d6367efbb9f58aea1a756477b616679c152",
+      "bytes": 6260096,
+      "pages": 239,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "political-science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "authors": [
+        "Mihai Nica",
+        "Susan Dean",
+        "Barbara Illowsky"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18024",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/9/9418/pdf/Principles_of_Business_Statistics_9418_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18024",
+      "license_evidence_quote": "This selection and arrangement of content as a collection is copyrighted by Mihai Nica. It is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Principles of Business Statistics, Mihai Nica, Susan Dean, Barbara Illowsky. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18024",
+      "pdf_path": "data/knowledge-base/sources/3c9d787343b7c6f40189049f4bcb596c918d915f1e672dc30a5b7ff99760736e.pdf",
+      "sha256": "3c9d787343b7c6f40189049f4bcb596c918d915f1e672dc30a5b7ff99760736e",
+      "bytes": 4161534,
+      "pages": 130,
+      "first_content_page": 8,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "authors": [
+        "Venkatesh Sridhar",
+        "Patrick Felton",
+        "Numerous Wikipedia authors whose work was copied here"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18028",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/12/12158/pdf/Principles_of_Finance_12158.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/6b6448f7ca05ffe820ba7357aa708c3c8f33c2e7f54664b59e78e433be84b5c6.pdf#page=2",
+      "license_evidence_quote": "This work is licensed under a Creative Commons-ShareAlike 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "Principles of Finance, Venkatesh Sridhar, Patrick Felton, Numerous Wikipedia authors whose work was copied here. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18028",
+      "pdf_path": "data/knowledge-base/sources/6b6448f7ca05ffe820ba7357aa708c3c8f33c2e7f54664b59e78e433be84b5c6.pdf",
+      "sha256": "6b6448f7ca05ffe820ba7357aa708c3c8f33c2e7f54664b59e78e433be84b5c6",
+      "bytes": 9437173,
+      "pages": 223,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "finance",
+      "version": 1
+    },
+    {
       "id": "principles-of-financial-accounting",
       "title": "Principles of Financial Accounting",
       "authors": [
@@ -999,6 +2158,58 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "authors": [
+        "Mark Husband",
+        "Dung Nguyen",
+        "Stephen Wong"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18129",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/8/8163/pdf/Principles_of_ObjectOriented_Programming_8163_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18129",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Principles of Object-Oriented Programming, Mark Husband, Dung Nguyen, Stephen Wong. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18129",
+      "pdf_path": "data/knowledge-base/sources/92a0c1d3769cf5840e76704316663e5b4d40085bb98a4bc88318277bcc392e14.pdf",
+      "sha256": "92a0c1d3769cf5840e76704316663e5b4d40085bb98a4bc88318277bcc392e14",
+      "bytes": 6341626,
+      "pages": 165,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "authors": [
+        "Kenneth Leroy Busbee"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18033",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/5/5267/pdf/Programming_Fundamentals_A_Modular_Structured_Approach_using_C_5267.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18033",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Programming Fundamentals -A Modular Structured Approach using C++, Kenneth Leroy Busbee. CC BY-SA 4.0. https://www.opentextbooks.org.hk/certificates-and-diplomas/18033",
+      "pdf_path": "data/knowledge-base/sources/75d9ecc5443d6039bcbbf83e740dba027f4da19990a5d48e62a4b81a0b78a300.pdf",
+      "sha256": "75d9ecc5443d6039bcbbf83e740dba027f4da19990a5d48e62a4b81a0b78a300",
+      "bytes": 6403410,
+      "pages": 337,
+      "first_content_page": 25,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "programming",
       "version": 1
     },
     {
@@ -1027,6 +2238,56 @@
       "version": 1
     },
     {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "authors": [
+        "Theodore Creighton"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39707",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/38/38441/pdf/School_Personnel_Administration_and_Instructional_Supervision_38441_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39707",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "School Personnel Administration and Instructional Supervision, Theodore Creighton. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39707",
+      "pdf_path": "data/knowledge-base/sources/5eb8828e25ffcf0288c8003d2394e9c3a18dd456210aeac4394135fd33ba7048.pdf",
+      "sha256": "5eb8828e25ffcf0288c8003d2394e9c3a18dd456210aeac4394135fd33ba7048",
+      "bytes": 2622584,
+      "pages": 46,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "authors": [
+        "Stephen Davies"
+      ],
+      "edition": "version 1.2",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/the-crystal-ball-instruction-manual-volume-one-introduction-to-data-science",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1805",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/7493eecbb43edbebe101c78c8ef59af0c9621bd315dad086721c414f4989f15c.pdf#page=4",
+      "license_evidence_quote": "Permission is granted to copy, distribute, transmit and adapt this work under a Creative Commons Attribution-ShareAlike 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science, Stephen Davies, version 1.2. CC BY-SA 4.0. https://open.umn.edu/opentextbooks/textbooks/the-crystal-ball-instruction-manual-volume-one-introduction-to-data-science",
+      "pdf_path": "data/knowledge-base/sources/7493eecbb43edbebe101c78c8ef59af0c9621bd315dad086721c414f4989f15c.pdf",
+      "sha256": "7493eecbb43edbebe101c78c8ef59af0c9621bd315dad086721c414f4989f15c",
+      "bytes": 26375971,
+      "pages": 314,
+      "first_content_page": 7,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "data-science",
+      "version": 1
+    },
+    {
       "id": "the-impact-of-open-source-software-on-education",
       "title": "The impact of open source software on education",
       "authors": [
@@ -1052,6 +2313,29 @@
       "version": 1
     },
     {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "authors": [],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/37/37375/pdf/The_Legal_and_Ethical_Environment_of_Business_37375.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+      "license_evidence_quote": "This selection and arrangement of content is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": true,
+      "attribution": "The Legal and Ethical Environment of Business. The source PDF credits Open Textbooks for Hong Kong and The Open University of Hong Kong on its cover and names no individual author or editor. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+      "pdf_path": "data/knowledge-base/sources/593593bff28303c6ec43df039008860fe36c92dd43dd841737d83efd789ceac6.pdf",
+      "sha256": "593593bff28303c6ec43df039008860fe36c92dd43dd841737d83efd789ceac6",
+      "bytes": 13395241,
+      "pages": 345,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "business-law-ethics",
+      "version": 2
+    },
+    {
       "id": "tourism-the-international-business",
       "title": "Tourism the International Business",
       "authors": [
@@ -1074,6 +2358,60 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "business-fundamentals",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "authors": [
+        "Catherine Schmidt-Jones",
+        "Russell Jones"
+      ],
+      "edition": "",
+      "source_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18034",
+      "download_url": "https://www.opentextbooks.org.hk/system/files/export/2/2180/pdf/Understanding_Basic_Music_Theory_2180_r.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "http://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://www.opentextbooks.org.hk/tertiary-institutions/18034",
+      "license_evidence_quote": "It is licensed under the Creative Commons Attribution ShareAlike 4.0 license ( http://creativecommons.org/licenses/by-sa/4.0/ ).",
+      "attribution_reviewed": false,
+      "attribution": "Understanding Basic Music Theory, Catherine Schmidt-Jones, Russell Jones. CC BY-SA 4.0. https://www.opentextbooks.org.hk/tertiary-institutions/18034",
+      "pdf_path": "data/knowledge-base/sources/963ff2123022c7348f3b8d0bdf73c7579af074d2c6fbc65d1cc1fbe919cd7633.pdf",
+      "sha256": "963ff2123022c7348f3b8d0bdf73c7579af074d2c6fbc65d1cc1fbe919cd7633",
+      "bytes": 5754969,
+      "pages": 241,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "music",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "authors": [
+        "N. Alan Clark",
+        "Thomas Heflin",
+        "Jeffrey Kluball",
+        "Elizabeth Kramer"
+      ],
+      "edition": "",
+      "source_url": "https://ung.edu/university-press/books/understanding-music-past-and-present.php",
+      "download_url": "https://web.ung.edu/media/university-press/Understanding Music-Past and Present-082817.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://ung.edu/university-press/books/understanding-music-past-and-present.php",
+      "license_evidence_quote": "Copyright License: CC BY-SA 4.0 International",
+      "attribution_reviewed": false,
+      "attribution": "Understanding Music: Past and Present, N. Alan Clark, Thomas Heflin, Jeffrey Kluball, Elizabeth Kramer. CC BY-SA 4.0. https://ung.edu/university-press/books/understanding-music-past-and-present.php",
+      "pdf_path": "data/knowledge-base/sources/00d022cfe16abc73cba6d8466fb90e6c9bd2782af18117878eae32e0152321e5.pdf",
+      "sha256": "00d022cfe16abc73cba6d8466fb90e6c9bd2782af18117878eae32e0152321e5",
+      "bytes": 29726658,
+      "pages": 315,
+      "first_content_page": 6,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "music",
       "version": 1
     },
     {

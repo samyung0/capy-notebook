@@ -1,0 +1,65 @@
+{
+ "id": "mat_9709767757f0b811",
+ "kind": "note",
+ "title": "Independent-Samples t-Test (with Worked Example)",
+ "content": "# The Independent-Samples t-Test\n\n## What it is\nAn **independent-samples t-test** compares the means of **two separate groups** to ask whether the difference observed in the samples reflects a real difference between the population means (μ₁ vs μ₂), or just sampling variability. \"Independent\" means there is no special relationship between observations in the two groups — e.g., participants randomly assigned to one of two conditions. (If each subject contributes *two* scores, use a paired/correlated t-test instead.)\n\n## Hypotheses\n- H₀: μ₁ = μ₂ (the population means are equal; the difference is 0)\n- H₁: μ₁ ≠ μ₂ (two-sided; one-sided versions are also possible)\n\n## Assumptions\n1. **Homogeneity of variance** — the two populations have the same variance.\n2. **Normality** — the populations are normally distributed.\n3. **Independence** — each value is sampled independently; each subject provides only one value.\n\nSmall-to-moderate violations of assumptions 1 and 2 make little difference; violating assumption 3 is serious.\n\n## The test statistic\nThe general significance-testing formula is:\n\nt = (statistic − hypothesized value) / (standard error of the statistic)\n\nHere the statistic is the difference between sample means and the hypothesized value is 0:\n\nt = (M₁ − M₂) / s_{M₁−M₂}\n\nWith equal variances, the standard error of the difference uses the **pooled variance** s²_p — a sample-size-weighted average of the two sample variances — and the degrees of freedom are df = n₁ + n₂ − 2. (The two samples need not be the same size; the unequal-variance alternative, Welch's test, is more complicated and reduces the degrees of freedom.)\n\n## Worked example: the \"Animal Research\" study\nStudents rated (on a 7-point scale) whether animal research is wrong. Summary data by gender:\n\n| Group | n | Mean | Variance |\n|---|---|---|---|\n| Females | 17 | 5.353 | 2.743 |\n| Males | 17 | 3.882 | 2.985 |\n\n**Step 1 — the statistic (difference between means):**\nM₁ − M₂ = 5.3529 − 3.8824 = **1.4705**. The hypothesized value is 0, so nothing is subtracted.\n\n**Step 2 — the standard error of the difference.** Pool the variances (equal n, so a simple average):\ns²_p = (2.743 + 2.985)/2 = 2.864\ns_{M₁−M₂} = √(2.864 × (1/17 + 1/17)) = √(0.3369) ≈ **0.580**\n\n**Step 3 — compute t:**\nt = 1.4705 / 0.580 ≈ **2.53**, with df = 17 + 17 − 2 = **32**.\n\n**Step 4 — decision.** A t of 2.53 with 32 df gives p ≈ .016 (two-tailed), below .05: reject H₀ and conclude that females rate animal research as more wrong than males do.\n\n## Reporting\nAt minimum report t, df, and p (e.g., t(32) = 2.53, p = .016). It is good practice to also include a 95% confidence interval for the mean difference and an effect size such as Cohen's d — e.g., a write-up like: \"A Student's independent samples t-test showed the difference was significant (t(31) = 2.1, p < .05, CI₉₅ = [0.2, 10.8], d = .74).\" What to include depends on your audience and journal standards.\n\n*Note: the data, assumptions, and Steps 1–2 follow Lane's Online Statistics Education (pp. 406–407); the pooled-variance/df framework is from Introductory Business Statistics §5.4; the reporting guidance and example stat block are from Learning Statistics with jamovi §11.4.1. The t and p values in Steps 3–4 are computed from those givens.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_315_v2",
+  "exc_858bafa062c60b_66_v2",
+  "exc_45ecdb7da7734b_241_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "introductory-business-statistics",
+    "title": "Introductory Business Statistics",
+    "authors": [
+     "Thomas K. Tiemann"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/33086",
+    "version": 2,
+    "excerptIds": [
+     "exc_858bafa062c60b_66_v2"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 3,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_241_v3"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 2,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_315_v2"
+    ]
+   }
+  ]
+ },
+ "size": "819 tokens",
+ "edits": []
+}

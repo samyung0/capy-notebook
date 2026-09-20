@@ -1,0 +1,36 @@
+{
+ "id": "mat_3f4f9f4996a22668",
+ "kind": "note",
+ "title": "How Contracts Are Formed: An Introduction",
+ "content": "# How Contracts Are Formed — An Introduction\n\nA **contract** is a legally enforceable promise. Not every promise is a contract: promising to be \"best friends forever\" is not enforceable, but promising a bank to repay a loan is. The elements of formation determine whether a promise is valid or suffers a deficiency that makes it void or voidable.\n\n## Sources of Contract Law\n- **Common law** — governs contracts for services and contracts not covered by the UCC (e.g., real estate).\n- **Uniform Commercial Code (UCC), Article 2** — governs the sale of goods, especially contracts between merchants and goods priced at $500 or more.\n\n## Elements of Common-Law Contract Formation\n\n### 1. Offer\n- Gives the **power of acceptance** to the offeree.\n- Must contain the agreement's **essential terms, definite and certain** (e.g., \"I offer to sell you my scooter for four hundred dollars\" — price, offeree, and subject matter are all specified). \"I'll sell you my house for a fair price\" is too vague to be a valid offer.\n- An **advertisement is not an offer**; it is an invitation to bargain, leaving the power of acceptance with the merchant.\n- An offer ends by **rejection, counteroffer, revocation, or expiration** of its time limit.\n\n### 2. Acceptance\n- Under common law, acceptance must be a **mirror image** of the offer — precisely the same terms.\n- A **counteroffer is not an acceptance**; it is a rejection of the original offer (e.g., \"I'll pay three hundred dollars\" instead of four hundred).\n- Offer + acceptance together form **mutual assent**.\n\n### 3. Consideration\n- Each party must give something of legal value; the promise must be a **firm commitment**.\n- An **illusory promise** fails as consideration (e.g., agreeing to buy a house \"if you like it\" is not a firm commitment, so no contract forms).\n\n### 4. Capacity\n- The parties must have the legal ability to be bound. **Minors** can disaffirm contracts; people with cognitive impairments (e.g., dementia) may lack capacity. Voluntary intoxication is rarely a convincing defense.\n\n### 5. Legality\n- The subject matter and terms must be **legal**; a court will not enforce a contract for an illegal purpose.\n\n## How the UCC Differs\nThe UCC **relaxes** common-law formation requirements:\n- Contracts can be formed by **any manner showing agreement** to contract (words or conduct).\n- Acceptance need **not** be a mirror image; in a \"battle of the forms,\" conflicting terms \"fall out\" and are replaced by **UCC gap fillers** (price, delivery dates, warranties, etc.).\n- Open terms can be filled in — **except quantity**, which must be specified for a binding contract.\n\n## Quick Comparison\n\n| Feature | Common law | UCC |\n|---|---|---|\n| Applies to | Services, real estate | Sale of goods ($500+), merchants |\n| Essential terms | Must be definite and certain | Quantity required; others gap-filled |\n| Acceptance | Mirror image required | Any manner showing agreement |\n\n## Key Takeaway\nIf any formation element is missing — a vague offer, a non-mirror-image acceptance, illusory consideration, lack of capacity, or illegal purpose — the contract may never have formed, which is a common defense to breach. When formation fails but injustice would result, courts may apply equitable remedies: **quasi-contract** (preventing unjust enrichment, damages measured by *quantum meruit*) or **promissory estoppel** (enforcing a promise on which a party detrimentally relied).\n\n```mermaid\nmindmap\n  root((Contract Formation))\n    Contract = legally enforceable promise\n    Sources of law\n      Common law: services, real estate\n      UCC Art. 2: goods, merchants, $500+\n    Common-law elements\n      Offer\n        Definite and certain terms\n        Power of acceptance\n        Ads = invitation to bargain\n      Acceptance\n        Mirror image rule\n        Counteroffer = rejection\n      Consideration\n        Firm commitment\n        No illusory promises\n      Capacity\n      Legality\n    UCC relaxation\n      Any manner of agreement\n      Gap fillers for open terms\n      Quantity still required\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_1c619222c448be_186_v1",
+  "exc_1c619222c448be_190_v1",
+  "exc_1c619222c448be_196_v1",
+  "exc_1c619222c448be_188_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "the-legal-and-ethical-environment-of-business",
+    "title": "The Legal and Ethical Environment of Business",
+    "authors": [],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+    "version": 1,
+    "excerptIds": [
+     "exc_1c619222c448be_186_v1",
+     "exc_1c619222c448be_188_v1",
+     "exc_1c619222c448be_190_v1",
+     "exc_1c619222c448be_196_v1"
+    ]
+   }
+  ]
+ },
+ "size": "1014 tokens",
+ "edits": []
+}

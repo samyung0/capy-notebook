@@ -1,0 +1,34 @@
+{
+ "id": "mat_634fb255e035a21e",
+ "kind": "note",
+ "title": "Bayesian Inference: Practice Exercises",
+ "content": "# Bayesian Inference: Practice Note\n\nBayesian inference updates a **prior probability** in light of new data to obtain a **posterior probability**. For a condition D and a test result T, Bayes' theorem gives:\n\nP(D | T) = P(T | D) · P(D) / [ P(T | D) · P(D) + P(T | D') · P(D') ]\n\nwhere P(D) is the prior (base rate), P(T|D) is the true-positive (hit) rate, and P(T|D') is the false-positive rate. A key lesson from the source's worked example: a \"95% accurate\" test does **not** mean a 0.95 posterior — the base rate matters. In the book's Disease X example (prior 0.02, hit rate 0.99, false-positive rate 0.09), the posterior after a positive test is only 19,800 / (19,800 + 88,200) = **0.1833**.\n\n---\n\n## Exercise 1 (adapted from Exercise 8, Online Statistics Education, Probability chapter)\n\nA test correctly identifies a disease in 95% of people who have it. It correctly identifies no disease in 94% of people who do not have it. In the population, 3% of people have the disease.\n\n**Question:** What is the probability that you have the disease if you tested positive?\n\n*Hints:* Identify the prior P(D) = 0.03, the hit rate P(T|D) = 0.95, and the false-positive rate P(T|D') = 0.06. Then apply Bayes' theorem (or imagine 100,000 people and count).\n\n---\n\n## Exercise 2 (adapted from Exercise 16, Online Statistics Education, Probability chapter)\n\n**True or False:** Suppose that at your regular physical exam you test positive for a relatively rare disease. You will need to start taking medicine if you have the disease, so you ask your doctor about the accuracy of the test. It turns out that the test is 98% accurate. The probability that you have Disease X is therefore 0.98 and the probability that you do not have it is 0.02.\n\n**Question:** Is this reasoning correct? Explain your answer.\n\n*Hint:* Think about what \"98% accurate\" leaves unspecified — the miss rate and the false-positive rate are different quantities, and neither alone determines the posterior without the base rate.\n\n---\n\n*Both exercises are grounded in the exercise set of the Probability chapter of* Online Statistics Education: An Interactive Multimedia Course of Study *(David M. Lane et al.); the conceptual framing follows the chapter's \"Base Rates\" section on Bayes' theorem. Exercise 1 is a source exercise; Exercise 2 is the source's true/false item, reproduced with its explanation prompt.*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_154_v2",
+  "exc_f97f47b7a1fd68_158_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 2,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_154_v2",
+     "exc_f97f47b7a1fd68_158_v2"
+    ]
+   }
+  ]
+ },
+ "size": "595 tokens",
+ "edits": []
+}

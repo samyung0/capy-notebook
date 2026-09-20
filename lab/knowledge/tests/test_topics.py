@@ -1,5 +1,9 @@
+import json
+import sys
+
 import pytest
 import topics
+from jsonschema import ValidationError
 
 
 def test_review_context_preserves_full_notes_without_old_topic_assignments():
@@ -9,11 +13,17 @@ def test_review_context_preserves_full_notes_without_old_topic_assignments():
         "synopsis": "Full summary " * 100,
         "evidence": "source words",
         "topic_ids": ["old"],
+        "retrieval": {
+            "summary": "A concept",
+            "scope": "An explicit context",
+            "context_excerpt_ids": [],
+        },
     }
     context = topics.reviewed_context(
         {"excerpts": [excerpt]}, {"corrected_excerpts": [excerpt], "tags": {"e": notes}}
     )
     assert context[0]["synopsis"] == notes["synopsis"]
+    assert context[0]["retrieval"] == notes["retrieval"]
     assert "topic_ids" not in context[0]
     with pytest.raises(ValueError, match="exactly once"):
         topics.reviewed_context(
@@ -108,8 +118,8 @@ def test_a_proposed_id_equal_to_a_subject_id_is_renamed_before_merging():
     assert merged["reused"] == ["sampling"]
 
 
-def test_merge_stops_at_64_and_rejects_bad_ids():
-    existing = [proposal(f"t-{i}", f"Topic {i}") for i in range(63)]
+def test_merge_stops_at_96_allows_76_and_rejects_bad_ids():
+    existing = [proposal(f"t-{i}", f"Topic {i}") for i in range(95)]
     answer = {
         "reused": [],
         "proposed": [proposal("new-1", "New one"), proposal("new-2", "New two")],
@@ -120,7 +130,18 @@ def test_merge_stops_at_64_and_rejects_bad_ids():
         topics.merge(
             existing, {"reused": [], "proposed": [proposal("new-1", "New one")]}, "s"
         )["subject_total"]
-        == 64
+        == 96
+    )
+    assert (
+        topics.merge(
+            [proposal(f"t-{i}", f"Topic {i}") for i in range(62)],
+            {
+                "reused": [],
+                "proposed": [proposal(f"new-{i}", f"New {i}") for i in range(14)],
+            },
+            "linguistics",
+        )["subject_total"]
+        == 76
     )
     with pytest.raises(SystemExit, match="kebab-case"):
         topics.merge([], {"reused": [], "proposed": [proposal("Bad_Id", "Bad")]}, "s")
@@ -158,3 +179,88 @@ def test_table_of_contents_drops_headings_shared_by_the_whole_book():
         toc[:3] == ["CHAPTER 1", "Chapter 1 › 1.1 Topic", "Chapter 1 › 1.2 Topic"]
         and len(toc) == 21
     )
+
+
+def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
+    book = {
+        "id": "book",
+        "subject_id": "statistics",
+        "sha256": "a" * 64,
+        "title": "Statistics",
+        "edition": "1",
+    }
+    excerpt = {"id": "e", "pages": [1], "chunk_ids": ["c"], "section_path": "Sampling"}
+    corpus = {"chunks": [{"section_path": "Sampling"}], "excerpts": [excerpt]}
+    folder = tmp_path / "books" / "book"
+    folder.mkdir(parents=True)
+    (folder / "corpus.json").write_text(json.dumps(corpus), encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"books": [book]}), encoding="utf-8"
+    )
+    review = tmp_path / "review.json"
+    notes = {
+        "roles": ["formal"],
+        "synopsis": "Full notes " * 200,
+        "evidence": "Source words",
+    }
+    review.write_text(
+        json.dumps({"corrected_excerpts": [excerpt], "tags": {"e": notes}}),
+        encoding="utf-8",
+    )
+    context_path = tmp_path / "context.json"
+    proposal_path = tmp_path / "proposal.json"
+    output = tmp_path / "candidate.json"
+    base = [
+        "topics.py",
+        "--run",
+        str(tmp_path),
+        "--book",
+        "book",
+        "--review-context",
+        str(review),
+    ]
+    monkeypatch.setattr(topics, "library_topics", lambda subject: EXISTING)
+
+    def no_model_call(*args, **kwargs):
+        pytest.fail("Delegated topics must not call another model")
+
+    monkeypatch.setattr(topics.llm, "complete", no_model_call)
+    monkeypatch.setattr(sys, "argv", [*base, "--export-context", str(context_path)])
+    topics.main()
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    assert context["reviewed_excerpts"][0]["synopsis"] == notes["synopsis"]
+    assert context["input"]["subject_id"] == "statistics"
+    artifact = {
+        "input": context["input"],
+        "model_provenance": {
+            "model": "gpt-5.6-sol",
+            "reasoning_effort": "medium",
+            "agent_id": "trial",
+        },
+        "reused": ["sampling"],
+        "proposed": [proposal("regression", "Linear regression")],
+    }
+    proposal_path.write_text(json.dumps(artifact), encoding="utf-8")
+    monkeypatch.setattr(
+        sys, "argv", [*base, "--proposal", str(proposal_path), "--output", str(output)]
+    )
+    topics.main()
+    candidate = json.loads(output.read_text(encoding="utf-8"))
+    assert [t["id"] for t in candidate["topics"]] == ["sampling", "regression"]
+    assert candidate["model"]["endpoint"] == "codex-subagent"
+    assert candidate["model"]["usage"] is None
+    assert not (tmp_path / "topics.json").exists()
+    reviewed_bytes = review.read_bytes()
+    review.write_bytes(reviewed_bytes + b"\n")
+    with pytest.raises(ValueError, match="current book, corpus and review"):
+        topics.main()
+    review.write_bytes(reviewed_bytes)
+    artifact["reused"] = ["missing"]
+    proposal_path.write_text(json.dumps(artifact), encoding="utf-8")
+    with pytest.raises(ValueError, match="unknown IDs"):
+        topics.main()
+    artifact["reused"] = ["sampling"]
+    artifact["proposed"] = [{"id": "incomplete"}]
+    proposal_path.write_text(json.dumps(artifact), encoding="utf-8")
+    with pytest.raises(ValidationError):
+        topics.main()

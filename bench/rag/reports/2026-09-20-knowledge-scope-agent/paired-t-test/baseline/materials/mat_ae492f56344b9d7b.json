@@ -1,0 +1,49 @@
+{
+ "id": "mat_ae492f56344b9d7b",
+ "kind": "note",
+ "title": "Paired-Samples t-Test: Concept + Worked Example",
+ "content": "# The Paired-Samples t-Test\n\n## What it is\nA paired-samples t-test compares two measurements taken from the **same units** (e.g., the same people before and after a treatment). Because the two samples are related, an independent-samples t-test would be wrong: it would conflate the within-subject differences (what we care about) with between-subject variability (which we don't).\n\n## The key idea\nReduce the problem to a **one-sample t-test on difference scores**. If $X_{i1}$ and $X_{i2}$ are the two measurements for participant $i$:\n\n$$D_i = X_{i1} - X_{i2}, \\qquad \\mu_D = \\mu_1 - \\mu_2$$\n\n## Hypotheses (two-sided)\n- $H_0: \\mu_D = 0$ (no mean change)\n- $H_1: \\mu_D \\neq 0$\n\n## Test statistic\nWith $\\bar{D}$ the mean of the difference scores and $\\hat{\\sigma}_D$ their standard deviation:\n\n$$t = \\frac{\\bar{D}}{SE(\\bar{D})} = \\frac{\\bar{D}}{\\hat{\\sigma}_D / \\sqrt{N}}, \\qquad df = N - 1$$\n\n## Worked example: two tests, 20 students\nStudents take the same test twice. Difference scores (test 2 − test 1) give:\n\n| | test 2 | test 1 | difference |\n|---|---|---|---|\n| mean | 58.385 | 56.980 | 1.405 |\n| std dev | 6.406 | 6.616 | 0.970 |\n\nCompute the statistic:\n\n$$t = \\frac{1.405}{0.970/\\sqrt{20}} = \\frac{1.405}{0.217} \\approx 6.48, \\qquad df = 19$$\n\n**Results:** $t(19) = 6.48$, $p < .001$; two-sided 95% CI for the mean improvement: [0.951, 1.859]; Cohen's $d \\approx 1.45$.\n\n**Conclusion:** the average improvement of about 1.4 points is significantly different from zero — students genuinely improved from test 1 to test 2.\n\n## Takeaways\n- The paired t-test is just a one-sample t-test on the differences — nothing new under the hood.\n- Use it whenever the two sets of scores are naturally matched (repeated measures, matched pairs).\n- Report $t(df)$, $p$, the CI for the mean difference, and an effect size.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_248_v2",
+  "exc_dd1e65de648fb2_885_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_885_v1"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_248_v2"
+    ]
+   }
+  ]
+ },
+ "size": "454 tokens",
+ "edits": []
+}

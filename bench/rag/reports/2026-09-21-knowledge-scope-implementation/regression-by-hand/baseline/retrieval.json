@@ -1,0 +1,1479 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "regression-by-hand",
+    "query": "Create one concise study note with a worked example of simple linear regression that I can follow without statistical software or programming.",
+    "check": "A self-contained hand-followable calculation, no required software steps."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "simple linear regression least squares slope intercept formula worked example by hand",
+      "topics": [],
+      "roles": [
+        "worked_example",
+        "formal"
+      ],
+      "seconds": 6.409,
+      "excerpts": [
+        {
+          "id": "exc_0689cddaba206d_703_v3",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.2 Writing the least squares regression line",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains writing the least squares regression line for predicting gift aid from family income. Defines the intercept a and slope b as statistics computed from data. Gives formulas: slope b = r sy/sx, and intercept a = y¯ − bx¯ using the point of averages. Notes a computer is usually used, and presents a summary table of estimates for the Elmhurst College data.",
+          "pages": [
+            459
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_6295_v3"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1169_v3"
+          ],
+          "retrieval": {
+            "scope": "Simple linear regression for Elmhurst College gift aid predicted from family income. Both variables are measured in thousands of dollars. The displayed fit has intercept 24.3193 and slope -0.0431; the correlation enters the slope formula for this paired dataset.",
+            "summary": "Derives least-squares slope b = r(s_y/s_x) and intercept a = y-bar - b x-bar, then gives Elmhurst gift-aid output for family income.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_0689cddaba206d_1169_v3",
+          "hit_text": "For the Elmhurst College data, we could ﬁt a least squares regression line for predicting gift aid based on a student’s family income and write the equation as:\n\naid̂ = a + b × family income\n\nHere a is the y-intercept of the least squares regression line and b is the slope of the least squares regression line. a and b are both statistics that can be calculated from the data.\n\nWe can enter all of the data into a statistical software package and easily ﬁnd the values of a and b. However, we can also calculate these values by hand, using only the summary statistics.\n\n• The slope of the least squares line is given by b = r sy sx where r is the correlation coeﬃcient between the variables x and y, and sx and sy are the sample standard deviations of x, the explanatory variable, and y, the response variable.\n• The point of averages (x,¯ y¯) is always on the least squares line. Plugging this point in for x and y in the least squares equation and solving for a gives\n\ny¯ = a + bx¯ a = y¯− bx¯\n\nWe mentioned earlier that a computer is usually used to compute the least squares line. A summary table based on computer output is shown in Figure 5.20 for the Elmhurst College data. The ﬁrst column of numbers provides estimates for a and b, respectively.\n\nEstimate Std. Error t value Pr(>∣t∣) (Intercept) 24.3193 1.2915 18.83 0.0000 family income -0.0431 0.0108 -3.98 0.0002\n\nFigure 5.20: Summary of least squares ﬁt for the Elmhurst College data.",
+          "hit_page_start": 459,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                98.79,
+                852.938,
+                126.465
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                389.954,
+                128.191,
+                577.49,
+                182.152
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                169.232,
+                852.936,
+                196.907
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                199.423,
+                852.941,
+                227.097
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                171.479,
+                232.456,
+                852.946,
+                377.143
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                365.1,
+                369.307,
+                675.598,
+                419.912
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                427.284,
+                852.944,
+                470.053
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                290.739,
+                475.49,
+                709.265,
+                530.985
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                240.827,
+                546.583,
+                759.176,
+                559.163
+              ],
+              "page": 459,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_f213361bf057b0_566_v3",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › IDENTIFYING THE LEAST SQUARES LINE FROM SUMMARY STATISTICS",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains how to identify the least squares line from summary statistics: estimate the slope b1 = (sy/sx)R, use the point (x̄, ȳ) with the point-slope equation, and simplify to obtain b0 = ȳ − b1x̄. Example 8.10 applies this to Elmhurst aid and family income data, producing aid = 24,327 − 0.0431 × family income. A software summary table gives matching estimates for b0 and b1.",
+          "pages": [
+            359
+          ],
+          "figure_ids": [
+            "fig_f213361bf057b0_5187_v3"
+          ],
+          "chunk_ids": [
+            "chk_f213361bf057b0_945_v3",
+            "chk_f213361bf057b0_946_v3"
+          ],
+          "retrieval": {
+            "scope": "Simple linear regression for predicting Elmhurst gift aid from family income, with both variables expressed in dollars in the fitted equation. The worked sample gives b1=-0.0431 and aid-hat=24,327-0.0431 times family income. The software table belongs to this one-predictor fit; it is not a multiple-regression result or a general causal claim about aid.",
+            "summary": "Derives a least-squares line from summary statistics with b1=(sy/sx)R and b0=y-bar-b1x-bar, then works the Elmhurst aid example and compares its coefficients with software output.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_f213361bf057b0_945_v3",
+          "hit_text": "To identify the least squares line from summary statistics:\n\n• Estimate the slope parameter, b1 = (sy/sx)R.\n• Noting that the point (¯x,y¯) is on the least squares line, use x0 = x¯ and y0 = y¯ with the point-slope equation: y − y¯ = b1(x − x¯).\n• Simplify the equation, which would reveal that b0 = y¯ − b1x¯.\n\nEXAMPLE 8.10 START Example problem: Using the point (101780,19940) from the sample means and the slope estimate\n\nb1 = −0.0431 from Guided Practice 8.9, ﬁnd the least-squares line for predicting aid based on family income.\n\nSolution to the example: Apply the point-slope equation using (101.78,19.94) and the slope b1 = −0.0431:\n\ny − y0 = b1(x − x0) y − 19,940 = −0.0431(x − 101,780)\n\nExpanding the right side and then adding 19,940 to each side, the equation simpliﬁes: aid = 24,327 − 0.0431 × family income\n\nHere we have replaced y with aid and x with family income to put the equation in context. The ﬁnal equation should always include a “hat” on the variable being predicted, whether it is a generic “y” or a named variable like “aid”.\n\nEXAMPLE 8.10 HAS ENDED.\n\nA computer is usually used to compute the least squares line, and a summary table generated using software for the Elmhurst regression line is shown in Figure 8.14. The ﬁrst column of numbers provides estimates for b0 and b1, respectively. These results match those from Example 8.10 (with some minor rounding error).\n\nEstimate Std. Error t value Pr(>|t|) (Intercept) 24319.3 1291.5 18.83 <0.0001 family income -0.0431 0.0108 -3.98 0.0002",
+          "hit_page_start": 359,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.338,
+                264.788,
+                577.868,
+                277.367
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.758,
+                284.014,
+                836.654,
+                363.225
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                382.979,
+                852.879,
+                415.542
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                417.742,
+                852.881,
+                445.731
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                463.341,
+                852.874,
+                499.947
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                375.641,
+                505.795,
+                624.127,
+                546.489
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                552.653,
+                759.791,
+                603.199
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                612.809,
+                852.876,
+                655.578
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                665.253,
+                372.092,
+                677.832
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                695.6,
+                852.944,
+                753.463
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                287.938,
+                771.731,
+                712.062,
+                817.529
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024193548387096774
+        },
+        {
+          "id": "exc_45ecdb7da7734b_279_v3",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Correlation and linear regression › 12.4 Estimating a linear regression model › 12.4.1 Linear regression in jamovi",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "jamovi"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Demonstrates running a simple linear regression in jamovi using parenthood.csv, with dani.grump as the dependent variable and dani.sleep as a covariate. Reports the fitted intercept b̂0 = 125.96 and slope b̂1 = −8.94, giving the regression line Ŷi = 125.96 + (−8.94Xi).",
+          "pages": [
+            287
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2224_v3",
+            "fig_45ecdb7da7734b_2225_v3"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_627_v3"
+          ],
+          "retrieval": {
+            "scope": "Jamovi-specific implementation using parenthood.csv. This is simple linear regression with one predictor and an intercept. The fitted numbers belong to that dataset and should not be used as a multiple-regression example or a general behavioral relationship.",
+            "summary": "Fits a simple linear regression in jamovi with dani.grump as outcome and dani.sleep as the sole predictor, yielding intercept 125.96, slope -8.94, and fitted line Y-hat=125.96-8.94X.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_45ecdb7da7734b_627_v3",
+          "hit_text": "To run my linear regression, open up the ‘Regression’ – ‘Linear Regression’ analysis in jamovi, using the parenthood.csv data file. Then specify dani.grump as the ‘Dependent Variable’ and dani.sleep as the variable entered in the ‘Covariates’ box. This gives the\n\nresults shown in Figure 12.13, showing an intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best fitting regression line that I plotted in Figure 12.12 has this formula:\n\n𝑌𝑖̂ = 125.96 + (−8.94𝑋𝑖)\n\nFigure 12.13. A jamovi screenshot showing a simple linear regression analysis",
+          "hit_page_start": 287,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                324.637,
+                843.736,
+                376.956
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                337.603,
+                843.75,
+                453.151
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                418.877,
+                387.575,
+                612.373,
+                486.36
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                218.368,
+                809.26,
+                812.88,
+                828.368
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022518382352941176
+        },
+        {
+          "id": "exc_f213361bf057b0_564_v3",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › GUIDED PRACTICE 8.8 START",
+          "roles": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "regression-diagnostics",
+            "correlation"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Guided Practice 8.8 asks whether least squares regression can be applied to the Elmhurst data; the solution notes a linear trend, no obvious outliers, roughly constant variance, and non-time-series observations. Section 8.2.4 sets up the least squares line aid = β0 + β1 × family income, defines β0 and β1 as parameters, and gives two properties for estimating them: b1 = (sy/sx)R and that (x̄, ȳ) lies on the line. Summary statistics for family income and gift aid are listed with R = −0.499.",
+          "pages": [
+            357,
+            358
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_942_v3",
+            "chk_f213361bf057b0_943_v3"
+          ],
+          "retrieval": {
+            "scope": "Simple linear regression with family income as the explanatory variable and gift aid as the response for the Elmhurst sample. The stated suitability judgment uses linearity, no obvious outliers, roughly constant variance and non-time-series observations. Excerpt 562 supplies the least-squares criterion and the Figure 8.11 fit used only by Guided Practice 8.8.",
+            "summary": "Checks least-squares conditions for Elmhurst gift-aid data, defines aid=beta0+beta1 times family income, and gives the slope formula b1=(sy/sx)R plus the fact that the fitted line passes through the sample means.",
+            "context_excerpt_ids": [
+              "exc_f213361bf057b0_562_v3"
+            ]
+          },
+          "hit_chunk_id": "chk_f213361bf057b0_943_v3",
+          "hit_text": "• The slope of the least squares line can be estimated by b1 = sy sx R where R is the correlation between the two variables, and sx and sy are the sample standard deviations of the explanatory variable and response, respectively.\n• If x¯ is the sample mean of the explanatory variable and y¯ is the sample mean of the vertical variable, then the point (¯x,y¯) is on the least squares line.\n\nFigure 8.13 shows the sample means for the family income and gift aid as $101,780 and$19,940, respectively. We could plot the point (101.8,19.94) on Figure 8.11 on page 355 to verify it falls on the least squares line (the solid line).\n\nNext, we formally ﬁnd the point estimates b0 and b1 of the parameters β0 and β1.\n\nFamily Income (x) Gift Aid (y) mean x¯ = $101,780 y¯ =$19,940 sd sx = $63,200 sy =$5,460\n\nR = −0.499 Figure 8.13: Summary statistics for family income and gift aid.",
+          "hit_page_start": 358,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                268.876,
+                852.949,
+                402.452
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.757,
+                407.648,
+                852.943,
+                452.769
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                465.347,
+                730.894,
+                478.87
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                341.131,
+                494.736,
+                658.869,
+                541.519
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                274.492,
+                545.491,
+                725.51,
+                586.562
+              ],
+              "page": 358,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021730462519936204
+        },
+        {
+          "id": "exc_64ed84430ae3b2_261_v2",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 6 Linear Regression and Correlation › Example 6.6 › Least Squares Criteria for Best Fit",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The process of fitting the best fit line is called linear regression. The idea behind finding the best fit line is based on the assumption that the data are scattered about a straight line. The criteria for the best fit line is that the sum of the squared errors (SSE) is minimized, that is made as small as possible. Any other line you might choose would have a higher SSE than the best fit line. This best fit line is called the least squares regression line.\n\nNote: Computer spreadsheets, statistical software, and many calculators can quickly calculate the best fit line and create the graphs. The calculations tend to be tedious if done by hand. Instructions to use the TI-83, TI-83+, and TI-84+ calculators to find the best fit line and create a scatterplot are shown at the end of this section.\n\nTHIRD EXAM vs FINAL EXAM EXAMPLE: The graph of the line of best fit for the third exam/final exam example is shown below:\n\nFigure 6.9 Exam Score\n\nThe least squares regression line (best fit line) for the third exam/final exam example has the equation:",
+          "pages": [
+            112
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_1609_v2"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_297_v2"
+          ],
+          "retrieval": {
+            "scope": "Simple linear regression for data plausibly scattered around a straight line. The exam scores are an incidental dataset, and software or a named calculator is optional. Excerpt 262 continues the example with the fitted equation, prediction domain, and slope interpretation.",
+            "summary": "Defines the least-squares regression line as the straight line that minimizes the sum of squared errors, notes common calculation tools, and shows the third-exam versus final-exam score example.",
+            "context_excerpt_ids": [
+              "exc_64ed84430ae3b2_262_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_64ed84430ae3b2_297_v2",
+          "hit_text": "The process of fitting the best fit line is called linear regression. The idea behind finding the best fit line is based on the assumption that the data are scattered about a straight line. The criteria for the best fit line is that the sum of the squared errors (SSE) is minimized, that is made as small as possible. Any other line you might choose would have a higher SSE than the best fit line. This best fit line is called the least squares regression line.\n\nNote: Computer spreadsheets, statistical software, and many calculators can quickly calculate the best fit line and create the graphs. The calculations tend to be tedious if done by hand. Instructions to use the TI-83, TI-83+, and TI-84+ calculators to find the best fit line and create a scatterplot are shown at the end of this section.\n\nTHIRD EXAM vs FINAL EXAM EXAMPLE: The graph of the line of best fit for the third exam/final exam example is shown below:\n\nFigure 6.9 Exam Score\n\nThe least squares regression line (best fit line) for the third exam/final exam example has the equation:",
+          "hit_page_start": 112,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.054,
+                306.461,
+                835.642,
+                416.97
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                138.659,
+                431.861,
+                834.783,
+                522.271
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.054,
+                537.162,
+                834.706,
+                581.757
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                404.598,
+                869.4,
+                557.997,
+                882.986
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                913.052,
+                821.82,
+                948.74
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020976200080677694
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

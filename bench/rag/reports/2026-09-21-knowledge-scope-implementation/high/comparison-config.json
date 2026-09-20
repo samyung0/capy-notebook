@@ -1,0 +1,16 @@
+{
+  "model": "glm-5.3-flash:cloud",
+  "transport": "http://127.0.0.1:11434/v1/chat/completions",
+  "requested_reasoning_effort": "high",
+  "temperature": 0,
+  "concurrent_turns": 2,
+  "source_sha256": {
+    "bench/rag/scripts/knowledge_scope_agent_eval.py": "85f60f4cbed34382c4ba8d2ea06c496e492868e7966b69e3e148c3501308e361",
+    "pipeline/pipeline/prompts/curate.py": "075f551cdb4e2980e1743f4900b8bb7d8ebe2bb9e7459a9cfc1a541301365ef4",
+    "pipeline/pipeline/retrieval/library.py": "5e1e20f18d88f9e7611a4ecd47b45fbea14722a744d03eadb41496b081d65e35",
+    "pipeline/pipeline/retrieval/tools.py": "444a41eb901c0e48259c51ee02f444075ca6449e4b29f2db5ff33074c3b7b335",
+    "pipeline/pipeline/retrieval/agent.py": "8d3b78b737030abb68e55e751323eea501fc58a827e9a47097db237deae2e141",
+    "lab/playground/scripts/playground.py": "f356ba1a1f6ae215b92c1e0c4ba3decb7670b0d4e844f042e808fbc2d7bfc6ca"
+  },
+  "low_comparator": "../followup"
+}

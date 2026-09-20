@@ -1,0 +1,40 @@
+{
+ "id": "mat_0ced8d7d0d70606a",
+ "kind": "note",
+ "title": "Historical Development of Chinese Contract Law",
+ "content": "# Historical Development of Chinese Contract Law\n\n## Imperial China (pre-1911)\n- Whether civil law existed in Imperial China is **debatable**: scholars such as **Liang Chichao (梁啟超)** and **Wang Boqi (王伯琦)** argued civil law (as distinct from criminal law) did not exist, while **Yang Honglie (楊鴻烈)** held the opposite view.\n- Beyond dispute: **no civil code ever existed** in Imperial China, though there was **separate legislation on marriage and debt**.\n\n## Late Qing: first draft civil code\n- **1902**: Emperor Guang Xu formed a team to draft a civil code modelled on **Continental European codes**.\n- Drafting ran **1908–1910**, producing the **Draft Civil Law of Great Qing (《大清民律草案》)** — the first civil code in China's history, though only in draft form.\n- **Never enacted**: the Qing Dynasty was overthrown shortly afterwards.\n\n## Republican era: first enacted civil code\n- **April 1927**: National Government established; **December 1928**: the legislature (Legislative Yuan) took charge of drafting.\n- **January 1929**: Drafting Committee of the Civil Code set up; compilation began **February 1929**.\n- **26 December 1930**: the **Civil Law of the Republic of China (《中華民國民法》)** promulgated — the first enacted civil code in Chinese history, containing **detailed contract law provisions**.\n\n## Post-1949 People's Republic\n- **1954**: drafting of a new civil code began; a draft was completed **December 1956**, but enactment was blocked by the **antirightist movements and the Cultural Revolution**; political unrest ended in **1978**.\n- Rather than revisiting the old draft, China legislated on contract law **piecemeal** to serve the economic reform starting 1979:\n  - **Economic Contract Law (1981)**\n  - **Foreign Economic Contract Law (1985)**\n  - **Technology Contract Law (1987)**\n- The **General Principles of Civil Law (GPCL, 1985)** is **not a civil code** — only \"general principles\", like the introductory chapter of a still-unfinished code.\n- The three contract statutes were **not comprehensive**: they contained **contradictory provisions** and **overlapping scopes**.\n\n## The 1999 unified Contract Law\n- **1993**: drafting of a unified Contract Law began to replace the three statutes; drafters were largely **legal academics**.\n- Extensive reference to international and comparative sources: **UNIDROIT Principles (PICC)**, **CISG**, **Principles of European Contract Law (PECL)**, the **French and German civil codes**, and **English common law**.\n- **Passed 15 March 1999, effective 1 October 1999**; supplemented by the **Supreme People's Court Interpretation on Several Issues Regarding the Application of the Contract Law** and other judicial interpretations (e.g. on technology and construction contracts).\n- The 1999 Contract Law has **not been revised** since promulgation (as of the source text).\n\n## Timeline at a glance\n```mermaid\ntimeline\n    title Chinese Contract Law: key milestones\n    1902 : Emperor Guang Xu orders a civil code drafted on the Continental European model\n    1908-1910 : Draft Civil Law of Great Qing (《大清民律草案》) — first draft civil code, never enacted\n    1930 : Civil Law of the Republic of China (《中華民國民法》) — first enacted civil code, with detailed contract provisions\n    1954-1956 : PRC civil code drafting; draft completed but not enacted (antirightist movements, Cultural Revolution)\n    1981/1985/1987 : Economic Contract Law, Foreign Economic Contract Law, Technology Contract Law (piecemeal, overlapping)\n    1985 : General Principles of Civil Law (GPCL) — general principles only, not a code\n    1993 : Drafting of unified Contract Law begins, drawing on PICC, CISG, PECL, French/German codes, English common law\n    1999 : Contract Law of the PRC passed 15 March, effective 1 October; supplemented by SPC judicial interpretations\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_3af200c915ae90_13_v1",
+  "exc_3af200c915ae90_14_v1",
+  "exc_3af200c915ae90_15_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "chinese-contract-law",
+    "title": "Chinese Contract Law",
+    "authors": [
+     "Walter Lee",
+     "Jenny Chung",
+     "Caroline Leung",
+     "Dr Zhang Xiaoyang",
+     "Shi Xuemei"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/18118",
+    "version": 1,
+    "excerptIds": [
+     "exc_3af200c915ae90_13_v1",
+     "exc_3af200c915ae90_14_v1",
+     "exc_3af200c915ae90_15_v1"
+    ]
+   }
+  ]
+ },
+ "size": "977 tokens",
+ "edits": []
+}

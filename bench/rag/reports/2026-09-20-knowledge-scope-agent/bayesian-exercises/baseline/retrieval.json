@@ -1,0 +1,1732 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "bayesian-exercises",
+    "query": "Create a short study note containing two practice exercises on Bayesian inference, grounded in exercises from the library.",
+    "check": "Finds the requested exercise role, or reports its absence; does not silently substitute general knowledge or unrelated probability exercises."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "Bayesian inference posterior probability exercise",
+      "topics": [],
+      "roles": [
+        "exercise"
+      ],
+      "seconds": 4.396,
+      "excerpts": [
+        {
+          "id": "exc_dd1e65de648fb2_1203_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents › 17.1.3 The joint probability of data and hypothesis › 734",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "I’m carrying an umbrella (i.e., data 𝑑 is observed). The joint probability of the hypothesis and the data is written 𝑃(𝑑,ℎ), and you can calculate it by multiplying the prior 𝑃(ℎ) by the likelihood 𝑃(𝑑|ℎ). Mathematically, we say that:\n\n𝑃(𝑑,ℎ) = 𝑃(𝑑|ℎ)𝑃(ℎ)\n\nSo, what is the probability that today is a rainy day and I remember to carry an umbrella? As we discussed earlier, the prior tells us that the probability of a rainy day is 15%, and the likelihood tells us that the probability of me remembering my umbrella on a rainy day is 30%. So the probability that both of these things are true is calculated by multiplying the two:\n\n𝑃(rainy,umbrella) = 𝑃(umbrella|rainy) × 𝑃(rainy) = 0.30 × 0.15\n\n= 0.045\n\nIn other words, before being told anything about what actually happened, you think that there is a 4.5% probability that today will be a rainy day and that I will remember an umbrella. However, there are of course four possible things that could happen, right? So let’s repeat the exercise for all four. If we do that, we end up with the following table:\n\nUmbrella No-umbrella\n\nRainy 0.045 0.105 Dry 0.0425 0.8075\n\nThis table captures all the information about which of the four possibilities are likely. To really get the full picture, though, it helps to add the row totals and column totals. That gives us this table:\n\nUmbrella No-umbrella Total\n\nRainy 0.0450 0.1050 0.15 Dry 0.0425 0.8075 0.85 Total 0.0875 0.9125 1\n\nThis table captures all the information about which of the four possibilities are likely. To really get the full picture, though, it helps to add the row totals and column totals. That gives us this table:\n\nUmbrella No-umbrella Total\n\nRainy 0.0450 0.1050 0.15 Dry 0.0425 0.8075 0.85 Total 0.0875 0.9125 1\n\nThis is a very useful table, so it’s worth taking a moment to think about what all these numbers are telling us. First, notice that the row sums aren’t telling us anything new at all. For example, the first row tells us that if we ignore all this umbrella business, the chance that today will be a rainy day is 15%. That’s not surprising, of course: that’s our prior. The important thing isn’t the number itself: rather, the important thing is that it gives us some confidence that our calculations are sensible! Now take a look at the column sums, and notice that they tell us something that we haven’t explicitly stated yet. In the same way that the",
+          "pages": [
+            735
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1798_v1",
+            "chk_dd1e65de648fb2_1799_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1798_v1",
+          "hit_text": "I’m carrying an umbrella (i.e., data 𝑑 is observed). The joint probability of the hypothesis and the data is written 𝑃(𝑑,ℎ), and you can calculate it by multiplying the prior 𝑃(ℎ) by the likelihood 𝑃(𝑑|ℎ). Mathematically, we say that:\n\n𝑃(𝑑,ℎ) = 𝑃(𝑑|ℎ)𝑃(ℎ)\n\nSo, what is the probability that today is a rainy day and I remember to carry an umbrella? As we discussed earlier, the prior tells us that the probability of a rainy day is 15%, and the likelihood tells us that the probability of me remembering my umbrella on a rainy day is 30%. So the probability that both of these things are true is calculated by multiplying the two:\n\n𝑃(rainy,umbrella) = 𝑃(umbrella|rainy) × 𝑃(rainy) = 0.30 × 0.15\n\n= 0.045\n\nIn other words, before being told anything about what actually happened, you think that there is a 4.5% probability that today will be a rainy day and that I will remember an umbrella. However, there are of course four possible things that could happen, right? So let’s repeat the exercise for all four. If we do that, we end up with the following table:\n\nUmbrella No-umbrella\n\nRainy 0.045 0.105 Dry 0.0425 0.8075\n\nThis table captures all the information about which of the four possibilities are likely. To really get the full picture, though, it helps to add the row totals and column totals. That gives us this table:\n\nUmbrella No-umbrella Total\n\nRainy 0.0450 0.1050 0.15 Dry 0.0425 0.8075 0.85 Total 0.0875 0.9125 1",
+          "hit_page_start": 735,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                55.711,
+                863.631,
+                181.11
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                414.864,
+                120.725,
+                585.132,
+                211.909
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.704,
+                193.588,
+                867.114,
+                264.431
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                301.65,
+                241.162,
+                698.35,
+                353.227
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                449.913,
+                282.924,
+                509.325,
+                374.109
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                354.783,
+                867.131,
+                425.624
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                439.172,
+                440.876,
+                626.176,
+                460.395
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                373.825,
+                464.905,
+                579.565,
+                501.533
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                531.282,
+                864.297,
+                585.015
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                408.851,
+                597.582,
+                656.498,
+                617.101
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                343.505,
+                621.611,
+                647.082,
+                675.346
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02087912087912088
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1202_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents › 17.1.3 The joint probability of data and hypothesis",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "At this point, all the elements are in place. Having written down the priors and the likelihood, you have all the information you need to do Bayesian reasoning. The question now becomes, how do we use this information? As it turns out, there’s a very simple equation that we can use here, but it’s important that you understand why we use it, so I’m going to try to build it up from more basic ideas.\n\nLet’s start out with one of the rules of probability theory. I listed it way back in Table 9.4, but I didn’t make a big deal out of it at the time and you probably ignored it. The rule in question is the one that talks about the probability that two things are true. In our example, you might want to calculate the probability that today is rainy (i.e., hypothesis ℎ is true) and\n\nLet’s start out with one of the rules of probability theory. I listed it way back in Table 9.4, but I didn’t make a big deal out of it at the time and you probably ignored it. The rule in question is the one that talks about the probability that two things are true. In our example, you might want to calculate the probability that today is rainy (i.e., hypothesis ℎ is true) and\n\n3It’s a leap of faith, I know, but let’s run with it okay? 4Um. I hate to bring this up, but some statisticians would object to me using the word “likelihood” here. The problem is that the word “likelihood” has a very specific meaning in frequentist statistics, and it’s not quite the same as what it means in Bayesian statistics. As far as I can tell, Bayesians didn’t originally have any agreed upon name for the likelihood, and so it became common practice for people to use the frequentist terminology. This wouldn’t have been a problem, except for the fact that the way that Bayesians use the word turns out to be quite different to the way frequentists do. This isn’t the place for yet another lengthy history lesson, but to put it crudely: when a Bayesian says “a likelihood function” they’re usually referring to one of the rows of the table. When a frequentist says the same thing, they’re referring to the same table, but to them “a likelihood function” almost always refers to one of the columns. This distinction matters in some contexts, but it’s not important for our purposes.",
+          "pages": [
+            734
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1796_v1",
+            "chk_dd1e65de648fb2_1797_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1797_v1",
+          "hit_text": "Let’s start out with one of the rules of probability theory. I listed it way back in Table 9.4, but I didn’t make a big deal out of it at the time and you probably ignored it. The rule in question is the one that talks about the probability that two things are true. In our example, you might want to calculate the probability that today is rainy (i.e., hypothesis ℎ is true) and\n\n3It’s a leap of faith, I know, but let’s run with it okay? 4Um. I hate to bring this up, but some statisticians would object to me using the word “likelihood” here. The problem is that the word “likelihood” has a very specific meaning in frequentist statistics, and it’s not quite the same as what it means in Bayesian statistics. As far as I can tell, Bayesians didn’t originally have any agreed upon name for the likelihood, and so it became common practice for people to use the frequentist terminology. This wouldn’t have been a problem, except for the fact that the way that Bayesians use the word turns out to be quite different to the way frequentists do. This isn’t the place for yet another lengthy history lesson, but to put it crudely: when a Bayesian says “a likelihood function” they’re usually referring to one of the rows of the table. When a frequentist says the same thing, they’re referring to the same table, but to them “a likelihood function” almost always refers to one of the columns. This distinction matters in some contexts, but it’s not important for our purposes.",
+          "hit_page_start": 734,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.9,
+                577.244,
+                866.114,
+                686.24
+              ],
+              "page": 734,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                144.232,
+                670.963,
+                865.721,
+                826.539
+              ],
+              "page": 734,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020299145299145296
+        },
+        {
+          "id": "exc_f213361bf057b0_294_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 4 › Distributions of random variables › 4.3 Binomial distribution › Exercises",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "binomial",
+            "probability-basics",
+            "random-variables"
+          ],
+          "confidence": 0.95,
+          "synopsis": "A set of exercises on the binomial distribution. Problems ask students to judge when the binomial model is appropriate, compute probabilities of exact, at-most, and at-least counts, and find expected value and standard deviation. Contexts include underage drinking, chickenpox, dreidel spins, arachnophobia, eye color, sickle cell anemia, permutations, and male children. Some parts also involve the geometric distribution and the addition rule for disjoint outcomes.",
+          "pages": [
+            175,
+            176
+          ],
+          "figure_ids": [
+            "fig_f213361bf057b0_2590_v2"
+          ],
+          "chunk_ids": [
+            "chk_f213361bf057b0_472_v2",
+            "chk_f213361bf057b0_473_v2",
+            "chk_f213361bf057b0_474_v2",
+            "chk_f213361bf057b0_475_v2",
+            "chk_f213361bf057b0_476_v2",
+            "chk_f213361bf057b0_477_v2",
+            "chk_f213361bf057b0_478_v2",
+            "chk_f213361bf057b0_479_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_476_v2",
+          "hit_text": "4.22 Arachnophobia. A Gallup Poll found that 7% of teenagers (ages 13 to 17) suﬀer from arachnophobia and are extremely afraid of spiders. At a summer camp there are 10 teenagers sleeping in each tent. Assume that these 10 teenagers are independent of each other.33 (a) Calculate the probability that at least one of them suﬀers from arachnophobia. (b) Calculate the probability that exactly 2 of them suﬀer from arachnophobia. (c) Calculate the probability that at most 1 of them suﬀers from arachnophobia. (d) If the camp counselor wants to make sure no more than 1 teenager in each tent is afraid of spiders, does it seem reasonable for him to randomly assign teenagers to tents?\n4.23 Eye color, Part II. Exercise 4.13 introduces a husband and wife with brown eyes who have 0.75 probability of having children with brown eyes, 0.125 probability of having children with blue eyes, and 0.125 probability of having children with green eyes. (a) What is the probability that their ﬁrst child will have green eyes and the second will not? (b) What is the probability that exactly one of their two children will have green eyes? (c) If they have six children, what is the probability that exactly two will have green eyes? (d) If they have six children, what is the probability that at least one will have green eyes? (e) What is the probability that the ﬁrst green eyed child will be the 4th child? (f) Would it be considered unusual if only 2 out of their 6 children had brown eyes?\n4.24 Sickle cell anemia.",
+          "hit_page_start": 176,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.222,
+                67.29,
+                852.948,
+                702.932
+              ],
+              "page": 176,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019984700707592274
+        },
+        {
+          "id": "exc_f213361bf057b0_175_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 3 › Probability › 3.2 Conditional probability › 3.2.3 Deﬁning conditional probability › GUIDED PRACTICE 3.31 HAS ENDED.",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "conditional",
+            "experiments"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Worked computations of conditional probabilities from ratios of joint to marginal probabilities, including a complement rule for conditional probabilities. Guided Practice 3.32 asks for the probability an inoculated person died from smallpox and comparison with a prior result. Guided Practice 3.33 asks whether the Boston inoculation study was observational or experimental, whether causal inference is possible, and potential confounding variables.",
+          "pages": [
+            111,
+            112
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_306_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_306_v2",
+          "hit_text": "P(mach learn is pred fashion and truth is fashion) = 0.1081 and P(truth is fashion) = 0.1696. Then the ratio represents the conditional probability: 0.1081/0.1696 = 0.6374.\n\n27(a) This probability is P(mach learnP(istruthpredisnotfashion, truth) is fashion) = 00..16960615 = 0.3626. (b) The total equals 1. (c) Under the condition the photo is about fashion, the ML algorithm must have either predicted it was about fashion or predicted it was not about fashion. The complement still works for conditional probabilities, provided the probabilities are conditioned on the same information.\n28P(result = died | inoculated = no) = P(result P=(inoculateddied and inoculated= no) = no) = 00..13569608 = 0.1411.\n\nGUIDED PRACTICE 3.32 START Determine the probability that an inoculated person died from smallpox. How does this result compare with the result of Guided Practice 3.31?29 Go to the preceding footnote link for the Guided Practice solution. GUIDED PRACTICE 3.32 HAS ENDED. GUIDED PRACTICE 3.33 START The people of Boston self-selected whether or not to be inoculated. (a) Is this study observational or was this an experiment? (b) Can we infer any causal connection using these data? (c) What are some potential confounding variables that might inﬂuence whether someone lived or died and also aﬀect whether that person was inoculated?30 Go to the preceding footnote link for the Guided Practice solution.\nGUIDED PRACTICE 3.33 HAS ENDED.",
+          "hit_page_start": 111,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                798.097,
+                743.366,
+                820.112
+              ],
+              "page": 111,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                821.181,
+                852.941,
+                893.841
+              ],
+              "page": 111,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                852.877,
+                291.49
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019869097709209912
+        },
+        {
+          "id": "exc_0689cddaba206d_223_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 2 › Probability, random variables, and probability distributions › 2.3 Conditional probability, intersections, and unions › 2.3.3 Deﬁning conditional probability › GUIDED PRACTICE 2.29 HAS ENDED.",
+          "roles": [
+            "introduction",
+            "worked_example",
+            "exercise"
+          ],
+          "topic_ids": [
+            "conditional",
+            "experiments",
+            "data-types"
+          ],
+          "confidence": 0.85,
+          "synopsis": "The smallpox data set from 1721 Boston contains 6,224 individuals with variables inoculated (yes/no) and result (lived/died), summarized in contingency tables of counts and proportions. Guided Practice exercises ask students to write conditional probabilities in formal notation, compute them, and consider whether the observational self-selected inoculation study supports causal conclusions and what confounding variables might exist.",
+          "pages": [
+            129,
+            130,
+            131
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_1685_v2",
+            "fig_0689cddaba206d_1689_v2"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_366_v2",
+            "chk_0689cddaba206d_367_v2",
+            "chk_0689cddaba206d_368_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_367_v2",
+          "hit_text": "22(a) If the photo is about fashion and the ML algorithm prediction was correct, then the ML algorithm my have a value of pred fashion: P(mach learn is pred fashion ∣ truth is fashion) (b) The equation for conditional probability indicates we should ﬁrst ﬁnd P(mach learn is pred fashion and truth is fashion)= 0.1081 and P(truth is not)= 0.1696. Then the ratio represents the conditional probability: 0.1081/0.1696 = 0.6374.\n23(a) This probability is P(mach learnP(istruthpredisnotfashion, truth) is fashion) = 00..06151696 = 0.3626. (b) The total equals 1. (c) Under\n\nthe condition the photo is about fashion, the ML algorithm must have either predicted it was about fashion or predicted it was not about fashion. The complement still works for conditional probabilities, provided the probabilities are conditioned on the same information.\n\n24Fenner F. 1988. Smallpox and Its Eradication (History of International Public Health, No. 6). Geneva: World Health Organization. ISBN 92-4-156110-6.\n\nGUIDED PRACTICE 2.30 START\n\nWrite out, in formal notation, the probability a randomly selected person who was not inoculated died from smallpox, and ﬁnd this probability.25 Go to the preceding footnote link for the Guided Practice solution.\n\nGUIDED PRACTICE 2.30 HAS ENDED.\n\n25P(result = died ∣ not inoculated)= P(result P=(notdiedinoculatedand not inoculated) ) = 00..13569608 = 0.1411.\n\nGUIDED PRACTICE 2.31 START",
+          "hit_page_start": 129,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                752.744,
+                852.948,
+                837.308
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                819.08,
+                852.941,
+                853.044
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                853.316,
+                852.943,
+                877.206
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                366.118,
+                83.359
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.876,
+                131.891
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                134.407,
+                448.613,
+                146.986
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.609,
+                930.352,
+                712.975,
+                972.047
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                366.118,
+                83.359
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01938793253347244
+        }
+      ]
+    },
+    {
+      "query": "Bayes rule posterior odds exercise update belief",
+      "topics": [
+        "bayesian-inference"
+      ],
+      "roles": [
+        "exercise"
+      ],
+      "seconds": 7.037,
+      "excerpts": [
+        {
+          "id": "exc_dd1e65de648fb2_1205_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents › 17.1.4 Updating beliefs using Bayes’ rule",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The table we laid out in the last section is a very powerful tool for solving the rainy day problem, because it considers all four logical possibilities and states exactly how confident you are in each of them before being given any data. It’s now time to consider what happens to our beliefs when we are actually given the data. In the rainy day problem, you are told that I really am carrying an umbrella. This is something of a surprising event: according to our table, the probability of me carrying an umbrella is only 8.75%. But that makes sense, right? A guy carrying an umbrella on a summer day in a hot dry city is pretty unusual, and so you really weren’t expecting that. Nevertheless, the problem tells you that it is true. No matter how unlikely you thought it was, you must now adjust your beliefs to accommodate the fact that you now know that I have an umbrella.5 To reflect this new knowledge, our revised table must have the following numbers:\n\n5If we were being a bit more sophisticated, we could extend the example to accommodate the possibility that I’m lying about the umbrella. But let’s keep things simple, shall we?",
+          "pages": [
+            736
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1801_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1801_v1",
+          "hit_text": "The table we laid out in the last section is a very powerful tool for solving the rainy day problem, because it considers all four logical possibilities and states exactly how confident you are in each of them before being given any data. It’s now time to consider what happens to our beliefs when we are actually given the data. In the rainy day problem, you are told that I really am carrying an umbrella. This is something of a surprising event: according to our table, the probability of me carrying an umbrella is only 8.75%. But that makes sense, right? A guy carrying an umbrella on a summer day in a hot dry city is pretty unusual, and so you really weren’t expecting that. Nevertheless, the problem tells you that it is true. No matter how unlikely you thought it was, you must now adjust your beliefs to accommodate the fact that you now know that I have an umbrella.5 To reflect this new knowledge, our revised table must have the following numbers:\n\n5If we were being a bit more sophisticated, we could extend the example to accommodate the possibility that I’m lying about the umbrella. But let’s keep things simple, shall we?",
+          "hit_page_start": 736,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.704,
+                599.102,
+                865.332,
+                789.697
+              ],
+              "page": 736,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                144.232,
+                795.936,
+                864.049,
+                826.569
+              ],
+              "page": 736,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02445795875198308
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1199_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.96,
+          "synopsis": "From a Bayesian perspective, statistical inference is all about belief revision. I start out with a set of candidate hypotheses ℎ about the world. I don’t know which of these hypotheses is true, but I do have some beliefs about which hypotheses are plausible and which are not. When I observe the data 𝑑, I have to revise those beliefs. If the data are consistent with a hypothesis, my belief in that hypothesis is strengthened. If the data are inconsistent with the hypothesis, my belief in that hypothesis is weakened. That’s it! At the end of this section I’ll give a precise description of how Bayesian reasoning works, but first I want to work through a simple example in order to introduce the key ideas. Consider the following reasoning problem:\n\nIn this problem, I have presented you with a single piece of data (𝑑 = I’m carrying the umbrella), and I’m asking you to tell me your beliefs about whether it’s raining. You have two possible hypotheses, ℎ: either it rains today or it does not. How should you solve this problem?\n\nI’m carrying an umbrella. Do you think it will rain?",
+          "pages": [
+            733
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1793_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1793_v1",
+          "hit_text": "From a Bayesian perspective, statistical inference is all about belief revision. I start out with a set of candidate hypotheses ℎ about the world. I don’t know which of these hypotheses is true, but I do have some beliefs about which hypotheses are plausible and which are not. When I observe the data 𝑑, I have to revise those beliefs. If the data are consistent with a hypothesis, my belief in that hypothesis is strengthened. If the data are inconsistent with the hypothesis, my belief in that hypothesis is weakened. That’s it! At the end of this section I’ll give a precise description of how Bayesian reasoning works, but first I want to work through a simple example in order to introduce the key ideas. Consider the following reasoning problem:\n\nIn this problem, I have presented you with a single piece of data (𝑑 = I’m carrying the umbrella), and I’m asking you to tell me your beliefs about whether it’s raining. You have two possible hypotheses, ℎ: either it rains today or it does not. How should you solve this problem?\n\nI’m carrying an umbrella. Do you think it will rain?",
+          "hit_page_start": 733,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                112.134,
+                866.116,
+                267.809
+              ],
+              "page": 733,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                273.023,
+                863.655,
+                398.422
+              ],
+              "page": 733,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                179.964,
+                277.439,
+                589.786,
+                296.931
+              ],
+              "page": 733,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024325753569539928
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1202_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents › 17.1.3 The joint probability of data and hypothesis",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "At this point, all the elements are in place. Having written down the priors and the likelihood, you have all the information you need to do Bayesian reasoning. The question now becomes, how do we use this information? As it turns out, there’s a very simple equation that we can use here, but it’s important that you understand why we use it, so I’m going to try to build it up from more basic ideas.\n\nLet’s start out with one of the rules of probability theory. I listed it way back in Table 9.4, but I didn’t make a big deal out of it at the time and you probably ignored it. The rule in question is the one that talks about the probability that two things are true. In our example, you might want to calculate the probability that today is rainy (i.e., hypothesis ℎ is true) and\n\nLet’s start out with one of the rules of probability theory. I listed it way back in Table 9.4, but I didn’t make a big deal out of it at the time and you probably ignored it. The rule in question is the one that talks about the probability that two things are true. In our example, you might want to calculate the probability that today is rainy (i.e., hypothesis ℎ is true) and\n\n3It’s a leap of faith, I know, but let’s run with it okay? 4Um. I hate to bring this up, but some statisticians would object to me using the word “likelihood” here. The problem is that the word “likelihood” has a very specific meaning in frequentist statistics, and it’s not quite the same as what it means in Bayesian statistics. As far as I can tell, Bayesians didn’t originally have any agreed upon name for the likelihood, and so it became common practice for people to use the frequentist terminology. This wouldn’t have been a problem, except for the fact that the way that Bayesians use the word turns out to be quite different to the way frequentists do. This isn’t the place for yet another lengthy history lesson, but to put it crudely: when a Bayesian says “a likelihood function” they’re usually referring to one of the rows of the table. When a frequentist says the same thing, they’re referring to the same table, but to them “a likelihood function” almost always refers to one of the columns. This distinction matters in some contexts, but it’s not important for our purposes.",
+          "pages": [
+            734
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1796_v1",
+            "chk_dd1e65de648fb2_1797_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1796_v1",
+          "hit_text": "At this point, all the elements are in place. Having written down the priors and the likelihood, you have all the information you need to do Bayesian reasoning. The question now becomes, how do we use this information? As it turns out, there’s a very simple equation that we can use here, but it’s important that you understand why we use it, so I’m going to try to build it up from more basic ideas.\n\nLet’s start out with one of the rules of probability theory. I listed it way back in Table 9.4, but I didn’t make a big deal out of it at the time and you probably ignored it. The rule in question is the one that talks about the probability that two things are true. In our example, you might want to calculate the probability that today is rainy (i.e., hypothesis ℎ is true) and",
+          "hit_page_start": 734,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.454,
+                483.152,
+                866.114,
+                571.101
+              ],
+              "page": 734,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.9,
+                577.244,
+                866.114,
+                686.24
+              ],
+              "page": 734,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023565323565323565
+        },
+        {
+          "id": "exc_dd1e65de648fb2_702_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical theory › 10 Estimating unknown quantities from a sample › 10.5 Estimating a confidence interval › 10.5.2 Interpreting a confidence interval",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "bayesian-inference",
+            "confidence-intervals",
+            "sampling",
+            "probability-basics",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The hardest thing about confidence intervals is understanding what they mean. Whenever people first encounter confidence intervals, the first instinct is almost always to say that “there is a 95% probability that the true mean lies inside the confidence interval”. It’s simple, and it seems to capture the common sense idea of what it means to say that I am “95% confident”. Unfortunately, it’s not quite right. The intuitive definition relies very heavily on your own personal beliefs about the value of the population mean. I say that I am 95% confident because those are my beliefs. In everyday life that’s perfectly okay, but if you remember back to Section 9.2, you’ll notice that talking about personal belief and confidence is a Bayesian idea. Personally (speaking as a Bayesian) I have no problem with the idea that the phrase “95% probability” is allowed to refer to a personal belief. However, confidence intervals are not Bayesian tools. Like everything else in this chapter, confidence intervals are frequentist tools, and if you are going to use frequentist methods then it’s not appropriate to attach a Bayesian interpretation to them. If you use frequentist methods, you must adopt frequentist interpretations!\n\nOkay, so if that’s not the right answer, what is? Remember what we said about frequentist probability: the only way we are allowed to make “probability statements” is to talk about a sequence of events, and to count up the frequencies of different kinds of events. From that perspective, the interpretation of a 95% confidence interval must have something to do with replication. Specifically: if we replicated the experiment over and over again and computed a 95% confidence interval for each replication, then 95% of those intervals would contain the true mean. More generally, 95% of all confidence intervals constructed using this procedure should contain the true population mean. This idea is illustrated in Figure 10.11, which shows 50 confidence intervals constructed for a “measure 10 IQ scores” experiment (top panel) and another 50 confidence intervals for a “measure 25 IQ scores” experiment (bottom panel).\n\nIn this particular run of the simulation, 5 of the 100 confidence intervals shown in Figure 10.11 failed to contain the true mean – close to, but not necessarily exactly, the 5 we’d expect on average in the long run.\n\nThe critical difference here is that the Bayesian claim makes a probability statement about the population mean (i.e., it refers to our uncertainty about the population mean), which is",
+          "pages": [
+            429
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1046_v1",
+            "chk_dd1e65de648fb2_1047_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1046_v1",
+          "hit_text": "The hardest thing about confidence intervals is understanding what they mean. Whenever people first encounter confidence intervals, the first instinct is almost always to say that “there is a 95% probability that the true mean lies inside the confidence interval”. It’s simple, and it seems to capture the common sense idea of what it means to say that I am “95% confident”. Unfortunately, it’s not quite right. The intuitive definition relies very heavily on your own personal beliefs about the value of the population mean. I say that I am 95% confident because those are my beliefs. In everyday life that’s perfectly okay, but if you remember back to Section 9.2, you’ll notice that talking about personal belief and confidence is a Bayesian idea. Personally (speaking as a Bayesian) I have no problem with the idea that the phrase “95% probability” is allowed to refer to a personal belief. However, confidence intervals are not Bayesian tools. Like everything else in this chapter, confidence intervals are frequentist tools, and if you are going to use frequentist methods then it’s not appropriate to attach a Bayesian interpretation to them. If you use frequentist methods, you must adopt frequentist interpretations!",
+          "hit_page_start": 429,
+          "hit_regions": [
+            {
+              "bbox": [
+                133.832,
+                289.0,
+                867.131,
+                530.918
+              ],
+              "page": 429,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022642390289449112
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1203_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.1 Probabilistic reasoning by rational agents › 17.1.3 The joint probability of data and hypothesis › 734",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "I’m carrying an umbrella (i.e., data 𝑑 is observed). The joint probability of the hypothesis and the data is written 𝑃(𝑑,ℎ), and you can calculate it by multiplying the prior 𝑃(ℎ) by the likelihood 𝑃(𝑑|ℎ). Mathematically, we say that:\n\n𝑃(𝑑,ℎ) = 𝑃(𝑑|ℎ)𝑃(ℎ)\n\nSo, what is the probability that today is a rainy day and I remember to carry an umbrella? As we discussed earlier, the prior tells us that the probability of a rainy day is 15%, and the likelihood tells us that the probability of me remembering my umbrella on a rainy day is 30%. So the probability that both of these things are true is calculated by multiplying the two:\n\n𝑃(rainy,umbrella) = 𝑃(umbrella|rainy) × 𝑃(rainy) = 0.30 × 0.15\n\n= 0.045\n\nIn other words, before being told anything about what actually happened, you think that there is a 4.5% probability that today will be a rainy day and that I will remember an umbrella. However, there are of course four possible things that could happen, right? So let’s repeat the exercise for all four. If we do that, we end up with the following table:\n\nUmbrella No-umbrella\n\nRainy 0.045 0.105 Dry 0.0425 0.8075\n\nThis table captures all the information about which of the four possibilities are likely. To really get the full picture, though, it helps to add the row totals and column totals. That gives us this table:\n\nUmbrella No-umbrella Total\n\nRainy 0.0450 0.1050 0.15 Dry 0.0425 0.8075 0.85 Total 0.0875 0.9125 1\n\nThis table captures all the information about which of the four possibilities are likely. To really get the full picture, though, it helps to add the row totals and column totals. That gives us this table:\n\nUmbrella No-umbrella Total\n\nRainy 0.0450 0.1050 0.15 Dry 0.0425 0.8075 0.85 Total 0.0875 0.9125 1\n\nThis is a very useful table, so it’s worth taking a moment to think about what all these numbers are telling us. First, notice that the row sums aren’t telling us anything new at all. For example, the first row tells us that if we ignore all this umbrella business, the chance that today will be a rainy day is 15%. That’s not surprising, of course: that’s our prior. The important thing isn’t the number itself: rather, the important thing is that it gives us some confidence that our calculations are sensible! Now take a look at the column sums, and notice that they tell us something that we haven’t explicitly stated yet. In the same way that the",
+          "pages": [
+            735
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1798_v1",
+            "chk_dd1e65de648fb2_1799_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1798_v1",
+          "hit_text": "I’m carrying an umbrella (i.e., data 𝑑 is observed). The joint probability of the hypothesis and the data is written 𝑃(𝑑,ℎ), and you can calculate it by multiplying the prior 𝑃(ℎ) by the likelihood 𝑃(𝑑|ℎ). Mathematically, we say that:\n\n𝑃(𝑑,ℎ) = 𝑃(𝑑|ℎ)𝑃(ℎ)\n\nSo, what is the probability that today is a rainy day and I remember to carry an umbrella? As we discussed earlier, the prior tells us that the probability of a rainy day is 15%, and the likelihood tells us that the probability of me remembering my umbrella on a rainy day is 30%. So the probability that both of these things are true is calculated by multiplying the two:\n\n𝑃(rainy,umbrella) = 𝑃(umbrella|rainy) × 𝑃(rainy) = 0.30 × 0.15\n\n= 0.045\n\nIn other words, before being told anything about what actually happened, you think that there is a 4.5% probability that today will be a rainy day and that I will remember an umbrella. However, there are of course four possible things that could happen, right? So let’s repeat the exercise for all four. If we do that, we end up with the following table:\n\nUmbrella No-umbrella\n\nRainy 0.045 0.105 Dry 0.0425 0.8075\n\nThis table captures all the information about which of the four possibilities are likely. To really get the full picture, though, it helps to add the row totals and column totals. That gives us this table:\n\nUmbrella No-umbrella Total\n\nRainy 0.0450 0.1050 0.15 Dry 0.0425 0.8075 0.85 Total 0.0875 0.9125 1",
+          "hit_page_start": 735,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                55.711,
+                863.631,
+                181.11
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                414.864,
+                120.725,
+                585.132,
+                211.909
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.704,
+                193.588,
+                867.114,
+                264.431
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                301.65,
+                241.162,
+                698.35,
+                353.227
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                449.913,
+                282.924,
+                509.325,
+                374.109
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                354.783,
+                867.131,
+                425.624
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                439.172,
+                440.876,
+                626.176,
+                460.395
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                373.825,
+                464.905,
+                579.565,
+                501.533
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                531.282,
+                864.297,
+                585.015
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                408.851,
+                597.582,
+                656.498,
+                617.101
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                343.505,
+                621.611,
+                647.082,
+                675.346
+              ],
+              "page": 735,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022527472527472527
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

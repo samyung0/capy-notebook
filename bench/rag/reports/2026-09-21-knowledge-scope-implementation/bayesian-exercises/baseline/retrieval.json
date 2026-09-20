@@ -1,0 +1,1439 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "bayesian-exercises",
+    "query": "Create a short study note containing two practice exercises on Bayesian inference, grounded in exercises from the library.",
+    "check": "Finds the requested exercise role, or reports its absence; does not silently substitute general knowledge or unrelated probability exercises."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "Bayesian inference posterior probability exercise",
+      "topics": [],
+      "roles": [
+        "exercise"
+      ],
+      "seconds": 5.112,
+      "excerpts": [
+        {
+          "id": "exc_f213361bf057b0_175_v3",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 3 › Probability › 3.2 Conditional probability › 3.2.3 Deﬁning conditional probability › GUIDED PRACTICE 3.31 HAS ENDED.",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "conditional",
+            "experiments"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Worked computations of conditional probabilities from ratios of joint to marginal probabilities, including a complement rule for conditional probabilities. Guided Practice 3.32 asks for the probability an inoculated person died from smallpox and comparison with a prior result. Guided Practice 3.33 asks whether the Boston inoculation study was observational or experimental, whether causal inference is possible, and potential confounding variables.",
+          "pages": [
+            111,
+            112
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f213361bf057b0_306_v3"
+          ],
+          "retrieval": {
+            "scope": "The photo-classification ratios illustrate conditional probability. The smallpox questions concern 6,224 people exposed in Boston in 1721; the required count/proportion tables are in excerpt 174. Inoculation was self-selected, so this is an observational study and the data do not support a causal effect without addressing confounding.",
+            "summary": "Works conditional probabilities from joint and marginal proportions, explains the conditional complement rule, and asks learners to calculate death after inoculation and assess causality and confounding in the 1721 Boston smallpox data.",
+            "context_excerpt_ids": [
+              "exc_f213361bf057b0_174_v3"
+            ]
+          },
+          "hit_chunk_id": "chk_f213361bf057b0_306_v3",
+          "hit_text": "P(mach learn is pred fashion and truth is fashion) = 0.1081 and P(truth is fashion) = 0.1696. Then the ratio represents the conditional probability: 0.1081/0.1696 = 0.6374.\n\n27(a) This probability is P(mach learnP(istruthpredisnotfashion, truth) is fashion) = 00..16960615 = 0.3626. (b) The total equals 1. (c) Under the condition the photo is about fashion, the ML algorithm must have either predicted it was about fashion or predicted it was not about fashion. The complement still works for conditional probabilities, provided the probabilities are conditioned on the same information.\n28P(result = died | inoculated = no) = P(result P=(inoculateddied and inoculated= no) = no) = 00..13569608 = 0.1411.\n\nGUIDED PRACTICE 3.32 START Determine the probability that an inoculated person died from smallpox. How does this result compare with the result of Guided Practice 3.31?29 Go to the preceding footnote link for the Guided Practice solution. GUIDED PRACTICE 3.32 HAS ENDED. GUIDED PRACTICE 3.33 START The people of Boston self-selected whether or not to be inoculated. (a) Is this study observational or was this an experiment? (b) Can we infer any causal connection using these data? (c) What are some potential confounding variables that might inﬂuence whether someone lived or died and also aﬀect whether that person was inoculated?30 Go to the preceding footnote link for the Guided Practice solution.\nGUIDED PRACTICE 3.33 HAS ENDED.",
+          "hit_page_start": 111,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                798.097,
+                743.366,
+                820.112
+              ],
+              "page": 111,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                821.181,
+                852.941,
+                893.841
+              ],
+              "page": 111,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                852.877,
+                291.49
+              ],
+              "page": 112,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022000830220008302
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_158_v2",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 5. Probability › (n - r)! › C › = › Exercises",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "probability-basics",
+            "binomial"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Prerequisites\n\n• All material presented in the Probability Chapter\n\n1. (a) What is the probability of rolling a pair of dice and obtaining a total score of 9 or more? (b) What is the probability of rolling a pair of dice and obtaining a total score of 7?\n2. A box contains four black pieces of cloth, two striped pieces, and six dotted pieces. A piece is selected randomly and then placed back in the box. A second piece is selected randomly. What is the probability that: a. both pieces are dotted? b. the ﬁrst piece is black and the second piece is dotted? c. one piece is black and one piece is striped?\n3. A card is drawn at random from a deck. (a) What is the probability that it is an ace or a king? (b) What is the probability that it is either a red card or a black card?\n4. The probability that you will win a game is 0.45. (a) If you play the game 80 times, what is the most likely number of wins? (b) What are the mean and variance of a binomial distribution with p = 0.45 and N = 80?\n5. A fair coin is ﬂipped 9 times. What is the probability of getting exactly 6 heads?\n6.When Susan and Jessica play a card game, Susan wins 60% of the time. If they play 9 games, what is the probability that Jessica will have won more games than Susan?\n7.You ﬂip a coin three times. (a) What is the probability of getting heads on only one of your ﬂips? (b) What is the probability of getting heads on at least one ﬂip?\n8. A test correctly identiﬁes a disease in 95% of people who have it. It correctly identiﬁes no disease in 94% of people who do not have it. In the population, 3% of the people have the disease.\n\nWhat is the probability that you have the disease if you tested positive?\n\n9. A jar contains 10 blue marbles, 5 red marbles, 4 green marbles, and 1 yellow marble. Two marbles are chosen (without replacement). (a) What is the probability that one will be green and the other red? (b) What is the probability that one will be blue and the other yellow?\n10. You roll a fair die ﬁve times, and you get a 6 each time. What is the probability that you get a 6 on the next roll?\n11. You win a game if you roll a die and get a 2 or a 5. You play this game 60 times. a. What is the probability that you win between 5 and 10 times (inclusive)? b. What is the probability that you will win the game at least 15 times? c. What is the probability that you will win the game at least 40 times? d. What is the most likely number of wins. e. What is the probability of obtaining the number of wins in d? Explain how you got each answer or show your work.\n12. In a baseball game, Tommy gets a hit 30% of the time when facing this pitcher. Joey gets a hit 25% of the time. They are both coming up to bat this inning. a. What is the probability that Joey or Tommy will get a hit? b. What is the probability that neither player gets a hit? c. What is the probability that they both get a hit?\n13. An unfair coin has a probability of coming up heads of 0.65. The coin is ﬂipped 50 times. What is the probability it will come up heads 25 or fewer times? (Give answer to at least 3 decimal places).\n14.You draw two cards from a deck, what is the probability that: a. both of them are face cards (king, queen, or jack)? b. you draw two cards from a deck and both of them are hearts?\n15.\n\nTrue/False: You are more likely to get a pattern of HTHHHTHTTH than HHHHHHHHTT when you ﬂip a coin 10 times.\n\n16. True/False: Suppose that at your regular physical exam you test positive for a relatively rare disease. You will need to start taking medicine if you have the disease, so you ask your doc- tor about the accuracy of the test. It turns out that the test is 98% accurate. The probability that you have Disease X is therefore 0.98 and the probability that you do not have it is .02. Explain your answer. Questions from Case Studies Diet and Health (DH) case study\n17. (DH) a. What percentage of people on the AHA diet had some sort of illness or death? b. What is the probability that if you randomly selected a person on the AHA diet, he or she would have some sort of illness or death? c. If 3 people on the AHA diet are chosen at random, what is the probability that they will all be healthy?\n18. (DH)\n\na. What percentage of people on the Mediterranean diet had some sort of illness or death?\nb. What is the probability that if you randomly selected a person on the Mediterranean diet, he or she would have some sort of illness or death?\nc. What is the probability that if you randomly selected a person on the Mediterranean diet, he or she would have cancer?\nd. If you randomly select ﬁve people from the Mediterranean diet, what is the probability that they would all be healthy?\n\nThe following questions are from ARTIST (reproduced with permission)",
+          "pages": [
+            216,
+            217,
+            218
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_316_v2",
+            "chk_f97f47b7a1fd68_317_v2",
+            "chk_f97f47b7a1fd68_318_v2",
+            "chk_f97f47b7a1fd68_319_v2",
+            "chk_f97f47b7a1fd68_320_v2",
+            "chk_f97f47b7a1fd68_321_v2"
+          ],
+          "retrieval": {
+            "scope": "Learner tasks covering the full Probability chapter. Questions 17-18 require Diet and Health case-study counts that are not printed here; excerpt 521 contains the relevant outcome table. No worked solutions are included.",
+            "summary": "Probability exercises on dice, cards, coins, binomial counts, independence, Bayes/base rates, sampling without replacement, and diet-and-health case-study proportions.",
+            "context_excerpt_ids": [
+              "exc_f97f47b7a1fd68_521_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_f97f47b7a1fd68_317_v2",
+          "hit_text": "1. (a) What is the probability of rolling a pair of dice and obtaining a total score of 9 or more? (b) What is the probability of rolling a pair of dice and obtaining a total score of 7?\n2. A box contains four black pieces of cloth, two striped pieces, and six dotted pieces. A piece is selected randomly and then placed back in the box. A second piece is selected randomly. What is the probability that: a. both pieces are dotted? b. the ﬁrst piece is black and the second piece is dotted? c. one piece is black and one piece is striped?\n3. A card is drawn at random from a deck. (a) What is the probability that it is an ace or a king? (b) What is the probability that it is either a red card or a black card?\n4. The probability that you will win a game is 0.45. (a) If you play the game 80 times, what is the most likely number of wins? (b) What are the mean and variance of a binomial distribution with p = 0.45 and N = 80?\n5. A fair coin is ﬂipped 9 times. What is the probability of getting exactly 6 heads?\n6.When Susan and Jessica play a card game, Susan wins 60% of the time. If they play 9 games, what is the probability that Jessica will have won more games than Susan?\n7.You ﬂip a coin three times. (a) What is the probability of getting heads on only one of your ﬂips? (b) What is the probability of getting heads on at least one ﬂip?\n8. A test correctly identiﬁes a disease in 95% of people who have it. It correctly identiﬁes no disease in 94% of people who do not have it. In the population, 3% of the people have the disease.",
+          "hit_page_start": 216,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                203.283,
+                879.444,
+                902.778
+              ],
+              "page": 216,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0205947357846092
+        },
+        {
+          "id": "exc_0689cddaba206d_223_v3",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 2 › Probability, random variables, and probability distributions › 2.3 Conditional probability, intersections, and unions › 2.3.3 Deﬁning conditional probability › GUIDED PRACTICE 2.29 HAS ENDED.",
+          "roles": [
+            "worked_example",
+            "exercise"
+          ],
+          "topic_ids": [
+            "conditional",
+            "experiments"
+          ],
+          "confidence": 0.85,
+          "synopsis": "The smallpox data set from 1721 Boston contains 6,224 individuals with variables inoculated (yes/no) and result (lived/died), summarized in contingency tables of counts and proportions. Guided Practice exercises ask students to write conditional probabilities in formal notation, compute them, and consider whether the observational self-selected inoculation study supports causal conclusions and what confounding variables might exist.",
+          "pages": [
+            129,
+            130,
+            131
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_1685_v3",
+            "fig_0689cddaba206d_1689_v3"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_366_v3",
+            "chk_0689cddaba206d_367_v3",
+            "chk_0689cddaba206d_368_v3"
+          ],
+          "retrieval": {
+            "scope": "Historical observational dataset with 244 inoculated and 5,980 uninoculated people. Pair calculations with this table: P(died | not inoculated)=0.1411. Self-selection can confound the comparison, so differences are associations, not proof that inoculation caused the outcome. The extracted text duplicates some answer fragments.",
+            "summary": "Uses a 1721 Boston smallpox table of 6,224 people to calculate conditional death probabilities and ask why self-selected inoculation data do not support a causal conclusion.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_0689cddaba206d_367_v3",
+          "hit_text": "22(a) If the photo is about fashion and the ML algorithm prediction was correct, then the ML algorithm my have a value of pred fashion: P(mach learn is pred fashion ∣ truth is fashion) (b) The equation for conditional probability indicates we should ﬁrst ﬁnd P(mach learn is pred fashion and truth is fashion)= 0.1081 and P(truth is not)= 0.1696. Then the ratio represents the conditional probability: 0.1081/0.1696 = 0.6374.\n23(a) This probability is P(mach learnP(istruthpredisnotfashion, truth) is fashion) = 00..06151696 = 0.3626. (b) The total equals 1. (c) Under\n\nthe condition the photo is about fashion, the ML algorithm must have either predicted it was about fashion or predicted it was not about fashion. The complement still works for conditional probabilities, provided the probabilities are conditioned on the same information.\n\n24Fenner F. 1988. Smallpox and Its Eradication (History of International Public Health, No. 6). Geneva: World Health Organization. ISBN 92-4-156110-6.\n\nGUIDED PRACTICE 2.30 START\n\nWrite out, in formal notation, the probability a randomly selected person who was not inoculated died from smallpox, and ﬁnd this probability.25 Go to the preceding footnote link for the Guided Practice solution.\n\nGUIDED PRACTICE 2.30 HAS ENDED.\n\n25P(result = died ∣ not inoculated)= P(result P=(notdiedinoculatedand not inoculated) ) = 00..13569608 = 0.1411.\n\nGUIDED PRACTICE 2.31 START",
+          "hit_page_start": 129,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                752.744,
+                852.948,
+                837.308
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                819.08,
+                852.941,
+                853.044
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                853.316,
+                852.943,
+                877.206
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                366.118,
+                83.359
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.876,
+                131.891
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                134.407,
+                448.613,
+                146.986
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.609,
+                930.352,
+                712.975,
+                972.047
+              ],
+              "page": 130,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                69.139,
+                366.118,
+                83.359
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020476190476190478
+        },
+        {
+          "id": "exc_0689cddaba206d_222_v3",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 2 › Probability, random variables, and probability distributions › 2.3 Conditional probability, intersections, and unions › 2.3.3 Deﬁning conditional probability › GUIDED PRACTICE 2.28 START",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "conditional",
+            "probability-basics"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Guided practice exercises on conditional probability notation and computation. Part (a) asks to express a conditional statement in notation; part (b) asks to compute the probability. A second exercise asks for the probability the algorithm is incorrect given the photo is about fashion, sums two conditional probabilities, and asks for an intuitive argument why the sum equals 1.",
+          "pages": [
+            129
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_365_v3"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_0689cddaba206d_365_v3",
+          "hit_text": "(a) Write out the following statement in conditional probability notation: “The probability that the ML prediction was correct, if the photo was about fashion”. Here the condition is now based on the photo’s truth status, not the ML algorithm.\n(b) Determine the probability from part (a). Figure 2.15 on page 127 may be helpful.22 Go to the preceding footnote link for the Guided Practice solution.\n\nGUIDED PRACTICE 2.28 HAS ENDED.\nGUIDED PRACTICE 2.29 START\n\n(a) Determine the probability that the algorithm is incorrect if it is known the photo is about fashion.\n(b) Using the answers from part (a) and Guided Practice 2.28(b), compute P(mach learn is pred fashion ∣ truth is fashion) + P(mach learn is pred not ∣ truth is fashion)\n(c) Provide an intuitive argument to explain why the sum in (b) is 1.23 Go to the preceding footnote link for the Guided Practice solution.",
+          "hit_page_start": 129,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                89.121,
+                852.876,
+                165.66
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                168.176,
+                448.613,
+                231.441
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                237.205,
+                852.874,
+                357.77
+              ],
+              "page": 129,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02002741395065489
+        },
+        {
+          "id": "exc_0689cddaba206d_740_v3",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › Exercise solutions › 2 Probability, random variables, and probability distributions › 2.41 (a) ZVR = 1.29, ZQR = 0.52.",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "normal",
+            "probability-basics",
+            "conditional",
+            "sampling"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Exercise solutions covering Z-scores and percentiles, normal probability calculations, the 68-95-99.7 rule, probability validity checks, conditional probability trees, independence, and sampling bias. Includes worked numeric answers for problems 2.41 through 2.65.",
+          "pages": [
+            484,
+            485
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1232_v3",
+            "chk_0689cddaba206d_1233_v3",
+            "chk_0689cddaba206d_1234_v3",
+            "chk_0689cddaba206d_1235_v3",
+            "chk_0689cddaba206d_1236_v3"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_0689cddaba206d_1235_v3",
+          "hit_text": "2.51 (a) Invalid. Sum is greater than 1. (b) Valid. Probabilities are between 0 and 1, and they sum to\n\n1. In this class, every student gets a C. (c) Invalid. Sum is less than 1. (d) Invalid. There is a negative probability. (e) Valid. Probabilities are between 0 and 1, and they sum to 1. (f) Invalid. There is a negative probability.\n2.53 0.8247. HIV? Result\n\npositive, 0.997\n\n0.259*0.997 = 0.2582\n\nyes, 0.259\n\nnegative, 0.003\n\n0.259*0.003 = 0.0008\n\npositive, 0.074\n\n0.741*0.074 = 0.0548\n\nno, 0.741\n\nnegative, 0.926\n\n0.741*0.926 = 0.6862\n\n2.55 (a) If the class is not graded on a curve, they are independent. If graded on a curve, then neither independent nor disjoint – unless the instructor will only give one A, which is a situation we will ignore in parts (b) and (c). (b) They are probably not independent: if you study together, your study habits would be related, which suggests your course performances are also related. (c) No. See the answer to\n\npart (a) when the course is not graded on a curve. More generally: if two things are unrelated (independent), then one occurring does not preclude the other from occurring.\n\n2.57 (a) 280/792 = 0.354. (b) 445/792 = 0.562. (c) 231/792 = 0.292, (d) 0.354×0.562 = 0.199 ≠ 0.292. The events are not independent, so you cannot just multiply the unconditional probabilities.",
+          "hit_page_start": 485,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                66.096,
+                491.859,
+                95.96
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                99.734,
+                491.866,
+                201.542
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                286.802,
+                204.402,
+                343.173,
+                211.933
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                362.333,
+                209.109,
+                447.886,
+                216.64
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                195.026,
+                215.016,
+                235.977,
+                222.548
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                285.158,
+                225.635,
+                344.819,
+                233.167
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                362.333,
+                230.343,
+                447.886,
+                237.874
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                286.802,
+                244.845,
+                343.173,
+                252.376
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                362.333,
+                249.552,
+                447.886,
+                257.083
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                196.923,
+                255.458,
+                234.088,
+                262.99
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                285.158,
+                266.073,
+                344.819,
+                273.605
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                362.333,
+                270.785,
+                447.886,
+                278.317
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                293.23,
+                491.868,
+                413.663
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                69.543,
+                852.948,
+                126.15
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                127.125,
+                852.941,
+                192.71
+              ],
+              "page": 485,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019966859983429994
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

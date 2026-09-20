@@ -1,0 +1,3433 @@
+{
+  "status": "103 current annotations across 14 books published and verified",
+  "trial": {
+    "excerpts": 16,
+    "books": 4,
+    "page_inspections": 27,
+    "artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/trial/trial.json"
+  },
+  "backfill": {
+    "books": 13,
+    "excerpts": 96,
+    "inspected_book_pages": 156,
+    "roles_changed": 56,
+    "topics_changed": 33,
+    "non_teaching": 4,
+    "full_notes_unchanged": 95
+  },
+  "source_files_sha256": {
+    "lab/knowledge/enrich.py": "2b1b6ee08d871cb2030e79b2b50d346c6ba15d1f5126b6294571d664edd838da",
+    "lab/knowledge/review.md": "e855d4cbbc51e6f02419dab1859709ff4b873700b564878a5f50c1e00c8d6d9d",
+    "lab/knowledge/topics.py": "3814b219ed12893a63f04991d06cee92385e8ce7b151f9bb1303c623cacb5fec",
+    "bench/rag/scripts/knowledge_base_pilot.py": "3683690ee47821f5603a4e2fd6755cf49a3da3f08449bdfb07bce05c3099e72f",
+    "bench/rag/scripts/knowledge_base_library.py": "2af909ce6bb47295928c5569dcee36d0eacb5d1adb95cb559e12267caca220dd",
+    "pipeline/pipeline/retrieval/knowledge_metadata.py": "5dc920cc329c7ecd230e64e46df0e5127769ec9f51709f225881292148c8a448",
+    "pipeline/pipeline/retrieval/library.py": "5e1e20f18d88f9e7611a4ecd47b45fbea14722a744d03eadb41496b081d65e35",
+    "pipeline/pipeline/retrieval/tools.py": "444a41eb901c0e48259c51ee02f444075ca6449e4b29f2db5ff33074c3b7b335",
+    "pipeline/pipeline/retrieval/agent.py": "8d3b78b737030abb68e55e751323eea501fc58a827e9a47097db237deae2e141",
+    "pipeline/pipeline/prompts/curate.py": "2a5edfa9361b28f1190c910ecfb0eac123e2c0034c0ba27cbc41e608b7f601a9",
+    "bench/rag/scripts/knowledge_scope_agent_eval.py": "c22a5d0234e4c818dfb98631668c9ccb403c33abb50e548716f623ffee68d4bc",
+    "bench/rag/fixtures/knowledge-scope-cases.json": "af78f0b0987b4788cef79dcf86cfc7ca5caab4bd86aec691321969d9b951e65c"
+  },
+  "books": [
+    {
+      "book_id": "learning-statistics-with-r",
+      "source_sha256": "043d04dc04cc06d4e5eef11e59687a919c7891620d38f35f4b404feb2544bc69",
+      "original_review_sha256": "8a5a2bc77f3d271f8d71b35dbfb65f69cda05a548e5bafe7c0ad6f8e19b7548f",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-1/learning-statistics-with-r.json",
+      "inspected_pdf_pages": [
+        1,
+        161,
+        162,
+        429,
+        430,
+        519,
+        537,
+        538,
+        539,
+        540,
+        542,
+        543,
+        610,
+        611,
+        612,
+        613,
+        620,
+        621,
+        733,
+        734,
+        735,
+        736,
+        737,
+        738,
+        756,
+        757
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch1",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "reused_trial_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/trial/learning-statistics-with-r.json",
+        "reused_trial_excerpt_ids": [
+          "exc_dd1e65de648fb2_0",
+          "exc_dd1e65de648fb2_278",
+          "exc_dd1e65de648fb2_998",
+          "exc_dd1e65de648fb2_1019",
+          "exc_dd1e65de648fb2_1199",
+          "exc_dd1e65de648fb2_1202",
+          "exc_dd1e65de648fb2_1203",
+          "exc_dd1e65de648fb2_1205"
+        ],
+        "reuse_method": "Rechecked each matching corrected excerpt and cited PDF page before preserving the trial tag and retrieval review."
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_dd1e65de648fb2_0",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "non_teaching"
+          ],
+          "topics_before": [
+            "data-types"
+          ],
+          "topics_after": [],
+          "retrieval": {
+            "summary": "Author credit on the book's title page; it contains no teaching content.",
+            "scope": "Title-page attribution only. This excerpt is excluded from teaching search.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "475cf8beedd79f305a223e5b71b3a2f19ed055c07e963f396c712e60954cfb41"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1003",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "multiple-regression",
+            "linear-regression",
+            "graphs",
+            "center",
+            "estimation"
+          ],
+          "topics_after": [
+            "multiple-regression",
+            "linear-regression",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Fits a two-predictor regression in R with lm, explains the implicit intercept, prints coefficients for danielle_sleep and baby_sleep, and interprets their relative sizes in the grumpiness example.",
+            "scope": "R-specific multiple linear regression using danielle_grump ~ danielle_sleep + baby_sleep. The coefficient comments apply to this fitted parenthood model. The mentioned 3D regression-plane visualization is in excerpt 1004.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1004"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "cdba6c40093a302a8b4438270ca69210fd641edc3fc79225721a5f6d1222181d"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1019",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "anova",
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests",
+            "sampling-distributions"
+          ],
+          "topics_after": [
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests"
+          ],
+          "retrieval": {
+            "summary": "Runs summary() on an R multiple-regression model with danielle_sleep and baby_sleep, displaying residuals, coefficients, t tests, R-squared, and the model F test.",
+            "scope": "R-specific multiple linear regression with two predictors. The excerpt displays output; the line-by-line interpretation and model comparison are in the next excerpt. Do not use it as a simple-regression example.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1020"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "d5bd496dacd176bf451cd22d259d70d32675c0d43691f7496b2a894ebdff4fc9"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1020",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests",
+            "sampling-distributions"
+          ],
+          "topics_after": [
+            "multiple-regression",
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests"
+          ],
+          "retrieval": {
+            "summary": "Interprets the R summary for a two-predictor regression: residual quartiles, coefficient estimates and t tests, N-K-1 degrees of freedom, the model F test, R-squared, and evidence for dropping baby_sleep.",
+            "scope": "Interpretation is tied to the multiple-regression output in excerpt 1019. Its residual-quartile check is described as quick and rough, not a full diagnostics procedure. The conclusion that regression_1 is preferable applies to this example, where baby_sleep p=.969 and R-squared=.816.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1019"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "a891ecc177d5f46ed1a8c8900b227ca3c716c6840097ca621af1189d3df4c17e"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1199",
+          "roles_before": [
+            "exercise",
+            "worked_example"
+          ],
+          "roles_after": [
+            "introduction",
+            "exercise"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests"
+          ],
+          "topics_after": [
+            "bayesian-inference"
+          ],
+          "retrieval": {
+            "summary": "Introduces Bayesian inference as revising beliefs about candidate hypotheses after observing data, then poses the umbrella-and-rain reasoning problem.",
+            "scope": "Conceptual, with no R dependency. This excerpt poses the problem but does not solve it; the linked excerpts supply the assumed prior, likelihood, joint probabilities, and posterior.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200",
+              "exc_dd1e65de648fb2_1201",
+              "exc_dd1e65de648fb2_1203",
+              "exc_dd1e65de648fb2_1204",
+              "exc_dd1e65de648fb2_1206"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "c9e4f593908b065c345db2da1a88394a03134f3dcc368a96b6c85a6c2a5a8845"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1200",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Defines a prior distribution as beliefs recorded before observing the focal evidence, using assumed January rain probabilities of 0.15 for rainy and 0.85 for dry in Adelaide.",
+            "scope": "Conceptual Bayesian example with no R dependency. The 0.15/0.85 values are illustrative assumptions based on 4.4 rainy days in a 31-day January, not a current forecast. The umbrella likelihood and posterior calculation are in the linked excerpts.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1199",
+              "exc_dd1e65de648fb2_1201",
+              "exc_dd1e65de648fb2_1203",
+              "exc_dd1e65de648fb2_1206"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "21d97fb320ac5d1a58816b34ef6cd1361f2ed2a7f1e1054035ed58e260f6349f"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1201",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "conditional",
+            "probability-basics"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "conditional",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Defines the likelihood P(d|h) as beliefs about observable data conditional on a hypothesis, using assumed umbrella probabilities for rainy and dry days.",
+            "scope": "Conceptual Bayesian example with no R dependency. The 0.30 rainy-day and 0.05 dry-day umbrella rates are assumed behavior, not measured frequencies. Combine them with the prior in excerpt 1200; the joint-probability calculation follows in excerpt 1203.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200",
+              "exc_dd1e65de648fb2_1203"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "5327880781bd6fa83df4549744039e3b860a2cee9594941f374173343444d57e"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1202",
+          "roles_before": [
+            "exercise",
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics",
+            "center"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Introduces joint probability as the next step after specifying priors and likelihoods, and distinguishes Bayesian and frequentist uses of the term likelihood.",
+            "scope": "Conceptual probability explanation with no R dependency. The sentence defining the rainy-day joint event is split at the page boundary and continues in excerpt 1203.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200",
+              "exc_dd1e65de648fb2_1201",
+              "exc_dd1e65de648fb2_1203"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "fce7fedeef441367bfd0c34016f8ac335b6fb3382f0a6c364c8a54de2c67717f"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1203",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Defines P(d,h)=P(d|h)P(h) and applies it to the rain-and-umbrella example, producing four joint probabilities and their marginal totals.",
+            "scope": "Worked example using the assumed Adelaide January prior and assumed umbrella behavior from excerpts 1200 and 1201. These illustrative assumptions are not an empirical weather model. Table interpretation continues in excerpt 1204.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200",
+              "exc_dd1e65de648fb2_1201",
+              "exc_dd1e65de648fb2_1204"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "a62bf7a6e84dbf78ee04e63477c499a72b0a4d4068fac5a158180c4b6f075dd1"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1204",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics",
+            "random-variables"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Explains how row and column sums of the rain-and-umbrella joint table recover marginal probabilities, then rewrites the table with symbolic data and hypothesis notation.",
+            "scope": "Conceptual probability notation with no R dependency. The 8.75% umbrella marginal comes from the illustrative joint table calculated in excerpt 1203. The final symbolic tables organize two hypotheses and two possible observations; belief updating begins in excerpt 1205.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1203",
+              "exc_dd1e65de648fb2_1205"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1576af1e4e3c4f48dc1f1bff1a78d8e6d0e901945ffd5d24baf3d654099cbbcf"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1205",
+          "roles_before": [
+            "exercise",
+            "worked_example"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Begins updating the rainy-day beliefs after observing an umbrella, explaining why impossible no-umbrella cells become zero and why the remaining probabilities must be renormalized.",
+            "scope": "Example-specific Bayesian update based on assumed priors and umbrella behavior. The numerical posterior is not in this excerpt; it appears in excerpt 1206.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200",
+              "exc_dd1e65de648fb2_1201",
+              "exc_dd1e65de648fb2_1203",
+              "exc_dd1e65de648fb2_1204",
+              "exc_dd1e65de648fb2_1206"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1300d3dce31b049385872070583ed5a7af5c415e1b8a034ecd1d1335f5285f81"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1206",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "bayesian-inference",
+            "hypothesis-tests",
+            "probability-basics"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "conditional",
+            "probability-basics"
+          ],
+          "retrieval": {
+            "summary": "Renormalizes the rain-and-umbrella joint probabilities after observing an umbrella, yielding posterior probabilities 0.514 for rain and 0.486 for dry.",
+            "scope": "Example-specific Bayesian update using the assumed prior and likelihood from excerpts 1200 and 1201. The 51.4% result is 0.045 divided by the 0.0875 umbrella marginal. The general posterior equation and Bayes rule continue in excerpt 1207.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1200",
+              "exc_dd1e65de648fb2_1201",
+              "exc_dd1e65de648fb2_1203",
+              "exc_dd1e65de648fb2_1207"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "2bb130ee018fbbf18397201382e391030a3321654edfe95e10ac147d302d6f9b"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1236",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "using-r",
+            "bayesian-inference",
+            "t-tests",
+            "sampling"
+          ],
+          "topics_after": [
+            "t-tests"
+          ],
+          "retrieval": {
+            "summary": "Sets up the Harpo two-group grades example and runs a frequentist Student independent-samples t-test in R as the baseline for a later Bayesian comparison.",
+            "scope": "R and lsr specific. This excerpt contains the data structure and frequentist independentSamplesTTest call with var.equal=TRUE; it does not yet show the Bayesian t test. The frequentist result and the ttestBF Bayes-factor analysis continue in excerpt 1237.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_1237"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "ccaac47cd059bf24f7fcf4fe1df9733c2d6720a6561474c67ae97fa6369df8f0"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_278",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "r-programming",
+            "graphs",
+            "center",
+            "data-types"
+          ],
+          "topics_after": [
+            "center",
+            "data-types"
+          ],
+          "retrieval": {
+            "summary": "Compares the mean as a data set's balancing point with the median as its middle ordered observation, then begins guidance on choosing between them by measurement scale.",
+            "scope": "Conceptual guidance independent of R. This excerpt covers nominal and ordinal data; its interval/ratio and extreme-value guidance continues in the next excerpt.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_279"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "fda3fc24e34c41542013f0e9e1d222f5f5d692146a3b7137ef539421a6687c31"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_279",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "r-programming",
+            "graphs",
+            "center",
+            "skew-and-kurtosis",
+            "data-types"
+          ],
+          "topics_after": [
+            "center",
+            "data-types",
+            "skew-and-kurtosis"
+          ],
+          "retrieval": {
+            "summary": "Explains when mean or median suits interval and ratio data, then uses skew and an extreme-income example to show how the mean moves toward a tail while the median remains closer to a typical value.",
+            "scope": "Conceptual guidance independent of R. The opening completes the ordinal-scale point from excerpt 278. The income figures are an illustrative outlier example, not a general income model.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_278"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "b15aead3a397e9512e6a94a95106f9c2d0827533298a2466444cb146603bcc46"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_702",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "bayesian-inference",
+            "confidence-intervals",
+            "sampling",
+            "probability-basics",
+            "center"
+          ],
+          "topics_after": [
+            "confidence-intervals",
+            "sampling-distributions",
+            "probability-basics",
+            "bayesian-inference"
+          ],
+          "retrieval": {
+            "summary": "Gives the frequentist interpretation of a 95% confidence interval: across repeated uses of the same procedure, about 95% of the resulting intervals contain the fixed population mean.",
+            "scope": "Applies to frequentist confidence intervals from repeated use of a fixed procedure. It rejects assigning 95% probability to the fixed mean after observing one interval. The 5 misses among 100 simulated intervals illustrate long-run coverage, not an exact quota for every 100 runs. The Bayesian contrast continues in excerpt 703.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_703"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "e6a2a886a4e5d47c1fddb98a852f7d3c6ce5440cd27b475383eba9c11430f629"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_853",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "t-tests",
+            "sampling",
+            "center"
+          ],
+          "topics_after": [
+            "t-tests"
+          ],
+          "retrieval": {
+            "summary": "Introduces the independent-samples t-test as a method for asking whether two unrelated groups have the same population mean.",
+            "scope": "Conceptual introduction for two distinct groups with one outcome per participant. It does not give formulas, assumptions, or a worked calculation; the Harpo student example begins in excerpt 854.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_854"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "f65b68b76fdf1548d4e5e819aef70df4527c6bc0a77b558cddf78510f128d3a6"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_882",
+          "roles_before": [
+            "exercise",
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "paired-data",
+            "sampling"
+          ],
+          "topics_after": [
+            "t-tests",
+            "paired-data"
+          ],
+          "retrieval": {
+            "summary": "Explains why repeated measurements violate the independence premise of an independent-samples t-test and motivates a paired test as a one-sample t-test on within-participant differences.",
+            "scope": "Applies to matched or repeated measurements where each value in one condition corresponds to a value in the other. The Chico grades supply context; the difference-score definition, hypotheses, statistic, and degrees of freedom continue in excerpt 883.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_881",
+              "exc_dd1e65de648fb2_883"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "890dda93664dc98a0a9f8d97dc6527ce96b96f1b66fd1a07292f2bcb9f63b0d9"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_885",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "using-r",
+            "r-programming",
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "topics_after": [
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "retrieval": {
+            "summary": "Interprets the Chico improvement test, then runs pairedSamplesTTest on wide-form grade_test2 and grade_test1 data and explains why its result matches a one-sample test of the difference scores.",
+            "scope": "R and lsr specific. The opening output belongs to the oneSampleTTest call in excerpt 884; the later command is the paired test for wide-form repeated measures. Variable order fixes the sign of the difference. The example has 20 paired students, t=6.475, df=19, p<.001.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_884"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "4ef411515b833f6eeb1c922c9e711905eee9d8ef421c5bf2607ca95ff662baba"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_888",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "using-r",
+            "r-programming",
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "topics_after": [
+            "t-tests",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "retrieval": {
+            "summary": "Runs pairedSamplesTTest on long-form Chico data using grade ~ time plus an id variable, and shows that reversing the difference order reverses the signs of the mean difference, t statistic, and confidence interval.",
+            "scope": "R and lsr specific for long-form repeated-measures data. The opening depends on the reshaping work in excerpt 887. The id must identify matched measurements and be supplied as the quoted variable name in this call form; that note finishes in excerpt 889.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_887",
+              "exc_dd1e65de648fb2_889"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "72360b8e81e227aeb6bf380a262f82fb115d2a87ce81d65e0f8a2bd10194a6ac"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_998",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "using-r",
+            "anova",
+            "linear-regression",
+            "center",
+            "estimation"
+          ],
+          "topics_after": [
+            "using-r",
+            "linear-regression",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Shows how to fit a simple linear regression in R with lm(formula, data), using danielle_grump as the outcome and danielle_sleep as the sole predictor.",
+            "scope": "R-specific simple linear regression with an intercept and one predictor. The coefficient interpretation continues in the next excerpt. It does not teach multiple regression.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_999"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "8691418472f1859b39412436c236d27bc8f300010ab96d35987fd670ade815dd"
+        },
+        {
+          "id": "exc_dd1e65de648fb2_999",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "linear-regression",
+            "graphs",
+            "center"
+          ],
+          "topics_after": [
+            "linear-regression",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Reads the fitted simple-regression coefficients from R output and writes the estimated line as y-hat = -8.94x + 125.96.",
+            "scope": "The numbers belong to the one-predictor parenthood model fitted in excerpt 998. This excerpt identifies the fitted equation; the practical meaning and limits of its slope and intercept continue in excerpt 1000. It does not describe multiple regression.",
+            "context_excerpt_ids": [
+              "exc_dd1e65de648fb2_998",
+              "exc_dd1e65de648fb2_1000"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "4c8ebe284da242e3ad9bbf463a91f983e6e21bf7aed7bf601261a77b45624665"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "compact-anthology-of-world-literature-part-1",
+      "source_sha256": "685dd8bd8f43bb1d0ad91f26f617e1a4ea29ea6782807305724bed59faaa459c",
+      "original_review_sha256": "520d337e7295790716f7a1cc2d59447061ab34e06b9b1da28f8e582c147e15a2",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-2/compact-anthology-of-world-literature-part-1.json",
+      "inspected_pdf_pages": [
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch2",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md"
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_1111cc969ad74d_115",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "reference"
+          ],
+          "topics_before": [
+            "ancient-near-east-greek-literature"
+          ],
+          "topics_after": [
+            "ancient-near-east-greek-literature"
+          ],
+          "retrieval": {
+            "summary": "Presents Book II of the Iliad: Jove deceives Agamemnon with a dream, Agamemnon tests the army, Ulysses halts the retreat and rebukes Thersites, and the poem catalogs Achaean and Trojan forces.",
+            "scope": "Primary literary text from Book II of the Iliad in Samuel Butler's English translation. It supports close reading of this episode, its speeches, similes, divine intervention, leadership conflicts, and force catalogues. It does not provide historical verification, a general account of Greek society, or literary interpretation.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "3264f58bb0b174b711f2c26faaf2aff141c3d93eccc1f8a4953371444f61af7c"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "lsj",
+      "source_sha256": "90d44719e232e643b1cb7d5b1fbf7884f495a9ec7488084c12459bf005d695aa",
+      "original_review_sha256": "e899337d84e982172352c76b08961a7c8c45b6cf81c862736fe40dd9bbb74c53",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-2/lsj.json",
+      "inspected_pdf_pages": [
+        78,
+        79,
+        94,
+        95,
+        96,
+        134,
+        135,
+        156,
+        157,
+        158,
+        163,
+        164,
+        249,
+        250,
+        251,
+        252,
+        253,
+        254,
+        258,
+        259,
+        260,
+        261,
+        267,
+        268,
+        269,
+        287,
+        447,
+        448
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch2",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md"
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_45ecdb7da7734b_95",
+          "roles_before": [
+            "introduction",
+            "formal"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "center",
+            "data-types"
+          ],
+          "topics_after": [
+            "center",
+            "data-types"
+          ],
+          "retrieval": {
+            "summary": "Explains mean as a distribution's balancing point and median as its middle observation, then uses measurement scale, skew, outliers, and an income example to guide the choice between them.",
+            "scope": "Software-independent guidance for choosing a measure of center. It recommends mode for nominal data, usually median for ordinal data, and either mean or median for interval/ratio data depending on purpose and sensitivity to extreme values. The income figures are illustrative.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "62be4c60431ac2ca88727c2a67da9fdb8afbda679bd451494cd6c9cb88338e40"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_107",
+          "roles_before": [
+            "introduction",
+            "worked_example",
+            "summary"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "worked_example",
+            "summary"
+          ],
+          "topics_before": [
+            "normal",
+            "center",
+            "spread"
+          ],
+          "topics_after": [
+            "normal",
+            "center",
+            "spread"
+          ],
+          "retrieval": {
+            "summary": "Defines a z-score as the number of standard deviations from the mean, computes grumpiness z=3.6 and extraversion z=-2.75, and explains why standardized scores can compare variables on different raw scales.",
+            "scope": "Software-independent standardization using z=(raw score-mean)/standard deviation. The percentile statements assume the hypothetical scores follow the stated normal distributions. The excerpt ends with a broad recap of the chapter's descriptive-statistics topics.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "13bbe28f555bbed9ccb42b83ba34297582173a112c4ac1a12b3b9b85ce4128e7"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_139",
+          "roles_before": [
+            "introduction"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "probability-basics",
+            "sampling"
+          ],
+          "topics_after": [
+            "probability-basics",
+            "sampling"
+          ],
+          "retrieval": {
+            "summary": "Motivates inferential statistics with a hypothetical poll of 1,000 NSW voters, asking how a sample result of 23% can support conclusions about millions of voters and why probability theory is needed.",
+            "scope": "Conceptual introduction to inference and probability. The polling numbers are an imagined illustration based on a 2010 news report, not a worked estimate or current political evidence. It raises representativeness and uncertainty questions without yet supplying inferential methods.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "0b9ab2efddd3046ad1b29ea5cb9943ed3027479d4548c04c97d9becd1f2e0f74"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_153",
+          "roles_before": [
+            "introduction"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "sampling",
+            "estimation"
+          ],
+          "topics_after": [
+            "sampling",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Introduces statistical inference as learning about unknowns from observed data and divides it into estimation and hypothesis testing, with sampling theory presented as the basis for estimation.",
+            "scope": "Chapter-level conceptual orientation. It outlines the relationship among sampling, estimation, and hypothesis testing but does not define an estimator, calculate an estimate, or present a test.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "53e1e24eef21d2c9d0f35aa56adc6137ef35211ed1a725c0587634b4d416b8a0"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_155",
+          "roles_before": [
+            "introduction"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "sampling"
+          ],
+          "topics_after": [
+            "sampling"
+          ],
+          "retrieval": {
+            "summary": "Defines a sample as observed data and a population as the larger set of possible people or observations about which conclusions are intended, then shows why a study's target population can be ambiguous.",
+            "scope": "General study-design and sampling concept. Examples concern voter polling, undergraduate psychology participants, and a probability game. The passage frames possible target populations but does not prescribe a sampling design or settle how broadly findings generalize.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "2900b478539b12ccf3447b99ea1e4259eddaff60f96243330ab9747fdbf699dd"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_159",
+          "roles_before": [
+            "introduction",
+            "formal"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "sampling",
+            "estimation",
+            "normal"
+          ],
+          "topics_after": [
+            "sampling",
+            "estimation",
+            "normal"
+          ],
+          "retrieval": {
+            "summary": "Distinguishes population parameters from sample statistics through a normal-IQ example: the population has mean 100 and SD 15, while one random sample of 100 has mean 98.5 and SD 15.9.",
+            "scope": "Software-independent sampling and estimation explanation. The IQ distribution and sample values are illustrative. It shows that statistics vary around parameters but does not yet teach an estimator's sampling distribution or a confidence interval.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "31b2578a89188825a0591cfad704e54280300ab73c1e08bc1c754189b4d80381"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_241",
+          "roles_before": [
+            "worked_example",
+            "formal",
+            "reference"
+          ],
+          "roles_after": [
+            "worked_example",
+            "formal",
+            "reference"
+          ],
+          "topics_before": [
+            "t-tests",
+            "jamovi",
+            "confidence-intervals"
+          ],
+          "topics_after": [
+            "t-tests",
+            "jamovi",
+            "confidence-intervals"
+          ],
+          "retrieval": {
+            "summary": "Runs a Student independent-samples t-test in jamovi for grades by tutor, interprets the confidence interval for the mean difference, and gives a reporting example with t, df, p, CI, and Cohen's d.",
+            "scope": "Jamovi-specific procedure and reporting example for two independent groups using Student's equal-variance t-test. The sample means are 74.53 and 69.06, with difference 5.48 and 95% CI [0.20, 10.76]. This is neither a paired test nor the unequal-variance Welch test.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "f459e796e748761b112f2903d26ae0c0e81e6662588e0119a647a14905cb442d"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_244",
+          "roles_before": [
+            "introduction",
+            "formal"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal"
+          ],
+          "topics_before": [
+            "t-tests"
+          ],
+          "topics_after": [
+            "t-tests"
+          ],
+          "retrieval": {
+            "summary": "Explains why Welch's independent-samples t-test avoids Student's equal-variance assumption, retains a mean-difference divided by standard-error statistic, and uses a different, possibly noninteger df calculation.",
+            "scope": "Software-independent explanation of Welch's test for two independent groups drawn from normal populations when variances need not be equal. Jamovi is mentioned only as an available implementation; operating it and interpreting its output continue after this excerpt.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "a358efefcaaea4a5f5099828302b56b4b62ad75dbf9080136b5bf3de62aeaf21"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_248",
+          "roles_before": [
+            "introduction",
+            "formal"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal"
+          ],
+          "topics_before": [
+            "paired-data",
+            "t-tests"
+          ],
+          "topics_after": [
+            "paired-data",
+            "t-tests"
+          ],
+          "retrieval": {
+            "summary": "Derives the paired-samples t-test as a one-sample t-test on within-person differences, with D_i=X_i1-X_i2, H0: mu_D=0, t=mean(D)/SE(mean(D)), and df=N-1.",
+            "scope": "Software-independent method for paired or repeated-measures observations. The sign of each difference depends on variable order. It tests a mean within-pair difference and should not be substituted for an independent-samples test on unrelated groups.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "9a6fb87220c63ed959f2e5059cac1212af0184feba0b4337e63ac8817dd903a7"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_249",
+          "roles_before": [
+            "worked_example",
+            "reference"
+          ],
+          "roles_after": [
+            "worked_example",
+            "reference"
+          ],
+          "topics_before": [
+            "paired-data",
+            "t-tests",
+            "jamovi"
+          ],
+          "topics_after": [
+            "paired-data",
+            "t-tests",
+            "jamovi"
+          ],
+          "retrieval": {
+            "summary": "Shows two equivalent jamovi implementations of a paired t-test: test a constructed difference variable with a one-sample t-test, or use Paired Samples T-Test; both give mean improvement 1.4 and t(19)=6.48, p<.001.",
+            "scope": "Jamovi-specific implementation for paired grades from the same students. The equivalence relies on testing the within-pair difference scores against zero. It does not apply to two independent groups.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "30c13c3db495440f65763dd0bb9eaf8fb31d652035a7408c7c63d5b3daf1655f"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_250",
+          "roles_before": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "t-tests",
+            "hypothesis-tests",
+            "confidence-intervals",
+            "paired-data",
+            "jamovi"
+          ],
+          "topics_after": [
+            "t-tests",
+            "hypothesis-tests",
+            "confidence-intervals",
+            "paired-data",
+            "jamovi"
+          ],
+          "retrieval": {
+            "summary": "Explains one-sided t-tests and one-sided confidence bounds, then shows jamovi settings for one-sample, independent-samples, and paired directional alternatives.",
+            "scope": "The conceptual distinction between one- and two-sided tests is software independent; the click paths and output examples require jamovi. Direction must be specified in advance. The examples span three distinct t-test designs and should not be treated as interchangeable.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "db96f834ddbc2bb5e34e7db9ed502ad18ad0f31ca9487e51dd5ef690e2ddb168"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_261",
+          "roles_before": [
+            "introduction",
+            "worked_example",
+            "reference"
+          ],
+          "roles_after": [
+            "introduction",
+            "worked_example",
+            "reference"
+          ],
+          "topics_before": [
+            "nonparametric",
+            "t-tests",
+            "hypothesis-tests",
+            "jamovi"
+          ],
+          "topics_after": [
+            "nonparametric",
+            "t-tests",
+            "hypothesis-tests",
+            "jamovi"
+          ],
+          "retrieval": {
+            "summary": "Builds a two-sample Mann-Whitney comparison by checking each group-A score against each group-B score, then shows jamovi output with U=3 and p=0.05556 for the no-ties example.",
+            "scope": "Two independent groups with substantially non-normal data; the hand-count explanation explicitly assumes no tied scores. The conceptual pairwise comparison is software independent, while the menu instructions require jamovi. This is not the paired or one-sample Wilcoxon test.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "907f75f92ecaf0ba9a5026d27f62e67d06f0f7144f4918da0515107aea39fdac"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_279",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "linear-regression",
+            "jamovi"
+          ],
+          "topics_after": [
+            "linear-regression",
+            "jamovi"
+          ],
+          "retrieval": {
+            "summary": "Fits a simple linear regression in jamovi with dani.grump as outcome and dani.sleep as the sole predictor, yielding intercept 125.96, slope -8.94, and fitted line Y-hat=125.96-8.94X.",
+            "scope": "Jamovi-specific implementation using parenthood.csv. This is simple linear regression with one predictor and an intercept. The fitted numbers belong to that dataset and should not be used as a multiple-regression example or a general behavioral relationship.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "fa4c86a1b59b7cb392050ed9361ed99d84d5f3ea9f1d6d8c08d5078669d04ae4"
+        },
+        {
+          "id": "exc_45ecdb7da7734b_409",
+          "roles_before": [
+            "introduction",
+            "worked_example",
+            "reference"
+          ],
+          "roles_after": [
+            "introduction",
+            "worked_example",
+            "reference"
+          ],
+          "topics_before": [
+            "bayesian-inference",
+            "t-tests",
+            "jamovi",
+            "hypothesis-tests"
+          ],
+          "topics_after": [
+            "bayesian-inference",
+            "t-tests",
+            "jamovi",
+            "hypothesis-tests"
+          ],
+          "retrieval": {
+            "summary": "Applies a Bayes-factor independent-samples t-test in jamovi to two tutor groups: BF=1.75 gives about 1.8:1 evidence for the alternative, contrasted with the frequentist p=.043 result.",
+            "scope": "Jamovi-specific Bayesian analysis of two independent groups using the software's suggested default prior, whose distribution and width are not specified in the excerpt. The evidence is weak for this dataset. This is not a paired-samples Bayesian t-test.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "bf71df024d45309069b63680f7722ce8b15db06807e3447af8fc9a672b5df2d2"
+        }
+      ],
+      "previous_version": 2,
+      "published_version": 3,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+      "source_sha256": "afa42d82224c02651168b58067697ba28316fcb475910781749c2f6f5c7a7e9d",
+      "original_review_sha256": "b0d0db0e9cecac8f567611e1fcf306b3132ffa8dcefdb1b74cb96d0447378953",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-3/educational-administration-the-roles-of-leadership-and-manag.json",
+      "inspected_pdf_pages": [
+        79,
+        80,
+        93,
+        118,
+        138
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch3",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md"
+      },
+      "correction_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/corrections/educational-administration-the-roles-of-leadership-and-manag.json",
+      "excerpts": [
+        {
+          "id": "exc_c93d5928c67e22_101",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "arts-based-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "topics_after": [
+            "arts-based-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "retrieval": {
+            "summary": "Introduces school-building leadership as influence on teaching and learning, argues that effective environments depend on shared and distributed leadership, and begins an arts-based approach to leadership practice.",
+            "scope": "Applies to principals and other stakeholders in school-building management under standards and accountability pressures. Claims are the author's synthesis of cited school-leadership literature and experience. The final arts-based premise continues in excerpt 102.",
+            "context_excerpt_ids": [
+              "exc_c93d5928c67e22_102"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "979e2eb511a61537fba4ca2f360736edbe8801c78b7750efcb37c7e9ed4d75e1"
+        },
+        {
+          "id": "exc_c93d5928c67e22_102",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "arts-based-school-leadership"
+          ],
+          "topics_after": [
+            "arts-based-school-leadership"
+          ],
+          "retrieval": {
+            "summary": "Contrasts managerial craft with leadership artistry and proposes 'and' thinking: reframing competing school duties as priorities that can be combined, while presenting the approach as one useful option rather than a single answer.",
+            "scope": "The author's school-leadership framework, illustrated by a high-school principal balancing classroom visits and discipline paperwork. It is advice for school leaders, not a validated universal rule. The excerpt ends as the author begins comparing qualitative and quantitative research.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "7fc5dfa8b84328775175dda4eaea2f3995c1df9c3194be9d5c1fa6ef9c3f6a6e"
+        },
+        {
+          "id": "exc_c93d5928c67e22_116",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "arts-based-school-leadership"
+          ],
+          "topics_after": [
+            "arts-based-school-leadership"
+          ],
+          "retrieval": {
+            "summary": "Uses shape as a metaphor for school management, then proposes separating administration into a Manager of Programs and instructional supervision into an Instructional Leader so teaching is not crowded out by operational demands.",
+            "scope": "A school-building leadership proposal developed by the author with 14 practicing administrators. The MP/IL split is a suggested response to competing principal duties, not a general organizational requirement or a district-level superintendent model.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "91979370e5909ea5d0f0e96c95674779b23e88de08a2a942fc8d2e5706d17703"
+        },
+        {
+          "id": "exc_c93d5928c67e22_145",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "non_teaching"
+          ],
+          "topics_before": [
+            "arts-based-school-leadership"
+          ],
+          "topics_after": [],
+          "retrieval": {
+            "summary": "Bibliography entries for school leadership, supervision, organizational change, arts-based research, mentoring, reflective practice, and related educational-administration literature.",
+            "scope": "Bibliography for the arts-based school-management chapter. It supplies citations rather than teaching the listed works, so it is excluded from teaching search.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "95dc92e217760e410b9bd3ea38d3edfe1fcedbb8b08465ed6f4343dfb44b7883"
+        },
+        {
+          "id": "exc_c93d5928c67e22_165",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "black-principals-coping-challenges"
+          ],
+          "topics_after": [
+            "black-principals-coping-challenges"
+          ],
+          "retrieval": {
+            "summary": "Discusses shortened preparation for new principals, presents transformational leadership as vision, modeling, reflection, and shared leadership, and contrasts second-order organizational change with task-focused instructional administration.",
+            "scope": "School-principal induction and change leadership as presented by the chapter's authors and cited scholars. The chapter applies this discussion to Black American principals, while many concepts in this excerpt are framed generally. Excerpt 164 supplies the shortage context; excerpt 166 completes the closing quotation.",
+            "context_excerpt_ids": [
+              "exc_c93d5928c67e22_164",
+              "exc_c93d5928c67e22_166"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "788f258c128b01e536948ac41e309c4c8bcd69947f5a040ebbaa79dc32a4dfaf"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 3,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "source_sha256": "5a0ab4b4aa32445142b4573faacb8d6367efbb9f58aea1a756477b616679c152",
+      "original_review_sha256": "833137d20eaa9f0fa0677bf35eaaa9892e765ae1c51195555af5dcec65d9fd73",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-3/politics-power-and-purpose-an-orientation-to-political-scien.json",
+      "inspected_pdf_pages": [
+        112,
+        113,
+        114,
+        116,
+        117,
+        120,
+        123,
+        126,
+        127,
+        135,
+        136
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch3",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "reused_review": {
+          "artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/trial/politics-power-and-purpose-an-orientation-to-political-scien.json",
+          "excerpt_ids": [
+            "exc_2bcaee6f65ce3f_152",
+            "exc_2bcaee6f65ce3f_153",
+            "exc_2bcaee6f65ce3f_179"
+          ],
+          "verification": "Re-read corrected source text and visually rechecked physical PDF pages 116, 117, 135, and 136."
+        }
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_2bcaee6f65ce3f_148",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Defines democratic sovereignty as authority dispersed among individuals and political equality as an ideal, then uses U.S. Senate and Electoral College representation to show that formal equality can remain incomplete.",
+            "scope": "Conceptual account of democracy with U.S. institutional examples. The excerpt covers individual sovereignty and political equality, the first two of the chapter's three elements. Dahl's 54-to-1 comparison is presented as a cited historical claim from the source.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "510e5b2ac44ed3f7df7cd6515f6b6c480c00c49134609ab875d228eb953efa57"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_150",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Presents democratic norms and values as the third element of democracy and argues that civic engagement, public deliberation, and community participation give democratic procedures social meaning.",
+            "scope": "Conceptual political theory. The opening Kansas and California voting example continues excerpt 148; the main explanation of norms and civic participation is self-contained. The page's three-part diagram matches the chapter's stated elements.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_148"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "8bfec79e833ab27e820e0a3bf5467cdacf5a42cdf96a17a10016faeffb9130ea"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_152",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Defines a republic as public ownership of the polity and democracy as direct or indirect citizen participation, then traces mixed rule and civic participation from Rome to Renaissance city-states.",
+            "scope": "Conceptual and historical political theory. The United States is the opening example, not a jurisdictional limit. The final sentence continues into excerpt 153.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_153"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "379aecc22420a5b6010fd27bae699c3d5e7529d7952ffaef7e4bff3136447f49"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_153",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Connects republics to classical republicanism, contrasts community rights with classical liberal individual rights, and traces mixed government through Aristotle, Machiavelli, Montesquieu, and the U.S. Constitution.",
+            "scope": "Historical account of classical republicanism and its influence on the U.S. constitutional system. The opening clause continues the Renaissance comparison from excerpt 152; the U.S. material is an application, not the definition's full scope.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_152"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "26d9f2a4bcda8feb54c018a384352baa8aa47c7c661f043ab24075122439b751"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_158",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Introduces aggregative democracy as a way to combine political preferences through voting, giving clear majority outcomes while beginning to identify its limits.",
+            "scope": "A normative justification for democracy, not a claim that majority voting always produces the best or fairest policy. The discussion of aggregative democracy's disadvantages continues in excerpt 159.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_159"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "c200553f5ed4eca238631e340d2e3bca187dfdc48a7e53706744c55341429f65"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_161",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Uses the 12 Angry Men example to explain deliberation, notes that deep value conflicts may resist consensus, and introduces radical democracy as direct citizen action that makes government accountable.",
+            "scope": "Political-theory comparison of deliberative and radical justifications for democracy. The film evidence is in excerpt 160, and the definition of radical democracy finishes in excerpt 162. Abortion and street protest are examples, not necessary conditions.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_160",
+              "exc_2bcaee6f65ce3f_162"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "b1d49d1d19459666a6e7ee332bc9545a05a8c6a45f5ea30358719c2c6f565be3"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_166",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "democratic-theory"
+          ],
+          "topics_after": [
+            "democratic-theory"
+          ],
+          "retrieval": {
+            "summary": "Assigns a three-page reflection on how life would differ without democracy, requiring at least two of the aggregative, deliberative, and radical conceptions; students outside a democracy reverse the scenario.",
+            "scope": "Learner exercise tied to the chapter's three justifications for democracy. The It's a Wonderful Life framing is illustrative. The required deliverable is a minimum three-page reflection, with a reversed prompt for students who do not live in a democracy.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "7f4a7db7ae8972ff575bddd6c5f7f5ae50fd7d2c2b2dc999f66ce1ff0657ee82"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_167",
+          "roles_before": [
+            "summary"
+          ],
+          "roles_after": [
+            "summary",
+            "exercise"
+          ],
+          "topics_before": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "topics_after": [
+            "democratic-theory",
+            "democratization"
+          ],
+          "retrieval": {
+            "summary": "Reviews democracy's core elements, the democracy-republic distinction, democratization, and aggregative, deliberative, and radical justifications, then asks learners to compare them and reflect on democracy's effects.",
+            "scope": "Chapter summary and reflection questions. The first paragraph reviews Chapter 5; the second also recaps the book's first section and previews later political-science subdisciplines.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "952915df50c3ea5d24c6fc954e31cba4ddb83b71195064ec2d7b0b29b48ecad9"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_178",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "history-of-political-theory"
+          ],
+          "topics_after": [
+            "history-of-political-theory"
+          ],
+          "retrieval": {
+            "summary": "Presents three conceptions of justice in Plato's Republic: honesty and fulfilled obligations, power defined by rulers, and Socratic wisdom through reason, moderation, and courage.",
+            "scope": "The author's account of positions attributed to Cephalus, Thrasymachus, and Socrates in Platonic political theory. These are competing viewpoints, not universal facts. The final question about justice as power continues in excerpt 179.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_179"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "937648c618446a192eb107149f926227c260622b3a3d7e1355390c906dd6accf"
+        },
+        {
+          "id": "exc_2bcaee6f65ce3f_179",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "history-of-political-theory"
+          ],
+          "topics_after": [
+            "history-of-political-theory"
+          ],
+          "retrieval": {
+            "summary": "Explains Plato's critique of democratic freedom, the slide from unchecked appetite to tyranny, and negative versus positive liberty within Plato's tripartite account of justice and wisdom.",
+            "scope": "Interpretation of Platonic political theory, not a general empirical claim about all democracies. The opening questions continue the preceding discussion of competing accounts of justice.",
+            "context_excerpt_ids": [
+              "exc_2bcaee6f65ce3f_178"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "33611aaca392048048ac977c3f0958f6bc665f9f64ee2835fa41ff41c2948656"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "21st-century-theories-of-education-administration",
+      "source_sha256": "78fd135f0bb4a8692f4d5df230e7a0622975e3dec0630a9aa1c1a6253b241fd7",
+      "original_review_sha256": "739d0506fdb06347e35c6472f22471c4c417e0c802333e7f303157d859c5c6af",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-4/21st-century-theories-of-education-administration.json",
+      "inspected_pdf_pages": [
+        5,
+        6,
+        8,
+        9,
+        10,
+        33,
+        34,
+        36
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch4",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md"
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_f1615397c20971_15",
+          "roles_before": [
+            "exercise",
+            "summary",
+            "reference"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "emotional-intelligence-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "topics_after": [
+            "educational-leadership-theory-practice"
+          ],
+          "retrieval": {
+            "summary": "Defines effective leadership for the chapter and lists five Kouzes and Posner practices: model the way, inspire a shared vision, challenge the process, enable others to act, and encourage the heart.",
+            "scope": "A conceptual definition in an educational-leadership chapter. The Leadership Practices Inventory is mentioned as one way leadership has been measured; using that questionnaire is not required to apply the definition.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "552ebb7ab803cf066b2198f8d0874ed3c34760d13093b2eb29e3eb69983cfb67"
+        },
+        {
+          "id": "exc_f1615397c20971_20",
+          "roles_before": [
+            "summary"
+          ],
+          "roles_after": [
+            "reference"
+          ],
+          "topics_before": [
+            "emotional-intelligence-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "topics_after": [
+            "emotional-intelligence-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "retrieval": {
+            "summary": "Reviews research on emotional intelligence and school leadership, contrasting significant self-ratings with nonsignificant supervisor/staff ratings and summarizing claims about learnable skills and professional development.",
+            "scope": "Literature review using studies and books from 2005-2009. The Ontario finding concerns principals and assistant principals and differs by rater: self-assessments p<.001, supervisor/staff ratings p>.05. Fetch excerpt 19 only for the preceding Mills-Rouse meta-analysis that the opening sentence completes.",
+            "context_excerpt_ids": [
+              "exc_f1615397c20971_19"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "21dd1f103f488a57448ee5293ede3e23be5ee11e35b5fbd57f5a3a2ce98e671b"
+        },
+        {
+          "id": "exc_f1615397c20971_59",
+          "roles_before": [
+            "introduction",
+            "reference"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "topics_after": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "retrieval": {
+            "summary": "Defines Synergistic Leadership Theory as four equal, interacting factors: organizational structure, leadership behavior, external forces, and beliefs, attitudes, and values, framed as gender-inclusive educational leadership.",
+            "scope": "Theory for examining educational leadership. The four-factor alignment and lack of hierarchy are part of the model; the feminine-voice and gender-inclusion claims are the authors' characterization of SLT. The page describes Figure 1, but the diagram itself is not visible on the inspected page.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "f3d99fadc8907d986ca43381384ec5034564a025182986fb3cf05386b426e9bf"
+        },
+        {
+          "id": "exc_f1615397c20971_68",
+          "roles_before": [
+            "summary",
+            "reference"
+          ],
+          "roles_after": [
+            "summary",
+            "worked_example"
+          ],
+          "topics_before": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "topics_after": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "retrieval": {
+            "summary": "Applies Synergistic Leadership Theory to Michele Rhee's Washington, D.C. school leadership, then summarizes the need to balance external forces, leadership behavior, organizational structure, and organizational values.",
+            "scope": "Implications for public-school leaders under the source's 2008-2009 framing. Michele Rhee and the Washington, D.C. district illustrate the theory; that case and its staffing actions are not required features of SLT or evidence that the framework applies universally.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "510311586832aa1a154a27f7ef5a0a11320ac992243ea8acd3bd3de6a4dc6c6b"
+        },
+        {
+          "id": "exc_f1615397c20971_9",
+          "roles_before": [
+            "introduction",
+            "reference"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "educational-leadership-theory-practice",
+            "culturally-responsive-social-justice-leadership",
+            "spiritual-ethical-leadership",
+            "synergistic-gender-inclusive-leadership",
+            "transformational-servant-leadership"
+          ],
+          "topics_after": [
+            "educational-leadership-theory-practice"
+          ],
+          "retrieval": {
+            "summary": "Introduces educational leadership as a bridge between theory and practice and uses quantum energy as an extended metaphor for the effort needed to initiate and sustain organizational change.",
+            "scope": "Written for educational administrators. Quantum mechanics is an analogy, not a required scientific method or evidence about leadership. The named leadership theories preview later chapters rather than teaching them here. Excerpt 10 completes the final sentence and states the project's aim.",
+            "context_excerpt_ids": [
+              "exc_f1615397c20971_10"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "f42a0473aeefb013dd9477ac0a795dcabd4141fd8d3510b95cc702c8bbddd520"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "principles-of-business-statistics",
+      "source_sha256": "3c9d787343b7c6f40189049f4bcb596c918d915f1e672dc30a5b7ff99760736e",
+      "original_review_sha256": "1532e8030bb53f162438e17c5cfb8ef1c4359721b2da8df375760341930d7da7",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-4/principles-of-business-statistics.json",
+      "inspected_pdf_pages": [
+        112,
+        113
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch4",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md"
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_64ed84430ae3b2_261",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "linear-regression",
+            "correlation"
+          ],
+          "topics_after": [
+            "linear-regression"
+          ],
+          "retrieval": {
+            "summary": "Defines the least-squares regression line as the straight line that minimizes the sum of squared errors, notes common calculation tools, and shows the third-exam versus final-exam score example.",
+            "scope": "Simple linear regression for data plausibly scattered around a straight line. The exam scores are an incidental dataset, and software or a named calculator is optional. Excerpt 262 continues the example with the fitted equation, prediction domain, and slope interpretation.",
+            "context_excerpt_ids": [
+              "exc_64ed84430ae3b2_262"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "b0bfc6c96f4012899bb37523df14037b8eab52fde48f142bf8ec42b60a1f5f0d"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "the-legal-and-ethical-environment-of-business",
+      "source_sha256": "593593bff28303c6ec43df039008860fe36c92dd43dd841737d83efd789ceac6",
+      "original_review_sha256": "ccd1b23540a2faff9e61a75d058d53ec9980eacee7ee357bdc5aff2a0d296487",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-4/the-legal-and-ethical-environment-of-business.json",
+      "inspected_pdf_pages": [
+        20,
+        149,
+        152,
+        153,
+        154,
+        155,
+        156,
+        157,
+        162,
+        163,
+        167
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch4",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "trial_reuse": {
+          "artifact": "../trial/the-legal-and-ethical-environment-of-business.json",
+          "excerpt_ids": [
+            "exc_1c619222c448be_14",
+            "exc_1c619222c448be_186",
+            "exc_1c619222c448be_187",
+            "exc_1c619222c448be_190"
+          ],
+          "note": "Reused matching source-checked replacement tags and page observations from the successful Sol medium trial; this reviewer rechecked assignment hashes and surrounding excerpt context."
+        }
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_1c619222c448be_14",
+          "roles_before": [
+            "introduction"
+          ],
+          "roles_after": [
+            "non_teaching"
+          ],
+          "topics_before": [
+            "sources-of-law-and-jurisprudence"
+          ],
+          "topics_after": [],
+          "retrieval": {
+            "summary": "Learning objectives for a section on sources of U.S. law; the excerpt itself contains no explanation.",
+            "scope": "Objectives only. It names intended coverage but does not teach the listed distinctions, so it is excluded from teaching search.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "803b511aec98500b85599d2671a1c3f5fd0cde8b35234bbea49778736ed7e0fb"
+        },
+        {
+          "id": "exc_1c619222c448be_182",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "contract-formation-and-ucc"
+          ],
+          "topics_after": [
+            "contract-formation-and-ucc"
+          ],
+          "retrieval": {
+            "summary": "Introduces the chapter's U.S. contracts topics and begins the Locke v. Warner Bros. case about a development agreement, payment, performance, and good faith.",
+            "scope": "Chapter-opening objectives and the first part of a California contract case. Fetch excerpt 183 only for the case's remaining facts, appellate reasoning, and outcome; the objectives themselves do not teach each listed doctrine.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_183"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "3cf8672ee4e1dbf92e90cd6a8bef1baf4c2f9e722a87ff1e49d679ade6e96104"
+        },
+        {
+          "id": "exc_1c619222c448be_186",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "contract-formation-and-ucc"
+          ],
+          "topics_after": [
+            "contract-formation-and-ucc"
+          ],
+          "retrieval": {
+            "summary": "Introduces U.S. contract formation, common law versus UCC Article 2, and the common-law requirements of offer, acceptance, consideration, capacity, and lawful purpose through scooter examples.",
+            "scope": "General U.S. business-law overview as presented by the textbook. The scooter and personal-promise scenarios are illustrations, not conditions on the rules. The bilateral example continues in excerpt 187.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_187"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "409443be632e7c1b14d69babbb903970d027d4591c8f778c918c52e42db7732d"
+        },
+        {
+          "id": "exc_1c619222c448be_187",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "contract-formation-and-ucc"
+          ],
+          "topics_after": [
+            "contract-formation-and-ucc"
+          ],
+          "retrieval": {
+            "summary": "Explains bilateral and unilateral contracts, consideration, illusory promises, lawful purpose, capacity, and the UCC's more flexible formation rules for sales of goods and merchants.",
+            "scope": "U.S. contract-law overview with illustrative scooter, employment, and illegal-cargo examples. The source notes that contract law varies by state and that states adopt versions of the UCC. The passage continues into excerpt 188.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_186",
+              "exc_1c619222c448be_188"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "e6b9998e51184ceb9b5cc60cfb1c9cd34157e9d9b986cdfe40c9f0c1df621f73"
+        },
+        {
+          "id": "exc_1c619222c448be_188",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "contract-formation-and-ucc"
+          ],
+          "topics_after": [
+            "contract-formation-and-ucc"
+          ],
+          "retrieval": {
+            "summary": "Explains the textbook's Statute of Frauds writing requirements and contrasts UCC formation with common law, including battle-of-forms treatment, gap fillers, and the required quantity term.",
+            "scope": "U.S. business-law account. The source presents $500 as the writing threshold for sales of goods and says non-UCC writing rules are often in state statutes. The opening question continues excerpt 187. The account reflects the textbook and is not current jurisdiction-specific legal advice.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_187"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "30e5aebdf44283c05f3758899680943bbe78c87ad94efb3e776bc5c802a04037"
+        },
+        {
+          "id": "exc_1c619222c448be_189",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "reference"
+          ],
+          "topics_before": [
+            "contract-formation-and-ucc"
+          ],
+          "topics_after": [
+            "contract-formation-and-ucc"
+          ],
+          "retrieval": {
+            "summary": "Extracted rows from a table comparing UCC and common-law formation rules, including acceptance, essential terms, gap fillers, sales of goods, services, and real-property interests.",
+            "scope": "U.S. textbook comparison. The extraction loses table headers and row alignment; excerpt 188 supplies the surrounding explanation. Read the $500 entry as the source's Statute of Frauds writing threshold, not as the boundary of UCC Article 2.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_188"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "95801594051538c8cf1a8cab512087991bfc623f0e30cdb6107fe7ff389002c5"
+        },
+        {
+          "id": "exc_1c619222c448be_190",
+          "roles_before": [
+            "summary"
+          ],
+          "roles_after": [
+            "summary"
+          ],
+          "topics_before": [
+            "contract-formation-and-ucc"
+          ],
+          "topics_after": [
+            "contract-formation-and-ucc"
+          ],
+          "retrieval": {
+            "summary": "Summarizes common-law and UCC contract formation, including offer, acceptance, consideration, capacity, lawful purpose, gap fillers, and the UCC quantity requirement.",
+            "scope": "U.S. overview as presented by the textbook. Read the $500 statement with excerpt 188: the source identifies that amount as a Statute of Frauds writing threshold. It does not establish that Article 2 applies only to goods priced at $500 or more.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_188",
+              "exc_1c619222c448be_189"
+            ]
+          },
+          "full_notes_unchanged": false,
+          "full_notes_sha256": "c1a735aab7ce294004972eb1cf50938b80373478469e1901412dbe470f952045"
+        },
+        {
+          "id": "exc_1c619222c448be_196",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "contract-performance-breach-remedies"
+          ],
+          "topics_after": [
+            "contract-performance-breach-remedies"
+          ],
+          "retrieval": {
+            "summary": "Explains contract defenses and equitable remedies, including defective formation, quasi-contract, promissory estoppel, capacity, illegality, and impossibility, with house-sale and mistaken-painter examples.",
+            "scope": "U.S. textbook account. It names statutes of limitations but gives no period here; excerpt 197 says state periods vary and gives the text's 3-10 year range by contract type and jurisdiction. Fetch 195 only for the opening defense setup and 197 for the continuation. This is not current legal advice.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_195",
+              "exc_1c619222c448be_197"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "20881b8064afe7b26dc55d4a4eb9ee5683ad51fb298ac3cefcf857dae4b4afde"
+        },
+        {
+          "id": "exc_1c619222c448be_202",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "contract-performance-breach-remedies"
+          ],
+          "topics_after": [
+            "contract-performance-breach-remedies"
+          ],
+          "retrieval": {
+            "summary": "Introduces assignment and delegation, explains that contract rights and duties are generally transferable subject to express and public-policy limits, and poses a band-performance example.",
+            "scope": "U.S. textbook overview of contract clauses and transfer rules. The nightclub band is an illustration; excerpt 203 completes the delegation rule and applies the personal-performance exception. Enforceability can depend on the contract and jurisdiction, so this is not current legal advice.",
+            "context_excerpt_ids": [
+              "exc_1c619222c448be_203"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "e07134d25d26da9aec8adec673e4cbc87e5b9a5434b5cc836b4da67425d3d3ed"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "ahss4",
+      "source_sha256": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+      "original_review_sha256": "de4f45cc978d2124d2b733f4502c132cb426472ceeb188d84de6c0c1d2bc0ccc",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-5/ahss4.json",
+      "inspected_pdf_pages": [
+        11,
+        12,
+        16,
+        57,
+        129,
+        130,
+        131,
+        459,
+        460,
+        473
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch5",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Fresh bounded source review against the corrected corpus and rendered PDF pages; trial metadata was reused only for exc_f97f47b7a1fd68_158 after source and hash checks."
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_0689cddaba206d_111",
+          "roles_before": [
+            "summary",
+            "reference"
+          ],
+          "roles_after": [
+            "summary"
+          ],
+          "topics_before": [
+            "center",
+            "spread",
+            "graphs"
+          ],
+          "topics_after": [
+            "center",
+            "spread",
+            "graphs"
+          ],
+          "retrieval": {
+            "summary": "Reviews measures of center and spread, linear transformations, outliers and robustness, five-number summaries and box plots, comparative displays, and Z-scores.",
+            "scope": "Section review of one-variable numerical summaries. Its box-plot convention defines outliers beyond 1.5 IQR and whiskers to the most extreme non-outliers. The transformation rules concern adding or multiplying every observation by a constant.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "b464f41159d300a474006b7eb45e173fb6d62fd78fa0d0292fd4a21b29ace546"
+        },
+        {
+          "id": "exc_0689cddaba206d_18",
+          "roles_before": [
+            "introduction",
+            "formal",
+            "exercise"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "exercise"
+          ],
+          "topics_before": [
+            "data-types",
+            "sampling"
+          ],
+          "topics_after": [
+            "data-types",
+            "sampling",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Frames statistics as a four-step investigation, then defines target population, sample, n, N, statistical study, observational unit, variable, parameter, and statistic.",
+            "scope": "Introductory definitions apply across the book's example fields. Guided Practice 1.1 asks only for the populations of interest in the voting and heart-disease questions. It does not yet teach a sampling design or claim that a sample automatically represents its population.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "f60d4cadf6fee84c31deaa6f7e0ceef1725494eee4ca72eb0f4440068615cfb0"
+        },
+        {
+          "id": "exc_0689cddaba206d_223",
+          "roles_before": [
+            "introduction",
+            "worked_example",
+            "exercise"
+          ],
+          "roles_after": [
+            "worked_example",
+            "exercise"
+          ],
+          "topics_before": [
+            "conditional",
+            "experiments",
+            "data-types"
+          ],
+          "topics_after": [
+            "conditional",
+            "experiments"
+          ],
+          "retrieval": {
+            "summary": "Uses a 1721 Boston smallpox table of 6,224 people to calculate conditional death probabilities and ask why self-selected inoculation data do not support a causal conclusion.",
+            "scope": "Historical observational dataset with 244 inoculated and 5,980 uninoculated people. Pair calculations with this table: P(died | not inoculated)=0.1411. Self-selection can confound the comparison, so differences are associations, not proof that inoculation caused the outcome. The extracted text duplicates some answer fragments.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "57f86e8723ed9d34ed36bceb3a9b569c88f312725fe35b41c301480ccc480dd8"
+        },
+        {
+          "id": "exc_0689cddaba206d_28",
+          "roles_before": [
+            "summary",
+            "introduction"
+          ],
+          "roles_after": [
+            "summary"
+          ],
+          "topics_before": [
+            "data-types",
+            "sampling",
+            "estimation"
+          ],
+          "topics_after": [
+            "data-types",
+            "sampling",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Reviews statistical investigations, population N and sample n, data tables, parameters and statistics, and numerical versus categorical variables.",
+            "scope": "Section review of introductory definitions. It distinguishes a population quantity from a sample statistic used to estimate it and classifies numerical variables as discrete or continuous. It does not specify how a sample was selected or guarantee representative inference.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "853ebdd536b8b066f00ed382ad2041954ccd4d94867b880bae582881df156bf6"
+        },
+        {
+          "id": "exc_0689cddaba206d_703",
+          "roles_before": [
+            "formal",
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "linear-regression",
+            "correlation"
+          ],
+          "topics_after": [
+            "linear-regression",
+            "correlation"
+          ],
+          "retrieval": {
+            "summary": "Derives least-squares slope b = r(s_y/s_x) and intercept a = y-bar - b x-bar, then gives Elmhurst gift-aid output for family income.",
+            "scope": "Simple linear regression for Elmhurst College gift aid predicted from family income. Both variables are measured in thousands of dollars. The displayed fit has intercept 24.3193 and slope -0.0431; the correlation enters the slope formula for this paired dataset.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "102164ddb221deb7e16f54e0aaa716c1b490633e846c54e1d537c668357b9846"
+        },
+        {
+          "id": "exc_0689cddaba206d_705",
+          "roles_before": [
+            "worked_example",
+            "formal"
+          ],
+          "roles_after": [
+            "worked_example",
+            "formal"
+          ],
+          "topics_before": [
+            "linear-regression"
+          ],
+          "topics_after": [
+            "linear-regression"
+          ],
+          "retrieval": {
+            "summary": "Interprets Elmhurst regression coefficients: predicted gift aid falls by $43.10 per additional $1,000 of family income, and the intercept predicts $24,300 at zero income.",
+            "scope": "Coefficient interpretation for a simple linear model with gift aid and family income both recorded in thousands of dollars. The intercept is meaningful only if the model remains valid at x=0 and zero lies within a relevant data range; in other applications it may be extrapolation.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "4b0cb266bacdeb246d322773ad035eba050cd58b82c410e679f6b4483db962ae"
+        },
+        {
+          "id": "exc_0689cddaba206d_728",
+          "roles_before": [
+            "summary",
+            "formal"
+          ],
+          "roles_after": [
+            "summary"
+          ],
+          "topics_before": [
+            "linear-regression",
+            "correlation",
+            "regression-diagnostics"
+          ],
+          "topics_after": [
+            "linear-regression",
+            "correlation",
+            "regression-diagnostics"
+          ],
+          "retrieval": {
+            "summary": "Reviews least-squares fitting, y-hat = a + bx, R-squared, the sign of correlation, coefficient interpretation, and cautions about intercepts outside the observed range.",
+            "scope": "Section review for simple regression. R-squared is described as explained response variation and does not give association direction; use slope or the scatterplot for the sign of r. The intercept may be unreasonable when x=0 is extrapolation or yields an impossible response.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "490700f4596501990f13a03e846104835897a9f35379fb4f3e1ec31f419eb7df"
+        }
+      ],
+      "previous_version": 2,
+      "published_version": 3,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "online-statistics-education-an-interactive-multimedia-course",
+      "source_sha256": "bb7f569da1981e8ee28d36e8d13cf5addfb58d991f82e9845374119421cef054",
+      "original_review_sha256": "9b9452767d917ff5bd7d8b2b0211e1d69cdd1b964db9a94a44c431e8c0851b17",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-5/online-statistics-education-an-interactive-multimedia-course.json",
+      "inspected_pdf_pages": [
+        10,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        134,
+        135,
+        140,
+        141,
+        142,
+        143,
+        159,
+        160,
+        161,
+        162,
+        163,
+        216,
+        217,
+        218,
+        605,
+        606
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch5",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Fresh bounded source review against the corrected corpus and rendered PDF pages; trial metadata was reused only for exc_f97f47b7a1fd68_158 after source and hash checks."
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_f97f47b7a1fd68_1",
+          "roles_before": [
+            "introduction",
+            "exercise"
+          ],
+          "roles_after": [
+            "non_teaching"
+          ],
+          "topics_before": [
+            "percentiles",
+            "data-transformations"
+          ],
+          "topics_after": [],
+          "retrieval": {
+            "summary": "Chapter roadmap listing the introductory statistics sections; it does not explain the listed concepts.",
+            "scope": "Opening overview and section list only. It is excluded from teaching search because the excerpt supplies no definitions, methods, examples, or learner tasks.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "20187838ba5b5f44b1ef82c54ba6ccd6dffbf497dd1e48fe267d5f0111a8d610"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_158",
+          "roles_before": [
+            "introduction",
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "probability-basics",
+            "binomial"
+          ],
+          "topics_after": [
+            "probability-basics",
+            "binomial"
+          ],
+          "retrieval": {
+            "summary": "Probability exercises on dice, cards, coins, binomial counts, independence, Bayes/base rates, sampling without replacement, and diet-and-health case-study proportions.",
+            "scope": "Learner tasks covering the full Probability chapter. Questions 17-18 require Diet and Health case-study counts that are not printed here; excerpt 521 contains the relevant outcome table. No worked solutions are included.",
+            "context_excerpt_ids": [
+              "exc_f97f47b7a1fd68_521"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "64eafe729c7a012d62675646fa475c8ad02b03ad5447548f23a40b7af598f165"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_5",
+          "roles_before": [
+            "introduction",
+            "worked_example"
+          ],
+          "roles_after": [
+            "introduction",
+            "worked_example"
+          ],
+          "topics_before": [
+            "center"
+          ],
+          "topics_after": [
+            "center"
+          ],
+          "retrieval": {
+            "summary": "Defines descriptive statistics, separates description from inference, and illustrates summaries with occupation salaries, metro-area sex ratios, and Olympic marathon means.",
+            "scope": "Conceptual introduction with historical U.S. examples. Salary data are from 1999, metro-area counts from 1990, and Olympic results run through 2004; use them to learn descriptive summaries, not as current facts. The marathon example compares two groups of 13 men's races.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "64ad1342f8ccb7b5fcd49375f703fcd5b43a6d1f4649acb2ebcc4aa6209ede50"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_521",
+          "roles_before": [
+            "reference",
+            "introduction",
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "data-transformations"
+          ],
+          "topics_after": [
+            "chi-square"
+          ],
+          "retrieval": {
+            "summary": "Sets up a chi-square test of diet and health outcome, gives the 2x4 observed-count table, and computes expected cancer counts under independence.",
+            "scope": "Worked contingency-table example for 605 study participants in AHA and Mediterranean diet groups. The excerpt ends during the expected-frequency derivation. Fetch excerpt 522 only when the general formula, full expected-count table, chi-square statistic, degrees of freedom, or p-value is needed.",
+            "context_excerpt_ids": [
+              "exc_f97f47b7a1fd68_522"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "0f97f4972ba9960c6b7d3aae0743a68cfe4889a1c2db9c3caa798d7d750e140f"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_6",
+          "roles_before": [
+            "introduction",
+            "worked_example"
+          ],
+          "roles_after": [
+            "introduction",
+            "worked_example"
+          ],
+          "topics_before": [
+            "data-types"
+          ],
+          "topics_after": [
+            "sampling",
+            "estimation"
+          ],
+          "retrieval": {
+            "summary": "Defines populations, samples, and inferential statistics through a U.S. election-opinion example, then begins explaining why representative sampling matters.",
+            "scope": "Introductory conceptual passage with a U.S. election example. It defines inference from a sample to a population but ends during the biased-sample example. Fetch excerpt 7 only for that continuation or for the later sampling-design and random-assignment objectives; those methods are not taught in this excerpt.",
+            "context_excerpt_ids": [
+              "exc_f97f47b7a1fd68_7"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1c939469dfe23667e54be97a5b3a431d81fea8b6a78c034e1210e222de6b3514"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_69",
+          "roles_before": [
+            "introduction"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "center",
+            "spread"
+          ],
+          "topics_after": [
+            "center",
+            "spread"
+          ],
+          "retrieval": {
+            "summary": "Shows that the median minimizes total absolute deviation, the mean minimizes total squared deviation, and the mean is the balance point, using values 2, 3, 4, 9, and 16.",
+            "scope": "General properties of mean and median illustrated by one five-value dataset. The displayed totals are 20 versus 22.8 for absolute deviations and 174 versus 134.8 for squared deviations; the balance point is mean 6.8 rather than median 4.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1f47789f7e5b63454e066a0d16b9e0f25fd49d2e8e9d6b3e2a768e7d0f9fc6dd"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_75",
+          "roles_before": [
+            "introduction"
+          ],
+          "roles_after": [
+            "introduction",
+            "worked_example"
+          ],
+          "topics_before": [
+            "center",
+            "spread"
+          ],
+          "topics_after": [
+            "center",
+            "spread"
+          ],
+          "retrieval": {
+            "summary": "Compares mean, median, mode, geometric mean, trimean, and trimmed mean under symmetry and positive skew using psychology scores and 1994 baseball salaries.",
+            "scope": "Examples show how skew changes measures of center. The psychology dataset has 642 scores; the baseball salaries are 1994 values in thousands of dollars. The source recommends reporting several center measures when they differ, rather than treating one measure as universally best.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "4b609a49f130cda0b3505f876e824f7ac695566455208dc9e050e14d001ddc1d"
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_98",
+          "roles_before": [
+            "introduction",
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "center",
+            "spread"
+          ],
+          "topics_after": [
+            "center",
+            "spread",
+            "data-transformations"
+          ],
+          "retrieval": {
+            "summary": "Exercises on skew, center, variability, linear and log transformations, deviation minimization, robustness, and interpreting a balance histogram, followed by case-study calculations.",
+            "scope": "Unsolved learner tasks. Questions 1-19 include their own numerical givens, tables, or printed histogram where needed. Questions 20-31 require Angry Moods, Flatulence, Stroop, Physicians' Reactions, Smiles and Leniency, or ADHD Treatment case-study data that are not contained in this excerpt.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "cd0f59fac1735f1b5012dc39eadb81639a1f544b615842d32e8bf36eb4c071e7"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "fundamentals-of-electrical-engineering-i",
+      "source_sha256": "e53ed3d0c7dd4add27d791d8d8d24f0e49ab87a40b99043b73a022a28446675a",
+      "original_review_sha256": "036b7708b04844bfd0b81a804a68e35fa7dd8864f306a590801a3c36cbad3d06",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-6/fundamentals-of-electrical-engineering-i.json",
+      "inspected_pdf_pages": [
+        314,
+        317,
+        318,
+        319,
+        320,
+        322,
+        323,
+        345,
+        346,
+        347,
+        348
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch6",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Fresh bounded review of corrected excerpts, necessary adjacent excerpts, and rendered source PDF pages."
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_d6a5f3974008aa_582",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "exercise"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Explains majority-vote decoding for a threefold repetition code, derives when one flipped bit is corrected, asks the learner to verify the decoding-error inequality, and explains why the fixed-power rate penalty can erase the apparent gain.",
+            "scope": "Classical binary block channel coding, not quantum error correction. The decoder assumes three transmitted copies and a per-bit channel error probability pe; it corrects at most one flipped bit. The table used by the opening calculation is in excerpt 581. The fixed-power comparison also accounts for the threefold bit-rate increase and reduced energy per bit.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_581"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "ae562e673375f230b403d3ee402b66988eede1e070893e024afb8d38acd5cd21"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_587",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Uses the (3,1) repetition code to explain Hamming distance, nearest-codeword decoding, and why correcting every single-bit error requires codewords separated by at least three bits, then introduces a more efficient (7,4) code.",
+            "scope": "Classical binary linear block coding, not quantum error correction. Distance counts bit flips along binary coordinates; the single-bit guarantee requires disjoint radius-one neighborhoods around codewords. The (7,4) generator matrix and efficiency discussion are specific to the displayed code.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "e5b3d595b1b906aacee3a99db0f1a603a63284749655e0722e3992d15e6888e7"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_588",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "formal",
+            "exercise"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Defines minimum Hamming distance for a linear block code, states d_min>=3 for correction of every single-bit error, asks for the distance needed to correct n errors, and finds d_min=3 for the displayed (7,4) code by codeword weights.",
+            "scope": "Classical binary linear block coding, not quantum error correction. The weight argument uses the specific (7,4) generator matrix introduced in excerpt 587. The general single-bit criterion applies to nearest-codeword decoding; the exercise asks the learner to generalize it to n-bit correction.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_587"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "a90169e5a1fa060b8180da6f12a20be580aaf4ee97a6005ef26484a3cde67246"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_594",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal",
+            "exercise"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Explains why a decoder that chooses the minimal error pattern can mistake a three-bit corruption of one (7,4) codeword for a valid or one-bit-corrupted different codeword, then asks when one-bit errors are likelier than three-bit errors.",
+            "scope": "Classical binary (7,4) channel coding, not quantum error correction. The maximum-probability argument assumes a sufficiently small independent per-bit error probability pe. The phrase \"minimal\" refers to the syndrome-decoding lookup and correction sequence given in excerpts 592-593.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_592",
+              "exc_d6a5f3974008aa_593"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "5210c9c2f1825ddd13da2206cdaf5a87ecd5d8da29cda6529782c8c23a4ce15a"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_597",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "formal"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Compares uncoded and (7,4)-coded block-error probabilities under an energy-per-bit penalty, defines Hamming codes by the perfect-fit relation 2^(N-K)-1=N for single-bit error patterns, and tabulates their N, K and efficiencies.",
+            "scope": "Classical binary channel coding, not quantum error correction. The plotted comparison assumes four data bits, a (7,4) single-bit-correcting code, fixed transmitter energy spread over seven bits, and the resulting coded-channel bit error probability p-prime_e. The table concerns Hamming-code parameter families and single-bit correction.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "5767d9558f361069a8480d385a770f8ba61a319545a77f403ee927367c6dcdb5"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_635",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Continues exercises on coding a four-symbol source, then poses a UPC barcode problem about digit representation, reverse reading, read-error probability and correction bars, and begins a length-5 binary error-correcting-code problem.",
+            "scope": "Classical source and channel coding, not quantum error correction. Problem 6.20 requires the four letter probabilities in excerpt 634. The UPC questions use equal-width black/white bars and a per-bar read error probability pe. Problem 6.22 continues with its complete codeword table in excerpt 636.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_634",
+              "exc_d6a5f3974008aa_636"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "468e59d479247df4ff7541eee4633043236500b016697527d81a757e4cd7fc74"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_636",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Exercises ask for efficiency, generator and parity-check matrices, decoding behavior and block-error probability of a length-5 code, then combine Huffman coding with a (6,3) channel code and introduce a hidden-data six-bit code.",
+            "scope": "Classical binary source/channel coding, not quantum error correction. The first four questions complete Problem 6.22 from excerpt 635. Problem 6.23 supplies a nine-letter probability table, a specific (6,3) code and bit error probability 1/8. Problem 6.24 continues with all six code-bit equations in excerpt 637.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_635",
+              "exc_d6a5f3974008aa_637"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "60338256c905acebd0e4746d30eacc88fb4f6f8b2984043720397048fc7bdf18"
+        },
+        {
+          "id": "exc_d6a5f3974008aa_637",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "communication-systems",
+            "digital-communication-and-coding"
+          ],
+          "topics_after": [
+            "communication-systems",
+            "digital-communication-and-coding"
+          ],
+          "retrieval": {
+            "summary": "Exercises analyze a six-bit linear code, miscoding of double errors by a (7,4) Hamming decoder, and selective protection of the four most significant bits in sampled signals sent by BPSK over an additive white-noise channel.",
+            "scope": "Classical error-correcting codes, not quantum error correction. The opening equations complete Problem 6.24 from excerpt 636. Problem 6.25 uses the displayed (7,4) generator matrix. Problem 6.26 assumes an 8 kHz signal, 8-bit A/D conversion, BPSK and additive white noise; its output-SNR part continues in excerpt 638.",
+            "context_excerpt_ids": [
+              "exc_d6a5f3974008aa_636",
+              "exc_d6a5f3974008aa_638"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "603dae6b3fe8a5d49c3e360a1e0abb4e0d8a3168365b8a6a0a3750827cfef65e"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "modern-philosophy",
+      "source_sha256": "e8a9198f2f61f0e05a9e5208ceaae69357079b2b2120861396d830a8d8cf66db",
+      "original_review_sha256": "2f1028636c1e2e9788ec8c4c9df4051f62aa14dea944e8f02a9cebbc82ac5f30",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-6/modern-philosophy.json",
+      "inspected_pdf_pages": [
+        246,
+        247,
+        248,
+        249
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch6",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Fresh bounded review of corrected excerpts, necessary adjacent excerpts, and rendered source PDF pages."
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_1ab346b9350488_312",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "exercise"
+          ],
+          "topics_before": [
+            "hume-empiricism-causation-and-skepticism"
+          ],
+          "topics_after": [
+            "hume-empiricism-causation-and-skepticism"
+          ],
+          "retrieval": {
+            "summary": "Introduces Hume Section XI as a remembered dialogue about philosophy, religion and civic order; a sceptical friend proposes to role-play Epicurus before the Athenians, and a learner question asks why that historical framing matters.",
+            "scope": "Interpret the voices carefully: Hume's narrator says he disapproves of many principles advanced by the friend; the friend then speaks as Epicurus in a staged defence. Claims in that speech are dialogic positions, not unqualified statements of Hume's own view. The Epicurean public-interest and effect-to-cause argument continues in excerpt 313.",
+            "context_excerpt_ids": [
+              "exc_1ab346b9350488_313"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "7f3775137db6ddb49344fd7047fa31e314bf4cf0f88ae3d3a19f9024e8625eb4"
+        }
+      ],
+      "previous_version": 1,
+      "published_version": 2,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    },
+    {
+      "book_id": "os4",
+      "source_sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "original_review_sha256": "ceca20ccc48857af61ba2b41ac60162bb8f8cf116bf08f5beae7738f40a9fcaf",
+      "original_review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/batch-6/os4.json",
+      "inspected_pdf_pages": [
+        111,
+        112,
+        175,
+        176,
+        307,
+        308,
+        357,
+        358,
+        359
+      ],
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_scope_batch6",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Fresh bounded review of corrected excerpts, necessary adjacent excerpts, and rendered source PDF pages."
+      },
+      "correction_artifact": null,
+      "excerpts": [
+        {
+          "id": "exc_f213361bf057b0_175",
+          "roles_before": [
+            "exercise",
+            "worked_example"
+          ],
+          "roles_after": [
+            "exercise",
+            "worked_example"
+          ],
+          "topics_before": [
+            "conditional",
+            "experiments"
+          ],
+          "topics_after": [
+            "conditional",
+            "experiments"
+          ],
+          "retrieval": {
+            "summary": "Works conditional probabilities from joint and marginal proportions, explains the conditional complement rule, and asks learners to calculate death after inoculation and assess causality and confounding in the 1721 Boston smallpox data.",
+            "scope": "The photo-classification ratios illustrate conditional probability. The smallpox questions concern 6,224 people exposed in Boston in 1721; the required count/proportion tables are in excerpt 174. Inoculation was self-selected, so this is an observational study and the data do not support a causal effect without addressing confounding.",
+            "context_excerpt_ids": [
+              "exc_f213361bf057b0_174"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1c117e436dad834edc88a6f783445fa8b3c89f41b57a54b823c74e47782b955d"
+        },
+        {
+          "id": "exc_f213361bf057b0_294",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "binomial",
+            "probability-basics",
+            "random-variables"
+          ],
+          "topics_after": [
+            "binomial",
+            "probability-basics",
+            "random-variables"
+          ],
+          "retrieval": {
+            "summary": "A mixed exercise set applies binomial probabilities, expected counts and standard deviations, geometric first-success reasoning, permutations and disjoint-outcome addition across health, behavior, games and family examples.",
+            "scope": "Use the binomial model only where the stated sample has a fixed number of trials, two outcomes per trial, constant success probability and independence or a reasonable approximation. Populations and rates vary by problem: US 18-20-year-olds, American adults, teenagers, children of specified parents, employees and dreidel spins. The permutation item is not binomial.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "27954a93745cbe2bd79af68c9cc2281bbe04f93c71a355430a50e1ce1bc50da0"
+        },
+        {
+          "id": "exc_f213361bf057b0_489",
+          "roles_before": [
+            "worked_example"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "t-tests"
+          ],
+          "topics_after": [
+            "t-tests"
+          ],
+          "retrieval": {
+            "summary": "Carries out an independent two-sample t calculation for mean scores on two shuffled exam versions: difference 5.3, SE 4.62, T=1.15, and either Welch df 45.97 or conservative df 26.",
+            "scope": "Applies to two groups of students who received randomly shuffled versions A and B of one course exam, with n=30 and n=27. The method compares population mean scores under independence and roughly symmetric, outlier-free samples. Excerpts 487-488 give the design, summaries, hypotheses and checks; excerpt 490 computes the two-sided p-value and conclusion.",
+            "context_excerpt_ids": [
+              "exc_f213361bf057b0_487",
+              "exc_f213361bf057b0_488",
+              "exc_f213361bf057b0_490"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1c44c45b4bc589e1667324eb506d5295147f3022ae9c4ec487f00f59abebd85b"
+        },
+        {
+          "id": "exc_f213361bf057b0_564",
+          "roles_before": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "roles_after": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "linear-regression",
+            "regression-diagnostics",
+            "correlation"
+          ],
+          "topics_after": [
+            "linear-regression",
+            "regression-diagnostics",
+            "correlation"
+          ],
+          "retrieval": {
+            "summary": "Checks least-squares conditions for Elmhurst gift-aid data, defines aid=beta0+beta1 times family income, and gives the slope formula b1=(sy/sx)R plus the fact that the fitted line passes through the sample means.",
+            "scope": "Simple linear regression with family income as the explanatory variable and gift aid as the response for the Elmhurst sample. The stated suitability judgment uses linearity, no obvious outliers, roughly constant variance and non-time-series observations. Excerpt 562 supplies the least-squares criterion and the Figure 8.11 fit used only by Guided Practice 8.8.",
+            "context_excerpt_ids": [
+              "exc_f213361bf057b0_562"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "26003c99c8d0e50eb94079c94b83223b15a86275ed41bd610518a51d253b7224"
+        },
+        {
+          "id": "exc_f213361bf057b0_566",
+          "roles_before": [
+            "formal",
+            "worked_example"
+          ],
+          "roles_after": [
+            "formal",
+            "worked_example"
+          ],
+          "topics_before": [
+            "linear-regression"
+          ],
+          "topics_after": [
+            "linear-regression"
+          ],
+          "retrieval": {
+            "summary": "Derives a least-squares line from summary statistics with b1=(sy/sx)R and b0=y-bar-b1x-bar, then works the Elmhurst aid example and compares its coefficients with software output.",
+            "scope": "Simple linear regression for predicting Elmhurst gift aid from family income, with both variables expressed in dollars in the fitted equation. The worked sample gives b1=-0.0431 and aid-hat=24,327-0.0431 times family income. The software table belongs to this one-predictor fit; it is not a multiple-regression result or a general causal claim about aid.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "f3613573aee1877d86282a2e3906a2fa1cbd7efa68eb8a5e138376c7484bc287"
+        }
+      ],
+      "previous_version": 2,
+      "published_version": 3,
+      "previous_version_status": "retained",
+      "verified_fields": [
+        "roles",
+        "topics",
+        "retrieval",
+        "full_notes_sha256",
+        "context_link_targets"
+      ]
+    }
+  ],
+  "reviewed_notes_created_for_preexisting_runs": [
+    {
+      "run": "C:\\WEB\\capy-notebook\\data\\knowledge-base-pilot-v4\\run",
+      "reviewed": 26
+    }
+  ],
+  "library": {
+    "books": 92,
+    "current_excerpts": 47717,
+    "scope_reviewed_excerpts": 96,
+    "search_eligible_excerpts_at_confidence_0_8": 46149
+  },
+  "followups": [
+    {
+      "book_id": "chinese-contract-law",
+      "source_sha256": "6d7582f965c330db2e3e85e8787a38a9c73be92b22ce6a2dbe0f333b2c807913",
+      "published_version": 2,
+      "review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/chinese-history-followup/chinese-contract-law.json",
+      "review_artifact_sha256": "55f8f14f945493420bf3d434c74909af9b364ccb2d4e986ce826bb384f18f373",
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_chinese_history_scope",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Reviewed exactly five assigned excerpts, necessary same-book context, and physical PDF pages 1-3, 8-12, and 21. The 2009 copyright notice anchors source-period caveats; no present law or publication date was inferred from outside the source.",
+        "parent_review_correction": "Parent review identified excerpt exc_3af200c915ae90_10 as a license line plus section roadmap with no teaching content. Rechecked against review.md and page 8; corrected its role from introduction to non_teaching and removed its topic ID before import."
+      },
+      "inspected_pdf_pages": [
+        1,
+        2,
+        3,
+        8,
+        9,
+        10,
+        11,
+        12,
+        21
+      ],
+      "excerpts": [
+        {
+          "id": "exc_3af200c915ae90_9",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "chinese-contract-law-history"
+          ],
+          "topics_after": [
+            "chinese-contract-law-history"
+          ],
+          "retrieval": {
+            "summary": "Explains how merchant tribunals and lex mercatoria entered English and U.S. common law, then contrasts reputation-based enforcement in Western jurisdictions with the source's assessment of commercial dispute resolution in China.",
+            "scope": "Historical comparative background, not a chronology of Chinese legislation. Claims that business ethics in China had yet to be cultivated, judgment enforcement was immature, and many disputes used non-legal means are the 2009 textbook's characterizations, not current findings.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "ebc32d18f531052ab6841dd6a6cd595176d2e603cf2496f4c8bedd7bb96d65d8"
+        },
+        {
+          "id": "exc_3af200c915ae90_10",
+          "roles_before": [
+            "exercise",
+            "reference"
+          ],
+          "roles_after": [
+            "non_teaching"
+          ],
+          "topics_before": [
+            "chinese-contract-law-history"
+          ],
+          "topics_after": [],
+          "retrieval": {
+            "summary": "Introduces a short comparative survey of contract-law milestones before the book turns to China.",
+            "scope": "A transition and roadmap only. It separates historical developments in other jurisdictions from the following history of Chinese contract law but supplies no dates, legal rules, or explanation, so it is excluded from teaching search.",
+            "context_excerpt_ids": []
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "1f810d6998ec4fbed4d00b00a12f31eaf80bfcf6025526e9f5681f67a77fe74f"
+        },
+        {
+          "id": "exc_3af200c915ae90_11",
+          "roles_before": [
+            "exercise",
+            "reference"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "chinese-contract-law-history"
+          ],
+          "topics_after": [
+            "chinese-contract-law-history"
+          ],
+          "retrieval": {
+            "summary": "Surveys Hammurabi, Roman contract and tort distinctions, French and German codification, English common law, and the rise of freedom of contract.",
+            "scope": "Historical comparative background across ancient Mesopotamia, Roman law, Continental Europe, and England. It is not an account of China's legal development or current law. The final English case quotation continues in excerpt 12.",
+            "context_excerpt_ids": [
+              "exc_3af200c915ae90_12"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "0b3b70574f8ffe5dc3aa5fe63607b0226534614698ec119b153959cca1ad0219"
+        },
+        {
+          "id": "exc_3af200c915ae90_12",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "chinese-contract-law-history"
+          ],
+          "topics_after": [
+            "chinese-contract-law-history"
+          ],
+          "retrieval": {
+            "summary": "Explains nineteenth-century freedom of contract, later welfare-state limits, and international harmonization through UNIDROIT, the Hague laws, CISG, and PECL.",
+            "scope": "Historical comparative background, not China-specific development or current-law guidance. 'Contemporary' and 'now' reflect the 2009 textbook's period. The opening quotation is attributed to the 1875 English case introduced in excerpt 11.",
+            "context_excerpt_ids": [
+              "exc_3af200c915ae90_11"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "ebc2e6a5d40ce7e3c5e486f63545cdcae544d50c75e9ed10181bf43d10bded4f"
+        },
+        {
+          "id": "exc_3af200c915ae90_14",
+          "roles_before": [
+            "formal"
+          ],
+          "roles_after": [
+            "introduction"
+          ],
+          "topics_before": [
+            "chinese-contract-law-history"
+          ],
+          "topics_after": [
+            "chinese-contract-law-history"
+          ],
+          "retrieval": {
+            "summary": "Traces China's civil and contract-law history from the late Qing draft and 1930 Republican code through failed PRC codification, piecemeal 1980s statutes, and the 1999 Contract Law.",
+            "scope": "Historical account centered on China through the 2009 textbook's 1999 Contract Law framework. Its claim that the GPCL was enacted in 1985 and its description of a civil code as still being drafted are preserved as source-period statements, not current law. Excerpt 13 supplies the opening debate over civil law in Imperial China.",
+            "context_excerpt_ids": [
+              "exc_3af200c915ae90_13"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "77931094f759911b21d10efcd40456169ec91e80e696fe0722fb5e1b212d4d22"
+        }
+      ]
+    },
+    {
+      "book_id": "ahss4",
+      "source_sha256": "f3a19c74d914422ed5838478936abab11b87dafee0781b72cc7bf7cd2c46fda5",
+      "published_version": 4,
+      "review_artifact": "data/knowledge-base/retrieval-enrichment-2026-09-21/bayes-context-followup/ahss4.json",
+      "review_artifact_sha256": "4b0e14ac413624b5a31392b02081d49a8556457ff899a1a34bbba215a77e5d60",
+      "model_provenance": {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+        "reviewer_task": "/root/sol_bayes_context_followup",
+        "reviewed_at": "2026-09-21",
+        "contract": "lab/knowledge/review.md",
+        "method": "Fresh bounded review of exactly exc_0689cddaba206d_332 and exc_0689cddaba206d_740 against the corrected corpus and rendered PDF pages 196-200 and 483-486. No external medical facts were used."
+      },
+      "inspected_pdf_pages": [
+        196,
+        197,
+        198,
+        199,
+        200,
+        483,
+        484,
+        485,
+        486
+      ],
+      "excerpts": [
+        {
+          "id": "exc_0689cddaba206d_332",
+          "roles_before": [
+            "exercise"
+          ],
+          "roles_after": [
+            "exercise"
+          ],
+          "topics_before": [
+            "probability-basics",
+            "conditional",
+            "normal",
+            "random-variables"
+          ],
+          "topics_after": [
+            "probability-basics",
+            "conditional",
+            "normal",
+            "random-variables"
+          ],
+          "retrieval": {
+            "summary": "Exercises 2.51-2.66 ask learners to assess probability distributions, use tables and conditional probability, distinguish independence, and solve expected-value and normal-model problems.",
+            "scope": "For Exercise 2.53 only, use the figures stated for an individual from Eswatini in this source: 25.9% population prevalence, 99.7% accuracy among carriers, and 92.6% accuracy among non-carriers. They are source-period, population-specific givens, not a generic screened-population prior. Fetch exc_0689cddaba206d_740 only when the answer or probability tree is needed.",
+            "context_excerpt_ids": [
+              "exc_0689cddaba206d_740"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "02629524e607399e7218e4b1e197f2a11b6304d3d04c9404deb2779205f553ca"
+        },
+        {
+          "id": "exc_0689cddaba206d_740",
+          "roles_before": [
+            "exercise",
+            "worked_example"
+          ],
+          "roles_after": [
+            "worked_example"
+          ],
+          "topics_before": [
+            "normal",
+            "probability-basics",
+            "conditional",
+            "sampling"
+          ],
+          "topics_after": [
+            "normal",
+            "probability-basics",
+            "conditional",
+            "sampling"
+          ],
+          "retrieval": {
+            "summary": "Answer-key solutions for Exercises 2.41-2.65, including Z-scores, normal probabilities, probability validity, a conditional-probability tree, independence, and sampling bias.",
+            "scope": "Appendix answer key, not learner prompts. For 2.53, 0.8247 and its tree depend on the Eswatini-specific givens in exc_0689cddaba206d_332: 0.259 prevalence, 0.997 accuracy among carriers, and 0.926 accuracy among non-carriers. Fetch that excerpt before interpreting 2.53. These are the source's stated population and period, not generic screening inputs. Other solution prompts outside 2.51-2.65 were not inspected in this bounded review.",
+            "context_excerpt_ids": [
+              "exc_0689cddaba206d_332"
+            ]
+          },
+          "full_notes_unchanged": true,
+          "full_notes_sha256": "393b6d596f1a4a1c7bd292cc9f182e7647ee0d1dbe9cd6d40686b4d083b6cd9b"
+        }
+      ]
+    }
+  ],
+  "final_totals": {
+    "books": 14,
+    "excerpts": 103,
+    "inspected_book_pages": 174,
+    "roles_changed": 62,
+    "topics_changed": 34,
+    "non_teaching": 5,
+    "full_notes_unchanged": 102,
+    "linked_excerpts": 59,
+    "context_links": 93
+  },
+  "final_library": {
+    "books": 92,
+    "current_excerpts": 47717,
+    "scope_reviewed_excerpts": 103,
+    "search_eligible_excerpts_at_confidence_0_8": 46148
+  },
+  "final_book_versions": {
+    "learning-statistics-with-r": 2,
+    "compact-anthology-of-world-literature-part-1": 2,
+    "lsj": 3,
+    "educational-administration-the-roles-of-leadership-and-manag": 3,
+    "politics-power-and-purpose-an-orientation-to-political-scien": 2,
+    "21st-century-theories-of-education-administration": 2,
+    "principles-of-business-statistics": 2,
+    "the-legal-and-ethical-environment-of-business": 2,
+    "ahss4": 4,
+    "online-statistics-education-an-interactive-multimedia-course": 2,
+    "fundamentals-of-electrical-engineering-i": 2,
+    "modern-philosophy": 2,
+    "os4": 3,
+    "chinese-contract-law": 2
+  },
+  "final_source_files_sha256": {
+    "lab/knowledge/enrich.py": "2b1b6ee08d871cb2030e79b2b50d346c6ba15d1f5126b6294571d664edd838da",
+    "lab/knowledge/review.md": "3a482e1260ab352c64ce2d3309dedffa1f5f938c07bb5119e6950f950f8e9af1",
+    "lab/knowledge/topics.py": "3814b219ed12893a63f04991d06cee92385e8ce7b151f9bb1303c623cacb5fec",
+    "bench/rag/scripts/knowledge_base_pilot.py": "3683690ee47821f5603a4e2fd6755cf49a3da3f08449bdfb07bce05c3099e72f",
+    "bench/rag/scripts/knowledge_base_library.py": "2af909ce6bb47295928c5569dcee36d0eacb5d1adb95cb559e12267caca220dd",
+    "pipeline/pipeline/retrieval/knowledge_metadata.py": "5dc920cc329c7ecd230e64e46df0e5127769ec9f51709f225881292148c8a448",
+    "pipeline/pipeline/retrieval/library.py": "5e1e20f18d88f9e7611a4ecd47b45fbea14722a744d03eadb41496b081d65e35",
+    "pipeline/pipeline/retrieval/tools.py": "444a41eb901c0e48259c51ee02f444075ca6449e4b29f2db5ff33074c3b7b335",
+    "pipeline/pipeline/retrieval/agent.py": "8d3b78b737030abb68e55e751323eea501fc58a827e9a47097db237deae2e141",
+    "pipeline/pipeline/prompts/curate.py": "075f551cdb4e2980e1743f4900b8bb7d8ebe2bb9e7459a9cfc1a541301365ef4",
+    "bench/rag/scripts/knowledge_scope_agent_eval.py": "c22a5d0234e4c818dfb98631668c9ccb403c33abb50e548716f623ffee68d4bc",
+    "bench/rag/fixtures/knowledge-scope-cases.json": "af78f0b0987b4788cef79dcf86cfc7ca5caab4bd86aec691321969d9b951e65c"
+  }
+}

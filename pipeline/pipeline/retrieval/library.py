@@ -22,6 +22,7 @@ wording in a query does not move the ranker, tag predicates do.
 from __future__ import annotations
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +34,7 @@ from ..config import cfg
 from ..jobs import TerminalError
 from . import models, store
 from .chunking import search_query_terms
+from .knowledge_metadata import RetrievalMetadata
 
 ROLES = ("introduction", "formal", "worked_example", "exercise", "summary", "reference")
 
@@ -105,6 +107,8 @@ CREATE TABLE IF NOT EXISTS library_excerpts (
   PRIMARY KEY (content_id, id)
 );
 CREATE INDEX IF NOT EXISTS library_excerpts_id_idx ON library_excerpts (id);
+-- NULL explicitly means scope has not been reviewed. Full synopses are retained.
+ALTER TABLE library_excerpts ADD COLUMN IF NOT EXISTS retrieval jsonb;
 CREATE TABLE IF NOT EXISTS library_figures (
   content_id text NOT NULL REFERENCES rag_contents, id text NOT NULL, book_id text NOT NULL, page int NOT NULL,
   bbox int[] NOT NULL, caption_bbox int[], space text NOT NULL, geometry_kind text NOT NULL, block_index int NOT NULL,
@@ -124,14 +128,22 @@ CREATE TABLE IF NOT EXISTS library_model_runs (
 # A chunk qualifies when its excerpt carries a verified tag matching every
 # requested facet. Empty facets pass everything, so a plain library search is
 # still restricted to excerpts the tagger could verify.
-_VERIFIED_TAG_FILTER = """
+_VERIFIED = """e.tag_status = 'tagged' AND e.evidence_verified
+              AND e.confidence >= %(min_confidence)s
+              AND NOT ('non_teaching' = ANY(e.roles))"""
+_ELIGIBLE = f"""{_VERIFIED}
+              AND EXISTS (SELECT 1 FROM library_chunks eligible_chunk
+                          WHERE eligible_chunk.content_id = e.content_id
+                            AND eligible_chunk.excerpt_id = e.id
+                            AND eligible_chunk.searchable)"""
+
+_VERIFIED_TAG_FILTER = f"""
       AND EXISTS (
             SELECT 1 FROM library_chunks lc
             JOIN library_excerpts e
               ON e.content_id = lc.content_id AND e.id = lc.excerpt_id
             WHERE lc.id = c.id
-              AND e.tag_status = 'tagged' AND e.evidence_verified
-              AND e.confidence >= %(min_confidence)s
+              AND {_VERIFIED}
               AND (%(no_topics)s OR e.topic_ids && %(topics)s::text[])
               AND (%(no_roles)s OR e.roles && %(roles)s::text[])
       )"""
@@ -188,28 +200,29 @@ async def close_pool() -> None:
         _pool = None
 
 
-# Tagged excerpts of the books' current versions: the unit the taxonomy counts.
-_CURRENT_TAGGED = """
-        SELECT 1 FROM library_excerpts e
+# Searchable, verified excerpts of current versions: the unit taxonomy counts.
+_CURRENT_ELIGIBLE = f"""
+        SELECT e.id, e.content_id, e.topic_ids FROM library_excerpts e
         JOIN rag_file_contents fc
           ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
-        WHERE e.tag_status = 'tagged'"""
+        WHERE {_ELIGIBLE}"""
 
 
 async def catalog(conn: Any) -> list[dict[str, Any]]:
-    """Subjects holding at least one tagged excerpt, for the tool description."""
+    """Subjects holding searchable teaching excerpts, for the tool description."""
     cur = await conn.execute(
         f"""
-        SELECT * FROM (
-          SELECT s.id, s.label, s.aliases, s.area,
-                 (SELECT count(*) FROM ({_CURRENT_TAGGED}
-                    AND e.topic_ids && ARRAY(
-                      SELECT t.id FROM library_topics t WHERE t.subject_id = s.id)
-                  ) held) AS excerpts
-          FROM library_subjects s
-        ) counted WHERE excerpts > 0 ORDER BY label
+        WITH held AS (
+          SELECT t.subject_id, count(DISTINCT (e.content_id, e.id)) AS excerpts
+          FROM ({_CURRENT_ELIGIBLE}) e
+          CROSS JOIN unnest(e.topic_ids) AS topic_id
+          JOIN library_topics t ON t.id = topic_id
+          GROUP BY t.subject_id
+        )
+        SELECT s.id, s.label, s.aliases, s.area, held.excerpts
+        FROM library_subjects s JOIN held ON held.subject_id = s.id ORDER BY s.label
         """,
-        {"ws": WORKSPACE},
+        {"ws": WORKSPACE, "min_confidence": cfg.library_tag_min_confidence},
     )
     return [dict(row) for row in await cur.fetchall()]
 
@@ -235,12 +248,22 @@ async def browse_subject(subject_id: str) -> dict[str, Any]:
             )
         cur = await conn.execute(
             f"""
-            SELECT t.id, t.label, t.aliases, t.scope,
-                   (SELECT count(*) FROM ({_CURRENT_TAGGED}
-                      AND e.topic_ids @> ARRAY[t.id]) held) AS excerpts
-            FROM library_topics t WHERE t.subject_id = %(subject)s ORDER BY t.label
+            WITH held AS (
+              SELECT t.id, count(DISTINCT (e.content_id, e.id)) AS excerpts
+              FROM ({_CURRENT_ELIGIBLE}) e
+              CROSS JOIN unnest(e.topic_ids) AS topic_id
+              JOIN library_topics t ON t.id = topic_id
+              WHERE t.subject_id = %(subject)s GROUP BY t.id
+            )
+            SELECT t.id, t.label, t.aliases, t.scope, coalesce(held.excerpts, 0) AS excerpts
+            FROM library_topics t LEFT JOIN held ON held.id = t.id
+            WHERE t.subject_id = %(subject)s ORDER BY t.label
             """,
-            {"ws": WORKSPACE, "subject": subject_id},
+            {
+                "ws": WORKSPACE,
+                "subject": subject_id,
+                "min_confidence": cfg.library_tag_min_confidence,
+            },
         )
         topics = [dict(row) for row in await cur.fetchall()]
     return {"subject": dict(subject), "topics": topics}
@@ -271,6 +294,7 @@ class Excerpt:
     pages: list[int]
     figure_ids: list[str]
     chunk_ids: list[str]
+    retrieval: RetrievalMetadata | None = None
     # Search only: the chunk that ranked this excerpt, and its fused score.
     hit_chunk_id: str = ""
     hit_text: str = ""
@@ -336,7 +360,7 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
     cur = await conn.execute(
         """
         SELECT e.id, e.book_id, b.title, e.section_path, e.roles, e.topic_ids,
-               e.confidence, e.synopsis, e.pages, e.figure_ids, e.chunk_ids
+               e.confidence, e.synopsis, e.pages, e.figure_ids, e.chunk_ids, e.retrieval
         FROM library_excerpts e
         JOIN rag_file_contents fc
           ON fc.content_id = e.content_id AND fc.workspace_id = %s
@@ -359,6 +383,7 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
             pages=list(row["pages"]),
             figure_ids=list(row["figure_ids"]),
             chunk_ids=list(row["chunk_ids"]),
+            retrieval=row["retrieval"],
         )
     return out
 
@@ -427,11 +452,19 @@ async def search(
         chunk_to_excerpt = await _chunk_excerpts(conn, [r["id"] for r in rows])
         ordered: list[tuple[str, dict[str, Any]]] = []
         seen: set[str] = set()
+        passages: set[str] = set()
         for row in rows:
             excerpt_id = chunk_to_excerpt[row["id"]]
             if excerpt_id in seen:
                 continue
+            # Collapse repeated copies of the same hit within a book. Cross-book
+            # similarity can hide different applicability, so it is not inferred.
+            passage = re.sub(r"\s+", " ", row["text"]).strip()
+            duplicate_key = f"{row['file_id']}\n{passage}"
+            if passage and duplicate_key in passages:
+                continue
             seen.add(excerpt_id)
+            passages.add(duplicate_key)
             ordered.append((excerpt_id, row))
             if len(ordered) == top_k:
                 break
@@ -458,14 +491,13 @@ async def _chunk_excerpts(conn: Any, chunk_ids: list[str]) -> dict[str, str]:
 
 async def _available_roles(conn: Any, topics: list[str]) -> dict[str, int]:
     cur = await conn.execute(
-        """
-        SELECT role, count(*) AS n
+        f"""
+        SELECT role, count(DISTINCT (e.content_id, e.id)) AS n
         FROM library_excerpts e
         JOIN rag_file_contents fc
           ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
         CROSS JOIN unnest(e.roles) AS role
-        WHERE e.tag_status = 'tagged' AND e.evidence_verified
-          AND e.confidence >= %(min_confidence)s
+        WHERE {_ELIGIBLE}
           AND (%(no_topics)s OR e.topic_ids && %(topics)s::text[])
         GROUP BY role ORDER BY role
         """,
@@ -651,12 +683,11 @@ async def browse(topic: str, *, page: int = 1, page_size: int = 20) -> BrowseRes
             )
         by_role = await _available_roles(conn, [topic])
         cur = await conn.execute(
-            """
+            f"""
             SELECT e.book_id, count(*) AS n FROM library_excerpts e
             JOIN rag_file_contents fc
               ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
-            WHERE e.tag_status = 'tagged' AND e.evidence_verified
-              AND e.confidence >= %(min_confidence)s AND e.topic_ids && %(topics)s::text[]
+            WHERE {_ELIGIBLE} AND e.topic_ids && %(topics)s::text[]
             GROUP BY e.book_id ORDER BY e.book_id
             """,
             {
@@ -667,12 +698,11 @@ async def browse(topic: str, *, page: int = 1, page_size: int = 20) -> BrowseRes
         )
         by_book = {row["book_id"]: int(row["n"]) for row in await cur.fetchall()}
         cur = await conn.execute(
-            """
+            f"""
             SELECT e.id FROM library_excerpts e
             JOIN rag_file_contents fc
               ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
-            WHERE e.tag_status = 'tagged' AND e.evidence_verified
-              AND e.confidence >= %(min_confidence)s AND e.topic_ids && %(topics)s::text[]
+            WHERE {_ELIGIBLE} AND e.topic_ids && %(topics)s::text[]
             ORDER BY e.book_id, e.pages[1], e.id
             LIMIT %(limit)s OFFSET %(offset)s
             """,

@@ -1,0 +1,20 @@
+{
+  "time_utc": "2026-09-20T14:17:10.561778+00:00",
+  "statistics": {
+    "excerpts": 45838,
+    "qualifying_excerpts": 45429,
+    "tagged_but_filtered": 407,
+    "empty_synopses": 126,
+    "synopsis_equals_full_text": 11736,
+    "synopsis_over_2000_chars": 3207
+  },
+  "cross_subject_topic_assignments": [],
+  "topic_refs_without_catalog_entry": 0,
+  "quantum_topics": [
+    {
+      "subject_id": "physics",
+      "id": "quantum-nature-of-light",
+      "label": "The Quantum Nature of Light"
+    }
+  ]
+}

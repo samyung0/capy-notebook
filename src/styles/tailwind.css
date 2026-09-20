@@ -322,11 +322,11 @@
       scrollbar-width: auto;
     }
     *::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 4px;
+      height: 4px;
     }
     *::-webkit-scrollbar-thumb {
-      background-color: var(--text-muted);
+      background-color: var(--color-scrollbar);
       border-radius: 999px;
     }
     *::-webkit-scrollbar-track {

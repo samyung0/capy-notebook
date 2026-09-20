@@ -21,7 +21,7 @@ const iconButtonVariants = cva(BASE_BUTTON_STYLE, {
       accent:
         'bg-action-accent text-action-accent-fg hover:bg-action-accent-hover',
       'accent-light':
-        'bg-tint-accent-1 text-tint-accent-1-fg hover:bg-solid-accent-1/30',
+        'bg-tint-accent-1 text-tint-accent-1-fg hover:bg-action-accent/30',
       dark: 'bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
       ghost: 'bg-transparent text-fg',
       'ghost-hover': 'bg-transparent text-fg hover:bg-surface-hover-bg',

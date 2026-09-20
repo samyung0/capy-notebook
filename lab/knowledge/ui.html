@@ -9,6 +9,18 @@ body {
     sans-serif;
   color: #222;
   background: #f6f6f4;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+[hidden] {
+  display: none !important;
+}
+#builder {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 .strip {
   display: flex;
@@ -24,7 +36,8 @@ body {
   display: grid;
   grid-template-columns: 1fr 1fr 1.3fr;
   gap: 12px;
-  height: calc(100vh - 92px);
+  flex: 1;
+  min-height: 0;
   padding: 12px;
 }
 .col {
@@ -155,7 +168,112 @@ h3 {
   margin: 4px 0;
   font-size: 14px;
 }
+.tabs {
+  gap: 0;
+  padding: 0 12px;
+}
+.tabs button {
+  padding: 8px 14px;
+  color: #555;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+}
+.tabs button.on {
+  font-weight: 600;
+  color: #222;
+  border-bottom-color: #48c;
+}
+.page {
+  padding: 12px;
+  overflow: auto;
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 12px;
+}
+.summary b {
+  font-size: 20px;
+  font-weight: 600;
+}
+.summary .muted {
+  display: block;
+  font-size: 12px;
+}
+table.cov {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cov th,
+.cov td {
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+.cov thead th {
+  font-weight: 500;
+  color: #555;
+  border-bottom: 1px solid #ddd;
+}
+.cov th.m,
+.cov td.m {
+  width: 21%;
+  font-variant-numeric: tabular-nums;
+}
+.cov tr.area td {
+  padding-top: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid #eee;
+}
+.cov tr.area td .muted {
+  font-weight: 400;
+}
+.cov tr.empty td {
+  padding-top: 2px;
+  padding-bottom: 8px;
+}
+.cov tr.subject {
+  cursor: pointer;
+}
+.cov tr.subject:hover td {
+  background: #fafafa;
+}
+.cov tr.subject td:first-child::before {
+  display: inline-block;
+  width: 12px;
+  color: #999;
+  content: "▸";
+}
+.cov tr.subject.open td:first-child::before {
+  content: "▾";
+}
+.cov tr.lists td {
+  padding: 2px 8px 10px 28px;
+}
+.lists .cols {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 4px 24px;
+}
+.lists .cols > div > b {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 500;
+  color: #555;
+}
+.lists .topics {
+  columns: 220px;
+}
 </style>
+<div class="strip tabs">
+  <button type="button" data-tab="builder">Builder</button
+  ><button type="button" data-tab="library">Library</button>
+</div>
+<div class="page" id="library" hidden></div>
+<div id="builder">
 <div class="strip" id="deps"></div>
 <div class="strip" id="model"></div>
 <div class="wrap">
@@ -219,6 +337,7 @@ h3 {
     <div id="books"></div>
   </div>
 </div>
+</div>
 <dialog id="addDialog">
   <form id="addForm" method="dialog">
     <b>Add to the ingestion queue</b> <span class="muted" id="addSha"></span>
@@ -264,6 +383,7 @@ const esc = (s) =>
     (c) => ({ '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]
   );
 const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n ?? 0));
+const fmt = (n) => Number(n).toLocaleString('en-US');
 const mb = (b) => (b / 1_048_576).toFixed(1) + ' MB';
 const when = (t) => (t ? new Date(t * 1000).toLocaleTimeString() : '');
 let state = null,
@@ -271,7 +391,11 @@ let state = null,
   logKey = null,
   booksKey = null,
   heldBook = null,
-  openPanels = {};
+  openPanels = {},
+  coverage = null,
+  coverageAt = 0,
+  coverageLoading = false,
+  openSubjects = {};
 
 async function post(url, body) {
   const r = await fetch(url, {
@@ -629,7 +753,103 @@ function selectHeld(sha, open) {
   }
 }
 
+// The Library tab: the live library per subject, read only.
+function renderLibrary() {
+  const cov = coverage;
+  if (!cov) {
+    $('library').innerHTML =
+      `<div class="muted">${coverageLoading ? 'Reading the library…' : 'The library is unreachable.'}</div>`;
+    return;
+  }
+  const sum = (key, rows) => rows.reduce((a, r) => a + r[key], 0);
+  const covered = cov.subjects.filter((r) => r.books);
+  // A subject's counts as a share of the library; its books' and topics'
+  // excerpts as a share of the subject's.
+  const whole = {
+    books: sum('books', covered),
+    topics: sum('topics', cov.subjects),
+    excerpts: sum('excerpts', covered),
+  };
+  const pct = (n, of) => {
+    const p = (100 * n) / of;
+    return (p < 10 ? p.toFixed(1) : Math.round(p)) + '%';
+  };
+  const cell = (r, key) =>
+    `<td class="m">${fmt(r[key])} <span class="muted">${pct(r[key], whole[key])}</span></td>`;
+  const lists = (r) => {
+    const books = cov.subject_books.filter((b) => b.subject_id === r.id);
+    const topics = cov.subject_topics.filter((t) => t.subject_id === r.id);
+    return `<tr class="lists"><td colspan="4"><div class="cols">
+      <div><b>Books</b>${books.map((b) => `<div class="q">${esc(b.title)} <span class="muted">v${b.version} · ${fmt(b.excerpts)} excerpts · ${pct(b.excerpts, r.excerpts)}</span></div>`).join('')}</div>
+      <div><b>Topics</b><div class="topics">${topics.map((t) => `<div class="q">${esc(t.label)} <span class="muted">${fmt(t.excerpts)} · ${pct(t.excerpts, r.excerpts)}</span></div>`).join('')}</div></div>
+    </div></td></tr>`;
+  };
+  const areas = cov.areas
+    .map((a) => {
+      const rows = cov.subjects.filter((r) => r.area === a.id);
+      const held = rows.filter((r) => r.books);
+      const empty = rows.filter((r) => !r.books);
+      const total = {
+        books: sum('books', held),
+        topics: sum('topics', held),
+        excerpts: sum('excerpts', held),
+      };
+      return (
+        `<tr class="area"><td>${esc(a.label)} <span class="muted">${held.length} of ${rows.length} subjects</span></td>
+          ${held.length ? cell(total, 'books') + cell(total, 'topics') + cell(total, 'excerpts') : '<td colspan="3"></td>'}</tr>` +
+        held
+          .map(
+            (r) =>
+              `<tr class="subject ${openSubjects[r.id] ? 'open' : ''}" onclick="openSubjects['${r.id}']=!openSubjects['${r.id}']; renderLibrary()"><td>${esc(r.label)} <code class="muted">${esc(r.id)}</code></td>${cell(r, 'books')}${cell(r, 'topics')}${cell(r, 'excerpts')}</tr>` +
+              (openSubjects[r.id] ? lists(r) : '')
+          )
+          .join('') +
+        (empty.length
+          ? `<tr class="empty"><td colspan="4"><details><summary class="muted">${empty.length} subjects without books</summary><span class="muted">${empty.map((r) => esc(r.label)).join(', ')}</span></details></td></tr>`
+          : '')
+      );
+    })
+    .join('');
+  $('library').innerHTML = `
+    <div class="summary">
+      <div><b>${fmt(whole.books)}</b><span class="muted">books</span></div>
+      <div><b>${covered.length}</b><span class="muted">of ${cov.subjects.length} subjects</span></div>
+      <div><b>${fmt(whole.topics)}</b><span class="muted">topics</span></div>
+      <div><b>${fmt(whole.excerpts)}</b><span class="muted">tagged excerpts</span></div>
+      <div class="muted" style="align-self:end">library read ${when(cov.checked_at)} · current book versions only · click a subject for its books and topics</div>
+    </div>
+    <div class="card"><table class="cov">
+      <thead><tr><th>Subject</th><th class="m">Books <span class="muted">% of library</span></th><th class="m">Topics <span class="muted">% of library</span></th><th class="m">Excerpts <span class="muted">% of library</span></th></tr></thead>
+      <tbody>${areas}</tbody>
+    </table></div>`;
+}
+
+// Fetched only while the tab is open; the server caches it for a minute.
+async function refreshCoverage() {
+  if (coverageLoading || Date.now() - coverageAt < 60_000) return;
+  coverageLoading = true;
+  if (!coverage) renderLibrary();
+  const r = await fetch('/api/library/coverage');
+  coverage = r.ok ? await r.json() : null;
+  coverageAt = Date.now();
+  coverageLoading = false;
+  renderLibrary();
+}
+
+function showTab() {
+  const tab = location.hash === '#library' ? 'library' : 'builder';
+  for (const b of document.querySelectorAll('.tabs button'))
+    b.classList.toggle('on', b.dataset.tab === tab);
+  $('builder').hidden = tab === 'library';
+  $('library').hidden = tab !== 'library';
+  if (tab === 'library') refreshCoverage();
+}
+for (const b of document.querySelectorAll('.tabs button'))
+  b.onclick = () => (location.hash = b.dataset.tab === 'library' ? '#library' : '');
+window.onhashchange = showTab;
+
 async function refresh() {
+  if (!$('library').hidden) refreshCoverage();
   state = await (
     await fetch('/api/state' + (heldBook ? '?held=' + heldBook : ''))
   ).json();
@@ -645,6 +865,7 @@ async function refresh() {
     renderBooks(state.ingest.books, state.settings);
   }
 }
+showTab();
 refresh();
 setInterval(refresh, 3000);
 </script>

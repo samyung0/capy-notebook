@@ -1,0 +1,1425 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "regression-r",
+    "query": "Create one concise study note showing how to fit and interpret a simple linear regression in R using lm().",
+    "check": "Source supports R lm; jamovi, R-squared or generic regression alone is insufficient."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "fitting simple linear regression in R with lm() interpreting coefficients summary output",
+      "topics": [],
+      "roles": [],
+      "seconds": 7.915,
+      "excerpts": [
+        {
+          "id": "exc_0689cddaba206d_728_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › Section summary",
+          "roles": [
+            "summary",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Summarizes least-squares regression: the line minimizes squared residuals and passes through (x̄, ȳ); form ŷ = a + bx; R² is the proportion of variation in the response explained by the linear relationship, ranges 0 to 1, and does not indicate direction; a and b are sample statistics; slope b is the predicted change in y per one-unit increase in x; intercept a is the predicted y at x = 0, sometimes unreasonable due to extrapolation or impossible values; interpret a, b, and R² in context.",
+          "pages": [
+            473
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1203_v2",
+            "chk_0689cddaba206d_1204_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1203_v2",
+          "hit_text": "• The simple linear regression model is ﬁt to the data by minimizing the sum of the squares of the residuals. Because of this, the resulting equation is often called the least-squares regression line (LSRL) and is calculated using technology. This regression line will pass through the point (¯x , y¯).\n• We write the least squares regression line in the form: yˆ = a+bx. The slope b and the y-intercept a can be calculated using technology or identiﬁed from computer output.\n• In simple linear regression, the square of the correlation coeﬃcient, R2, is called the coeﬃcient of determination. R2 is the proportion of variation in the response variable that is explained by the linear relationship with the explanatory variable.\n• R2 is always between 0 and 1, inclusive, or between 0% and 100%, inclusive. R2 applies to any type of model, not just a linear model, and can be used to compare the ﬁt among various models. The higher the value of R2, the better the model “ﬁts” the data.\n• The value of R2 is always positive and cannot tell us the direction of the association. If ﬁnding r based on R2, make sure to use either the scatterplot or the slope of the regression line to determine whether r =+ √R2 or − √R2.\n• The coeﬃcients a and b of the least-squares regression line model (line of best ﬁt) are statistics because they are based on a sample of values.\n• The slope b of the least-squares regression line can be interpreted as the predicted increase or decrease in the response variable y for a one-unit increase in the explanatory variable x.",
+          "hit_page_start": 473,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                326.336,
+                852.948,
+                814.241
+              ],
+              "page": 473,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021022934109938114
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1003_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.3 Multiple linear regression › 15.3.1 Doing it in R",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "multiple-regression",
+            "linear-regression",
+            "graphs",
+            "center",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Multiple regression in R is no different to simple regression: all we have to do is specify a more complicated formula when using the lm() function. For example, if we want to use both danielle_sleep and baby_sleep as predictors in our attempt to explain why I’m so grumpy, then the formula we need is this:\n\ndanielle_grump ~ danielle_sleep + baby_sleep\n\nNotice that, just like last time, I haven’t explicitly included any reference to the intercept term in this formula; only the two predictor variables and the outcome. By default, the lm() function assumes that the model should include an intercept (though you can get rid of it if you want). In any case, I can create a new regression model – which I’ll call regression_2 – using the following command:\n\nregression_2 <- lm( formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood\n\n)\n\nAnd just like last time, if we print() out this regression model we can see what the estimated regression coeﬀicients are:\n\nprint(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep baby_sleep 125.96557 -8.95025 0.01052\n\nAnd just like last time, if we print() out this regression model we can see what the estimated regression coeﬀicients are:\n\nprint(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep baby_sleep 125.96557 -8.95025 0.01052\n\nThe coeﬀicient associated with danielle_sleep is quite large, suggesting that every hour of sleep I lose makes me a lot grumpier. However, the coeﬀicient for baby_sleep is very small, suggesting that it doesn’t really matter how much sleep my son gets; not really. What matters as far as my grumpiness goes is how much sleep I get. To get a sense of what this multiple regression model looks like, Figure 15.4 shows a 3D plot that plots all three variables, along with the regression model itself.",
+          "pages": [
+            612
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1484_v1",
+            "chk_dd1e65de648fb2_1485_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1484_v1",
+          "hit_text": "Multiple regression in R is no different to simple regression: all we have to do is specify a more complicated formula when using the lm() function. For example, if we want to use both danielle_sleep and baby_sleep as predictors in our attempt to explain why I’m so grumpy, then the formula we need is this:\n\ndanielle_grump ~ danielle_sleep + baby_sleep\n\nNotice that, just like last time, I haven’t explicitly included any reference to the intercept term in this formula; only the two predictor variables and the outcome. By default, the lm() function assumes that the model should include an intercept (though you can get rid of it if you want). In any case, I can create a new regression model – which I’ll call regression_2 – using the following command:\n\nregression_2 <- lm( formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood\n\n)\n\nAnd just like last time, if we print() out this regression model we can see what the estimated regression coeﬀicients are:\n\nprint(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep baby_sleep 125.96557 -8.95025 0.01052",
+          "hit_page_start": 612,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                203.321,
+                866.119,
+                274.163
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                285.458,
+                548.129,
+                303.806
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.9,
+                312.9,
+                866.31,
+                400.85
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                416.326,
+                669.786,
+                467.944
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                466.391,
+                145.722,
+                484.739
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.704,
+                506.0,
+                863.634,
+                542.626
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                558.102,
+                314.172,
+                576.449
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                610.48,
+                856.953,
+                645.621
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                660.86,
+                258.023,
+                679.207
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.438,
+                677.653,
+                566.845,
+                712.793
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02025355596784168
+        },
+        {
+          "id": "exc_dd1e65de648fb2_999_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 15.2.1 Using the lm() function › 610",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "graphs",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "This looks promising. There’s two separate pieces of information here. Firstly, R is politely reminding us what the command was that we used to specify the model in the first place, which can be helpful. More importantly from our perspective, however, is the second part, in which R gives us the intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best-fitting regression line that I plotted in Figure 15.2 has this formula:\n\n𝑌𝑖̂ = −8.94 𝑋𝑖 + 125.96",
+          "pages": [
+            611
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1479_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1479_v1",
+          "hit_text": "This looks promising. There’s two separate pieces of information here. Firstly, R is politely reminding us what the command was that we used to specify the model in the first place, which can be helpful. More importantly from our perspective, however, is the second part, in which R gives us the intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best-fitting regression line that I plotted in Figure 15.2 has this formula:\n\n𝑌𝑖̂ = −8.94 𝑋𝑖 + 125.96",
+          "hit_page_start": 611,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                89.222,
+                866.116,
+                198.217
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                408.297,
+                151.876,
+                591.699,
+                246.27
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01639344262295082
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1019_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.5 Hypothesis tests for regression models › 15.5.3 Running the hypothesis tests in R",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "anova",
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests",
+            "sampling-distributions"
+          ],
+          "confidence": 0.96,
+          "synopsis": "To compute all of the quantities that we have talked about so far, all you need to do is ask for a summary() of your regression model. Since I’ve been using regression_2 as my example, let’s do that:\n\nsummary(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nResiduals: Min 1Q Median 3Q Max\n\n-11.0345 -2.2198 -0.4016 2.6775 11.7496 Coefficients:\n\nEstimate Std. Error t value Pr(>|t|)\n\n(Intercept) 125.96557 3.04095 41.423 <2e-16 *** danielle_sleep -8.95025 0.55346 -16.172 <2e-16 *** baby_sleep 0.01052 0.27106 0.039 0.969\n\n--Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 4.354 on 97 degrees of freedom Multiple R-squared: 0.8161, Adjusted R-squared: 0.8123 F-statistic: 215.2 on 2 and 97 DF, p-value: < 2.2e-16\n\nThe output that this command produces is pretty dense, but we’ve already discussed everything of interest in it, so what I’ll do is go through it line by line. The first line reminds us of what the actual regression model is:\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)",
+          "pages": [
+            620
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1505_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1505_v1",
+          "hit_text": "To compute all of the quantities that we have talked about so far, all you need to do is ask for a summary() of your regression model. Since I’ve been using regression_2 as my example, let’s do that:\n\nsummary(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nResiduals: Min 1Q Median 3Q Max\n\n-11.0345 -2.2198 -0.4016 2.6775 11.7496 Coefficients:\n\nEstimate Std. Error t value Pr(>|t|)\n\n(Intercept) 125.96557 3.04095 41.423 <2e-16 *** danielle_sleep -8.95025 0.55346 -16.172 <2e-16 *** baby_sleep 0.01052 0.27106 0.039 0.969\n\n--Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 4.354 on 97 degrees of freedom Multiple R-squared: 0.8161, Adjusted R-squared: 0.8123 F-statistic: 215.2 on 2 and 97 DF, p-value: < 2.2e-16\n\nThe output that this command produces is pretty dense, but we’ve already discussed everything of interest in it, so what I’ll do is go through it line by line. The first line reminds us of what the actual regression model is:\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)",
+          "hit_page_start": 620,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                280.446,
+                866.101,
+                334.181
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                350.404,
+                332.887,
+                368.751
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                402.932,
+                856.953,
+                438.072
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                453.311,
+                548.129,
+                488.452
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                486.898,
+                548.129,
+                538.831
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                286.096,
+                537.277,
+                622.995,
+                555.624
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                554.069,
+                660.43,
+                606.003
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                604.448,
+                716.578,
+                639.59
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                654.828,
+                688.503,
+                706.761
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                716.321,
+                864.119,
+                770.054
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                781.5,
+                856.953,
+                816.326
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016129032258064516
+        },
+        {
+          "id": "exc_dd1e65de648fb2_998_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 15.2.1 Using the lm() function",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "anova",
+            "linear-regression",
+            "center",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The lm() function is a fairly complicated one: if you type ?lm, the help files will reveal that there are a lot of arguments that you can specify, and most of them won’t make a lot of sense to you. At this stage however, there’s really only two of them that you care about, and as it turns out you’ve seen them before:\n\n• formula. A formula that specifies the regression model. For the simple linear regression models that we’ve talked about so far, in which you have a single predictor variable as well as an intercept term, this formula is of the form outcome ~ predictor. However, more complicated formulas are allowed, and we’ll discuss them later.\n• data. The data frame containing the variables.\n\nAs we saw with aov() in Comparing several means (one-way ANOVA), the output of the lm() function is a fairly complicated object, with quite a lot of technical information buried under the hood. Because this technical information is used by other functions, it’s generally a good idea to create a variable that stores the results of your regression. With this in mind, to run my linear regression, the command I want to use is this:\n\nregression_1 <- lm( formula = danielle_grump ~ danielle_sleep, data = parenthood\n\n)\n\nAs we saw with aov() in Comparing several means (one-way ANOVA), the output of the lm() function is a fairly complicated object, with quite a lot of technical information buried under the hood. Because this technical information is used by other functions, it’s generally a good idea to create a variable that stores the results of your regression. With this in mind, to run my linear regression, the command I want to use is this:\n\nregression_1 <- lm( formula = danielle_grump ~ danielle_sleep, data = parenthood\n\n)\n\nNote that I used danielle_grump ~ danielle_sleep as the formula: in the model that I’m trying to estimate, danielle_grump is the outcome variable, and danielle_sleep is the predictor variable. It’s always a good idea to remember which one is which! Anyway, what this does is create an “lm object” (i.e., a variable whose class is \"lm\") called regression_1. Let’s have a look at what happens when we print() it out:\n\nprint(regression_1)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep 125.956 -8.937",
+          "pages": [
+            610
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1477_v1",
+            "chk_dd1e65de648fb2_1478_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1478_v1",
+          "hit_text": "As we saw with aov() in Comparing several means (one-way ANOVA), the output of the lm() function is a fairly complicated object, with quite a lot of technical information buried under the hood. Because this technical information is used by other functions, it’s generally a good idea to create a variable that stores the results of your regression. With this in mind, to run my linear regression, the command I want to use is this:\n\nregression_1 <- lm( formula = danielle_grump ~ danielle_sleep, data = parenthood\n\n)\n\nNote that I used danielle_grump ~ danielle_sleep as the formula: in the model that I’m trying to estimate, danielle_grump is the outcome variable, and danielle_sleep is the predictor variable. It’s always a good idea to remember which one is which! Anyway, what this does is create an “lm object” (i.e., a variable whose class is \"lm\") called regression_1. Let’s have a look at what happens when we print() it out:\n\nprint(regression_1)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep 125.956 -8.937",
+          "hit_page_start": 610,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.704,
+                364.977,
+                863.993,
+                452.927
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                469.152,
+                548.127,
+                520.77
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                519.216,
+                145.722,
+                537.563
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                559.573,
+                867.113,
+                647.879
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                663.746,
+                314.172,
+                682.093
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                716.274,
+                735.296,
+                751.414
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                766.653,
+                258.023,
+                785.0
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.438,
+                783.446,
+                417.113,
+                818.586
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015873015873015872
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

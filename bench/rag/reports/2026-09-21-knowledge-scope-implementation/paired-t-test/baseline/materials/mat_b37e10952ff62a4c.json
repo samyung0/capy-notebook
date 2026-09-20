@@ -1,0 +1,53 @@
+{
+ "id": "mat_b37e10952ff62a4c",
+ "kind": "note",
+ "title": "Paired-Samples t-Test with Worked Example",
+ "content": "# Paired-Samples t-Test — Study Note\n\n## When to use it\nUse a paired-samples t-test when each observation in one condition is naturally matched to an observation in the other — e.g. the same person measured before and after a treatment, or matched pairs. Running an independent-samples t-test here would be wrong: it assumes no relationship between the samples, and it would conflate the within-subject differences (what you care about) with between-subject variability (which you don't).\n\n## The key idea\nA paired-samples t-test is **not a new test at all** — it is just an ordinary **one-sample t-test applied to the difference scores**. For each participant *i*, compute the difference:\n\n- D_i = X_i1 − X_i2 (first listed variable minus second; the sign depends on the order you list the variables)\n\nThen test whether the mean difference differs from zero.\n\n## Hypotheses and statistic\n- H₀: μ_D = 0 (no mean change between conditions)\n- H₁: μ_D ≠ 0 (two-sided; one-sided versions possible)\n\nWith D̄ the mean of the difference scores and σ̂_D their standard deviation:\n\nt = D̄ / (σ̂_D / √N), with degrees of freedom df = N − 1 (N = number of pairs).\n\n## Worked example: Chico study grades\nTwenty students took the same test at the start and end of a subject. Their scores:\n\n| | grade_test2 | grade_test1 | difference |\n|---|---|---|---|\n| Mean | 58.385 | 56.980 | 1.405 |\n| Std dev | 6.406 | 6.616 | 0.970 |\n\n**Compute the statistic:**\n- Mean improvement D̄ = 1.405, SD of differences = 0.970, N = 20\n- SE = 0.970 / √20 ≈ 0.217\n- t = 1.405 / 0.217 ≈ **6.475**, df = 19\n\n**Result:** t(19) = 6.475, p < .001 — reject H₀. Students improved significantly from test 1 to test 2.\n\n- Two-sided 95% CI for the mean difference: [0.951, 1.859] (excludes 0, consistent with the test)\n- Effect size: Cohen's d ≈ 1.448 (a very large improvement)\n\n**Check:** the same numbers come out of a one-sample t-test on the difference variable — exactly what you'd expect, since the paired test *is* a one-sample test under the hood.\n\n## Takeaways\n- Pairing removes between-subject variability, giving a more sensitive test than comparing independent groups.\n- Always define the difference direction (first minus second) and state it.\n- Report t, df, p, the mean difference with its CI, and an effect size.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_882_v2",
+  "exc_dd1e65de648fb2_885_v2",
+  "exc_45ecdb7da7734b_248_v3",
+  "exc_45ecdb7da7734b_249_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 2,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_882_v2",
+     "exc_dd1e65de648fb2_885_v2"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 3,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_248_v3",
+     "exc_45ecdb7da7734b_249_v3"
+    ]
+   }
+  ]
+ },
+ "size": "572 tokens",
+ "edits": []
+}

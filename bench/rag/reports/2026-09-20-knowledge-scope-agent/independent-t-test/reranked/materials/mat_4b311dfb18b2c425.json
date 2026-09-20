@@ -1,0 +1,86 @@
+{
+ "id": "mat_4b311dfb18b2c425",
+ "kind": "note",
+ "title": "Independent-Samples t-Test: Explanation + Worked Example",
+ "content": "# The Independent-Samples t-Test\n\n## What it is\nThe independent-samples t-test asks whether two **independent** groups (no special relationship between observations in the two samples — e.g., participants randomly allocated to two groups) come from populations with the **same mean**. It comes in two forms: **Student's** t-test (simpler, more restrictive assumptions) and **Welch's** t-test (more robust).\n\n## Hypotheses\n- H₀: μ₁ = μ₂ (the two population means are identical, so μ₁ − μ₂ = 0)\n- Hₐ: μ₁ ≠ μ₂ (two-sided; or a one-sided version, e.g., μ₁ > μ₂)\n\n## Test statistic\nThe t-statistic compares the observed difference of sample means to zero, scaled by its standard error:\n\nt = (x̄₁ − x̄₂) / SE\n\nFor the Welch form (unequal variances allowed):\n\nSE = √( s₁²/n₁ + s₂²/n₂ )\n\nFor Student's form, a pooled variance estimate is used instead, giving SE = σ̂·√(1/N₁ + 1/N₂).\n\n**Degrees of freedom:** with software, fractional values (e.g., 45.97 or 108.5); by hand, use the smaller of n₁ − 1 and n₂ − 1 (or N − 2 for Student's test).\n\n## Assumptions / conditions\n- **Independence:** two independent random samples (each < 10% of the population if sampled without replacement), or an experiment with two randomly assigned treatments.\n- **Sample size / distribution:** each group roughly symmetric with no strong outliers; with n ≥ 30 per group, skew is less of a concern. Student's test additionally assumes equal population standard deviations (Welch relaxes this).\n\n## Worked example: two versions of a course exam\nA class took one of two shuffled versions of an exam (A or B). We test whether the exams are equally difficult, on average.\n\n- **Hypotheses:** H₀: μ_A − μ_B = 0 (equally difficult); Hₐ: μ_A − μ_B ≠ 0.\n- **Summary statistics:** n_A = 30, x̄_A = 79.4, s_A = 14; n_B = 27, x̄_B = 74.1, s_B = 20.\n- **Conditions:** exams were shuffled (random assignment → independence satisfied); summary statistics suggest roughly symmetric data with no concerning outliers.\n- **Point estimate:** x̄_A − x̄_B = 79.4 − 74.1 = 5.3\n- **Standard error:** SE = √(14²/30 + 20²/27) ≈ 4.62\n- **Test statistic:** T = (5.3 − 0) / 4.62 ≈ 1.15\n- **Degrees of freedom:** 45.97 with software; by hand, df = min(29, 26) = 26.\n- **Decision:** T = 1.15 is a small value in the t-distribution with 26 df — the two-sided p-value is large, so we **fail to reject H₀**. There is no convincing evidence that one exam was more difficult than the other.\n\n## Second quick example: North Carolina births\nComparing birth weights of newborns whose mothers smoked (n = 50, x̄ = 6.78, s = 1.43) vs. did not smoke (n = 100, x̄ = 7.18, s = 1.60):\n- Point estimate: 6.78 − 7.18 = −0.40 pounds\n- SE = √(1.43²/50 + 1.60²/100) = 0.26\n- T = (−0.40 − 0)/0.26 = −1.54, df = 108.5\n- Two-sided p-value = 0.124 > α = 0.05 → fail to reject H₀: no sufficient evidence of a difference in average birth weight. (Note: failing to reject does not prove no difference — larger datasets do show smoking mothers tend to have smaller newborns.)\n\n## Takeaway\nCompute the difference in means, divide by its standard error, compare to a t-distribution with the appropriate df, and judge the p-value against α (e.g., 0.05).",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_239_v2",
+  "exc_f213361bf057b0_489_v2",
+  "exc_dd1e65de648fb2_865_v1",
+  "exc_0689cddaba206d_638_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_638_v2"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_865_v1"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_239_v2"
+    ]
+   },
+   {
+    "id": "os4",
+    "title": "OpenIntro Statistics",
+    "authors": [
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/os/",
+    "version": 2,
+    "excerptIds": [
+     "exc_f213361bf057b0_489_v2"
+    ]
+   }
+  ]
+ },
+ "size": "791 tokens",
+ "edits": []
+}

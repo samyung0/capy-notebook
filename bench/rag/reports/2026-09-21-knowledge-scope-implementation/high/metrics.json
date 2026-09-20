@@ -1,0 +1,237 @@
+{
+  "method": "Six matched cases against the final 103-annotation library snapshot. Exact same system prompt, limits, search configuration and model as the low follow-ups; requested reasoning effort is high instead of low. Temperature zero; initially two concurrent turns. Two first requests failed with provider internal errors before responding and were retried once, retaining all failures. The selected six trajectories use the first attempt with an actual agent response, including stalls; no semantic failures were retried. Single paired sample per case, not a held-out benchmark or general model ranking. Reported token metrics do not establish full billed cost; the endpoint reported zero separate reasoning tokens in both modes.",
+  "summary": {
+    "cases": 6,
+    "attempts": 8,
+    "provider_errors_before_response": 2,
+    "nonempty_notes": 5,
+    "stalled": 1,
+    "median_seconds": 70.72,
+    "median_seconds_including_failed_attempts": 73.67,
+    "median_agent_input_tokens": 84699.5,
+    "median_model_calls": 7.5,
+    "total_input_tokens": 519437,
+    "total_output_tokens": 21255,
+    "cached_read_tokens": 13440,
+    "reported_reasoning_tokens": 0,
+    "successful_captures": 2,
+    "turns_with_capture": 1,
+    "turns_with_refused_writes": 5,
+    "truncated_results": 0
+  },
+  "low_summary": {
+    "runs": 6,
+    "nonempty_notes": 5,
+    "stalled": 1,
+    "median_seconds": 41.48,
+    "median_agent_input_tokens": 71888.0,
+    "median_model_calls": 7.0,
+    "total_input_tokens": 403485,
+    "total_output_tokens": 11286,
+    "successful_captures": 1,
+    "turns_with_refused_writes": 3,
+    "truncated_results": 0
+  },
+  "failed_attempts": [
+    {
+      "case": "athenian-democracy",
+      "folder": "athenian-democracy/baseline",
+      "seconds": 6.03,
+      "errors": [
+        {
+          "type": "error",
+          "message": "The chat agent hit an internal error.",
+          "code": "agent_failed",
+          "detail": "ProviderError: {\"error\":{\"message\":\"Internal Server Error (ref: db3928f7-f812-4154-a428-36c723c1b533)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+        }
+      ],
+      "usage": {
+        "provider": "",
+        "model": "",
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "embedTokens": 0,
+        "calls": 0
+      }
+    },
+    {
+      "case": "distinct-regression-examples",
+      "folder": "distinct-regression-examples/baseline",
+      "seconds": 5.9,
+      "errors": [
+        {
+          "type": "error",
+          "message": "The chat agent hit an internal error.",
+          "code": "agent_failed",
+          "detail": "ProviderError: {\"error\":{\"message\":\"Internal Server Error (ref: cf246b5e-3d12-490d-a17e-a356c7a6c6ca)\",\"type\":\"api_error\",\"param\":null,\"code\":null}}\n"
+        }
+      ],
+      "usage": {
+        "provider": "",
+        "model": "",
+        "inputTokens": 0,
+        "outputTokens": 0,
+        "embedTokens": 0,
+        "calls": 0
+      }
+    }
+  ],
+  "runs": [
+    {
+      "case": "regression-r",
+      "folder": "regression-r/baseline",
+      "attempt": 1,
+      "seconds": 56.71,
+      "seconds_including_failed_attempt": 56.71,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 75628,
+      "agent_output_tokens": 4083,
+      "cached_read_tokens": 0,
+      "reported_reasoning_tokens": 0,
+      "agent_model_calls": 7,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "search_calls": 2,
+      "read_calls": 4,
+      "open_todos": 0,
+      "truncated_results": 0,
+      "snapshot_verified": true,
+      "same_system_prompt_as_low": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Simple-model fit and two-predictor summary are explicitly separated. Still copies a full numerical summary without capture and calls a nonsignificant coefficient no effect. Much of a concise simple-regression note is spent on the multiple-model output."
+      }
+    },
+    {
+      "case": "leadership-general",
+      "folder": "leadership-general/baseline",
+      "attempt": 1,
+      "seconds": 52.94,
+      "seconds_including_failed_attempt": 52.94,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 78691,
+      "agent_output_tokens": 2606,
+      "cached_read_tokens": 0,
+      "reported_reasoning_tokens": 0,
+      "agent_model_calls": 7,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "search_calls": 3,
+      "read_calls": 5,
+      "open_todos": 0,
+      "truncated_results": 0,
+      "snapshot_verified": true,
+      "same_system_prompt_as_low": true,
+      "review": {
+        "verdict": "partial",
+        "note": "Adds a source-backed working definition and five-practice labels, but supplies practice descriptions absent from the read passage and presents school-specific recommendations as general in the body. The scope qualification is at the end."
+      }
+    },
+    {
+      "case": "chinese-contract-history",
+      "folder": "chinese-contract-history/baseline",
+      "attempt": 1,
+      "seconds": 55.85,
+      "seconds_including_failed_attempt": 55.85,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 27218,
+      "agent_output_tokens": 1756,
+      "cached_read_tokens": 0,
+      "reported_reasoning_tokens": 0,
+      "agent_model_calls": 4,
+      "successful_captures": 0,
+      "refused_writes": 0,
+      "search_calls": 1,
+      "read_calls": 3,
+      "open_todos": 1,
+      "truncated_results": 0,
+      "snapshot_verified": true,
+      "same_system_prompt_as_low": true,
+      "review": {
+        "verdict": "fits_scope",
+        "note": "Preserves the 2009 period qualification and identifies comparative background separately. Broader and longer than low; retains a research todo. Historical and legal facts are not independently certified."
+      }
+    },
+    {
+      "case": "athenian-democracy",
+      "folder": "retry/athenian-democracy/baseline",
+      "attempt": 2,
+      "seconds": 94.89,
+      "seconds_including_failed_attempt": 100.92,
+      "stop": "curate_stall",
+      "nonempty_materials": 0,
+      "agent_input_tokens": 124149,
+      "agent_output_tokens": 4190,
+      "cached_read_tokens": 8960,
+      "reported_reasoning_tokens": 0,
+      "agent_model_calls": 8,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "search_calls": 7,
+      "read_calls": 8,
+      "open_todos": 1,
+      "truncated_results": 0,
+      "snapshot_verified": true,
+      "same_system_prompt_as_low": true,
+      "review": {
+        "verdict": "stalled",
+        "note": "Seven searches and eight reads after an initial unread-source write refusal. Ends with Now writing the study note but no material. The refused draft still adds unsupported Athenian assertions; this is not an honest coverage-gap stop."
+      }
+    },
+    {
+      "case": "bayesian-exercises",
+      "folder": "bayesian-exercises/baseline",
+      "attempt": 1,
+      "seconds": 98.55,
+      "seconds_including_failed_attempt": 98.55,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 123043,
+      "agent_output_tokens": 5163,
+      "cached_read_tokens": 0,
+      "reported_reasoning_tokens": 0,
+      "agent_model_calls": 9,
+      "successful_captures": 0,
+      "refused_writes": 1,
+      "search_calls": 3,
+      "read_calls": 5,
+      "open_todos": 1,
+      "truncated_results": 0,
+      "snapshot_verified": true,
+      "same_system_prompt_as_low": true,
+      "review": {
+        "verdict": "partial",
+        "note": "A real disease-test exercise and the source-posed umbrella reasoning problem with coherent values and original illustrative context. No page capture for formulas or numerical results; a research todo remains open and duplicate ledger creation is refused."
+      }
+    },
+    {
+      "case": "distinct-regression-examples",
+      "folder": "retry/distinct-regression-examples/baseline",
+      "attempt": 2,
+      "seconds": 84.74,
+      "seconds_including_failed_attempt": 90.64,
+      "stop": "answer",
+      "nonempty_materials": 1,
+      "agent_input_tokens": 90708,
+      "agent_output_tokens": 3457,
+      "cached_read_tokens": 4480,
+      "reported_reasoning_tokens": 0,
+      "agent_model_calls": 8,
+      "successful_captures": 2,
+      "refused_writes": 1,
+      "search_calls": 1,
+      "read_calls": 4,
+      "open_todos": 0,
+      "truncated_results": 0,
+      "snapshot_verified": true,
+      "same_system_prompt_as_low": true,
+      "review": {
+        "verdict": "fits_with_verification_gap",
+        "note": "Completes two coherent, distinct regression examples instead of stalling. Captures only the exam-score source pages, not the Elmhurst example, while the final reply overstates that the fitted numbers were verified."
+      }
+    }
+  ]
+}

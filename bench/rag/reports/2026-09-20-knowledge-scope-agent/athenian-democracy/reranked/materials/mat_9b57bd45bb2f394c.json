@@ -1,0 +1,53 @@
+{
+ "id": "mat_9b57bd45bb2f394c",
+ "kind": "note",
+ "title": "Democracy in Ancient Athens",
+ "content": "# Democracy in Ancient Athens\n\n## What \"democracy\" means\n- The word comes from the Greek *demos* (the people) and *kratos* (power or rule): rule by the citizens themselves.\n- A **democracy** is a system of government in which citizens themselves engage **directly or indirectly** in government — unlike a **republic**, which only means the country is a public matter (\"res publica\") rather than the private property of a ruler, and does not by itself imply democracy.\n\n## Athens as the classical model of direct democracy\n- Ancient Athens is the classic case of **direct democracy**: citizens did not elect representatives but participated personally in government.\n- The central institution was the **Assembly (Ekklesia)**, where citizens gathered to debate and vote on laws and public decisions. Speech-making before the Assembly was so central a role that the Greek word *rhetor* — the origin of \"rhetoric\" — named a person with a certain role in the Athenian Assembly.\n- Large citizen bodies also served as **juries** (Athenian juries could number in the hundreds), so ordinary citizens exercised judicial as well as legislative power.\n\n## Limits of Athenian democracy\n- Citizenship was restricted: women, enslaved people, and foreign residents were excluded from political participation, so \"the people\" who ruled were only a fraction of the population.\n- Ancient city-states, even when contrasted with monarchies, were often not particularly democratic in the modern sense; they emphasized citizen participation and mobilization in defense of the city-state.\n\n## How ancient thinkers judged it\n- **Plato** was critical: in *The Republic*, Socrates describes democracy as a system that maximizes individual liberty, which in its fully developed form becomes licentiousness and social chaos — out of which, he argues, a tyrant arises promising stability and order. Tyranny, in Plato's account, emerges from the runaway freedoms of fully developed democracies.\n- **Aristotle** valued political participation as the highest human activity but favored **mixed government** — blending rule of the one (monarchy), the few (aristocracy), and the many (a polity of middle-class rule) — rather than pure rule of the many. This \"classical republicanism\" emphasizes the rights of the community over the rights of the individual.\n\n## Why it matters\n- Athens established the core democratic ideas still used today: political sovereignty residing in individual citizens, citizen equality, and active civic participation as the foundation of a democratic society.\n- Later republics (Rome, the Italian city-states, and ultimately the American Constitution via Montesquieu's separation of powers) evolved from related ideas of mixed government and civic participation — but representative republicanism is a distinct tradition from Athens' direct democracy.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_2bcaee6f65ce3f_152_v1",
+  "exc_2bcaee6f65ce3f_153_v1",
+  "exc_2bcaee6f65ce3f_179_v1",
+  "exc_cb7b7f5790e6ba_15_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "bad-ideas-about-writing",
+    "title": "Bad Ideas About Writing",
+    "authors": [
+     "Cheryl E Ball",
+     "Drew M Loewe"
+    ],
+    "edition": "",
+    "license": "CC BY 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/bad-ideas-about-writing",
+    "version": 1,
+    "excerptIds": [
+     "exc_cb7b7f5790e6ba_15_v1"
+    ]
+   },
+   {
+    "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+    "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+    "authors": [
+     "Jay Steinmetz"
+    ],
+    "edition": "",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/politics-power-and-purpose-an-orientation-to-political-science",
+    "version": 1,
+    "excerptIds": [
+     "exc_2bcaee6f65ce3f_152_v1",
+     "exc_2bcaee6f65ce3f_153_v1",
+     "exc_2bcaee6f65ce3f_179_v1"
+    ]
+   }
+  ]
+ },
+ "size": "712 tokens",
+ "edits": []
+}

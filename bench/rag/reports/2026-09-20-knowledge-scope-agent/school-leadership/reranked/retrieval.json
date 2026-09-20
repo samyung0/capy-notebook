@@ -1,0 +1,2414 @@
+{
+  "arm": "reranked",
+  "case": {
+    "id": "school-leadership",
+    "query": "Create one concise introductory study note explaining effective school leadership.",
+    "check": "Uses the requested school context; general leadership principles may support it."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "effective school leadership principals instructional leadership",
+      "topics": [],
+      "roles": [],
+      "seconds": 8.157,
+      "excerpts": [
+        {
+          "id": "exc_c93d5928c67e22_165_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 6 Challenges Facing Black American Principals: A Conversation about Coping › 134",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "black-principals-coping-challenges"
+          ],
+          "confidence": 0.96,
+          "synopsis": "most principals have served in an assistant principalship or resource teacher position for a number of years before stepping into the principalship. With the appropriate mental disposition, good mentoring, and a solid graduate program, those who serve for a few years in these roles amass many of the skills and much of the knowledge required to succeed in the principalship. However, due to the current shortfalls, there are often assistant principals and resource teachers who move into principalships after serving for relatively short periods of time in preparatory roles. Thus, the coping strategies and leadership skills they possess when assuming the principalship may be underdeveloped.\n\nThe first few years of the principalship are critical in influencing administrative leadership practice (Hart, 1991; 1993). During the induction period, principals usually try to exert their leadership function in a way consistent with their own personal values, mentor and protégé experience, and professional training. Simultaneously, they experience pressures from subordinates, superiors, and the community to act in a way consistent with their expectations. An essential key to principal success is the perspective that effectiveness is aligned with transformational leadership.\n\nThe first few years of the principalship are critical in influencing administrative leadership practice (Hart, 1991; 1993). During the induction period, principals usually try to exert their leadership function in a way consistent with their own personal values, mentor and protégé experience, and professional training. Simultaneously, they experience pressures from subordinates, superiors, and the community to act in a way consistent with their expectations. An essential key to principal success is the perspective that effectiveness is aligned with transformational leadership.\n\nTransformational leadership is the ability to articulate a vision and inspire futuristic and high cognitive thinking among diverse people for an overall strong school culture. Effective leadership also includes appropriate modeling, intellectual stimulation, evaluation, re-evaluation, and reflection (Leithwood, 1993; Hoyle, English, & Steffy, 1998' Dembowski & Eksotrom, 1999;). Leithwood argues that transformational leadership is essential for effective school change. While the predominant operational mode for the principalship has been that of instructional leadership, Leithwood argues that this model is no longer adequate to respond to the challenges confronting school leaders. Nor are models adequate that do not embrace the elements of care, nurture, and constituent engagement. Effective schools without caring, nurturing, and good principals are misleading; hence the reason that many low socio-economic schools do not work.\n\nLeithwood contends that the instructional leader model is dated. The instructional model reflected a principal's ability to carry out many tasks but it somewhat none essential as it relates to the improvement of student achievement. These instructional duties may include maintenance, finance, human resources, and public relations. In other words, the instructional model embraces the ability to make adjustments within the existing structure thereby restoring balance that is non-transformational and without new learning.\n\nSecond order changes, on the other hand, require a form of leadership that is sensitive to organization building. This includes: developing a shared vision; creating productive work cultures; delegating leadership to creating new way of seeing things (Leithwood, 2000). A paramount example of second order changes includes the ability to improve student achievement in an area of accountability. The failure to attend to reform at this level, accounts for much of the failure of reform efforts. Proponents of second order change believe that is not enough to just know what is important; principals must also know what is essential (Waters & Grubb, 2004).The principal's role in change and improvement efforts has evolved to become that of a \"leader of leaders\" (Hallinger & Hausman, 1993). \"Images of transformational leadership emphasize the capacity of the principal to engage others as leaders rather than the",
+          "pages": [
+            138
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_394_v1",
+            "chk_c93d5928c67e22_395_v1",
+            "chk_c93d5928c67e22_396_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_395_v1",
+          "hit_text": "The first few years of the principalship are critical in influencing administrative leadership practice (Hart, 1991; 1993). During the induction period, principals usually try to exert their leadership function in a way consistent with their own personal values, mentor and protégé experience, and professional training. Simultaneously, they experience pressures from subordinates, superiors, and the community to act in a way consistent with their expectations. An essential key to principal success is the perspective that effectiveness is aligned with transformational leadership.\n\nTransformational leadership is the ability to articulate a vision and inspire futuristic and high cognitive thinking among diverse people for an overall strong school culture. Effective leadership also includes appropriate modeling, intellectual stimulation, evaluation, re-evaluation, and reflection (Leithwood, 1993; Hoyle, English, & Steffy, 1998' Dembowski & Eksotrom, 1999;). Leithwood argues that transformational leadership is essential for effective school change. While the predominant operational mode for the principalship has been that of instructional leadership, Leithwood argues that this model is no longer adequate to respond to the challenges confronting school leaders. Nor are models adequate that do not embrace the elements of care, nurture, and constituent engagement. Effective schools without caring, nurturing, and good principals are misleading; hence the reason that many low socio-economic schools do not work.",
+          "hit_page_start": 138,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                236.815,
+                826.815,
+                366.03
+              ],
+              "page": 138,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                376.66,
+                833.168,
+                599.403
+              ],
+              "page": 138,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_c93d5928c67e22_145_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.5 Texture: Feel or appearance of an object or surface › 114",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Hall, G., & Rutherford, S. (1990, April). A preliminary review of research related to stages of concern. Paper presented at the annual meeting of the American\n\nEducational Research Association, Boston, MA.\n\nHargreaves, A., & Fink, D. (2006). Sustainable leadership. San Francisco: Jossey-Bass. Harris, B. M. (1998). Paradigms and parameters of supervision in education. In G. R. Firth & E. F. Pajak (Eds.), Handbook of research on school supervision (pp.1104-1122). New York: Simon & Schuster Macmillan.\n\nHeid, K. A. (Sept, 2005). Aesthetic development: A cognitive experience. Art Education 58(5), 48-53.\n\nHord, S. M., Rutherford, W. L., Huling-Austin, L., & Hall, G. (1987). Taking charge of change. Alexandria, VA: Association for Supervision and Curriculum Development.\n\nHoward, V. (1982). Artistry: The work of artists. Indianapolis, MN: Hackett. Hunter, M.\n\n(1984). Knowing, teaching, and supervising. In P. L. Hofford (Ed.), Using what we know about teaching. Alexandria, VA: Association for Supervision and Curriculum Development.\n\nJackson, P. W. (1998). John Dewey and the lessons of art. New Haven, CT: Yale University Press.\n\nKelehear, Z. (2005, Fall). Mentoring and managing: A new paradigm for instructional leadership. Journal of Scholarship and Practice 2(3), 5-15.\n\nJackson, P. W. (1998). John Dewey and the lessons of art. New Haven, CT: Yale University Press.\n\nKelehear, Z. (2005, Fall). Mentoring and managing: A new paradigm for instructional leadership. Journal of Scholarship and Practice 2(3), 5-15.\n\nKelehear, Z. (2002, Fall). Tell me what went well with your lesson, Sam: E-mail with empathy helps new teachers to grow. Journal of Staff Development, 23(4), 33-36. Kelehear, Z. (2001, Fall). Empathic writing as a function of effective leadership: E-mail and the principal as leader. American Association of Behavioral and Social Sciences Journal, 39-46.\n\nLambert, L. (2003). Leadership capacity for lasting school improvement. Alexandria, VA: Association for Curriculum and Curriculum Development.\n\nLambert, L., Walker, D., Zimmerman, D. P., Cooper, J. E., Lambert, M. D., Gardner, M. E., & Szabo, M. (2003). The constructivist leader (2nd ed.). New York: Teachers College Press.\n\nLawrence-Lightfoot, S. (1983). The good high school: Portraits of character and culture. New York: Basic Books.\n\nLawrence-Lightfoot, S., & Davis, J. H. (1997). The art and science of portraiture. San Francisco: Jossey-Bass.\n\nLewis, A. C. (2004, March). Schools that engage children. Phi Delta Kappan 85(7), 483. Martorella, P. H. (1985). Elementary social studies: Developing reflective, competent, and concerned citizens. Boston: Little, Brown.\n\nMaxwell, J. C. (1998). The 21 irrefutable laws of leadership. Nashville, TN: Thomas Nelson.\n\nMaxwell, J. C. (2002). Leadership 101. Nashville, TN: Thomas Nelson.",
+          "pages": [
+            118
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_336_v1",
+            "chk_c93d5928c67e22_337_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_337_v1",
+          "hit_text": "Jackson, P. W. (1998). John Dewey and the lessons of art. New Haven, CT: Yale University Press.\n\nKelehear, Z. (2005, Fall). Mentoring and managing: A new paradigm for instructional leadership. Journal of Scholarship and Practice 2(3), 5-15.\n\nKelehear, Z. (2002, Fall). Tell me what went well with your lesson, Sam: E-mail with empathy helps new teachers to grow. Journal of Staff Development, 23(4), 33-36. Kelehear, Z. (2001, Fall). Empathic writing as a function of effective leadership: E-mail and the principal as leader. American Association of Behavioral and Social Sciences Journal, 39-46.\n\nLambert, L. (2003). Leadership capacity for lasting school improvement. Alexandria, VA: Association for Curriculum and Curriculum Development.\n\nLambert, L., Walker, D., Zimmerman, D. P., Cooper, J. E., Lambert, M. D., Gardner, M. E., & Szabo, M. (2003). The constructivist leader (2nd ed.). New York: Teachers College Press.\n\nLawrence-Lightfoot, S. (1983). The good high school: Portraits of character and culture. New York: Basic Books.\n\nLawrence-Lightfoot, S., & Davis, J. H. (1997). The art and science of portraiture. San Francisco: Jossey-Bass.\n\nLewis, A. C. (2004, March). Schools that engage children. Phi Delta Kappan 85(7), 483. Martorella, P. H. (1985). Elementary social studies: Developing reflective, competent, and concerned citizens. Boston: Little, Brown.\n\nMaxwell, J. C. (1998). The 21 irrefutable laws of leadership. Nashville, TN: Thomas Nelson.\n\nMaxwell, J. C. (2002). Leadership 101. Nashville, TN: Thomas Nelson.",
+          "hit_page_start": 118,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                393.584,
+                757.639,
+                429.272
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                439.903,
+                810.015,
+                475.59
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                486.221,
+                817.761,
+                577.529
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                589.684,
+                807.597,
+                625.372
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                636.002,
+                834.314,
+                689.899
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                702.055,
+                834.034,
+                737.742
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                748.373,
+                798.474,
+                784.061
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                794.691,
+                818.274,
+                849.084
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                859.715,
+                787.25,
+                895.403
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                906.033,
+                680.345,
+                923.015
+              ],
+              "page": 118,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022737556561085975
+        },
+        {
+          "id": "exc_c93d5928c67e22_102_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 76",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "than just good management. Indeed, it was management but also much more. There was this sense of art, not just craft, among the very best leaders. For example, the author began to discover that traditional assessment methods for instructional leadership were often quite effective in addressing narrowing teaching functions but failed to grasp the nuances, subtleties, and totality of successful classrooms (Blumberg, 1989; Pajak, 2003). From a very different point of departure, Stronge (2002) also concludes that school leader practice has little to no effect on teacher behavior and subsequently student learning. According to Stronge, principals managed to do the craft of observations and provide some evidence of what they saw. They often completed this task with short, drop-in visits. But what was missing from this type of management was the fact that little change in teacher or student behavior came about as a result of the observation. In some ways, according to Stronge, principals failed to address the complexity of the teacher function. Indeed, leading schools and supporting teachers required school principals to do much more than managing. Successful schools were places where craft and art were practiced.\n\nAt this point, the author needs to ask the reader to consider a slight shift in thinking. Instead of trying to compete with the reader's assumptions and practices regarding school leadership, assumptions that emerge from powerful and successful experience no doubt, and instead of trying to convince the reader that the answer is “this” instead of “that,” the author wants to encourage the reader to engage in “and” thinking. Recently when working with a high school principal, the author had this exchange: “I noticed that your teachers did not feel you visited their classrooms often enough. How might you respond to them?” The principal, in obvious frustration, responded “Yes, I know I need to do more than I have been doing but I cannot find time because of all the discipline referrals.” The principal was doing what the author affectionately calls “Yes . . . but” thinking. How many times might one say in a day's time “Yes, I could get to that job but I cannot find time” or “Yes, I need to be in halls greeting students but I just cannot get out of the office and all the paperwork.” This type of thinking tends to be defeatist in nature as it builds obstacles instead of possibilities. A different way to consider our thinking is what the author calls “and” thinking. For example, “Yes, I need to be in the halls more often and I will distribute some of the paperwork so that I can find time to do it.” In reality, individuals tend to find time for those things that matter most.\n\nIf being in the halls greeting students was really important, then they would create a world where that could happen. The shift from “yes. . . but” thinking to “and” thinking is a subtle but powerful change. Such a shift represents a change in values and priorities, indeed a paradigmatic change. In like fashion, when considering the work in this monograph the author wants to challenge the reader to engage in “and” thinking and not “yes. . . but” thinking. Instead of looking for the absolute answer in this work, consider the possibility that the content offers another way to be successful; not the only one. Now let the reader put that type of thinking to work as he or she prepares for the more specific discussion of successful management of schools.\n\nArts-Based Research as a Way of Seeing Is quantitative research the best choice for discovering truth? Or, is qualitative research the best method-ology? In some traditional debates, the argument might follow something like this: “Yes, qualitative research offers some answers to questions on teacher performance but the real answers are in quantitative analyses.” Or, “Yes,",
+          "pages": [
+            80
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_213_v1",
+            "chk_c93d5928c67e22_214_v1",
+            "chk_c93d5928c67e22_215_v1",
+            "chk_c93d5928c67e22_216_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_213_v1",
+          "hit_text": "than just good management. Indeed, it was management but also much more. There was this sense of art, not just craft, among the very best leaders. For example, the author began to discover that traditional assessment methods for instructional leadership were often quite effective in addressing narrowing teaching functions but failed to grasp the nuances, subtleties, and totality of successful classrooms (Blumberg, 1989; Pajak, 2003). From a very different point of departure, Stronge (2002) also concludes that school leader practice has little to no effect on teacher behavior and subsequently student learning. According to Stronge, principals managed to do the craft of observations and provide some evidence of what they saw. They often completed this task with short, drop-in visits. But what was missing from this type of management was the fact that little change in teacher or student behavior came about as a result of the observation. In some ways, according to Stronge, principals failed to address the complexity of the teacher function. Indeed, leading schools and supporting teachers required school principals to do much more than managing. Successful schools were places where craft and art were practiced.",
+          "hit_page_start": 80,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                835.197,
+                338.417
+              ],
+              "page": 80,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021464646464646464
+        },
+        {
+          "id": "exc_c93d5928c67e22_116_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.1 Shape: Two-dimensional area › 89",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Management is the shape of schools. We manage budgets, discipline, community relations, and personnel. These are not the things that should be our focus in schools but they are exactly the matters with which we must deal so that we might teach children. And, the degree to which a leader can handle aspects of time management, scheduling, random but daily details, personnel management, parent conferencing, and community relations will determine the level of success for the students at that school. Of the management details, supervision of personnel is the most rewarding, demanding, and exhausting. Successful leaders find ways to be instructional leaders by offering supervision, staff development, remediation, and when necessary termination. But during the whole process of management, leaders struggle to balance being compassionate and supportive with being clinical and direct with personnel. Both sets of skills are necessary, but it is the rare leader who can do them both well. Effective leaders understand how to shape the modes of management to support the business of student learning.\n\nRecently, while involved in staff development for assistant principals, it became clear to the author that the systemic configuration in the schools inhibited, or prohibited, the proper application of leadership functions. Put bluntly, school leadership has assumed so many different roles in the building that some leaders felt they were not doing any of the jobs very well. In fact, based on recent research with practicing assistant principals (Kelehear, 2005) the author and participants reconstructed the leadership position so that myriad responsibilities might be separated into two categories, for two different positions. Instead of one position in charge of both management and leadership, there would be the Manager of Programs (MP) for administration and the Instructional Leader (IL) for instructional supervision. Being in charge in today's schools continues to be a daunting task. Given the competing demands of federal mandates, state assessments, standardized-testing schedules, shrinking revenue streams, and the like, it is no small wonder that children and teaching somehow get lost in the shuffle.\n\nIt is clear from the literature (Sergiovanni, 1999; Smith & Piele, 1989; Glickman, Gordon, & Ross-Gordon, 2004; Sergiovanni & Starratt, 2002; Fullan, 2001; Starratt, 2004; Robbins & Alvy, 2003) that principals are called upon to do a myriad of jobs. It is a challenging task for principals to offer instructional leadership and also manage the other competing responsibilities. In much the same way as a teacher must be a successful manager of classroom behavior in order to be able to teach, the school leader must be able to manage the school so that instruction can take place. But to ask one person to manage all the business of schooling and also to conduct instructional supervision might be an unrealistic expectation. In working with 14 administrators, the author began to imagine that by separating the instructional supervision function from the principal's responsibility, then maybe another teacher leader could more fully supervise instruction in our schools (Kelehear, 2005). The role of instructional supervision would rest with someone whose primary responsibility was instructional development. Managing all other affairs of schooling such as budgets, parent conferences, and discipline would reside with the principal's position. The Manager of Programs (MP) was responsible for all matters of school governance and management with the exception of instructional leadership.",
+          "pages": [
+            93
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_255_v1",
+            "chk_c93d5928c67e22_256_v1",
+            "chk_c93d5928c67e22_257_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_257_v1",
+          "hit_text": "It is clear from the literature (Sergiovanni, 1999; Smith & Piele, 1989; Glickman, Gordon, & Ross-Gordon, 2004; Sergiovanni & Starratt, 2002; Fullan, 2001; Starratt, 2004; Robbins & Alvy, 2003) that principals are called upon to do a myriad of jobs. It is a challenging task for principals to offer instructional leadership and also manage the other competing responsibilities. In much the same way as a teacher must be a successful manager of classroom behavior in order to be able to teach, the school leader must be able to manage the school so that instruction can take place. But to ask one person to manage all the business of schooling and also to conduct instructional supervision might be an unrealistic expectation. In working with 14 administrators, the author began to imagine that by separating the instructional supervision function from the principal's responsibility, then maybe another teacher leader could more fully supervise instruction in our schools (Kelehear, 2005). The role of instructional supervision would rest with someone whose primary responsibility was instructional development. Managing all other affairs of schooling such as budgets, parent conferences, and discipline would reside with the principal's position. The Manager of Programs (MP) was responsible for all matters of school governance and management with the exception of instructional leadership.",
+          "hit_page_start": 93,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                601.126,
+                866.237,
+                917.395
+              ],
+              "page": 93,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02132435465768799
+        },
+        {
+          "id": "exc_c93d5928c67e22_101_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 75",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Leadership in the school building is at the heart of school leadership. It is in the school building, the halls, and classrooms that principals most directly impact teacher behavior. The question that arises from a study leadership in the school building is not about if principals can affect teaching behavior but rather in what manner and to what extent principals might affect teaching behavior, school environment, and ultimately student learning (Stronge, 2002). And there is growing consensus in the literature, most recently reported in the “School Leadership Study” out of Stanford University (Davis, et al. 2005) that successful school leaders can influence student achievement in at least two important ways: (1) By selecting, supporting, and developing effective teachers; (2) By managing, implementing, and adjusting effective organizational environments. Other authors in this book will devote more time to the first element of effective leadership. In this monograph the author will focus on how school-based leaders can effectively manage the competing, and sometimes conflicting, demands of leading in today's schools so as to provide an organizational environment that encourages growth and development on the part of students, teachers, and administrators. The responsibility of managing a successful learning environment is one shared by all stakeholders.\n\nIf doing it alone is the plan for the school principal, then research suggests that the leader is less likely to maintain and support learning environments and is more likely to “burn out” under the broadening responsibilities of today's accountability environment (Hargreaves, 2006). In light of this harsh reality, in sections of this monograph the author will offer school leaders ideas and possibilities for sharing the awesome responsibility of managing effective schools.\n\nIn distributed leadership contexts, school based leaders find ways for multiple stakeholders to participate in the leadership, and thus successful management, of schools. This notion of distributed leadership is most recently articulated by Andy Hargreaves and Dean Fink (2006) in their book, Sustainable Leadership. The principal, as school building leader, interacts with teachers and students. It is at the school building where teachers also provide leadership in the daily interactions with their peers, with their students, and with their parents and other stakeholders. And, it is in the daily interactions with students that teachers and principals can encourage students to take on leadership. The literature regarding successful school based management continues to grow both in breadth and depth and if my graduate students are any indicator of today's leaders, school based stakeholders yearn for specific and guiding principles for how to manage today's learning environments. In very obvious ways it is at school building level where the tug between theory and practice is most powerful and most often confrontational (Hargreaves & Fink, 2006). Although establishing theoretical context is essential in framing a theory of leadership, principals often consider such discussions meaningless in helping them make sense of daily pressures and demands of schooling. What principals want is a theory of school building leadership that can speak honestly and directly to the challenges of helping teachers and students achieve in an atmosphere of standards and accountability (Stronge, 2002).\n\nA Way of Thinking Over the past few years the author has investigated leadership in the schools from\n\nan arts-based research methodology. Based on his own experiences, conversations with leaders, and research, he grew to be suspicious that leading was in fact more",
+          "pages": [
+            79
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_209_v1",
+            "chk_c93d5928c67e22_210_v1",
+            "chk_c93d5928c67e22_211_v1",
+            "chk_c93d5928c67e22_212_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_209_v1",
+          "hit_text": "Leadership in the school building is at the heart of school leadership. It is in the school building, the halls, and classrooms that principals most directly impact teacher behavior. The question that arises from a study leadership in the school building is not about if principals can affect teaching behavior but rather in what manner and to what extent principals might affect teaching behavior, school environment, and ultimately student learning (Stronge, 2002). And there is growing consensus in the literature, most recently reported in the “School Leadership Study” out of Stanford University (Davis, et al. 2005) that successful school leaders can influence student achievement in at least two important ways: (1) By selecting, supporting, and developing effective teachers; (2) By managing, implementing, and adjusting effective organizational environments. Other authors in this book will devote more time to the first element of effective leadership. In this monograph the author will focus on how school-based leaders can effectively manage the competing, and sometimes conflicting, demands of leading in today's schools so as to provide an organizational environment that encourages growth and development on the part of students, teachers, and administrators. The responsibility of managing a successful learning environment is one shared by all stakeholders.",
+          "hit_page_start": 79,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                872.995,
+                469.355
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02119938884644767
+        },
+        {
+          "id": "exc_c93d5928c67e22_121_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.2 Form: Three-dimensional structure or shape; geometric or free form › 93",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "ISLLC Standard #5: A school administrator is an educational leader who promotes the success of all students by acting with integrity, fairness, and in an ethical manner.\n\nA Leadership Perspective: The difference in management and leadership is the movement from shape to form,\n\nfrom two-dimensional perspective to a three-dimensional one. Leadership in many cases is a matter of perspective. Effective leaders find ways to recognize different perspectives in general through effective communication and more specifically through active listening. Truly gifted communicators can discern surface messages and distinguish them from the very important, but embedded, messages. What is the speaker saying? What is the speaker communicating? What is the speaker feeling? The answers are often wideranging.\n\nfrom two-dimensional perspective to a three-dimensional one. Leadership in many cases is a matter of perspective. Effective leaders find ways to recognize different perspectives in general through effective communication and more specifically through active listening. Truly gifted communicators can discern surface messages and distinguish them from the very important, but embedded, messages. What is the speaker saying? What is the speaker communicating? What is the speaker feeling? The answers are often wideranging.\n\nThe form for effective school-based management comes as effective communication. In other words, effective management requires one to be able to see individuals, events, and cultures from three dimensional perspectives. Communication has as its prerequisite trust. Without a sense of trust between two people, both in terms of content and confidentiality, there is little hope of meaningful conversation. An obvious example might be that if teachers trust their colleagues to work with them and not reveal their weak teaching areas to the general public, and certainly not to supervisors, then they might be more inclined to share deficiencies with colleagues. In so doing, teachers might be able to find help toward improving pedagogical gaps. If, on the other hand, teachers do not have the confidence in others' genuine concern for their professional development, they will certainly not engage in conversation with people about any professional areas of need. It is through active listening that principals can communicate trust and genuine interest that might lead to collegial interaction and growth.\n\nFortunately, active listening is a skill that can be developed. Though many people might think they are good listeners, in fact, without concentrated and frequent practice, and perhaps training, few people are effective listeners. It is only through intentional practice that one can develop into an effective listener. And the truly good listener recognizes that communication comes in verbal and nonverbal forms.\n\nEffective leaders also recognize that through empathic writing, a sort of active listening through writing, the content of a message can begin to have depth along with breadth (Kelehear, 2002). In other words, leaders see the message from the front, from the side, from the inside. In so doing, the effective leaders recognize the multidimensional dynamic, the three-dimensional reality that comes with effective communication.\n\nResearch on the role of effective communication and the role it plays in successful leadership proclaims that that there can be no leadership without communication. In fact, it is communication that helps school leaders build trust and integrity in organizational cultures. Robbins & Alvy (1998) assert that today's principals are expected to be much more than simply instructional leaders. Among the multiple roles principals assume beyond instructional leadership are chief financial officer for the school building, student and teacher counselor for both professional and personal matters, and community contact for topics ranging from dress codes to the bus schedule. Embedded in all the principals' responsibilities, both the de jure and de",
+          "pages": [
+            97
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_267_v1",
+            "chk_c93d5928c67e22_268_v1",
+            "chk_c93d5928c67e22_269_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_269_v1",
+          "hit_text": "Fortunately, active listening is a skill that can be developed. Though many people might think they are good listeners, in fact, without concentrated and frequent practice, and perhaps training, few people are effective listeners. It is only through intentional practice that one can develop into an effective listener. And the truly good listener recognizes that communication comes in verbal and nonverbal forms.\n\nEffective leaders also recognize that through empathic writing, a sort of active listening through writing, the content of a message can begin to have depth along with breadth (Kelehear, 2002). In other words, leaders see the message from the front, from the side, from the inside. In so doing, the effective leaders recognize the multidimensional dynamic, the three-dimensional reality that comes with effective communication.\n\nResearch on the role of effective communication and the role it plays in successful leadership proclaims that that there can be no leadership without communication. In fact, it is communication that helps school leaders build trust and integrity in organizational cultures. Robbins & Alvy (1998) assert that today's principals are expected to be much more than simply instructional leaders. Among the multiple roles principals assume beyond instructional leadership are chief financial officer for the school building, student and teacher counselor for both professional and personal matters, and community contact for topics ranging from dress codes to the bus schedule. Embedded in all the principals' responsibilities, both the de jure and de",
+          "hit_page_start": 97,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                558.031,
+                863.376,
+                649.835
+              ],
+              "page": 97,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                660.466,
+                873.03,
+                770.975
+              ],
+              "page": 97,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                781.606,
+                870.613,
+                948.232
+              ],
+              "page": 97,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02072274397713352
+        },
+        {
+          "id": "exc_a35c627f0c0b82_13_v1",
+          "book_id": "introduction-to-school-leadership",
+          "book_title": "Introduction to School Leadership",
+          "section_path": "Chapter 3 Shared Leadership",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "shared-distributed-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nTraditionally school leadership has been that of the top-down approach adopted from business and industrial organizations where the leader leads, makes key decisions, motivates, and inspires. While this approach has been popular in educational administration in the past, it is highly unlikely that a single person can provide the necessary leadership for all issues. Leaders and followers of today need to let go of that expectation and embrace new ways of leading. One way is to emphasis a shift from the formal leader to a shared leadership model. Instead of a single individual leading to success, other individuals, who are partners or group members, take on the responsibility for leadership.\n\nTraditionally school leadership has been that of the top-down approach adopted from business and industrial organizations where the leader leads, makes key decisions, motivates, and inspires. While this approach has been popular in educational administration in the past, it is highly unlikely that a single person can provide the necessary leadership for all issues. Leaders and followers of today need to let go of that expectation and embrace new ways of leading. One way is to emphasis a shift from the formal leader to a shared leadership model. Instead of a single individual leading to success, other individuals, who are partners or group members, take on the responsibility for leadership.\n\n\"We no longer believe that one administrator can serve as the instructional leader for an entire school without the substantial participation of other educators\"(Lambert, 2002). This formal model has several weaknesses. For example, when the principal leaves any promising change that has been implemented fades away. Under No Child Left Behind, we are under pressure to provide quality learning for all students and quality results on test scores. Instructional leadership must be a shared, community undertaking. Leadership is the professional work of everyone in the school(Lambert, 2002). Teachers have extraordinary leadership capabilities, and their leadership is a major untapped resource for improving our nation's schools (Barth, 1990). When administrators learn to tap this resource, they will have a wealth of knowledge available to them. Often times it is not only the team leader that possesses the leadership capabilities but also the quiet team member that assumes the role of curriculum specialist.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [
+            "fig_a35c627f0c0b82_100_v1"
+          ],
+          "chunk_ids": [
+            "chk_a35c627f0c0b82_22_v1",
+            "chk_a35c627f0c0b82_23_v1"
+          ],
+          "hit_chunk_id": "chk_a35c627f0c0b82_23_v1",
+          "hit_text": "Traditionally school leadership has been that of the top-down approach adopted from business and industrial organizations where the leader leads, makes key decisions, motivates, and inspires. While this approach has been popular in educational administration in the past, it is highly unlikely that a single person can provide the necessary leadership for all issues. Leaders and followers of today need to let go of that expectation and embrace new ways of leading. One way is to emphasis a shift from the formal leader to a shared leadership model. Instead of a single individual leading to success, other individuals, who are partners or group members, take on the responsibility for leadership.\n\n\"We no longer believe that one administrator can serve as the instructional leader for an entire school without the substantial participation of other educators\"(Lambert, 2002). This formal model has several weaknesses. For example, when the principal leaves any promising change that has been implemented fades away. Under No Child Left Behind, we are under pressure to provide quality learning for all students and quality results on test scores. Instructional leadership must be a shared, community undertaking. Leadership is the professional work of everyone in the school(Lambert, 2002). Teachers have extraordinary leadership capabilities, and their leadership is a major untapped resource for improving our nation's schools (Barth, 1990). When administrators learn to tap this resource, they will have a wealth of knowledge available to them. Often times it is not only the team leader that possesses the leadership capabilities but also the quiet team member that assumes the role of curriculum specialist.",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                171.083,
+                832.973,
+                337.709
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                348.34,
+                832.074,
+                589.787
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02004830917874396
+        },
+        {
+          "id": "exc_a35c627f0c0b82_11_v1",
+          "book_id": "introduction-to-school-leadership",
+          "book_title": "Introduction to School Leadership",
+          "section_path": "Chapter 2 Building a Learning Community: The Culture and Climate of Schools › 2.3 References",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "school-culture-and-climate",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nBarth, R. (1990). Improving schools from within. San Francisco: Jossey-Bass Publishers. Covey, S. (1990). Principle-centered leadership. New York: Simon & Schuster, Inc.\n\nGoldhammer, R. (1980). Clinical supervision: Special methods for the supervision of teachers. New York: Holt.\n\nGreenfield, Thomas B (1984). Leaders and schools: Willfulness and non-natural order, in Thomas Sergiovanni and John E. Corbally (Eds.), Leadership and Organizational Cultur. Urbana-Champaign: University of Illinois Press.\n\nHoy, W., & Forsyth, P. (1986). Effective supervision: theory into practice. New York: McGraw-Hill Company.\n\nKarp, S. (2005). The trouble with takeover. Educational Leadership, 62, (5), 28-32. Lashway, L. (2003, July). Role of the school leader. Retrieved Feb 12, 2004, from http:// eric.uoregon.edu/trends_issues/rolelead/index.html#providing Lambert, L. (1998). Building leadership capacity in schools. Alexandria, VA: ASCD. McEwan, E. (2003). 7 steps to effective instructional leadership. 2nd ed. Thousand Oaks, CA: Corin Press. McQuarrie, F., Wood, F. (1991, August). Designs on the job learning. Retrieved Feb 12, 2005, from http://www.nsdc.org/library/publications/jsd/wood203.pdf",
+          "pages": [
+            10
+          ],
+          "figure_ids": [
+            "fig_a35c627f0c0b82_88_v1"
+          ],
+          "chunk_ids": [
+            "chk_a35c627f0c0b82_20_v1"
+          ],
+          "hit_chunk_id": "chk_a35c627f0c0b82_20_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nBarth, R. (1990). Improving schools from within. San Francisco: Jossey-Bass Publishers. Covey, S. (1990). Principle-centered leadership. New York: Simon & Schuster, Inc.\n\nGoldhammer, R. (1980). Clinical supervision: Special methods for the supervision of teachers. New York: Holt.\n\nGreenfield, Thomas B (1984). Leaders and schools: Willfulness and non-natural order, in Thomas Sergiovanni and John E. Corbally (Eds.), Leadership and Organizational Cultur. Urbana-Champaign: University of Illinois Press.\n\nHoy, W., & Forsyth, P. (1986). Effective supervision: theory into practice. New York: McGraw-Hill Company.\n\nKarp, S. (2005). The trouble with takeover. Educational Leadership, 62, (5), 28-32. Lashway, L. (2003, July). Role of the school leader. Retrieved Feb 12, 2004, from http:// eric.uoregon.edu/trends_issues/rolelead/index.html#providing Lambert, L. (1998). Building leadership capacity in schools. Alexandria, VA: ASCD. McEwan, E. (2003). 7 steps to effective instructional leadership. 2nd ed. Thousand Oaks, CA: Corin Press. McQuarrie, F., Wood, F. (1991, August). Designs on the job learning. Retrieved Feb 12, 2005, from http://www.nsdc.org/library/publications/jsd/wood203.pdf",
+          "hit_page_start": 10,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                507.52,
+                717.824,
+                539.569
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                550.982,
+                831.05,
+                586.67
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                597.3,
+                806.627,
+                632.988
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                643.619,
+                825.21,
+                698.012
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                708.643,
+                795.545,
+                744.33
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                754.961,
+                826.709,
+                938.511
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019632414369256473
+        },
+        {
+          "id": "exc_c93d5928c67e22_134_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.4 Color: Property of objects coming from reflected light › 104",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "A Leadership Perspective:\n\nAs different colors contribute to the whole beauty of the art and people's different styles, different gifts support successful schools. One of the ways leaders can celebrate differences is by first acknowledging that diversity is valued. This diversity can be in terms of gender or ethnicity, of course. What might also be noted is that the diversity of ideas, teaching styles, or perspectives is important to the successful school. Successful leaders consider learning styles and personality types as they seek out teachers' help. Building a successful committee is as much about “who decides who decides” as it is about who is in the group. In other words, successful leaders help bring together individuals with acknowledged differences so that a true exchange of ideas can begin. The negative approach might be leaders who select the “right” ones for committees knowing before the work begins what the conclusions will be. Where leadership is successful there are shared values and goals coupled with an appreciation for the different paths one might take to reach those goals. One of the more notable examples of these shared values amidst diverse approaches can be in a principal's role as instructional leader at a local school high school. Specifically, how might the principal support a shared value through staff development initiatives that also celebrates diverse approaches to effective instruction?\n\nNo Child Left Behind (NCLB), for better or for worse, has school leaders across the nation looking carefully at staff development, especially as staff development affects the notion of “highly qualified teachers” and “school improvement.” Two questions that continue to arise among many school leaders are, “How can we be sure that our money spent on staff development has measurable results?” and “How can we sustain any benefits so that our good intentions might last longer than just to the end of the training session?”\n\nHistorically, leaders have created mission statements and vision statements to help provide organizations a means to articulate what they value most. As noted earlier in this monograph regarding “space,” some schools have adopted a core values approach school leadership. Core values help schools communicate to the community, students, teachers and administrators what is most important. It would stand to reason that the daily activities within the school would support those values as well. Principals have an especially important role in making certain that what the teachers are doing is supportive and consistent with the articulated core values. Additionally, in a time when much staff development is being eliminated because of diminishing budgets, initiatives must be able to communicate to various audiences their value with specific and understandable assessments. And as leaders begin to “justify” their expenditures for staff development in light of NCLB, then they might return to what matters most, helping children learn.\n\nEven when a staff development program adopts a core values approach, it will continue to find challenges to implementing successful professional development. If on the other hand school leaders couple core values with an intentional, on-going reflection process, then they can greatly improve the chances for successful staff development. One way that professional development efforts can achieve desired results is by the principal, teacher-leaders, and teachers answering affirmatively the following seven questions about the staff development initiative:",
+          "pages": [
+            108
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_302_v1",
+            "chk_c93d5928c67e22_303_v1",
+            "chk_c93d5928c67e22_304_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_302_v1",
+          "hit_text": "A Leadership Perspective:\n\nAs different colors contribute to the whole beauty of the art and people's different styles, different gifts support successful schools. One of the ways leaders can celebrate differences is by first acknowledging that diversity is valued. This diversity can be in terms of gender or ethnicity, of course. What might also be noted is that the diversity of ideas, teaching styles, or perspectives is important to the successful school. Successful leaders consider learning styles and personality types as they seek out teachers' help. Building a successful committee is as much about “who decides who decides” as it is about who is in the group. In other words, successful leaders help bring together individuals with acknowledged differences so that a true exchange of ideas can begin. The negative approach might be leaders who select the “right” ones for committees knowing before the work begins what the conclusions will be. Where leadership is successful there are shared values and goals coupled with an appreciation for the different paths one might take to reach those goals. One of the more notable examples of these shared values amidst diverse approaches can be in a principal's role as instructional leader at a local school high school. Specifically, how might the principal support a shared value through staff development initiatives that also celebrates diverse approaches to effective instruction?",
+          "hit_page_start": 108,
+          "hit_regions": [
+            {
+              "bbox": [
+                148.971,
+                59.558,
+                359.854,
+                76.54
+              ],
+              "page": 108,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                87.171,
+                833.469,
+                403.441
+              ],
+              "page": 108,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019367448471926084
+        },
+        {
+          "id": "exc_a35c627f0c0b82_20_v1",
+          "book_id": "introduction-to-school-leadership",
+          "book_title": "Introduction to School Leadership",
+          "section_path": "Chapter 4 The Principalship: Manager to Leader › 4.2 Changing from Manager to Leader",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "educational-leadership-theory-practice",
+            "transformational-servant-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nPrincipals are no longer strictly managers; they are expected to be leaders. Leaders that can take their school to a higher level of academic achievement, where all students are successful learners and all teachers engage their students in learning. To become such a leader, principals need to leave behind their bureaucratic management styles and redefine themselves as a moral leader. Principals that are leaders not just managers will be able to move their school forward. These new principals allow teachers to be leaders in developing better curriculums to reach the needs of all students. For a principal to maintain this type of leadership, he will need to learn how to serve his staff not just manage it.\n\nPrincipals are beginning to value the important role that teachers play in the success of their school. Recognizing their value, principals are beginning to work with teachers to achieve goals that will contribute to the schools success. Principals are looking for a leadership style that welcomes the cooperation of others and values their input. One such leadership style is that of a servant leader. In servant leadership one serves the needs of their staff (Sergiovanni, 2000). By serving one's staff instead of serving one's own needs, a principal is able to create change within the school. Principals can practice servant leadership in the three ways that Sergiovanni (2000) describes: purposing, empowerment, and leadership by outrage.",
+          "pages": [
+            15
+          ],
+          "figure_ids": [
+            "fig_a35c627f0c0b82_136_v1"
+          ],
+          "chunk_ids": [
+            "chk_a35c627f0c0b82_32_v1"
+          ],
+          "hit_chunk_id": "chk_a35c627f0c0b82_32_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nPrincipals are no longer strictly managers; they are expected to be leaders. Leaders that can take their school to a higher level of academic achievement, where all students are successful learners and all teachers engage their students in learning. To become such a leader, principals need to leave behind their bureaucratic management styles and redefine themselves as a moral leader. Principals that are leaders not just managers will be able to move their school forward. These new principals allow teachers to be leaders in developing better curriculums to reach the needs of all students. For a principal to maintain this type of leadership, he will need to learn how to serve his staff not just manage it.\n\nPrincipals are beginning to value the important role that teachers play in the success of their school. Recognizing their value, principals are beginning to work with teachers to achieve goals that will contribute to the schools success. Principals are looking for a leadership style that welcomes the cooperation of others and values their input. One such leadership style is that of a servant leader. In servant leadership one serves the needs of their staff (Sergiovanni, 2000). By serving one's staff instead of serving one's own needs, a principal is able to create change within the school. Principals can practice servant leadership in the three ways that Sergiovanni (2000) describes: purposing, empowerment, and leadership by outrage.",
+          "hit_page_start": 15,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                525.963,
+                755.639,
+                558.012
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                569.425,
+                867.19,
+                736.051
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                746.682,
+                873.012,
+                913.308
+              ],
+              "page": 15,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01923701298701299
+        },
+        {
+          "id": "exc_f1615397c20971_15_v1",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 2 Nicely, K., Womack, J., & Wright, L. (July 2009). Emotional Intelligence and Effective Leadership: Implications for School Leaders › 2.2 Definitions of Key Terms › 2.2.2 Effective Leadership",
+          "roles": [
+            "exercise",
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "emotional-intelligence-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nMany books and articles have been written on the topic of effective leadership. A definition of effective leadership varies among experts. Questionnaires, such as the Leadership Practices Inventory created by Kouzes and Posner (1995), have been used to measure leadership effectiveness. Kouzes and Pousner believe that effective leaders engage in five practices; model the way, inspire a shared vision, challenge the process, enable others to act, and encourage the heart (1995). These practices and other leadership concepts provide a means of shaping a model leader. Understanding that effective leaders will also hold individual leadership traits, defining the term in a general sense is a challenge. For the purpose of our chapter, we will define effective leadership as \"the art of mobilizing others to want to struggle for shared aspirations\" (Kouzes & Posner, 1995, p. 30).",
+          "pages": [
+            8
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_62_v1"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_19_v1"
+          ],
+          "hit_chunk_id": "chk_f1615397c20971_19_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nMany books and articles have been written on the topic of effective leadership. A definition of effective leadership varies among experts. Questionnaires, such as the Leadership Practices Inventory created by Kouzes and Posner (1995), have been used to measure leadership effectiveness. Kouzes and Pousner believe that effective leaders engage in five practices; model the way, inspire a shared vision, challenge the process, enable others to act, and encourage the heart (1995). These practices and other leadership concepts provide a means of shaping a model leader. Understanding that effective leaders will also hold individual leadership traits, defining the term in a general sense is a challenge. For the purpose of our chapter, we will define effective leadership as \"the art of mobilizing others to want to struggle for shared aspirations\" (Kouzes & Posner, 1995, p. 30).",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                175.543,
+                826.309,
+                207.591
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                219.005,
+                831.827,
+                423.042
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018905021173623714
+        },
+        {
+          "id": "exc_c93d5928c67e22_64_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 2 Theories of Educational › Management › 2.6 Central Features of Organizational Culture › 2.6.4 Using Theory to Improve Practice › 38",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "educational-management-models",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Bush, T. & Glover, D. (2002). School leadership: Concepts and evidence. Nottingham: National College for School Leadership.\n\nCampbell-Evans, G. (1993). A values perspective on school-based management. In C. Dimmock (Ed.), School-based management and school effectiveness. London: Routledge.\n\nChapman, J. (1993). Leadership, school-based decision-making and school effectiveness. In C. Dimmock (Ed.). School-based management and school effectiveness. London: Routledge.\n\nCohen, L., Manion, L. & Morrison, K. (2000). Research methods in education (5th Ed.). Routledge-Falmer: London.\nCohen, M. D. & March, J. G. (1986). Leadership and ambiguity: The American college president. Boston: The Harvard Business School Press.\n\nCopland, M., Darling-Hammond, L., Knapp, M., McLaugghlin, M. & Talbert, J. (2002). Leadership for teaching and learning: A framework for research and action. New Orleans: American Educational Research Association.\n\nCuban, L. (1988). The managerial imperative and the practice of leadership in schools. Albany, NY: State University of New York Press\n\nDavies, J.L. & Morgan, A. W. (1983). Management of higher education in a period of contraction and uncertainty. In O. Body-Barrett, T. Bush, J. Goodey, J. McNay & M. Preedy (Eds.). Approaches to post school management. London: Harper and Row.\n\nDimmock, C. (1999). Principals and school restructuring: Conceptualising challenges as dilemmas. Journal of Educational Administration, 37(5), 441-462.\n\nDavies, J.L. & Morgan, A. W. (1983). Management of higher education in a period of contraction and uncertainty. In O. Body-Barrett, T. Bush, J. Goodey, J. McNay & M. Preedy (Eds.). Approaches to post school management. London: Harper and Row.\n\nDimmock, C. (1999). Principals and school restructuring: Conceptualising challenges as dilemmas. Journal of Educational Administration, 37(5), 441-462.\n\nDimmock, C. & Walker, A. (2002b). School leadership in context - societal and organizational cultures. In T. Bush and L. Bell (Eds.). The principles and practice of educational management. London: Paul Chapman.\n\nDressler, B. (2001). Charter school leadership. Education and Urban Society, 33(2), 170-185.\n\nEnderud, H. (1980) Administrative leadership in organised anarchies, International Journal of Institutional Management in Higher Education, 4(3), 235-53.\n\nEnglish, F. (2002). Cutting the Gordian Knot of educational administration: The theorypractice gap, The Review, XLIV (1), 1-3.\n\nGlaser, B. G. and Strauss, A. L. (1967). The Discovery of Grounded Theory, Weidenfeld and Nicolson, London.\n\nGreenfield, T. B. (1973). Organisations as social inventions: rethinking assumptions about change, Journal of Applied Behavioural Science, 9: 5, 551-74.\n\nGreenfield, T. B. (1975). Theory about organisations: a new perspective and its implications for schools, in M. Hughes (Ed.) Administering Education: International Challenge, Athlone Press, London.\n\nGreenfield, T. B. (1979). Organisation theory is ideology, Curriculum Enquiry, 9: 2, 97-112.",
+          "pages": [
+            42
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_114_v1",
+            "chk_c93d5928c67e22_115_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_114_v1",
+          "hit_text": "Bush, T. & Glover, D. (2002). School leadership: Concepts and evidence. Nottingham: National College for School Leadership.\n\nCampbell-Evans, G. (1993). A values perspective on school-based management. In C. Dimmock (Ed.), School-based management and school effectiveness. London: Routledge.\n\nChapman, J. (1993). Leadership, school-based decision-making and school effectiveness. In C. Dimmock (Ed.). School-based management and school effectiveness. London: Routledge.\n\nCohen, L., Manion, L. & Morrison, K. (2000). Research methods in education (5th Ed.). Routledge-Falmer: London.\nCohen, M. D. & March, J. G. (1986). Leadership and ambiguity: The American college president. Boston: The Harvard Business School Press.\n\nCopland, M., Darling-Hammond, L., Knapp, M., McLaugghlin, M. & Talbert, J. (2002). Leadership for teaching and learning: A framework for research and action. New Orleans: American Educational Research Association.\n\nCuban, L. (1988). The managerial imperative and the practice of leadership in schools. Albany, NY: State University of New York Press\n\nDavies, J.L. & Morgan, A. W. (1983). Management of higher education in a period of contraction and uncertainty. In O. Body-Barrett, T. Bush, J. Goodey, J. McNay & M. Preedy (Eds.). Approaches to post school management. London: Harper and Row.\n\nDimmock, C. (1999). Principals and school restructuring: Conceptualising challenges as dilemmas. Journal of Educational Administration, 37(5), 441-462.",
+          "hit_page_start": 42,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                815.008,
+                95.246
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                105.876,
+                814.568,
+                160.27
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                170.9,
+                729.914,
+                225.293
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                235.924,
+                818.627,
+                317.93
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                328.561,
+                800.697,
+                382.954
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                393.584,
+                827.114,
+                429.272
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                439.903,
+                801.526,
+                494.296
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                504.926,
+                833.062,
+                540.614
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018774069319640565
+        },
+        {
+          "id": "exc_c93d5928c67e22_176_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 6 Challenges Facing Black American Principals: A Conversation about Coping › 145",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "black-principals-coping-challenges"
+          ],
+          "confidence": 0.96,
+          "synopsis": "staff. The request was honored. I laughed and exclaimed, “Girl so, they ain't recognizing yo “D” huh?” We both fell into insurmountable laughter.\n\nIn turn, I relayed to her how one of my White students asked, “How did you learn to speak like dat?” The student was referring to my usage of Standard English and the ability to code switch. Our laughter reflects our understanding that deep and soul filled laughter is therapeutic and helps to relieve the stress of the day.\n\nWhen injustices seem too unbearable, one often uses music to illustrate “You gotta hurt before you heal” (Bland, 1989) and I add that hurting and healing takes time. In the Black experience, music and laughter provide opportunities to release, express, and temporarily remedy frustration and stressors. Dialogue, music, and laughter enable people of color to maneuver within the game of politics, for if one does not learn to play the political game he/she will surely be played by politics. It is equally important to know that many things that exist as barriers, must often be left alone if the time for removing these barriers is not right. Quite often, issues should be left alone until the appropriate amount of ammunition for engaging in battle is available to the aggrieved to ensure that he or she has a strong case. For example, if an aggrieved faculty member is filing a grievance against an administrator, the faculty person needs to ensure that necessary documentation has been submitted in a timely manner and in accordance with university policy.\n\nIn the hit song \"The Gambler,\" Kenny Rogers 2 has this advice for listeners and I share it as metaphor for African Americans and other historically underrepresented people attempting to thrive in chaotic situations:\n\nYou got to know when to hold 'em, know when to fold 'em, know when to walk away and know when to run. You never count your money when you're sittin' at the table. There'll be time enough for countin' when the dealin's done.\n\nSummary and Implications This short chapter has many implications for school districts that are committed to\n\nYou got to know when to hold 'em, know when to fold 'em, know when to walk away and know when to run. You never count your money when you're sittin' at the table. There'll be time enough for countin' when the dealin's done.\n\nSummary and Implications This short chapter has many implications for school districts that are committed to\n\nsupporting the success and effectiveness of school principals in the 21st century. Although the transformational leadership models embody collaboration and strategic planning for moving from a simple instructional design to incorporating first and second order changes, the facilitative leadership might be more appropriate for principals of color. This model includes the behaviors that embrace the collective ability of the school principals to adapt, solve problems, and improve performance. Facilitative leadership includes behavior that helps the school achieve goals that may be shared, negotiated or complemented (Murphy & Louis, 2001). In addition, resources such as Skills for Successful 21st Century School Leaders (Hoyle, 2005) are recommended for districts seeking to prepare skilled leaders. This resource envelopes practical approaches to establishing relationships with culturally diverse constituencies, formulating policies for bonds, facilitating site-base decision making, gathering and analyzing data, and implementing futuristically focused staff development. In addition, the following ideals are recommended in preparing principals from historically underrepresented groups. The ideals are supported by culturally responsive proverbs.\n\nKnowledge is like a garden. When it is not cultivated it cannot be harvested. -Guinea",
+          "pages": [
+            149
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_432_v1",
+            "chk_c93d5928c67e22_433_v1",
+            "chk_c93d5928c67e22_434_v1",
+            "chk_c93d5928c67e22_435_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_434_v1",
+          "hit_text": "You got to know when to hold 'em, know when to fold 'em, know when to walk away and know when to run. You never count your money when you're sittin' at the table. There'll be time enough for countin' when the dealin's done.\n\nSummary and Implications This short chapter has many implications for school districts that are committed to\n\nsupporting the success and effectiveness of school principals in the 21st century. Although the transformational leadership models embody collaboration and strategic planning for moving from a simple instructional design to incorporating first and second order changes, the facilitative leadership might be more appropriate for principals of color. This model includes the behaviors that embrace the collective ability of the school principals to adapt, solve problems, and improve performance. Facilitative leadership includes behavior that helps the school achieve goals that may be shared, negotiated or complemented (Murphy & Louis, 2001). In addition, resources such as Skills for Successful 21st Century School Leaders (Hoyle, 2005) are recommended for districts seeking to prepare skilled leaders. This resource envelopes practical approaches to establishing relationships with culturally diverse constituencies, formulating policies for bonds, facilitating site-base decision making, gathering and analyzing data, and implementing futuristically focused staff development. In addition, the following ideals are recommended in preparing principals from historically underrepresented groups. The ideals are supported by culturally responsive proverbs.",
+          "hit_page_start": 149,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                506.708,
+                871.496,
+                561.101
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                182.202,
+                571.732,
+                859.461,
+                616.327
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                618.05,
+                870.543,
+                915.614
+              ],
+              "page": 149,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018450797872340427
+        },
+        {
+          "id": "exc_c93d5928c67e22_147_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.5 Texture: Feel or appearance of an object or surface › 116",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Starratt, R. J. (2004). Ethical leadership. San Francisco: Jossey-Bass. Steinbeck, J. (1955, November). . . . Like captured fireflies. California Teachers Association Journal, 51 (8), 7.\n\nStrike, K. A., Haller, E. J., & Soltis, J. F. (1998). The ethics of school administration (2nd ed.). New York: Teachers College Press.\n\nStronge, J. H. (2002). Qualities of effective teachers. Alexandria, VA: Association for Curriculum and Curriculum Development.\n\nSullivan, S., & Glanz, J. (2005). Supervision that improves teaching: Strategies and techniques (2nd ed.). Thousand Oaks, CA: Corwin.\nSullivan, S., & Glanz, J. (2006). Building effective learning communities: Strategies for leadership, learning, and collaboration. Thousand Oaks, CA.: Corwin Press.\n\nTaylor, P. (Ed). (2002). Amazing grace: The lithographs of Joseph Norman. Boston: Museum of the National Center of Afro-American Artists.\n\nWaite, D. (1995). Rethinking instructional supervision: Notes on its language and culture. Washington, DC: Falmer.\n\nWenger, E., McDermott, R., & Snyder, W. (2002). Cultivating communities of practice. Boston: Harvard Business School Press.\n\nWoolfolk, A., & Hoy, W. K. (2003). Instructional leadership: A learning-centered guide. Boston: Allyn & Bacon.\n\nZeichner, K. M., & Liston, D. P. (1996). Reflective teaching: An introduction. Mahwah, NJ: Lawrence Erlbaum.\n\nZepeda, S. (2000). Instructional supervision: Applying tools and concepts. Larchmont, NY: Eye on Education.",
+          "pages": [
+            120
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_340_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_340_v1",
+          "hit_text": "Starratt, R. J. (2004). Ethical leadership. San Francisco: Jossey-Bass. Steinbeck, J. (1955, November). . . . Like captured fireflies. California Teachers Association Journal, 51 (8), 7.\n\nStrike, K. A., Haller, E. J., & Soltis, J. F. (1998). The ethics of school administration (2nd ed.). New York: Teachers College Press.\n\nStronge, J. H. (2002). Qualities of effective teachers. Alexandria, VA: Association for Curriculum and Curriculum Development.\n\nSullivan, S., & Glanz, J. (2005). Supervision that improves teaching: Strategies and techniques (2nd ed.). Thousand Oaks, CA: Corwin.\nSullivan, S., & Glanz, J. (2006). Building effective learning communities: Strategies for leadership, learning, and collaboration. Thousand Oaks, CA.: Corwin Press.\n\nTaylor, P. (Ed). (2002). Amazing grace: The lithographs of Joseph Norman. Boston: Museum of the National Center of Afro-American Artists.\n\nWaite, D. (1995). Rethinking instructional supervision: Notes on its language and culture. Washington, DC: Falmer.\n\nWenger, E., McDermott, R., & Snyder, W. (2002). Cultivating communities of practice. Boston: Harvard Business School Press.\n\nWoolfolk, A., & Hoy, W. K. (2003). Instructional leadership: A learning-centered guide. Boston: Allyn & Bacon.\n\nZeichner, K. M., & Liston, D. P. (1996). Reflective teaching: An introduction. Mahwah, NJ: Lawrence Erlbaum.\n\nZepeda, S. (2000). Instructional supervision: Applying tools and concepts. Larchmont, NY: Eye on Education.",
+          "hit_page_start": 120,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                823.286,
+                113.951
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                124.582,
+                813.086,
+                160.27
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                170.9,
+                796.674,
+                206.588
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                217.219,
+                811.232,
+                299.224
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                309.855,
+                789.526,
+                345.543
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                356.173,
+                780.634,
+                391.861
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                402.492,
+                812.521,
+                438.179
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                448.81,
+                816.703,
+                484.498
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                495.128,
+                809.521,
+                530.816
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                541.447,
+                820.18,
+                577.134
+              ],
+              "page": 120,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018017344497607654
+        },
+        {
+          "id": "exc_c93d5928c67e22_122_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.2 Form: Three-dimensional structure or shape; geometric or free form › 94",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "facto assignments, is the requirement that they be clear and accurate communicators (Cousins, 1996). In fact, one might easily make the case that, above all else, effective principals must be skilled communicators (Stevan & Blumberg, 1986; Zigler, 1994; Tauer, 1996; Cousins, 1996; Reiman & Thies-Sprinthall, 1998; Reiman, 1999).\n\nIn the spirit of skilled communicator, effective school leaders are able to articulate the vision and mission of the school and school system, establish norms of behavior for both teachers and students, and communicate high expectations for teaching and learning. There can be no effective leadership, it would appear, without effective communication (Persell & Cookson, 1982; Buffie, 1989; Barth, 1990; Prestine, 1993; Blase & Blase, 1994; Stolp & Smith, 1995).\n\nParticularly fascinating for today's principals is the possible role that technology, and in particular e-mail, might play in contributing to successful communication. With the infusion of technology into schools, computers and e-mail have become part of the daily routine for principals and teachers. In interviews with twelve principals representing elementary, middle, and high schools, it became clear that both teachers and principals relied heavily on e-mail to communicate with each other (Kelehear, 2001). One principal commented that she no longer used the intercom, but depended on e-mail to reach teachers and students. She reduced faculty meetings from once a week to once a month and disseminated all daily and weekly information by e-mail.\n\nParticularly fascinating for today's principals is the possible role that technology, and in particular e-mail, might play in contributing to successful communication. With the infusion of technology into schools, computers and e-mail have become part of the daily routine for principals and teachers. In interviews with twelve principals representing elementary, middle, and high schools, it became clear that both teachers and principals relied heavily on e-mail to communicate with each other (Kelehear, 2001). One principal commented that she no longer used the intercom, but depended on e-mail to reach teachers and students. She reduced faculty meetings from once a week to once a month and disseminated all daily and weekly information by e-mail.\n\nSeveral principals also found that face to face contact with some teachers seemed to diminish through the use of e-mail, if not in qualitative terms, certainly in quantitative ways. Two principals had actually removed the sign-in sheet and had teachers sign in from their rooms via e-mail. They commented that by moving the sign-in sheet they inadvertently lost contact with half of the staff. Several other principals commented that if it were not for the mail boxes in the front office, they would likely not see many of their teachers. Or, as another principal lamented, \"I was talking with a teacher I had not seen in a few days when he told me that he had been absent for two days. I did not even know he was not there!\"\n\nSeveral principals also found that face to face contact with some teachers seemed to diminish through the use of e-mail, if not in qualitative terms, certainly in quantitative ways. Two principals had actually removed the sign-in sheet and had teachers sign in from their rooms via e-mail. They commented that by moving the sign-in sheet they inadvertently lost contact with half of the staff. Several other principals commented that if it were not for the mail boxes in the front office, they would likely not see many of their teachers. Or, as another principal lamented, \"I was talking with a teacher I had not seen in a few days when he told me that he had been absent for two days. I did not even know he was not there!\"\n\nAnd finally, there emerged the expectation on the part of principals and teachers alike that an immediate response to e-mail was not only preferred, rather it was expected. When teachers and principals sent messages, they became annoyed when the response was not returned quickly. When pressed by what was meant by \"quickly,\" the teachers expected the principal to respond within three or four hours. Principals were more exacting. They anticipated a response from teachers within the hour! Several of the schools conducted faculty meetings whose agenda items focused on establishing norms and expectations regarding e-mail.\n\nAnd finally, there emerged the expectation on the part of principals and teachers alike that an immediate response to e-mail was not only preferred, rather it was expected. When teachers and principals sent messages, they became annoyed when the response was not returned quickly. When pressed by what was meant by \"quickly,\" the teachers expected the principal to respond within three or four hours. Principals were more exacting. They anticipated a response from teachers within the hour! Several of the schools conducted faculty meetings whose agenda items focused on establishing norms and expectations regarding e-mail.\n\nGiven that e-mail has so completely become interwoven into the fabric of the school culture, it is interesting to note the reaction of staff when “the system” goes down or crashes. One principal recounted her and her staff's reaction to such an event:\n\nLast week the system stopped working. I sought out our technology specialist in an attempt to find the source of the problem. Almost simultaneously, teachers began drifting by my office to tell of the problem and find when it might be fixed. When I discovered that the system might be down for several days, immediately my daily routine began to change. I traveled the halls listening to teachers teaching and I talked with students as they moved on to their next class. During the transition to classes, I",
+          "pages": [
+            98
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_270_v1",
+            "chk_c93d5928c67e22_271_v1",
+            "chk_c93d5928c67e22_272_v1",
+            "chk_c93d5928c67e22_273_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_270_v1",
+          "hit_text": "facto assignments, is the requirement that they be clear and accurate communicators (Cousins, 1996). In fact, one might easily make the case that, above all else, effective principals must be skilled communicators (Stevan & Blumberg, 1986; Zigler, 1994; Tauer, 1996; Cousins, 1996; Reiman & Thies-Sprinthall, 1998; Reiman, 1999).\n\nIn the spirit of skilled communicator, effective school leaders are able to articulate the vision and mission of the school and school system, establish norms of behavior for both teachers and students, and communicate high expectations for teaching and learning. There can be no effective leadership, it would appear, without effective communication (Persell & Cookson, 1982; Buffie, 1989; Barth, 1990; Prestine, 1993; Blase & Blase, 1994; Stolp & Smith, 1995).\n\nParticularly fascinating for today's principals is the possible role that technology, and in particular e-mail, might play in contributing to successful communication. With the infusion of technology into schools, computers and e-mail have become part of the daily routine for principals and teachers. In interviews with twelve principals representing elementary, middle, and high schools, it became clear that both teachers and principals relied heavily on e-mail to communicate with each other (Kelehear, 2001). One principal commented that she no longer used the intercom, but depended on e-mail to reach teachers and students. She reduced faculty meetings from once a week to once a month and disseminated all daily and weekly information by e-mail.",
+          "hit_page_start": 98,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                828.545,
+                132.657
+              ],
+              "page": 98,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                143.287,
+                826.356,
+                253.797
+              ],
+              "page": 98,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                264.428,
+                831.792,
+                431.053
+              ],
+              "page": 98,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017876344086021505
+        },
+        {
+          "id": "exc_4e19b0a9c9bd8c_134_v1",
+          "book_id": "organizational-change-in-the-field-of-education-administrati",
+          "book_title": "Organizational Change in the Field of Education Administration",
+          "section_path": "Chapter 4 Theories of Educational Management › 4.5 Central Features of Organizational Culture › 4.5.4 Using Theory to Improve Practice › 95",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "educational-management-models",
+            "school-culture-and-climate"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Bush, T. & Glover, D. (2002). School leadership: Concepts and evidence. Nottingham: National College for School Leadership.\n\nCampbell-Evans, G. (1993). A values perspective on school-based management. In C. Dimmock (Ed.), School-based management and school effectiveness. London: Routledge.\n\nChapman, J. (1993). Leadership, school-based decision-making and school effectiveness. In C. Dimmock (Ed.). School-based management and school effectiveness. London: Routledge.\n\nCohen, L., Manion, L. & Morrison, K. (2000). Research methods in education (5th Ed.). Routledge-Falmer: London.\nCohen, M. D. & March, J. G. (1986). Leadership and ambiguity: The American college president. Boston: The Harvard Business School Press.\n\nCopland, M., Darling-Hammond, L., Knapp, M., McLaugghlin, M. & Talbert, J. (2002). Leadership for teaching and learning: A framework for research and action. New Orleans: American Educational Research Association.\n\nCuban, L. (1988). The managerial imperative and the practice of leadership in schools. Albany, NY: State University of New York Press\n\nDavies, J.L. & Morgan, A. W. (1983). Management of higher education in a period of contraction and uncertainty. In O. Body-Barrett, T. Bush, J. Goodey, J. McNay & M. Preedy (Eds.). Approaches to post school management. London: Harper and Row.\n\nDimmock, C. (1999). Principals and school restructuring: Conceptualising challenges as dilemmas. Journal of Educational Administration, 37(5), 441-462.\n\nDavies, J.L. & Morgan, A. W. (1983). Management of higher education in a period of contraction and uncertainty. In O. Body-Barrett, T. Bush, J. Goodey, J. McNay & M. Preedy (Eds.). Approaches to post school management. London: Harper and Row.\n\nDimmock, C. (1999). Principals and school restructuring: Conceptualising challenges as dilemmas. Journal of Educational Administration, 37(5), 441-462.\n\nDimmock, C. & Walker, A. (2002b). School leadership in context _ societal and organizational cultures. In T. Bush and L. Bell (Eds.). The principles and practice of educational management. London: Paul Chapman.\n\nDressler, B. (2001). Charter school leadership. Education and Urban Society, 33(2), 170-185.\n\nEnderud, H. (1980) Administrative leadership in organised anarchies, International Journal of Institu-tional Management in Higher Education, 4(3), 235-53.\n\nEnglish, F. (2002). Cutting the Gordian Knot of educational administration: The theorypractice gap, The Review, XLIV (1), 1-3.\n\nGlaser, B. G. and Strauss, A. L. (1967). The Discovery of Grounded Theory, Weidenfeld and Nicolson, London.\n\nGreenfield, T. B. (1973). Organisations as social inventions: rethinking assumptions about change, Journal of Applied Behavioural Science, 9: 5, 551-74.\n\nGreenfield, T. B. (1975). Theory about organisations: a new perspective and its implications for schools, in M. Hughes (Ed.) Administering Education: International Challenge, Athlone Press, London.\n\nGreenfield, T. B. (1979). Organisation theory is ideology, Curriculum Enquiry, 9: 2, 97-112.",
+          "pages": [
+            99
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_4e19b0a9c9bd8c_293_v1",
+            "chk_4e19b0a9c9bd8c_294_v1"
+          ],
+          "hit_chunk_id": "chk_4e19b0a9c9bd8c_293_v1",
+          "hit_text": "Bush, T. & Glover, D. (2002). School leadership: Concepts and evidence. Nottingham: National College for School Leadership.\n\nCampbell-Evans, G. (1993). A values perspective on school-based management. In C. Dimmock (Ed.), School-based management and school effectiveness. London: Routledge.\n\nChapman, J. (1993). Leadership, school-based decision-making and school effectiveness. In C. Dimmock (Ed.). School-based management and school effectiveness. London: Routledge.\n\nCohen, L., Manion, L. & Morrison, K. (2000). Research methods in education (5th Ed.). Routledge-Falmer: London.\nCohen, M. D. & March, J. G. (1986). Leadership and ambiguity: The American college president. Boston: The Harvard Business School Press.\n\nCopland, M., Darling-Hammond, L., Knapp, M., McLaugghlin, M. & Talbert, J. (2002). Leadership for teaching and learning: A framework for research and action. New Orleans: American Educational Research Association.\n\nCuban, L. (1988). The managerial imperative and the practice of leadership in schools. Albany, NY: State University of New York Press\n\nDavies, J.L. & Morgan, A. W. (1983). Management of higher education in a period of contraction and uncertainty. In O. Body-Barrett, T. Bush, J. Goodey, J. McNay & M. Preedy (Eds.). Approaches to post school management. London: Harper and Row.\n\nDimmock, C. (1999). Principals and school restructuring: Conceptualising challenges as dilemmas. Journal of Educational Administration, 37(5), 441-462.",
+          "hit_page_start": 99,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                852.824,
+                95.246
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                105.876,
+                852.383,
+                160.27
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                170.9,
+                767.729,
+                225.293
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                235.924,
+                856.442,
+                317.93
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                328.561,
+                838.513,
+                382.954
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                393.584,
+                864.929,
+                429.272
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                439.903,
+                839.341,
+                494.296
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                504.926,
+                870.877,
+                540.614
+              ],
+              "page": 99,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017777777777777778
+        },
+        {
+          "id": "exc_2c5e7de90c1410_27_v1",
+          "book_id": "school-personnel-administration-and-instructional-supervisio",
+          "book_title": "School Personnel Administration and Instructional Supervision",
+          "section_path": "Chapter 3 Integrative Thinking › 3.1 Taking the Opposable Mind and Integrative Thinking to the Arena of the Principalship and the Administration of Personnel › 3.1.1 Entrepreneurial Leadership",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "integrative-thinking-opposable-mind"
+          ],
+          "confidence": 0.98,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nA principal's mission must now include designing and implementing new strategies to help teachers and students recognize, understand, and integrate technology with teaching and learning in the classroom. The mere presence of hardware and software in the classroom does not assure meaningful learning for students. We are beyond the point of deciding whether or not we will accept technology in our schools. The crucial task at hand is to decide how to implement this technology effectively into instruction.\n\nTo get started with understanding the concept of the Opposable Mind, and what it has to do with the leading of school personnel, read a recent chapter that weaves two important concepts together: the Opposable Mind and Entrepreneurial Leadership. Though focusing on technology leadership, it very much has to do with school personnel. Click Here (http://cnx.org/content/m19200/latest/Entrepreneurial% 20Leadership.pdf) to Access Entrepreneurial Leadership.",
+          "pages": [
+            13
+          ],
+          "figure_ids": [
+            "fig_2c5e7de90c1410_115_v1"
+          ],
+          "chunk_ids": [
+            "chk_2c5e7de90c1410_35_v1"
+          ],
+          "hit_chunk_id": "chk_2c5e7de90c1410_35_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nA principal's mission must now include designing and implementing new strategies to help teachers and students recognize, understand, and integrate technology with teaching and learning in the classroom. The mere presence of hardware and software in the classroom does not assure meaningful learning for students. We are beyond the point of deciding whether or not we will accept technology in our schools. The crucial task at hand is to decide how to implement this technology effectively into instruction.\n\nTo get started with understanding the concept of the Opposable Mind, and what it has to do with the leading of school personnel, read a recent chapter that weaves two important concepts together: the Opposable Mind and Entrepreneurial Leadership. Though focusing on technology leadership, it very much has to do with school personnel. Click Here (http://cnx.org/content/m19200/latest/Entrepreneurial% 20Leadership.pdf) to Access Entrepreneurial Leadership.",
+          "hit_page_start": 13,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                110.519,
+                755.64,
+                142.568
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                153.981,
+                867.066,
+                283.196
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                293.827,
+                871.496,
+                404.336
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017452135493372607
+        },
+        {
+          "id": "exc_a35c627f0c0b82_29_v1",
+          "book_id": "introduction-to-school-leadership",
+          "book_title": "Introduction to School Leadership",
+          "section_path": "Chapter 4 The Principalship: Manager to Leader › 4.10 References",
+          "roles": [
+            "introduction",
+            "reference"
+          ],
+          "topic_ids": [
+            "educational-leadership-theory-practice",
+            "transformational-servant-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nAllen, G. (1998) Supervision: Management modern. Retrieved June 20, 2005, from http://ollie.dcccd.edu/mgmt1374/book_contents/1overview/management_history/ mgmt_history.htm\n\nCartwright, R. (2002) Empowerment. Oxford, United Kingdom: Capstone Publishing Ltd.\n\nLambert, L. (2003). Leadership Capacity for Lasting School Improvement. Alexandria, VA: Assoc. for Supervision and Curriculum Development\n\nMcMahon, K. N. (2001). An Interview with Helen S. Astin. In Developing Nonhierarchical Leadership on Campus (p. 8). Westport, Connecticut: Greenwood Press\n\nOwens, R. G. (2004). Organizational Behavior in Education. (8th ed.) Boston: Pearson Education Prideaux, R. (2001). The Effective and Democratic School Principal. Retrieved June 14, 2005, from http://www.cybertext.net.au/tct/papers/week4/printable/ prideaux%20-%20printable.htm\n\nSergiovanni, T. J. (2005).The principalship: A reflective practice perspective 5th ed. Needham Heights, Maryland: Allyn and Bacon.\n\nSergiovanni, T. J. (2000). Leadership as Stewardship. In The Jossey-Bass Reader on Educational Leadership. New York, NY: John Wiley and Sons, Inc.\n\nSpears, L. C. (2002). Tracing the Past, Present, and Future of Serva nt-Leadership. In Focus On Leadership: Servant-leadership for the Twenty-first Century (pp. 1-10). New York, NY: John Wiley and Sons, Inc.",
+          "pages": [
+            19
+          ],
+          "figure_ids": [
+            "fig_a35c627f0c0b82_177_v1"
+          ],
+          "chunk_ids": [
+            "chk_a35c627f0c0b82_44_v1"
+          ],
+          "hit_chunk_id": "chk_a35c627f0c0b82_44_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nAllen, G. (1998) Supervision: Management modern. Retrieved June 20, 2005, from http://ollie.dcccd.edu/mgmt1374/book_contents/1overview/management_history/ mgmt_history.htm\n\nCartwright, R. (2002) Empowerment. Oxford, United Kingdom: Capstone Publishing Ltd.\n\nLambert, L. (2003). Leadership Capacity for Lasting School Improvement. Alexandria, VA: Assoc. for Supervision and Curriculum Development\n\nMcMahon, K. N. (2001). An Interview with Helen S. Astin. In Developing Nonhierarchical Leadership on Campus (p. 8). Westport, Connecticut: Greenwood Press\n\nOwens, R. G. (2004). Organizational Behavior in Education. (8th ed.) Boston: Pearson Education Prideaux, R. (2001). The Effective and Democratic School Principal. Retrieved June 14, 2005, from http://www.cybertext.net.au/tct/papers/week4/printable/ prideaux%20-%20printable.htm\n\nSergiovanni, T. J. (2005).The principalship: A reflective practice perspective 5th ed. Needham Heights, Maryland: Allyn and Bacon.\n\nSergiovanni, T. J. (2000). Leadership as Stewardship. In The Jossey-Bass Reader on Educational Leadership. New York, NY: John Wiley and Sons, Inc.\n\nSpears, L. C. (2002). Tracing the Past, Present, and Future of Serva nt-Leadership. In Focus On Leadership: Servant-leadership for the Twenty-first Century (pp. 1-10). New York, NY: John Wiley and Sons, Inc.",
+          "hit_page_start": 19,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                393.061,
+                755.639,
+                425.109
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                436.523,
+                837.19,
+                490.916
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                501.546,
+                842.324,
+                537.234
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                547.865,
+                854.553,
+                583.552
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                594.183,
+                845.148,
+                629.871
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                640.501,
+                873.684,
+                713.6
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                724.23,
+                829.141,
+                759.918
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                770.549,
+                830.871,
+                806.236
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                816.867,
+                859.282,
+                871.26
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017412935323383085
+        },
+        {
+          "id": "exc_f1615397c20971_68_v1",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 5 Leonard, N., & Jones, A. (July 2009). Synergistic Leadership Theory › 5.4 Implications for School Leaders",
+          "roles": [
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSuccessful leaders demonstrate leadership behaviors ranging from autocratic decision making to collaborative practices within the organization. Michele Rhee, of the Washington D.C. school district, has demonstrated behaviors on this continuum as she has sought to improve the low performing schools within her large urban district. She has excused ineffective teachers and principals and provided incentives of six figure salaries to highly effective teachers. External forces of the urban school district have included the teacher's union, school board, the mayor, city administrator, and parents. Michelle Rhee's belief that Washington D.C. schools can be improved with effective staff and leadership has caught the attention of the nation (Thomas, Constant, & Wingert, 2008).\n\nImplications for school leaders include the recognition that effective leadership in public schools in the 21st century must include the balance of external forces, leadership behavior, organizational structure, and attitudes, and values and beliefs of organization. Educational leaders of the past have been able to operate within the confines of their own organizational structure using traditional leadership approaches. Successful leaders of today, such as Michelle Rhee, are exemplifying a holistic approach to leading within their organizations. SLT provides a gender inclusive theoretical framework for leaders to develop and cultivate effective 21st century leadership within our schools.",
+          "pages": [
+            36
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_383_v1"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_99_v1"
+          ],
+          "hit_chunk_id": "chk_f1615397c20971_99_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSuccessful leaders demonstrate leadership behaviors ranging from autocratic decision making to collaborative practices within the organization. Michele Rhee, of the Washington D.C. school district, has demonstrated behaviors on this continuum as she has sought to improve the low performing schools within her large urban district. She has excused ineffective teachers and principals and provided incentives of six figure salaries to highly effective teachers. External forces of the urban school district have included the teacher's union, school board, the mayor, city administrator, and parents. Michelle Rhee's belief that Washington D.C. schools can be improved with effective staff and leadership has caught the attention of the nation (Thomas, Constant, & Wingert, 2008).\n\nImplications for school leaders include the recognition that effective leadership in public schools in the 21st century must include the balance of external forces, leadership behavior, organizational structure, and attitudes, and values and beliefs of organization. Educational leaders of the past have been able to operate within the confines of their own organizational structure using traditional leadership approaches. Successful leaders of today, such as Michelle Rhee, are exemplifying a holistic approach to leading within their organizations. SLT provides a gender inclusive theoretical framework for leaders to develop and cultivate effective 21st century leadership within our schools.",
+          "hit_page_start": 36,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                523.999,
+                826.309,
+                556.048
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                567.461,
+                834.667,
+                752.792
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                763.423,
+                832.462,
+                938.552
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01701310737455316
+        },
+        {
+          "id": "exc_c93d5928c67e22_117_v1",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 4.1 Shape: Two-dimensional area › 90",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership",
+            "superintendent-executive-management"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The Instructional Leader (IL) would conduct all instructional programs relative to evaluation, supervision, induction, remediation, and instructional staff development. This job would carry with it a supervisory supplement that would recognize the lead teacher's supervisory responsibilities. The school would have an instructional committee whose responsibility it would be to select an IL who may or may not be a member of the committee. The IL's appointment would be 3 years. The IL would function as a part of the instructional committee but leadership within the committee would reside with a different person. One way to imagine the organization is to imagine an elected school board with an appointed superintendent. The committee will have representatives from grade levels for elementary schools or from subject areas for high schools. Middle schools would have instructional committees drawn from teams.\n\nFor matters relative to evaluation, the IL would have the primary responsibility for making “judgments concerning the overall quality of the teacher's performance and the teacher's competence in carrying out assigned duties as well as provide a picture of the quality of teaching performances across the professional staff” (Nolan, 2003). These data will be collected as part of the teacher's overall evaluation in terms of retention, tenure, and promotion. The actual process for making employment decisions is described later in this paper.\n\nFor matters relative to evaluation, the IL would have the primary responsibility for making “judgments concerning the overall quality of the teacher's performance and the teacher's competence in carrying out assigned duties as well as provide a picture of the quality of teaching performances across the professional staff” (Nolan, 2003). These data will be collected as part of the teacher's overall evaluation in terms of retention, tenure, and promotion. The actual process for making employment decisions is described later in this paper.\n\nWithin the context of supervision, the goal of the IL is to offer instructional support for teachers through-out their professional career paths. Novice teachers might receive close-ordered coaching to help through the stresses of being new to the profession. Tenured teachers might receive support in the form of instructional development and experimentation. End-of-career teachers might receive requests from the IL to share expertise with others or to take on staff development responsibilities. At whatever the career stage, the nature of the instructional support will be in the form of developmental supervision or mentoring.\n\nWithin the context of supervision, the goal of the IL is to offer instructional support for teachers through-out their professional career paths. Novice teachers might receive close-ordered coaching to help through the stresses of being new to the profession. Tenured teachers might receive support in the form of instructional development and experimentation. End-of-career teachers might receive requests from the IL to share expertise with others or to take on staff development responsibilities. At whatever the career stage, the nature of the instructional support will be in the form of developmental supervision or mentoring.\n\nResearch on mentoring emphasizes that the direction and content of instructional development is a shared responsibility of both the novice teacher and mentor teacher (Glickman, 2002; Reiman, 1999; Reiman & Theis-Sprinthall, 1993). Through collaboration and coaching the pair of teachers observe each other, share reflections on experiences, and develop professional development plans. Although during the early stages of the professional relationship, the mentor will likely assume a dominate role; over time the nature of the relationship will shift responsibilities from the mentor to novice (Gray & Gray, 1985).\n\nResearch on mentoring emphasizes that the direction and content of instructional development is a shared responsibility of both the novice teacher and mentor teacher (Glickman, 2002; Reiman, 1999; Reiman & Theis-Sprinthall, 1993). Through collaboration and coaching the pair of teachers observe each other, share reflections on experiences, and develop professional development plans. Although during the early stages of the professional relationship, the mentor will likely assume a dominate role; over time the nature of the relationship will shift responsibilities from the mentor to novice (Gray & Gray, 1985).\n\nA key function of the IL is to identify, develop, and supervise a cadre of successful teachers who are trained in developmental supervision and mentoring. The IL will be the lead mentor and will offer support and guidance to the cadre and will also substitute in cadre classes when the mentor is conducting observations or conferences. Each mentor will provide reports to the IL regarding dates of mentor contacts, the nature of the observation, and any issues that the IL might need to address. Because of the need for confidentiality and trust in the mentoring relationship, care will be given not to offer specific details of the mentor's contacts. The mentor's contacts will be formative in nature. Differently, the IL will conduct summative observations and evaluations of teachers for employment decisions. The IL will offer summary reports and recommendations to the MP and those reports would",
+          "pages": [
+            94
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_258_v1",
+            "chk_c93d5928c67e22_259_v1",
+            "chk_c93d5928c67e22_260_v1",
+            "chk_c93d5928c67e22_261_v1"
+          ],
+          "hit_chunk_id": "chk_c93d5928c67e22_258_v1",
+          "hit_text": "The Instructional Leader (IL) would conduct all instructional programs relative to evaluation, supervision, induction, remediation, and instructional staff development. This job would carry with it a supervisory supplement that would recognize the lead teacher's supervisory responsibilities. The school would have an instructional committee whose responsibility it would be to select an IL who may or may not be a member of the committee. The IL's appointment would be 3 years. The IL would function as a part of the instructional committee but leadership within the committee would reside with a different person. One way to imagine the organization is to imagine an elected school board with an appointed superintendent. The committee will have representatives from grade levels for elementary schools or from subject areas for high schools. Middle schools would have instructional committees drawn from teams.\n\nFor matters relative to evaluation, the IL would have the primary responsibility for making “judgments concerning the overall quality of the teacher's performance and the teacher's competence in carrying out assigned duties as well as provide a picture of the quality of teaching performances across the professional staff” (Nolan, 2003). These data will be collected as part of the teacher's overall evaluation in terms of retention, tenure, and promotion. The actual process for making employment decisions is described later in this paper.",
+          "hit_page_start": 94,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                826.427,
+                282.3
+              ],
+              "page": 94,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                292.931,
+                819.862,
+                422.146
+              ],
+              "page": 94,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016879432624113476
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "query": "effective school leadership principals instructional leadership",
+      "ids": [
+        "exc_f1615397c20971_15_v1",
+        "exc_c93d5928c67e22_165_v1",
+        "exc_a35c627f0c0b82_13_v1",
+        "exc_a35c627f0c0b82_20_v1",
+        "exc_c93d5928c67e22_101_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [
+    {
+      "seconds": 2.863,
+      "usage": {
+        "prompt_tokens": 20780,
+        "completion_tokens": 363,
+        "total_tokens": 21143,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_f1615397c20971_15_v1",
+            "reason": "Provides a concise definition of effective leadership and Kouzes & Posner's five practices, ideal for an introductory note."
+          },
+          {
+            "id": "exc_c93d5928c67e22_165_v1",
+            "reason": "Explains transformational leadership vs. instructional leadership and what effective principals do (vision, modeling, reflection)."
+          },
+          {
+            "id": "exc_a35c627f0c0b82_13_v1",
+            "reason": "Introduces shared/distributed leadership and why one-person instructional leadership is insufficient."
+          },
+          {
+            "id": "exc_a35c627f0c0b82_20_v1",
+            "reason": "Contrasts manager vs. leader roles of principals and introduces servant leadership."
+          },
+          {
+            "id": "exc_c93d5928c67e22_101_v1",
+            "reason": "Summarizes how school leaders influence student achievement through teacher development and organizational environments."
+          }
+        ],
+        "gap": "Excerpts skew toward US-context theory; no systematic coverage of concrete day-to-day leadership practices or evidence-based effect sizes."
+      },
+      "input_characters": 95373
+    }
+  ],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

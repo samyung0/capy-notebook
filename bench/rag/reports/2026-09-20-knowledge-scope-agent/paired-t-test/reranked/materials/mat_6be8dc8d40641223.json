@@ -1,0 +1,51 @@
+{
+ "id": "mat_6be8dc8d40641223",
+ "kind": "note",
+ "title": "Paired-Samples t-Test: Explanation + Worked Example",
+ "content": "# Paired-Samples t-Test — Study Note\n\n## What it is\nA **paired-samples t-test** (also called a dependent-means or matched-pairs t-test) is used when each observation in one sample is naturally linked to one observation in the other — e.g. the same person measured **before and after** a treatment, or matched pairs of subjects. It is really just a **one-sample t-test applied to the difference scores**.\n\n## Setup\nFor each pair *i*, compute the difference score:\n\n$$D_i = X_{i1} - X_{i2}$$\n\n(Choose the direction so that a positive difference means the effect you expect, e.g. \"after − before\".) Let $\\mu_D$ be the population mean difference.\n\n- **Hypotheses** (two-sided shown): $H_0: \\mu_D = 0$ vs. $H_A: \\mu_D \\neq 0$. For a specific claimed value (like an improvement of 100 points), test $H_0: \\mu_D = 100$.\n- **Test statistic:**\n\n$$t = \\frac{\\bar{D} - \\mu_{D,0}}{s_D / \\sqrt{n}}$$\n\nwhere $\\bar{D}$ is the sample mean of the differences, $s_D$ their standard deviation, and $n$ the number of pairs. **Degrees of freedom: $n - 1$.**\n\n## Conditions to check\n1. Pairs are independent of each other (random sample; sample < 10% of population).\n2. Differences are approximately normal, or the number of pairs is large (e.g. $n \\geq 30$).\n\n## Why pair the data?\nPairing removes person-to-person variability: each subject acts as their own control, so the test on differences is more powerful than an independent-samples t-test on the same data.\n\n---\n\n## Worked Example (SAT prep course)\n\n**Problem:** An SAT prep company claims students improve by **more than 100 points** on average. A consumer group samples 30 students who took the course; each has a before and after SAT score, giving 30 difference scores (after − before). The differences have mean $\\bar{x}_d = 135.9$ and standard deviation $s_d = 82.2$. Test at $\\alpha = 0.05$.\n\n**1. Identify:** Paired data → one-sample t-test on the mean difference $\\mu_d$ (after − before).\n- $H_0: \\mu_d = 100$ (average improvement is 100 points)\n- $H_A: \\mu_d > 100$ (improvement exceeds 100 points)\n\n**2. Check conditions:** Random sample; assume < 10% of the population; $n_d = 30 \\geq 30$, so the t-test is fine.\n\n**3. Calculate:**\n- Standard error: $SE = s_d/\\sqrt{n} = 82.2/\\sqrt{30} = 15.0$\n- Test statistic: $T = \\dfrac{135.9 - 100}{15.0} = 2.4$\n- Degrees of freedom: $df = 30 - 1 = 29$\n- One-sided p-value (area right of 2.4 under $t_{29}$): **p = 0.012**\n\n**4. Conclude:** Since $p = 0.012 < 0.05$, reject $H_0$. The data provide convincing evidence that students improve by **more than 100 points** on average after the course.\n\n---\n\n## Key takeaways\n- Paired test = one-sample t-test on differences; $df = n - 1$.\n- Define the difference direction consistently and state hypotheses in terms of $\\mu_D$.\n- The null value need not be 0 — test against any claimed mean difference.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_0689cddaba206d_599_v2",
+  "exc_dd1e65de648fb2_883_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_599_v2"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_883_v1"
+    ]
+   }
+  ]
+ },
+ "size": "709 tokens",
+ "edits": []
+}

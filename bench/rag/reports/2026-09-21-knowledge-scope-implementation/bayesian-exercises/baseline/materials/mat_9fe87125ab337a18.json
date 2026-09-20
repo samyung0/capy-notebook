@@ -1,0 +1,51 @@
+{
+ "id": "mat_9fe87125ab337a18",
+ "kind": "note",
+ "title": "Bayesian Inference: Two Practice Exercises",
+ "content": "# Bayesian Inference: Short Study Note\n\n## Core idea\nBayesian inference updates a prior belief about a hypothesis using data, via Bayes' rule:\n\nP(H | data) = P(data | H) · P(H) / P(data)\n\nwhere P(data) = P(data | H)·P(H) + P(data | not H)·P(not H). A probability tree is often the easiest way to organize the pieces: branch first on the hypothesis (with prior probabilities), then on the test result (with conditional probabilities), then read the posterior as the ratio of the branch you care about to the total of all branches matching the observed data.\n\n## Exercise 1 — Disease screening (adapted from Online Statistics Education, Probability chapter, Exercise 8)\nA test correctly identifies a disease in 95% of people who have it (sensitivity = 0.95) and correctly identifies no disease in 94% of people who do not have it (specificity = 0.94). In the population, 3% of people have the disease.\n\n**(a)** Draw a probability tree: first branch on disease status (prior 0.03 / 0.97), then on test result.\n**(b)** Compute the probability that a person has the disease given a positive test.\n**(c)** Interpret: why is this posterior so much lower than the test's sensitivity?\n\n*Solution sketch:* P(positive) = 0.03·0.95 + 0.97·0.06 = 0.0285 + 0.0582 = 0.0867. So P(disease | positive) = 0.0285 / 0.0867 ≈ **0.329**. The low prior (3%) dominates: most positives come from the large healthy group, a classic base-rate effect.\n\n## Exercise 2 — HIV screening tree (from Advanced High School Statistics, Exercise 2.53, with its worked solution)\nAn HIV test has a sensitivity of 0.997 and a false-positive rate of 0.074. In the screened population, 25.9% of people actually have HIV (prior = 0.259).\n\n**(a)** Build the tree: HIV yes (0.259) → positive (0.997) or negative (0.003); HIV no (0.741) → positive (0.074) or negative (0.926).\n**(b)** Compute the four joint probabilities and use them to find P(HIV | positive).\n**(c)** Compare with Exercise 1: what changed, and why is the posterior here so much higher?\n\n*Solution (from the source's worked answer):* Joint probabilities: 0.259·0.997 = 0.2582; 0.259·0.003 = 0.0008; 0.741·0.074 = 0.0548; 0.741·0.926 = 0.6862. Then P(HIV | positive) = 0.2582 / (0.2582 + 0.0548) ≈ **0.8247**. The much higher prior (0.259 vs 0.03) pushes the posterior up, even though this test has a higher false-positive rate — a direct illustration of how strongly the prior shapes Bayesian updating.\n\n## Takeaway\nThe posterior is a tug-of-war between the prior and the evidence. Same test, different base rate → very different conclusions. Always ask: what is the prior, what is the likelihood, and what normalizes the denominator?\n\n---\n*Sources: Online Statistics Education (Introduction to Statistics, Ch. 5 Probability exercises); Advanced High School Statistics (Ch. 2 exercise solutions, problem 2.53).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_158_v2",
+  "exc_0689cddaba206d_740_v3"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 3,
+    "excerptIds": [
+     "exc_0689cddaba206d_740_v3"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 2,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_158_v2"
+    ]
+   }
+  ]
+ },
+ "size": "708 tokens",
+ "edits": []
+}

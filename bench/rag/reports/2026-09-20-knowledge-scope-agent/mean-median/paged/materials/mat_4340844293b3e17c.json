@@ -1,0 +1,49 @@
+{
+ "id": "mat_4340844293b3e17c",
+ "kind": "note",
+ "title": "Mean vs. Median: A Beginner's Guide",
+ "content": "# Mean vs. Median — What's the Difference?\n\nBoth are measures of **central tendency**: a single number that describes the \"center\" of a set of data.\n\n## The Mean (the average)\n- Add up all the values, then divide by how many there are.\n- Formula: mean = (sum of all values) / (number of values)\n- It uses **every** value in the data, so it's the most common \"average.\"\n- Downside: it is very **sensitive to outliers** (extreme values) — one huge or tiny value can drag it far away.\n\n## The Median (the middle value)\n- **Order** the values from smallest to largest, then take the one in the middle.\n- If there is an even number of values, take the average of the middle two.\n- Example: the median of 5, 2, 7, 9, 4 is 5 (ordered: 2, 4, **5**, 7, 9). The median of 4, 6, 8, 10 is 7 (average of 6 and 8).\n- Downside: it ignores how far apart the values are — it only uses their order.\n\n## When are they the same?\nIn a **symmetric** distribution (like a bell curve), the mean and median are equal. Example: 1, 3, 4, 5, 6, 7, 9 — both the mean and median are 5.\n\n## When do they differ?\nWhen the data are **skewed** (asymmetric), the mean gets dragged toward the tail where the extreme values are, while the median stays near the \"body\" of the data. That's why news reports usually quote **median** salaries and **median** house prices — a few very rich people or very expensive houses would make the mean misleading.\n\n## Small concrete example\nFour friends sit at a table:\n- Bob earns $50,000, Kate $60,000, Jane $65,000.\n- Mean = (50,000 + 60,000 + 65,000) / 3 = **$58,333**; Median = **$60,000**.\n\nNow Bill (income $100,000,000) joins them:\n- Mean jumps to **$25,043,750** — wildly unrepresentative.\n- Median rises only to **$62,500** — still close to a typical income.\n\n**Takeaway:** if you want the *typical* value, use the median when your data contain outliers or are skewed; the mean is fine for symmetric data and uses all the information available.\n\n## Quick comparison\n\n| | Mean | Median |\n|---|---|---|\n| How | Sum ÷ count | Middle value after sorting |\n| Uses all values? | Yes | No (only order) |\n| Affected by outliers? | Yes, strongly | Barely |\n| Best for | Symmetric data | Skewed data / data with outliers |",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_45ecdb7da7734b_95_v2",
+  "exc_f97f47b7a1fd68_69_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 2,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_95_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_69_v1"
+    ]
+   }
+  ]
+ },
+ "size": "555 tokens",
+ "edits": []
+}

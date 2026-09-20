@@ -1,0 +1,34 @@
+{
+ "id": "mat_de81f4c8bfb4cb18",
+ "kind": "note",
+ "title": "How Contracts Are Formed — An Introduction",
+ "content": "# How Contracts Are Formed — An Introduction\n\n## What a contract is\nA **contract** is a legally enforceable promise. Not every promise qualifies: promising to be \"best friends forever\" is not enforceable, but promising a bank to repay a loan is. The difference lies in whether the elements of formation are present — if they are not, the \"contract\" may be void or voidable.\n\n## Two sources of contract law (U.S.)\n- **Common law** — governs contracts for services and contracts not covered by the UCC (e.g., real estate). Its formation requirements are the more stringent ones.\n- **Uniform Commercial Code (UCC), Article 2** — governs the sale of goods, especially contracts between merchants (goods priced at $500 or more). The UCC relaxes formation rules: gap fillers supply undefined or conflicting terms, quantity is the one required term, and a contract can be formed in any manner showing agreement to contract.\n\n## Elements of common-law formation\n1. **Offer** — gives a *power of acceptance* to the offeree and must state the agreement's essential terms in a **definite and certain** form (e.g., \"I offer to sell you my scooter for four hundred dollars\" — price, offeree, and subject matter are all present). Vague essential terms defeat the offer (\"I'll sell you my house for a fair price\" is not a valid offer).\n   - An **advertisement is not an offer** — it is an *invitation to bargain*, so the merchant keeps the power of acceptance.\n   - An offer ends by **rejection, counteroffer, revocation, or expiration** of its time limit.\n2. **Acceptance** — must be a **mirror image** of the offer. A counteroffer (\"I'll pay three hundred dollars\") is not acceptance; it is a rejection of the offer. Offer + acceptance together form **mutual assent**.\n3. **Consideration** — each party must give something that firmly commits it to the deal. An **illusory promise** (\"I'll buy it *if I like it*\") fails as consideration, so no contract forms.\n\nAdditionally, for enforceability:\n4. **Capacity** — the parties must have legal capacity to contract (minors can disaffirm; cognitive impairment or involuntary intoxication can defeat capacity).\n5. **Legality** — the contract's purpose must be legal; a court will not enforce a contract with an illegal subject matter.\n\n## Contract types\n- **Bilateral contract**: a promise for a promise (both parties make promises).\n- **Unilateral contract**: a promise for an act.\n\n## Why formation matters\nIf any element is deficient, a defendant can defend against enforcement by showing the contract **never formed**. Under the UCC this defense is harder to mount, because formation requirements are relaxed. When formation fails but enforcing the promise avoids an injustice, courts may use equitable substitutes: **quasi-contract** (unjust enrichment; damages measured by *quantum meruit*) and **promissory estoppel** (detrimental reliance), which can stand in for consideration.\n\n## Key takeaways\n- A contract is a legally enforceable promise.\n- Common law: offer + acceptance (mirror image) + consideration, plus capacity and legal purpose.\n- UCC: relaxed rules for goods/merchants; quantity is the required term.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_1c619222c448be_186_v1",
+  "exc_1c619222c448be_190_v1",
+  "exc_1c619222c448be_196_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "the-legal-and-ethical-environment-of-business",
+    "title": "The Legal and Ethical Environment of Business",
+    "authors": [],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+    "version": 1,
+    "excerptIds": [
+     "exc_1c619222c448be_186_v1",
+     "exc_1c619222c448be_190_v1",
+     "exc_1c619222c448be_196_v1"
+    ]
+   }
+  ]
+ },
+ "size": "789 tokens",
+ "edits": []
+}

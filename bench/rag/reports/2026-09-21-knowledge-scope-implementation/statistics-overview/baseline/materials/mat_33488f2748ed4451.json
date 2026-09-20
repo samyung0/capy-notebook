@@ -1,0 +1,69 @@
+{
+ "id": "mat_33488f2748ed4451",
+ "kind": "note",
+ "title": "What Is Statistics? A Beginner's Introduction",
+ "content": "# What Is Statistics? — A Beginner's Note\n\n## The big idea\n**Statistics** is the science of collecting, summarizing, and interpreting **data** — the information gathered from experiments, surveys, records, or observations — in order to draw conclusions and make decisions under uncertainty.\n\nA helpful contrast: *probability* reasons from a known population down to individual events (deductive reasoning), while *statistics* reasons the other way — from a **sample** (the data you actually have) up to the **population** you care about (inferential reasoning). The two are intertwined: probability theory underpins statistical inference.\n\n## The two branches\n\n### 1. Descriptive statistics — summarizing what you know\nDescriptive statistics are **numbers used to summarize and describe data**. Examples:\n- A percentage (e.g., the share of birth certificates issued in one state)\n- An average (e.g., the mean age of mothers, or mean winning times of Olympic marathons)\n- Tables and graphs that give a compact picture of the data\n\nThey are useful for spotting patterns and raising questions — but they **do not generalize beyond the data at hand**. For example, comparing the mean winning time of the first 13 Olympic marathons (2:44:22) with the next 13 (2:13:18) is suggestive, but descriptive statistics alone cannot tell you whether the difference is real or just chance.\n\n### 2. Inferential statistics — learning what you don't know\nThis is the \"bigger and more useful part\" of statistics: it lets you **\"learn what we do not know from what we do.\"** You observe a small, manageable **sample** (e.g., 1,000 randomly polled voters) and use mathematical procedures to make intelligent guesses about the whole **population** (e.g., 4.6 million voters) — something impossible to measure directly. It traditionally splits into two big ideas:\n- **Estimation** — approximating an unknown quantity (e.g., the true proportion or average)\n- **Hypothesis testing** — deciding whether a claim about the population is supported by the data\n\n## Why it's useful\n- **Summarizing**: turn large, messy datasets into a few meaningful numbers and pictures.\n- **Generalizing**: draw conclusions about a whole population from a sample — polls, surveys, medical trials, quality control.\n- **Decision-making under uncertainty**: quantify how confident you can be, rather than guessing from intuition alone (intuition breaks down quickly — is 29% plausible when a poll says 23%?).\n- **Everywhere in daily life**: election polls, salary comparisons, sports results, product testing — once you look for it, statistical inference is everywhere.\n\n## One caution\nInference is only as good as the sample. A **biased sample** — one that over-represents one kind of case at the expense of others (e.g., polling only residents of one state about a national question) — cannot support conclusions about the population. *How* the data were collected matters as much as the numbers themselves.\n\n## Key terms\n| Term | Meaning |\n|---|---|\n| Data | Information collected from an experiment, survey, or record (singular: *datum*) |\n| Population | The entire set of cases you want to know about |\n| Sample | The smaller subset you actually observe |\n| Descriptive statistics | Numbers that summarize the data at hand |\n| Inferential statistics | Methods for generalizing from a sample to a population |\n| Estimation | Approximating an unknown population quantity from a sample |\n| Hypothesis testing | Deciding whether data support a claim about the population |",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_5_v2",
+  "exc_f97f47b7a1fd68_6_v2",
+  "exc_45ecdb7da7734b_139_v3",
+  "exc_45ecdb7da7734b_153_v3",
+  "exc_e49c11171c5f1c_269_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "evidence-based-software-engineering",
+    "title": "Evidence-based Software Engineering",
+    "authors": [
+     "Derek M. Jones"
+    ],
+    "edition": "",
+    "license": "CC BY-SA",
+    "licenseUrl": "http://creativecommons.org/licenses/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/evidence-based-software-engineering",
+    "version": 1,
+    "excerptIds": [
+     "exc_e49c11171c5f1c_269_v1"
+    ]
+   },
+   {
+    "id": "lsj",
+    "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+    "authors": [
+     "Danielle J. Navarro",
+     "David R. Foxcroft"
+    ],
+    "edition": "2025, author-hosted PDF snapshot downloaded 2026-09-16",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://davidfoxcroft.github.io/lsj-book/",
+    "version": 3,
+    "excerptIds": [
+     "exc_45ecdb7da7734b_139_v3",
+     "exc_45ecdb7da7734b_153_v3"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 2,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_5_v2",
+     "exc_f97f47b7a1fd68_6_v2"
+    ]
+   }
+  ]
+ },
+ "size": "881 tokens",
+ "edits": []
+}

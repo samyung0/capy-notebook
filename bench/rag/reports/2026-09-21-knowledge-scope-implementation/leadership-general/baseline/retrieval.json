@@ -1,0 +1,1643 @@
+{
+  "arm": "baseline",
+  "case": {
+    "id": "leadership-general",
+    "query": "Create one concise introductory study note explaining what effective leadership involves.",
+    "check": "General leadership principles; school-specific administration is not silently presented as the whole subject."
+  },
+  "prototype": "cursor-header-v1",
+  "harness": "capture-path-and-empty-note-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 40,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "what effective leadership involves traits behaviors influence",
+      "topics": [],
+      "roles": [
+        "introduction",
+        "summary"
+      ],
+      "seconds": 7.896,
+      "excerpts": [
+        {
+          "id": "exc_c93d5928c67e22_101_v3",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 75",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Leadership in the school building is at the heart of school leadership. It is in the school building, the halls, and classrooms that principals most directly impact teacher behavior. The question that arises from a study leadership in the school building is not about if principals can affect teaching behavior but rather in what manner and to what extent principals might affect teaching behavior, school environment, and ultimately student learning (Stronge, 2002). And there is growing consensus in the literature, most recently reported in the “School Leadership Study” out of Stanford University (Davis, et al. 2005) that successful school leaders can influence student achievement in at least two important ways: (1) By selecting, supporting, and developing effective teachers; (2) By managing, implementing, and adjusting effective organizational environments. Other authors in this book will devote more time to the first element of effective leadership. In this monograph the author will focus on how school-based leaders can effectively manage the competing, and sometimes conflicting, demands of leading in today's schools so as to provide an organizational environment that encourages growth and development on the part of students, teachers, and administrators. The responsibility of managing a successful learning environment is one shared by all stakeholders.\n\nIf doing it alone is the plan for the school principal, then research suggests that the leader is less likely to maintain and support learning environments and is more likely to “burn out” under the broadening responsibilities of today's accountability environment (Hargreaves, 2006). In light of this harsh reality, in sections of this monograph the author will offer school leaders ideas and possibilities for sharing the awesome responsibility of managing effective schools.\n\nIn distributed leadership contexts, school based leaders find ways for multiple stakeholders to participate in the leadership, and thus successful management, of schools. This notion of distributed leadership is most recently articulated by Andy Hargreaves and Dean Fink (2006) in their book, Sustainable Leadership. The principal, as school building leader, interacts with teachers and students. It is at the school building where teachers also provide leadership in the daily interactions with their peers, with their students, and with their parents and other stakeholders. And, it is in the daily interactions with students that teachers and principals can encourage students to take on leadership. The literature regarding successful school based management continues to grow both in breadth and depth and if my graduate students are any indicator of today's leaders, school based stakeholders yearn for specific and guiding principles for how to manage today's learning environments. In very obvious ways it is at school building level where the tug between theory and practice is most powerful and most often confrontational (Hargreaves & Fink, 2006). Although establishing theoretical context is essential in framing a theory of leadership, principals often consider such discussions meaningless in helping them make sense of daily pressures and demands of schooling. What principals want is a theory of school building leadership that can speak honestly and directly to the challenges of helping teachers and students achieve in an atmosphere of standards and accountability (Stronge, 2002).\n\nA Way of Thinking Over the past few years the author has investigated leadership in the schools from\n\nan arts-based research methodology. Based on his own experiences, conversations with leaders, and research, he grew to be suspicious that leading was in fact more",
+          "pages": [
+            79
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_209_v3",
+            "chk_c93d5928c67e22_210_v3",
+            "chk_c93d5928c67e22_211_v3",
+            "chk_c93d5928c67e22_212_v3"
+          ],
+          "retrieval": {
+            "scope": "Applies to principals and other stakeholders in school-building management under standards and accountability pressures. Claims are the author's synthesis of cited school-leadership literature and experience. The final arts-based premise continues in excerpt 102.",
+            "summary": "Introduces school-building leadership as influence on teaching and learning, argues that effective environments depend on shared and distributed leadership, and begins an arts-based approach to leadership practice.",
+            "context_excerpt_ids": [
+              "exc_c93d5928c67e22_102_v3"
+            ]
+          },
+          "hit_chunk_id": "chk_c93d5928c67e22_209_v3",
+          "hit_text": "Leadership in the school building is at the heart of school leadership. It is in the school building, the halls, and classrooms that principals most directly impact teacher behavior. The question that arises from a study leadership in the school building is not about if principals can affect teaching behavior but rather in what manner and to what extent principals might affect teaching behavior, school environment, and ultimately student learning (Stronge, 2002). And there is growing consensus in the literature, most recently reported in the “School Leadership Study” out of Stanford University (Davis, et al. 2005) that successful school leaders can influence student achievement in at least two important ways: (1) By selecting, supporting, and developing effective teachers; (2) By managing, implementing, and adjusting effective organizational environments. Other authors in this book will devote more time to the first element of effective leadership. In this monograph the author will focus on how school-based leaders can effectively manage the competing, and sometimes conflicting, demands of leading in today's schools so as to provide an organizational environment that encourages growth and development on the part of students, teachers, and administrators. The responsibility of managing a successful learning environment is one shared by all stakeholders.",
+          "hit_page_start": 79,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                872.995,
+                469.355
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02459016393442623
+        },
+        {
+          "id": "exc_f1615397c20971_68_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 5 Leonard, N., & Jones, A. (July 2009). Synergistic Leadership Theory › 5.4 Implications for School Leaders",
+          "roles": [
+            "summary",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSuccessful leaders demonstrate leadership behaviors ranging from autocratic decision making to collaborative practices within the organization. Michele Rhee, of the Washington D.C. school district, has demonstrated behaviors on this continuum as she has sought to improve the low performing schools within her large urban district. She has excused ineffective teachers and principals and provided incentives of six figure salaries to highly effective teachers. External forces of the urban school district have included the teacher's union, school board, the mayor, city administrator, and parents. Michelle Rhee's belief that Washington D.C. schools can be improved with effective staff and leadership has caught the attention of the nation (Thomas, Constant, & Wingert, 2008).\n\nImplications for school leaders include the recognition that effective leadership in public schools in the 21st century must include the balance of external forces, leadership behavior, organizational structure, and attitudes, and values and beliefs of organization. Educational leaders of the past have been able to operate within the confines of their own organizational structure using traditional leadership approaches. Successful leaders of today, such as Michelle Rhee, are exemplifying a holistic approach to leading within their organizations. SLT provides a gender inclusive theoretical framework for leaders to develop and cultivate effective 21st century leadership within our schools.",
+          "pages": [
+            36
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_383_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_99_v2"
+          ],
+          "retrieval": {
+            "scope": "Implications for public-school leaders under the source's 2008-2009 framing. Michele Rhee and the Washington, D.C. district illustrate the theory; that case and its staffing actions are not required features of SLT or evidence that the framework applies universally.",
+            "summary": "Applies Synergistic Leadership Theory to Michele Rhee's Washington, D.C. school leadership, then summarizes the need to balance external forces, leadership behavior, organizational structure, and organizational values.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_f1615397c20971_99_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSuccessful leaders demonstrate leadership behaviors ranging from autocratic decision making to collaborative practices within the organization. Michele Rhee, of the Washington D.C. school district, has demonstrated behaviors on this continuum as she has sought to improve the low performing schools within her large urban district. She has excused ineffective teachers and principals and provided incentives of six figure salaries to highly effective teachers. External forces of the urban school district have included the teacher's union, school board, the mayor, city administrator, and parents. Michelle Rhee's belief that Washington D.C. schools can be improved with effective staff and leadership has caught the attention of the nation (Thomas, Constant, & Wingert, 2008).\n\nImplications for school leaders include the recognition that effective leadership in public schools in the 21st century must include the balance of external forces, leadership behavior, organizational structure, and attitudes, and values and beliefs of organization. Educational leaders of the past have been able to operate within the confines of their own organizational structure using traditional leadership approaches. Successful leaders of today, such as Michelle Rhee, are exemplifying a holistic approach to leading within their organizations. SLT provides a gender inclusive theoretical framework for leaders to develop and cultivate effective 21st century leadership within our schools.",
+          "hit_page_start": 36,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                523.999,
+                826.309,
+                556.048
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                567.461,
+                834.667,
+                752.792
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                763.423,
+                832.462,
+                938.552
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023809523809523808
+        },
+        {
+          "id": "exc_f1615397c20971_9_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 1 Pennington, R. (July 2009). Leadership: A Practitioner's Bridge from Theory to Practical › 1.1 Forward",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEducational administrative practitioners evaluate theories, implement practices and refine leadership strategies daily. The exploration of the leadership gap between theory and praxis is a quantum undertaking. Quantum physicists explain the predictable behavior of particles and the energy they contain using quantum mechanics (Izquierdo-Aymerich and Aduriz-Bravo 2009). The manipulation and prediction of behavior allows leaders to bring about desired outcomes. Leadership, a human phenomenon embedded in culture, represents many things to different people (Ciulla 2008). Researchers have examined leadership skills from a variety of perspectives (Ciulla 2008). No single trait or combination of traits has been identified that fully explains a leaders' ability to bring about positive change, but most agree there are energy investments necessary in all areas (Robinson, Lloyd et al. 2008). There exists a plethora of leadership theories, styles, paradigms and ideas. Leadership from the educational perspective takes many forms and presents many challenges. In an attempt to examine leadership from several diverse perspectives, topics such as Leadership for Technology, Transformational vs. Servant Leadership: A Comparative Analysis, Synergistic Leadership: A Gender Inclusive Theory, Spiritual and Ethical Leadership, Leading from Below the Surface, Leading in Rural Appalachia, How Leaders Use Their Opposable Minds will be investigated.\n\nAccording to the quantum theory, leadership at the atomic level involves transferring discrete packets of energy into particles to propel them into an excited state (Izquierdo-Aymerich and Aduriz-Bravo 2009). In order for particles to remain in this new environment, energy must be constantly supplied to the particle. In order for leaders to initiate change, large investments of energy must be made initially to effect change. Once a quantum leap has been made, the energy required to maintain the change is exponentially less than that required to effect the original change. Leadership at the atomic level is independent of state. Effecting change from a transformational, spiritual, synergistic, or emotional vantage point requires the input of quantum packets of energy. Whether Leading from Below the Surface, in rural Appalachia or with an Opposable Mind, leaders cannot opt for energy input below the threshold required to effect change. From the quantum frame of reference, it is an all or nothing process. Without the required discrete packet of energy input, particles quickly come to rest in the non-excited state. The law of conservation of energy governs energy investments made by educators. The finite amount of energy in all systems can be converted in form, but no new energy can be created. Effective leaders",
+          "pages": [
+            5
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_28_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_11_v2",
+            "chk_f1615397c20971_12_v2"
+          ],
+          "retrieval": {
+            "scope": "Written for educational administrators. Quantum mechanics is an analogy, not a required scientific method or evidence about leadership. The named leadership theories preview later chapters rather than teaching them here. Excerpt 10 completes the final sentence and states the project's aim.",
+            "summary": "Introduces educational leadership as a bridge between theory and practice and uses quantum energy as an extended metaphor for the effort needed to initiate and sustain organizational change.",
+            "context_excerpt_ids": [
+              "exc_f1615397c20971_10_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_f1615397c20971_11_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEducational administrative practitioners evaluate theories, implement practices and refine leadership strategies daily. The exploration of the leadership gap between theory and praxis is a quantum undertaking. Quantum physicists explain the predictable behavior of particles and the energy they contain using quantum mechanics (Izquierdo-Aymerich and Aduriz-Bravo 2009). The manipulation and prediction of behavior allows leaders to bring about desired outcomes. Leadership, a human phenomenon embedded in culture, represents many things to different people (Ciulla 2008). Researchers have examined leadership skills from a variety of perspectives (Ciulla 2008). No single trait or combination of traits has been identified that fully explains a leaders' ability to bring about positive change, but most agree there are energy investments necessary in all areas (Robinson, Lloyd et al. 2008). There exists a plethora of leadership theories, styles, paradigms and ideas. Leadership from the educational perspective takes many forms and presents many challenges. In an attempt to examine leadership from several diverse perspectives, topics such as Leadership for Technology, Transformational vs. Servant Leadership: A Comparative Analysis, Synergistic Leadership: A Gender Inclusive Theory, Spiritual and Ethical Leadership, Leading from Below the Surface, Leading in Rural Appalachia, How Leaders Use Their Opposable Minds will be investigated.",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                254.106,
+                864.124,
+                286.154
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                297.568,
+                871.812,
+                632.543
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022989889263360617
+        },
+        {
+          "id": "exc_f1615397c20971_96_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 9 Attributions",
+          "roles": [
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "emotional-intelligence-school-leadership",
+            "culturally-responsive-social-justice-leadership",
+            "spiritual-ethical-leadership",
+            "synergistic-gender-inclusive-leadership",
+            "transformational-servant-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nCollection: 21st Century Theories of Education Administration Edited by: Joseph Makolandra, Kevin G. Bezy, Cindy Delp, Brad E. Bizzell, Caroline Wray, Forest Jones, Janet Womack, Dawn Hutton, Asia Jones, Guylene Wood-Setzer, Seydric Williams, Nancy Leonard, Ken Nicely, Linda Wright, Robert Pennington, Tracy Richardson\n\nModule: \"Leadership: A Practitioners Bridge from Theory to Practice\" Used here as: \"Pennington, R. (July 2009). Leadership: A Practitioner's Bridge from Theory to Practice\" By: Robert Pennington URL: Pages: 1 2 Copyright: Robert Pennington\n\nModule: \"Emotional Intelligence and Effective Leadership: Implications for School Leaders\" Used here as: \"Nicely, K., Womack, J., & Wright, L. (July 2009). Emotional Intelligence and Effective Leadership: Implications for School Leaders\" By: Ken Nicely, Janet Womack, Linda Wright URL: Pages: 3 8 Copyright: Ken Nicely, Janet Womack, Linda Wright\n\nModule: \"Leading in Rural Appalachia\" Used here as: \"Bizzell, B. (July 2009). Leading in Rural Appalachia \" By: Brad E. Bizzell URL: Pages: 9 15 Copyright: Brad E. Bizzell\n\nModule: \"Spiritual and Ethical Leadership\" Used here as: \"Bezy, K., & Makolandra, J. (July 2009). Spiritual and Ethical Leadership \" By: Kevin G. Bezy, Joseph Makolandra URL: Pages: 17 24 Copyright: Kevin G. Bezy, Joseph Makolandra\n\nModule: \"Spiritual and Ethical Leadership\" Used here as: \"Bezy, K., & Makolandra, J. (July 2009). Spiritual and Ethical Leadership \" By: Kevin G. Bezy, Joseph Makolandra URL: Pages: 17 24 Copyright: Kevin G. Bezy, Joseph Makolandra\n\nModule: \"Synergistic Leadership Theory\" Used here as: \"Leonard, N., & Jones, A. (July 2009). Synergistic Leadership Theory \" By: Nancy Leonard, Asia Jones URL: Pages: 25 29 Copyright: Nancy Leonard, Asia Jones\n\nModule: \"Transformational Leadership and Servant Leadership: Is There a Difference\" Used here as: \"Williams, S., & Jones, F. (July 2009). Transformational Leadership and Servant Leadership: Is There a Difference ?\" By: Seydric Williams, Forest Jones URL: http://cnx.org/content/m27080/1.1/ Pages: 31 35 Copyright: Seydric Williams, Forest Jones License:\n\nModule: \"Leading from Below the Surface\" Used here as: \"Richardson, T., Delp, C., & Wood-Setzer, G. (July 2009). Leading from Below the Surface: A Nontraditional Approach to School Leadership\" By: Tracy Richardson, Cindy Delp, Guylene Wood-Setzer Pages: 37 40 Copyright: Tracy Richardson, Cindy Delp, Guylene Wood-Setzer\n\nModule: \"Technology in Leadership\" Used here as: \"Overfelt, C., & Hutton, D. (July 2009). Technology in Leadership\" By: Caroline Wray, Dawn Hutton",
+          "pages": [
+            54
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_542_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_140_v2",
+            "chk_f1615397c20971_141_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_f1615397c20971_141_v2",
+          "hit_text": "Module: \"Spiritual and Ethical Leadership\" Used here as: \"Bezy, K., & Makolandra, J. (July 2009). Spiritual and Ethical Leadership \" By: Kevin G. Bezy, Joseph Makolandra URL: Pages: 17 24 Copyright: Kevin G. Bezy, Joseph Makolandra\n\nModule: \"Synergistic Leadership Theory\" Used here as: \"Leonard, N., & Jones, A. (July 2009). Synergistic Leadership Theory \" By: Nancy Leonard, Asia Jones URL: Pages: 25 29 Copyright: Nancy Leonard, Asia Jones\n\nModule: \"Transformational Leadership and Servant Leadership: Is There a Difference\" Used here as: \"Williams, S., & Jones, F. (July 2009). Transformational Leadership and Servant Leadership: Is There a Difference ?\" By: Seydric Williams, Forest Jones URL: http://cnx.org/content/m27080/1.1/ Pages: 31 35 Copyright: Seydric Williams, Forest Jones License:\n\nModule: \"Leading from Below the Surface\" Used here as: \"Richardson, T., Delp, C., & Wood-Setzer, G. (July 2009). Leading from Below the Surface: A Nontraditional Approach to School Leadership\" By: Tracy Richardson, Cindy Delp, Guylene Wood-Setzer Pages: 37 40 Copyright: Tracy Richardson, Cindy Delp, Guylene Wood-Setzer\n\nModule: \"Technology in Leadership\" Used here as: \"Overfelt, C., & Hutton, D. (July 2009). Technology in Leadership\" By: Caroline Wray, Dawn Hutton",
+          "hit_page_start": 54,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                506.0,
+                804.244,
+                579.099
+              ],
+              "page": 54,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                589.729,
+                815.114,
+                662.828
+              ],
+              "page": 54,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                673.458,
+                828.192,
+                765.262
+              ],
+              "page": 54,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                775.893,
+                810.968,
+                867.697
+              ],
+              "page": 54,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                878.328,
+                795.21,
+                932.721
+              ],
+              "page": 54,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021135029354207434
+        },
+        {
+          "id": "exc_f1615397c20971_19_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 2 Nicely, K., Womack, J., & Wright, L. (July 2009). Emotional Intelligence and Effective Leadership: Implications for School Leaders › 2.3 Literature Review",
+          "roles": [
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "emotional-intelligence-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSalovey and Mayer (1990) are among the key researchers of the past twenty years who have advanced emotional intelligence as a valid component of what intelligence is understood to be. In their construct, emotions are either positive or negative responses to events and motivate people to act in certain ways, including prioritizing their actions. A person exercises emotional intelligence when he assesses and expresses his own emotions, recognizes emotions in other people, and is motivated to adapt his behaviors accordingly.\n\nSalovey and Mayer (1990) are among the key researchers of the past twenty years who have advanced emotional intelligence as a valid component of what intelligence is understood to be. In their construct, emotions are either positive or negative responses to events and motivate people to act in certain ways, including prioritizing their actions. A person exercises emotional intelligence when he assesses and expresses his own emotions, recognizes emotions in other people, and is motivated to adapt his behaviors accordingly.\n\nGoleman (1995) drew from the work of Salovey & Mayer (1990) and other theorists to further describe what it means to be emotionally intelligent and he explained why emotional intelligence is an important dimension of human interactions. Goleman built part of his case on human physiology, describing the role of two parts of the brain: the thalamus and the amygdala. The amygdala serves as an emergency response mechanism through which signals are sent from the brain to other parts of the body before stimuli have been fully processed by the neocortex. These signals trigger emotional responses which can be determining factors in whether a person remains safe when confronted with physical danger (i.e. the fight or fight response) or whether he laughs or cries when told he has just been fired from his job. Goleman provided many examples of scenarios in which a person's emotional response to a situation can become more important that the person's cognitive ability. Fortunately for school leaders who want to gain these skills, Goleman concluded that the ability to assess and manage one's emotions in a given situation can be learned and improved.\n\nPalmer (2003) further developed the conceptualization of emotional intelligence by applying a goodness of ft analysis to instruments that measure emotional intelligence. He found that no one instrument clearly emerged as a statistically good fit for conceptualizations of emotional intelligence. Palmer proposed a new taxonomy that included a dimension associated with leadership: Interpersonal Management, refering to the ability of someone to manage his own emotions and manage the emotions of others. The addition of the management dimension to previous conceptualizations of emotional intelligence further established the role that emotional intelligence plays in effective leadership.\n\nMills and Rouse (2009) stated, \"That there is a moderately strong relationship between emotional intelligence an effective leadership\" (p. 2). They conducted a meta-analysis to determine if a relationship exists between emotional intelligence and effective leadership. The results of the study suggested a moderately strong relationship between emotional intelligence effective leadership, r .383, p<.05.\n\nMills and Rouse also suggested that emotional intelligence is a concept that school leaders should assess for themselves and that it should be incorporated in the",
+          "pages": [
+            9
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_78_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_23_v2",
+            "chk_f1615397c20971_24_v2",
+            "chk_f1615397c20971_25_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_f1615397c20971_25_v2",
+          "hit_text": "Palmer (2003) further developed the conceptualization of emotional intelligence by applying a goodness of ft analysis to instruments that measure emotional intelligence. He found that no one instrument clearly emerged as a statistically good fit for conceptualizations of emotional intelligence. Palmer proposed a new taxonomy that included a dimension associated with leadership: Interpersonal Management, refering to the ability of someone to manage his own emotions and manage the emotions of others. The addition of the management dimension to previous conceptualizations of emotional intelligence further established the role that emotional intelligence plays in effective leadership.\n\nMills and Rouse (2009) stated, \"That there is a moderately strong relationship between emotional intelligence an effective leadership\" (p. 2). They conducted a meta-analysis to determine if a relationship exists between emotional intelligence and effective leadership. The results of the study suggested a moderately strong relationship between emotional intelligence effective leadership, r .383, p<.05.\n\nMills and Rouse also suggested that emotional intelligence is a concept that school leaders should assess for themselves and that it should be incorporated in the",
+          "hit_page_start": 9,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                632.485,
+                870.506,
+                799.11
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                809.741,
+                871.812,
+                901.545
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                912.176,
+                839.889,
+                947.863
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020455386893743058
+        }
+      ]
+    },
+    {
+      "query": "effective leadership definition influence followers goals management",
+      "topics": [],
+      "roles": [
+        "introduction",
+        "summary"
+      ],
+      "seconds": 4.707,
+      "excerpts": [
+        {
+          "id": "exc_c93d5928c67e22_101_v3",
+          "book_id": "educational-administration-the-roles-of-leadership-and-manag",
+          "book_title": "Educational Administration: The Roles of Leadership and Management",
+          "section_path": "Chapter 4 The Art of Successful School-Based Management › 75",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "arts-based-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Leadership in the school building is at the heart of school leadership. It is in the school building, the halls, and classrooms that principals most directly impact teacher behavior. The question that arises from a study leadership in the school building is not about if principals can affect teaching behavior but rather in what manner and to what extent principals might affect teaching behavior, school environment, and ultimately student learning (Stronge, 2002). And there is growing consensus in the literature, most recently reported in the “School Leadership Study” out of Stanford University (Davis, et al. 2005) that successful school leaders can influence student achievement in at least two important ways: (1) By selecting, supporting, and developing effective teachers; (2) By managing, implementing, and adjusting effective organizational environments. Other authors in this book will devote more time to the first element of effective leadership. In this monograph the author will focus on how school-based leaders can effectively manage the competing, and sometimes conflicting, demands of leading in today's schools so as to provide an organizational environment that encourages growth and development on the part of students, teachers, and administrators. The responsibility of managing a successful learning environment is one shared by all stakeholders.\n\nIf doing it alone is the plan for the school principal, then research suggests that the leader is less likely to maintain and support learning environments and is more likely to “burn out” under the broadening responsibilities of today's accountability environment (Hargreaves, 2006). In light of this harsh reality, in sections of this monograph the author will offer school leaders ideas and possibilities for sharing the awesome responsibility of managing effective schools.\n\nIn distributed leadership contexts, school based leaders find ways for multiple stakeholders to participate in the leadership, and thus successful management, of schools. This notion of distributed leadership is most recently articulated by Andy Hargreaves and Dean Fink (2006) in their book, Sustainable Leadership. The principal, as school building leader, interacts with teachers and students. It is at the school building where teachers also provide leadership in the daily interactions with their peers, with their students, and with their parents and other stakeholders. And, it is in the daily interactions with students that teachers and principals can encourage students to take on leadership. The literature regarding successful school based management continues to grow both in breadth and depth and if my graduate students are any indicator of today's leaders, school based stakeholders yearn for specific and guiding principles for how to manage today's learning environments. In very obvious ways it is at school building level where the tug between theory and practice is most powerful and most often confrontational (Hargreaves & Fink, 2006). Although establishing theoretical context is essential in framing a theory of leadership, principals often consider such discussions meaningless in helping them make sense of daily pressures and demands of schooling. What principals want is a theory of school building leadership that can speak honestly and directly to the challenges of helping teachers and students achieve in an atmosphere of standards and accountability (Stronge, 2002).\n\nA Way of Thinking Over the past few years the author has investigated leadership in the schools from\n\nan arts-based research methodology. Based on his own experiences, conversations with leaders, and research, he grew to be suspicious that leading was in fact more",
+          "pages": [
+            79
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_c93d5928c67e22_209_v3",
+            "chk_c93d5928c67e22_210_v3",
+            "chk_c93d5928c67e22_211_v3",
+            "chk_c93d5928c67e22_212_v3"
+          ],
+          "retrieval": {
+            "scope": "Applies to principals and other stakeholders in school-building management under standards and accountability pressures. Claims are the author's synthesis of cited school-leadership literature and experience. The final arts-based premise continues in excerpt 102.",
+            "summary": "Introduces school-building leadership as influence on teaching and learning, argues that effective environments depend on shared and distributed leadership, and begins an arts-based approach to leadership practice.",
+            "context_excerpt_ids": [
+              "exc_c93d5928c67e22_102_v3"
+            ]
+          },
+          "hit_chunk_id": "chk_c93d5928c67e22_209_v3",
+          "hit_text": "Leadership in the school building is at the heart of school leadership. It is in the school building, the halls, and classrooms that principals most directly impact teacher behavior. The question that arises from a study leadership in the school building is not about if principals can affect teaching behavior but rather in what manner and to what extent principals might affect teaching behavior, school environment, and ultimately student learning (Stronge, 2002). And there is growing consensus in the literature, most recently reported in the “School Leadership Study” out of Stanford University (Davis, et al. 2005) that successful school leaders can influence student achievement in at least two important ways: (1) By selecting, supporting, and developing effective teachers; (2) By managing, implementing, and adjusting effective organizational environments. Other authors in this book will devote more time to the first element of effective leadership. In this monograph the author will focus on how school-based leaders can effectively manage the competing, and sometimes conflicting, demands of leading in today's schools so as to provide an organizational environment that encourages growth and development on the part of students, teachers, and administrators. The responsibility of managing a successful learning environment is one shared by all stakeholders.",
+          "hit_page_start": 79,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                872.995,
+                469.355
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022689474934663816
+        },
+        {
+          "id": "exc_f1615397c20971_19_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 2 Nicely, K., Womack, J., & Wright, L. (July 2009). Emotional Intelligence and Effective Leadership: Implications for School Leaders › 2.3 Literature Review",
+          "roles": [
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "emotional-intelligence-school-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSalovey and Mayer (1990) are among the key researchers of the past twenty years who have advanced emotional intelligence as a valid component of what intelligence is understood to be. In their construct, emotions are either positive or negative responses to events and motivate people to act in certain ways, including prioritizing their actions. A person exercises emotional intelligence when he assesses and expresses his own emotions, recognizes emotions in other people, and is motivated to adapt his behaviors accordingly.\n\nSalovey and Mayer (1990) are among the key researchers of the past twenty years who have advanced emotional intelligence as a valid component of what intelligence is understood to be. In their construct, emotions are either positive or negative responses to events and motivate people to act in certain ways, including prioritizing their actions. A person exercises emotional intelligence when he assesses and expresses his own emotions, recognizes emotions in other people, and is motivated to adapt his behaviors accordingly.\n\nGoleman (1995) drew from the work of Salovey & Mayer (1990) and other theorists to further describe what it means to be emotionally intelligent and he explained why emotional intelligence is an important dimension of human interactions. Goleman built part of his case on human physiology, describing the role of two parts of the brain: the thalamus and the amygdala. The amygdala serves as an emergency response mechanism through which signals are sent from the brain to other parts of the body before stimuli have been fully processed by the neocortex. These signals trigger emotional responses which can be determining factors in whether a person remains safe when confronted with physical danger (i.e. the fight or fight response) or whether he laughs or cries when told he has just been fired from his job. Goleman provided many examples of scenarios in which a person's emotional response to a situation can become more important that the person's cognitive ability. Fortunately for school leaders who want to gain these skills, Goleman concluded that the ability to assess and manage one's emotions in a given situation can be learned and improved.\n\nPalmer (2003) further developed the conceptualization of emotional intelligence by applying a goodness of ft analysis to instruments that measure emotional intelligence. He found that no one instrument clearly emerged as a statistically good fit for conceptualizations of emotional intelligence. Palmer proposed a new taxonomy that included a dimension associated with leadership: Interpersonal Management, refering to the ability of someone to manage his own emotions and manage the emotions of others. The addition of the management dimension to previous conceptualizations of emotional intelligence further established the role that emotional intelligence plays in effective leadership.\n\nMills and Rouse (2009) stated, \"That there is a moderately strong relationship between emotional intelligence an effective leadership\" (p. 2). They conducted a meta-analysis to determine if a relationship exists between emotional intelligence and effective leadership. The results of the study suggested a moderately strong relationship between emotional intelligence effective leadership, r .383, p<.05.\n\nMills and Rouse also suggested that emotional intelligence is a concept that school leaders should assess for themselves and that it should be incorporated in the",
+          "pages": [
+            9
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_78_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_23_v2",
+            "chk_f1615397c20971_24_v2",
+            "chk_f1615397c20971_25_v2"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_f1615397c20971_25_v2",
+          "hit_text": "Palmer (2003) further developed the conceptualization of emotional intelligence by applying a goodness of ft analysis to instruments that measure emotional intelligence. He found that no one instrument clearly emerged as a statistically good fit for conceptualizations of emotional intelligence. Palmer proposed a new taxonomy that included a dimension associated with leadership: Interpersonal Management, refering to the ability of someone to manage his own emotions and manage the emotions of others. The addition of the management dimension to previous conceptualizations of emotional intelligence further established the role that emotional intelligence plays in effective leadership.\n\nMills and Rouse (2009) stated, \"That there is a moderately strong relationship between emotional intelligence an effective leadership\" (p. 2). They conducted a meta-analysis to determine if a relationship exists between emotional intelligence and effective leadership. The results of the study suggested a moderately strong relationship between emotional intelligence effective leadership, r .383, p<.05.\n\nMills and Rouse also suggested that emotional intelligence is a concept that school leaders should assess for themselves and that it should be incorporated in the",
+          "hit_page_start": 9,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                632.485,
+                870.506,
+                799.11
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                809.741,
+                871.812,
+                901.545
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                912.176,
+                839.889,
+                947.863
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0216602646180111
+        },
+        {
+          "id": "exc_f1615397c20971_9_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 1 Pennington, R. (July 2009). Leadership: A Practitioner's Bridge from Theory to Practical › 1.1 Forward",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEducational administrative practitioners evaluate theories, implement practices and refine leadership strategies daily. The exploration of the leadership gap between theory and praxis is a quantum undertaking. Quantum physicists explain the predictable behavior of particles and the energy they contain using quantum mechanics (Izquierdo-Aymerich and Aduriz-Bravo 2009). The manipulation and prediction of behavior allows leaders to bring about desired outcomes. Leadership, a human phenomenon embedded in culture, represents many things to different people (Ciulla 2008). Researchers have examined leadership skills from a variety of perspectives (Ciulla 2008). No single trait or combination of traits has been identified that fully explains a leaders' ability to bring about positive change, but most agree there are energy investments necessary in all areas (Robinson, Lloyd et al. 2008). There exists a plethora of leadership theories, styles, paradigms and ideas. Leadership from the educational perspective takes many forms and presents many challenges. In an attempt to examine leadership from several diverse perspectives, topics such as Leadership for Technology, Transformational vs. Servant Leadership: A Comparative Analysis, Synergistic Leadership: A Gender Inclusive Theory, Spiritual and Ethical Leadership, Leading from Below the Surface, Leading in Rural Appalachia, How Leaders Use Their Opposable Minds will be investigated.\n\nAccording to the quantum theory, leadership at the atomic level involves transferring discrete packets of energy into particles to propel them into an excited state (Izquierdo-Aymerich and Aduriz-Bravo 2009). In order for particles to remain in this new environment, energy must be constantly supplied to the particle. In order for leaders to initiate change, large investments of energy must be made initially to effect change. Once a quantum leap has been made, the energy required to maintain the change is exponentially less than that required to effect the original change. Leadership at the atomic level is independent of state. Effecting change from a transformational, spiritual, synergistic, or emotional vantage point requires the input of quantum packets of energy. Whether Leading from Below the Surface, in rural Appalachia or with an Opposable Mind, leaders cannot opt for energy input below the threshold required to effect change. From the quantum frame of reference, it is an all or nothing process. Without the required discrete packet of energy input, particles quickly come to rest in the non-excited state. The law of conservation of energy governs energy investments made by educators. The finite amount of energy in all systems can be converted in form, but no new energy can be created. Effective leaders",
+          "pages": [
+            5
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_28_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_11_v2",
+            "chk_f1615397c20971_12_v2"
+          ],
+          "retrieval": {
+            "scope": "Written for educational administrators. Quantum mechanics is an analogy, not a required scientific method or evidence about leadership. The named leadership theories preview later chapters rather than teaching them here. Excerpt 10 completes the final sentence and states the project's aim.",
+            "summary": "Introduces educational leadership as a bridge between theory and practice and uses quantum energy as an extended metaphor for the effort needed to initiate and sustain organizational change.",
+            "context_excerpt_ids": [
+              "exc_f1615397c20971_10_v2"
+            ]
+          },
+          "hit_chunk_id": "chk_f1615397c20971_11_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nEducational administrative practitioners evaluate theories, implement practices and refine leadership strategies daily. The exploration of the leadership gap between theory and praxis is a quantum undertaking. Quantum physicists explain the predictable behavior of particles and the energy they contain using quantum mechanics (Izquierdo-Aymerich and Aduriz-Bravo 2009). The manipulation and prediction of behavior allows leaders to bring about desired outcomes. Leadership, a human phenomenon embedded in culture, represents many things to different people (Ciulla 2008). Researchers have examined leadership skills from a variety of perspectives (Ciulla 2008). No single trait or combination of traits has been identified that fully explains a leaders' ability to bring about positive change, but most agree there are energy investments necessary in all areas (Robinson, Lloyd et al. 2008). There exists a plethora of leadership theories, styles, paradigms and ideas. Leadership from the educational perspective takes many forms and presents many challenges. In an attempt to examine leadership from several diverse perspectives, topics such as Leadership for Technology, Transformational vs. Servant Leadership: A Comparative Analysis, Synergistic Leadership: A Gender Inclusive Theory, Spiritual and Ethical Leadership, Leading from Below the Surface, Leading in Rural Appalachia, How Leaders Use Their Opposable Minds will be investigated.",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                254.106,
+                864.124,
+                286.154
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                297.568,
+                871.812,
+                632.543
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01932021466905188
+        },
+        {
+          "id": "exc_a35c627f0c0b82_29_v1",
+          "book_id": "introduction-to-school-leadership",
+          "book_title": "Introduction to School Leadership",
+          "section_path": "Chapter 4 The Principalship: Manager to Leader › 4.10 References",
+          "roles": [
+            "introduction",
+            "reference"
+          ],
+          "topic_ids": [
+            "educational-leadership-theory-practice",
+            "transformational-servant-leadership"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nAllen, G. (1998) Supervision: Management modern. Retrieved June 20, 2005, from http://ollie.dcccd.edu/mgmt1374/book_contents/1overview/management_history/ mgmt_history.htm\n\nCartwright, R. (2002) Empowerment. Oxford, United Kingdom: Capstone Publishing Ltd.\n\nLambert, L. (2003). Leadership Capacity for Lasting School Improvement. Alexandria, VA: Assoc. for Supervision and Curriculum Development\n\nMcMahon, K. N. (2001). An Interview with Helen S. Astin. In Developing Nonhierarchical Leadership on Campus (p. 8). Westport, Connecticut: Greenwood Press\n\nOwens, R. G. (2004). Organizational Behavior in Education. (8th ed.) Boston: Pearson Education Prideaux, R. (2001). The Effective and Democratic School Principal. Retrieved June 14, 2005, from http://www.cybertext.net.au/tct/papers/week4/printable/ prideaux%20-%20printable.htm\n\nSergiovanni, T. J. (2005).The principalship: A reflective practice perspective 5th ed. Needham Heights, Maryland: Allyn and Bacon.\n\nSergiovanni, T. J. (2000). Leadership as Stewardship. In The Jossey-Bass Reader on Educational Leadership. New York, NY: John Wiley and Sons, Inc.\n\nSpears, L. C. (2002). Tracing the Past, Present, and Future of Serva nt-Leadership. In Focus On Leadership: Servant-leadership for the Twenty-first Century (pp. 1-10). New York, NY: John Wiley and Sons, Inc.",
+          "pages": [
+            19
+          ],
+          "figure_ids": [
+            "fig_a35c627f0c0b82_177_v1"
+          ],
+          "chunk_ids": [
+            "chk_a35c627f0c0b82_44_v1"
+          ],
+          "retrieval": null,
+          "hit_chunk_id": "chk_a35c627f0c0b82_44_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/).\n\nAllen, G. (1998) Supervision: Management modern. Retrieved June 20, 2005, from http://ollie.dcccd.edu/mgmt1374/book_contents/1overview/management_history/ mgmt_history.htm\n\nCartwright, R. (2002) Empowerment. Oxford, United Kingdom: Capstone Publishing Ltd.\n\nLambert, L. (2003). Leadership Capacity for Lasting School Improvement. Alexandria, VA: Assoc. for Supervision and Curriculum Development\n\nMcMahon, K. N. (2001). An Interview with Helen S. Astin. In Developing Nonhierarchical Leadership on Campus (p. 8). Westport, Connecticut: Greenwood Press\n\nOwens, R. G. (2004). Organizational Behavior in Education. (8th ed.) Boston: Pearson Education Prideaux, R. (2001). The Effective and Democratic School Principal. Retrieved June 14, 2005, from http://www.cybertext.net.au/tct/papers/week4/printable/ prideaux%20-%20printable.htm\n\nSergiovanni, T. J. (2005).The principalship: A reflective practice perspective 5th ed. Needham Heights, Maryland: Allyn and Bacon.\n\nSergiovanni, T. J. (2000). Leadership as Stewardship. In The Jossey-Bass Reader on Educational Leadership. New York, NY: John Wiley and Sons, Inc.\n\nSpears, L. C. (2002). Tracing the Past, Present, and Future of Serva nt-Leadership. In Focus On Leadership: Servant-leadership for the Twenty-first Century (pp. 1-10). New York, NY: John Wiley and Sons, Inc.",
+          "hit_page_start": 19,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                393.061,
+                755.639,
+                425.109
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                436.523,
+                837.19,
+                490.916
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                501.546,
+                842.324,
+                537.234
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                547.865,
+                854.553,
+                583.552
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                594.183,
+                845.148,
+                629.871
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                640.501,
+                873.684,
+                713.6
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                724.23,
+                829.141,
+                759.918
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                770.549,
+                830.871,
+                806.236
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                816.867,
+                859.282,
+                871.26
+              ],
+              "page": 19,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01909722222222222
+        },
+        {
+          "id": "exc_f1615397c20971_68_v2",
+          "book_id": "21st-century-theories-of-education-administration",
+          "book_title": "21st Century Theories of Education Administration",
+          "section_path": "21st Century Theories of Education Administration › Chapter 5 Leonard, N., & Jones, A. (July 2009). Synergistic Leadership Theory › 5.4 Implications for School Leaders",
+          "roles": [
+            "summary",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "synergistic-gender-inclusive-leadership",
+            "educational-leadership-theory-practice"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSuccessful leaders demonstrate leadership behaviors ranging from autocratic decision making to collaborative practices within the organization. Michele Rhee, of the Washington D.C. school district, has demonstrated behaviors on this continuum as she has sought to improve the low performing schools within her large urban district. She has excused ineffective teachers and principals and provided incentives of six figure salaries to highly effective teachers. External forces of the urban school district have included the teacher's union, school board, the mayor, city administrator, and parents. Michelle Rhee's belief that Washington D.C. schools can be improved with effective staff and leadership has caught the attention of the nation (Thomas, Constant, & Wingert, 2008).\n\nImplications for school leaders include the recognition that effective leadership in public schools in the 21st century must include the balance of external forces, leadership behavior, organizational structure, and attitudes, and values and beliefs of organization. Educational leaders of the past have been able to operate within the confines of their own organizational structure using traditional leadership approaches. Successful leaders of today, such as Michelle Rhee, are exemplifying a holistic approach to leading within their organizations. SLT provides a gender inclusive theoretical framework for leaders to develop and cultivate effective 21st century leadership within our schools.",
+          "pages": [
+            36
+          ],
+          "figure_ids": [
+            "fig_f1615397c20971_383_v2"
+          ],
+          "chunk_ids": [
+            "chk_f1615397c20971_99_v2"
+          ],
+          "retrieval": {
+            "scope": "Implications for public-school leaders under the source's 2008-2009 framing. Michele Rhee and the Washington, D.C. district illustrate the theory; that case and its staffing actions are not required features of SLT or evidence that the framework applies universally.",
+            "summary": "Applies Synergistic Leadership Theory to Michele Rhee's Washington, D.C. school leadership, then summarizes the need to balance external forces, leadership behavior, organizational structure, and organizational values.",
+            "context_excerpt_ids": []
+          },
+          "hit_chunk_id": "chk_f1615397c20971_99_v2",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nSuccessful leaders demonstrate leadership behaviors ranging from autocratic decision making to collaborative practices within the organization. Michele Rhee, of the Washington D.C. school district, has demonstrated behaviors on this continuum as she has sought to improve the low performing schools within her large urban district. She has excused ineffective teachers and principals and provided incentives of six figure salaries to highly effective teachers. External forces of the urban school district have included the teacher's union, school board, the mayor, city administrator, and parents. Michelle Rhee's belief that Washington D.C. schools can be improved with effective staff and leadership has caught the attention of the nation (Thomas, Constant, & Wingert, 2008).\n\nImplications for school leaders include the recognition that effective leadership in public schools in the 21st century must include the balance of external forces, leadership behavior, organizational structure, and attitudes, and values and beliefs of organization. Educational leaders of the past have been able to operate within the confines of their own organizational structure using traditional leadership approaches. Successful leaders of today, such as Michelle Rhee, are exemplifying a holistic approach to leading within their organizations. SLT provides a gender inclusive theoretical framework for leaders to develop and cultivate effective 21st century leadership within our schools.",
+          "hit_page_start": 36,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                523.999,
+                826.309,
+                556.048
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                567.461,
+                834.667,
+                752.792
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                763.423,
+                832.462,
+                938.552
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018947015425888666
+        }
+      ]
+    }
+  ],
+  "pages": [],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 2
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 3
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 3
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 2
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 2
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 3
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 2
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 2
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 3
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 2
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 2
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

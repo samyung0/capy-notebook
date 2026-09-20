@@ -13,7 +13,8 @@ uv run --project pipeline python lab/knowledge/server.py --port 18766
 
 Secrets are lifted from the repository-root `.env.local`: `ALIBABA_API_KEY`,
 `ALIBABA_BASE_URL`, `LIBRARY_DATABASE_URL`, `DEEPINFRA_API_KEY` and the five
-`KNOWLEDGE_BASE_B2_*` values. Two models (`llm.py`): GLM-5.3-Flash on the local
+`KNOWLEDGE_BASE_B2_*` values. The ordinary dashboard runner uses two models
+(`llm.py`): GLM-5.3-Flash on the local
 Ollama cloud model (`glm-5.3-flash:cloud`, 127.0.0.1:11434) serves topics and
 scraping; Qwen3.8-Flash on Alibaba Model Studio serves the transcribe and tag
 stages. Both wait and retry on a connection error, a 429 or a 5xx (5, 20, 60 s;
@@ -116,7 +117,7 @@ book added or published, merged by sha256 on add, after parse (which fills
 
 `topics.py` derives the book's topics from its table of contents, reusing the
 subject's existing library topics and proposing new ones (two or three per
-chapter, at most 64 per subject; past that the stage stops and asks for the
+chapter, at most 96 per subject; past that the stage stops and asks for the
 subject to be split; a proposed id equal to a subject id is renamed with a
 `-basics` suffix and recorded under `renamed`). After the tag stage,
 `topics.json` carries the tagged-excerpt count per topic and the dashboard
@@ -185,31 +186,69 @@ verified rate, failed, review items, usage). The stage state under
 as the book version's model runs. A killed stage leaves
 `models/<stage>/command.lock`; the server removes stale locks at startup.
 
+## Library tab
+
+The dashboard's second tab (`#library`) reads the live library, not the
+builder's queue: per area in fixture order, every subject holding books with
+its books, topics and tagged excerpts of current book versions, each as a count
+and its share of the library; a subject expands to its books (title, version,
+excerpts) and topics (label, tagged excerpts), each with its share of the
+subject's excerpts, and the subjects without books fold under each area. A book's subject is the one its topics
+were published under. Tags and queued or unpublished books are not counted.
+`GET /api/library/coverage` runs three queries over one tunnel connection
+(about five seconds), is cached for a minute and is fetched only while the
+tab is open; it answers 503 while the library is unreachable.
+
 ## Codex intake monitor
 
-The `knowledge-builder-intake` heartbeat checks every five minutes. It stays
-quiet until Physics v2 is published and its source/dashboard verification is
-recorded. After that gate, it can automatically admit eligible downloads using
-the existing licence, metadata, language, level, subject and hash checks.
-Missing metadata is not invented. GLM still handles scraping and topics.
+The `kb` heartbeat uses its configured schedule and can be paused in Codex.
+When active, it automatically admits eligible downloads using
+the existing licence, metadata, language, subject and hash checks.
+Missing metadata is not invented. The automatic scraper still uses GLM; the
+delegated per-book workflow uses Sol for both source review and topic reasoning.
 
 The monitor pauses the ordinary ingest worker before admitting a delegated
 book, then runs parse and figures. Sol medium reviews the source and produces
 corrected excerpts, semantic roles, full synopses and verbatim evidence.
-Topics follows review: `topics.py --review-context <artifact>` sends every
-excerpt's full notes plus the outline to GLM, omitting old topic IDs. A final
-Sol pass assigns topic IDs against the new catalog. `--output <path>` allows
-auditing a candidate catalog before replacing the run's `topics.json`.
-Agents finish independently, save checkpoints silently, validate their own
-work and return completed artifacts. The parent performs one final consistency
-and import pass. Do not run the Alibaba stages concurrently on that book.
+Follow [the review contract](review.md) for role semantics, non-teaching text,
+short retrieval descriptions, applicability and necessary source-context links.
+The short fields supplement the full notes. Final topic assignment must retain
+them; indexing refuses metadata lost between review and final tags.
+Topics follows review in the same Sol owner's assignment. Use `topics.py --run
+<run> --book <id> --review-context <full-review.json> --export-context <context>`
+to refresh the subject catalog and save the full reviewed context, rules and
+input hashes. The owner produces `reused`/`proposed` topics, then imports them
+with `--proposal <proposal.json>` instead of `--export-context`. This path makes
+no GLM call. The helper validates the source/corpus/review binding and provenance,
+merges against the current catalog and enforces the 96-topic limit. The same
+owner assigns final IDs from the merged result while retaining full notes.
+See [the review contract](review.md) for the proposal format and split-book
+ownership. `--output <path>` keeps a trial separate from canonical `topics.json`.
+Fresh agents own a bounded book's remaining workflow through publication and
+verification. They save checkpoints silently, validate and import their own
+artifacts, advance SQLite/dashboard state, and return one completion report or
+an unresolved blocker. The parent dispatches work and briefly checks final
+receipts; it does not repeat reviews or routinely import between stages.
+Serialize shared manifest exports, conflicting topic imports and publication updates.
+Do not run the Alibaba stages concurrently on that book.
 The dashboard's ordinary stage runner still uses the Qwen workflow above.
+
+For bounded enrichment of processed books, `enrich.py --run <run> --artifact
+<review.json>` validates the source hash, base tag-file hash, excerpt IDs,
+metadata, topic IDs and verbatim evidence. Add `--apply` to save an immutable
+backup and import the reviewed tags, then run the existing index and publish
+stages. The artifact names `book_id`, `source_sha256`, `base_tags_sha256`,
+`model_provenance`, `inspection_records` and a `tags` object containing complete
+replacement tags for exactly the reviewed excerpts. Each inspection record
+names the physical `pdf_page`, `rendered_page_path` and source-grounded
+`observation`; record the pages actually checked. Preserve the full synopsis.
+The prior version stays available for rollback. This does not start the intake scheduler.
 
 The monitor allows up to eight active books across preparation, source review
 and indexing. Parser requests respect the configured document capacity. Up to
 six Sol agents can run alongside the parent; large books can share those
-slots through disjoint page/excerpt scopes. The parent imports completed
-artifacts and advances the dashboard state through publication automatically.
+slots through disjoint page/excerpt scopes, with one owner assembling the book.
+The assigned owner advances the dashboard through publication automatically.
 No stage waits for user approval; existing validation and eligibility checks
 still apply, and unresolved failures are reported.
 

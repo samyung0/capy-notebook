@@ -1,0 +1,2433 @@
+{
+  "arm": "paged",
+  "case": {
+    "id": "jamovi-t-test",
+    "query": "Create one concise study note showing how to run and interpret an independent-samples t-test in jamovi.",
+    "check": "Correct software and test variant; supported source-specific interface steps."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "independent samples t-test jamovi",
+      "topics": [],
+      "roles": [],
+      "seconds": 10.113,
+      "excerpts": [
+        {
+          "id": "exc_45ecdb7da7734b_241_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.2 The one-sample 𝑡-test › 11.2.3 Assumptions of the one sample 𝑡-test › 11.4.1 Doing the test in jamovi",
+          "roles": [
+            "worked_example",
+            "formal",
+            "reference"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "jamovi",
+            "confidence-intervals"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Demonstrates running an independent samples t-test in jamovi: grade is the dependent variable and tutor the grouping variable. Output reports the t-statistic, degrees of freedom, p-value, a confidence interval for the difference between group means, and an effect size. The example gives Anastasia's mean 74.53 and Bernadette's 69.06, difference 5.48, with 95% CI [0.20, 10.76], and shows a write-up: t(31) = 2.1, p < .05, CI95 = [0.2, 10.8], d = .74. Advises reporting effect size and confidence interval.",
+          "pages": [
+            249,
+            250,
+            251
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1897_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_554_v2",
+            "chk_45ecdb7da7734b_555_v2",
+            "chk_45ecdb7da7734b_556_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_554_v2",
+          "hit_text": "Not surprisingly, you can run an independent samples 𝑡-test easily in jamovi. The outcome variable for our test is the student grade, and the groups are defined in terms of the tutor for each class. So you probably won’t be too surprised that all you have to do in jamovi is go to the relevant analysis (‘Analyses’ – ‘T-Tests’ – ‘Independent Samples T-Test’) and move the grade variable across to the ‘Dependent Variables’ box, and the tutor variable across into the ‘Grouping Variable’ box, as shown in Figure 11.9.\n\nFigure 11.9. Independent 𝑡-test in jamovi, with options checked for useful results\n\nThe output has a very familiar form. First, it tells you what test was run, and it tells you the name of the dependent variable that you used. It then reports the test results. Just like last time the test results consist of a 𝑡-statistic, the degrees of freedom, and the 𝑝-value. The final section reports two things: it gives you a confidence interval and an effect size. I’ll talk about effect sizes later. The confidence interval, however, I should talk about now.",
+          "hit_page_start": 249,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                765.251,
+                843.752,
+                903.506
+              ],
+              "page": 249,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                175.84,
+                423.706,
+                792.908,
+                519.132
+              ],
+              "page": 250,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                503.407,
+                812.495,
+                615.438
+              ],
+              "page": 250,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024329950559458757
+        },
+        {
+          "id": "exc_45ecdb7da7734b_249_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.6.2 What is the paired samples 𝑡-test? › 11.6.3 Doing the test in jamovi",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "jamovi"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Describes doing a paired samples t-test in jamovi, either by creating a difference variable and running a one sample t-test, or by using the jamovi 'Paired Samples T-Test' analysis. Reports an average improvement of 1.4% from test 1 to test 2, significantly different from 0 (t(19) = 6.48, p < .001). Notes the paired samples t-test is a one sample test under the hood, so results are identical.",
+          "pages": [
+            259
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1979_v2",
+            "fig_45ecdb7da7734b_1981_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_573_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_573_v2",
+          "hit_text": "How do you do a paired samples 𝑡-test in jamovi? One possibility is to follow the process I outlined above. That is, create a “difference” variable and then run a one sample 𝑡-test on that. Since we’ve already created a variable called “improvement”, let’s do that and see what we get, Figure 11.15.\n\nFigure 11.15. Results showing a one sample 𝑡-test on paired difference scores The output shown in Figure 11.15 is (obviously) formatted exactly the same was as it was the last time we used the one-sample 𝑡-test analysis (Section 11.2), and it confirms our intuition. There’s an average improvement of 1.4% from test 1 to test 2, and this is significantly different from 0 (𝑡(19) = 6.48,𝑝 < .001). However, suppose you’re lazy and you don’t want to go to all the effort of creating a new variable. Or perhaps you just want to keep the difference between one-sample and paired samples tests clear in your head. If so, you can use the jamovi ‘Paired Samples T-Test’ analysis, getting the results shown in Figure 11.16.\nFigure 11.16. Results showing a paired sample 𝑡-test. Compare with Figure 11.15\n\nThe numbers are identical to those that come from the one sample test, which of course they have to be given that the paired samples 𝑡-test is just a one sample test under the hood.",
+          "hit_page_start": 259,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                96.746,
+                843.752,
+                225.382
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                297.539,
+                843.752,
+                686.538
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                641.989,
+                843.74,
+                737.415
+              ],
+              "page": 259,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024325753569539928
+        },
+        {
+          "id": "exc_45ecdb7da7734b_261_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.10 Testing non-normal data › 11.10.1 Two sample Mann-Whitney 𝑈 test",
+          "roles": [
+            "introduction",
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "nonparametric",
+            "t-tests",
+            "hypothesis-tests",
+            "jamovi"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Introduces the two-sample Mann-Whitney U test as a rank-based alternative, describing how to compare every observation in group A against group B and count checkmarks to obtain the test statistic W. Notes that W's sampling distribution is complicated but interpreted like t or z, with two-sided rejection for very large or small W. Shows jamovi output for an Independent Samples T-Test with the Mann-Whitney U option, giving U = 3 and p = 0.05556.",
+          "pages": [
+            267,
+            268,
+            269
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2064_v2",
+            "fig_45ecdb7da7734b_2073_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_592_v2",
+            "chk_45ecdb7da7734b_593_v2",
+            "chk_45ecdb7da7734b_594_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_594_v2",
+          "hit_text": "We then count up the number of checkmarks. This is our test statistic, 𝑊.119 The actual sampling distribution for 𝑊 is somewhat complicated, and I’ll skip the details. For our purposes, it’s suﬀicient to note that the interpretation of 𝑊 is qualitatively the same as the interpretation of 𝑡 or 𝑧. That is, if we want a two-sided test then we reject the null hypothesis when 𝑊 is very large or very small, but if we have a directional (i.e., one-sided) hypothesis then we only use one or the other.\n\nFigure 11.24. jamovi QQ plot showing non-normality from the AFL winning margins data\n\nIn jamovi, if we run an ‘Independent Samples T-Test’ with scores as the dependent variable. and group as the grouping variable, and then under the options for ‘tests’ check the option for ‘Mann-Whitney U’, we will get results showing that 𝑈 = 3 (i.e., the same number of checkmarks as shown above), and a 𝑝-value = 0.05556. See Figure 11.25. Counting up the tick marks this time we get a test statistic of 𝑊 = 7. As before, if our test is two-sided, then we reject the null hypothesis when W is very large or very small.",
+          "hit_page_start": 268,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                771.228,
+                812.497,
+                933.072
+              ],
+              "page": 268,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                504.15,
+                843.759,
+                539.863
+              ],
+              "page": 269,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                564.332,
+                843.752,
+                692.967
+              ],
+              "page": 269,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022281639928698752
+        },
+        {
+          "id": "exc_45ecdb7da7734b_250_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.7 One-sided tests",
+          "roles": [
+            "introduction",
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "hypothesis-tests",
+            "confidence-intervals",
+            "paired-data",
+            "jamovi"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains one-sided hypothesis tests for t-tests. Describes specifying one-sided alternatives in jamovi for one sample, independent samples, and paired samples t-tests. Notes that the t-statistic and degrees of freedom stay the same, but the p-value and confidence interval change, with one-sided intervals reporting a single bound rather than two.",
+          "pages": [
+            259,
+            260,
+            261
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1989_v2",
+            "fig_45ecdb7da7734b_1990_v2",
+            "fig_45ecdb7da7734b_1997_v2",
+            "fig_45ecdb7da7734b_1999_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_574_v2",
+            "chk_45ecdb7da7734b_575_v2",
+            "chk_45ecdb7da7734b_576_v2",
+            "chk_45ecdb7da7734b_577_v2",
+            "chk_45ecdb7da7734b_578_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_578_v2",
+          "hit_text": "Again, the output changes in a predictable way. The definition of the alternative hypothesis has changed, the 𝑝-value has changed, and it now reports a one-sided confidence interval rather than a two-sided one.\n\nWhat about the paired samples 𝑡-test? Suppose we wanted to test the hypothesis that grades go up from test 1 to test 2 in Dr Zeppo’s class, and are not prepared to consider the idea that the grades go down. In jamovi you would do this by specifying, under the ‘Hypotheses’ option, that grade_test2 (‘Measure 1’ in jamovi, because we copied this first into the paired variables box) > grade_test1 (‘Measure 2’ in jamovi). You should get the results shown in Figure 11.19.\n\nFigure 11.18. jamovi results showing an ‘Independent Samples T-Test’ where the actual hypothesis is one-sided, i.e. that Anastasia’s students had higher grades than Bernadette’s\nFigure 11.19. jamovi results showing a ‘Paired Samples T-Test’ where the actual hypothesis is one-sided, i.e. that grade_test2 (‘Measure 1’) > grade_test1 (‘Measure 2’)\n\nYet again, the output changes in a predictable way. The hypothesis has changed, the 𝑝-value has changed, and the confidence interval is now one-sided.",
+          "hit_page_start": 260,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                743.792,
+                812.502,
+                839.218
+              ],
+              "page": 260,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                785.303,
+                812.49,
+                923.557
+              ],
+              "page": 260,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                245.926,
+                843.753,
+                505.617
+              ],
+              "page": 261,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                473.286,
+                843.734,
+                568.713
+              ],
+              "page": 261,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021897007042253523
+        },
+        {
+          "id": "exc_45ecdb7da7734b_244_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test)",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Introduces the Welch t-test as an alternative to the Student t-test that does not assume equal standard deviations between groups. Explains that the t-statistic is computed similarly (difference of sample means divided by the standard error of that difference), but the standard error calculation differs because pooling is inappropriate when population standard deviations differ. Notes that Welch degrees of freedom are computed differently and need not be a whole number. Mentions the Welch test is available as an 'Independent Samples T-Test' option in jamovi.",
+          "pages": [
+            253,
+            254
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1924_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_561_v2",
+            "chk_45ecdb7da7734b_562_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_561_v2",
+          "hit_text": "The biggest problem with using the Student test in practice is the third assumption listed in the previous section. It assumes that both groups have the same standard deviation. This is rarely true in real life. If two samples don’t have the same means, why should we expect them to have the same standard deviation? There’s really no reason to expect this assumption to be true. We’ll talk a little bit about how you can check this assumption later on because it does crop up in a few different places, not just the 𝑡-test. But right now I’ll talk about a different form of the 𝑡-test (Welch, 1947) that does not rely on this assumption. A graphical illustration of what the Welch 𝑡test assumes about the data is shown in Figure 11.10, to provide a contrast with the Student test version in Figure 11.8. I’ll admit it’s a bit odd to talk about the cure before talking about the diagnosis, but as it happens the Welch test can be specified as one of the ‘Independent Samples T-Test’ options in jamovi, so this is probably the best place to discuss it.\n\nFigure 11.10. Graphical illustration of the null and alternative hypotheses assumed by the Welch 𝑡-test. Like the Student test (Figure 11.9) we assume that both samples are drawn from a normal population; but the alternative hypothesis no longer requires the two populations to have equal variance",
+          "hit_page_start": 253,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                138.031,
+                843.76,
+                356.392
+              ],
+              "page": 253,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                621.844,
+                843.757,
+                717.271
+              ],
+              "page": 253,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018105629348513598
+        },
+        {
+          "id": "exc_45ecdb7da7734b_409_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Bayesian statistics › 16.4 Bayesian 𝑡-tests › 16.4.1 Independent samples 𝑡-test",
+          "roles": [
+            "introduction",
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "bayesian-inference",
+            "t-tests",
+            "jamovi",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Describes the Bayesian version of the independent samples t-test using the harpo.csv data set. Selecting the 'Bayes factor' checkbox in jamovi with the default 'Prior' yields a Bayes factor of 1.75, about 1.8:1 evidence for the alternative. Contrasts this with the orthodox t-test, which gave p = .043, noting Bayesian methods usually require more evidence before rejecting the null.",
+          "pages": [
+            447,
+            448
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_3605_v2",
+            "fig_45ecdb7da7734b_3606_v2",
+            "fig_45ecdb7da7734b_3608_v2",
+            "fig_45ecdb7da7734b_3609_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_955_v2",
+            "chk_45ecdb7da7734b_956_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_955_v2",
+          "hit_text": "The most common type of 𝑡-test is the independent samples 𝑡-test, and it arises when you have data as in the harpo.csv data set that we used in Chapter 11 on 𝑡-tests. In this data set, we have two groups of students, those who received lessons from Anastasia and those who took their classes with Bernadette. The question we want to answer is whether there’s any difference in the grades received by these two groups of students. Back in Chapter 11 I suggested you could analyse this kind of data using the Independent Samples 𝑡-test in jamovi, which gave us the results in Figure 16.2. As we obtain a 𝑝-value less than 0.05, we reject the null hypothesis.\n\nFigure 16.2. Independent samples 𝑡-test result in jamovi\n\nWhat does the Bayesian version of the 𝑡-test look like? We can get the Bayes factor analysis by selecting the ‘Bayes factor’ checkbox under the ‘Tests’ option, and accepting the suggested default value for the ‘Prior’. This gives the results shown in the table in Figure 16.3. What we get in this table is a Bayes factor statistic of 1.75, meaning that the evidence provided by these data are about 1.8:1 in favour of the alternative hypothesis.\n\nFigure 16.3. Bayes factor analysis alongside independent samples 𝑡-test",
+          "hit_page_start": 447,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                757.453,
+                843.752,
+                969.11
+              ],
+              "page": 447,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                271.083,
+                402.318,
+                697.684,
+                497.744
+              ],
+              "page": 448,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                448.81,
+                812.505,
+                570.46
+              ],
+              "page": 448,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                213.477,
+                645.208,
+                755.273,
+                740.635
+              ],
+              "page": 448,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01793563579277865
+        },
+        {
+          "id": "exc_45ecdb7da7734b_263_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.11 Summary",
+          "roles": [
+            "summary",
+            "reference"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "paired-data",
+            "nonparametric",
+            "errors-power"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Summary of t-test procedures: one-sample t-test compares a sample mean to a hypothesized population mean; independent samples t-test compares two group means, in Student (equal SD) and Welch (unequal SD) forms; paired-samples t-test compares two scores per person. Notes one-sided tests must be pre-planned, Cohen's d for effect size, normality checks via QQ plots and Shapiro-Wilk, and Mann-Whitney or Wilcoxon alternatives for non-normal data.",
+          "pages": [
+            270,
+            271,
+            272
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2091_v2",
+            "fig_45ecdb7da7734b_2092_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_596_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_596_v2",
+          "hit_text": "• The one-sample 𝑡-test is used to compare a single sample mean against a hypoth-\n\n• An independent samples 𝑡-test is used to compare the means of two groups, and tests the null hypothesis that they have the same mean. It comes in two forms: The independent samples 𝑡-test (Student test) assumes that the groups have the same standard deviation, The independent samples 𝑡-test (Welch test) does not.\n\nesised value for the population mean.\n\nFigure 11.26. jamovi screen showing results for one-sample and paired sample Wilcoxon nonparametric tests\n\n• The paired-samples 𝑡-test is used when you have two scores from each person, and you want to test the null hypothesis that the two scores have the same mean.\n• One-sided tests are legitimate as long as they are pre-planned (like all tests!).\n• Effect size calculations for the difference between means can be calculated via the Cohen’s 𝑑 statistic.\n• Checking the normality of a sample using QQ plots and the Shapiro-Wilk test.\n• If your data are non-normal, you can use Mann-Whitney or Wilcoxon tests instead of 𝑡-tests for Testing non-normal data.\n\nChapter 12",
+          "hit_page_start": 270,
+          "hit_regions": [
+            {
+              "bbox": [
+                180.361,
+                781.697,
+                812.488,
+                877.124
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                180.361,
+                814.906,
+                812.498,
+                960.146
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                199.491,
+                834.425,
+                486.729,
+                853.533
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                450.051,
+                843.755,
+                485.764
+              ],
+              "page": 271,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                211.611,
+                477.025,
+                843.752,
+                688.682
+              ],
+              "page": 271,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                194.435,
+                332.599,
+                233.579
+              ],
+              "page": 272,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016666666666666666
+        },
+        {
+          "id": "exc_45ecdb7da7734b_234_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.2 The one-sample 𝑡-test › 11.2.1 Introducing the 𝑡-test › 11.2.2 Doing the test in jamovi",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "jamovi",
+            "confidence-intervals"
+          ],
+          "confidence": 0.9,
+          "synopsis": "The excerpt explains that one-sample t-test mechanics mirror the z-test but use the estimated standard deviation and t-distribution. It then demonstrates running a one-sample t-test in jamovi via Analyses – T-Tests – One Sample T-Test, specifying the variable and null hypothesis test value. Reported output includes t = 2.25, df = 19, p = 0.036, a 95% confidence interval, and an effect size measure. It shows how to report the result, including shorthand notation and a compressed stat block.",
+          "pages": [
+            244,
+            245
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1856_v2",
+            "fig_45ecdb7da7734b_1857_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_540_v2",
+            "chk_45ecdb7da7734b_541_v2",
+            "chk_45ecdb7da7734b_542_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_540_v2",
+          "hit_text": "As you might expect, the mechanics of the 𝑡-test are almost identical to the mechanics of the z-test. So there’s not much point in going through the tedious exercise of showing you how to do the calculations using low level commands. It’s pretty much identical to the calculations that we did earlier, except that we use the estimated standard deviation and then we test our hypothesis using the 𝑡-distribution rather than the normal distribution. And so instead of going through the calculations in tedious detail for a second time, I’ll jump straight to showing you how 𝑡-tests are actually done. jamovi comes with a dedicated analysis for 𝑡-tests that is very flexible (it can run lots of different kinds of\n\n𝑡-tests). It’s pretty straightforward to use; all you need to do is specify ‘Analyses’ – ‘T-Tests’ – ‘One Sample T-Test’, move the variable you are interested in (𝑋) across into the ‘Variables’ box, and type in the mean value for the null hypothesis (‘67.5’) in the ‘Hypothesis’ – ‘Test value’ box. Easy enough. See Figure 11.6, which, amongst other things that we will get to in a moment, gives you a 𝑡-test statistic = 2.25, with 19 degrees of freedom and an associated 𝑝-value of 0.036.\n\nFigure 11.6. jamovi does the one-sample 𝑡-test",
+          "hit_page_start": 244,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                711.522,
+                812.512,
+                923.179
+              ],
+              "page": 244,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                62.521,
+                843.755,
+                240.968
+              ],
+              "page": 245,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                339.797,
+                517.867,
+                691.47,
+                613.293
+              ],
+              "page": 245,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015873015873015872
+        },
+        {
+          "id": "exc_45ecdb7da7734b_215_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Categorical data analysis › 10.2 The 𝜒2 test of independence (or association) › 10.2.2 Doing the test in jamovi",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "chi-square",
+            "jamovi",
+            "research-validity"
+          ],
+          "confidence": 0.92,
+          "synopsis": "Demonstrates running the 𝜒2 test of independence in jamovi via Frequencies > Contingency Tables > Independent Samples, reporting 𝜒2 = 10.72, df = 2, p = 0.005, and Cramér's V = 0.24. Shows how to request expected counts and effect size, and provides a write-up of results. Discusses interpretation and a methodological weakness (possible reactivity effect), distinguishing statistical significance from scientific value.",
+          "pages": [
+            225,
+            226
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1680_v2",
+            "fig_45ecdb7da7734b_1681_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_501_v2",
+            "chk_45ecdb7da7734b_502_v2",
+            "chk_45ecdb7da7734b_503_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_501_v2",
+          "hit_text": "Okay, now that we know how the test works let’s have a look at how it’s done in jamovi. As tempting as it is to lead you through the tedious calculations so that you’re forced to learnitthelongway, Ifigurethere’snopoint. Ialready showedyouhowtodoitthelong way for the goodness-of-fit test in the last section, and since the test of independence isn’t conceptually any different, you won’t learn anything new by doing it the long way. So instead I’ll go straight to showing you the easy way.\n\nAfter you have run the test in jamovi (‘Frequencies’ – ‘Contingency Tables’ – ‘Independent Samples’), all you have to do is look underneath the contingency table in the jamovi results window and there is the 𝜒2 statistic for you. This shows a 𝜒2 statistic value of 10.72, with 2 df and 𝑝-value = 0.005.\n\nThat was easy, wasn’t it! You can also ask jamovi to show you the expected counts - just click on the check box for ‘Counts’ – ‘Expected’ in the ‘Cells’ options and the expected counts will appear in the contingency table. And whilst you are doing that, an effect size measure would be helpful. We’ll choose Cramér’s 𝑉 , and you can specify this from a check box in the ‘Statistics’ options, and it gives a value for Cramér’s 𝑉 of 0.24. See Figure 10.5. We will talk about this some more in just a moment.\n\nThis output gives us enough information to write up the result:\n\nPearson’s 𝜒2 revealed a significant association between species and choice (𝜒2(2) = 10.7,𝑝 < .01). Robots appeared to be more likely to say that they prefer flowers, but the humans were more likely to say they prefer data.",
+          "hit_page_start": 225,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                448.938,
+                843.752,
+                551.068
+              ],
+              "page": 225,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                553.951,
+                843.767,
+                665.982
+              ],
+              "page": 225,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                631.586,
+                843.752,
+                757.307
+              ],
+              "page": 225,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                739.515,
+                669.995,
+                758.624
+              ],
+              "page": 225,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                230.741,
+                742.135,
+                800.521,
+                854.165
+              ],
+              "page": 225,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015625
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1238_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.5 Bayesian 𝑡-tests › 17.5.1 Independent samples 𝑡-test › 757",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "r-programming",
+            "bayesian-inference",
+            "paired-data",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.96,
+          "synopsis": "So what does all this mean? Just as we saw with the contingencyTableBF() function, the output is pretty dense. But, just like last time, there’s not a lot of information here that you actually need to process. Firstly, let’s examine the bottom line. The BFindepSample part just tells you that you ran an independent samples 𝑡-test, and the JZS part is technical information that is a little beyond the scope of this book.15 In the line above, the text Null, mu1-mu2 =\n\nSo what does all this mean? Just as we saw with the contingencyTableBF() function, the output is pretty dense. But, just like last time, there’s not a lot of information here that you actually need to process. Firstly, let’s examine the bottom line. The BFindepSample part just tells you that you ran an independent samples 𝑡-test, and the JZS part is technical information that is a little beyond the scope of this book.15 In the line above, the text Null, mu1-mu2 =\n\n0 is just telling you that the null hypothesis is that there are no differences between means. But you already knew that. Ignore the r=0.707 part: it refers to a technical detail that we won’t worry about in this chapter.16 Instead, you should focus on the Bayes factor itself: the evidence provided by these data are only about 2:1 in favour of the alternative. Before moving on, it’s worth highlighting the difference between the orthodox test results and the Bayesian one. According to the orthodox test, we obtained a significant result, though only barely. Nevertheless, many people would happily accept 𝑝 = .043 as reasonably strong evidence for an effect. In contrast, notice that the Bayesian test doesn’t even reach 2:1 odds in favour of an effect, and would be considered very weak evidence at best. In my experience that’s a pretty typical outcome. Bayesian methods usually require more evidence before rejecting the null. 17.5.2 Paired samples 𝑡-test Back in The paired-samples 𝑡-test I discussed the chico data frame in which students’ grades were measured on two tests, and we were interested in finding out whether grades went up from test 1 to test 2. Because every student did both tests, the tool we used to analyse the data was a paired samples 𝑡-test. To remind you of what the data look like, here’s the first few cases: load(\"data/chico.Rdata\") head(chico) id grade_test1 grade_test2\n1 student1 42.9 44.6\n2 student2 51.8 54.0\n3 student3 71.7 72.3\n4 student4 51.6 53.4\n5 student5 63.5 63.8\n6 student6 58.0 59.3\n\n15Just in case you’re interested: the “JZS” part of the output relates to how the Bayesian test expresses the prior uncertainty about the variance 𝜎2, and it’s short for the names of three people: “Jeffreys Zellner Siow”. See Rouder et al. (2009) for details.\n16Again, in case you care … the null hypothesis here specifies an effect size of 0, since the two means are identical.\n\nThe alternative hypothesis states that there is an effect, but it doesn’t specify exactly how big the effect will be. The 𝑟 value here relates to how big the effect is expected to be according to the alternative. You can type ?ttestBF to get more details.",
+          "pages": [
+            758
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1857_v1",
+            "chk_dd1e65de648fb2_1858_v1",
+            "chk_dd1e65de648fb2_1859_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1857_v1",
+          "hit_text": "So what does all this mean? Just as we saw with the contingencyTableBF() function, the output is pretty dense. But, just like last time, there’s not a lot of information here that you actually need to process. Firstly, let’s examine the bottom line. The BFindepSample part just tells you that you ran an independent samples 𝑡-test, and the JZS part is technical information that is a little beyond the scope of this book.15 In the line above, the text Null, mu1-mu2 =",
+          "hit_page_start": 758,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.363,
+                89.222,
+                864.101,
+                198.217
+              ],
+              "page": 758,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015151515151515152
+        },
+        {
+          "id": "exc_dd1e65de648fb2_867_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.3 The independent samples 𝑡-test (Student test) › 13.3.6 Doing the test in R › 526",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "r-programming",
+            "t-tests",
+            "hypothesis-tests",
+            "confidence-intervals"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The outcome variable for our test is the student grade, and the groups are defined in terms of the tutor for each class. So you probably won’t be too surprised to see that we’re going to describe the test that we want in terms of an R formula that reads like this grade ~ tutor. The specific command that we need is:\n\nindependentSamplesTTest( formula = grade ~ tutor, # formula specifying outcome and group variables data = harpo, # data frame that contains the variables var.equal = TRUE # assume that the two groups have the same variance\n\n)\n\nStudent's independent samples t-test\n\nOutcome variable: grade Grouping variable: tutor\n\nDescriptive statistics:\n\nAnastasia Bernadette mean 74.533 69.056 std dev. 8.999 5.775\n\nHypotheses: null: population means equal for both groups alternative: different population means in each group\n\nTest results: t-statistic: 2.115 degrees of freedom: 31 p-value: 0.043\n\nOther information: two-sided 95% confidence interval: [0.197, 10.759] estimated effect size (Cohen's d): 0.74\n\nThe first two arguments should be familiar to you. The first one is the formula that tells R",
+          "pages": [
+            527
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1282_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1282_v1",
+          "hit_text": "The outcome variable for our test is the student grade, and the groups are defined in terms of the tutor for each class. So you probably won’t be too surprised to see that we’re going to describe the test that we want in terms of an R formula that reads like this grade ~ tutor. The specific command that we need is:\n\nindependentSamplesTTest( formula = grade ~ tutor, # formula specifying outcome and group variables data = harpo, # data frame that contains the variables var.equal = TRUE # assume that the two groups have the same variance\n\n)\n\nStudent's independent samples t-test\n\nOutcome variable: grade Grouping variable: tutor\n\nDescriptive statistics:\n\nAnastasia Bernadette mean 74.533 69.056 std dev. 8.999 5.775\n\nHypotheses: null: population means equal for both groups alternative: different population means in each group\n\nTest results: t-statistic: 2.115 degrees of freedom: 31 p-value: 0.043\n\nOther information: two-sided 95% confidence interval: [0.197, 10.759] estimated effect size (Cohen's d): 0.74\n\nThe first two arguments should be familiar to you. The first one is the formula that tells R",
+          "hit_page_start": 527,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                219.101,
+                867.113,
+                289.943
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                306.167,
+                838.235,
+                374.58
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                373.025,
+                145.722,
+                391.372
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.438,
+                423.842,
+                501.337,
+                442.189
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                457.428,
+                370.304,
+                492.568
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                507.807,
+                351.587,
+                526.154
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.438,
+                524.601,
+                435.83,
+                576.534
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                591.773,
+                660.428,
+                643.706
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                658.944,
+                379.678,
+                727.672
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                742.91,
+                641.711,
+                794.843
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                804.403,
+                863.637,
+                823.922
+              ],
+              "page": 527,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014925373134328358
+        },
+        {
+          "id": "exc_45ecdb7da7734b_239_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.2 The one-sample 𝑡-test › 11.2.3 Assumptions of the one sample 𝑡-test › 11.3.2 Introducing the test",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Introduces the independent samples t-test, distinguishing Student's and Welch's forms. Defines independent samples and states the null hypothesis that two population means are equal (𝜇1 = 𝜇2) versus the alternative that they differ (𝜇1 ≠ 𝜇2). Describes constructing a t-statistic based on the difference between sample means divided by a standard error estimate, noting the standard error calculation is more involved than in one-sample tests.",
+          "pages": [
+            247,
+            248
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_548_v2",
+            "chk_45ecdb7da7734b_549_v2",
+            "chk_45ecdb7da7734b_550_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_548_v2",
+          "hit_text": "The independent samples 𝑡-test comes in two different forms, Student’s and Welch’s. The original Student 𝑡-test, which is the one I’ll describe in this section, is the simpler of the two but relies on much more restrictive assumptions than the Welch 𝑡-test. Assuming for the moment that you want to run a two-sided test, the goal is to determine whether two “independent samples” of data are drawn from populations with the same mean (the null hypothesis) or different means (the alternative hypothesis). When we say “independent” samples, what we really mean here is that there’s no special relationship between observations in the two samples. This probably doesn’t make a lot of sense right now, but it will be clearer when we come to talk about the paired samples 𝑡test later on. For now, let’s just point out that if we have an experimental design where participants are randomly allocated to one of two groups, and we want to compare the two groups’ mean performance on some outcome measure, then an independent samples 𝑡-test (rather than a paired samples 𝑡-test) is what we’re after.\n\nOkay, so let’s let 𝜇1 denote the true population mean for group 1 (e.g., Anastasia’s students), and 𝜇2 will be the true population mean for group 2 (e.g., Bernadette’s students),105 and as usual we’ll let 𝑋1̄ and 𝑋2̄ denote the observed sample means for both of these groups. Our null hypothesis states that the two population means are identical (𝜇1 = 𝜇2) and the alternative to this is that they are not (𝜇1 ≠ 𝜇2) (Figure 11.8). Written in mathematical-ese, this is:\n\n= 𝜇 𝐻0 ∶ 𝜇1 ≠ 𝜇2",
+          "hit_page_start": 247,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                673.686,
+                843.759,
+                968.365
+              ],
+              "page": 247,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                62.521,
+                812.516,
+                224.364
+              ],
+              "page": 248,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                434.436,
+                162.147,
+                533.45,
+                282.479
+              ],
+              "page": 248,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014874660223497434
+        },
+        {
+          "id": "exc_45ecdb7da7734b_245_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.5.1 Doing the Welch test in jamovi",
+          "roles": [
+            "worked_example",
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "errors-power",
+            "jamovi"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Demonstrates running the Welch test alongside the default Student's 𝑡-test in jamovi, reading the output the same way. Notes the Welch result is not significant (𝑡(23.02) = 2.03, 𝑝 = .054) while the Student test was, and cautions against over-interpreting differences between 𝑝 = .049 and 𝑝 = .051. Discusses the trade-off: Student's test is slightly more powerful when variances are equal, but Welch is preferred since equal population variances are rarely believed.",
+          "pages": [
+            254
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_1934_v2",
+            "fig_45ecdb7da7734b_1935_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_563_v2",
+            "chk_45ecdb7da7734b_564_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_563_v2",
+          "hit_text": "If you tick the check box for the Welch test in the analysis we did above, then this is what it gives you (Figure 11.11).\n\nFigure 11.11. Results showing the Welch test alongside the default Students 𝑡-test in jamovi\n\nThe interpretation of this output should be fairly obvious. You read the output for the Welch’s test in the same way that you would for the Student’s test. You’ve got your descriptive statistics, the test results and some other information. So that’s all pretty easy.\n\nExcept, except…our result isn’t significant anymore. When we ran the Student test we did get a significant effect, but the Welch test on the same data set is not (𝑡(23.02) = 2.03,𝑝 = .054). What does this mean? Should we panic? Is the sky burning? Probably not. The fact that one test is significant and the other isn’t doesn’t itself mean very much, especially since I kind of rigged the data so that this would happen. As a general rule, it’s not a good idea to go out of your way to try to interpret or explain the difference between a 𝑝-value of .049 and a 𝑝-value of .051. If this sort of thing happens in real life, the difference in these 𝑝-values is almost certainly due to chance.",
+          "hit_page_start": 254,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                272.06,
+                812.484,
+                307.772
+              ],
+              "page": 254,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                419.058,
+                812.486,
+                514.485
+              ],
+              "page": 254,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                506.061,
+                812.502,
+                574.982
+              ],
+              "page": 254,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                561.261,
+                812.516,
+                756.314
+              ],
+              "page": 254,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014492753623188406
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1236_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.5 Bayesian 𝑡-tests › 17.5.1 Independent samples 𝑡-test",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "using-r",
+            "bayesian-inference",
+            "t-tests",
+            "sampling"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The most common type of 𝑡-test is the independent samples 𝑡-test, and it arises when you have data that look something like this:\n\nload(\"data/harpo.Rdata\") head(harpo)\n\ngrade tutor 1 65 Anastasia 2 72 Bernadette 3 66 Bernadette 4 74 Anastasia 5 73 Anastasia 6 71 Bernadette\n\nIn this data set, we have two groups of students, those who received lessons from Anastasia and those who took their classes with Bernadette. The question we want to answer is whether there’s any difference in the grades received by these two groups of students. Back in The 𝑡-test I suggested you could analyse this kind of data using the independentSamplesTTest() function in the lsr package. For example, if you want to run a Student’s 𝑡-test, you’d use a command like this:\n\nindependentSamplesTTest( formula = grade ~ tutor, data = harpo, var.equal = TRUE\n\n)\n\nStudent's independent samples t-test Outcome variable: grade",
+          "pages": [
+            756
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1854_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1854_v1",
+          "hit_text": "The most common type of 𝑡-test is the independent samples 𝑡-test, and it arises when you have data that look something like this:\n\nload(\"data/harpo.Rdata\") head(harpo)\n\ngrade tutor 1 65 Anastasia 2 72 Bernadette 3 66 Bernadette 4 74 Anastasia 5 73 Anastasia 6 71 Bernadette\n\nIn this data set, we have two groups of students, those who received lessons from Anastasia and those who took their classes with Bernadette. The question we want to answer is whether there’s any difference in the grades received by these two groups of students. Back in The 𝑡-test I suggested you could analyse this kind of data using the independentSamplesTTest() function in the lsr package. For example, if you want to run a Student’s 𝑡-test, you’d use a command like this:\n\nindependentSamplesTTest( formula = grade ~ tutor, data = harpo, var.equal = TRUE\n\n)\n\nStudent's independent samples t-test Outcome variable: grade",
+          "hit_page_start": 756,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                260.59,
+                863.655,
+                351.774
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                346.951,
+                360.962,
+                381.778
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                399.697,
+                304.812,
+                518.487
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                528.047,
+                863.993,
+                654.15
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                649.328,
+                379.68,
+                717.74
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                716.186,
+                145.722,
+                734.533
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                767.003,
+                501.337,
+                818.936
+              ],
+              "page": 756,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014285714285714285
+        },
+        {
+          "id": "exc_45ecdb7da7734b_367_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Factorial ANOVA › 14.8 Post hoc tests",
+          "roles": [
+            "introduction",
+            "formal",
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "anova",
+            "jamovi"
+          ],
+          "confidence": 0.9,
+          "synopsis": "This section introduces post hoc testing after a significant omnibus ANOVA. It explains that F-tests do not identify which groups differ, reviews multiple-comparison corrections, and lists jamovi contrast types (Deviation, Simple, Difference, Helmert, Repeated, Polynomial). It focuses on Tukey’s HSD, describing simultaneous confidence intervals and adjusted p-values, and demonstrates running Tukey post hoc tests in jamovi for main effects and interaction terms using the clinicaltrial.csv factorial ANOVA example.",
+          "pages": [
+            378,
+            379,
+            380,
+            381
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_3086_v2",
+            "fig_45ecdb7da7734b_3087_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_823_v2",
+            "chk_45ecdb7da7734b_824_v2",
+            "chk_45ecdb7da7734b_825_v2",
+            "chk_45ecdb7da7734b_826_v2",
+            "chk_45ecdb7da7734b_827_v2",
+            "chk_45ecdb7da7734b_828_v2",
+            "chk_45ecdb7da7734b_829_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_827_v2",
+          "hit_text": "The TukeyHSD function in jamovi is pretty easy to use. You simply specify the ANOVA model term that you want to run the post hoc tests for. For example, if we were looking to run post hoc tests for the main effects but not the interaction, we would open up the ‘Post Hoc Tests’ option in the ANOVA analysis screen, move the drug and therapy variables across to the box on the right, and then select the ‘Tukey’ checkbox in the list of possible post hoc corrections that could be applied. This, along with the corresponding results table, is shown in Figure 14.24.\n\nThe output shown in the ‘Post Hoc Tests’ results table is (I hope) pretty straightforward. The first comparison, for example, is the Anxifree versus placebo difference, and the first part of the output indicates that the observed difference in group means is .27. The next number is the standard error for the difference, from which we could calculate the 95% confidence interval if we wanted, though jamovi does not currently provide this option. Then there is a column with the degrees of freedom, a column with the 𝑡-value, and finally a column with the 𝑝-value. For the first comparison the adjusted 𝑝-value is .21. In contrast, if you look at the next line, we see that the observed difference between joyzepam and the placebo is 1.03, and this result is significant (𝑝 < .001).",
+          "hit_page_start": 380,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                206.572,
+                812.502,
+                325.307
+              ],
+              "page": 380,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                331.106,
+                812.502,
+                523.243
+              ],
+              "page": 380,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013888888888888888
+        },
+        {
+          "id": "exc_45ecdb7da7734b_262_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.10 Testing non-normal data › 11.10.1 Two sample Mann-Whitney 𝑈 test › 11.10.2 One sample Wilcoxon test",
+          "roles": [
+            "worked_example",
+            "formal"
+          ],
+          "topic_ids": [
+            "nonparametric",
+            "paired-data",
+            "jamovi"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains the one sample Wilcoxon test (equivalently the paired samples Wilcoxon test) using before-and-after happiness scores, where the change score is the difference. Notes the equivalence between paired-samples testing on before/after and one-sample testing on change scores, and describes tabulating positive differences against the complete sample. Shows how to run it in jamovi via the 'Wilcoxon rank' option under 'Tests' in the 'One Sample T-Test' analysis window, reporting Wilcoxon 𝑊 = 7, 𝑝-value = 0.03711.",
+          "pages": [
+            269,
+            270
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2079_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_595_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_595_v2",
+          "hit_text": "What about the one sample Wilcoxon test (or equivalently, the paired samples Wilcoxon test)? Suppose I’m interested in finding out whether taking a statistics class has any effect on the happiness of students. My data is in the happiness.csv file. What I’ve measured here is the happiness of each student before taking the class and after taking the class, and the change score is the difference between the two. Just like we saw with the 𝑡-test, there’s no fundamental difference between doing a paired-samples test using before and after, versus doing a one-sample test using the change scores. As before, the simplest way to think about the test is to construct a tabulation. The way to do it this time is to take those change scores that are positive differences, and tabulate them against all the complete sample. What you end up with is a table that looks like Table 11.5.\n\nFigure 11.25. jamovi screen showing results for the Mann-Whitney 𝑈 test\n\nTable 11.5. Comparing observations by group for a one-sample Wilcoxon 𝑈 test\n\nAll differences\n\n−24 −14 −10 7 −6 −38 2 −35 −30 5 7 . . . ✓ ✓ . ✓ . . ✓ 2 . . . . . . . . . 5 . . . . . . ✓ . . ✓\n\nPositive differences\n\nRunning this in jamovi is straightforward. For the one sample version, specify the ‘Wilcoxon rank’ option under ‘Tests’ in the ‘One Sample T-Test’ analysis window. This gives a Wilcoxon 𝑊 = 7, 𝑝-value = 0.03711. Evidently, taking a statistics class does have an effect on your happiness. Switching to a paired samples version of the test won’t give a different answer, of course; see Figure 11.26.",
+          "hit_page_start": 269,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                732.36,
+                843.757,
+                917.513
+              ],
+              "page": 269,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                205.142,
+                391.532,
+                763.608,
+                486.958
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                180.115,
+                424.74,
+                788.635,
+                520.167
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                477.743,
+                496.451,
+                588.717,
+                515.56
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                294.648,
+                521.231,
+                771.83,
+                666.472
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                201.247,
+                524.158,
+                288.437,
+                559.638
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                654.339,
+                812.502,
+                749.765
+              ],
+              "page": 270,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013620071684587814
+        },
+        {
+          "id": "exc_dd1e65de648fb2_856_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 13 The 𝑡-test › 13.3 The independent samples 𝑡-test (Student test) › 13.3.2 Introducing the test",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "sampling",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The independent samples 𝑡-test comes in two different forms, Student’s and Welch’s. The original Student 𝑡-test – which is the one I’ll describe in this section – is the simpler of the two, but relies on much more restrictive assumptions than the Welch 𝑡-test. Assuming for the moment that you want to run a two-sided test, the goal is to determine whether two “independent samples” of data are drawn from populations with the same mean (the",
+          "pages": [
+            520
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1267_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1267_v1",
+          "hit_text": "The independent samples 𝑡-test comes in two different forms, Student’s and Welch’s. The original Student 𝑡-test – which is the one I’ll describe in this section – is the simpler of the two, but relies on much more restrictive assumptions than the Welch 𝑡-test. Assuming for the moment that you want to run a two-sided test, the goal is to determine whether two “independent samples” of data are drawn from populations with the same mean (the",
+          "hit_page_start": 520,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                699.885,
+                863.993,
+                825.285
+              ],
+              "page": 520,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013513513513513514
+        },
+        {
+          "id": "exc_45ecdb7da7734b_316_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing several means (one-way ANOVA) › 13.5 Multiple comparisons and post hoc tests › 13.5.1 Running “pairwise” 𝑡-tests",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "anova",
+            "t-tests",
+            "jamovi"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Describes running uncorrected pairwise t-tests as post hoc comparisons among three drug-group means in jamovi, via the ANOVA 'Post Hoc Tests' options and the 'No correction' checkbox, producing a table of pairwise comparisons.",
+          "pages": [
+            326
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2613_v2",
+            "fig_45ecdb7da7734b_2614_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_713_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_713_v2",
+          "hit_text": "How might we go about solving our problem? Given that we’ve got three separate pairs of means (placebo versus Anxifree, placebo versus Joyzepam, and Anxifree versus Joyzepam) to compare, what we could do is run three separate 𝑡-tests and see what happens. This is easy to do in jamovi. Go to the ANOVA ‘Post Hoc Tests’ options, move the ‘drug’ variable across into the active box on the right, and then click on the ‘No correction’ checkbox. This will produce a neat table showing all the pairwise 𝑡-test comparisons amongst the three levels of the drug variable, as in Figure 13.4.\n\nFigure 13.4. Uncorrected pairwise 𝑡-tests as post hoc comparisons in jamovi",
+          "hit_page_start": 326,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                500.962,
+                812.517,
+                646.201
+              ],
+              "page": 326,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                196.035,
+                803.621,
+                772.733,
+                899.047
+              ],
+              "page": 326,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013333333333333334
+        },
+        {
+          "id": "exc_45ecdb7da7734b_236_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.2 The one-sample 𝑡-test › 11.2.3 Assumptions of the one sample 𝑡-test › 11.3.1 The data",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "t-tests",
+            "jamovi",
+            "data-types"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Introduces a scenario with 33 students and two tutors, Anastasia (N1 = 15) and Bernadette (N2 = 18), to compare grades. Describes loading harpo.csv into jamovi with variables ID, grade, and tutor, noting the grade variable must be changed to continuous measurement level and tutor is a factor. Mentions calculating means and standard deviations via 'Exploration' – 'descriptives' and a summary table.",
+          "pages": [
+            246
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_545_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_545_v2",
+          "hit_text": "Suppose we have 33 students taking Dr Harpo’s statistics lectures, and Dr Harpo doesn’t grade to a curve. Actually, Dr Harpo’s grading is a bit of a mystery, so we don’t really know anything about what the average grade is for the class as a whole. There are two tutors for the class, Anastasia and Bernadette. There are 𝑁1 = 15 students in Anastasia’s tutorials, and 𝑁2 = 18 in Bernadette’s tutorials. The research question I’m interested in is whether Anastasia or Bernadette is a better tutor, or if it doesn’t make much of a difference. Dr Harpo emails me the course grades, in the harpo.csv file. As usual, I’ll load the file into jamovi and have a look at what variables it contains - there are three variables, ID, grade and tutor. The grade variable contains each student’s grade, but it is not imported into jamovi with the correct measurement level attribute, so I need to change this so it is regarded as a continuous variable (see Section 3.6). The tutor variable is a factor that indicates who each student’s tutor was - either Anastasia or Bernadette.\n\nWe can calculate means and standard deviations, using the ‘Exploration’ – ‘descriptives’ analysis, and here’s a nice little summary table (Table 11.2).",
+          "hit_page_start": 246,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                668.874,
+                812.502,
+                887.235
+              ],
+              "page": 246,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                893.032,
+                812.502,
+                928.744
+              ],
+              "page": 246,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013157894736842105
+        },
+        {
+          "id": "exc_45ecdb7da7734b_254_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Comparing two means › 11.5 The independent samples 𝑡-test (Welch test) › 11.8 Effect size › 11.8.3 Cohen’s 𝑑 from a paired-samples test",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "paired-data",
+            "t-tests",
+            "jamovi"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Discusses Cohen's 𝑑 for a paired samples 𝑡-test. jamovi measures effect size relative to the distribution of difference scores, using 𝑑 = 𝐷̄ / 𝜎̂𝐷, where 𝜎̂𝐷 estimates the standard deviation of the differences. In Figure 11.16, Cohen's 𝑑 = 1.45, meaning time 2 grades average 1.45 standard deviations higher than time 1. Alternatively, measuring effect size relative to original variables (as for Student or Welch tests) gives a much smaller Cohen's 𝑑 = 0.22, though this is not straightforward in jamovi.",
+          "pages": [
+            263
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_585_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_585_v2",
+          "hit_text": "Finally, what should we do for a paired samples 𝑡-test? In this case, the answer depends on what it is you’re trying to do. jamovi assumes that you want to measure your effect sizes relative to the distribution of difference scores, and the measure of 𝑑 that you calculate is:\n\n𝐷̄ 𝜎̂𝐷\n\n𝑑 =\n\nwhere 𝜎̂𝐷 is the estimate of the standard deviation of the differences. In Figure 11.16 Cohen’s 𝑑 = 1.45, indicating that the time 2 grade scores are, on average, 1.45 standard deviations higher than the time 1 grade scores.\n\nThis is the version of Cohen’s 𝑑 that gets reported by the jamovi ‘Paired Samples T-Test’ analysis. The only wrinkle is figuring out whether this is the measure you want or not. To the extent that you care about the practical consequences of your research, you often want to measure the effect size relative to the original variables, not the difference scores (e.g., the 1% improvement in Dr Chico’s class over time is pretty small when measured against the amount of between-student variation in grades), in which case you use the same versions of Cohen’s 𝑑 that you would use for a Student or Welch test. It’s not so straightforward to do this in jamovi; essentially you have to change the structure of the data in the spreadsheet view so I won’t go into that here,115 but the Cohen’s 𝑑 for this perspective is quite different: it is 0.22 which is quite small when assessed on the scale of the original variables.",
+          "hit_page_start": 263,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                493.304,
+                843.759,
+                621.939
+              ],
+              "page": 263,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                521.075,
+                554.003,
+                543.144,
+                672.437
+              ],
+              "page": 263,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                485.167,
+                567.122,
+                513.979,
+                662.549
+              ],
+              "page": 263,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                609.142,
+                843.766,
+                721.172
+              ],
+              "page": 263,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                667.257,
+                843.762,
+                912.122
+              ],
+              "page": 263,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013156788566624632
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "search_id": "search_1",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_45ecdb7da7734b_241_v2",
+        "exc_45ecdb7da7734b_249_v2",
+        "exc_45ecdb7da7734b_261_v2",
+        "exc_45ecdb7da7734b_250_v2",
+        "exc_45ecdb7da7734b_244_v2"
+      ]
+    }
+  ],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2280,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,2806 @@
+{
+  "arm": "paged",
+  "case": {
+    "id": "regression-r",
+    "query": "Create one concise study note showing how to fit and interpret a simple linear regression in R using lm().",
+    "check": "Source supports R lm; jamovi, R-squared or generic regression alone is insufficient."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "simple linear regression lm() R fitting interpreting summary output coefficients",
+      "topics": [],
+      "roles": [],
+      "seconds": 10.316,
+      "excerpts": [
+        {
+          "id": "exc_0689cddaba206d_728_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › Section summary",
+          "roles": [
+            "summary",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Summarizes least-squares regression: the line minimizes squared residuals and passes through (x̄, ȳ); form ŷ = a + bx; R² is the proportion of variation in the response explained by the linear relationship, ranges 0 to 1, and does not indicate direction; a and b are sample statistics; slope b is the predicted change in y per one-unit increase in x; intercept a is the predicted y at x = 0, sometimes unreasonable due to extrapolation or impossible values; interpret a, b, and R² in context.",
+          "pages": [
+            473
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1203_v2",
+            "chk_0689cddaba206d_1204_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1203_v2",
+          "hit_text": "• The simple linear regression model is ﬁt to the data by minimizing the sum of the squares of the residuals. Because of this, the resulting equation is often called the least-squares regression line (LSRL) and is calculated using technology. This regression line will pass through the point (¯x , y¯).\n• We write the least squares regression line in the form: yˆ = a+bx. The slope b and the y-intercept a can be calculated using technology or identiﬁed from computer output.\n• In simple linear regression, the square of the correlation coeﬃcient, R2, is called the coeﬃcient of determination. R2 is the proportion of variation in the response variable that is explained by the linear relationship with the explanatory variable.\n• R2 is always between 0 and 1, inclusive, or between 0% and 100%, inclusive. R2 applies to any type of model, not just a linear model, and can be used to compare the ﬁt among various models. The higher the value of R2, the better the model “ﬁts” the data.\n• The value of R2 is always positive and cannot tell us the direction of the association. If ﬁnding r based on R2, make sure to use either the scatterplot or the slope of the regression line to determine whether r =+ √R2 or − √R2.\n• The coeﬃcients a and b of the least-squares regression line model (line of best ﬁt) are statistics because they are based on a sample of values.\n• The slope b of the least-squares regression line can be interpreted as the predicted increase or decrease in the response variable y for a one-unit increase in the explanatory variable x.",
+          "hit_page_start": 473,
+          "hit_regions": [
+            {
+              "bbox": [
+                171.479,
+                326.336,
+                852.948,
+                814.241
+              ],
+              "page": 473,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.021249076127124907
+        },
+        {
+          "id": "exc_dd1e65de648fb2_998_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 15.2.1 Using the lm() function",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "using-r",
+            "anova",
+            "linear-regression",
+            "center",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The lm() function is a fairly complicated one: if you type ?lm, the help files will reveal that there are a lot of arguments that you can specify, and most of them won’t make a lot of sense to you. At this stage however, there’s really only two of them that you care about, and as it turns out you’ve seen them before:\n\n• formula. A formula that specifies the regression model. For the simple linear regression models that we’ve talked about so far, in which you have a single predictor variable as well as an intercept term, this formula is of the form outcome ~ predictor. However, more complicated formulas are allowed, and we’ll discuss them later.\n• data. The data frame containing the variables.\n\nAs we saw with aov() in Comparing several means (one-way ANOVA), the output of the lm() function is a fairly complicated object, with quite a lot of technical information buried under the hood. Because this technical information is used by other functions, it’s generally a good idea to create a variable that stores the results of your regression. With this in mind, to run my linear regression, the command I want to use is this:\n\nregression_1 <- lm( formula = danielle_grump ~ danielle_sleep, data = parenthood\n\n)\n\nAs we saw with aov() in Comparing several means (one-way ANOVA), the output of the lm() function is a fairly complicated object, with quite a lot of technical information buried under the hood. Because this technical information is used by other functions, it’s generally a good idea to create a variable that stores the results of your regression. With this in mind, to run my linear regression, the command I want to use is this:\n\nregression_1 <- lm( formula = danielle_grump ~ danielle_sleep, data = parenthood\n\n)\n\nNote that I used danielle_grump ~ danielle_sleep as the formula: in the model that I’m trying to estimate, danielle_grump is the outcome variable, and danielle_sleep is the predictor variable. It’s always a good idea to remember which one is which! Anyway, what this does is create an “lm object” (i.e., a variable whose class is \"lm\") called regression_1. Let’s have a look at what happens when we print() it out:\n\nprint(regression_1)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep 125.956 -8.937",
+          "pages": [
+            610
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1477_v1",
+            "chk_dd1e65de648fb2_1478_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1478_v1",
+          "hit_text": "As we saw with aov() in Comparing several means (one-way ANOVA), the output of the lm() function is a fairly complicated object, with quite a lot of technical information buried under the hood. Because this technical information is used by other functions, it’s generally a good idea to create a variable that stores the results of your regression. With this in mind, to run my linear regression, the command I want to use is this:\n\nregression_1 <- lm( formula = danielle_grump ~ danielle_sleep, data = parenthood\n\n)\n\nNote that I used danielle_grump ~ danielle_sleep as the formula: in the model that I’m trying to estimate, danielle_grump is the outcome variable, and danielle_sleep is the predictor variable. It’s always a good idea to remember which one is which! Anyway, what this does is create an “lm object” (i.e., a variable whose class is \"lm\") called regression_1. Let’s have a look at what happens when we print() it out:\n\nprint(regression_1)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep 125.956 -8.937",
+          "hit_page_start": 610,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.704,
+                364.977,
+                863.993,
+                452.927
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                469.152,
+                548.127,
+                520.77
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                519.216,
+                145.722,
+                537.563
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                559.573,
+                867.113,
+                647.879
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                663.746,
+                314.172,
+                682.093
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                716.274,
+                735.296,
+                751.414
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                766.653,
+                258.023,
+                785.0
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.438,
+                783.446,
+                417.113,
+                818.586
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020258980785296574
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1003_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.3 Multiple linear regression › 15.3.1 Doing it in R",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "multiple-regression",
+            "linear-regression",
+            "graphs",
+            "center",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Multiple regression in R is no different to simple regression: all we have to do is specify a more complicated formula when using the lm() function. For example, if we want to use both danielle_sleep and baby_sleep as predictors in our attempt to explain why I’m so grumpy, then the formula we need is this:\n\ndanielle_grump ~ danielle_sleep + baby_sleep\n\nNotice that, just like last time, I haven’t explicitly included any reference to the intercept term in this formula; only the two predictor variables and the outcome. By default, the lm() function assumes that the model should include an intercept (though you can get rid of it if you want). In any case, I can create a new regression model – which I’ll call regression_2 – using the following command:\n\nregression_2 <- lm( formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood\n\n)\n\nAnd just like last time, if we print() out this regression model we can see what the estimated regression coeﬀicients are:\n\nprint(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep baby_sleep 125.96557 -8.95025 0.01052\n\nAnd just like last time, if we print() out this regression model we can see what the estimated regression coeﬀicients are:\n\nprint(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep baby_sleep 125.96557 -8.95025 0.01052\n\nThe coeﬀicient associated with danielle_sleep is quite large, suggesting that every hour of sleep I lose makes me a lot grumpier. However, the coeﬀicient for baby_sleep is very small, suggesting that it doesn’t really matter how much sleep my son gets; not really. What matters as far as my grumpiness goes is how much sleep I get. To get a sense of what this multiple regression model looks like, Figure 15.4 shows a 3D plot that plots all three variables, along with the regression model itself.",
+          "pages": [
+            612
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1484_v1",
+            "chk_dd1e65de648fb2_1485_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1484_v1",
+          "hit_text": "Multiple regression in R is no different to simple regression: all we have to do is specify a more complicated formula when using the lm() function. For example, if we want to use both danielle_sleep and baby_sleep as predictors in our attempt to explain why I’m so grumpy, then the formula we need is this:\n\ndanielle_grump ~ danielle_sleep + baby_sleep\n\nNotice that, just like last time, I haven’t explicitly included any reference to the intercept term in this formula; only the two predictor variables and the outcome. By default, the lm() function assumes that the model should include an intercept (though you can get rid of it if you want). In any case, I can create a new regression model – which I’ll call regression_2 – using the following command:\n\nregression_2 <- lm( formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood\n\n)\n\nAnd just like last time, if we print() out this regression model we can see what the estimated regression coeﬀicients are:\n\nprint(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nCoefficients:\n\n(Intercept) danielle_sleep baby_sleep 125.96557 -8.95025 0.01052",
+          "hit_page_start": 612,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                203.321,
+                866.119,
+                274.163
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                285.458,
+                548.129,
+                303.806
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.9,
+                312.9,
+                866.31,
+                400.85
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                416.326,
+                669.786,
+                467.944
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                466.391,
+                145.722,
+                484.739
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.704,
+                506.0,
+                863.634,
+                542.626
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                558.102,
+                314.172,
+                576.449
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                610.48,
+                856.953,
+                645.621
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                660.86,
+                258.023,
+                679.207
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.438,
+                677.653,
+                566.845,
+                712.793
+              ],
+              "page": 612,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02002741395065489
+        },
+        {
+          "id": "exc_0689cddaba206d_719_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.5 Technology: Scatterplots and regression analysis › Desmos: › 6. MANUALLY CREATE regression model: To see the linear regression model in the form y = a + bx, you can type y1 ∼ a + bx1. The ∼ is in the upper left of keyboard. Adjust the number after y and x to match the subscript on your data table. You can also use this method to manually generate models of your choosing.",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "regression-diagnostics",
+            "graphs"
+          ],
+          "confidence": 0.85,
+          "synopsis": "Provides R commands for scatterplots and linear regression: reading x and y values with scan(), building a model with lm(y ∼ x), summarizing with summary(), plotting with plot(x, y) and abline(model), and creating residual histograms and residual plots. Also notes calculator data entry and references NumWorks, TI-83/84, and Casio instructions.",
+          "pages": [
+            467,
+            468
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_6407_v2",
+            "fig_0689cddaba206d_6408_v2",
+            "fig_0689cddaba206d_6410_v2",
+            "fig_0689cddaba206d_6411_v2",
+            "fig_0689cddaba206d_6414_v2"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1191_v2",
+            "chk_0689cddaba206d_1192_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1191_v2",
+          "hit_text": "R: Scatterplots and Linear Regression Analysis\n\nFirst read in the x and y values as described on page 53. For simplicity, we use scan(). However, if you have loaded the openintro package as described near the bottom of page 54 you can use the dataset$variable structure, e.g. loan50$total credit utilized.\n\n> x = scan() 1: 95131 2: 51929 ...\n\n50: 390156\n51: Read 50 items\n\n> y = scan() 1: 32894 2: 78341 ... 50: 52534 51: Read 50 items\n\nUse the lm() function to build a linear model and summary() to summarize it. > model = lm(y ∼ x) > summary(model) Residuals: Min 1Q Median 3Q Max\n\n-64713 -28247 -16934 10568 305912 Coefficients: . Estimate Std.Error t value Pr(>|t|) 14210.43201 2.984 0.00446 ** (Intercept) 42410.57946 . x 0.09176 0.05333 1.720 0.09179\n--Residual standard error: 62540 on 48 degrees of freedom\n\nR-squared: 0.05808\n\nMultiple\n\n, Adjusted R-squared: 0.03846\n\nUse plot(x, y) to make a scatterplot. For fun, type help(plot) at the > prompt and investigate the optional type argument. > plot(x, y) > plot(x, y, ylim=c(0,400000), col = \"purple\", xlab = \"Loan Amount ($)\", ylab = \"Total Credit Utilized\", abline(model, col=\"red\"))\n\nMake a histogram of the residuals and a residual plot, plotting the residuals versus x. Add xlab = \" \" and ylab = \" \" as desired. > hist(model$residuals) > plot(x, model$residuals, abline(h=0))",
+          "hit_page_start": 467,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                68.222,
+                482.41,
+                81.179
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                83.694,
+                852.943,
+                127.848
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                141.354,
+                249.614,
+                198.324
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                201.734,
+                258.162,
+                243.609
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                508.139,
+                141.354,
+                619.242,
+                243.609
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                258.034,
+                709.271,
+                330.779
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                334.188,
+                653.815,
+                456.737
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                229.511,
+                460.146,
+                391.892,
+                471.832
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                460.146,
+                215.43,
+                471.832
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                397.425,
+                460.146,
+                653.815,
+                471.832
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                489.657,
+                852.948,
+                562.402
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                726.61,
+                757.822,
+                785.859
+              ],
+              "page": 467,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019732441471571906
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1019_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.5 Hypothesis tests for regression models › 15.5.3 Running the hypothesis tests in R",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "anova",
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests",
+            "sampling-distributions"
+          ],
+          "confidence": 0.96,
+          "synopsis": "To compute all of the quantities that we have talked about so far, all you need to do is ask for a summary() of your regression model. Since I’ve been using regression_2 as my example, let’s do that:\n\nsummary(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nResiduals: Min 1Q Median 3Q Max\n\n-11.0345 -2.2198 -0.4016 2.6775 11.7496 Coefficients:\n\nEstimate Std. Error t value Pr(>|t|)\n\n(Intercept) 125.96557 3.04095 41.423 <2e-16 *** danielle_sleep -8.95025 0.55346 -16.172 <2e-16 *** baby_sleep 0.01052 0.27106 0.039 0.969\n\n--Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 4.354 on 97 degrees of freedom Multiple R-squared: 0.8161, Adjusted R-squared: 0.8123 F-statistic: 215.2 on 2 and 97 DF, p-value: < 2.2e-16\n\nThe output that this command produces is pretty dense, but we’ve already discussed everything of interest in it, so what I’ll do is go through it line by line. The first line reminds us of what the actual regression model is:\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)",
+          "pages": [
+            620
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1505_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1505_v1",
+          "hit_text": "To compute all of the quantities that we have talked about so far, all you need to do is ask for a summary() of your regression model. Since I’ve been using regression_2 as my example, let’s do that:\n\nsummary(regression_2)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)\n\nResiduals: Min 1Q Median 3Q Max\n\n-11.0345 -2.2198 -0.4016 2.6775 11.7496 Coefficients:\n\nEstimate Std. Error t value Pr(>|t|)\n\n(Intercept) 125.96557 3.04095 41.423 <2e-16 *** danielle_sleep -8.95025 0.55346 -16.172 <2e-16 *** baby_sleep 0.01052 0.27106 0.039 0.969\n\n--Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1\n\nResidual standard error: 4.354 on 97 degrees of freedom Multiple R-squared: 0.8161, Adjusted R-squared: 0.8123 F-statistic: 215.2 on 2 and 97 DF, p-value: < 2.2e-16\n\nThe output that this command produces is pretty dense, but we’ve already discussed everything of interest in it, so what I’ll do is go through it line by line. The first line reminds us of what the actual regression model is:\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + baby_sleep, data = parenthood)",
+          "hit_page_start": 620,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                280.446,
+                866.101,
+                334.181
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                350.404,
+                332.887,
+                368.751
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                402.932,
+                856.953,
+                438.072
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                453.311,
+                548.129,
+                488.452
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                486.898,
+                548.129,
+                538.831
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                286.096,
+                537.277,
+                622.995,
+                555.624
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                554.069,
+                660.43,
+                606.003
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                604.448,
+                716.578,
+                639.59
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                654.828,
+                688.503,
+                706.761
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                716.321,
+                864.119,
+                770.054
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                781.5,
+                856.953,
+                816.326
+              ],
+              "page": 620,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01960125448028674
+        },
+        {
+          "id": "exc_0689cddaba206d_731_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › Chapter highlights",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "correlation",
+            "linear-regression",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Chapter highlights on describing linear association between two numerical variables and fitting a linear model. Covers starting with a scatterplot, using residual plots, fitting a least squares line yˆ = a + bx with interpretation of a and b, residuals y − yˆ, the correlation coefficient r, and the coefficient of determination R2. Notes that r and R2 alone cannot establish linearity. Mentions multiple and nonlinear regression as future topics.",
+          "pages": [
+            476
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1209_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1209_v2",
+          "hit_text": "This chapter focused on describing the linear association between two numerical variables and ﬁtting a linear model.\n\n• Every analysis should begin with graphing the data using a scatterplot in order to see the association and any deviations from the trend. A residual plot helps us better see patterns in the data.\n• When the data show a linear trend, we ﬁt a least squares regression line of the form: yˆ = a + bx, where a is the y-intercept and b is the slope. It is important to be able to interpret a and b in the context of the data.\n• A residual, y − yˆ, measures the error for an individual point.\n• The correlation coeﬃcient, r, measures the strength and direction of the linear association between two variables. However, r alone cannot tell us whether data follow a linear trend or whether a linear model is appropriate.\n• The coeﬃcient of determination, R2, measures the proportion of variation in the y values explained by a given model. Like r, R2 alone cannot tell us whether data follow a linear trend or whether a linear model is appropriate.\n\nIn this chapter we focused on simple linear models with one explanatory variable. More complex methods of prediction, such as multiple regression (more than one explanatory variable) and nonlinear regression can be studied in a future course.",
+          "hit_page_start": 476,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                131.729,
+                852.933,
+                159.403
+              ],
+              "page": 476,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                171.479,
+                169.63,
+                852.948,
+                405.953
+              ],
+              "page": 476,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                147.059,
+                418.532,
+                852.944,
+                461.302
+              ],
+              "page": 476,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01704949088325835
+        },
+        {
+          "id": "exc_45ecdb7da7734b_279_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Correlation and linear regression › 12.4 Estimating a linear regression model › 12.4.1 Linear regression in jamovi",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "jamovi"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Demonstrates running a simple linear regression in jamovi using parenthood.csv, with dani.grump as the dependent variable and dani.sleep as a covariate. Reports the fitted intercept b̂0 = 125.96 and slope b̂1 = −8.94, giving the regression line Ŷi = 125.96 + (−8.94Xi).",
+          "pages": [
+            287
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_2224_v2",
+            "fig_45ecdb7da7734b_2225_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_627_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_627_v2",
+          "hit_text": "To run my linear regression, open up the ‘Regression’ – ‘Linear Regression’ analysis in jamovi, using the parenthood.csv data file. Then specify dani.grump as the ‘Dependent Variable’ and dani.sleep as the variable entered in the ‘Covariates’ box. This gives the\n\nresults shown in Figure 12.13, showing an intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best fitting regression line that I plotted in Figure 12.12 has this formula:\n\n𝑌𝑖̂ = 125.96 + (−8.94𝑋𝑖)\n\nFigure 12.13. A jamovi screenshot showing a simple linear regression analysis",
+          "hit_page_start": 287,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                324.637,
+                843.736,
+                376.956
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                337.603,
+                843.75,
+                453.151
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                418.877,
+                387.575,
+                612.373,
+                486.36
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                218.368,
+                809.26,
+                812.88,
+                828.368
+              ],
+              "page": 287,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016956521739130436
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1242_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Endings, alternatives and prospects › 17 Bayesian statistics › 17.6 Bayesian regression › 17.6.1 A quick refresher › 759",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "bayesian-inference",
+            "anova",
+            "linear-regression",
+            "regression-diagnostics",
+            "hypothesis-tests"
+          ],
+          "confidence": 0.96,
+          "synopsis": "danielle_sleep baby_sleep danielle_grump day 1 7.59 10.18 56 1 2 7.91 11.66 60 2 3 5.14 7.92 82 3 4 7.71 9.61 55 4 5 6.68 9.75 67 5 6 5.99 5.04 72 6\n\nBack in Linear regression I proposed a theory in which my grumpiness (danielle_grump) on any given day is related to the amount of sleep I got the night before (danielle_sleep), and possibly to the amount of sleep our baby got (baby_sleep), though probably not to the day on which we took the measurement. We tested this using a regression model. In order to estimate the regression model we used the lm() function, like so:\n\nmodel <- lm( formula = danielle_grump ~ danielle_sleep + day + baby_sleep, data = parenthood\n\n)\n\nThe hypothesis tests for each of the terms in the regression model were extracted using the summary() function:\n\nsummary(model)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + day + baby_sleep,\n\ndata = parenthood)\n\nBLAH BLAH BLAH Residual standard error: 4.375 on 96 degrees of freedom Multiple R-squared: 0.8163, Adjusted R-squared: 0.8105 F-statistic: 142.2 on 3 and 96 DF, p-value: < 2.2e-16\n\nWhen interpreting the results, each row in this table corresponds to one of the possible predictors. The (Intercept) term isn’t usually interesting, though it is highly significant. The important thing for our purposes is the fact that danielle_sleep is significant at 𝑝 < .001 and neither of the other variables are.",
+          "pages": [
+            760
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1863_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1863_v1",
+          "hit_text": "danielle_sleep baby_sleep danielle_grump day 1 7.59 10.18 56 1 2 7.91 11.66 60 2 3 5.14 7.92 82 3 4 7.71 9.61 55 4 5 6.68 9.75 67 5 6 5.99 5.04 72 6\n\nBack in Linear regression I proposed a theory in which my grumpiness (danielle_grump) on any given day is related to the amount of sleep I got the night before (danielle_sleep), and possibly to the amount of sleep our baby got (baby_sleep), though probably not to the day on which we took the measurement. We tested this using a regression model. In order to estimate the regression model we used the lm() function, like so:\n\nmodel <- lm( formula = danielle_grump ~ danielle_sleep + day + baby_sleep, data = parenthood\n\n)\n\nThe hypothesis tests for each of the terms in the regression model were extracted using the summary() function:\n\nsummary(model)\n\nCall: lm(formula = danielle_grump ~ danielle_sleep + day + baby_sleep,\n\ndata = parenthood)\n\nBLAH BLAH BLAH Residual standard error: 4.375 on 96 degrees of freedom Multiple R-squared: 0.8163, Adjusted R-squared: 0.8105 F-statistic: 142.2 on 3 and 96 DF, p-value: < 2.2e-16\n\nWhen interpreting the results, each row in this table corresponds to one of the possible predictors. The (Intercept) term isn’t usually interesting, though it is highly significant. The important thing for our purposes is the fact that danielle_sleep is significant at 𝑝 < .001 and neither of the other variables are.",
+          "hit_page_start": 760,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                90.751,
+                566.845,
+                209.543
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                219.101,
+                863.637,
+                307.408
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                323.275,
+                725.936,
+                374.894
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                373.34,
+                145.722,
+                391.687
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                413.696,
+                863.637,
+                450.681
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                466.547,
+                267.379,
+                484.894
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                519.061,
+                735.296,
+                554.201
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                173.797,
+                552.646,
+                342.229,
+                570.994
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.364,
+                603.027,
+                688.503,
+                688.545
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.454,
+                698.105,
+                866.596,
+                789.992
+              ],
+              "page": 760,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016577060931899642
+        },
+        {
+          "id": "exc_dd1e65de648fb2_999_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 15.2.1 Using the lm() function › 610",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "graphs",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "This looks promising. There’s two separate pieces of information here. Firstly, R is politely reminding us what the command was that we used to specify the model in the first place, which can be helpful. More importantly from our perspective, however, is the second part, in which R gives us the intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best-fitting regression line that I plotted in Figure 15.2 has this formula:\n\n𝑌𝑖̂ = −8.94 𝑋𝑖 + 125.96",
+          "pages": [
+            611
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1479_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1479_v1",
+          "hit_text": "This looks promising. There’s two separate pieces of information here. Firstly, R is politely reminding us what the command was that we used to specify the model in the first place, which can be helpful. More importantly from our perspective, however, is the second part, in which R gives us the intercept 𝑏̂0 = 125.96 and the slope 𝑏̂1 = −8.94. In other words, the best-fitting regression line that I plotted in Figure 15.2 has this formula:\n\n𝑌𝑖̂ = −8.94 𝑋𝑖 + 125.96",
+          "hit_page_start": 611,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                89.222,
+                866.116,
+                198.217
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                408.297,
+                151.876,
+                591.699,
+                246.27
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01639344262295082
+        },
+        {
+          "id": "exc_45ecdb7da7734b_304_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Correlation and linear regression › 12.12 Summary",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "correlation",
+            "linear-regression",
+            "multiple-regression",
+            "regression-diagnostics",
+            "confidence-intervals"
+          ],
+          "confidence": 0.9,
+          "synopsis": "A bulleted summary of regression topics: correlations, scatterplots, linear regression model ideas and estimation, multiple linear regression, R^2 fit, hypothesis tests, confidence intervals and standardised coefficients, assumptions and model checking, and model selection.",
+          "pages": [
+            312,
+            314
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_683_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_683_v2",
+          "hit_text": "• Want to know how strong the relationship is between two variables? Calculate Correlations.\n• Drawing Scatterplots.\n• Basic ideas about What is a linear regression model? and Estimating a linear regression model.\n• Multiple linear regression.\n• Quantifying the fit of the regression model using 𝑅2.\n• Hypothesis tests for regression models.\n• In Regarding regression coeﬀicients we talked about calculating Confidence intervals for the coeﬀicients and Calculating standardised regression coeﬀicients.\n• The Assumptions of regression and Model checking.\n• Regression Model selection.\n\nChapter 13",
+          "hit_page_start": 312,
+          "hit_regions": [
+            {
+              "bbox": [
+                180.361,
+                645.501,
+                812.493,
+                847.258
+              ],
+              "page": 312,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                194.435,
+                332.599,
+                233.579
+              ],
+              "page": 314,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015361828184511215
+        },
+        {
+          "id": "exc_dd1e65de648fb2_992_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.1 What is a linear regression model?",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "hypothesis-tests",
+            "correlation",
+            "graphs",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Since the basic ideas in regression are closely tied to correlation, we’ll return to the parenthood.Rdata file that we were using to illustrate how correlations work. Recall that, in this data set, we were trying to find out why Danielle is so very grumpy all the time, and our working hypothesis was that I’m not getting enough sleep. We drew some scatterplots to help us examine the relationship between the amount of sleep I get, and my grumpiness the following day. The actual scatterplot that we draw is the one shown in Figure 15.1, and as we saw previously this corresponds to a correlation of 𝑟 = −.90, but what we find ourselves secretly imagining is something that looks closer to Figure 15.2a. That is, we mentally draw a straight line through the middle of the data. In statistics, this line that we’re drawing is called a regression line. Notice that – since we’re not idiots – the regression line goes through the middle of the data. We don’t find ourselves imagining anything like the rather silly plot shown in Figure 15.2b.\n\nThis is not highly surprising: the line that I’ve drawn in Figure 15.2b doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right? This is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑚𝑥 + 𝑐\n\nThis is not highly surprising: the line that I’ve drawn in Figure 15.2b doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right? This is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑚𝑥 + 𝑐\n\nOr, at least, that’s what it was when I went to high school all those years ago. The two variables are 𝑥 and 𝑦, and we have two coeﬀicients, 𝑚 and 𝑐. The coeﬀicient 𝑚 represents the slope of the line, and the coeﬀicient 𝑐 represents the 𝑦-intercept of the line. Digging further back into our decaying memories of high school (sorry, for some of us high school was a long time ago), we remember that the intercept is interpreted as “the value of 𝑦 that you get when",
+          "pages": [
+            606
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1467_v1",
+            "chk_dd1e65de648fb2_1468_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1468_v1",
+          "hit_text": "This is not highly surprising: the line that I’ve drawn in Figure 15.2b doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right? This is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑚𝑥 + 𝑐\n\nOr, at least, that’s what it was when I went to high school all those years ago. The two variables are 𝑥 and 𝑦, and we have two coeﬀicients, 𝑚 and 𝑐. The coeﬀicient 𝑚 represents the slope of the line, and the coeﬀicient 𝑐 represents the 𝑦-intercept of the line. Digging further back into our decaying memories of high school (sorry, for some of us high school was a long time ago), we remember that the intercept is interpreted as “the value of 𝑦 that you get when",
+          "hit_page_start": 606,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                597.308,
+                866.114,
+                685.258
+              ],
+              "page": 606,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                455.596,
+                663.172,
+                543.956,
+                754.356
+              ],
+              "page": 606,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.222,
+                711.223,
+                863.984,
+                853.731
+              ],
+              "page": 606,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014705882352941176
+        },
+        {
+          "id": "exc_e49c11171c5f1c_330_v1",
+          "book_id": "evidence-based-software-engineering",
+          "book_title": "Evidence-based Software Engineering",
+          "section_path": "+ + + › Regression modeling › 11.2 Linear regression",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "regression-modeling"
+          ],
+          "confidence": 0.94,
+          "synopsis": "The simplest form of regression model is linear regression, where the response variable is modeled as a linear combination of explanatory variables and an additive error (the error terms are assumed to be independent and identically distributed; εdenotes the total error).",
+          "pages": [
+            293,
+            294,
+            295
+          ],
+          "figure_ids": [
+            "fig_e49c11171c5f1c_9482_v1"
+          ],
+          "chunk_ids": [
+            "chk_e49c11171c5f1c_1313_v1",
+            "chk_e49c11171c5f1c_1314_v1",
+            "chk_e49c11171c5f1c_1315_v1",
+            "chk_e49c11171c5f1c_1316_v1",
+            "chk_e49c11171c5f1c_1317_v1",
+            "chk_e49c11171c5f1c_1318_v1",
+            "chk_e49c11171c5f1c_1319_v1",
+            "chk_e49c11171c5f1c_1320_v1",
+            "chk_e49c11171c5f1c_1321_v1"
+          ],
+          "hit_chunk_id": "chk_e49c11171c5f1c_1315_v1",
+          "hit_text": "The formula has the form of an equation, with the = symbol replaced by ~ (pronounced is distributed according to) and the coefﬁcients αand β are implicitly present, i.e., they do not need to be explicitly speciﬁed in the code.\n\nThe following code uses glm to build a model showing the relationship between the number of lines of source code (sloc) in FreeBSD, and the number of days elapsed since the project started (in 1993):\n\nBSD_mod=glm(sloc ~ Number_days, data=bsd_info)\n\nThe ﬁtted equation is: E[sloc] = α+β×Number_days where: E[sloc] is the expected value of sloc (the error term is discussed below). Figure 11.2 shows the measured data points, and a straight line based in the coefﬁcients contained in the object returned by glm. The summary function takes the object returned by glm and prints details about the ﬁtted model;iv the following is for the model ﬁtted to the FreeBSD data: Github–Local\n\nCall: glm(formula = sloc ~ Number_days, data = kind_bsd)\n\nDeviance Residuals:\n\nMin 1Q Median 3Q Max -82990 -32136 -3609 35389 87324\n\nCoefficients:\n\nEstimate Std. Error t value Pr(>|t|)\n\n(Intercept) 1.139e+05 1.171e+03 97.24 <2e-16 *** Number_days 3.937e+02 4.205e-01 936.33 <2e-16 *** ---\n\nSignif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1\n\n1400\n\n1200\n\nLines of code (thousands)\n\n1000\n\n800\n\n600\n\n400\n\n200\n\n0 1000 2000 3000 4000\n\nElapsed days\n\n(Dispersion parameter for gaussian family taken to be 1657283104)\n\nNull deviance: 1.4610e+15 on 4826 degrees of freedom Residual deviance: 7.9964e+12 on 4825 degrees of freedom AIC: 116172",
+          "hit_page_start": 294,
+          "hit_regions": [
+            {
+              "bbox": [
+                71.429,
+                41.305,
+                666.667,
+                83.965
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                91.045,
+                666.661,
+                133.706
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                142.376,
+                424.801,
+                153.275
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                172.817,
+                666.672,
+                300.84
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                309.51,
+                455.53,
+                333.426
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                348.561,
+                217.387,
+                359.46
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                361.578,
+                363.346,
+                385.495
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                400.63,
+                171.295,
+                411.529
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                171.295,
+                413.647,
+                447.848,
+                424.546
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                426.663,
+                478.576,
+                463.596
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                465.714,
+                547.712,
+                478.415
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                695.587,
+                265.41,
+                724.879,
+                276.176
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                695.587,
+                292.045,
+                724.879,
+                302.812
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                679.718,
+                307.436,
+                694.945,
+                414.591
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                695.587,
+                318.669,
+                724.879,
+                329.435
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                702.913,
+                345.304,
+                724.882,
+                356.07
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                702.913,
+                371.939,
+                724.882,
+                382.706
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                702.913,
+                398.575,
+                724.882,
+                409.341
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                702.913,
+                425.21,
+                724.882,
+                435.976
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                727.081,
+                460.007,
+                958.06,
+                470.772
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                819.544,
+                469.692,
+                898.217,
+                480.458
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                491.748,
+                570.76,
+                502.648
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                71.429,
+                517.783,
+                516.985,
+                554.716
+              ],
+              "page": 294,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014492753623188406
+        },
+        {
+          "id": "exc_45ecdb7da7734b_277_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Correlation and linear regression › 12.3 What is a linear regression model?",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "correlation"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Introduces linear regression as a more powerful extension of Pearson correlation, using a sleep-grumpiness example. Explains the regression line as a line through the middle of the data, reviews the straight-line formula y = a + bx, and defines intercept and slope. Presents the regression model notation Ŷi = b0 + b1Xi, distinguishing observed Yi from predicted Ŷi, and defines residuals as εi = Yi − Ŷi, giving the full model Yi = b0 + b1Xi + εi.",
+          "pages": [
+            283,
+            284,
+            285
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_621_v2",
+            "chk_45ecdb7da7734b_622_v2",
+            "chk_45ecdb7da7734b_623_v2",
+            "chk_45ecdb7da7734b_624_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_622_v2",
+          "hit_text": "Notice that, since we’re not idiots, the regression line goes through the middle of the data. We don’t find ourselves imagining anything like the rather silly plot shown in Figure 12.11(b). This is not highly surprising. The line that I’ve drawn in Figure 12.11(b) doesn’t “fit” the data very well, so it doesn’t make a lot of sense to propose it as a way of summarising the data, right?\n\nFigure 12.11. Panel (a) shows the sleep-grumpiness scatterplot from Figure 12.9 with the best fitting regression line drawn over the top. Not surprisingly, the line goes through the middle of the data. In contrast, panel (b) shows the same data, but with a very poor choice of regression line drawn over the top\n\nThis is a very simple observation to make, but it turns out to be very powerful when we start trying to wrap just a little bit of maths around it. To do so, let’s start with a refresher of some high school maths. The formula for a straight line is usually written like this:\n\n𝑦 = 𝑎 + 𝑏𝑥\n\nThe two variables are 𝑥 and 𝑦, and we have two coeﬀicients, 𝑎 and 𝑏.123 The coeﬀicient 𝑎 represents the y-intercept of the line, and coeﬀicient 𝑏 represents the slope of the line. The intercept is interpreted as “the value of y that you get when 𝑥 = 0”. Similarly, a slope of b means that if you increase the x-value by 1 unit, then the y-value goes up by\n\nb units, and a negative slope means that the y-value would go down rather than up. We use the exact same formula for a regression line.",
+          "hit_page_start": 284,
+          "hit_regions": [
+            {
+              "bbox": [
+                156.25,
+                98.644,
+                812.502,
+                184.169
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                604.814,
+                812.484,
+                673.735
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                688.901,
+                812.484,
+                757.822
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                442.769,
+                719.196,
+                525.979,
+                814.622
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                752.404,
+                812.502,
+                881.039
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                854.946,
+                812.484,
+                890.658
+              ],
+              "page": 284,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014285714285714285
+        },
+        {
+          "id": "exc_0689cddaba206d_705_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.3 Interpreting the coeﬃcients of a regression line",
+          "roles": [
+            "worked_example",
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains interpreting coefficients in a linear regression model. Worked examples interpret the slope (-0.0431) and y-intercept (24.3) for Elmhurst College gift aid predicted from family income, noting the slope gives the predicted change in y per one-unit change in x and the intercept gives predicted y when x = 0, valid only if the model extends to x = 0.",
+          "pages": [
+            460
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1171_v2",
+            "chk_0689cddaba206d_1172_v2",
+            "chk_0689cddaba206d_1173_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1173_v2",
+          "hit_text": "INTERPRETING COEFFICIENTS IN A LINEAR MODEL\n\n• The slope, b, describes the predicted increase or decreases in the response variable y for a one unit increase of the explanatory variable x.\n• The y-intercept, a, describes the predicted outcome of y if x = 0. The linear model must be valid all the way to x = 0 for this to make sense, which in many applications is not the case.",
+          "hit_page_start": 460,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.338,
+                544.534,
+                532.894,
+                558.754
+              ],
+              "page": 460,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.758,
+                573.008,
+                836.668,
+                666.268
+              ],
+              "page": 460,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014084507042253521
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1133_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 16 Factorial ANOVA › 16.6 ANOVA as a linear model",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "factorial-anova",
+            "anova",
+            "linear-regression",
+            "regression-diagnostics"
+          ],
+          "confidence": 0.96,
+          "synopsis": "One of the most important things to understand about ANOVA and regression is that they’re basically the same thing. On the surface of it, you wouldn’t think that this is true: after all, the way that I’ve described them so far suggests that ANOVA is primarily concerned with testing for group differences, and regression is primarily concerned with understanding the correlations between variables. And as far as it goes, that’s perfectly true. But when you look under the hood, so to speak, the underlying mechanics of ANOVA and regression are awfully similar. In fact, if you think about it, you’ve already seen evidence of this. ANOVA and regression both rely heavily on sums of squares (SS), both make use of 𝐹 tests, and so on. Looking back, it’s hard to escape the feeling that Chapter 14 and Linear regression were a bit repetitive.\n\nThe reason for this is that ANOVA and regression are both kinds of linear models. In the case of regression, this is kind of obvious. The regression equation that we use to define the relationship between predictors and outcomes is the equation for a straight line, so it’s quite obviously a linear model. And if that wasn’t a big enough clue, the simple fact that the command to run a regression is lm() is kind of a hint too. When we use an R formula like outcome ~ predictor1 + predictor2 what we’re really working with is the somewhat uglier linear model:\n\n𝑌𝑝 = 𝑏1𝑋1𝑝 + 𝑏2𝑋2𝑝 + 𝑏0 + 𝜖𝑝\n\nThe reason for this is that ANOVA and regression are both kinds of linear models. In the case of regression, this is kind of obvious. The regression equation that we use to define the relationship between predictors and outcomes is the equation for a straight line, so it’s quite obviously a linear model. And if that wasn’t a big enough clue, the simple fact that the command to run a regression is lm() is kind of a hint too. When we use an R formula like outcome ~ predictor1 + predictor2 what we’re really working with is the somewhat uglier linear model:\n\n𝑌𝑝 = 𝑏1𝑋1𝑝 + 𝑏2𝑋2𝑝 + 𝑏0 + 𝜖𝑝\n\nwhere 𝑌𝑝 is the outcome value for the 𝑝-th observation (e.g., 𝑝-th person), 𝑋1𝑝 is the value of the first predictor for the 𝑝-th observation, 𝑋2𝑝 is the value of the second predictor for the 𝑝-th observation, the 𝑏1, 𝑏2 and 𝑏0 terms are our regression coeﬀicients, and 𝜖𝑝 is the 𝑝-th residual. If we ignore the residuals 𝜖𝑝 and just focus on the regression line itself, we get the following formula:\n\n𝑌𝑝̂ = 𝑏1𝑋1𝑝 + 𝑏2𝑋2𝑝 + 𝑏0\n\nwhere 𝑌𝑝̂ is the value of 𝑌 that the regression line predicts for person 𝑝, as opposed to the actually-observed value 𝑌𝑝. The thing that isn’t immediately obvious is that we can write ANOVA as a linear model as well. However, it’s actually pretty straightforward to do this. Let’s start with a really simple example: rewriting a 2×2 factorial ANOVA as a linear model.",
+          "pages": [
+            689
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1681_v1",
+            "chk_dd1e65de648fb2_1682_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1682_v1",
+          "hit_text": "The reason for this is that ANOVA and regression are both kinds of linear models. In the case of regression, this is kind of obvious. The regression equation that we use to define the relationship between predictors and outcomes is the equation for a straight line, so it’s quite obviously a linear model. And if that wasn’t a big enough clue, the simple fact that the command to run a regression is lm() is kind of a hint too. When we use an R formula like outcome ~ predictor1 + predictor2 what we’re really working with is the somewhat uglier linear model:\n\n𝑌𝑝 = 𝑏1𝑋1𝑝 + 𝑏2𝑋2𝑝 + 𝑏0 + 𝜖𝑝\n\nwhere 𝑌𝑝 is the outcome value for the 𝑝-th observation (e.g., 𝑝-th person), 𝑋1𝑝 is the value of the first predictor for the 𝑝-th observation, 𝑋2𝑝 is the value of the second predictor for the 𝑝-th observation, the 𝑏1, 𝑏2 and 𝑏0 terms are our regression coeﬀicients, and 𝜖𝑝 is the 𝑝-th residual. If we ignore the residuals 𝜖𝑝 and just focus on the regression line itself, we get the following formula:\n\n𝑌𝑝̂ = 𝑏1𝑋1𝑝 + 𝑏2𝑋2𝑝 + 𝑏0\n\nwhere 𝑌𝑝̂ is the value of 𝑌 that the regression line predicts for person 𝑝, as opposed to the actually-observed value 𝑌𝑝. The thing that isn’t immediately obvious is that we can write ANOVA as a linear model as well. However, it’s actually pretty straightforward to do this. Let’s start with a really simple example: rewriting a 2×2 factorial ANOVA as a linear model.",
+          "hit_page_start": 689,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                307.891,
+                863.984,
+                430.332
+              ],
+              "page": 689,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                385.103,
+                394.409,
+                614.083,
+                485.593
+              ],
+              "page": 689,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                419.693,
+                867.098,
+                562.199
+              ],
+              "page": 689,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                403.699,
+                502.021,
+                595.487,
+                596.415
+              ],
+              "page": 689,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.704,
+                530.048,
+                867.113,
+                675.765
+              ],
+              "page": 689,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014080050624901122
+        },
+        {
+          "id": "exc_dd1e65de648fb2_997_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 609",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "shortcut that R provides you with, let’s cut straight to the chase… and use the lm() function (short for “linear model”) to do all the heavy lifting.",
+          "pages": [
+            610
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1476_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1476_v1",
+          "hit_text": "shortcut that R provides you with, let’s cut straight to the chase… and use the lm() function (short for “linear model”) to do all the heavy lifting.",
+          "hit_page_start": 610,
+          "hit_regions": [
+            {
+              "bbox": [
+                134.278,
+                89.222,
+                863.636,
+                125.848
+              ],
+              "page": 610,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0136986301369863
+        },
+        {
+          "id": "exc_dd1e65de648fb2_1000_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.2 Estimating a linear regression model › 15.2.2 Interpreting the estimated model",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "center",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The most important thing to be able to understand is how to interpret these coeﬀicients. Let’s start with 𝑏̂1, the slope. If we remember the definition of the slope, a regression coeﬀicient of 𝑏̂1 = −8.94 means that if I increase 𝑋𝑖 by 1, then I’m decreasing 𝑌𝑖 by 8.94. That is, each additional hour of sleep that I gain will improve my mood, reducing my grumpiness by 8.94 grumpiness points. What about the intercept? Well, since 𝑏̂0 corresponds to “the expected value of 𝑌𝑖 when 𝑋𝑖 equals 0”, it’s pretty straightforward. It implies that if I get zero hours of sleep (𝑋𝑖 = 0) then my grumpiness will go off the scale, to an insane value of (𝑌𝑖 = 125.96). Best to be avoided, I think.",
+          "pages": [
+            611
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1480_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1480_v1",
+          "hit_text": "The most important thing to be able to understand is how to interpret these coeﬀicients. Let’s start with 𝑏̂1, the slope. If we remember the definition of the slope, a regression coeﬀicient of 𝑏̂1 = −8.94 means that if I increase 𝑋𝑖 by 1, then I’m decreasing 𝑌𝑖 by 8.94. That is, each additional hour of sleep that I gain will improve my mood, reducing my grumpiness by 8.94 grumpiness points. What about the intercept? Well, since 𝑏̂0 corresponds to “the expected value of 𝑌𝑖 when 𝑋𝑖 equals 0”, it’s pretty straightforward. It implies that if I get zero hours of sleep (𝑋𝑖 = 0) then my grumpiness will go off the scale, to an insane value of (𝑌𝑖 = 125.96). Best to be avoided, I think.",
+          "hit_page_start": 611,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.722,
+                248.857,
+                867.111,
+                428.941
+              ],
+              "page": 611,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013513513513513514
+        },
+        {
+          "id": "exc_0689cddaba206d_720_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 5 › Regression Analysis › 5.3 Least squares regression › 5.3.5 Technology: Scatterplots and regression analysis › Desmos: › 6. MANUALLY CREATE regression model: To see the linear regression model in the form y = a + bx, you can type y1 ∼ a + bx1. The ∼ is in the upper left of keyboard. Adjust the number after y and x to match the subscript on your data table. You can also use this method to manually generate models of your choosing. › NUMWORKS: REGRESSION",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "regression-diagnostics",
+            "correlation"
+          ],
+          "confidence": 0.82,
+          "synopsis": "Step-by-step calculator instructions for fitting a linear regression model. Covers entering x and y values, graphing the scatterplot, drawing the regression line, viewing regression output, and inspecting a residual plot. For TI-84/TI-83, describes using STAT, CALC, LinReg(a+bx) to obtain a (y-intercept), b (slope), R2 (explained variance), and r (correlation coefficient), and how to turn on diagnostics if r2 and r do not appear.",
+          "pages": [
+            468,
+            469
+          ],
+          "figure_ids": [
+            "fig_0689cddaba206d_6418_v2",
+            "fig_0689cddaba206d_6419_v2",
+            "fig_0689cddaba206d_6420_v2",
+            "fig_0689cddaba206d_6421_v2",
+            "fig_0689cddaba206d_6422_v2",
+            "fig_0689cddaba206d_6423_v2",
+            "fig_0689cddaba206d_6425_v2"
+          ],
+          "chunk_ids": [
+            "chk_0689cddaba206d_1193_v2",
+            "chk_0689cddaba206d_1194_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_1193_v2",
+          "hit_text": "Use OK or EXE to make a selection.\n\n1. Click the yellow Home button (above the black Power button) to get to the home screen.\n2. Select Regression and enter the x and y values.\n3. Use the up and right arrow and select Graph. This will show you the scatterplot. Use the left and right arrow to toggle among the data points.\n4. Press the up arrow and the right arrow to select Regression. Here you can choose Linear a+bx format or choose a nonlinear regression. This will draw the regression onto the scatterplot.\n5. Press the up arrow and the right arrow to select Regression again. Here you will see the regression output. Press the down arrow to see more options, including Residual plot.\n6. On the residual plot, use the left and right arrows to select individual points and see their corresponding residual.\n7. Use the arrows to choose Stats at the top to see the summary statistics for x and y. Press the right arrow to see the y summary statistics. Press down arrow to see more summary statistics.\n\nTI-84: FINDING a, b, R2, AND r FOR A LINEAR MODEL\n\nUse STAT, CALC, LinReg(a + bx).\n\n1. Choose STAT.\n2. Right arrow to CALC.\n3. Down arrow and choose 8:LinReg(a+bx). • Caution: choosing 4:LinReg(ax+b) will reverse a and b.\n4. Let Xlist be L1 and Ylist be L2 (don’t forget to enter the x and y values in L1 and L2 before doing this calculation).\n5. Leave FreqList blank.\n6. Leave Store RegEQ blank.\n7. Choose Calculate and hit ENTER, which returns: a a, the y-intercept of the best ﬁt line b b, the slope of the best ﬁt line r2 R2, the explained variance r r, the correlation coeﬃcient",
+          "hit_page_start": 468,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.338,
+                181.716,
+                409.324,
+                194.295
+              ],
+              "page": 468,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                183.234,
+                206.874,
+                836.67,
+                785.511
+              ],
+              "page": 468,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                189.02,
+                74.982,
+                562.833,
+                89.202
+              ],
+              "page": 469,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.338,
+                94.965,
+                407.067,
+                107.544
+              ],
+              "page": 469,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                183.234,
+                120.124,
+                836.663,
+                356.513
+              ],
+              "page": 469,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013444244604316547
+        },
+        {
+          "id": "exc_f213361bf057b0_566_v2",
+          "book_id": "os4",
+          "book_title": "OpenIntro Statistics",
+          "section_path": "Chapter 8 › Introduction to linear regression › 8.2 Least squares regression › 8.2.3 Conditions for the least squares line › IDENTIFYING THE LEAST SQUARES LINE FROM SUMMARY STATISTICS",
+          "roles": [
+            "formal",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "linear-regression"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Explains how to identify the least squares line from summary statistics: estimate the slope b1 = (sy/sx)R, use the point (x̄, ȳ) with the point-slope equation, and simplify to obtain b0 = ȳ − b1x̄. Example 8.10 applies this to Elmhurst aid and family income data, producing aid = 24,327 − 0.0431 × family income. A software summary table gives matching estimates for b0 and b1.",
+          "pages": [
+            359
+          ],
+          "figure_ids": [
+            "fig_f213361bf057b0_5187_v2"
+          ],
+          "chunk_ids": [
+            "chk_f213361bf057b0_945_v2",
+            "chk_f213361bf057b0_946_v2"
+          ],
+          "hit_chunk_id": "chk_f213361bf057b0_946_v2",
+          "hit_text": "A computer is usually used to compute the least squares line, and a summary table generated using software for the Elmhurst regression line is shown in Figure 8.14. The ﬁrst column of numbers provides estimates for b0 and b1, respectively. These results match those from Example 8.10 (with some minor rounding error).\n\nEstimate Std. Error t value Pr(>|t|) (Intercept) 24319.3 1291.5 18.83 <0.0001 family income -0.0431 0.0108 -3.98 0.0002\n\nFigure 8.14: Summary of least squares ﬁt for the Elmhurst data. Compare the parameter estimates in the ﬁrst column to the results of Example 8.10.\n\n11Compute the slope using the summary statistics from Figure 8.13:\n\nb1 =\n\n5,460 63,200\n\nsy sx\n\n(−0.499) = −0.0431\n\nR =",
+          "hit_page_start": 359,
+          "hit_regions": [
+            {
+              "bbox": [
+                147.059,
+                695.6,
+                852.944,
+                753.463
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                287.938,
+                771.731,
+                712.062,
+                817.529
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                208.825,
+                833.126,
+                791.175,
+                860.801
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.609,
+                894.308,
+                578.322,
+                906.037
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                363.185,
+                920.226,
+                390.492,
+                931.058
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                443.176,
+                913.22,
+                481.616,
+                937.83
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                396.289,
+                913.22,
+                409.505,
+                938.457
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                483.567,
+                919.934,
+                604.26,
+                937.384
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                412.271,
+                920.226,
+                437.379,
+                930.29
+              ],
+              "page": 359,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013157894736842105
+        },
+        {
+          "id": "exc_dd1e65de648fb2_993_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Statistical tools › 15 Linear regression › 15.1 What is a linear regression model? › 606",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "linear-regression",
+            "graphs",
+            "center",
+            "estimation"
+          ],
+          "confidence": 0.96,
+          "synopsis": "My grumpiness (0−100)\n\n40 60 80\n\n5 6 7 8 9\n\nMy sleep (hours)\n\nFigure 15.1: Scatterplot showing grumpiness as a function of hours slept.\n\n𝑥 = 0”. Similarly, a slope of 𝑚 means that if you increase the 𝑥-value by 1 unit, then the 𝑦-value goes up by 𝑚 units; a negative slope means that the 𝑦-value would go down rather than up. Ah yes, it’s all coming back to me now.\n\nNow that we’ve remembered that, it should come as no surprise to discover that we use the exact same formula to describe a regression line. If 𝑌 is the outcome variable (the DV) and 𝑋 is the predictor variable (the IV), then the formula that describes our regression is written like this:\n\nNow that we’ve remembered that, it should come as no surprise to discover that we use the exact same formula to describe a regression line. If 𝑌 is the outcome variable (the DV) and 𝑋 is the predictor variable (the IV), then the formula that describes our regression is written like this:\n\n𝑌𝑖̂ = 𝑏1𝑋𝑖 + 𝑏0 Hm. Looks like the same formula, but there’s some extra frilly bits in this version. Let’s make sure we understand them. Firstly, notice that I’ve written 𝑋𝑖 and 𝑌𝑖 rather than just plain old 𝑋 and 𝑌 . This is because we want to remember that we’re dealing with actual data. In this equation, 𝑋𝑖 is the value of predictor variable for the 𝑖th observation (i.e., the number of hours of sleep that I got on day 𝑖 of my little study), and 𝑌𝑖 is the corresponding value of the outcome variable (i.e., my grumpiness on that day). And although I haven’t said so explicitly in the equation, what we’re assuming is that this formula works for all observations in the data set (i.e., for all 𝑖). Secondly, notice that I wrote 𝑌𝑖̂ and not 𝑌𝑖. This is because we want to make the distinction between the actual data 𝑌𝑖, and the estimate 𝑌𝑖̂ (i.e., the prediction that our regression line is making). Thirdly, I changed the letters used to describe the coeﬀicients from 𝑚 and 𝑐 to 𝑏1 and 𝑏0. That’s just the way that statisticians like to refer to the coeﬀicients in a regression model. I’ve no idea why they chose 𝑏, but that’s what they did. In any case 𝑏0",
+          "pages": [
+            607
+          ],
+          "figure_ids": [
+            "fig_dd1e65de648fb2_6511_v1"
+          ],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_1469_v1",
+            "chk_dd1e65de648fb2_1470_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_1470_v1",
+          "hit_text": "Now that we’ve remembered that, it should come as no surprise to discover that we use the exact same formula to describe a regression line. If 𝑌 is the outcome variable (the DV) and 𝑋 is the predictor variable (the IV), then the formula that describes our regression is written like this:\n\n𝑌𝑖̂ = 𝑏1𝑋𝑖 + 𝑏0 Hm. Looks like the same formula, but there’s some extra frilly bits in this version. Let’s make sure we understand them. Firstly, notice that I’ve written 𝑋𝑖 and 𝑌𝑖 rather than just plain old 𝑋 and 𝑌 . This is because we want to remember that we’re dealing with actual data. In this equation, 𝑋𝑖 is the value of predictor variable for the 𝑖th observation (i.e., the number of hours of sleep that I got on day 𝑖 of my little study), and 𝑌𝑖 is the corresponding value of the outcome variable (i.e., my grumpiness on that day). And although I haven’t said so explicitly in the equation, what we’re assuming is that this formula works for all observations in the data set (i.e., for all 𝑖). Secondly, notice that I wrote 𝑌𝑖̂ and not 𝑌𝑖. This is because we want to make the distinction between the actual data 𝑌𝑖, and the estimate 𝑌𝑖̂ (i.e., the prediction that our regression line is making). Thirdly, I changed the letters used to describe the coeﬀicients from 𝑚 and 𝑐 to 𝑏1 and 𝑏0. That’s just the way that statisticians like to refer to the coeﬀicients in a regression model. I’ve no idea why they chose 𝑏, but that’s what they did. In any case 𝑏0",
+          "hit_page_start": 607,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                505.726,
+                863.637,
+                614.018
+              ],
+              "page": 607,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                136.363,
+                553.838,
+                864.297,
+                861.699
+              ],
+              "page": 607,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.012658227848101266
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "search_id": "search_1",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_0689cddaba206d_728_v2",
+        "exc_dd1e65de648fb2_998_v1",
+        "exc_dd1e65de648fb2_1003_v1",
+        "exc_0689cddaba206d_719_v2",
+        "exc_dd1e65de648fb2_1019_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2302,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

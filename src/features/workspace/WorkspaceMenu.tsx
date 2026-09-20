@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -66,24 +67,25 @@ export function WorkspaceMenu({
     : [workspace, ...(workspaces ?? [])];
   return (
     <DropdownMenu modal={false}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          className="flex h-9 min-w-0 items-center gap-3 px-1.5 pr-2"
-          iconRight="chevronDown"
-          iconRightClassName="text-fg-muted"
-          title={m.workspace_switch()}
-          variant="ghost-hover"
-        >
-          <img
-            alt=""
-            className="size-7 shrink-0 -translate-y-px rounded-md"
-            src={iconUrl(workspace.iconId)}
-          />
-          <span className="t-body min-w-0 truncate font-semibold">
-            {workspace.name}
-          </span>
-        </Button>
-      </DropdownMenuTrigger>
+      <ButtonTooltip label={m.workspace_switch()} side="bottom">
+        <DropdownMenuTrigger asChild>
+          <Button
+            className="flex h-9 min-w-0 items-center gap-3 px-1.5 pr-2"
+            iconRight="chevronDown"
+            iconRightClassName="text-fg-muted"
+            variant="ghost-hover"
+          >
+            <img
+              alt=""
+              className="size-6.5 shrink-0 -translate-y-px rounded-md"
+              src={iconUrl(workspace.iconId)}
+            />
+            <span className="t-body min-w-0 truncate font-semibold">
+              {workspace.name}
+            </span>
+          </Button>
+        </DropdownMenuTrigger>
+      </ButtonTooltip>
       <DropdownMenuContent align="start" className="w-72 p-1.5">
         <div className="max-h-80 overflow-y-auto">
           {list.map((w) => (

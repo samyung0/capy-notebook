@@ -867,6 +867,18 @@ def _excerpt_facets(excerpt: library.Excerpt) -> str:
     return " | ".join(parts)
 
 
+def _excerpt_scope(excerpt: library.Excerpt) -> str:
+    if excerpt.retrieval is None:
+        return "Scope not reviewed. Check the source's applicability before using it."
+    metadata = excerpt.retrieval
+    text = f"teaches: {metadata['summary']}\nscope: {metadata['scope']}"
+    if metadata["context_excerpt_ids"]:
+        text += "\nSource context (scope explains when needed): " + ", ".join(
+            metadata["context_excerpt_ids"]
+        )
+    return text
+
+
 def _no_excerpts(
     topics: list[str], roles: list[str], available: dict[str, int] | None
 ) -> str:
@@ -918,7 +930,7 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
                 [
                     _excerpt_head(excerpt),
                     _excerpt_facets(excerpt),
-                    f"synopsis: {excerpt.synopsis}",
+                    _excerpt_scope(excerpt),
                     excerpt.hit_text,
                 ]
             )
@@ -981,7 +993,7 @@ async def _browse_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         counts,
     ]
     items = [
-        f"{_excerpt_head(excerpt)}\n{_excerpt_facets(excerpt)}\nsynopsis: {excerpt.synopsis}"
+        f"{_excerpt_head(excerpt)}\n{_excerpt_facets(excerpt)}\n{_excerpt_scope(excerpt)}"
         for excerpt in result.items
     ]
     tail = ""
@@ -1024,7 +1036,14 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         _excerpt_head(read.excerpt)
         + "\n"
         + _excerpt_facets(read.excerpt)
+        + "\n"
+        + _excerpt_scope(read.excerpt)
         + f"\nchunks {read.first}-{read.last} of this excerpt, from {start}"
+        + (
+            f"\n\nFull reviewed notes: {read.excerpt.synopsis}"
+            if start <= read.first
+            else ""
+        )
         + "\n\n"
         + body
         + tail

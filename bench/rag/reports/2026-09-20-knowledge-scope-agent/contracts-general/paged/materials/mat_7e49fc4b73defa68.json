@@ -1,0 +1,36 @@
+{
+ "id": "mat_7e49fc4b73defa68",
+ "kind": "note",
+ "title": "How Contracts Are Formed: An Introduction",
+ "content": "# How Contracts Are Formed — An Introduction\n\nA **contract** is a legally enforceable promise. Not every promise qualifies: promising to be \"best friends forever\" is not enforceable, but promising a bank to repay a loan is. Contract law asks whether a promise is one the courts will enforce, and the answer turns on the elements of formation.\n\n## Sources of Contract Law\n- **Common law** governs contracts for services and contracts not otherwise covered by the UCC (e.g., real estate).\n- **Uniform Commercial Code (UCC), Article 2** governs the sale of goods (moveable things, not money, securities, or land) and contracts between merchants. All fifty states have adopted some version of it.\n\n## Elements of Common-Law Contract Formation\n1. **Offer** — gives a power of acceptance to the offeree and must contain the agreement's essential terms in a *definite and certain* form (e.g., \"I offer to sell you my scooter for four hundred dollars\" states the price, the offeree, and the object). An **advertisement is not an offer**; it is an invitation to bargain, leaving the power of acceptance with the merchant.\n2. **Acceptance** — under common law, the acceptance must be a **mirror image** of the offer. A **counteroffer** (e.g., \"I'll pay three hundred dollars\") is not acceptance — it is a rejection, which terminates the offer. The offeror may also **revoke** the offer before acceptance, or set a time limit after which the offer expires.\n3. **Consideration** — a bargained-for exchange of acts or promises in which each party incurs a new **legal detriment**. An **illusory promise** (e.g., \"I'll buy it if I don't find one I like better\") fails as consideration because the promisor retains a way out. Likewise, an employer demanding a noncompete mid-employment without giving anything new in return lacks consideration.\n4. **Legal purpose** — the subject matter must be lawful. A contract to fly illegal cargo is unenforceable: no party can seek a remedy in court, even if all other elements are perfectly formed.\n5. **Capacity** — parties must be legally capable of contracting. Adults of sound mind have capacity; minors lack it, so contracts with minors are **voidable at the minor's sole option** under the infancy doctrine (the other party cannot void it).\n\nOffer + acceptance together form **mutual assent**.\n\n## Bilateral vs. Unilateral Contracts\n- **Bilateral**: a promise for a promise (\"I'll sell for $400\" / \"I agree to buy for $400\").\n- **Unilateral**: a promise for an action (\"I'll sell to the first person who puts $400 cash in my hands\" — accepted only by performing the act).\n\n## How the UCC Relaxes Formation\nCommon-law requirements would be too burdensome for merchants, whose purchase orders and invoices routinely clash (a \"battle of the forms\"). Under the UCC:\n- Terms need not all be definite and certain — **gap fillers** supply missing prices, delivery dates, warranties, and the like.\n- Acceptance need not be a mirror image; the key question is whether the parties intended a binding agreement. Conflicting terms \"fall out\" and are replaced by gap fillers.\n- **Quantity is the one essential term** that must be specified and cannot be gap-filled.\n\n## Why Formation Matters\nIf any element of formation is missing, the contract may be void or voidable — and \"the contract never formed\" is a complete defense to a breach claim. Certain contracts must also be in writing to be enforceable under the **Statute of Frauds**. Even where formation fails, courts may sometimes enforce a promise through equitable remedies — **quasi-contract** (to prevent unjust enrichment) and **promissory estoppel** (where one party detrimentally relied on the promise) — substituting for consideration.\n\n```mermaid\nmindmap\n  root((Contract Formation))\n    What is a contract\n      Legally enforceable promise\n      Common law vs UCC\n    Common-law elements\n      Offer\n        Definite and certain terms\n        Advertisement = invitation to bargain\n      Acceptance\n        Mirror image rule\n        Counteroffer = rejection\n      Consideration\n        Bargained-for exchange\n        Legal detriment\n        Illusory promise fails\n      Legal purpose\n      Capacity\n        Minors voidable\n    Contract types\n      Bilateral promise for promise\n      Unilateral promise for act\n    UCC flexibility\n      Gap fillers\n      No mirror image rule\n      Quantity required\n    Defenses and equity\n      No formation defense\n      Statute of Frauds\n      Quasi-contract\n      Promissory estoppel\n```",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_1c619222c448be_186_v1",
+  "exc_1c619222c448be_187_v1",
+  "exc_1c619222c448be_190_v1",
+  "exc_1c619222c448be_196_v1"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "the-legal-and-ethical-environment-of-business",
+    "title": "The Legal and Ethical Environment of Business",
+    "authors": [],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/tertiary-institutions/39700",
+    "version": 1,
+    "excerptIds": [
+     "exc_1c619222c448be_186_v1",
+     "exc_1c619222c448be_187_v1",
+     "exc_1c619222c448be_190_v1",
+     "exc_1c619222c448be_196_v1"
+    ]
+   }
+  ]
+ },
+ "size": "1127 tokens",
+ "edits": []
+}

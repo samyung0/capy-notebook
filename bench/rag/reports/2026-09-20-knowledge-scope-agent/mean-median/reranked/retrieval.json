@@ -1,0 +1,2459 @@
+{
+  "arm": "reranked",
+  "case": {
+    "id": "mean-median",
+    "query": "Create one concise beginner study note explaining the difference between the mean and median, with a small concrete example.",
+    "check": "General explanation; specialized books and incidental dataset contexts are acceptable; a objectives list alone is insufficient."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "mean vs median difference central tendency example",
+      "topics": [],
+      "roles": [
+        "introduction",
+        "worked_example"
+      ],
+      "seconds": 6.847,
+      "excerpts": [
+        {
+          "id": "exc_f97f47b7a1fd68_569_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "7 References › 21. Glossary › / › Linear Combination",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "effect-size"
+          ],
+          "confidence": 0.96,
+          "synopsis": "A linear combination of variables is a way of creating a new variable by combining other variables. A linear combination is one in which each variable is multiplied by a coefﬁcient and the are products summed. For example, if\n\nY = 3X1 + 2X2 + .5X3\n\nthen Y is a linear combination of the variables X1, X2, and X3.\n\nLinear Regression Linear regression is a method for predicting a criterion variable from one or more predictor variable. In simple regression, the criterion is predicted from a single predictor variable and the best-ﬁtting straight line is of the form\n\nY' = bX + A\n\nwhere Y' is the predicted score, X is the predictor variable, b is the slope, and A is the Y intercept. Typically, the criterion for the “best ﬁtting” line is the line for which the sum of\n\nthe squared errors of prediction is minimized. In multiple regression, the criterion is predicted from two or more predictor variables.\n\nLinear Relationship There is a perfect linear relationship between two variables if a scatterplot of the points falls on a straight line. The relationship is linear even if the points diverge from the line as long as the divergence is random rather than being systematic.\n\nLinear Transformation A linear transformation is any transformation of a variable that can be achieved by multiplying it by a constant, and then adding a second constant. If Y is the transformed value of X, then Y = aX + b. The transformation from degrees Fahrenheit to degrees Centigrade is linear and is done using the formula:\n\nC = 0.55556F - 17.7778.\n\nLinear Transformation A linear transformation is any transformation of a variable that can be achieved by multiplying it by a constant, and then adding a second constant. If Y is the transformed value of X, then Y = aX + b. The transformation from degrees Fahrenheit to degrees Centigrade is linear and is done using the formula:\n\nC = 0.55556F - 17.7778.\n\nLogarithm The logarithm of a number is the power the base of the logarithm has to be raised to in order to equal the number. If the base of the logarithm is 10 and the number is 1,000, then the log is 3 since 10 has to be raised to the 3rd power to equal 1,000.\n\nLower Adjacent Value A component of a box plot, the lower adjacent value is smallest value in the data above the inner lower fence.\n\nLower Hinge A component of a box plot, the lower hinge is the 25th percentile. The upper hinge is the 75th percentile.\n\nMain Effect A main effect of an independent variable is the effect of the variable averaging over all levels of the other variable(s). For example, in a design with age and gender as factors, the main effect of gender would be the difference between the genders averaging across all ages used in the experiment.\n\nMargin of Error When a statistic is used to estimate a parameter, it is common to compute a conﬁdence interval. The margin of error is the difference between the statistic and the endpoints of the interval. For example, if the statistic were 0.6 and the conﬁdence interval ranged from 0.4 to 0.8, then the margin of error would be 0.20. Unless otherwise speciﬁed, the 95% conﬁdence interval is used.\n\nMargin of Error When a statistic is used to estimate a parameter, it is common to compute a conﬁdence interval. The margin of error is the difference between the statistic and the endpoints of the interval. For example, if the statistic were 0.6 and the conﬁdence interval ranged from 0.4 to 0.8, then the margin of error would be 0.20. Unless otherwise speciﬁed, the 95% conﬁdence interval is used.\n\nMarginal Mean In a design with two factors, the marginal means for one factor are the means for that factor averaged across all levels of the other factor. In the table shown below, the two factors are “Relationship” and “Companion Weight.” The marginal means for each of the two levels of Relationship (Girl Friend and Acquaintance) are computed by averaging across the two levels of Companion Weight. Thus, the marginal mean for Acquaintance of 6.37 is the mean of 6.15 and 6.59.\n\n|  | Companion Weight | \n |  | Obese | Typical | Marginal Mean\nRelationship | Girl Friend | 5.65 | 6.19 | 5.92\nAcquaintance | 6.15 | 6.59 | 6.37\n | Marginal Mean | 5.9 | 6.39 |\n\nMarginal Mean In a design with two factors, the marginal means for one factor are the means for that factor averaged across all levels of the other factor. In the table shown below, the two factors are “Relationship” and “Companion Weight.” The marginal means for each of the two levels of Relationship (Girl Friend and Acquaintance) are computed by averaging across the two levels of Companion Weight. Thus, the marginal mean for Acquaintance of 6.37 is the mean of 6.15 and 6.59.\n\n|  | Companion Weight | \n |  | Obese | Typical | Marginal Mean\nRelationship | Girl Friend | 5.65 | 6.19 | 5.92\nAcquaintance | 6.15 | 6.59 | 6.37\n | Marginal Mean | 5.9 | 6.39 |\n\nMean Also known as the arithmetic mean, the mean is typically what is meant by the word “average.” The mean is perhaps the most common measure of central tendency. The mean of a variable is given by (the sum of all its values)/(the number of values). For example, the mean of 4, 8, and 9 is 7. The sample mean is written as M, and the population mean as the Greek letter mu (μ). Despite its popularity, the mean may not be an appropriate measure of central tendency for skewed distributions, or in situations with outliers. Other than the arithmetic mean, there is the geometric mean and the harmonic mean.\n\nMean Also known as the arithmetic mean, the mean is typically what is meant by the word “average.” The mean is perhaps the most common measure of central tendency. The mean of a variable is given by (the sum of all its values)/(the number of values). For example, the mean of 4, 8, and 9 is 7. The sample mean is written as M, and the population mean as the Greek letter mu (μ). Despite its popularity, the mean may not be an appropriate measure of central tendency for skewed distributions, or in situations with outliers. Other than the arithmetic mean, there is the geometric mean and the harmonic mean.\n\nMedian The median is a popular measure of central tendency. It is the 50th percentile of a distribution. To ﬁnd the median of a number of values, ﬁrst order them, then ﬁnd the observation in the middle: the median of 5, 2, 7, 9, and 4 is 5. (Note that if there is an even number of values, one takes the average of the middle two: the median of 4, 6, 8, and 10 is 7.) The median is often more appropriate than the mean in skewed distributions and in situations with outliers.\n\nMisses Misses occur when a diagnostic test returns a negative result, but the true state of the subject is positive. For example, if a person has strep throat and the diagnostic test fails to indicate it, then a miss has occurred. The concept is similar to a Type II error in signiﬁcance testing.\n\nMode The mode is a measure of central tendency. It is the most frequent value in a distribution: the mode of 3, 4, 4, 5, 5, 5, 8 is 5. Note that the mode may be very different from the mean and the median.\n\nMode The mode is a measure of central tendency. It is the most frequent value in a distribution: the mode of 3, 4, 4, 5, 5, 5, 8 is 5. Note that the mode may be very different from the mean and the median.\n\nMultiple Regression Multiple regression is linear regression in which two or more predictor variables are used\n\nto predict the criterion.",
+          "pages": [
+            671,
+            672,
+            673,
+            674
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_1089_v1",
+            "chk_f97f47b7a1fd68_1090_v1",
+            "chk_f97f47b7a1fd68_1091_v1",
+            "chk_f97f47b7a1fd68_1092_v1",
+            "chk_f97f47b7a1fd68_1093_v1",
+            "chk_f97f47b7a1fd68_1094_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_1093_v1",
+          "hit_text": "Mean Also known as the arithmetic mean, the mean is typically what is meant by the word “average.” The mean is perhaps the most common measure of central tendency. The mean of a variable is given by (the sum of all its values)/(the number of values). For example, the mean of 4, 8, and 9 is 7. The sample mean is written as M, and the population mean as the Greek letter mu (μ). Despite its popularity, the mean may not be an appropriate measure of central tendency for skewed distributions, or in situations with outliers. Other than the arithmetic mean, there is the geometric mean and the harmonic mean.\n\nMedian The median is a popular measure of central tendency. It is the 50th percentile of a distribution. To ﬁnd the median of a number of values, ﬁrst order them, then ﬁnd the observation in the middle: the median of 5, 2, 7, 9, and 4 is 5. (Note that if there is an even number of values, one takes the average of the middle two: the median of 4, 6, 8, and 10 is 7.) The median is often more appropriate than the mean in skewed distributions and in situations with outliers.\n\nMisses Misses occur when a diagnostic test returns a negative result, but the true state of the subject is positive. For example, if a person has strep throat and the diagnostic test fails to indicate it, then a miss has occurred. The concept is similar to a Type II error in signiﬁcance testing.\n\nMode The mode is a measure of central tendency. It is the most frequent value in a distribution: the mode of 3, 4, 4, 5, 5, 5, 8 is 5. Note that the mode may be very different from the mean and the median.",
+          "hit_page_start": 673,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                434.973,
+                875.052,
+                618.644
+              ],
+              "page": 673,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                628.155,
+                878.528,
+                770.159
+              ],
+              "page": 673,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                779.67,
+                873.739,
+                880.008
+              ],
+              "page": 673,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                90.949,
+                877.712,
+                170.455
+              ],
+              "page": 674,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023821721311475412
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_75_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Comparing Measures of Central Tendency",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency\n• Chapter 3: Mean and Median Learning Objectives\n\n1. Understand how the difference between the mean and median is affected by skew\n2. State how the measures differ in symmetric distributions\n3. State which measure(s) should be used to describe the center of a skewed distribution\n\nHow do the various measures of central tendency compare with each other? For symmetric distributions, the mean, median, trimean, and trimmed mean are equal, as is the mode except in bimodal distributions. Differences among the measures occur with skewed distributions. Figure 1 shows the distribution of 642 scores on an introductory psychology test. Notice this distribution has a slight positive skew.\n\n150\n\nFrequency\n\n100\n\n50\n\n39.5 49.5 59.5 69.5 79.5 89.5 99.5 109.5 119.5 129.5 139.5 149.5 159.5 169.5\n\nFigure 1. A distribution with a positive skew.\n\nMeasures of central tendency are shown in Table 1. Notice they do not differ greatly, with the exception that the mode is considerably lower than the other measures. When distributions have a positive skew, the mean is typically higher than the median, although it may not be in bimodal distributions. For these data, the mean of 91.58 is higher than the median of 90. Typically the trimean and trimmed mean will fall between the median and the mean, although in this case, the trimmed mean is slightly lower than the median. The geometric mean is lower than all measures except the mode.\n\nMeasures of central tendency are shown in Table 1. Notice they do not differ greatly, with the exception that the mode is considerably lower than the other measures. When distributions have a positive skew, the mean is typically higher than the median, although it may not be in bimodal distributions. For these data, the mean of 91.58 is higher than the median of 90. Typically the trimean and trimmed mean will fall between the median and the mean, although in this case, the trimmed mean is slightly lower than the median. The geometric mean is lower than all measures except the mode.\n\nTable 1. Measures of central tendency for the test scores.\n\nMeasure | Value\nMode Median Geometric Mean Trimean Mean trimmed 50% Mean | 84.00 90.00 89.70 90.25 89.81 91.58\n\nThe distribution of baseball salaries (in 1994) shown in Figure 2 has a much more pronounced skew than the distribution in Figure 1.\n\nFigure 2. A distribution with a very large positive skew. This histogram shows the salaries of major league baseball players (in thousands of dollars: 250 equals 250,000).\n\nTable 2 shows the measures of central tendency for these data. The large skew results in very different values for these measures. No single measure of central\n\nFigure 2. A distribution with a very large positive skew. This histogram shows the salaries of major league baseball players (in thousands of dollars: 250 equals 250,000).\n\nTable 2 shows the measures of central tendency for these data. The large skew results in very different values for these measures. No single measure of central\n\ntendency is sufﬁcient for data such as these. If you were asked the very general question: “So, what do baseball players make?” and answered with the mean of $1,183,000, you would not have told the whole story since only about one third of baseball players make that much. If you answered with the mode of$250,000 or the median of $500,000, you would not be giving any indication that some players make many millions of dollars. Fortunately, there is no need to summarize a distribution with a single number. When the various measures differ, our opinion is that you should report the mean, median, and either the trimean or the mean trimmed 50%. Sometimes it is worth reporting the mode as well. In the media, the median is usually reported to summarize the center of skewed distributions. You will hear about median salaries and median prices of houses sold, etc. This is better than reporting only the mean, but it would be informative to hear more statistics.\n\nTable 2. Measures of central tendency for baseball salaries (in thousands of dollars).\n\nMeasure | Value\nMode Median Geometric Mean Trimean Mean trimmed 50% Mean | 250 500 555 792 619 1,183",
+          "pages": [
+            140,
+            141,
+            142,
+            143
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_1333_v1",
+            "fig_f97f47b7a1fd68_1339_v1",
+            "fig_f97f47b7a1fd68_1340_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_182_v1",
+            "chk_f97f47b7a1fd68_183_v1",
+            "chk_f97f47b7a1fd68_184_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_182_v1",
+          "hit_text": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency\n• Chapter 3: Mean and Median Learning Objectives\n\n1. Understand how the difference between the mean and median is affected by skew\n2. State how the measures differ in symmetric distributions\n3. State which measure(s) should be used to describe the center of a skewed distribution\n\nHow do the various measures of central tendency compare with each other? For symmetric distributions, the mean, median, trimean, and trimmed mean are equal, as is the mode except in bimodal distributions. Differences among the measures occur with skewed distributions. Figure 1 shows the distribution of 642 scores on an introductory psychology test. Notice this distribution has a slight positive skew.\n\n150\n\nFrequency\n\n100\n\n50\n\n39.5 49.5 59.5 69.5 79.5 89.5 99.5 109.5 119.5 129.5 139.5 149.5 159.5 169.5\n\nFigure 1. A distribution with a positive skew.\n\nMeasures of central tendency are shown in Table 1. Notice they do not differ greatly, with the exception that the mode is considerably lower than the other measures. When distributions have a positive skew, the mean is typically higher than the median, although it may not be in bimodal distributions. For these data, the mean of 91.58 is higher than the median of 90. Typically the trimean and trimmed mean will fall between the median and the mean, although in this case, the trimmed mean is slightly lower than the median. The geometric mean is lower than all measures except the mode.",
+          "hit_page_start": 140,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                285.797,
+                185.606
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                190.657,
+                513.377,
+                339.646
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                344.697,
+                840.466,
+                453.283
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                464.646,
+                872.864,
+                573.232
+              ],
+              "page": 140,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                157.029,
+                109.183,
+                179.44,
+                123.432
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                115.167,
+                215.229,
+                136.641,
+                272.91
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                157.029,
+                207.817,
+                179.44,
+                222.064
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                164.5,
+                305.04,
+                179.44,
+                319.289
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                185.163,
+                417.448,
+                882.292,
+                431.697
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                440.814,
+                528.565,
+                458.491
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                480.271,
+                866.82,
+                658.302
+              ],
+              "page": 141,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022770398481973434
+        },
+        {
+          "id": "exc_45ecdb7da7734b_95_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Descriptive statistics › 4.1 Measures of central tendency › 4.1.4 Mean or median? What’s the difference?",
+          "roles": [
+            "introduction",
+            "formal"
+          ],
+          "topic_ids": [
+            "center",
+            "data-types"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Explains how to interpret the mean versus the median and when to use each. The mean is the 'centre of gravity' of the data; the median is the middle observation. Guidance is given by measurement scale: nominal data suit the mode; ordinal data suit the median; interval and ratio data accept either, with the mean using all information but being sensitive to extreme values. Skewness makes the mean shift toward the tail while the median stays near the body, illustrated with an income example.",
+          "pages": [
+            78,
+            79
+          ],
+          "figure_ids": [
+            "fig_45ecdb7da7734b_554_v2",
+            "fig_45ecdb7da7734b_555_v2"
+          ],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_186_v2",
+            "chk_45ecdb7da7734b_187_v2",
+            "chk_45ecdb7da7734b_188_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_188_v2",
+          "hit_text": "• If your data are ordinal scale you’re more likely to want to use the median than the mean. The median only makes use of the order information in your data (i.e., which numbers are bigger) but doesn’t depend on the precise numbers involved. That’s exactly the situation that applies when your data are ordinal scale. The mean, on the other hand, makes use of the precise numeric values assigned to the observations, so it’s not really appropriate for ordinal data.\n• For interval and ratio scale data either one is generally acceptable. Which one you pick depends a bit on what you’re trying to achieve. The mean has the advantage that it uses all the information in the data (which is useful when you don’t have a lot of data). But it’s very sensitive to extreme, outlying values.\n\nLet’s expand on that last part a little. One consequence is that there are systematic differences between the mean and the median when the histogram is asymmetric (Skew and kurtosis). This is illustrated in Figure 4.4. Notice that the median (right-hand side) is located closer to the “body” of the histogram, whereas the mean (left-hand side) gets dragged towards the “tail” (where the extreme values are). To give a concrete example, suppose Bob (income $50,000), Kate (income$60,000) and Jane (income $65,000) are sitting at a table. The average income at the table is$58,333 and the median income is $60,000. Then Bill sits down with them (income$100,000,000). The average income has now jumped to $25,043,750 but the median rises only to$62,500. If you’re interested in looking at the overall income at the table the mean might be the right answer. But if you’re interested in what counts as a typical income at the table the median would be a better choice here.",
+          "hit_page_start": 79,
+          "hit_regions": [
+            {
+              "bbox": [
+                211.611,
+                98.644,
+                843.752,
+                267.192
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                286.828,
+                843.752,
+                488.583
+              ],
+              "page": 79,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022366522366522368
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_69_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Median and Mean",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency Learning Objectives\n\n1. State when the mean and median are the same\n2. State whether it is the mean or median that minimizes the mean absolute deviation\n3. State whether it is the mean or median that minimizes the mean squared deviation\n4. State whether it is the mean or median that is the balance point on a balance scale\n\nIn the section “What is central tendency,” we saw that the center of a distribution could be deﬁned three ways: (1) the point on which a distribution would balance, (2) the value whose average absolute deviation from all the other values is minimized, and (3) the value whose squared difference from all the other values is minimized. The mean is the point on which a distribution would balance, the median is the value that minimizes the sum of absolute deviations, and the mean is the value that minimizes the sum of the squared deviations.\n\nTable 1 shows the absolute and squared deviations of the numbers 2, 3, 4, 9, and 16 from their median of 4 and their mean of 6.8. You can see that the sum of absolute deviations from the median (20) is smaller than the sum of absolute deviations from the mean (22.8). On the other hand, the sum of squared deviations from the median (174) is larger than the sum of squared deviations from the mean (134.8).\n\nTable 1. Absolute and squared deviations from the median of 4 and the mean of 6.8.\n\nTable 1 shows the absolute and squared deviations of the numbers 2, 3, 4, 9, and 16 from their median of 4 and their mean of 6.8. You can see that the sum of absolute deviations from the median (20) is smaller than the sum of absolute deviations from the mean (22.8). On the other hand, the sum of squared deviations from the median (174) is larger than the sum of squared deviations from the mean (134.8).\n\nTable 1. Absolute and squared deviations from the median of 4 and the mean of 6.8.\n\nValue | Absolute Deviation from Median | Absolute Deviation from Mean | Squared Deviation from Median | Squared Deviation from Mean\n2 | 2 | 4.8 | 4 | 23.04\n3 | 1 | 3.8 | 1 | 14.44\n4 | 0 | 2.8 | 0 | 7.84\n9 | 5 | 2.2 | 25 | 4.84\n16 | 12 | 9.2 | 144 | 84.64\nTotal | 20 | 22.8 | 174 | 134.8\n\nFigure 1 shows that the distribution balances at the mean of 6.8 and not at the median of 4. The relative advantages and disadvantages of the mean and median are discussed in the section “Comparing Measures” later in this chapter.\n\nFigure 1. The distribution balances at the mean of 6.8 and not at the median of 4.0.\n\nWhen a distribution is symmetric, then the mean and the median are the same. Consider the following distribution: 1, 3, 4, 5, 6, 7, 9. The mean and median are both 5. The mean, median, and mode are identical in the bell-shaped normal distribution.",
+          "pages": [
+            134,
+            135
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_1254_v1",
+            "fig_f97f47b7a1fd68_1255_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_174_v1",
+            "chk_f97f47b7a1fd68_175_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_174_v1",
+          "hit_text": "by David M. Lane Prerequisites\n\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency Learning Objectives\n\n1. State when the mean and median are the same\n2. State whether it is the mean or median that minimizes the mean absolute deviation\n3. State whether it is the mean or median that minimizes the mean squared deviation\n4. State whether it is the mean or median that is the balance point on a balance scale\n\nIn the section “What is central tendency,” we saw that the center of a distribution could be deﬁned three ways: (1) the point on which a distribution would balance, (2) the value whose average absolute deviation from all the other values is minimized, and (3) the value whose squared difference from all the other values is minimized. The mean is the point on which a distribution would balance, the median is the value that minimizes the sum of absolute deviations, and the mean is the value that minimizes the sum of the squared deviations.\n\nTable 1 shows the absolute and squared deviations of the numbers 2, 3, 4, 9, and 16 from their median of 4 and their mean of 6.8. You can see that the sum of absolute deviations from the median (20) is smaller than the sum of absolute deviations from the mean (22.8). On the other hand, the sum of squared deviations from the median (174) is larger than the sum of squared deviations from the mean (134.8).\n\nTable 1. Absolute and squared deviations from the median of 4 and the mean of 6.8.",
+          "hit_page_start": 134,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                285.797,
+                185.606
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                190.657,
+                513.377,
+                271.465
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                276.515,
+                841.327,
+                430.556
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                441.919,
+                874.247,
+                595.96
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                601.01,
+                872.426,
+                732.323
+              ],
+              "page": 134,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                95.96,
+                844.68,
+                136.364
+              ],
+              "page": 135,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02222222222222222
+        },
+        {
+          "id": "exc_dd1e65de648fb2_279_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Working with data › 5 Descriptive statistics › 5.1 Measures of central tendency › 5.1.4 Mean or median? What’s the difference? › 161",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "graphs",
+            "center",
+            "skew-and-kurtosis",
+            "data-types"
+          ],
+          "confidence": 0.96,
+          "synopsis": "makes use of the precise numeric values assigned to the observations, so it’s not really appropriate for ordinal data.\n• For interval and ratio scale data, either one is generally acceptable. Which one you pick depends a bit on what you’re trying to achieve. The mean has the advantage that it uses all the information in the data (which is useful when you don’t have a lot of data), but it’s very sensitive to extreme values, as we’ll see in Trimmed mean.\n\nLet’s expand on that last part a little. One consequence is that there’s systematic differences between the mean and the median when the histogram is asymmetric (skewed; see Skew and kurtosis). This is illustrated in Figure 5.2: notice that the median is typically located closer to the “body” of the histogram, whereas the mean gets dragged towards the “tail” (where the extreme values are). To give a concrete example, suppose Bob (income $50,000), Kate (income$60,000) and Jane (income $65,000) are sitting at a table: the average income at the table is$58,333 and the median income is $60,000. Then Bill sits down with them (income$100,000,000). The average income has now jumped to $25,043,750 but the median rises only to$62,500. If you’re interested in looking at the overall income at the table, the mean might be the right answer; but if you’re interested in what counts as a typical income at the table, the median would be a better choice here.",
+          "pages": [
+            162
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_433_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_433_v1",
+          "hit_text": "makes use of the precise numeric values assigned to the observations, so it’s not really appropriate for ordinal data.\n• For interval and ratio scale data, either one is generally acceptable. Which one you pick depends a bit on what you’re trying to achieve. The mean has the advantage that it uses all the information in the data (which is useful when you don’t have a lot of data), but it’s very sensitive to extreme values, as we’ll see in Trimmed mean.\n\nLet’s expand on that last part a little. One consequence is that there’s systematic differences between the mean and the median when the histogram is asymmetric (skewed; see Skew and kurtosis). This is illustrated in Figure 5.2: notice that the median is typically located closer to the “body” of the histogram, whereas the mean gets dragged towards the “tail” (where the extreme values are). To give a concrete example, suppose Bob (income $50,000), Kate (income$60,000) and Jane (income $65,000) are sitting at a table: the average income at the table is$58,333 and the median income is $60,000. Then Bill sits down with them (income$100,000,000). The average income has now jumped to $25,043,750 but the median rises only to$62,500. If you’re interested in looking at the overall income at the table, the mean might be the right answer; but if you’re interested in what counts as a typical income at the table, the median would be a better choice here.",
+          "hit_page_start": 162,
+          "hit_regions": [
+            {
+              "bbox": [
+                158.145,
+                89.222,
+                866.114,
+                194.279
+              ],
+              "page": 162,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                134.278,
+                204.194,
+                866.116,
+                394.789
+              ],
+              "page": 162,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02154808179820855
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_62_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Measures of Central Tendency",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: Central Tendency Learning Objectives\n\n1. Compute mean\n2. Compute median\n3. Compute mode\n\nIn the previous section we saw that there are several ways to deﬁne central tendency. This section deﬁnes the three most common measures of central tendency: the mean, the median, and the mode. The relationships among these measures of central tendency and the deﬁnitions given in the previous section will probably not be obvious to you.\n\nThis section gives only the basic deﬁnitions of the mean, median and mode. A further discussion of the relative merits and proper applications of these statistics is presented in a later section.\n\nArithmetic Mean The arithmetic mean is the most common measure of central tendency. It is simply the sum of the numbers divided by the number of numbers. The symbol “μ” is used for the mean of a population. The symbol “M” is used for the mean of a sample. The formula for μ is shown below:",
+          "pages": [
+            131
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_166_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_166_v1",
+          "hit_text": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: Central Tendency Learning Objectives\n\n1. Compute mean\n2. Compute median\n3. Compute mode\n\nIn the previous section we saw that there are several ways to deﬁne central tendency. This section deﬁnes the three most common measures of central tendency: the mean, the median, and the mode. The relationships among these measures of central tendency and the deﬁnitions given in the previous section will probably not be obvious to you.\n\nThis section gives only the basic deﬁnitions of the mean, median and mode. A further discussion of the relative merits and proper applications of these statistics is presented in a later section.\n\nArithmetic Mean The arithmetic mean is the most common measure of central tendency. It is simply the sum of the numbers divided by the number of numbers. The symbol “μ” is used for the mean of a population. The symbol “M” is used for the mean of a sample. The formula for μ is shown below:",
+          "hit_page_start": 131,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                285.797,
+                185.606
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                190.657,
+                395.224,
+                294.192
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                299.242,
+                303.977,
+                362.374
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                373.737,
+                868.518,
+                482.323
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                487.374,
+                879.959,
+                550.505
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                569.319,
+                880.899,
+                686.869
+              ],
+              "page": 131,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02054794520547945
+        },
+        {
+          "id": "exc_2dfae4cbb39513_676_v1",
+          "book_id": "educational-psychology",
+          "book_title": "Educational Psychology",
+          "section_path": "Chapter 12 Standardized and other formal Assessments › 12.5 Understanding test results › 12.5.2 Central tendency and variability › 359",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "piaget-cognitive-development"
+          ],
+          "confidence": 0.98,
+          "synopsis": "important as each provides different information for teachers. The median represents the score of the “middle” students, with half scoring above and below, but does not tell us about the scores on the test that occurred most often. The mean is important for some statistical calculations but is highly influenced by a few extreme scores (called outliers) but the median is not. To illustrate this, imagine a test out of 20 points taken by 10 students, and most do very well but one student does very poorly. The scores might be 4, 18, 18, 19, 19, 19, 19, 19, 20, 20. The mean is 17.5 (170/10) but if the lowest score (4) is eliminated the mean is now is 1.5 points higher at 19 (171/9). However, in this example the median remains at 19 whether the lowest score is included. When there are some extreme scores the median is often more useful for teachers in indicating the central tendency of the frequency distribution.\n\nThe measures of central tendency help us summarize scores that are representative, but they do not tell us anything about how variable or how spread out are the scores. Figure 12.6 illustrates sets of scores from two different schools on the same test for fourth graders. Note that the mean for each is 40 but in School A the scores are much less spread out. A simple way to summarize variability is the range, hich is the lowest score subtracted from the lowest score. In School A with low variability the range is (45”35) = 10; in the school B the range is ( 55-22 = 33).\n\nThe measures of central tendency help us summarize scores that are representative, but they do not tell us anything about how variable or how spread out are the scores. Figure 12.6 illustrates sets of scores from two different schools on the same test for fourth graders. Note that the mean for each is 40 but in School A the scores are much less spread out. A simple way to summarize variability is the range, hich is the lowest score subtracted from the lowest score. In School A with low variability the range is (45”35) = 10; in the school B the range is ( 55-22 = 33).\n\nFigure 12.6 Fourth grade math scores in two different schools with the same mean but different variability\n\nHowever, the range is only based on two scores in the distribution, the highest and lowest scores, and so does not represent variability in all the scores. The standard deviation is based on how much, on average, all the scores deviate from the mean. In\n\nthe example in the standard deviations are 7.73 for School A and 2.01 for School B. In the exercise below we demonstrate how to calculate the standard deviation.",
+          "pages": [
+            373
+          ],
+          "figure_ids": [
+            "fig_2dfae4cbb39513_3933_v1"
+          ],
+          "chunk_ids": [
+            "chk_2dfae4cbb39513_1092_v1",
+            "chk_2dfae4cbb39513_1093_v1"
+          ],
+          "hit_chunk_id": "chk_2dfae4cbb39513_1092_v1",
+          "hit_text": "important as each provides different information for teachers. The median represents the score of the “middle” students, with half scoring above and below, but does not tell us about the scores on the test that occurred most often. The mean is important for some statistical calculations but is highly influenced by a few extreme scores (called outliers) but the median is not. To illustrate this, imagine a test out of 20 points taken by 10 students, and most do very well but one student does very poorly. The scores might be 4, 18, 18, 19, 19, 19, 19, 19, 20, 20. The mean is 17.5 (170/10) but if the lowest score (4) is eliminated the mean is now is 1.5 points higher at 19 (171/9). However, in this example the median remains at 19 whether the lowest score is included. When there are some extreme scores the median is often more useful for teachers in indicating the central tendency of the frequency distribution.\n\nThe measures of central tendency help us summarize scores that are representative, but they do not tell us anything about how variable or how spread out are the scores. Figure 12.6 illustrates sets of scores from two different schools on the same test for fourth graders. Note that the mean for each is 40 but in School A the scores are much less spread out. A simple way to summarize variability is the range, hich is the lowest score subtracted from the lowest score. In School A with low variability the range is (45”35) = 10; in the school B the range is ( 55-22 = 33).",
+          "hit_page_start": 373,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                869.748,
+                263.595
+              ],
+              "page": 373,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                274.226,
+                865.971,
+                403.441
+              ],
+              "page": 373,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0201885310290652
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_66_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Measures of Central Tendency › Additional measures of central tendency › Additional measures of central tendency",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "(15 + 2 × 20 + 23) 4\n\n78 4\n\n=\n\n= 19.5\n\nAlthough the arithmetic mean is not the only “mean” (there is also a geometric mean), it is by far the most commonly used. Therefore, if the term “mean” is used without specifying whether it is the arithmetic mean, the geometric mean, or some other mean, it is assumed to refer to the arithmetic mean.\n\n( 25 + 2 50 +  75) 4\n\n=\n\n(15 + 2 × 20 + 23) 4\n\n78 4\n\nMedian The median is also a frequently used measure of central tendency. The median is the midpoint of a distribution: the same number of scores is above the median as below it. For the data in Table 1, there are 31 scores. The 16th highest score (which equals 20) is the median because there are 15 scores below the 16th score and 15\n\n=\n\n= 19.5",
+          "pages": [
+            132
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_170_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_170_v1",
+          "hit_text": "(15 + 2 × 20 + 23) 4\n\n78 4\n\n=\n\n= 19.5\n\nAlthough the arithmetic mean is not the only “mean” (there is also a geometric mean), it is by far the most commonly used. Therefore, if the term “mean” is used without specifying whether it is the arithmetic mean, the geometric mean, or some other mean, it is assumed to refer to the arithmetic mean.\n\n( 25 + 2 50 +  75) 4\n\n=\n\n(15 + 2 × 20 + 23) 4\n\n78 4\n\nMedian The median is also a frequently used measure of central tendency. The median is the midpoint of a distribution: the same number of scores is above the median as below it. For the data in Table 1, there are 31 scores. The 16th highest score (which equals 20) is the median because there are 15 scores below the 16th score and 15\n\n=\n\n= 19.5",
+          "hit_page_start": 132,
+          "hit_regions": [
+            {
+              "bbox": [
+                79.325,
+                588.62,
+                297.873,
+                638.966
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                332.408,
+                589.398,
+                361.735,
+                638.971
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                305.196,
+                604.837,
+                324.931,
+                625.199
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                368.962,
+                604.837,
+                445.58,
+                625.199
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                645.174,
+                871.026,
+                731.033
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                308.059,
+                646.995,
+                541.881,
+                696.29
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                281.399,
+                662.347,
+                300.866,
+                682.596
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.763,
+                749.039,
+                392.342,
+                799.104
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                426.408,
+                749.812,
+                455.337,
+                799.109
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                749.847,
+                879.417,
+                867.396
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                399.565,
+                765.165,
+                419.033,
+                785.413
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                462.466,
+                765.165,
+                538.042,
+                785.413
+              ],
+              "page": 132,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020180180180180182
+        },
+        {
+          "id": "exc_0689cddaba206d_65_v2",
+          "book_id": "ahss4",
+          "book_title": "Advanced High School Statistics",
+          "section_path": "Chapter 1 › Exploring one-variable data and collecting data › 1.4 Numerical summaries and box plots › 1.4.1 Measures of center › GUIDED PRACTICE 1.24 HAS ENDED. › EXAMPLE 1.25 START",
+          "roles": [
+            "worked_example",
+            "formal"
+          ],
+          "topic_ids": [
+            "estimation",
+            "center"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Example 1.25 estimates the population mean interest rate µx using the sample mean 11.57% from 50 loans, noting larger samples give more accurate point estimates. It then defines the median as the middle value of an ordered data set, computed as (9.93 + 9.93)/2 = 9.93 for the even-sized loan50 data, and describes the mean as a balancing point and the median as splitting histogram area in half. Example 1.26 asks why the mean exceeds the median, attributing it to large values dragging up the mean.",
+          "pages": [
+            36
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_0689cddaba206d_101_v2",
+            "chk_0689cddaba206d_102_v2",
+            "chk_0689cddaba206d_103_v2"
+          ],
+          "hit_chunk_id": "chk_0689cddaba206d_102_v2",
+          "hit_text": "In Chapter 3 and beyond, we will develop tools to characterize the accuracy of point estimates like the sample mean. As you might have guessed, point estimates based on larger samples tend to be more accurate than those based on smaller samples.\n\nEXAMPLE 1.25 HAS ENDED. The median provides another measure of center. The median splits an ordered data set in half. There are 50 interest rates in the loan50 data set (an even number) so the data are perfectly split into two groups of 25. We take the median in this case to be the average of the two middle observations: (9.93 + 9.93)/2 = 9.93. When there are an odd number of observations, there will be exactly one observation that splits the data into two halves, and in this case that observation is the median (no average needed). MEDIAN: THE NUMBER IN THE MIDDLE In an ordered data set, the median is the observation right in the middle. If there are an even number of observations, the median is the average of the two middle values. Graphically, we can think of the mean as the balancing point. To estimate the median from a histogram, we try to split the area in half so that 50% of the area is to the left and 50% of the area is to the right. Interest Rate Frequency Mean Median 0 2 4 6 8 10 12 14 5% 10% 15% 20% 25% Figure 1.22: A histogram of interest rate with its mean and median shown.\nEXAMPLE 1.26 START Example problem: Based on the data, why is the mean greater than the median in this data set?",
+          "hit_page_start": 36,
+          "hit_regions": [
+            {
+              "bbox": [
+                146.895,
+                201.944,
+                852.876,
+                244.713
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                146.895,
+                254.388,
+                852.946,
+                843.24
+              ],
+              "page": 36,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019078947368421053
+        },
+        {
+          "id": "exc_dd1e65de648fb2_282_v1",
+          "book_id": "learning-statistics-with-r",
+          "book_title": "Learning Statistics with R",
+          "section_path": "Working with data › 5 Descriptive statistics › 5.1 Measures of central tendency › 5.1.6 Trimmed mean",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "r-programming",
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "One of the fundamental rules of applied statistics is that the data are messy. Real life is never simple, and so the data sets that you obtain are never as straightforward as the statistical theory says.5 This can have awkward consequences. To illustrate, consider this rather strange looking data set:\n\n−100,2,3,4,5,6,7,8,9,10\n\nIf you were to observe this in a real life data set, you’d probably suspect that something funny was going on with the −100 value. It’s probably an outlier, a value that doesn’t really belong with the others. You might consider removing it from the data set entirely, and in this particular case I’d probably agree with that course of action. In real life, however, you don’t always get such cut-and-dried examples. For instance, you might get this instead:\n\n−15,2,3,4,5,6,7,8,9,12\n\nThe −15 looks a bit suspicious, but not anywhere near as much as that −100 did. In this case, it’s a little trickier. It might be a legitimate observation, it might not.\n\nIf you were to observe this in a real life data set, you’d probably suspect that something funny was going on with the −100 value. It’s probably an outlier, a value that doesn’t really belong with the others. You might consider removing it from the data set entirely, and in this particular case I’d probably agree with that course of action. In real life, however, you don’t always get such cut-and-dried examples. For instance, you might get this instead:\n\n−15,2,3,4,5,6,7,8,9,12\n\nThe −15 looks a bit suspicious, but not anywhere near as much as that −100 did. In this case, it’s a little trickier. It might be a legitimate observation, it might not.\n\nWhen faced with a situation where some of the most extreme-valued observations might not be quite trustworthy, the mean is not necessarily a good measure of central tendency. It is highly sensitive to one or two extreme values, and is thus not considered to be a robust measure. One remedy that we’ve seen is to use the median. A more general solution is to use a “trimmed mean”. To calculate a trimmed mean, what you do is “discard” the most extreme examples on both ends (i.e., the largest and the smallest), and then take the mean of everything else. The goal is to preserve the best characteristics of the mean and the median: just like a median, you aren’t highly influenced by extreme outliers, but like the mean, you “use” more than one of the observations. Generally, we describe a trimmed mean in terms of the percentage of observation on either side that are discarded. So, for instance, a 10% trimmed mean discards the largest 10% of the observations and the smallest 10% of the observations, and then takes the mean of the remaining 80% of the observations. Not surprisingly, the 0% trimmed mean is just the regular mean, and the 50% trimmed mean is the median. In that sense, trimmed means provide a whole family of central tendency measures that span the range from the mean to the median.\n\nFor our toy example above, we have 10 observations, and so a 10% trimmed mean is calculated by ignoring the largest value (i.e., 12) and the smallest value (i.e., -15) and taking the mean of the remaining values. First, let’s enter the data\n\n5Or at least, the basic statistical theory – these days there is a whole subfield of statistics called robust statistics that tries to grapple with the messiness of real data and develop theory that can cope with it.",
+          "pages": [
+            164
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_dd1e65de648fb2_438_v1",
+            "chk_dd1e65de648fb2_439_v1",
+            "chk_dd1e65de648fb2_440_v1"
+          ],
+          "hit_chunk_id": "chk_dd1e65de648fb2_439_v1",
+          "hit_text": "If you were to observe this in a real life data set, you’d probably suspect that something funny was going on with the −100 value. It’s probably an outlier, a value that doesn’t really belong with the others. You might consider removing it from the data set entirely, and in this particular case I’d probably agree with that course of action. In real life, however, you don’t always get such cut-and-dried examples. For instance, you might get this instead:\n\n−15,2,3,4,5,6,7,8,9,12\n\nThe −15 looks a bit suspicious, but not anywhere near as much as that −100 did. In this case, it’s a little trickier. It might be a legitimate observation, it might not.\n\nWhen faced with a situation where some of the most extreme-valued observations might not be quite trustworthy, the mean is not necessarily a good measure of central tendency. It is highly sensitive to one or two extreme values, and is thus not considered to be a robust measure. One remedy that we’ve seen is to use the median. A more general solution is to use a “trimmed mean”. To calculate a trimmed mean, what you do is “discard” the most extreme examples on both ends (i.e., the largest and the smallest), and then take the mean of everything else. The goal is to preserve the best characteristics of the mean and the median: just like a median, you aren’t highly influenced by extreme outliers, but like the mean, you “use” more than one of the observations. Generally, we describe a trimmed mean in terms of the percentage of observation on either side that are discarded. So, for instance, a 10% trimmed mean discards the largest 10% of the observations and the smallest 10% of the observations, and then takes the mean of the remaining 80% of the observations. Not surprisingly, the 0% trimmed mean is just the regular mean, and the 50% trimmed mean is the median. In that sense, trimmed means provide a whole family of central tendency measures that span the range from the mean to the median.",
+          "hit_page_start": 164,
+          "hit_regions": [
+            {
+              "bbox": [
+                136.364,
+                235.314,
+                864.279,
+                339.667
+              ],
+              "page": 164,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                403.804,
+                329.405,
+                596.193,
+                420.59
+              ],
+              "page": 164,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.722,
+                363.244,
+                866.103,
+                454.428
+              ],
+              "page": 164,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.454,
+                439.524,
+                866.116,
+                698.549
+              ],
+              "page": 164,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01880151098901099
+        },
+        {
+          "id": "exc_64ed84430ae3b2_65_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 2 Descriptive Statistics › Example 2.2 › 2.4 Descriptive Statistics: Measuring the Center of the Data",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "graphs",
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nThe \"center\" of a data set is also a way of describing location. The two most widely used measures of the \"center\" of the data are the mean (average) and the median. To calculate the mean weight of 50 people, add the 50 weights together and divide by\n\n50. To find the median weight of the 50 people, order the data and find the number that splits the data into two equal parts (previously discussed under box plots in this chapter). The median is generally a better measure of the center when there are extreme values or outliers because it is not affected by the precise numerical values of the outliers. The mean is the most common measure of the center.\n\nNote: The words \"mean\" and \"average\" are often used interchangeably. The substitution of one word for the other is common practice. The technical term is \"arithmetic mean\" and \"average\" is technically a center location. However, in practice among non-statisticians, \"average\" is commonly accepted for \"arithmetic mean.\"\n\nThe mean can also be calculated by multiplying each distinct value by its frequency and then dividing the sum by the total number of data values. The letter used to represent the sample mean is an x with a bar over it (pronounced \"x bar\"): .\n\nThe Greek letter µ (pronounced \"mew\") represents the population mean. One of the requirements for the sample mean to be a good estimate of the population mean is for the sample taken to be truly random.\n\nThe Greek letter µ (pronounced \"mew\") represents the population mean. One of the requirements for the sample mean to be a good estimate of the population mean is for the sample taken to be truly random.\n\nTo see that both ways of calculating the mean are the same, consider the sample: 1; 1; 1; 2; 2; 3; 4; 4; 4; 4; 4\n\nIn the second calculation for the sample mean, the frequencies are 3, 2, 1, and 5. You can quickly find the location of the median by using the expression . The letter n is the total number of data values in the sample. If n is an odd number, the median is the middle value of the ordered data (ordered smallest to largest). If n is an even number, the median is equal to the two middle values added together and divided by 2 after the data has been ordered. For example, if the total number of data\n\nvalues is 97, then | . The median is the 49th value in the\nordered data. If the total number | of data values is 100, then\n. The | median occurs midway between the 50th and 51st",
+          "pages": [
+            37
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_413_v1",
+            "fig_64ed84430ae3b2_419_v1",
+            "fig_64ed84430ae3b2_422_v1",
+            "fig_64ed84430ae3b2_423_v1",
+            "fig_64ed84430ae3b2_425_v1",
+            "fig_64ed84430ae3b2_426_v1",
+            "fig_64ed84430ae3b2_428_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_90_v1",
+            "chk_64ed84430ae3b2_91_v1",
+            "chk_64ed84430ae3b2_92_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_90_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nThe \"center\" of a data set is also a way of describing location. The two most widely used measures of the \"center\" of the data are the mean (average) and the median. To calculate the mean weight of 50 people, add the 50 weights together and divide by\n\n50. To find the median weight of the 50 people, order the data and find the number that splits the data into two equal parts (previously discussed under box plots in this chapter). The median is generally a better measure of the center when there are extreme values or outliers because it is not affected by the precise numerical values of the outliers. The mean is the most common measure of the center.\n\nNote: The words \"mean\" and \"average\" are often used interchangeably. The substitution of one word for the other is common practice. The technical term is \"arithmetic mean\" and \"average\" is technically a center location. However, in practice among non-statisticians, \"average\" is commonly accepted for \"arithmetic mean.\"\n\nThe mean can also be calculated by multiplying each distinct value by its frequency and then dividing the sum by the total number of data values. The letter used to represent the sample mean is an x with a bar over it (pronounced \"x bar\"): .\n\nThe Greek letter µ (pronounced \"mew\") represents the population mean. One of the requirements for the sample mean to be a good estimate of the population mean is for the sample taken to be truly random.",
+          "hit_page_start": 37,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                140.091,
+                864.124,
+                172.14
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                183.553,
+                873.546,
+                237.947
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                239.67,
+                871.903,
+                331.474
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                176.472,
+                346.365,
+                862.306,
+                436.774
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.867,
+                451.665,
+                841.867,
+                506.058
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                516.689,
+                853.407,
+                571.082
+              ],
+              "page": 37,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017888888888888888
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_98_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Variance Sum law I › = + › = + › Exercises",
+          "roles": [
+            "introduction",
+            "exercise"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Prerequisites\n\n• All material presented in the Summarizing Distributions chapter\n\n1. Make up a dataset of 12 numbers with a positive skew. Use a statistical program to compute the skew. Is the mean larger than the median as it usually is for distributions with a positive skew? What is the value for skew?\n2. Repeat Problem 1 only this time make the dataset have a negative skew.\n3. Make up three data sets with 5 numbers each that have: (a) the same mean but different standard deviations. (b) the same mean but different medians. (c) the same median but different means.\n4. Find the mean and median for the following three variables:\n5. A sample of 30 distance scores measured in yards has a mean of 10, a variance of 9, and a standard deviation of 3 (a) You want to convert all your distances from yards to feet, so you multiply each score in the sample by 3. What are the new mean, variance, and standard deviation? (b) You then decide that you only want to look at the distance past a certain point. Thus, after multiplying the original scores by 3, you decide to subtract 4 feet from each of the scores. Now what are the new mean, variance, and standard deviation?\n6. You recorded the time in seconds it took for 8 participants to solve a puzzle. These times appear below. However, when the data was entered into the statistical program, the score that was supposed to be 22.1 was entered as 21.2.\n\nYou had calculated the following measures of central tendency: the mean, the median, and the mean trimmed 25%. Which of these measures of central tendency will change when you correct the recording error?\n\n7. For the test scores in question #6, which measures of variability (range, standard deviation, variance) would be changed if the 22.1 data point had been erroneously recorded as 21.2?\n8. You know the minimum, the maximum, and the 25th, 50th, and 75th percentiles of a distribution. Which of the following measures of central tendency or variability can you determine? mean, median, mode, trimean, geometric mean, range, interquartile range, variance, standard deviation\n9. For the numbers 1, 3, 4, 6, and 12: Find the value (v) for which Σ(X-v)2 is minimized. Find the value (v) for which Σ|x-v| is minimized.\n10. Your younger brother comes home one day after taking a science test. He says that some- one at school told him that “60% of the students in the class scored above the median test grade.” What is wrong with this statement? What if he had said “60% of the students scored below the mean?”\n11. An experiment compared the ability of three groups of participants to remember brieﬂy- presented chess positions. The data are shown below. The numbers represent the number of pieces correctly remembered from three chess\n\npositions. Compare the performance of each group. Consider spread as well as central tendency.\n\n12. True/False: A bimodal distribution has two modes and two medians.\n13. True/False: The best way to describe a skewed distribution is to report the mean.\n14. True/False: When plotted on the same graph, a distribution with a mean of 50 and a standard deviation of 10 will look more spread out than will a distribution with a mean of 60 and a standard deviation of 5.\n15. Compare the mean, median, trimean in terms of their sensitivity to extreme scores.\n16. If the mean time to respond to a stimulus is much higher than the median time to respond, what can you say about the shape of the distribution of response times?\n17. A set of numbers is transformed by taking the log base 10 of each number. The mean of the transformed data is 1.65. What is the geometric mean of the untransformed data?\n18. Which measure of central tendency is most often used for returns on investment?\n\n19. The histogram is in balance on the fulcrum. What are the mean, median, and mode of the distribution (approximate where necessary)? Questions from Case Studies Angry Moods (AM) case study\n20. (AM) Does Anger-Out have a positive skew, a negative skew, or no skew?\n21. (AM) What is the range of the Anger-In scores? What is the interquartile range?\n22. (AM) What is the overall mean Control-Out score? What is the mean ControlOut score for the athletes? What is the mean Control-Out score for the nonathletes?\n23. (AM) What is the variance of the Control-In scores for the athletes? What is the variance of the Control-In scores for the non-athletes? Flatulence (F) case study\n24. (F) Based on a histogram of the variable “perday”, do you think the mean or median of this variable is larger? Calculate the mean and median to see if you are right.\n\nStroop (S) case study\n\n25.(S) Compute the mean for “words”.\n26. (S#2) Compute the mean and standard deviation for “colors”. Physicians’ Reactions (PR) case study\n27.(PR) What is the mean expected time spent for the average-weight patients? What is the mean expected time spent for the overweight patients?\n28.(PR) What is the difference in means between the groups? By approximately how many standard deviations do the means differ? Smiles and Leniency (SL) case study\n29.(SL) Find the mean, median, standard deviation, and interquartile range for the leniency scores of each of the four groups. ADHD Treatment (AT) case study\n30.(AT) What is the mean number of correct responses of the participants after taking the placebo (0 mg/kg)?\n31.(AT) What are the standard deviation and the interquartile range of the d0 condition?",
+          "pages": [
+            159,
+            160,
+            161,
+            162,
+            163
+          ],
+          "figure_ids": [
+            "fig_f97f47b7a1fd68_1705_v1"
+          ],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_215_v1",
+            "chk_f97f47b7a1fd68_216_v1",
+            "chk_f97f47b7a1fd68_217_v1",
+            "chk_f97f47b7a1fd68_218_v1",
+            "chk_f97f47b7a1fd68_219_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_216_v1",
+          "hit_text": "You had calculated the following measures of central tendency: the mean, the median, and the mean trimmed 25%. Which of these measures of central tendency will change when you correct the recording error?\n\n7. For the test scores in question #6, which measures of variability (range, standard deviation, variance) would be changed if the 22.1 data point had been erroneously recorded as 21.2?\n8. You know the minimum, the maximum, and the 25th, 50th, and 75th percentiles of a distribution. Which of the following measures of central tendency or variability can you determine? mean, median, mode, trimean, geometric mean, range, interquartile range, variance, standard deviation\n9. For the numbers 1, 3, 4, 6, and 12: Find the value (v) for which Σ(X-v)2 is minimized. Find the value (v) for which Σ|x-v| is minimized.\n10. Your younger brother comes home one day after taking a science test. He says that some- one at school told him that “60% of the students in the class scored above the median test grade.” What is wrong with this statement? What if he had said “60% of the students scored below the mean?”\n11. An experiment compared the ability of three groups of participants to remember brieﬂy- presented chess positions. The data are shown below. The numbers represent the number of pieces correctly remembered from three chess\n\npositions. Compare the performance of each group. Consider spread as well as central tendency.",
+          "hit_page_start": 160,
+          "hit_regions": [
+            {
+              "bbox": [
+                135.294,
+                95.96,
+                844.408,
+                159.091
+              ],
+              "page": 160,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                409.722,
+                882.075,
+                898.359
+              ],
+              "page": 160,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                152.941,
+                95.96,
+                871.384,
+                136.364
+              ],
+              "page": 161,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017622180451127817
+        },
+        {
+          "id": "exc_64ed84430ae3b2_77_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 2 Descriptive Statistics › Example 2.6 › 2.5 Descriptive Statistics: Skewness and the Mean, Median, and Mode › 35",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "graphs",
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "The mean is 6.3, the median is 6.5, and the mode is 7. Notice that the mean is less than the median and they are both less than the mode. The mean and the median both reflect the skewing but the mean more so. The histogram for the data: 6 ; 7 ; 7 ; 7 ; 7 ; 8 ; 8 ; 8 ; 9 ; 10 is also not symmetrical. It is skewed to the right.\nThe mean is 7.7, the median is 7.5, and the mode is 7. Of the three statistics, the mean is the largest, while the mode is the smallest. Again, the mean reflects the skewing the most.\n\nTo summarize, generally if the distribution of data is skewed to the left, the mean is less than the median, which is often less than the mode. If the distribution of data is skewed to the right, the mode is often less than the median, which is less than the mean.\n\nSkewness and symmetry become important when we discuss probability distributions in later chapters.",
+          "pages": [
+            42
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_492_v1",
+            "fig_64ed84430ae3b2_494_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_104_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_104_v1",
+          "hit_text": "The mean is 6.3, the median is 6.5, and the mode is 7. Notice that the mean is less than the median and they are both less than the mode. The mean and the median both reflect the skewing but the mean more so. The histogram for the data: 6 ; 7 ; 7 ; 7 ; 7 ; 8 ; 8 ; 8 ; 9 ; 10 is also not symmetrical. It is skewed to the right.\nThe mean is 7.7, the median is 7.5, and the mode is 7. Of the three statistics, the mean is the largest, while the mode is the smallest. Again, the mean reflects the skewing the most.\n\nTo summarize, generally if the distribution of data is skewed to the left, the mean is less than the median, which is often less than the mode. If the distribution of data is skewed to the right, the mode is often less than the median, which is less than the mean.\n\nSkewness and symmetry become important when we discuss probability distributions in later chapters.",
+          "hit_page_start": 42,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                273.293,
+                833.187,
+                687.913
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                698.544,
+                813.669,
+                771.643
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                782.273,
+                830.521,
+                817.961
+              ],
+              "page": 42,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017176071055381402
+        },
+        {
+          "id": "exc_64ed84430ae3b2_69_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 2 Descriptive Statistics › Example 2.4",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Suppose that, in a small town of 50 people, one person earns $5,000,000 per year and the other 49 each earn$30,000. Which is the better measure of the \"center,\" the mean or the median?\n\nSolution\n\n(There are 49 people who earn $30,000 and one person who earns$5,000,000.) The median is a better measure of the \"center\" than the mean because 49 of the values are 30,000 and one is 5,000,000. The 5,000,000 is an outlier. The 30,000 gives us a better sense of the middle of the data. Another measure of the center is the mode. The mode is the most frequent value. If a data set has two values that occur the same number of times, then the set is bimodal.",
+          "pages": [
+            39
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_451_v1",
+            "fig_64ed84430ae3b2_452_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_96_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_96_v1",
+          "hit_text": "Suppose that, in a small town of 50 people, one person earns $5,000,000 per year and the other 49 each earn$30,000. Which is the better measure of the \"center,\" the mean or the median?\n\nSolution\n\n(There are 49 people who earn $30,000 and one person who earns$5,000,000.) The median is a better measure of the \"center\" than the mean because 49 of the values are 30,000 and one is 5,000,000. The 5,000,000 is an outlier. The 30,000 gives us a better sense of the middle of the data. Another measure of the center is the mode. The mode is the most frequent value. If a data set has two values that occur the same number of times, then the set is bimodal.",
+          "hit_page_start": 39,
+          "hit_regions": [
+            {
+              "bbox": [
+                191.597,
+                96.597,
+                804.338,
+                149.596
+              ],
+              "page": 39,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                191.597,
+                171.419,
+                268.592,
+                187.007
+              ],
+              "page": 39,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                191.597,
+                272.072,
+                768.055,
+                437.304
+              ],
+              "page": 39,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015384615384615385
+        },
+        {
+          "id": "exc_2dfae4cbb39513_675_v1",
+          "book_id": "educational-psychology",
+          "book_title": "Educational Psychology",
+          "section_path": "Chapter 12 Standardized and other formal Assessments › 12.5 Understanding test results › 12.5.2 Central tendency and variability",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "piaget-cognitive-development"
+          ],
+          "confidence": 0.98,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommon s.org/licenses/by-sa/4.0/).\n\nThere are three common ways of measuring central tendency or which score(s) are typical. The mean is calculated by adding up all the scores and dividing by the number of scores. In the example in Table 12.2 for 30 scores, the mean is 24. The median is the “middle” score of the distribution ” that is half of the scores are above the median and half are below. The median on the distribution is 23 because 15 scores are above 23 and 15 are below. The mode is the score that occurs most often. In Table 12.2: Frequency distribution for 30 scores there are actually two modes 22 and 27 and so this distribution is described as bimodal. Calculating the mean, median and mode are",
+          "pages": [
+            372
+          ],
+          "figure_ids": [
+            "fig_2dfae4cbb39513_3926_v1"
+          ],
+          "chunk_ids": [
+            "chk_2dfae4cbb39513_1091_v1"
+          ],
+          "hit_chunk_id": "chk_2dfae4cbb39513_1091_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommon s.org/licenses/by-sa/4.0/).\n\nThere are three common ways of measuring central tendency or which score(s) are typical. The mean is calculated by adding up all the scores and dividing by the number of scores. In the example in Table 12.2 for 30 scores, the mean is 24. The median is the “middle” score of the distribution ” that is half of the scores are above the median and half are below. The median on the distribution is 23 because 15 scores are above 23 and 15 are below. The mode is the score that occurs most often. In Table 12.2: Frequency distribution for 30 scores there are actually two modes 22 and 27 and so this distribution is described as bimodal. Calculating the mean, median and mode are",
+          "hit_page_start": 372,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                750.068,
+                826.309,
+                782.116
+              ],
+              "page": 372,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                793.53,
+                830.168,
+                941.45
+              ],
+              "page": 372,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015289806795469686
+        },
+        {
+          "id": "exc_45ecdb7da7734b_94_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Descriptive statistics › 4.1 Measures of central tendency › 4.1.3 The median",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.95,
+          "synopsis": "The median is defined as the middle value of sorted observations. For an odd number of values, it is the single middle number; for an even number, it is the average of the two middle numbers. Examples use AFL winning margins, and jamovi is noted as computing the median in practice.",
+          "pages": [
+            77,
+            78
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_185_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_185_v2",
+          "hit_text": "The second measure of central tendency that people use a lot is the median, and it’s even easier to describe than the mean. The median of a set of observations is just the middle value. As before let’s imagine we were interested only in the first 5 AFL winning margins: 56, 31, 56, 8 and 32. To figure out the median we sort these numbers into ascending order: 8, 31, 32, 56, 56.\n\nFrom inspection, it’s obvious that the median value of these 5 observations is 32 since that’s the middle one in the sorted list (I’ve put it in bold to make it even more obvious). Easy stuff. But what should we do if we are interested in the first 6 games rather than the first 5? Since the sixth game in the season had a winning margin of 14 points, our sorted list is now 8, 14, 31, 32, 56, 56.\n\nAnd there are two middle numbers, 31 and 32. The median is defined as the average of those two numbers, which is of course 31.5. As before, it’s very tedious to do this by hand when you’ve got lots of numbers. In real life, of course, no-one actually calculates the median by sorting the data and then looking for the middle value. In real life we use a computer to do the heavy lifting for us, and jamovi has provided us with a median value of 30.50 for the afl.margins variable (Figure 4.3).",
+          "hit_page_start": 77,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                806.039,
+                843.767,
+                915.154
+              ],
+              "page": 77,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                98.644,
+                812.502,
+                184.169
+              ],
+              "page": 78,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                156.25,
+                189.968,
+                812.502,
+                292.099
+              ],
+              "page": 78,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014508290451686678
+        },
+        {
+          "id": "exc_45ecdb7da7734b_101_v2",
+          "book_id": "lsj",
+          "book_title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+          "section_path": "Descriptive statistics › 4.2 Measures of variability › 4.2.3 Mean absolute deviation",
+          "roles": [
+            "introduction",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "spread"
+          ],
+          "confidence": 0.95,
+          "synopsis": "Introduces a deviation-based approach to measuring spread, distinguishing mean absolute deviation (from the mean) and median absolute deviation (from the median). Works through computing the mean absolute deviation for five winning margins (56, 31, 56, 8, 32): mean X̄ = 36.6, deviation scores Xi − X̄, absolute deviations, and their mean, yielding 15.52. Notes the median-based measure is preferred in statistics but the mean-based one occasionally appears in psychology.",
+          "pages": [
+            84,
+            85
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_45ecdb7da7734b_200_v2",
+            "chk_45ecdb7da7734b_201_v2",
+            "chk_45ecdb7da7734b_202_v2"
+          ],
+          "hit_chunk_id": "chk_45ecdb7da7734b_201_v2",
+          "hit_text": "practice, this leads to two different measures: the “mean absolute deviation” (from the mean) and the “median absolute deviation” (from the median). From what I’ve read, the measure based on the median seems to be used in statistics and does seem to be the better of the two. But to be honest I don’t think I’ve seen it used much in psychology. The measure based on the mean does occasionally show up in psychology though. In this section I’ll talk about the first one, and I’ll come back to talk about the second one later.\n\nSince the previous paragraph might sound a little abstract, let’s go through the mean absolute deviation from the mean a little more slowly. One useful thing about this measure is that the name actually tells you exactly how to calculate it. Let’s think about our AFL winning margins data, and once again we’ll start by pretending that there are only 5 games in total, with winning margins of 56, 31, 56, 8 and 32. Since our calculations rely on an examination of the deviation from some reference point (in this case the mean), the first thing we need to calculate is the mean, 𝑋̄. For these five observations, our mean is 𝑋̄ = 36.6. The next step is to convert each of our observations 𝑋𝑖 into a deviation score. We do this by calculating the difference between the observation 𝑋𝑖 and the mean 𝑋̄. That is, the deviation score is defined to be 𝑋𝑖−𝑋̄. For the first observation in our sample, this is equal to 56−36.6 = 19.4. Okay, that’s simple enough. The next step in the process is to convert these deviations to absolute deviations, and we do this by converting any negative values to positive ones. Mathematically, we would denote the absolute value of −3 as ∣ −3 ∣, and so we say that ∣ −3 ∣= 3. We use the absolute value here because we don’t really care whether the value is higher than the mean or lower than the mean, we’re just interested in how close it is to the mean. To help make this process as obvious as possible, Table 4.2 shows these calculations for all five observations.",
+          "hit_page_start": 85,
+          "hit_regions": [
+            {
+              "bbox": [
+                187.5,
+                98.644,
+                843.752,
+                217.379
+              ],
+              "page": 85,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                187.5,
+                223.176,
+                843.766,
+                524.56
+              ],
+              "page": 85,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014294134983790157
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_74_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Additional Measures of Central Tendency › Additional measures of central tendency › Measures of variability › 5%. Table 5 shows how a portfolio gaining 5% a year would end up with the same value ($1,276) as shown in Table 4. Table 5. Portfolio Returns",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Year | Return | Value\n\n1 2 3 4 5 | 5% 5% 5% 5% 5% | 1,050 1,103 1,158 1,216 1,276\n\nTrimmed Mean To compute a trimmed mean, you remove some of the higher and lower scores and compute the mean of the remaining scores. A mean trimmed 10% is a mean computed with 10% of the scores trimmed off: 5% from the bottom and 5% from the top. A mean trimmed 50% is computed by trimming the upper 25% of the scores and the lower 25% of the scores and computing the mean of the remaining scores. The trimmed mean is similar to the median which, in essence, trims the upper 49+% and the lower 49+% of the scores. Therefore the trimmed mean is a hybrid of the mean and the median. To compute the mean trimmed 20% for the touchdown pass data shown in Table 1, you remove the lower 10% of the scores (6, 9, and 12) as well as the upper 10% of the scores (33, 33, and 37) and compute the mean of the remaining 25 scores. This mean is 20.16.",
+          "pages": [
+            138,
+            139
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_181_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_181_v1",
+          "hit_text": "Year | Return | Value\n\n1 2 3 4 5 | 5% 5% 5% 5% 5% | 1,050 1,103 1,158 1,216 1,276\n\nTrimmed Mean To compute a trimmed mean, you remove some of the higher and lower scores and compute the mean of the remaining scores. A mean trimmed 10% is a mean computed with 10% of the scores trimmed off: 5% from the bottom and 5% from the top. A mean trimmed 50% is computed by trimming the upper 25% of the scores and the lower 25% of the scores and computing the mean of the remaining scores. The trimmed mean is similar to the median which, in essence, trims the upper 49+% and the lower 49+% of the scores. Therefore the trimmed mean is a hybrid of the mean and the median. To compute the mean trimmed 20% for the touchdown pass data shown in Table 1, you remove the lower 10% of the scores (6, 9, and 12) as well as the upper 10% of the scores (33, 33, and 37) and compute the mean of the remaining 25 scores. This mean is 20.16.",
+          "hit_page_start": 138,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                791.567,
+                521.242,
+                823.133
+              ],
+              "page": 138,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                90.909,
+                521.242,
+                229.226
+              ],
+              "page": 139,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                249.304,
+                881.145,
+                525.943
+              ],
+              "page": 139,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01422081769701758
+        },
+        {
+          "id": "exc_64ed84430ae3b2_76_v1",
+          "book_id": "principles-of-business-statistics",
+          "book_title": "Principles of Business Statistics",
+          "section_path": "Chapter 2 Descriptive Statistics › Example 2.6 › 2.5 Descriptive Statistics: Skewness and the Mean, Median, and Mode",
+          "roles": [
+            "reference",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "graphs",
+            "center",
+            "spread"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nConsider the following data set:\n\n4 ; 5 ; 6 ; 6 ; 6 ; 7 ; 7 ; 7 ; 7 ; 7 ; 7 ; 8 ; 8 ; 8 ; 9 ; 10 This data set produces the histogram shown below. Each interval has width one and each value is located in the middle of an interval.  The histogram displays a symmetrical distribution of data. A distribution is symmetrical if a vertical line can be drawn at some point in the histogram such that the shape to the left and the right of the vertical line are mirror images of each other. The mean, the median, and the mode are each 7 for these data. In a perfectly symmetrical distribution, the mean and the median are the same. This example has one mode (unimodal) and the mode is the same as the mean and median. In a symmetrical distribution that has two modes (bimodal), the two modes would be different from the mean and median. The histogram for the data:\n4 ; 5 ; 6 ; 6 ; 6 ; 7 ; 7 ; 7 ; 7 ; 8\n\nis not symmetrical. The right-hand side seems \"chopped off\" compared to the left side. The shape distribution is called skewed to the left because it is pulled out to the left.",
+          "pages": [
+            41
+          ],
+          "figure_ids": [
+            "fig_64ed84430ae3b2_484_v1",
+            "fig_64ed84430ae3b2_488_v1"
+          ],
+          "chunk_ids": [
+            "chk_64ed84430ae3b2_103_v1"
+          ],
+          "hit_chunk_id": "chk_64ed84430ae3b2_103_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nConsider the following data set:\n\n4 ; 5 ; 6 ; 6 ; 6 ; 7 ; 7 ; 7 ; 7 ; 7 ; 7 ; 8 ; 8 ; 8 ; 9 ; 10 This data set produces the histogram shown below. Each interval has width one and each value is located in the middle of an interval.  The histogram displays a symmetrical distribution of data. A distribution is symmetrical if a vertical line can be drawn at some point in the histogram such that the shape to the left and the right of the vertical line are mirror images of each other. The mean, the median, and the mode are each 7 for these data. In a perfectly symmetrical distribution, the mean and the median are the same. This example has one mode (unimodal) and the mode is the same as the mean and median. In a symmetrical distribution that has two modes (bimodal), the two modes would be different from the mean and median. The histogram for the data:\n4 ; 5 ; 6 ; 6 ; 6 ; 7 ; 7 ; 7 ; 7 ; 8\n\nis not symmetrical. The right-hand side seems \"chopped off\" compared to the left side. The shape distribution is called skewed to the left because it is pulled out to the left.",
+          "hit_page_start": 41,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                251.433,
+                864.124,
+                283.482
+              ],
+              "page": 41,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                294.895,
+                423.155,
+                311.878
+              ],
+              "page": 41,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                322.508,
+                861.524,
+                801.254
+              ],
+              "page": 41,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                811.885,
+                871.615,
+                866.278
+              ],
+              "page": 41,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013918345705196181
+        },
+        {
+          "id": "exc_f97f47b7a1fd68_70_v1",
+          "book_id": "online-statistics-education-an-interactive-multimedia-course",
+          "book_title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+          "section_path": "Introduction to Statistics › 3. Summarizing Distributions › Additional Measures of Central Tendency",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "center"
+          ],
+          "confidence": 0.96,
+          "synopsis": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency\n• Chapter 3: Mean and Median",
+          "pages": [
+            136
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_f97f47b7a1fd68_176_v1"
+          ],
+          "hit_chunk_id": "chk_f97f47b7a1fd68_176_v1",
+          "hit_text": "by David M. Lane Prerequisites\n\n• Chapter 1: Percentiles\n• Chapter 1: Distributions\n• Chapter 3: What is Central Tendency\n• Chapter 3: Measures of Central Tendency\n• Chapter 3: Mean and Median",
+          "hit_page_start": 136,
+          "hit_regions": [
+            {
+              "bbox": [
+                117.647,
+                124.979,
+                285.797,
+                185.606
+              ],
+              "page": 136,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                117.647,
+                190.657,
+                513.377,
+                300.505
+              ],
+              "page": 136,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013333333333333334
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "query": "mean vs median difference central tendency example",
+      "ids": [
+        "exc_f97f47b7a1fd68_569_v1",
+        "exc_45ecdb7da7734b_95_v2",
+        "exc_64ed84430ae3b2_69_v1",
+        "exc_2dfae4cbb39513_676_v1",
+        "exc_45ecdb7da7734b_94_v2"
+      ]
+    }
+  ],
+  "rerank_calls": [
+    {
+      "seconds": 3.717,
+      "usage": {
+        "prompt_tokens": 17779,
+        "completion_tokens": 430,
+        "total_tokens": 18209,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "answer": {
+        "selected": [
+          {
+            "id": "exc_f97f47b7a1fd68_569_v1",
+            "reason": "Concise glossary definitions of mean and median, each with a tiny numeric example and a note on when the median is preferable — ideal core of a beginner note."
+          },
+          {
+            "id": "exc_45ecdb7da7734b_95_v2",
+            "reason": "Beginner-friendly explanation of mean vs median with the vivid income-table example showing how an outlier inflates the mean but barely moves the median."
+          },
+          {
+            "id": "exc_64ed84430ae3b2_69_v1",
+            "reason": "Short worked example (town incomes) directly answering which measure is better with an outlier present."
+          },
+          {
+            "id": "exc_2dfae4cbb39513_676_v1",
+            "reason": "Concrete test-score example (4, 18, 18, 19, ...) showing the mean shifting with an outlier while the median stays at 19."
+          },
+          {
+            "id": "exc_45ecdb7da7734b_94_v2",
+            "reason": "Simple step-by-step median computation for odd and even sample sizes, useful for the 'how to compute' part of the note."
+          }
+        ],
+        "gap": "No single excerpt combines everything; the note must be assembled from definitions plus outlier examples. Skew-related comparisons (mean vs median under skew) are only lightly covered."
+      },
+      "input_characters": 70774
+    }
+  ],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 2,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,3240 @@
+{
+  "arm": "paged",
+  "case": {
+    "id": "chinese-contract-history",
+    "query": "Create one concise study note on the historical development of Chinese contract law, based on the available textbooks.",
+    "check": "Chinese jurisdiction and historical framing; source-period material is not described as current legal advice."
+  },
+  "prototype": "cursor-header-v1",
+  "page_size": 5,
+  "pool_size": 20,
+  "candidates": 160,
+  "cache_ttl_seconds": 900,
+  "searches": [
+    {
+      "query": "historical development of Chinese contract law",
+      "topics": [],
+      "roles": [],
+      "seconds": 8.327,
+      "excerpts": [
+        {
+          "id": "exc_3af200c915ae90_10_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 1.2 Historical development of Chinese contract law",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces a comparison of milestones in other legal systems before the historical development of Chinese contract law.",
+          "pages": [
+            8
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_68_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_20_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_20_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nIn this section, we will very briefly mention a few key milestones in the historical development of contract law in other jurisdictions before we discuss the history of contract law in China.",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                793.892,
+                826.308,
+                825.941
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                837.354,
+                799.514,
+                891.747
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.024085750315258513
+        },
+        {
+          "id": "exc_3af200c915ae90_4_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope",
+            "chinese-contract-doctrines",
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces the graduate course and its focus on the 1999 PRC Contract Law, business practice, freedom of contract in a socialist market economy, contract definitions, scope, doctrines, interpretation, transaction policy, and privity; lists the unit learning outcomes.",
+          "pages": [
+            5
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_8_v1",
+            "chk_3af200c915ae90_9_v1",
+            "chk_3af200c915ae90_10_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_10_v1",
+          "hit_text": "• describes the historical development of Chinese contract law;\n• analyses the general principle of contract law;\n• illustrates the relationship between contract law and other related branches of law;\n• assesses the scope of contract law;\n• categorizes different forms of contract; and",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                181.6,
+                824.884,
+                846.98,
+                935.393
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023685515873015872
+        },
+        {
+          "id": "exc_3af200c915ae90_11_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 1.2 Historical development of Chinese contract law › 1.2.1 Historical developments in other jurisdictions",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Surveys contractual rules in Hammurabi's code, Roman law, continental civil codes, English common law, freedom of contract, consideration, and the emergence of contractual liberty.",
+          "pages": [
+            9
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_73_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_21_v1",
+            "chk_3af200c915ae90_22_v1",
+            "chk_3af200c915ae90_23_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_23_v1",
+          "hit_text": "Roman law for the first time distinguished breaches of contract from tortious acts. Prior to that, as in ancient Greece, non-performance was simply regarded as infringement. Various provisions of the Roman law have become the origin of modern contract law in Continental Europe, based on which the French Civil Code (Code Civil des Franςais 1804) and the German Civil Code (Bürgerliches Gesetzbuch) were drafted. The French Civil Code established for the first time the principle of freedom of contract, which has become the core principle of modern contract law.\n\nIn England, the principles of modern contract law were well developed in common law courts in the early 19th century. The first important treatise expounding the English law of contract was arguably John Powell’s Essay upon the Law of Contracts and Agreements. The concept of freedom of contract, originating in the work of Adam Smith, was well summed up in the words of a judge in 1875 in the case of Printing and Numerical Registering Co. v. Sampson (1875) LR 19 Eq 462:",
+          "hit_page_start": 9,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                612.504,
+                869.333,
+                741.761
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                752.392,
+                870.082,
+                862.901
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022989889263360617
+        },
+        {
+          "id": "exc_3af200c915ae90_9_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 5",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Continues the history of merchant dispute resolution through lex mercatoria, specialized tribunals, common-law absorption, and the practical limits of formal enforcement in commercial relationships.",
+          "pages": [
+            8
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_18_v1",
+            "chk_3af200c915ae90_19_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_19_v1",
+          "hit_text": "In the US, merchants had tried to avoid the time-consuming court procedures for resolving commercial disputes until the end of the 18th century. Similar to the situation in England, the outcome of the competition between courts of law and merchants’ tribunals was that the customs of merchants were absorbed by judges and integrated into the common law.\n\nThe experience in Western jurisdictions shows that merchants’ concern about their goodwill and long-term reputation, rather than the effectiveness of the court system, is probably the biggest driving force behind the enforceability of contracts. In China, however, business ethics have yet to be cultivated. The deterrent force of peer pressure on contract breakers remains to be seen. Coupled with the immature system of the enforcement of court judgments, it is hardly surprising that many commercial disputes in China are resolved by non-legal means.\n\nIn the next section of the unit, you will find out more about the key milestones in the historical development of Chinese contract law.",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                451.482,
+                835.074,
+                543.286
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                553.917,
+                833.751,
+                683.132
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                693.762,
+                818.15,
+                729.45
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.022727272727272728
+        },
+        {
+          "id": "exc_3af200c915ae90_42_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 18",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Concludes that the hospital bears a public-law obligation regardless of acceptance, poses a rural-land self-test about authority and discharge, and introduces statutory, judicial, administrative, and transactional sources of Chinese contract law.",
+          "pages": [
+            21
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_216_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_62_v1",
+            "chk_3af200c915ae90_63_v1",
+            "chk_3af200c915ae90_64_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_64_v1",
+          "hit_text": "In Continental civil law jurisdictions such as Germany, Japan, France, Switzerland and Italy, the contract law is found within the civil code or the code of obligations. Contract law, tort law and the law of unjust enrichment are all regarded as part of the law of obligations.\n\nAt the time of writing, China’s civil code is still in the drafting stage. The General Principles of Civil Law and the Contract Law remain the sources of Chinese contract law. In addition, the Sino-foreign Equity Joint Venture Law and the Sino-Foreign Cooperative Joint Venture Law contain specific provisions on Sino-foreign joint venture contracts.\n\nAdministrative rules and regulations also constitute sources of the Chinese contract law. Furthermore, according to article 125 of the Contract Law, ‘transaction practices’ may also be the so urces of contract law.",
+          "hit_page_start": 21,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                688.423,
+                870.084,
+                761.521
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                772.152,
+                872.36,
+                863.956
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                874.587,
+                857.766,
+                928.98
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02095238095238095
+        },
+        {
+          "id": "exc_3af200c915ae90_14_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › 1.2.2 Historical developments in China › 8",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Traces Chinese civil and contract law from the late Qing draft civil code through the Republican civil code, post-1949 drafting, the 1980s economic contract statutes, and the 1999 unified Contract Law informed by international and comparative sources.",
+          "pages": [
+            11
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_27_v1",
+            "chk_3af200c915ae90_28_v1",
+            "chk_3af200c915ae90_29_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_29_v1",
+          "hit_text": "The three pieces of legislation on contract law were not intended to be a comprehensive set. They were enacted piecemeal to solve the immediate needs of the economic reform starting from 1979. They contained contradictory provisions, and the scope of each of them overlapped. In 1993, the drafting process of a new Contract Law started, which was intended to replace the three pieces of legislation. It is believed that the drafters of the new Contract Law, consisting of many legal academics this time, had made extensive reference to various sources, such as the UNIDROIT Principles of International Commercial Contracts (PICC) (http://www.unidroit.org/english/principles/contracts/main.htm),the United Nations Convention on Contracts for International Sale of Goods (CISG) (http://www.uncitral.org/uncitral/en/uncitral_texts/sale_goods.html), the Principles of European Contract Law (PECL) (http://frontpage.cbs.dk/law/commission_on_european_contract_law/), the civil codes of France and Germany, and the English common law. It was passed on 15 March 1999, effective 1 October 1999, and was supplemented by the Interpretation on Several Issues Regarding the Application of the Contract Law (1) (http://www.sjzmbc.gov.cn/en/public/englishshow.jsp?id=20060904158511) issued by the Supreme People’s Court and some other judicial interpretations on technology contract and construction contract.",
+          "hit_page_start": 11,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                600.363,
+                872.995,
+                916.633
+              ],
+              "page": 11,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020833333333333332
+        },
+        {
+          "id": "exc_3af200c915ae90_12_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Continues comparative history through nineteenth-century freedom of contract, welfare-state limits, consumer and environmental protection, CISG, UNIDROIT principles, and European contract-law harmonization.",
+          "pages": [
+            10
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_24_v1",
+            "chk_3af200c915ae90_25_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_25_v1",
+          "hit_text": "Contract law in the 19th century was developed against the backdrop of the rise of the free economy, while the contemporary trend is the emergence of the welfare state. Freedom of contract is now regulated for various reasons, such as the pursuit of social welfare, consumer safety and environmental protection. The interplay of these social factors and contractual freedom is unavoidably the subject of political and jurisprudential controversy.\n\nAnother contemporary trend is the internationalisation of contract law. As early as 1930, the International Institute for Unification of Private Law (UNIDROIT) embarked on the work of unifying the laws regarding the international sale of goods. In 1964, at the Hague Conference, the Uniform Law on International Sale of Goods and the Uniform Law on the Formation of Contract for International Sale of Goods were adopted. However, since these two conventions failed to achieve the objective of establishing a unified code on the international sale of goods, the United Nations International Trade Law Committee (UNCITRAL), on the basis of these two conventions, formulated in 1978 the United Nations Convention on Contract for the In ternational Sale of Goods (CISG) (http://www.cisg.law.pace.edu/cisg/biblio/bonell96.ht ml), adopted in 1980 and effective from 1 January 1988. In May 1994, the Governing Council of the International Institute for the Unification of Private Law (UNIDROIT) gave its imprimatur to the publication of the Principles of International Commercial Contracts (hereinafter the UNIDROIT Principles). Meanwhile, the European Union has been actively formulating the uniform principles of European contract law. The Commission on European Contract Law made up of legal experts and academics from European Union member states has developed the Principles of European Contract Law (PECL).",
+          "hit_page_start": 10,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                338.23,
+                833.909,
+                448.74
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                459.371,
+                831.692,
+                794.346
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.0196514012303486
+        },
+        {
+          "id": "exc_3af200c915ae90_18_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Online discussion 1.1 › 1.3 Features of Chinese contract law › 1.3.1 The concept of a contract",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Compares continental intent-based and common-law enforceability-based definitions, then presents Article 2's Chinese definition of contracts as agreements between equal parties affecting civil rights and obligations.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_107_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_33_v1",
+            "chk_3af200c915ae90_34_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_34_v1",
+          "hit_text": "When the common law and Continental civil law definitions of contract are compared, the definition of contract in Continental civil law is more abstract. It is based on expression of the parties’ intent (or translated as “expression of will”). The common law, on the other hand, defines it from the perspective of enforceability in a court of law. This reflects the pragmatic approach of the common law, a tradition that can also be seen in the common law of tort and other subjects.\n\nThe Chinese contract law follows the Continental civil law tradition. According to Article 2 of the Contract Law, a contract is “an agreement among natural persons, legal",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                783.093,
+                829.763,
+                894.014
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                904.644,
+                833.37,
+                940.333
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01953760989905568
+        },
+        {
+          "id": "exc_3af200c915ae90_44_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 1.6 Doctrines of contract law › 1.6.1 Freedom of contract",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-doctrines"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains freedom of contract as a borrowed doctrine absent from the planned economy, summarizes its private-autonomy rationale, and contrasts private freedom with the positive-law limits on public bodies.",
+          "pages": [
+            22
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_226_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_66_v1",
+            "chk_3af200c915ae90_67_v1",
+            "chk_3af200c915ae90_68_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_66_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nFreedom of contract is a borrowed concept. China did not accept it in the planned economy era. In the light of such historical background, it is not difficult to understand why the draftsmen sought to declare it expressly in the Contract Law. Legal textbooks on contract law published in China often devote a substantive part of the introductory chapter to discussing the justification for this concept.\n\nLink to Supplementary Information Freedom of contract\n\nIt is interesting to see the way in which Chinese academics explain the concept of freedom of contract to students. The following is a typical one.",
+          "hit_page_start": 22,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                310.227,
+                826.308,
+                342.276
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                353.689,
+                833.45,
+                445.493
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                456.124,
+                419.592,
+                500.719
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                511.349,
+                790.055,
+                547.037
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018956043956043958
+        },
+        {
+          "id": "exc_3af200c915ae90_45_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 1.6 Doctrines of contract law › 1.6.1 Freedom of contract › 20",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-doctrines"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Lists the freedoms to contract, choose parties and terms, select form and dispute resolution, then explains mandatory duties, standard-form constraints, and protections for consumers, employees, and other vulnerable groups.",
+          "pages": [
+            23
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_69_v1",
+            "chk_3af200c915ae90_70_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_70_v1",
+          "hit_text": "The essential elements of the doctrine of freedom of contract under Chinese law include: (1) the freedom to make a contract or not to make any contract; (2) the freedom to choose with whom one should contract; (3) the freedom to decide the contents of the contract; (4) the freedom to decide the mode in which the contract is to be made; and (5) the freedom to decide the dispute resolution mechanism to be stipulated into the contract.\n\nThe freedom of contract is often subject to various restrictions, for example:\n\n• Mandatory obligations: In order to safeguard the legal interests and social and public interests of vulnerable groups, the contracting parties are sometimes required to observe certain mandatory obligations. For example, public utilities in China, such as water supply, electricity, gas, public transport, are prohibited from refusing consumers’ offers.\n• Standard form contracts: The use of standard form contracts by business operators greatly restricts the choice of customers, who are in the weaker bargaining position. Most service providers such as banks, telecommunications operators and insurance companies insist on adopting pre-printed standard form contracts. The inequality in bargaining power is adjusted by legislation.\n• Protection of vulnerable groups generally: The typical example is consumers and employees (see, for example, the Consumer Protection Law, the Labour Law and the Labour Contract Law).",
+          "hit_page_start": 23,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                339.249,
+                859.743,
+                450.292
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                462.448,
+                788.042,
+                479.43
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                181.6,
+                490.061,
+                869.692,
+                736.219
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018595679012345677
+        },
+        {
+          "id": "exc_3af200c915ae90_37_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Activity 1.3 › 1.4.3 Contract law and property law",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains the relationship between Contract Law and Property Law for land management, transfers, easements, security, mortgages, pledges, and rural land contracting, including statutory contracting procedures and breach liability.",
+          "pages": [
+            18
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_183_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_55_v1",
+            "chk_3af200c915ae90_56_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_55_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nThe newly enacted Property Law refers to various types of contracts, such as contracted management of land, contracts on transfer of the right to use construction land, easement contracts, security contracts, mortgage contracts, contracts on pledge rights, etc. These contracts are in principle governed by the Contract Law, save for the contracts relating to state-owned land, which are subject to the specific laws mentioned in the previous section. In practice, business entities often deal with collective and rural enterprises and we will give a brief account of these issues below.\n\nArticle 19 of the Law on Land Contract in Rural Areas (http://www.gov.cn/english/laws/2005-10/09/content_75300.htm) provides that land shall be contracted out in accordance with the following procedures:\n\n1. a contract-working team shall be elected by the villagers assembly of the collective economic organization concerned;\n2. the contract-working team shall, in accordance with the provisions of laws and administrative rules and regulations, draw up and announce its contracting plan;\n3. convening, according to law, the villagers assembly of the collective economic organization concerned to adopt the contracting plan through discussion;\n4. making known to the public arrangements for the implementation of the contracting plan; and\n5. concluding the contract.",
+          "hit_page_start": 18,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                287.904,
+                826.308,
+                319.952
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                331.366,
+                830.15,
+                460.581
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                471.211,
+                832.558,
+                525.605
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.634,
+                536.235,
+                825.242,
+                702.861
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017147366910604103
+        },
+        {
+          "id": "exc_3af200c915ae90_35_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Activity 1.3 › 1.4.2 Contracts between state and business",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Distinguishes state transactions made as an equal private-law participant from sovereign administrative acts, explains when Contract Law applies, and introduces administrative contracts governed by special rules.",
+          "pages": [
+            17
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_176_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_53_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_53_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nAre contracts between the state and the business sectors subject to the Contract Law? We must look at the transaction in question. As a general rule, if the state enters into a transaction with an enterprise on an equal basis, that means the state does not exercise its sovereignty as a state, but rather as an entity in the private law regime, the Contract Law applies. Hence, the example in item (5) of the above Activity is governed by the Contract Law. However, item (2) is an administrative act of the government, which is not governed by the Contract Law. As to why the Chinese government is allowed to make a ‘gift’ on condition of a certain amount of tax payment is outside the scope of this course.\n\nIn China, there is also a broad range of administrative contracts, such as contracts awarded through tender for government procurement, and other special procedures, such as state-owned land use right transfer contracts, contracts for public works, executive employment contracts, and so on. The state-owned land use right transfer contracts, for example, are granted in order to achieve the national land policy; the performance of such contracts is subject to the command and supervision of the land administrative authorities with respect to the land use, duration of the grant and so on, any breach of which would be susceptible to penalties imposed by the authorities.",
+          "hit_page_start": 17,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                554.171,
+                864.123,
+                586.22
+              ],
+              "page": 17,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                597.633,
+                872.731,
+                764.259
+              ],
+              "page": 17,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                774.89,
+                867.437,
+                922.81
+              ],
+              "page": 17,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01623062015503876
+        },
+        {
+          "id": "exc_3af200c915ae90_29_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.2 › 13",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains the court's rejection of contractual intent in the kow-tow case, identifies intent and legal significance as essential elements, and contrasts Chinese law's approach with common-law consideration.",
+          "pages": [
+            16
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_47_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_47_v1",
+          "hit_text": "It was held that by asking the claimant to greet him as gandie and kowtow, the defendant’s intent was just to embarrass the claimant. However, the claimant’s conduct was also in lack of good faith. As the defendant did not deliver possession of the car to the claimant, nor did he register the transfer, the alleged contract of gift between the parties was invalid. In accordance with article 55 of the General Principles of Civil Law, and articles 5, 186 and 187 of the Contract Law, the claimant’s claim was dismissed. Obviously the parties did not intend to create any contract in such circumstances.\n\nThere are two essential elements of a contract under Chinese law: (1) an expression of intent; (2) the expression of intent having legal significance. A simple test is whether the act is embodied with civil rights and obligations. At common law, the equivalent question is whether there is any intention to create legal relations.\n\nAt common law, consideration is an essential element of a contract, but there is no equivalent concept in Chinese law. In Case Study above, assuming that common law applied, the court would have held that the promise did not constitute a contract due to the lack of consideration. In Chinese law, on the contrary, the court has to rely on the ground of lack of expression of intent with legal significance.",
+          "hit_page_start": 16,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                834.42,
+                207.479
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                218.109,
+                832.869,
+                291.208
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                301.838,
+                824.222,
+                393.643
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016143650164268723
+        },
+        {
+          "id": "exc_3af200c915ae90_15_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › 1.2.2 Historical developments in China › 9",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "States the course's dated use of the 1999 PRC Contract Law and points readers to its official English translation.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_30_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_30_v1",
+          "hit_text": "In this course, ‘the Contract Law’ refers to the Contract Law of the PRC promulgated in\n\n1999. It has not been revised since then. In this unit, we will refer to the official English translation of the Contract Law (http://tradeinservices.mofcom.gov.cn/en/b/1999-03-15/8371.shtml).",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                829.798,
+                76.54
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                78.264,
+                830.824,
+                141.564
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016129032258064516
+        },
+        {
+          "id": "exc_3af200c915ae90_6_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › 1.1 Contract law: some background",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains why enforceable contracts support market exchange and credit, uses Weber's rationalization account to frame contracts as specialized rules and information systems, and notes that corporations and transactions can be understood as contractual arrangements.",
+          "pages": [
+            6
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_42_v1",
+            "fig_3af200c915ae90_47_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_12_v1",
+            "chk_3af200c915ae90_13_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_12_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nBefore we launch into the main body of the unit, we will begin by thinking about contract law and its role in the market economy.\n\nContracts are at the core of the market economy. The reason for this is clear: business transactions are premised upon contractual relationships. The enforceability of contracts is a key to economic development. The market economy mechanism relies on the combined usage of capital and credit. The implementation of credit sales is effected by the contract law system. The fact that contracts are enforceable in a court of law makes credit sales possible. This unit will examine the background of the contract law system. One aspect we will not cover, however, is how different kinds of contractual arrangements affect transaction costs. This is a topic for the economists, and is out of the scope of this course.\n\nAs we think about the significance of contract law, it may be useful to consult the work of some well-known scholars. The first of these is the sociologist Max Weber.\n\nFigure 1.1 Max Weber\n\nAccording to Weber, one of the major characteristics of modern society is the process of rationalization. In other words, a task is achieved through a process broken down into a number of distinct and highly specialized rules. These rules are measured in terms of precise figures. Abstract adjectives such as ‘basic’ or ‘good’ are not helpful to rationalization.",
+          "hit_page_start": 6,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                153.898,
+                826.308,
+                185.947
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                197.36,
+                781.057,
+                233.048
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                243.678,
+                832.709,
+                410.304
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                420.935,
+                832.674,
+                456.622
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                405.252,
+                592.841,
+                557.323,
+                606.426
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                636.493,
+                826.886,
+                728.297
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015789473684210527
+        },
+        {
+          "id": "exc_3af200c915ae90_7_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › 1.1 Contract law: some background › 4",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Qualifies the idea that all commerce rests on discrete contracts by discussing relational contracting, personal trust, community enforcement, reputation, arbitration, and merchant tribunals in European and common-law history.",
+          "pages": [
+            7
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_14_v1",
+            "chk_3af200c915ae90_15_v1",
+            "chk_3af200c915ae90_16_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_15_v1",
+          "hit_text": "Later, Macneil, another American jurist, also pointed out in his work The New Social Contract (1981) that a majority of US commercial transactions were not transacted through discrete contracts between strangers, but rather through established relationships. He referred to these relationships as ‘relational contracts.’\n\nAvner Greif, an economist, made a historical study of the pre-modern European economy. He found that in the absence of a contract enforcement system, there was inter-community, impersonal exchange from as early as the 12th century in Europe, under an institution called the Community Responsibility System (http://www-econ.stanford.edu/faculty/workp/swp97016.html). Under this system, traders would belong to particular groups based on their social affiliation. Within these groups, contracts were often made and signed in the presence of witnesses. These groups also had the ability to impose sanctions on individual members. This guaranteed the fulfilment of the contractual obligations and promoted the economic development of credit transactions.",
+          "hit_page_start": 7,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                245.722,
+                839.407,
+                318.821
+              ],
+              "page": 7,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                329.451,
+                871.062,
+                514.783
+              ],
+              "page": 7,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014248003248950859
+        },
+        {
+          "id": "exc_3af200c915ae90_19_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Online discussion 1.1 › 1.3 Features of Chinese contract law › 1.3.1 The concept of a contract › 10",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Completes the Article 2 definition and introduces related Chinese legal terms for contract-like acts.",
+          "pages": [
+            13
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_35_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_35_v1",
+          "hit_text": "persons or other organizations as equal parties for the establishment, modification of a relationship involving the civil rights and obligations of such entities.”\n\nApart from the term ‘contract,’ you may come across other related terms in Chinese contract law. We explore these briefly below.",
+          "hit_page_start": 13,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                60.624,
+                863.571,
+                95.413
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                106.698,
+                849.101,
+                142.386
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014084507042253521
+        },
+        {
+          "id": "exc_1c619222c448be_186_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES: 1. Find out when the Uniform Commercial Code (UCC) is the appropriate law to apply and when the common law is the appropriate law. 2. Learn the elements of common-law contracts. 3. Identify the difference between common-law contracts and contracts between merchants. A contract is a legally enforceable promise.",
+          "pages": [
+            152,
+            153
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_446_v1",
+            "chk_1c619222c448be_447_v1",
+            "chk_1c619222c448be_448_v1",
+            "chk_1c619222c448be_449_v1",
+            "chk_1c619222c448be_450_v1",
+            "chk_1c619222c448be_451_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_447_v1",
+          "hit_text": "This section explores contract formation. We can examine the elements of formation to determine whether the contract is valid or whether it suffers some deficiency that renders it not legally enforceable.\n\nIn the United States, two primary sources of law govern our contracts: the common law and the Uniform Commercial Code. The Uniform Commercial Code (UCC) article 2 governs contracts between a merchant and the sale of goods. Essentially, the UCC contains two sets of rules for contracts. One set involves rules for everyone, and the other set involves rules for merchants. In this section, we will explore the UCC as it applies to merchants. Chiefly, we will examine how the UCC requirements differ from common law in contract formation\n\nHowever, we will first address common-law contracts. Common law governs contracts for services as well as contracts not otherwise governed by the UCC. It is important to recognize the elements of common-law contract formation because they are more stringent than the requirements for formation between merchants under the UCC. If all elements of common-law contract formation do not exist, then the contract may be void or voidable.\n\nThe elements of common-law contract formation include offer, acceptance, and consideration. Offer and acceptance together form mutual assent. Additionally, to be\n\nenforceable, the contract must be for a legal purpose and parties to the contract must have capacity to enter into the contract.",
+          "hit_page_start": 152,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                579.308,
+                821.397,
+                633.701
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                644.331,
+                827.679,
+                773.546
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                784.177,
+                833.733,
+                894.686
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                905.317,
+                822.245,
+                941.005
+              ],
+              "page": 152,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                869.43,
+                95.246
+              ],
+              "page": 153,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013354037267080746
+        },
+        {
+          "id": "exc_3af200c915ae90_17_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Online discussion 1.1 › 1.3 Features of Chinese contract law",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces the features of Chinese contract law through comparison with contract concepts in other jurisdictions.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_103_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_32_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_32_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nIn this section, we will discuss the features of Chinese contract law with reference to the legal concept of contracts in other jurisdictions.",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                372.395,
+                826.308,
+                404.444
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                415.857,
+                813.474,
+                451.545
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013333333333333334
+        },
+        {
+          "id": "exc_1c619222c448be_190_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › KEY TAKEAWAYS",
+          "roles": [
+            "summary"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › KEY TAKEAWAYS: A contract is a legally enforceable promise. Common law and the UCC are different sources of contract law. Common law is the appropriate type of law for service contracts and contracts that do not fall under the UCC, like real estate contracts. The UCC governs contracts involving the sale of goods with a price of five hundred dollars or more and in contracts between merchants.",
+          "pages": [
+            157
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_462_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_462_v1",
+          "hit_text": "A contract is a legally enforceable promise. Common law and the UCC are different sources of contract law. Common law is the appropriate type of law for service contracts and contracts that do not fall under the UCC, like real estate contracts. The UCC governs contracts involving the sale of goods with a price of five hundred dollars or more and in contracts between merchants. Common-law contract formation requires a valid offer, acceptance, and consideration. The parties must have capacity, and the subject matter must be a legal purpose. The UCC relaxes formation requirements by allowing the use of gap fillers for undefined or conflicting terms and by allowing a contract to be formed by any manner that shows agreement to contract. Quantity is a required term for contracts governed by the UCC.",
+          "hit_page_start": 157,
+          "hit_regions": [
+            {
+              "bbox": [
+                190.336,
+                409.246,
+                801.894,
+                649.299
+              ],
+              "page": 157,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013308798356727148
+        }
+      ]
+    },
+    {
+      "query": "China contract law history 1999 Contract Law Economic Contract Law foreign economic contract",
+      "topics": [],
+      "roles": [],
+      "seconds": 10.996,
+      "excerpts": [
+        {
+          "id": "exc_3af200c915ae90_4_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope",
+            "chinese-contract-doctrines",
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces the graduate course and its focus on the 1999 PRC Contract Law, business practice, freedom of contract in a socialist market economy, contract definitions, scope, doctrines, interpretation, transaction policy, and privity; lists the unit learning outcomes.",
+          "pages": [
+            5
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_8_v1",
+            "chk_3af200c915ae90_9_v1",
+            "chk_3af200c915ae90_10_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_9_v1",
+          "hit_text": "In this course, we will discuss the basic structure of Chinese contract law, including the legislation known as the Contract Law of the People’s Republic of China, and other related laws and regulations. Throughout the course, when we refer to ‘the Contract Law’ with an upper case ‘C’ and ‘L’ we mean the Contract Law of the People’s Republic of China. The ‘contract law’ in small letters refers to the law relating to contracts in China generally. Through this course, you will gain a good grasp of the key concepts and principles of contract law from the perspective of business practice. Upon completion of this course, you should have developed the necessary analytical skills for resolving contract law issues in real life cases.\n\nThe hallmark of contract law in capitalist economies is the concept of freedom of contract. In this course, we will examine the interplay between this concept and the socialist market economy with Chinese characteristics. In this first unit, we will examine the key concepts of the Chinese contract law together with some background information, including the characteristics of the system and its historical development and application. We will look at the legal concept of a contract and various approaches for defining a contract under law. We will also take a brief look at the scope of application of contract law in China. There are a number of fundamental doctrines underlying Chinese contract law. These include principles such as equality, freedom of contract and good faith, and we will examine these in detail later in the unit. Following that, we will look at various ways of categorizing contracts, and the principles of interpretation of contractual terms. Finally, we will discuss the two main policy considerations underlying the contract law. These are the policy to encourage transactions, and privity of contract. In short, this unit:",
+          "hit_page_start": 5,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                322.508,
+                871.301,
+                489.134
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                499.765,
+                872.042,
+                814.253
+              ],
+              "page": 5,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.023348236462990564
+        },
+        {
+          "id": "exc_3af200c915ae90_42_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 18",
+          "roles": [
+            "exercise",
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Concludes that the hospital bears a public-law obligation regardless of acceptance, poses a rural-land self-test about authority and discharge, and introduces statutory, judicial, administrative, and transactional sources of Chinese contract law.",
+          "pages": [
+            21
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_216_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_62_v1",
+            "chk_3af200c915ae90_63_v1",
+            "chk_3af200c915ae90_64_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_64_v1",
+          "hit_text": "In Continental civil law jurisdictions such as Germany, Japan, France, Switzerland and Italy, the contract law is found within the civil code or the code of obligations. Contract law, tort law and the law of unjust enrichment are all regarded as part of the law of obligations.\n\nAt the time of writing, China’s civil code is still in the drafting stage. The General Principles of Civil Law and the Contract Law remain the sources of Chinese contract law. In addition, the Sino-foreign Equity Joint Venture Law and the Sino-Foreign Cooperative Joint Venture Law contain specific provisions on Sino-foreign joint venture contracts.\n\nAdministrative rules and regulations also constitute sources of the Chinese contract law. Furthermore, according to article 125 of the Contract Law, ‘transaction practices’ may also be the so urces of contract law.",
+          "hit_page_start": 21,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                688.423,
+                870.084,
+                761.521
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                772.152,
+                872.36,
+                863.956
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                874.587,
+                857.766,
+                928.98
+              ],
+              "page": 21,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02273787313432836
+        },
+        {
+          "id": "exc_3af200c915ae90_14_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › 1.2.2 Historical developments in China › 8",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Traces Chinese civil and contract law from the late Qing draft civil code through the Republican civil code, post-1949 drafting, the 1980s economic contract statutes, and the 1999 unified Contract Law informed by international and comparative sources.",
+          "pages": [
+            11
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_27_v1",
+            "chk_3af200c915ae90_28_v1",
+            "chk_3af200c915ae90_29_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_29_v1",
+          "hit_text": "The three pieces of legislation on contract law were not intended to be a comprehensive set. They were enacted piecemeal to solve the immediate needs of the economic reform starting from 1979. They contained contradictory provisions, and the scope of each of them overlapped. In 1993, the drafting process of a new Contract Law started, which was intended to replace the three pieces of legislation. It is believed that the drafters of the new Contract Law, consisting of many legal academics this time, had made extensive reference to various sources, such as the UNIDROIT Principles of International Commercial Contracts (PICC) (http://www.unidroit.org/english/principles/contracts/main.htm),the United Nations Convention on Contracts for International Sale of Goods (CISG) (http://www.uncitral.org/uncitral/en/uncitral_texts/sale_goods.html), the Principles of European Contract Law (PECL) (http://frontpage.cbs.dk/law/commission_on_european_contract_law/), the civil codes of France and Germany, and the English common law. It was passed on 15 March 1999, effective 1 October 1999, and was supplemented by the Interpretation on Several Issues Regarding the Application of the Contract Law (1) (http://www.sjzmbc.gov.cn/en/public/englishshow.jsp?id=20060904158511) issued by the Supreme People’s Court and some other judicial interpretations on technology contract and construction contract.",
+          "hit_page_start": 11,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                600.363,
+                872.995,
+                916.633
+              ],
+              "page": 11,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02222659323367427
+        },
+        {
+          "id": "exc_3af200c915ae90_12_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Continues comparative history through nineteenth-century freedom of contract, welfare-state limits, consumer and environmental protection, CISG, UNIDROIT principles, and European contract-law harmonization.",
+          "pages": [
+            10
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_24_v1",
+            "chk_3af200c915ae90_25_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_25_v1",
+          "hit_text": "Contract law in the 19th century was developed against the backdrop of the rise of the free economy, while the contemporary trend is the emergence of the welfare state. Freedom of contract is now regulated for various reasons, such as the pursuit of social welfare, consumer safety and environmental protection. The interplay of these social factors and contractual freedom is unavoidably the subject of political and jurisprudential controversy.\n\nAnother contemporary trend is the internationalisation of contract law. As early as 1930, the International Institute for Unification of Private Law (UNIDROIT) embarked on the work of unifying the laws regarding the international sale of goods. In 1964, at the Hague Conference, the Uniform Law on International Sale of Goods and the Uniform Law on the Formation of Contract for International Sale of Goods were adopted. However, since these two conventions failed to achieve the objective of establishing a unified code on the international sale of goods, the United Nations International Trade Law Committee (UNCITRAL), on the basis of these two conventions, formulated in 1978 the United Nations Convention on Contract for the In ternational Sale of Goods (CISG) (http://www.cisg.law.pace.edu/cisg/biblio/bonell96.ht ml), adopted in 1980 and effective from 1 January 1988. In May 1994, the Governing Council of the International Institute for the Unification of Private Law (UNIDROIT) gave its imprimatur to the publication of the Principles of International Commercial Contracts (hereinafter the UNIDROIT Principles). Meanwhile, the European Union has been actively formulating the uniform principles of European contract law. The Commission on European Contract Law made up of legal experts and academics from European Union member states has developed the Principles of European Contract Law (PECL).",
+          "hit_page_start": 10,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                338.23,
+                833.909,
+                448.74
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                459.371,
+                831.692,
+                794.346
+              ],
+              "page": 10,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.02049476345250993
+        },
+        {
+          "id": "exc_3af200c915ae90_11_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 1.2 Historical development of Chinese contract law › 1.2.1 Historical developments in other jurisdictions",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Surveys contractual rules in Hammurabi's code, Roman law, continental civil codes, English common law, freedom of contract, consideration, and the emergence of contractual liberty.",
+          "pages": [
+            9
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_73_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_21_v1",
+            "chk_3af200c915ae90_22_v1",
+            "chk_3af200c915ae90_23_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_23_v1",
+          "hit_text": "Roman law for the first time distinguished breaches of contract from tortious acts. Prior to that, as in ancient Greece, non-performance was simply regarded as infringement. Various provisions of the Roman law have become the origin of modern contract law in Continental Europe, based on which the French Civil Code (Code Civil des Franςais 1804) and the German Civil Code (Bürgerliches Gesetzbuch) were drafted. The French Civil Code established for the first time the principle of freedom of contract, which has become the core principle of modern contract law.\n\nIn England, the principles of modern contract law were well developed in common law courts in the early 19th century. The first important treatise expounding the English law of contract was arguably John Powell’s Essay upon the Law of Contracts and Agreements. The concept of freedom of contract, originating in the work of Adam Smith, was well summed up in the words of a judge in 1875 in the case of Printing and Numerical Registering Co. v. Sampson (1875) LR 19 Eq 462:",
+          "hit_page_start": 9,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                612.504,
+                869.333,
+                741.761
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                752.392,
+                870.082,
+                862.901
+              ],
+              "page": 9,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.020192136630492796
+        },
+        {
+          "id": "exc_3af200c915ae90_18_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Online discussion 1.1 › 1.3 Features of Chinese contract law › 1.3.1 The concept of a contract",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Compares continental intent-based and common-law enforceability-based definitions, then presents Article 2's Chinese definition of contracts as agreements between equal parties affecting civil rights and obligations.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_107_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_33_v1",
+            "chk_3af200c915ae90_34_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_33_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nIn traditional Continental civil law system, the two essential elements of a contract are the parties’ intent and the expression of such intent by the parties. Article 1101 of the French Civil Code (Code Civil des Franςais) states: “A contract is an agreement by which one or several persons bind themselves, towards one or several others, to transfer, to do or not to do something”. This reveals that the traditional civil law approaches the contract law from the perspective of the law of obligations. The common law jurisdictions, on the other hand, view contract from a different perspective. According to the Encyclopaedia Britannica, a contract is “a promise\n\nenforceable by law.”“The making of a contract requires the mutual assent of two or more persons … If one of the parties fails to keep the promise, the other is entitled to legal recourse.”\n\nWhen the common law and Continental civil law definitions of contract are compared, the definition of contract in Continental civil law is more abstract. It is based on expression of the parties’ intent (or translated as “expression of will”). The common law, on the other hand, defines it from the perspective of enforceability in a court of law. This reflects the pragmatic approach of the common law, a tradition that can also be seen in the common law of tort and other subjects.",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                513.137,
+                826.308,
+                545.185
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                556.599,
+                829.551,
+                714.702
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                717.901,
+                800.504,
+                771.808
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                783.093,
+                829.763,
+                894.014
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.019294569582678542
+        },
+        {
+          "id": "exc_3af200c915ae90_37_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Activity 1.3 › 1.4.3 Contract law and property law",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains the relationship between Contract Law and Property Law for land management, transfers, easements, security, mortgages, pledges, and rural land contracting, including statutory contracting procedures and breach liability.",
+          "pages": [
+            18
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_183_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_55_v1",
+            "chk_3af200c915ae90_56_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_55_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nThe newly enacted Property Law refers to various types of contracts, such as contracted management of land, contracts on transfer of the right to use construction land, easement contracts, security contracts, mortgage contracts, contracts on pledge rights, etc. These contracts are in principle governed by the Contract Law, save for the contracts relating to state-owned land, which are subject to the specific laws mentioned in the previous section. In practice, business entities often deal with collective and rural enterprises and we will give a brief account of these issues below.\n\nArticle 19 of the Law on Land Contract in Rural Areas (http://www.gov.cn/english/laws/2005-10/09/content_75300.htm) provides that land shall be contracted out in accordance with the following procedures:\n\n1. a contract-working team shall be elected by the villagers assembly of the collective economic organization concerned;\n2. the contract-working team shall, in accordance with the provisions of laws and administrative rules and regulations, draw up and announce its contracting plan;\n3. convening, according to law, the villagers assembly of the collective economic organization concerned to adopt the contracting plan through discussion;\n4. making known to the public arrangements for the implementation of the contracting plan; and\n5. concluding the contract.",
+          "hit_page_start": 18,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                287.904,
+                826.308,
+                319.952
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                331.366,
+                830.15,
+                460.581
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                471.211,
+                832.558,
+                525.605
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                135.634,
+                536.235,
+                825.242,
+                702.861
+              ],
+              "page": 18,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01917246299268771
+        },
+        {
+          "id": "exc_3af200c915ae90_10_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 1.2 Historical development of Chinese contract law",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces a comparison of milestones in other legal systems before the historical development of Chinese contract law.",
+          "pages": [
+            8
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_68_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_20_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_20_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nIn this section, we will very briefly mention a few key milestones in the historical development of contract law in other jurisdictions before we discuss the history of contract law in China.",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                793.892,
+                826.308,
+                825.941
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                837.354,
+                799.514,
+                891.747
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018463689448145405
+        },
+        {
+          "id": "exc_3af200c915ae90_45_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 1.6 Doctrines of contract law › 1.6.1 Freedom of contract › 20",
+          "roles": [
+            "worked_example"
+          ],
+          "topic_ids": [
+            "chinese-contract-doctrines"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Lists the freedoms to contract, choose parties and terms, select form and dispute resolution, then explains mandatory duties, standard-form constraints, and protections for consumers, employees, and other vulnerable groups.",
+          "pages": [
+            23
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_69_v1",
+            "chk_3af200c915ae90_70_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_70_v1",
+          "hit_text": "The essential elements of the doctrine of freedom of contract under Chinese law include: (1) the freedom to make a contract or not to make any contract; (2) the freedom to choose with whom one should contract; (3) the freedom to decide the contents of the contract; (4) the freedom to decide the mode in which the contract is to be made; and (5) the freedom to decide the dispute resolution mechanism to be stipulated into the contract.\n\nThe freedom of contract is often subject to various restrictions, for example:\n\n• Mandatory obligations: In order to safeguard the legal interests and social and public interests of vulnerable groups, the contracting parties are sometimes required to observe certain mandatory obligations. For example, public utilities in China, such as water supply, electricity, gas, public transport, are prohibited from refusing consumers’ offers.\n• Standard form contracts: The use of standard form contracts by business operators greatly restricts the choice of customers, who are in the weaker bargaining position. Most service providers such as banks, telecommunications operators and insurance companies insist on adopting pre-printed standard form contracts. The inequality in bargaining power is adjusted by legislation.\n• Protection of vulnerable groups generally: The typical example is consumers and employees (see, for example, the Consumer Protection Law, the Labour Law and the Labour Contract Law).",
+          "hit_page_start": 23,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                339.249,
+                859.743,
+                450.292
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                462.448,
+                788.042,
+                479.43
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                181.6,
+                490.061,
+                869.692,
+                736.219
+              ],
+              "page": 23,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01812039312039312
+        },
+        {
+          "id": "exc_3af200c915ae90_44_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Case Study 1.3 › 1.6 Doctrines of contract law › 1.6.1 Freedom of contract",
+          "roles": [
+            "worked_example",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-doctrines"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains freedom of contract as a borrowed doctrine absent from the planned economy, summarizes its private-autonomy rationale, and contrasts private freedom with the positive-law limits on public bodies.",
+          "pages": [
+            22
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_226_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_66_v1",
+            "chk_3af200c915ae90_67_v1",
+            "chk_3af200c915ae90_68_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_66_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nFreedom of contract is a borrowed concept. China did not accept it in the planned economy era. In the light of such historical background, it is not difficult to understand why the draftsmen sought to declare it expressly in the Contract Law. Legal textbooks on contract law published in China often devote a substantive part of the introductory chapter to discussing the justification for this concept.\n\nLink to Supplementary Information Freedom of contract\n\nIt is interesting to see the way in which Chinese academics explain the concept of freedom of contract to students. The following is a typical one.",
+          "hit_page_start": 22,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                310.227,
+                826.308,
+                342.276
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                353.689,
+                833.45,
+                445.493
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                456.124,
+                419.592,
+                500.719
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                511.349,
+                790.055,
+                547.037
+              ],
+              "page": 22,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.018038852913968548
+        },
+        {
+          "id": "exc_3af200c915ae90_35_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Activity 1.3 › 1.4.2 Contracts between state and business",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Distinguishes state transactions made as an equal private-law participant from sovereign administrative acts, explains when Contract Law applies, and introduces administrative contracts governed by special rules.",
+          "pages": [
+            17
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_176_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_53_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_53_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nAre contracts between the state and the business sectors subject to the Contract Law? We must look at the transaction in question. As a general rule, if the state enters into a transaction with an enterprise on an equal basis, that means the state does not exercise its sovereignty as a state, but rather as an entity in the private law regime, the Contract Law applies. Hence, the example in item (5) of the above Activity is governed by the Contract Law. However, item (2) is an administrative act of the government, which is not governed by the Contract Law. As to why the Chinese government is allowed to make a ‘gift’ on condition of a certain amount of tax payment is outside the scope of this course.\n\nIn China, there is also a broad range of administrative contracts, such as contracts awarded through tender for government procurement, and other special procedures, such as state-owned land use right transfer contracts, contracts for public works, executive employment contracts, and so on. The state-owned land use right transfer contracts, for example, are granted in order to achieve the national land policy; the performance of such contracts is subject to the command and supervision of the land administrative authorities with respect to the land use, duration of the grant and so on, any breach of which would be susceptible to penalties imposed by the authorities.",
+          "hit_page_start": 17,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                554.171,
+                864.123,
+                586.22
+              ],
+              "page": 17,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                597.633,
+                872.731,
+                764.259
+              ],
+              "page": 17,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                774.89,
+                867.437,
+                922.81
+              ],
+              "page": 17,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.017652003362286353
+        },
+        {
+          "id": "exc_3af200c915ae90_15_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › 1.2.2 Historical developments in China › 9",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "States the course's dated use of the 1999 PRC Contract Law and points readers to its official English translation.",
+          "pages": [
+            12
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_30_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_30_v1",
+          "hit_text": "In this course, ‘the Contract Law’ refers to the Contract Law of the PRC promulgated in\n\n1999. It has not been revised since then. In this unit, we will refer to the official English translation of the Contract Law (http://tradeinservices.mofcom.gov.cn/en/b/1999-03-15/8371.shtml).",
+          "hit_page_start": 12,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                59.558,
+                829.798,
+                76.54
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                78.264,
+                830.824,
+                141.564
+              ],
+              "page": 12,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.01639344262295082
+        },
+        {
+          "id": "exc_3af200c915ae90_6_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › 1.1 Contract law: some background",
+          "roles": [
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains why enforceable contracts support market exchange and credit, uses Weber's rationalization account to frame contracts as specialized rules and information systems, and notes that corporations and transactions can be understood as contractual arrangements.",
+          "pages": [
+            6
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_42_v1",
+            "fig_3af200c915ae90_47_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_12_v1",
+            "chk_3af200c915ae90_13_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_12_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nBefore we launch into the main body of the unit, we will begin by thinking about contract law and its role in the market economy.\n\nContracts are at the core of the market economy. The reason for this is clear: business transactions are premised upon contractual relationships. The enforceability of contracts is a key to economic development. The market economy mechanism relies on the combined usage of capital and credit. The implementation of credit sales is effected by the contract law system. The fact that contracts are enforceable in a court of law makes credit sales possible. This unit will examine the background of the contract law system. One aspect we will not cover, however, is how different kinds of contractual arrangements affect transaction costs. This is a topic for the economists, and is out of the scope of this course.\n\nAs we think about the significance of contract law, it may be useful to consult the work of some well-known scholars. The first of these is the sociologist Max Weber.\n\nFigure 1.1 Max Weber\n\nAccording to Weber, one of the major characteristics of modern society is the process of rationalization. In other words, a task is achieved through a process broken down into a number of distinct and highly specialized rules. These rules are measured in terms of precise figures. Abstract adjectives such as ‘basic’ or ‘good’ are not helpful to rationalization.",
+          "hit_page_start": 6,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                153.898,
+                826.308,
+                185.947
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                197.36,
+                781.057,
+                233.048
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                243.678,
+                832.709,
+                410.304
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                420.935,
+                832.674,
+                456.622
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                405.252,
+                592.841,
+                557.323,
+                606.426
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                636.493,
+                826.886,
+                728.297
+              ],
+              "page": 6,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.016187470780738664
+        },
+        {
+          "id": "exc_3af200c915ae90_32_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Self-test 1.2 › 1.4 Application of contract law",
+          "roles": [
+            "exercise",
+            "reference"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Introduces the broad scope of application of the 1999 Contract Law compared with earlier statutes.",
+          "pages": [
+            16
+          ],
+          "figure_ids": [
+            "fig_3af200c915ae90_164_v1"
+          ],
+          "chunk_ids": [
+            "chk_3af200c915ae90_50_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_50_v1",
+          "hit_text": "Available under Creative Commons-ShareAlike 4.0 International License (http://creativecommons.org/licenses/by-sa/4.0/).\n\nIn comparison with the old laws, the Contract Law enacted in 1999 has a wide scope of application.",
+          "hit_page_start": 16,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                801.552,
+                826.308,
+                833.601
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                845.014,
+                835.338,
+                880.702
+              ],
+              "page": 16,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015625
+        },
+        {
+          "id": "exc_3af200c915ae90_9_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "Chapter 1 General principles of contract law › Activity 1.1 › 5",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "chinese-contract-law-history"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Continues the history of merchant dispute resolution through lex mercatoria, specialized tribunals, common-law absorption, and the practical limits of formal enforcement in commercial relationships.",
+          "pages": [
+            8
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_18_v1",
+            "chk_3af200c915ae90_19_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_19_v1",
+          "hit_text": "In the US, merchants had tried to avoid the time-consuming court procedures for resolving commercial disputes until the end of the 18th century. Similar to the situation in England, the outcome of the competition between courts of law and merchants’ tribunals was that the customs of merchants were absorbed by judges and integrated into the common law.\n\nThe experience in Western jurisdictions shows that merchants’ concern about their goodwill and long-term reputation, rather than the effectiveness of the court system, is probably the biggest driving force behind the enforceability of contracts. In China, however, business ethics have yet to be cultivated. The deterrent force of peer pressure on contract breakers remains to be seen. Coupled with the immature system of the enforcement of court judgments, it is hardly surprising that many commercial disputes in China are resolved by non-legal means.\n\nIn the next section of the unit, you will find out more about the key milestones in the historical development of Chinese contract law.",
+          "hit_page_start": 8,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                451.482,
+                835.074,
+                543.286
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                553.917,
+                833.751,
+                683.132
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                126.05,
+                693.762,
+                818.15,
+                729.45
+              ],
+              "page": 8,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.015591179653679654
+        },
+        {
+          "id": "exc_1c619222c448be_426_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 13 Business in the Global Legal Environment › LEARNING OBJECTIVES › 13.1.2 The Nature of Law as It Applies to Businesses Operating in the International Arena",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "international-business-law"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 13 Business in the Global Legal Environment › LEARNING OBJECTIVES › 13.1.2 The Nature of Law as It Applies to Businesses Operating in the International Arena: Available under Creative Commons-ShareAlike 4.0 International License (http:// creativecommons.org/licenses/by-sa/4.0/). Businesses are not involved in signing treaties or in creating law that applies between sovereign states. Indeed, the sovereign states themselves have the only power to conduct foreign affairs. In the United States, that power rests with the president, though Congress also has important roles.",
+          "pages": [
+            338,
+            339
+          ],
+          "figure_ids": [
+            "fig_1c619222c448be_2497_v1",
+            "fig_1c619222c448be_2504_v1",
+            "fig_1c619222c448be_2505_v1"
+          ],
+          "chunk_ids": [
+            "chk_1c619222c448be_968_v1",
+            "chk_1c619222c448be_969_v1",
+            "chk_1c619222c448be_970_v1",
+            "chk_1c619222c448be_971_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_969_v1",
+          "hit_text": "As noted in the example concerning U.S. companies doing business with Foxconn and Hon Hai Precision Industry Co., international business can involve creating contracts between parties from different nations. These contracts are horizontal in nature, much like a treaty. However, they are also subject to a vertical legal structure, because the parties to the contact will have chosen which laws will apply to resolve disputes arising under the contract. For example, if Microsoft, a U.S. company, has a contract with KYE Systems Corp., a Chinese manufacturer, to assemble its products, the contract might very well include a choice of law clause that would require any contract dispute to be settled in accordance with Washington State law. A choice of law clause is a contractual provision that specifies which law and jurisdiction will apply to disputes arising under the contract. The contract might contain such a clause because Microsoft’s headquarters are in Washington State, and it would be more convenient for Microsoft to settle any disputes arising under a contract by using the laws in the state where it is located. This probably would be terribly inconvenient for KYE Systems Corp., but the benefits of obtaining a Microsoft contract probably outweigh the potential inconvenience of resolving disputes in the Washington State court system. Additionally, a well-established United Nations treaty, the Convention on the Recognition and Enforcement of Foreign Arbitral Awards, provides for the enforcement of arbitral awards among member states.",
+          "hit_page_start": 338,
+          "hit_regions": [
+            {
+              "bbox": [
+                126.05,
+                420.311,
+                832.339,
+                923.635
+              ],
+              "page": 338,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014810924369747899
+        },
+        {
+          "id": "exc_55691aaba9e95f_671_v1",
+          "book_id": "business-fundamentals",
+          "book_title": "Business Fundamentals",
+          "section_path": "Chapter 14 International business for the entrepreneur › China establishes a new employment contract law for 2008 (www.aon.com) › Introduction",
+          "roles": [
+            "introduction"
+          ],
+          "topic_ids": [
+            "globalization-entrepreneurs"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Introduction: On June 29, 2007 at the 28th session of the standing committee of the 10th National People’s Congress, a new employment contract law was adopted which took take effect on 1 Jauary 2008. This law requires all employers to enter into contracts with their e mployees within 30 days of fulltime employment and sets out guidelines for their implementation.",
+          "pages": [
+            356,
+            357
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_55691aaba9e95f_1023_v1",
+            "chk_55691aaba9e95f_1024_v1",
+            "chk_55691aaba9e95f_1025_v1"
+          ],
+          "hit_chunk_id": "chk_55691aaba9e95f_1023_v1",
+          "hit_text": "On June 29, 2007 at the 28th session of the standing committee of the 10th National People’s Congress, a new employment contract law was adopted which took take effect on 1 Jauary 2008. This law requires all employers to enter into contracts with their e mployees within 30 days of fulltime employment and sets out guidelines for their implementation. By incorporating new legal provisions with existing laws from the current PRC labor law, the committee hopes to meet three main objectives: (1) to clarify the employment contract system by clearly identifying both the employer and the employee litigation rights and duties (2) provide protection of an employee's legitimate rights and interests and (3) construct and develop harmonious/stable work relations. All regulations that affect employees such as compensation, work hours, rest, leave, work safety and hygiene, insurance, benefits, employee training, work discipline or work quota management must be approved by the employee representative congress or by all the employees and determined with a trade union (to be established by all employers) or",
+          "hit_page_start": 356,
+          "hit_regions": [
+            {
+              "bbox": [
+                152.521,
+                622.671,
+                763.486,
+                937.546
+              ],
+              "page": 356,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014733193017209361
+        },
+        {
+          "id": "exc_3af200c915ae90_19_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › Online discussion 1.1 › 1.3 Features of Chinese contract law › 1.3.1 The concept of a contract › 10",
+          "roles": [
+            "exercise"
+          ],
+          "topic_ids": [
+            "chinese-contract-concept-and-scope"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Completes the Article 2 definition and introduces related Chinese legal terms for contract-like acts.",
+          "pages": [
+            13
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_35_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_35_v1",
+          "hit_text": "persons or other organizations as equal parties for the establishment, modification of a relationship involving the civil rights and obligations of such entities.”\n\nApart from the term ‘contract,’ you may come across other related terms in Chinese contract law. We explore these briefly below.",
+          "hit_page_start": 13,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                60.624,
+                863.571,
+                95.413
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                106.698,
+                849.101,
+                142.386
+              ],
+              "page": 13,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014285714285714285
+        },
+        {
+          "id": "exc_1c619222c448be_183_v1",
+          "book_id": "the-legal-and-ethical-environment-of-business",
+          "book_title": "The Legal and Ethical Environment of Business",
+          "section_path": "Chapter 6 Contracts › LEARNING OBJECTIVES › 140",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "contract-formation-and-ucc"
+          ],
+          "confidence": 0.9,
+          "synopsis": "Chapter 6 Contracts › LEARNING OBJECTIVES › 140: would receive $250,000 per year for three years. Second, the contract was a$750,000 “pay or play” deal, which gave Warner Bros. a choice between using Locke’s services as a director and paying Locke a fee. Though Locke did not know this, Eastwood agreed to reimburse Warner Bros.",
+          "pages": [
+            150,
+            151
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_1c619222c448be_437_v1",
+            "chk_1c619222c448be_438_v1",
+            "chk_1c619222c448be_439_v1",
+            "chk_1c619222c448be_440_v1",
+            "chk_1c619222c448be_441_v1",
+            "chk_1c619222c448be_442_v1",
+            "chk_1c619222c448be_443_v1"
+          ],
+          "hit_chunk_id": "chk_1c619222c448be_442_v1",
+          "hit_text": "1. Locke v. Warner Bros. Inc., 57 Cal. App. 4th 354 (1997).\n\npromises is an important part of business that provides necessary stability, regardless of whether keeping the promise makes economic sense or not.\n\nIf you had a business, would you breach a contract to save money? Why or why not? Contracts are agreements between two or more parties. Generally speaking, contracts are a form of private law, because the terms of the contract are binding on those parties but not on everyone. The contract represents mutual assent to a bargained-for exchange between parties.\n\nGenerally speaking, in the United States parties may enter into contracts for whatever they wish and under any terms that they agree on. In other words, parties may assent to agreements even if those agreements represent bad bargains. However, there are certain external restrictions on our abilities to form contracts. Additionally, certain internal (to the contract) restrictions may exist on our abilities to exercise rights or to engage in other contracts.\n\nLegal restrictions, external to the contract, limit our ability to bargain. For example, if you wanted to hire someone to work for your company, you could not contract with that person to work one hundred- hour workweeks at twenty-five cents per hour. Even if you could find someone to work under those conditions and even if you both agreed to those terms of the contract, our statutory and regulatory laws prohibit you from entering into a contract with those terms. Such wages would violate minimum wage laws.",
+          "hit_page_start": 150,
+          "hit_regions": [
+            {
+              "bbox": [
+                129.785,
+                943.409,
+                454.008,
+                955.297
+              ],
+              "page": 150,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                59.558,
+                868.849,
+                95.246
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                105.876,
+                871.884,
+                206.588
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                217.219,
+                866.96,
+                327.728
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            },
+            {
+              "bbox": [
+                163.866,
+                338.359,
+                873.489,
+                467.574
+              ],
+              "page": 151,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.014216843762298308
+        },
+        {
+          "id": "exc_3af200c915ae90_49_v1",
+          "book_id": "chinese-contract-law",
+          "book_title": "Chinese Contract Law",
+          "section_path": "“ › 22",
+          "roles": [
+            "formal"
+          ],
+          "topic_ids": [
+            "chinese-contract-doctrines"
+          ],
+          "confidence": 0.96,
+          "synopsis": "Explains frustration and fundamental change through legal, policy, currency, and market changes, distinguishes extraordinary change from ordinary commercial risk, and describes renegotiation or judicial adjustment despite the 1999 Contract Law's omission of the doctrine.",
+          "pages": [
+            25
+          ],
+          "figure_ids": [],
+          "chunk_ids": [
+            "chk_3af200c915ae90_76_v1",
+            "chk_3af200c915ae90_77_v1"
+          ],
+          "hit_chunk_id": "chk_3af200c915ae90_77_v1",
+          "hit_text": "During the drafting stage of the Contract Law in the 1990s, the doctrine of fundamental change of circumstances was included in the first four versions of the bill, but was deleted from the final draft, on the ground that the ‘legal system’ (probably referring to the quality of the judiciary) was not mature enough to distinguish change of circumstances and commercial risk. However, there are cases where the people’s courts adopted the concept in judicial practice. See, for example, articles 4 and 7 of the Interpretations of the Supreme People’s Court on Some Issues Trial of Disputes Relating to Rural Household Contracts (《關於審理農村承包合同糾紛案件若干問題的意見》), where the concept was for the first time applied in China.",
+          "hit_page_start": 25,
+          "hit_regions": [
+            {
+              "bbox": [
+                163.866,
+                198.385,
+                873.136,
+                709.768
+              ],
+              "page": 25,
+              "space": "page-1000-topleft"
+            }
+          ],
+          "score": 0.013888888888888888
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "search_id": "search_1",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_3af200c915ae90_10_v1",
+        "exc_3af200c915ae90_4_v1",
+        "exc_3af200c915ae90_11_v1",
+        "exc_3af200c915ae90_9_v1",
+        "exc_3af200c915ae90_42_v1"
+      ]
+    },
+    {
+      "search_id": "search_2",
+      "start": 0,
+      "next_start": 5,
+      "ids": [
+        "exc_3af200c915ae90_4_v1",
+        "exc_3af200c915ae90_42_v1",
+        "exc_3af200c915ae90_14_v1",
+        "exc_3af200c915ae90_12_v1",
+        "exc_3af200c915ae90_11_v1"
+      ]
+    }
+  ],
+  "rerank_calls": [],
+  "books_before": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ],
+  "cache_id_payload_bytes": 4474,
+  "books_after": [
+    {
+      "id": "21st-century-theories-of-education-administration",
+      "title": "21st Century Theories of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+      "title": "A Brief Introduction to Engineering Computation with MATLAB",
+      "version": 1
+    },
+    {
+      "id": "accountancy",
+      "title": "Accountancy",
+      "version": 1
+    },
+    {
+      "id": "accounting-principles-a-business-perspective",
+      "title": "Accounting Principles: A Business Perspective",
+      "version": 1
+    },
+    {
+      "id": "a-cognitive-perspective-on-emotion",
+      "title": "A Cognitive Perspective on Emotion",
+      "version": 1
+    },
+    {
+      "id": "a-first-course-in-electrical-and-computer-engineering",
+      "title": "A First Course in Electrical and Computer Engineering",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-komnzo",
+      "title": "A grammar of Komnzo",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-moloko",
+      "title": "A grammar of Moloko",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-palula",
+      "title": "A grammar of Palula",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-papuan-malay",
+      "title": "A grammar of Papuan Malay",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-pite-saami",
+      "title": "A grammar of Pite Saami",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yakkha",
+      "title": "A grammar of Yakkha",
+      "version": 1
+    },
+    {
+      "id": "a-grammar-of-yauyos-quechua",
+      "title": "A grammar of Yauyos Quechua",
+      "version": 1
+    },
+    {
+      "id": "ahss4",
+      "title": "Advanced High School Statistics",
+      "version": 2
+    },
+    {
+      "id": "a-learning-approach-to-school-discipline-problem-solving-ins",
+      "title": "A Learning Approach to School Discipline: Problem Solving Instead of Punishing",
+      "version": 1
+    },
+    {
+      "id": "applied-ecology",
+      "title": "Applied Ecology",
+      "version": 1
+    },
+    {
+      "id": "bad-ideas-about-writing",
+      "title": "Bad Ideas About Writing",
+      "version": 1
+    },
+    {
+      "id": "basic-income-tax-second-edition",
+      "title": "Basic Income Tax, Second Edition",
+      "version": 1
+    },
+    {
+      "id": "basic-political-concepts",
+      "title": "Basic Political Concepts",
+      "version": 1
+    },
+    {
+      "id": "becoming-a-change-facilitator",
+      "title": "Becoming a Change Facilitator",
+      "version": 1
+    },
+    {
+      "id": "brief-calculus",
+      "title": "Brief Calculus",
+      "version": 1
+    },
+    {
+      "id": "business-ethics",
+      "title": "Business Ethics",
+      "version": 1
+    },
+    {
+      "id": "business-fundamentals",
+      "title": "Business Fundamentals",
+      "version": 1
+    },
+    {
+      "id": "business-government-and-society",
+      "title": "Business, Government, and Society",
+      "version": 1
+    },
+    {
+      "id": "business-processes-and-information-technology",
+      "title": "Business Processes and Information Technology",
+      "version": 1
+    },
+    {
+      "id": "chinese-contract-law",
+      "title": "Chinese Contract Law",
+      "version": 1
+    },
+    {
+      "id": "communication-theory",
+      "title": "Communication Theory",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-1",
+      "title": "Compact Anthology of World Literature - Part 1",
+      "version": 1
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-2",
+      "title": "Compact Anthology of World Literature - Part 2",
+      "version": 2
+    },
+    {
+      "id": "compact-anthology-of-world-literature-part-3",
+      "title": "Compact Anthology of World Literature - Part 3",
+      "version": 1
+    },
+    {
+      "id": "computer-networking-principles-protocols-and-practice",
+      "title": "Computer Networking: Principles, Protocols and Practice",
+      "version": 1
+    },
+    {
+      "id": "concepts-of-biology",
+      "title": "Concepts Of Biology",
+      "version": 1
+    },
+    {
+      "id": "core-concepts-of-marketing",
+      "title": "Core Concepts of Marketing",
+      "version": 1
+    },
+    {
+      "id": "curriculum-development-for-christian-ministry",
+      "title": "Curriculum Development for Christian Ministry",
+      "version": 1
+    },
+    {
+      "id": "database-design",
+      "title": "Database Design",
+      "version": 1
+    },
+    {
+      "id": "educational-administration-the-roles-of-leadership-and-manag",
+      "title": "Educational Administration: The Roles of Leadership and Management",
+      "version": 1
+    },
+    {
+      "id": "educational-psychology",
+      "title": "Educational Psychology",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-1",
+      "title": "Electromagnetics, Volume 1",
+      "version": 1
+    },
+    {
+      "id": "electromagnetics-volume-2",
+      "title": "Electromagnetics, Volume 2",
+      "version": 1
+    },
+    {
+      "id": "electronic-commerce-the-strategic-perspective",
+      "title": "Electronic Commerce: The Strategic Perspective",
+      "version": 1
+    },
+    {
+      "id": "entrepreneurship-education-and-training",
+      "title": "Entrepreneurship Education and Training",
+      "version": 1
+    },
+    {
+      "id": "evidence-based-software-engineering",
+      "title": "Evidence-based Software Engineering",
+      "version": 1
+    },
+    {
+      "id": "focusing-on-organizational-change",
+      "title": "Focusing on Organizational Change",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-compressible-fluid-mechanics",
+      "title": "Fundamentals of Compressible Fluid Mechanics",
+      "version": 1
+    },
+    {
+      "id": "fundamentals-of-electrical-engineering-i",
+      "title": "Fundamentals of Electrical Engineering I",
+      "version": 1
+    },
+    {
+      "id": "how-does-cognition-influence-emotion",
+      "title": "How does Cognition Influence Emotion?",
+      "version": 1
+    },
+    {
+      "id": "information-strategies-for-communicators",
+      "title": "Information Strategies for Communicators",
+      "version": 2
+    },
+    {
+      "id": "information-systems",
+      "title": "Information Systems",
+      "version": 1
+    },
+    {
+      "id": "information-systems-for-business-and-beyond",
+      "title": "Information Systems for Business and Beyond",
+      "version": 2
+    },
+    {
+      "id": "integrated-infrastructure-design-guide-methods-techniques-st",
+      "title": "Integrated Infrastructure Design Guide: Methods, Techniques, Strategies, Perspectives, Featured Designs",
+      "version": 1
+    },
+    {
+      "id": "intermediate-financial-accounting-2021-a-volume-1",
+      "title": "Intermediate Financial Accounting - 2021-A Volume 1",
+      "version": 1
+    },
+    {
+      "id": "introducing-marketing",
+      "title": "Introducing Marketing",
+      "version": 2
+    },
+    {
+      "id": "introduction-to-g-programming",
+      "title": "Introduction to G Programming",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-school-leadership",
+      "title": "Introduction to School Leadership",
+      "version": 1
+    },
+    {
+      "id": "introductory-business-statistics",
+      "title": "Introductory Business Statistics",
+      "version": 2
+    },
+    {
+      "id": "intro-to-logic",
+      "title": "Intro to Logic",
+      "version": 1
+    },
+    {
+      "id": "java-java-java-object-oriented-problem-solving-3-e",
+      "title": "Java, Java, Java: Object-Oriented Problem Solving, 3/E",
+      "version": 1
+    },
+    {
+      "id": "learning-statistics-with-r",
+      "title": "Learning Statistics with R",
+      "version": 1
+    },
+    {
+      "id": "literary-skills-and-the-archive",
+      "title": "Literary Skills and the Archive",
+      "version": 1
+    },
+    {
+      "id": "lsj",
+      "title": "Learning Statistics with jamovi: A Tutorial for Beginners in Statistical Analysis",
+      "version": 2
+    },
+    {
+      "id": "managing-for-productivity-in-the-hospitality-industry",
+      "title": "Managing for Productivity in the Hospitality Industry",
+      "version": 1
+    },
+    {
+      "id": "marketing",
+      "title": "Marketing",
+      "version": 1
+    },
+    {
+      "id": "mathematics-for-elementary-teachers",
+      "title": "Mathematics for Elementary Teachers",
+      "version": 1
+    },
+    {
+      "id": "methodologies-tools-and-new-developments-for-e-learning",
+      "title": "Methodologies, Tools and New Developments for E-Learning",
+      "version": 1
+    },
+    {
+      "id": "modern-philosophy",
+      "title": "Modern Philosophy",
+      "version": 1
+    },
+    {
+      "id": "motivation-and-the-learning-environment",
+      "title": "Motivation and the Learning Environment",
+      "version": 2
+    },
+    {
+      "id": "music-fundamentals-1-pitch-and-major-scales-and-keys",
+      "title": "Music Fundamentals 1: Pitch and Major Scales and Keys",
+      "version": 1
+    },
+    {
+      "id": "music-fundamentals-2-rhythm-and-meter",
+      "title": "Music Fundamentals 2: Rhythm and Meter",
+      "version": 1
+    },
+    {
+      "id": "music-inquiry",
+      "title": "Music Inquiry",
+      "version": 1
+    },
+    {
+      "id": "online-statistics-education-an-interactive-multimedia-course",
+      "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+      "version": 1
+    },
+    {
+      "id": "open-logic-project",
+      "title": "Open Logic Project",
+      "version": 1
+    },
+    {
+      "id": "open-research",
+      "title": "Open Research",
+      "version": 1
+    },
+    {
+      "id": "operations-management",
+      "title": "Operations Management",
+      "version": 2
+    },
+    {
+      "id": "organizational-change-in-the-field-of-education-administrati",
+      "title": "Organizational Change in the Field of Education Administration",
+      "version": 1
+    },
+    {
+      "id": "os4",
+      "title": "OpenIntro Statistics",
+      "version": 2
+    },
+    {
+      "id": "phylogenetic-comparative-methods-learning-from-trees",
+      "title": "Phylogenetic Comparative Methods: learning from trees",
+      "version": 1
+    },
+    {
+      "id": "physics",
+      "title": "Physics",
+      "version": 3
+    },
+    {
+      "id": "politics-power-and-purpose-an-orientation-to-political-scien",
+      "title": "Politics, Power, and Purpose: An Orientation to Political Science",
+      "version": 1
+    },
+    {
+      "id": "principles-of-business-statistics",
+      "title": "Principles of Business Statistics",
+      "version": 1
+    },
+    {
+      "id": "principles-of-finance",
+      "title": "Principles of Finance",
+      "version": 1
+    },
+    {
+      "id": "principles-of-financial-accounting",
+      "title": "Principles of Financial Accounting",
+      "version": 1
+    },
+    {
+      "id": "principles-of-object-oriented-programming",
+      "title": "Principles of Object-Oriented Programming",
+      "version": 1
+    },
+    {
+      "id": "programming-fundamentals-a-modular-structured-approach-using",
+      "title": "Programming Fundamentals -A Modular Structured Approach using C++",
+      "version": 1
+    },
+    {
+      "id": "project-management",
+      "title": "Project Management",
+      "version": 1
+    },
+    {
+      "id": "school-personnel-administration-and-instructional-supervisio",
+      "title": "School Personnel Administration and Instructional Supervision",
+      "version": 1
+    },
+    {
+      "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+      "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+      "version": 1
+    },
+    {
+      "id": "the-impact-of-open-source-software-on-education",
+      "title": "The impact of open source software on education",
+      "version": 1
+    },
+    {
+      "id": "the-legal-and-ethical-environment-of-business",
+      "title": "The Legal and Ethical Environment of Business",
+      "version": 1
+    },
+    {
+      "id": "tourism-the-international-business",
+      "title": "Tourism the International Business",
+      "version": 1
+    },
+    {
+      "id": "understanding-basic-music-theory",
+      "title": "Understanding Basic Music Theory",
+      "version": 1
+    },
+    {
+      "id": "understanding-music-past-and-present",
+      "title": "Understanding Music: Past and Present",
+      "version": 1
+    },
+    {
+      "id": "writing-the-nation-a-concise-introduction-to-american-litera",
+      "title": "Writing the Nation: A Concise Introduction to American Literature 1865 to Present",
+      "version": 1
+    }
+  ]
+}

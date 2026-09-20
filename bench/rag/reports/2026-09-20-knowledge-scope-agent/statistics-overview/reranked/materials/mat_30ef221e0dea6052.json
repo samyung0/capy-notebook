@@ -1,0 +1,71 @@
+{
+ "id": "mat_30ef221e0dea6052",
+ "kind": "note",
+ "title": "What Is Statistics? A Beginner's Introduction",
+ "content": "# What Is Statistics? — A Beginner's Note\n\n## The big idea\n**Statistics** is the science of collecting, summarizing, and interpreting data so you can make intelligent decisions and educated guesses. Data are the pieces of information collected from experiments, surveys, records, or observations (one piece is a *datum*; the collection is a *data set*).\n\n## Two branches\n1. **Descriptive statistics** — numbers that summarize and describe the data you actually have. Examples: the average age of mothers on birth certificates, the percentage of certificates issued in one state, a basketball player's shooting percentage. Descriptive statistics *only* describe the data at hand — they do not generalize beyond it.\n2. **Inferential statistics** — the mathematical procedures for converting information about a **sample** (a small subset) into intelligent guesses about a **population** (the larger whole). Example: instead of asking every American how they feel about voting procedures, you ask a few thousand and infer how the whole country feels. A good sample must not over-represent one group (e.g., sampling only Florida residents would be biased).\n\n## Why statistics is useful\n- **Everyday life:** statistical claims bombard you constantly — \"4 out of 5 dentists recommend…\", health risk percentages, sports records, opinion polls. Statistics gives you the tools to react intelligently to this information instead of being manipulated by it.\n- **Evaluating arguments:** numbers are often used to *add credibility* to an argument or advertisement, but many are not backed by careful analysis. Learning statistics makes you an intelligent consumer of claims: question the numbers, their sources, and the procedures used to generate them.\n- **Making educated guesses:** from news reports to buying a house or managing a budget, statistical methods help you make the \"best educated guess\" from sample information.\n- **Every field:** economics, business, psychology, education, biology, law, computer science, and more all rely on statistics.\n- **Answering research questions:** statistics is an investigative process — ask a valid question, collect data, analyze it, and draw a conclusion. It can even turn suggestive patterns (e.g., marathon times getting faster) into reasoned answers about whether a real change occurred.\n\n## Key terms at a glance\n| Term | Meaning |\n|---|---|\n| Data / datum | Collected information / one piece of it |\n| Population | The entire group of interest |\n| Sample | The subset you actually collect data on |\n| Descriptive statistics | Summarizing the data you have |\n| Inferential statistics | Generalizing from sample to population |\n\n**Bottom line:** statistics is both a shield (spotting misleading numbers) and a tool (drawing sound conclusions from data) — one of the most practical subjects you can study.",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_f97f47b7a1fd68_4_v1",
+  "exc_f97f47b7a1fd68_6_v1",
+  "exc_64ed84430ae3b2_5_v1",
+  "exc_0689cddaba206d_28_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_28_v2"
+    ]
+   },
+   {
+    "id": "online-statistics-education-an-interactive-multimedia-course",
+    "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
+    "authors": [
+     "David M. Lane"
+    ],
+    "edition": "",
+    "license": "public domain",
+    "licenseUrl": "https://onlinestatbook.com/2/index.html",
+    "sourceUrl": "https://onlinestatbook.com/2/index.html",
+    "version": 1,
+    "excerptIds": [
+     "exc_f97f47b7a1fd68_4_v1",
+     "exc_f97f47b7a1fd68_6_v1"
+    ]
+   },
+   {
+    "id": "principles-of-business-statistics",
+    "title": "Principles of Business Statistics",
+    "authors": [
+     "Mihai Nica",
+     "Susan Dean",
+     "Barbara Illowsky"
+    ],
+    "edition": "",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "http://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://www.opentextbooks.org.hk/certificates-and-diplomas/18024",
+    "version": 1,
+    "excerptIds": [
+     "exc_64ed84430ae3b2_5_v1"
+    ]
+   }
+  ]
+ },
+ "size": "711 tokens",
+ "edits": []
+}

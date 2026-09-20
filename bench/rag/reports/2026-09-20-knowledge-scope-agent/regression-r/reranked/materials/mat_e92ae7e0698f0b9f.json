@@ -1,0 +1,55 @@
+{
+ "id": "mat_e92ae7e0698f0b9f",
+ "kind": "note",
+ "title": "Simple Linear Regression in R with lm()",
+ "content": "# Simple Linear Regression in R with `lm()`\n\n## 1. Fitting the model\n\n`lm()` takes two key arguments:\n\n- **`formula`** — the model, written as `outcome ~ predictor` (outcome on the left, predictor on the right).\n- **`data`** — the data frame containing the variables.\n\n```r\nregression_1 <- lm(formula = danielle_grump ~ danielle_sleep, data = parenthood)\n```\n\nThe result is an \"lm object\" holding lots of technical information, so store it in a variable. Printing it shows the model call and the coefficients:\n\n```r\nprint(regression_1)\n# Coefficients:\n# (Intercept)  danielle_sleep\n#     125.956          -8.937\n```\n\n## 2. The fitted line\n\nThe printed coefficients give the best-fitting regression line:\n\n$$\\hat{Y}_i = -8.94\\,X_i + 125.96$$\n\n## 3. Interpreting the coefficients\n\n- **Slope ($\\hat{b}_1$ = −8.94):** for each 1-unit increase in the predictor, the outcome changes by the slope. Here, each additional hour of sleep reduces grumpiness by 8.94 points.\n- **Intercept ($\\hat{b}_0$ = 125.96):** the expected value of the outcome when the predictor equals 0. Here, zero hours of sleep predicts a grumpiness score of 125.96. (Interpret it cautiously if X = 0 is outside the observed data range.)\n\n## 4. Getting the full picture: `summary()`\n\n```r\nsummary(regression_1)\n```\n\nThe summary output contains, line by line:\n\n- **Call** — the model you fit.\n- **Residuals** — a five-number summary of the errors (Min, 1Q, Median, 3Q, Max).\n- **Coefficients table** — for each coefficient: `Estimate`, `Std. Error`, `t value`, `Pr(>|t|)` (p-value), plus significance stars (`***` p < 0.001, `**` p < 0.01, `*` p < 0.05, `.` p < 0.1).\n- **Residual standard error** — typical size of the prediction error, with degrees of freedom.\n- **Multiple / Adjusted R-squared** — proportion of variance in the outcome explained by the model (e.g. R² = 0.816 means ~82% of the variation is explained).\n- **F-statistic** — overall test of whether the model fits better than an intercept-only model, with its p-value.\n\n## 5. Quick workflow\n\n```r\nmodel <- lm(y ~ x, data = mydata)   # fit\nsummary(model)                      # coefficients, p-values, R²\nplot(mydata$x, mydata$y)            # scatterplot\nabline(model, col = \"red\")          # add the fitted line\nhist(model$residuals)               # check residual distribution\nplot(mydata$x, model$residuals)     # residual plot vs. predictor\nabline(h = 0)\n```\n\n---\n\n*Sources: Learning Statistics with R (Ch. 15, Linear regression); Advanced High School Statistics (§5.3.5, R commands for regression).*",
+ "cards": [],
+ "questions": [],
+ "excerpt_ids": [
+  "exc_dd1e65de648fb2_998_v1",
+  "exc_dd1e65de648fb2_1000_v1",
+  "exc_dd1e65de648fb2_1019_v1",
+  "exc_0689cddaba206d_719_v2"
+ ],
+ "provenance": {
+  "books": [
+   {
+    "id": "ahss4",
+    "title": "Advanced High School Statistics",
+    "authors": [
+     "Leah Dorazio",
+     "David Diez",
+     "Mine Cetinkaya-Rundel",
+     "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2026-04-10",
+    "license": "CC BY-SA 3.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "sourceUrl": "https://www.openintro.org/book/ahss/",
+    "version": 2,
+    "excerptIds": [
+     "exc_0689cddaba206d_719_v2"
+    ]
+   },
+   {
+    "id": "learning-statistics-with-r",
+    "title": "Learning Statistics with R",
+    "authors": [
+     "Danielle Navarro"
+    ],
+    "edition": "0.7.0 (2026-07-18)",
+    "license": "CC BY-SA 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sourceUrl": "https://open.umn.edu/opentextbooks/textbooks/learning-statistics-with-r-a-tutorial-for-psychology-students-and-other-beginners",
+    "version": 1,
+    "excerptIds": [
+     "exc_dd1e65de648fb2_1000_v1",
+     "exc_dd1e65de648fb2_1019_v1",
+     "exc_dd1e65de648fb2_998_v1"
+    ]
+   }
+  ]
+ },
+ "size": "633 tokens",
+ "edits": []
+}
