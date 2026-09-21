@@ -4,7 +4,6 @@ import { Badge } from '@/components/ui/Badge';
 import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import type { IconName } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
 import {
   Popover,
@@ -65,6 +64,7 @@ export function ListToolbar<V extends string>({
   view,
   onViewChange,
   action,
+  selectionActions,
 }: {
   sorts: readonly SortOption<V>[];
   sort: V;
@@ -76,6 +76,8 @@ export function ListToolbar<V extends string>({
   onViewChange?: (view: ListView) => void;
   /** Primary action rendered at the right edge. */
   action?: ReactNode;
+  /** Replaces the entire sort/filter group, including its styled container. */
+  selectionActions?: ReactNode;
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const current = sorts.find((option) => option.value === sort) ?? sorts[0];
@@ -96,122 +98,140 @@ export function ListToolbar<V extends string>({
     : m.workspaces_filter();
 
   return (
-    <div className="-mb-3 flex items-center justify-between gap-3 px-6">
-      <div className="flex items-center gap-2 pt-2 pb-3">
-        <Menu
-          align="start"
-          items={sorts.map((option) => ({
-            closeOnSelect: false,
-            description: sortDirectionLabel(
-              option.order,
-              option.value === sort && ascending
-            ),
-            icon: option.icon,
-            label: option.label,
-            onClick: () =>
-              onSortChange(
-                option.value,
-                option.value === sort ? !ascending : false
-              ),
-          }))}
-          trigger={
-            <Button
-              className="h-fit px-1 py-1.5"
-              iconRight="chevronDown"
-              size="md"
-              variant="ghost"
-            >
-              {m.workspaces_sort_prefix({ label: current.label })}
-              <span className="font-normal text-fg-muted text-xs">
-                {sortDirectionLabel(current.order, ascending)}
-              </span>
-            </Button>
-          }
-        />
-        <Popover onOpenChange={setFilterOpen} open={filterOpen}>
-          <PopoverTrigger asChild>
-            <Button
-              className="h-fit px-1 py-1.5"
-              iconLeft="filter"
-              iconRight="chevronDown"
-              size="md"
-              variant="ghost"
-            >
-              {filterLabel}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="max-h-96 w-72 gap-0 p-0">
-            <Card
-              border="solid"
-              className="max-h-96 gap-3 overflow-y-auto p-3.5"
-              radius="card"
-            >
-              {filters.map((section) => (
-                <section className="flex flex-col gap-2" key={section.key}>
-                  <p>{section.label}</p>
-                  {section.options.length === 0 ? (
-                    <p className="text-fg-muted">{section.emptyLabel}</p>
-                  ) : (
-                    <div className="-ml-0.5 flex flex-wrap gap-1.5">
-                      {section.options.map((option) => {
-                        const active = section.selected.includes(option.value);
-                        return (
-                          <button
-                            className={BASE_BUTTON_STYLE}
-                            key={option.value}
-                            onClick={() => section.onToggle(option.value)}
-                            type="button"
-                          >
-                            <Badge
-                              className={cn(
-                                'transition-colors',
-                                !active && 'hover:bg-surface-dark'
-                              )}
-                              size="sm"
-                              tone={active ? 'dark' : 'page'}
-                            >
-                              {option.label}
-                            </Badge>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              ))}
-              <Button
-                className="mx-auto w-fit"
-                disabled={!hasFilters}
-                fullWidth
-                onClick={onResetFilters}
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.workspaces_filter_reset()}
-              </Button>
-            </Card>
-          </PopoverContent>
-        </Popover>
-      </div>
-      <div className="flex items-center gap-2">
-        {view && onViewChange && (
-          <div className="flex items-center gap-0.5 rounded-button bg-surface-dark p-0.5">
-            <ViewButton
-              active={view === 'grid'}
-              icon="grid"
-              label={m.list_view_grid()}
-              onClick={() => onViewChange('grid')}
+    <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-6">
+      <div className="flex h-11.5 items-center py-2">
+        {selectionActions ?? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Menu
+              align="start"
+              items={sorts.map((option) => ({
+                closeOnSelect: false,
+                description: sortDirectionLabel(
+                  option.order,
+                  option.value === sort && ascending
+                ),
+                icon: option.icon,
+                label: option.label,
+                onClick: () =>
+                  onSortChange(
+                    option.value,
+                    option.value === sort ? !ascending : false
+                  ),
+              }))}
+              trigger={
+                <Button
+                  className="h-fit px-1 py-1.5"
+                  iconRight="chevronDown"
+                  size="md"
+                  variant="ghost"
+                >
+                  {m.workspaces_sort_prefix({ label: current.label })}
+                  <span className="font-normal text-fg-muted text-xs">
+                    {sortDirectionLabel(current.order, ascending)}
+                  </span>
+                </Button>
+              }
             />
-            <ViewButton
-              active={view === 'list'}
-              icon="list"
-              label={m.list_view_list()}
-              onClick={() => onViewChange('list')}
-            />
+            <Popover onOpenChange={setFilterOpen} open={filterOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  className="h-fit px-1 py-1.5"
+                  iconLeft="filter"
+                  iconRight="chevronDown"
+                  size="md"
+                  variant="ghost"
+                >
+                  {filterLabel}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="max-h-96 w-72 gap-0 p-0">
+                <Card
+                  border="solid"
+                  className="max-h-96 gap-3 overflow-y-auto p-3.5"
+                  radius="card"
+                >
+                  {filters.map((section) => (
+                    <section className="flex flex-col gap-2" key={section.key}>
+                      <p>{section.label}</p>
+                      {section.options.length === 0 ? (
+                        <p className="text-fg-muted">{section.emptyLabel}</p>
+                      ) : (
+                        <div className="-ml-0.5 flex flex-wrap gap-1.5">
+                          {section.options.map((option) => {
+                            const active = section.selected.includes(
+                              option.value
+                            );
+                            return (
+                              <button
+                                className={BASE_BUTTON_STYLE}
+                                key={option.value}
+                                onClick={() => section.onToggle(option.value)}
+                                type="button"
+                              >
+                                <Badge
+                                  className={cn(
+                                    'transition-colors',
+                                    !active && 'hover:bg-surface-dark'
+                                  )}
+                                  size="sm"
+                                  tone={active ? 'dark' : 'page'}
+                                >
+                                  {option.label}
+                                </Badge>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                  <Button
+                    className="mx-auto w-fit"
+                    disabled={!hasFilters}
+                    fullWidth
+                    onClick={onResetFilters}
+                    size="sm"
+                    variant="ghost-hover"
+                  >
+                    {m.workspaces_filter_reset()}
+                  </Button>
+                </Card>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
-        {action}
       </div>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">{action}</div>
+        {view && onViewChange && (
+          <ListViewToggle onViewChange={onViewChange} view={view} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ListViewToggle({
+  view,
+  onViewChange,
+}: {
+  view: ListView;
+  onViewChange: (view: ListView) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <ViewButton
+        active={view === 'grid'}
+        icon="grid"
+        label={m.list_view_grid()}
+        onClick={() => onViewChange('grid')}
+      />
+      <ViewButton
+        active={view === 'list'}
+        icon="list"
+        label={m.list_view_list()}
+        onClick={() => onViewChange('list')}
+      />
     </div>
   );
 }
@@ -221,24 +241,28 @@ function ViewButton({
   icon,
   label,
   onClick,
+  className,
 }: {
   active: boolean;
   icon: IconName;
   label: string;
   onClick: () => void;
+  className?: string;
 }) {
   return (
-    <IconButton
+    <Button
+      aria-label={label}
       aria-pressed={active}
       className={cn(
-        'size-7 rounded-[6px] text-fg-muted',
-        active && 'bg-surface text-fg shadow-xs'
+        'px-1',
+        !active && 'text-fg-muted hover:text-fg',
+        className,
+        active && 'bg-surface-hover-bg hover:bg-surface-hover-bg'
       )}
-      icon={icon}
-      label={label}
+      iconLeft={icon}
       onClick={onClick}
       size="sm"
-      variant="ghost"
+      variant="ghost-hover"
     />
   );
 }

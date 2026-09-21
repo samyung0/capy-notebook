@@ -46,7 +46,7 @@ export default function Workspaces() {
       value: 'files',
     },
   ];
-  const [sort, setSort] = useState<WorkspaceSort>('accessed');
+  const [sort, setSort] = useState<WorkspaceSort>('created');
   const [ascending, setAscending] = useState(false);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -103,7 +103,7 @@ export default function Workspaces() {
           <SkeletonCardGrid count={6} />
         ) : (
           <div
-            className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
             ref={revealRef}
           >
             {sortedWorkspaces?.map((w) => (

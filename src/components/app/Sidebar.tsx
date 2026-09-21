@@ -85,7 +85,7 @@ function Row({
     <Link
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) transition-colors active:-rotate-1',
+        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) transition-transform active:-rotate-1',
         collapsed ? 'h-10 w-10 justify-center' : 'w-full gap-3 px-3 py-2',
         active
           ? 'bg-action font-bold text-action-fg'

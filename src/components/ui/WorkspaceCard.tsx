@@ -100,7 +100,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             />
           </span>
           <div className="flex-1">
-            <h3 className="t-card-title truncate">{workspace.name}</h3>
+            <h3 className="t-card-title line-clamp-2">{workspace.name}</h3>
             <p className="t-meta mt-1 text-fg-muted">
               {m.workspace_card_meta({
                 chapters: String(workspace.chapterCount),

@@ -93,9 +93,12 @@ part of adding development tools.
   its target, and `WorkspaceStatsDialog` and `TaskEditDialog` have no normal
   callers. The panel now opens them directly. Feature-flagged pages remain
   behind their existing flags.
-- **Empty collections:** mistakes and trash begin empty. Create a failed quiz
-  attempt or trash a file to reach these flows. Scenario reset changes handlers,
-  not the database or local editor drafts.
+- **Seeded collections:** mistakes include missed and unanswered fixture questions;
+  Create includes 85 additional standalone study notes, and trash includes 87
+  archived source files with restorable records and byte links. Both lists paginate
+  at 40 items by default; the MSW trash endpoint honors `cursor`, `limit`, and
+  `workspaceId`. Trash dates use a rolling 30-day retention window. Scenario reset
+  changes handlers, not the database or local editor drafts; reload to reseed.
 
 ## Validation
 

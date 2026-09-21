@@ -150,7 +150,7 @@ const appRoutes = [
     '/workspaces',
     () => import('@/routes/Workspaces'),
     ({ context: { queryClient: qc } }) =>
-      qc.prefetchQuery(workspacesQuery({ sort: 'accessed', tag: [] }))
+      qc.prefetchQuery(workspacesQuery({ sort: 'created', tag: [] }))
   ),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),

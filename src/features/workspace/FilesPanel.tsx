@@ -415,7 +415,7 @@ export function FilesPanel({
                         />
                         <Icon
                           className="shrink-0 text-fg-secondary"
-                          name="archive"
+                          name="chapter"
                           size={15}
                         />
                         <span className="line-clamp-1 translate-y-px truncate font-semibold">

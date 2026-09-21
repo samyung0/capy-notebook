@@ -1030,7 +1030,23 @@ const seedCards: Flashcard[] = [
  * Pool of questions the user has recently missed (across quizzes). Feeds the
  * "Review mistakes" quiz. Deduped by question id.
  */
-export const mistakes: Question[] = [];
+const mistakeIds = new Set([
+  'q6',
+  'q8',
+  'q12',
+  'q16',
+  'q17',
+  'q20',
+  'q21',
+  'q22',
+  'q27',
+  'q28',
+  'q29',
+  'q30',
+]);
+export const mistakes: Question[] = seedQuizzes
+  .flatMap((quiz) => quiz.questions)
+  .filter((question) => mistakeIds.has(question.id));
 
 export const labels: Label[] = [
   { color: 'green', id: 'lb_bio', name: 'Biology' },
@@ -1307,6 +1323,37 @@ for (const note of seedNotes) {
   );
 }
 
+// Three pages of standalone notes at the default 40-item page size.
+for (let index = 1; index <= 85; index++) {
+  const title = `Study journal ${String(index).padStart(3, '0')}`;
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument([
+        {
+          children: [
+            {
+              text: `${title}: review notes and questions for this study session.`,
+            },
+          ],
+          type: 'p',
+        },
+      ]),
+      createdAt: days(index),
+      id: `mat_pagination_${index}`,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title,
+      workspaceId: '',
+      workspaceName: '',
+    })
+  );
+}
+
 /* ---------------- chat: conversations + messages ---------------- */
 export const conversations: Conversation[] = [
   {
@@ -1326,6 +1373,37 @@ export const trash: Array<{
   item: TrashItem;
   material?: Material;
 }> = [];
+
+files
+  .filter((file) => ['f_1', 'f_2', 'f_7'].includes(file.id))
+  .flatMap((source) => Array.from({ length: 29 }, () => source))
+  .forEach((source, index) => {
+    const file: SourceFile = {
+      ...source,
+      chapterId: null,
+      id: `trash_seed_${source.id}_${index}`,
+      name: `Archived ${String(index + 1).padStart(3, '0')} ${source.name}`,
+      position: nextContentPosition(source.workspaceId, null) + index,
+    };
+    fileLinks[file.id] = { ...fileLinks[source.id] };
+    trash.push({
+      file,
+      item: {
+        episodeId: `episode_${file.id}`,
+        fileKind: file.kind,
+        id: file.id,
+        kind: 'source_file',
+        purgeAfter: hours(index + 1 - 30 * 24),
+        sizeBytes: file.sizeBytes,
+        title: file.name,
+        trashedAt: hours(index + 1),
+        workspaceId: file.workspaceId,
+        workspaceName: workspaces.find(
+          (workspace) => workspace.id === file.workspaceId
+        )?.name,
+      },
+    });
+  });
 
 export const chatMessages: WireMessage[] = [
   {

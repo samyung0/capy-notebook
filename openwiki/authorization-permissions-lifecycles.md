@@ -670,9 +670,22 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
 
+The Files page's Select mode works in grid and list views. It replaces
+sort/filter with selection actions; Select all finishes pagination for the
+current filters before updating the selection. Active-file Delete confirms
+moving the selected files to trash. Trash offers Restore and confirmed permanent
+deletion, plus Empty trash, which loads every page and confirms the collected
+item count before deleting that snapshot. Items arriving after confirmation are
+not included. Trash targets retain their episode IDs. Actions use the existing
+per-item endpoints sequentially, stop at the first failure, and remove only
+successful items from the selection. The error toast explains the failed
+operation; remaining items stay selected for a manual retry.
+
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),
-[trash sweep](../server/cmd/api/trash_worker.go#L1).
+[trash sweep](../server/cmd/api/trash_worker.go#L1),
+[Files selection](../src/routes/Files.tsx), and
+[selection state](../src/features/files/useFileSelection.ts).
 
 ### Unrecorded stable objects
 

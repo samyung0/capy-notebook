@@ -73,6 +73,8 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 
 ### Lib
 
+- [`src/features/files/useFileSelection.test.ts`](../src/features/files/useFileSelection.test.ts): Select-all/empty-trash pagination includes all pages, skips unnecessary fetching, and refuses failed or non-advancing pages rather than returning a partial deletion target.
+
 | File                                                        | About                                                                                                                                                                                         |
 | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`src/lib/analytics.test.ts`](../src/lib/analytics.test.ts) | Closed `AnalyticsEvent` union exhaustiveness, size/duration/score/card buckets, parameterized pageview paths, clone/study source, ingest once-per-file, and quota-only `quota_blocked` props. |

@@ -1456,12 +1456,16 @@ export const handlers = [
   }),
   /* ---------------- trash (owner-only bin) ---------------- */
   http.get('/api/trash', async ({ request }) => {
-    const url = new URL(request.url);
-    const wsId = url.searchParams.get('workspaceId');
+    const { limit, offset, param } = listParams(request.url);
+    const wsId = param('workspaceId');
     const items = db.trash
       .filter((entry) => !wsId || entry.item.workspaceId === wsId)
       .map((entry) => entry.item);
-    return HttpResponse.json({ items });
+    return HttpResponse.json({
+      items: items.slice(offset, offset + limit),
+      nextCursor:
+        offset + limit < items.length ? String(offset + limit) : undefined,
+    });
   }),
   http.post('/api/trash/:kind/:id/restore', async ({ params, request }) => {
     const body = (await request.json()) as { episodeId: string };

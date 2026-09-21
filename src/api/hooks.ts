@@ -946,20 +946,31 @@ export function useMoveFile(wsId: string) {
     },
   });
 }
+function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
+  qc.invalidateQueries({ queryKey: qk.files(wsId) });
+  qc.invalidateQueries({ queryKey: qk.allFiles });
+  qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+  qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+  qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
+  qc.invalidateQueries({ queryKey: qk.trash() });
+}
+
 /** Deleting a file moves it to the trash; the owner can restore it from
  * Files › Trash for 30 days. Its bytes stay charged until purged. */
 export function useDeleteFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.del<void>(`/files/${id}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.files(wsId) });
-      qc.invalidateQueries({ queryKey: qk.allFiles });
-      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
-      qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
-      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
-      qc.invalidateQueries({ queryKey: qk.trash() });
-    },
+    onSuccess: () => invalidateAfterFileDelete(qc, wsId),
+  });
+}
+
+export function useDeleteOwnedFile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: Pick<SourceFile, 'id' | 'workspaceId'>) =>
+      api.del<void>(`/files/${id}`),
+    onSuccess: (_data, file) => invalidateAfterFileDelete(qc, file.workspaceId),
   });
 }
 

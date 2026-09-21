@@ -23,6 +23,8 @@ const buttonVariants = cva(BASE_BUTTON_STYLE, {
         'border border-transparent bg-action-accent text-action-accent-fg hover:bg-action-accent-hover',
       danger:
         'border border-transparent bg-solid-error text-surface hover:brightness-95',
+      'danger-light':
+        'border border-transparent text-tint-error-fg hover:bg-tint-error/85',
       dark: 'border border-transparent bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
       ghost: 'border-none',
       'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
