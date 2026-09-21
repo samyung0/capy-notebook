@@ -265,6 +265,17 @@ replacement tags for exactly the reviewed excerpts. Each inspection record
 names the physical `pdf_page`, `rendered_page_path` and source-grounded
 `observation`; record the pages actually checked. Preserve the full synopsis.
 The prior version stays available for rollback. This does not start the intake scheduler.
+Source-backed extraction repairs use [source-repair.md](source-repair.md): Sol
+returns chunk replacements bound to the original corpus, chunk text and exact
+inspected page images. `enrich.py` projects and validates repaired excerpt and
+indexed text, then backs up the original corpus when applying. The parent
+reindexes, publishes and verifies actual chunk text. Earlier unresolved reports
+are tracked locally in `sol-backfill-2026-09-21/repair-inventory.json`, with
+follow-ups under each scope's `repair-v1/`; original packets and notes remain
+intact. `initial-review-repair-inventory.json` separately tracks the 103 early
+reviewed excerpts whose old reports lack structured issue lists. Whole-book
+owners include those saved reports when assessing prior source limits.
+Source-authored errors and unavailable content retain explicit limits.
 
 The monitor allows up to eight active books across preparation, source review
 and indexing. Parser requests respect the configured document capacity. Up to

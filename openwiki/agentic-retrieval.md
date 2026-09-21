@@ -1227,6 +1227,17 @@ Packet export requires an explicit frozen original-note file and assignment hash
 it rejects updated live notes used as the old baseline after enrichment. Existing
 immutable enrichment backups can supply the original bytes without reverting
 the live run.
+The existing-excerpt backfill also repairs readable extraction defects through
+`lab/knowledge/source-repair.md`. Sol emits exact chunk replacements tied to
+original corpus/text hashes and inspected page-image hashes, preserving the PDF,
+locators and old full notes. `enrich.py` validates and projects repaired excerpt
+and indexed text before apply, which backs up the original corpus. The parent
+serializes import, reindexing and replacement publication, and verifies published
+chunk text. Saved unresolved issues from earlier Sol assignments remain in a
+local repair inventory; metadata completion alone does not close them. Printed
+errors, author placeholders and unavailable content retain explicit limits.
+`packet.py --source-review` embeds the assembled repaired source across scoped
+packets and their direct context links. Qwen's optional text-only role is unchanged.
 Observed failures are included in Sol's example file. Qwen's separate
 `bench/rag/fixtures/knowledge-review-v2/system-prompt.txt` embeds its examples
 directly, including no-op fixes and immutable old notes. The optional test helper

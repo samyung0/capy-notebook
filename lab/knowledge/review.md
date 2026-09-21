@@ -24,6 +24,9 @@ applying changes and put `baseline_notes` and `baseline_sha256` in the assignmen
 All split workers and the owner use that same baseline. For an incoming book,
 freeze the first full source-review notes before topic/final-tag changes and
 record that baseline stage. Keep supported corrections in the candidate.
+Assignments that include source repair also freeze [source-repair.md](source-repair.md)
+and its hash. Existing assignments retain their original inputs and messages;
+a repair follow-up records the new permission and writes separate artifacts.
 
 ## Teaching roles
 
@@ -151,6 +154,19 @@ the previous version available until the replacement is verified. Do not
 reparse the book merely to enrich annotations. Metadata absent from older
 reviews means unreviewed scope, never an assertion that the passage is general.
 
+The existing-excerpt backfill now includes source-backed extraction repair.
+Sol repairs readable missing text, code, formulas, table structure and diagram
+details in a separate candidate, following [source-repair.md](source-repair.md).
+It also revisits saved unresolved issues from earlier annotation-only work.
+Keep the original PDF, corpus snapshot, full-note baseline and locators intact.
+Distinguish repaired extraction from a printed error, unavailable external
+material or an intentional blank. The latter remain explicit source limits.
+The owner assembles chunk repairs and complete tags before topic decisions.
+`enrich.py` validates those repairs and their exact source/page bindings,
+projects excerpt and indexed text, and backs up the corpus on authorized apply.
+The parent reindexes and publishes a replacement version, verifying actual
+published chunk text as well as metadata before marking the repair complete.
+
 The owner advances its bounded assignment autonomously and returns one final
 artifact and receipt. Serialize conflicting publication and shared manifest
 writes. Preserve parser capacity, eight active books and six concurrent agents.
@@ -173,6 +189,12 @@ Generate packets with the local exporter after the assigned final tags are ready
 ```sh
 uv run --project pipeline python lab/knowledge/packet.py --run <run> --review <candidate-review.json> --catalog <catalog-snapshot.json> --baseline-notes <frozen-original-notes.json> --baseline-sha256 <assignment-baseline-hash> --proposal <proposal.json> --merged-topics <merged-topics.json> --case-id <book-and-scope-id> --output <new-packet.json>
 ```
+
+For a repaired book, the candidate also carries the chunk-level `source_repairs`
+described in the repair contract. Export final scope packets with
+`--source-review <assembled-review.json>` to embed repaired linked context from
+other scopes. The exporter projects the repairs without changing its input run.
+Keep the existing book-review-v2 packet schema; Qwen still reviews supplied text.
 
 The candidate review contains `source_sha256`, `tags`, `model_provenance`,
 `inspection_records`, `validation_receipts` and `unresolved_items`; when supplied,

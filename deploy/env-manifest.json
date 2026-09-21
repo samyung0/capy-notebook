@@ -495,27 +495,33 @@
     },
     "KNOWLEDGE_BASE_B2_APP_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "local"]
+      "targets": ["coolify", "local"],
+      "required_for": ["coolify"]
     },
     "KNOWLEDGE_BASE_B2_BUCKET": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["coolify", "local"],
+      "required_for": ["coolify"]
     },
     "KNOWLEDGE_BASE_B2_ENDPOINT": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["coolify", "local"],
+      "required_for": ["coolify"]
     },
     "KNOWLEDGE_BASE_B2_KEY_ID": {
       "kind": "secret",
-      "targets": ["coolify", "local"]
+      "targets": ["coolify", "local"],
+      "required_for": ["coolify"]
     },
     "KNOWLEDGE_BASE_B2_REGION": {
       "kind": "variable",
-      "targets": ["coolify", "local"]
+      "targets": ["coolify", "local"],
+      "required_for": ["coolify"]
     },
     "LIBRARY_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["coolify", "local"]
+      "targets": ["coolify", "local"],
+      "required_for": ["coolify"]
     },
     "LLM_API_KEY": {
       "kind": "variable",
@@ -594,7 +600,8 @@
     },
     "OPS_LIBRARY_DATABASE_URL": {
       "kind": "secret",
-      "targets": ["ops"]
+      "targets": ["ops"],
+      "required_for": ["ops"]
     },
     "OPS_UNSAFE_DEVELOPMENT": {
       "kind": "variable",

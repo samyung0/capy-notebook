@@ -85,7 +85,8 @@ fractions survived extraction.] Can you find a general algorithm?"
   repaired when that passage also lacks the operands.
 - If authorized to repair source text, inspect the exact PDF page, preserve the
   original, record the page and correction, then validate the corrected text.
-  In annotation-only work, leave the extraction limit explicit.
+  In historical annotation-only work, leave the extraction limit explicit.
+  The current source-repair assignment requires recovery when the PDF is readable.
 - Do distinguish "metadata reviewed; target fractions still missing" from
   "source recovered" in the completion record. A warning and a page path do
   not restore operands. Keep unresolved recovery against the affected IDs even
@@ -94,6 +95,35 @@ fractions survived extraction.] Can you find a general algorithm?"
 An empty answer column in a learner worksheet may be intentional. Do inspect
 the table layout; don't fill it or report lost answers just because cells are blank.
 Do distinguish an error printed in the textbook from an extraction error.
+
+Observed repair cases from the existing-book backfill:
+
+- *Principles of Object-Oriented Programming*: do transcribe readable damaged
+  Java listings and label visible diagram descriptions. Do read the whole-book
+  context before declaring Queen/Worker code missing. The inspected JUnit pages
+  contain only a partial listing and task; do retain the external-code limit.
+  Don't generate a plausible complete implementation and call it recovered.
+- The same book's priority-queue placeholder is authored that way. Do report
+  that there is no lesson to recover. Don't write the missing lesson yourself.
+- *Principles of Business Statistics*: do restore a formula's visible fraction,
+  root, superscript and table alignment. If the PDF itself prints an inconsistent
+  expression, preserve it and explain the source limit in the affected scope.
+  Don't replace a printed formula with the mathematically expected one.
+- When extraction repeats text that the PDF prints once, do remove the extra
+  occurrence with an `extraction_duplicate` patch and page evidence. Don't remove
+  passages from different books merely because their examples are similar.
+- *Phylogenetic Comparative Methods*: an initial repair pass left six excerpts
+  with flattened nested equations. Reopening PDF pages 166, 180, 181, 182, 185
+  and 194 at 2448 by 3168 pixels allowed Sol to restore the readable fractions,
+  products, integrals, matrices and subscripts. Do reopen or enlarge the exact
+  page before treating layout complexity as an unrecoverable limit. Use explicit
+  LaTeX or unambiguous mathematical text. Don't leave a readable equation damaged
+  merely because it occupies two dimensions. Preserve a printed symbol even if
+  it appears mathematically questionable; report the source issue separately.
+- Do write full replacement text for each changed chunk, with the original
+  text hash and exact supporting page-image hashes as in
+  [source-repair.md](source-repair.md). Don't put the complete multi-page excerpt
+  into one chunk, erase unaffected content, or treat a warning as a repair.
 
 ## 6. Links must restore the right context
 

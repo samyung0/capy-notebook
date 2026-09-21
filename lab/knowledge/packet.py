@@ -22,6 +22,7 @@ def build_packet(
     baseline_sha256: str,
     proposal: Path | None = None,
     merged_topics: Path | None = None,
+    source_review: Path | None = None,
 ) -> dict:
     snapshots: dict[Path, bytes] = {}
 
@@ -37,6 +38,18 @@ def build_packet(
     corpus_path = run / "books" / book["id"] / "corpus.json"
     notes_path = baseline_notes
     corpus, before, candidate = load(corpus_path), load(notes_path), load(review)
+    repair_review = None
+    if candidate.get("source_repairs") or source_review:
+        from enrich import repaired_corpus
+
+        repair_review = load(source_review) if source_review else candidate
+        if "source_repairs" not in repair_review:
+            raise ValueError(
+                "source review must explicitly declare source_repairs, including an empty list"
+            )
+        corpus = repaired_corpus(
+            corpus, repair_review, hashlib.sha256(snapshots[corpus_path]).hexdigest()
+        )
     if hashlib.sha256(snapshots[notes_path]).hexdigest() != baseline_sha256.lower():
         raise ValueError("Original-note baseline hash differs from the assignment")
     excerpts = {e["id"]: e for e in corpus["excerpts"]}
@@ -80,11 +93,44 @@ def build_packet(
         paths["proposal"] = proposal
     if merged_topics:
         paths["merged_topics"] = merged_topics
+    if source_review:
+        paths["source_review"] = source_review
+    repair_provenance = {}
+    if repair_review is not None:
+        repairs = [
+            r
+            for r in repair_review.get("source_repairs", [])
+            if r["excerpt_id"] in needed
+        ]
+        pages = {page for repair in repairs for page in repair["pdf_pages"]}
+        assessments = []
+        for record in repair_review.get("repair_assessment", []):
+            ids = record.get(
+                "excerpt_ids", [record["excerpt_id"]] if "excerpt_id" in record else []
+            )
+            if set(ids) & needed:
+                assessments.append(
+                    {**record, "excerpt_ids": [eid for eid in ids if eid in needed]}
+                )
+        repair_provenance["source_repair"] = {
+            "model_provenance": repair_review.get("model_provenance"),
+            "corrections": [
+                {k: v for k, v in repair.items() if k != "text"} for repair in repairs
+            ],
+            "assessments": assessments,
+            "inspection_records": [
+                r
+                for r in repair_review.get("inspection_records", [])
+                if r.get("pdf_page") in pages
+            ],
+            "validation_receipts": repair_review.get("validation_receipts", []),
+        }
     return {
         "case_id": case_id,
         "provenance": {
             "book": book,
             "model_provenance": candidate.get("model_provenance"),
+            **repair_provenance,
             "bindings": {
                 name: {
                     "path": str(path.resolve()),
@@ -151,6 +197,7 @@ if __name__ == "__main__":
     parser.add_argument("--case-id", required=True)
     parser.add_argument("--proposal", type=Path)
     parser.add_argument("--merged-topics", type=Path)
+    parser.add_argument("--source-review", type=Path)
     args = vars(parser.parse_args())
     output = args.pop("output")
     packet = build_packet(**args)

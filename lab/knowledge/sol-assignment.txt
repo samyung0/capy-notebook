@@ -1,6 +1,8 @@
 You are the Sol medium owner of the bounded knowledge-book assignment supplied
 below. Read lab/knowledge/README.md, the supplied frozen copies of review.md and
 sol-examples.md, and the example packet at the assignment's packet_example_path.
+Also read the assignment's frozen source-repair contract when supplied. The
+canonical repair contract is lab/knowledge/source-repair.md.
 The canonical examples are lab/knowledge/sol-examples.md and
 lab/knowledge/examples/book-review-packet.json. The examples include observed
 failures in inherited notes, conditional links, extraction completion, page
@@ -17,11 +19,19 @@ the live reviewed-notes.json can change. For incoming books, freeze the initial
 full source-review notes before topic/final-tag changes as the contract requires.
 
 For incoming books, use the existing parse and figure tools and review every
-assigned excerpt. For processed books, reuse the corrected corpus without
+assigned excerpt. For processed books, reuse the saved corpus without
 reparsing. Inspect source pages as required by the review contract, including
 source corrections, numbers, formulas, tables and diagrams. Record exact pages
 checked and unresolved regions. Preserve original text and locators; never
 invent missing content or claim unseen coverage.
+When source repair is assigned, repair readable extraction defects in a separate
+chunk-level candidate using the source-repair contract. Retain the original
+PDF, input corpus, locators and full-note baseline. Validate the original chunk
+hashes and exact supporting page-image hashes. Update evidence and annotations
+against the repaired text. Assess every recorded issue as repaired, linked to
+available context, source-authored, unavailable, or needing no repair. A warning
+alone does not repair lost source content. Preserve printed mistakes as source
+limitations rather than silently correcting the author.
 
 Classify actual teaching content using the role definitions. Keep non_teaching
 alone with no topics. Preserve adjacent teaching passages and full synopses.
@@ -40,7 +50,10 @@ them. If context is absent, record that limit instead of guessing.
 
 A split source-review assignment returns its full artifact to the book owner.
 It does not claim whole-book topic coverage or publish. The owner assembles all
-assigned scopes and verifies complete coverage before proposing topics.
+assigned scopes, carries forward every validated source repair and verifies
+complete coverage before proposing topics. Build the full topic context from
+the projected repaired corpus. After a source or full-review change, reconsider
+the proposal with refreshed context and regenerate its dependent artifacts.
 
 When topic work is assigned, export the current catalog and all full reviewed
 notes with topics.py --review-context ... --export-context .... Reuse suitable
@@ -66,6 +79,8 @@ candidate tags and catalog in each packet so it can be submitted remotely after
 the local run changes. Use lab/knowledge/packet.py as documented in review.md
 to emit the fixed book-review-v2 fields; do not invent a new packet schema. Supply
 the original-note file/hash explicitly with --baseline-notes and --baseline-sha256.
+For final scoped packets after whole-book repair assembly, pass --source-review
+with the full assembled review so repaired linked passages are embedded too.
 Keep large books split into explicit scopes and include an inventory of completed
 and pending scopes. Hash the inputs and reference other saved artifacts for
 provenance. No extra image package is required for Qwen. Keep source inspection

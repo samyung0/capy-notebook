@@ -907,11 +907,13 @@ key is handed to the retrieval service and to the loader on the developer PC.
    | `KNOWLEDGE_BASE_B2_KEY_ID`   | the scoped key's id                          |
    | `KNOWLEDGE_BASE_B2_APP_KEY`  | the scoped key's secret                      |
 
-   All five carry the manifest targets `coolify` and `local`; only
-   `KNOWLEDGE_BASE_B2_KEY_ID` and `KNOWLEDGE_BASE_B2_APP_KEY` are manifest
-   secrets, the other three are plain variables. Set them on
-   the retrieval service in the deployment's environment (Coolify for UAT and
-   production, `deploy/.env` for the local stack). The library builder and
+   All five carry the manifest targets `coolify` and `local` and are
+   `required_for` `coolify`, so a UAT or production render fails when any is
+   missing from GitHub; only `KNOWLEDGE_BASE_B2_KEY_ID` and
+   `KNOWLEDGE_BASE_B2_APP_KEY` are manifest secrets, the other three are plain
+   variables. Push them with `scripts/env/config.py push` from a file that
+   holds only the keys being set (a blank value deletes the GitHub entry);
+   `deploy/.env` carries them for the local stack. The library builder and
    loader on the developer PC read the same five names from the ignored
    project-root `.env.local`. Nothing else in the stack needs them.
 
@@ -1325,14 +1327,17 @@ stays retained behind it. Nothing is pinned per environment.
    large HNSW builds and drop it back afterwards. Disk is on the root volume
    (about 390 GB free at setup).
 7. Application access. The ops dashboard reads the library through
-   `OPS_LIBRARY_DATABASE_URL` (manifest secret, target `ops`, optional): put
+   `OPS_LIBRARY_DATABASE_URL` (manifest secret, target `ops`, required): put
    the `capy_library_reader` URL there and restart ops to get the read-only
    Library section; leave it empty and every `/api/ops/library` route answers
    404 `library_unconfigured`. That pool skips the app role contract because
    the library has its own schema and its own reader role. The retrieval
    service reads the same database through `LIBRARY_DATABASE_URL` (manifest
-   secret, targets `coolify` and `local`); there is no pin variable, because
-   UAT and production read the same live books.
+   secret, targets `coolify` and `local`, required for `coolify`); both hold
+   the same reader URL. The loader keeps the owner URL through the tunnel in
+   project-root `.env.local` under the same `LIBRARY_DATABASE_URL` name, so
+   never copy one into the other. There is no pin variable, because UAT and
+   production read the same live books.
 8. Loading. The loader runs on the developer PC through the tunnel with the
    owner URL: `schema` creates the schema as `LIBRARY_SCHEMA` writes it,
    `publish --run <run> [--book <id>]` loads each book as its next version and

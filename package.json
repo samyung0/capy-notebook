@@ -127,7 +127,7 @@
     "preview": "vite preview",
     "fmt": "biome format --write .",
     "fmt:go": "cd server && go fmt ./...",
-    "fmt:py": "uv --native-tls run --with ruff ruff format pipeline bench lab && uv --native-tls run --with ruff ruff check --fix pipeline bench lab",
+    "fmt:py": "uv --native-tls run --with ruff ruff format pipeline && uv --native-tls run --with ruff ruff check --fix pipeline",
     "pretypecheck": "pnpm run office:prepare",
     "typecheck": "tsc -b --noEmit",
     "pretest": "pnpm run office:prepare",
