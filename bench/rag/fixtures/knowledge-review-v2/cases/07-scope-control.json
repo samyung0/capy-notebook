@@ -1,0 +1,98 @@
+{
+  "case_id": "07-scope-control",
+  "provenance": "Synthetic cross-domain scope examples, not factual claims about real rules or studies.",
+  "source": {
+    "source_id": "scope-fixture",
+    "title": "Practice across domains",
+    "synthetic": true,
+    "excerpts": [
+      {
+        "excerpt_id": "population",
+        "text": "The study followed adult shift workers in one hospital. It reported an association between schedule regularity and self-reported sleep quality. It did not test an intervention."
+      },
+      {
+        "excerpt_id": "jurisdiction",
+        "text": "This chapter describes Region A school council rules in force in 2009. Each council includes two elected teacher representatives."
+      },
+      {
+        "excerpt_id": "incidental",
+        "text": "Use classification to group objects by shared properties. Sorting seashells by shape is one example; the same approach can organize other collections."
+      },
+      {
+        "excerpt_id": "method",
+        "text": "In the narrative interview method described here, the interviewer begins with one open question and lets the participant finish their account before asking follow-up questions."
+      },
+      {
+        "excerpt_id": "units",
+        "text": "In this exercise, lengths are given in feet and areas in square feet. Keep these units consistent when comparing the plot dimensions."
+      }
+    ]
+  },
+  "assignment": {
+    "scope": "five supplied scope fields",
+    "target_ids": [
+      "population",
+      "jurisdiction",
+      "incidental",
+      "method",
+      "units"
+    ],
+    "fields": [
+      "scope"
+    ]
+  },
+  "full_reviewed_notes": {
+    "population": "Reports an association in adult shift workers at one hospital.",
+    "jurisdiction": "Describes teacher representation on Region A school councils under 2009 rules.",
+    "incidental": "Classification groups objects by shared properties, with seashells as an example.",
+    "method": "Describes the opening and follow-up sequence for this narrative interview method.",
+    "units": "The exercise specifies feet and square feet for plot measurements."
+  },
+  "final_tags": [
+    {
+      "excerpt_id": "population",
+      "synopsis": "Reports an association in adult shift workers at one hospital.",
+      "retrieval": {
+        "summary": "Reports an association in adult shift workers at one hospital.",
+        "scope": "Observational association in adult shift workers at one hospital; no intervention was tested.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "jurisdiction",
+      "synopsis": "Describes teacher representation on Region A school councils under 2009 rules.",
+      "retrieval": {
+        "summary": "Describes teacher representation on Region A school councils under 2009 rules.",
+        "scope": "Region A school council rules in 2009; current rules and other jurisdictions are outside this passage.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "incidental",
+      "synopsis": "Classification groups objects by shared properties, with seashells as an example.",
+      "retrieval": {
+        "summary": "Classification groups objects by shared properties, with seashells as an example.",
+        "scope": "General classification; seashells are an incidental example.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "method",
+      "synopsis": "Describes the opening and follow-up sequence for this narrative interview method.",
+      "retrieval": {
+        "summary": "Describes the opening and follow-up sequence for this narrative interview method.",
+        "scope": "Applies to the narrative interview method described here.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "units",
+      "synopsis": "The exercise specifies feet and square feet for plot measurements.",
+      "retrieval": {
+        "summary": "The exercise specifies feet and square feet for plot measurements.",
+        "scope": "The supplied exercise uses feet and square feet.",
+        "context_excerpt_ids": []
+      }
+    }
+  ]
+}

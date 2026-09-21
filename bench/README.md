@@ -103,6 +103,16 @@ retrieval workflow's agent results.
 The [Sol topic-owner trial](rag/reports/2026-09-21-sol-topic-owner.md) tests keeping
 topic proposals and final tagging with the source-review agent, without a GLM
 handoff in the delegated builder workflow.
+The [Qwen book review sample pack](rag/fixtures/knowledge-review-v2/README.md)
+contains seven synthetic cases, a real candidate sample and a repaired control, all text-only, with
+separate expected findings and an explicit dry-run/send helper. It reviews
+roles, notes, scope, topics and context links; it has no material or page review.
+The [Sol workflow trial](rag/scripts/sol_workflow_trial.py) prepares isolated
+catalog-holdout and split-book assignments with frozen prompts and examples,
+then audits returned artifacts. Its [example-guided rerun report](rag/reports/2026-09-21-sol-workflow-examples.md)
+separates structural validation from source and annotation quality. The
+[deduplication research note](rag/reports/2026-09-21-knowledge-duplicate-strategy.md)
+separates duplicate discovery from result grouping and recommends a bounded test.
 
 The four subdirectories are frozen experiments, each with its own README,
 reproduction steps, and report. They describe completed runs on a preserved lab

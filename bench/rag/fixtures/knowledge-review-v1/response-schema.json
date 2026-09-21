@@ -1,0 +1,296 @@
+{
+  "type": "object",
+  "properties": {
+    "case_id": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "material",
+        "book"
+      ]
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "pass",
+        "needs_changes",
+        "incomplete"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string",
+            "enum": [
+              "grounding",
+              "scope",
+              "page_verification",
+              "roles",
+              "topics",
+              "note_preservation",
+              "context_links",
+              "duplicate_relation",
+              "extraction"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pass",
+              "fail",
+              "unverifiable",
+              "not_applicable"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "excerpt_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "physical_pdf_page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "source_id",
+                "excerpt_id",
+                "physical_pdf_page"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finding_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "target_id",
+          "check",
+          "status",
+          "source_refs",
+          "evidence",
+          "finding_ids"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "grounding",
+              "scope",
+              "page_verification",
+              "roles",
+              "topics",
+              "note_preservation",
+              "context_links",
+              "duplicate_relation",
+              "extraction"
+            ]
+          },
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "target_quote_or_field": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "contradicted",
+              "unsupported",
+              "unverifiable",
+              "invalid_artifact"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "excerpt_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "physical_pdf_page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "source_id",
+                "excerpt_id",
+                "physical_pdf_page"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "evidence": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "narrow",
+              "remove",
+              "correct_from_source",
+              "restore_notes",
+              "revise_classification",
+              "revise_topics",
+              "link_context",
+              "group_duplicates",
+              "request_source"
+            ]
+          },
+          "proposed_replacement": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "target_ids",
+          "target_quote_or_field",
+          "status",
+          "source_refs",
+          "evidence",
+          "explanation",
+          "action",
+          "proposed_replacement"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "example_relations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "duplicate",
+              "complementary",
+              "distinct",
+              "uncertain"
+            ]
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "source_id": {
+                  "type": "string"
+                },
+                "excerpt_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "physical_pdf_page": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "source_id",
+                "excerpt_id",
+                "physical_pdf_page"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "target_ids",
+          "relation",
+          "explanation",
+          "source_refs"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "case_id",
+    "mode",
+    "review_status",
+    "checks",
+    "findings",
+    "example_relations"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

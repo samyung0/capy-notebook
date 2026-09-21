@@ -1,0 +1,73 @@
+{
+  "case_id": "10-extraction",
+  "mode": "book",
+  "targets": [
+    {
+      "target_id": "stats-358",
+      "required_checks": [
+        "extraction"
+      ]
+    },
+    {
+      "target_id": "question-359",
+      "required_checks": [
+        "context_links"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "os4",
+      "version": 3,
+      "title": "OpenIntro Statistics, 4th edition, screen-reader PDF",
+      "synthetic": false,
+      "excerpts": [
+        {
+          "excerpt_id": "stats-358",
+          "physical_pdf_page": 358,
+          "text": "Figure 8.13 and the slope formula are in the page-358 image. The candidate extraction is supplied separately and must be checked against the image."
+        },
+        {
+          "excerpt_id": "question-359",
+          "physical_pdf_page": 359,
+          "text": "Using the summary statistics in Figure 8.13, compute the slope for the regression line of gift aid against family income."
+        }
+      ],
+      "source_sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "license": "CC BY-SA 3.0",
+      "source_url": "https://www.openintro.org/book/os/",
+      "text_note": "Faithful plain-text normalization of the table; verify against the attached original page."
+    }
+  ],
+  "images": [
+    {
+      "source_id": "os4",
+      "version": 3,
+      "physical_pdf_page": 358,
+      "path": "images/os4-p358.png",
+      "sha256": "c163ad4aa59b180781729784a96477ceeea92cfdb2e81cd623175eb2788923e6",
+      "mime_type": "image/png"
+    },
+    {
+      "source_id": "os4",
+      "version": 3,
+      "physical_pdf_page": 359,
+      "path": "images/os4-p359.png",
+      "sha256": "036428b0daf3a1554ca8edf145f9d9b301e152e00c16860e50ea9c4541e2afd1",
+      "mime_type": "image/png"
+    }
+  ],
+  "candidate_extractions": [
+    {
+      "excerpt_id": "stats-358",
+      "text": "b1 = (sx / sy) R. Family Income mean = $19,940; Gift Aid mean = $101,780. Family Income sd = $5,460; Gift Aid sd = $63,200; R = -0.499."
+    }
+  ],
+  "candidate_links": [
+    {
+      "excerpt_id": "question-359",
+      "context_excerpt_ids": [],
+      "scope": "This question is self-contained and needs no other passage."
+    }
+  ]
+}

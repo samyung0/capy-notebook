@@ -1,0 +1,89 @@
+{
+  "not_model_input": true,
+  "cases": {
+    "01-book-defects": {
+      "status": "needs_changes",
+      "must_find": [
+        "e1 objectives-only misclassified as exercise/teaching topic",
+        "e2 redundant median-new proposal instead of catalog median",
+        "e3 unsupported R requirement",
+        "e4 missing bootstrap topic and unrelated median assignment",
+        "e4 full synopsis replaced by short metadata"
+      ],
+      "must_preserve": [
+        "Correct median definition and conceptual regression source text."
+      ]
+    },
+    "02-book-control": {
+      "status": "pass",
+      "must_find": [],
+      "must_preserve": [
+        "All corrected roles, full notes, topic reuse/new bootstrap topic, general conceptual scope."
+      ]
+    },
+    "03-missing-scope": {
+      "status": "incomplete",
+      "must_find": [
+        "Missing chapters-3-4 prevents whole-book coverage claim."
+      ],
+      "must_preserve": [
+        "Do not guess topics in missing chapters."
+      ]
+    },
+    "04-context-defect": {
+      "status": "needs_changes",
+      "must_find": [
+        "solution-a wrongly links question-b; required context is question-a."
+      ],
+      "must_preserve": [
+        "Different datasets/models are not interchangeable; do not recompute slopes."
+      ]
+    },
+    "05-context-control": {
+      "status": "pass",
+      "must_find": [],
+      "must_preserve": [
+        "Correct question-a link; absence of images is irrelevant."
+      ]
+    },
+    "06-scope-defects": {
+      "status": "needs_changes",
+      "must_find": [
+        "population broadened and association changed to causation",
+        "jurisdiction and 2009 period discarded",
+        "incidental seashell example becomes a required discipline",
+        "one interview method generalized to all methods",
+        "units changed without support"
+      ],
+      "must_preserve": [
+        "No legal/medical facts from memory; use only synthetic source text."
+      ]
+    },
+    "07-scope-control": {
+      "status": "pass",
+      "must_find": [],
+      "must_preserve": [
+        "Source-supported necessary conditions across domains."
+      ]
+    },
+    "08-real-book-sample": {
+      "status": "open assessment",
+      "must_find": [],
+      "must_preserve": [
+        "This has no prescored ground truth; inspect every finding against supplied source.",
+        "Missing retrieval metadata is declared backlog.",
+        "Do not infer that inherited tags were newly written by Sol.",
+        "No current-law fact check, outside source repair or numerical verification."
+      ]
+    },
+    "09-real-book-repaired-control": {
+      "status": "pass",
+      "must_find": [],
+      "must_preserve": [
+        "exc_6 has an explanatory teaching role and a topic whose scope now consistently includes its source section.",
+        "exc_10 is already non_teaching with no topics and needs no cosmetic synopsis edit.",
+        "exc_57 removes the invented creditor direction while preserving the loan scenario; the erroneous old note must not force a regression."
+      ]
+    }
+  }
+}

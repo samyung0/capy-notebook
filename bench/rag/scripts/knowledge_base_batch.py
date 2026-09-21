@@ -83,6 +83,10 @@ def request(custom_id: str, messages: list[dict], max_tokens: int) -> dict:
 def prepare(directory: Path, requests: list[dict], base_url: str = BASE_URL) -> dict:
     if not requests or len(requests) > 50000:
         raise PilotError("A batch needs 1–50,000 requests")
+    models = {row["body"]["model"] for row in requests}
+    thinking = {row["body"].get("enable_thinking") for row in requests}
+    if len(models) != 1 or len(thinking) != 1:
+        raise PilotError("A batch must use one model and one thinking mode")
     ids = [row["custom_id"] for row in requests]
     if len(ids) != len(set(ids)) or any(len(x) > 256 for x in ids):
         raise PilotError("Batch custom IDs must be unique and at most 256 characters")
@@ -110,7 +114,7 @@ def prepare(directory: Path, requests: list[dict], base_url: str = BASE_URL) -> 
         "input_sha256": fingerprint,
         "request_ids": ids,
         "status": "prepared",
-        "model": MODEL,
+        "model": requests[0]["body"]["model"],
         "base_url": base_url,
     }
     save_json(state_path, state)
@@ -140,7 +144,7 @@ def shard_unsubmitted(directory: Path, size: int) -> dict:
         shards = []
         for start in range(0, len(rows), size):
             name = f"part-{start // size:03d}"
-            prepare(directory / name, rows[start : start + size])
+            prepare(directory / name, rows[start : start + size], state["base_url"])
             shards.append(name)
         save_json(directory / "pre-shard-state.json", state)
         state.update(shards=shards, status="prepared_shards")
@@ -170,6 +174,12 @@ class BatchClient:
             raise BatchTransportError(
                 f"Alibaba transport failed: {type(exc).__name__}; inspect saved batch state"
             ) from None
+        if method == "GET" and (
+            response.status_code == 429 or 500 <= response.status_code < 600
+        ):
+            raise BatchTransportError(
+                f"Alibaba read temporarily unavailable: HTTP {response.status_code}"
+            )
         return self.checked_response(response)
 
     @staticmethod
@@ -321,6 +331,7 @@ class BatchClient:
                 save_json(path, state)
                 raise
             state.update(batch_id=created["id"], status=created["status"])
+            save_json(directory / "batch.json", created)
             save_json(path, state)
             return state
 
@@ -376,6 +387,7 @@ class BatchClient:
                     "No recorded batch ID; submit or reconcile the stage first"
                 )
             job = self.call("GET", f"/batches/{state['batch_id']}").json()
+            save_json(directory / "batch.json", job)
             state.update(
                 status=job["status"], request_counts=job.get("request_counts", {})
             )

@@ -1,0 +1,92 @@
+{
+  "case_id": "01-claims",
+  "mode": "material",
+  "targets": [
+    {
+      "target_id": "b1",
+      "required_checks": [
+        "grounding",
+        "scope"
+      ]
+    },
+    {
+      "target_id": "b2",
+      "required_checks": [
+        "grounding"
+      ]
+    },
+    {
+      "target_id": "b3",
+      "required_checks": [
+        "grounding",
+        "scope"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "school-fixture",
+      "version": 1,
+      "title": "Synthetic leadership passage",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "excerpt_id": "lead-1",
+          "physical_pdf_page": null,
+          "text": "In the school settings examined by the authors, shared instructional leadership was associated with stronger teacher collaboration. This observational finding does not establish causation or guarantee an outcome."
+        },
+        {
+          "excerpt_id": "lead-2",
+          "physical_pdf_page": null,
+          "text": "The authors recommend that school leaders make time for teachers to discuss instructional decisions."
+        }
+      ]
+    },
+    {
+      "source_id": "politics-fixture",
+      "version": 1,
+      "title": "Synthetic political-theory passage",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "excerpt_id": "pol-1",
+          "physical_pdf_page": null,
+          "text": "Democracy concerns participation in collective decisions. Direct democracy involves citizens deciding issues themselves; representative democracy involves choosing people to decide on their behalf. This excerpt gives no account of institutions in ancient Athens."
+        }
+      ]
+    }
+  ],
+  "images": [],
+  "learner_request": "Explain what these sources support about leadership and direct democracy.",
+  "draft_blocks": [
+    {
+      "id": "b1",
+      "text": "Shared leadership guarantees effective collaboration for managers in every industry.",
+      "cites": [
+        "lead-1"
+      ]
+    },
+    {
+      "id": "b2",
+      "text": "The Athenian council had exactly 500 members.",
+      "cites": [
+        "pol-1"
+      ]
+    },
+    {
+      "id": "b3",
+      "text": "For school leadership, the authors recommend making time for teachers to discuss instructional decisions. A suggested practice activity: outline an agenda for such a discussion. This activity is my adaptation.",
+      "cites": [
+        "lead-2"
+      ]
+    }
+  ],
+  "writer_record": {
+    "read_excerpt_ids": [
+      "lead-1",
+      "lead-2",
+      "pol-1"
+    ],
+    "captures": []
+  }
+}

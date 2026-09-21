@@ -1,0 +1,6 @@
+{
+  "model": "qwen3.8-max",
+  "temperature": 0,
+  "enable_thinking": false,
+  "stream": false
+}

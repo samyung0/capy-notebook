@@ -1,0 +1,10 @@
+{
+  "model": "qwen3.8-max",
+  "temperature": 0,
+  "enable_thinking": true,
+  "max_tokens": 8192,
+  "stream": false,
+  "response_format": {
+    "type": "json_object"
+  }
+}

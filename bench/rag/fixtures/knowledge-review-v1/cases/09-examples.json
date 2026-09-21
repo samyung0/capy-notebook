@@ -1,0 +1,101 @@
+{
+  "case_id": "09-examples",
+  "mode": "book",
+  "targets": [
+    {
+      "target_id": "a",
+      "required_checks": [
+        "duplicate_relation"
+      ]
+    },
+    {
+      "target_id": "b",
+      "required_checks": [
+        "duplicate_relation"
+      ]
+    },
+    {
+      "target_id": "c",
+      "required_checks": [
+        "duplicate_relation"
+      ]
+    },
+    {
+      "target_id": "d",
+      "required_checks": [
+        "duplicate_relation"
+      ]
+    },
+    {
+      "target_id": "q",
+      "required_checks": [
+        "duplicate_relation"
+      ]
+    },
+    {
+      "target_id": "answer",
+      "required_checks": [
+        "duplicate_relation"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "example-fixture",
+      "version": 1,
+      "title": "Synthetic example comparison fixture",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "excerpt_id": "a",
+          "physical_pdf_page": null,
+          "text": "Dataset Cedar: response is weekly bicycle rentals, explanatory variable is hours of sunshine. One-predictor linear regression is demonstrated."
+        },
+        {
+          "excerpt_id": "b",
+          "physical_pdf_page": null,
+          "text": "A restatement of Dataset Cedar fits weekly bicycle rentals using hours of sunshine as its sole predictor. The observations and fitted model are identical to candidate a."
+        },
+        {
+          "excerpt_id": "c",
+          "physical_pdf_page": null,
+          "text": "Dataset Cedar uses the same observations but models weekly bicycle rentals using both hours of sunshine and temperature."
+        },
+        {
+          "excerpt_id": "d",
+          "physical_pdf_page": null,
+          "text": "Dataset Harbor models daily ferry passengers from hours of sunshine. Its observations differ from Dataset Cedar."
+        },
+        {
+          "excerpt_id": "q",
+          "physical_pdf_page": null,
+          "text": "For the one-predictor Cedar model in candidate a, explain what the slope represents."
+        },
+        {
+          "excerpt_id": "answer",
+          "physical_pdf_page": null,
+          "text": "Answer to candidate q: the slope describes the modeled difference in expected weekly bicycle rentals associated with one additional hour of sunshine."
+        }
+      ]
+    }
+  ],
+  "images": [],
+  "candidate_pairs": [
+    [
+      "a",
+      "b"
+    ],
+    [
+      "a",
+      "c"
+    ],
+    [
+      "a",
+      "d"
+    ],
+    [
+      "q",
+      "answer"
+    ]
+  ]
+}

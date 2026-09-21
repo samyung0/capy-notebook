@@ -1,0 +1,1217 @@
+{
+  "scope": "Text-only book review; observed findings, not automatically applied changes.",
+  "current_configuration": {
+    "model": "qwen3.8-max",
+    "enable_thinking": false,
+    "response_format": "json_schema",
+    "strict": true,
+    "caller_token_limit": null
+  },
+  "runs": {
+    "first_strict": [
+      {
+        "receipt": {
+          "case_id": "01-book-defects",
+          "request_sha256": "806a3ff77861fcbdc9020b53edef71f635e23786079b7cb90b9dcb2addfb149c",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 10.452999999994063,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 2318,
+            "total_tokens": 2819,
+            "completion_tokens": 501,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 2318
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "01-book-defects",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "e1",
+            "e2",
+            "e3",
+            "e4"
+          ],
+          "findings": [
+            {
+              "category": "roles",
+              "target_ids": [
+                "e1"
+              ],
+              "field": "roles",
+              "issue": "Objectives list alone is non_teaching, not an exercise. No learner task is given.",
+              "evidence": [
+                {
+                  "excerpt_id": "e1",
+                  "quote": "Learning objectives: describe the median, explain simple linear regression, and describe bootstrap resampling."
+                }
+              ],
+              "action": "Change role from 'exercise' to 'non_teaching'."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "e1"
+              ],
+              "field": "topic_ids",
+              "issue": "non_teaching content must have no topics assigned.",
+              "evidence": [
+                {
+                  "excerpt_id": "e1",
+                  "quote": "Learning objectives: describe the median, explain simple linear regression, and describe bootstrap resampling."
+                }
+              ],
+              "action": "Remove topic assignment 'median' from e1."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "e2"
+              ],
+              "field": "topic_ids",
+              "issue": "Proposed topic 'median-new' is redundant with existing topic 'median'; both share the same scope.",
+              "evidence": [
+                {
+                  "excerpt_id": "e2",
+                  "quote": "Order the observations. For an odd number of observations, the median is the middle observation. For an even number, it is the average of the two central observations."
+                }
+              ],
+              "action": "Replace proposed topic 'median-new' with existing topic 'median'."
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "e3"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Scope claims R is required, but the source text specifies no software. The full_reviewed_notes correctly state 'specifies no software'.",
+              "evidence": [
+                {
+                  "excerpt_id": "e3",
+                  "quote": "Simple linear regression uses a straight-line model to describe a response variable in terms of one explanatory variable."
+                }
+              ],
+              "action": "Remove 'Requires the R programming language.' from retrieval scope; use 'General definition.' or similar."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "e4"
+              ],
+              "field": "topic_ids",
+              "issue": "Topic 'median' is unrelated to bootstrap resampling content. No catalog topic covers this concept.",
+              "evidence": [
+                {
+                  "excerpt_id": "e4",
+                  "quote": "A bootstrap resample draws observations with replacement from the observed sample, retaining its size. Recompute a statistic on each of many such resamples to investigate its sampling variability."
+                }
+              ],
+              "action": "Remove 'median' and propose a new topic for bootstrap resampling."
+            }
+          ],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "02-book-control",
+          "request_sha256": "dce58692217df0f473bff517e38c45ea352fb9c4b9e1b61a2341aa4da34d7793",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 3.3439999999973224,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 2397,
+            "total_tokens": 2436,
+            "completion_tokens": 39,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 2397
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "02-book-control",
+          "review_status": "pass",
+          "reviewed_ids": [
+            "e1",
+            "e2",
+            "e3",
+            "e4"
+          ],
+          "findings": [],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "03-missing-scope",
+          "request_sha256": "bdd659add6d979baf040d502b949071ff7ab890786b9f5f401c5421efe77be13",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 6.235000000000582,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 1543,
+            "total_tokens": 1754,
+            "completion_tokens": 211,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 1543
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "03-missing-scope",
+          "review_status": "incomplete",
+          "reviewed_ids": [
+            "catalog"
+          ],
+          "findings": [
+            {
+              "category": "topics",
+              "target_ids": [
+                "catalog"
+              ],
+              "field": "completion_claim",
+              "issue": "Completion claim asserts all topics in the complete book are covered, but the chapters-3-4 scope is absent and deterministic validation already reports failure.",
+              "evidence": [
+                {
+                  "excerpt_id": "e1",
+                  "quote": "Learning objectives: describe the median, explain simple linear regression, and describe bootstrap resampling."
+                }
+              ],
+              "action": "Remove or qualify the completion claim until the missing chapters-3-4 review artifact is supplied. Note that 'bootstrap resampling' from e1 may require a topic assignment once that scope is available."
+            }
+          ],
+          "missing_evidence": [
+            {
+              "target_ids": [
+                "catalog"
+              ],
+              "required": "Review artifact for expected scope 'chapters-3-4', which is absent per the assignment's missing_scope_ids and deterministic validation report."
+            }
+          ]
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "04-context-defect",
+          "request_sha256": "f7be62b378fd68f910c8dda69efa3421d994c83a31cfb7d6323802597d19da33",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 5.687999999994645,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 1707,
+            "total_tokens": 1899,
+            "completion_tokens": 192,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 1707
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "04-context-defect",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "solution-a"
+          ],
+          "findings": [
+            {
+              "category": "context_links",
+              "target_ids": [
+                "solution-a"
+              ],
+              "field": "context_excerpt_ids",
+              "issue": "Linked context excerpt is unrelated to the solution. The solution interprets Exercise A's model, but question-b (Exercise B) is linked instead of question-a (Exercise A), which contains the givens and model specification needed.",
+              "evidence": [
+                {
+                  "excerpt_id": "solution-a",
+                  "quote": "This solution uses the dataset and model specified in Exercise A."
+                },
+                {
+                  "excerpt_id": "question-b",
+                  "quote": "Exercise B. Model house sale price using floor area and number of bedrooms together."
+                }
+              ],
+              "action": "Replace context_excerpt_ids [\"question-b\"] with [\"question-a\"]."
+            }
+          ],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "05-context-control",
+          "request_sha256": "80298a521fcb90492ba3ac0603c7de47915ecd7fec957c938be27a79d817c967",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 2.9689999999973224,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 1706,
+            "total_tokens": 1744,
+            "completion_tokens": 38,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 1706
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "05-context-control",
+          "review_status": "pass",
+          "reviewed_ids": [
+            "solution-a"
+          ],
+          "findings": [],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "06-scope-defects",
+          "request_sha256": "bbfff69bcfbb80aec876bd02f3c6152cc4a75b4c07aa89090da43f8c39905f7d",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 12.046999999991385,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 1950,
+            "total_tokens": 2513,
+            "completion_tokens": 563,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 1950
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "06-scope-defects",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "population",
+            "jurisdiction",
+            "incidental",
+            "method",
+            "units"
+          ],
+          "findings": [
+            {
+              "category": "scope",
+              "target_ids": [
+                "population"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Retrieval scope invents population (children), causal claim (proves improvement), and contradicts the source which states no intervention was tested.",
+              "evidence": [
+                {
+                  "excerpt_id": "population",
+                  "quote": "The study followed adult shift workers in one hospital. It reported an association between schedule regularity and self-reported sleep quality. It did not test an intervention."
+                }
+              ],
+              "action": "Replace retrieval scope with: 'Applies to adult shift workers in one hospital; reports an association, not a tested intervention.'"
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "jurisdiction"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Retrieval scope generalizes to all schools worldwide and present day, contradicting the source's limitation to Region A in 2009.",
+              "evidence": [
+                {
+                  "excerpt_id": "jurisdiction",
+                  "quote": "This chapter describes Region A school council rules in force in 2009."
+                }
+              ],
+              "action": "Replace retrieval scope with: 'Limited to Region A school councils under rules in force in 2009.'"
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "incidental"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Retrieval scope adds an unsupported prerequisite ('Requires a marine biology collection') based on an incidental example.",
+              "evidence": [
+                {
+                  "excerpt_id": "incidental",
+                  "quote": "Sorting seashells by shape is one example; the same approach can organize other collections."
+                }
+              ],
+              "action": "Remove the marine biology prerequisite from retrieval scope; seashells are an incidental example of classification."
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "method"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Retrieval scope universalizes the method to every interview, removing the source's qualification that it applies to the narrative interview method described.",
+              "evidence": [
+                {
+                  "excerpt_id": "method",
+                  "quote": "In the narrative interview method described here, the interviewer begins with one open question and lets the participant finish their account before asking follow-up questions."
+                }
+              ],
+              "action": "Replace retrieval scope with: 'Applies to the specific narrative interview method described here.'"
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "units"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Retrieval scope instructs using meters, directly contradicting the source which specifies feet and square feet.",
+              "evidence": [
+                {
+                  "excerpt_id": "units",
+                  "quote": "In this exercise, lengths are given in feet and areas in square feet. Keep these units consistent when comparing the plot dimensions."
+                }
+              ],
+              "action": "Replace retrieval scope with: 'Lengths and areas in this exercise are given in feet and square feet.'"
+            }
+          ],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "07-scope-control",
+          "request_sha256": "e5cfefbbaab4b14475f4b8ba5ee9e2ef66adc1f6807963399fc26713c312c9c6",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 7.828000000008615,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 1972,
+            "total_tokens": 2325,
+            "completion_tokens": 353,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 1972
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "07-scope-control",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "population",
+            "jurisdiction",
+            "incidental",
+            "method",
+            "units"
+          ],
+          "findings": [
+            {
+              "category": "scope",
+              "target_ids": [
+                "population"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Scope omits the necessary condition that the study relied on self-reported sleep quality, which limits generalizability of the association.",
+              "evidence": [
+                {
+                  "excerpt_id": "population",
+                  "quote": "It reported an association between schedule regularity and self-reported sleep quality."
+                }
+              ],
+              "action": "Add 'self-reported sleep quality' to the scope summary."
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "jurisdiction"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Scope adds an unsupported exclusionary claim about current rules and other jurisdictions not present in the source text.",
+              "evidence": [
+                {
+                  "excerpt_id": "jurisdiction",
+                  "quote": "This chapter describes Region A school council rules in force in 2009."
+                }
+              ],
+              "action": "Remove 'current rules and other jurisdictions are outside this passage' from the scope; retain only what the source states."
+            },
+            {
+              "category": "notes",
+              "target_ids": [
+                "population"
+              ],
+              "field": "full_reviewed_notes",
+              "issue": "Full notes omit the qualification that the outcome was self-reported sleep quality, losing a key methodological limitation.",
+              "evidence": [
+                {
+                  "excerpt_id": "population",
+                  "quote": "It reported an association between schedule regularity and self-reported sleep quality."
+                }
+              ],
+              "action": "Update full notes to include 'self-reported sleep quality'."
+            }
+          ],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "08-real-book-sample",
+          "request_sha256": "7de777196f9a9f72df6dba55b7c71032b02e8e740194a6302c1ca5744ceb0aa3",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 25.703000000008615,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 26181,
+            "total_tokens": 27471,
+            "completion_tokens": 1290,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 26181
+            }
+          }
+        },
+        "prompt_sha256": "7016a2549f9f0eeac9d4f56eb4451ee2513a4e17787756fae368895d75b2c927",
+        "schema_checked": true,
+        "review": {
+          "case_id": "08-real-book-sample",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "exc_3af200c915ae90_0",
+            "exc_3af200c915ae90_1",
+            "exc_3af200c915ae90_4",
+            "exc_3af200c915ae90_5",
+            "exc_3af200c915ae90_6",
+            "exc_3af200c915ae90_9",
+            "exc_3af200c915ae90_10",
+            "exc_3af200c915ae90_11",
+            "exc_3af200c915ae90_12",
+            "exc_3af200c915ae90_19",
+            "exc_3af200c915ae90_25",
+            "exc_3af200c915ae90_39",
+            "exc_3af200c915ae90_57"
+          ],
+          "findings": [
+            {
+              "category": "roles",
+              "target_ids": [
+                "exc_3af200c915ae90_4"
+              ],
+              "field": "roles",
+              "issue": "Excerpt is a course introduction listing learning outcomes and unit scope. Per the role definitions, 'Objectives, contents, bibliographies and administrative text alone are non_teaching'. The passage does not explain any contract-law concept; it only states what the course will cover.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_4",
+                  "quote": "Welcome to LAW B844W Chinese Contract Law. It is a compulsory five-credit course in the Master of Laws in Chinese Business Law (LLM (Chinese Business Law)) programme."
+                },
+                {
+                  "excerpt_id": "exc_3af200c915ae90_4",
+                  "quote": "In short, this unit:\n\n• describes the historical development of Chinese contract law;\n• analyses the general principle of contract law;"
+                }
+              ],
+              "action": "Change role from 'introduction' to 'non_teaching' and remove all topic assignments."
+            },
+            {
+              "category": "roles",
+              "target_ids": [
+                "exc_3af200c915ae90_19"
+              ],
+              "field": "roles",
+              "issue": "Excerpt completes the Article 2 definition of a contract and introduces related terms. This is substantive teaching content stating a legal definition, not a learner task or question.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_19",
+                  "quote": "persons or other organizations as equal parties for the establishment, modification of a relationship involving the civil rights and obligations of such entities.”\n\nApart from the term ‘contract,’ you may come across other related terms in Chinese contract law. We explore these briefly below."
+                }
+              ],
+              "action": "Change role from 'exercise' to 'formal'."
+            },
+            {
+              "category": "roles",
+              "target_ids": [
+                "exc_3af200c915ae90_39"
+              ],
+              "field": "roles",
+              "issue": "Excerpt quotes supplementary statutory provisions on quotation procedures for state-owned land-use rights. It contains no learner task or question; it is substantive lookup material.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_39",
+                  "quote": "Article 18. The quotation term shall be no less than ten working days. The margin of price rise may be adjusted according to the prices offered by competitive buyers during the period of quotation."
+                }
+              ],
+              "action": "Change role from 'exercise' to 'reference'."
+            },
+            {
+              "category": "notes",
+              "target_ids": [
+                "exc_3af200c915ae90_10"
+              ],
+              "field": "synopsis",
+              "issue": "Synopsis claims the excerpt 'Introduces a comparison of milestones in other legal systems', but the source text only says it will 'very briefly mention a few key milestones' before discussing China. It is a transition sentence, not an actual introduction of a comparison.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_10",
+                  "quote": "In this section, we will very briefly mention a few key milestones in the historical development of contract law in other jurisdictions before we discuss the history of contract law in China."
+                }
+              ],
+              "action": "Revise synopsis to reflect that this is a brief transitional statement, not a substantive introduction of comparative milestones."
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "exc_3af200c915ae90_6"
+              ],
+              "field": "topic_ids",
+              "issue": "Excerpt discusses Weber's rationalization theory and the economic role of contracts in market economies. It is general background about why contracts matter economically, not about the historical development of Chinese contract law. Assigning it to 'chinese-contract-law-history' is unsupported by the content.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_6",
+                  "quote": "According to Weber, one of the major characteristics of modern society is the process of rationalization. In other words, a task is achieved through a process broken down into a number of distinct and highly specialized rules."
+                },
+                {
+                  "excerpt_id": "exc_3af200c915ae90_6",
+                  "quote": "This explains why contracts occupy a prominent role as the infrastructure for the development of modern market economy."
+                }
+              ],
+              "action": "Remove topic 'chinese-contract-law-history' from this excerpt. If no existing topic covers the economic/sociological background of contracts, leave unassigned or propose an appropriate topic."
+            }
+          ],
+          "missing_evidence": []
+        }
+      }
+    ],
+    "refined_prompt": [
+      {
+        "receipt": {
+          "case_id": "01-book-defects",
+          "request_sha256": "fd09cee60383136d73dc5bf250d31f024ecfba89de9c3ea17dcb4cb1e4c6c1bc",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 14.09299999999348,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 2524,
+            "total_tokens": 3166,
+            "completion_tokens": 642,
+            "prompt_tokens_details": {
+              "cached_tokens": 0,
+              "text_tokens": 2524
+            }
+          }
+        },
+        "prompt_sha256": "cf46a99c96059e71b21adf694304b277024a0881fd0993987f39d171f91df5c5",
+        "schema_checked": true,
+        "review": {
+          "case_id": "01-book-defects",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "e1",
+            "e2",
+            "e3",
+            "e4"
+          ],
+          "findings": [
+            {
+              "category": "roles",
+              "target_ids": [
+                "e1"
+              ],
+              "field": "roles",
+              "issue": "Objectives list alone is non_teaching, not an exercise. No learner task is given.",
+              "evidence": [
+                {
+                  "excerpt_id": "e1",
+                  "quote": "Learning objectives: describe the median, explain simple linear regression, and describe bootstrap resampling."
+                }
+              ],
+              "action": "Change role from 'exercise' to 'non_teaching'."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "e1"
+              ],
+              "field": "topic_ids",
+              "issue": "non_teaching content must have no topics assigned.",
+              "evidence": [
+                {
+                  "excerpt_id": "e1",
+                  "quote": "Learning objectives: describe the median, explain simple linear regression, and describe bootstrap resampling."
+                }
+              ],
+              "action": "Remove topic assignment 'median' from e1."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "e2"
+              ],
+              "field": "topic_ids",
+              "issue": "Proposed topic 'median-new' is redundant with existing topic 'median'; both share the same scope ('The middle of ordered observations').",
+              "evidence": [
+                {
+                  "excerpt_id": "e2",
+                  "quote": "Order the observations. For an odd number of observations, the median is the middle observation. For an even number, it is the average of the two central observations."
+                }
+              ],
+              "action": "Replace proposed topic 'median-new' with existing topic 'median'."
+            },
+            {
+              "category": "scope",
+              "target_ids": [
+                "e3"
+              ],
+              "field": "retrieval.scope",
+              "issue": "Scope claims 'Requires the R programming language' but the source text specifies no software. The reviewed note explicitly states 'specifies no software'.",
+              "evidence": [
+                {
+                  "excerpt_id": "e3",
+                  "quote": "Simple linear regression uses a straight-line model to describe a response variable in terms of one explanatory variable."
+                }
+              ],
+              "action": "Remove the R requirement from retrieval scope; change to 'General definition' or similar."
+            },
+            {
+              "category": "notes",
+              "target_ids": [
+                "e4"
+              ],
+              "field": "synopsis",
+              "issue": "Synopsis 'Bootstrap resampling.' replaces the multi-sentence reviewed note that explains drawing with replacement, retaining sample size, recomputing statistics, and investigating sampling variability. This is a substantive loss of retrieval detail.",
+              "evidence": [
+                {
+                  "excerpt_id": "e4",
+                  "quote": "A bootstrap resample draws observations with replacement from the observed sample, retaining its size. Recompute a statistic on each of many such resamples to investigate its sampling variability."
+                }
+              ],
+              "action": "Restore the full reviewed note content as the synopsis instead of the two-word label."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "e4"
+              ],
+              "field": "topic_ids",
+              "issue": "Topic 'median' (scope: 'The middle of ordered observations') is unrelated to bootstrap resampling content.",
+              "evidence": [
+                {
+                  "excerpt_id": "e4",
+                  "quote": "A bootstrap resample draws observations with replacement from the observed sample, retaining its size. Recompute a statistic on each of many such resamples to investigate its sampling variability."
+                }
+              ],
+              "action": "Remove 'median' topic. Propose a new topic for bootstrap resampling if none exists in the catalog."
+            }
+          ],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "02-book-control",
+          "request_sha256": "892699969f3bb1bce5cc8d4539a63b3bc3ded3dcb2b69bd0202ee988fe35b58f",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 3.9839999999967404,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 2603,
+            "total_tokens": 2653,
+            "completion_tokens": 50,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 2603
+            }
+          }
+        },
+        "prompt_sha256": "cf46a99c96059e71b21adf694304b277024a0881fd0993987f39d171f91df5c5",
+        "schema_checked": true,
+        "review": {
+          "case_id": "02-book-control",
+          "review_status": "pass",
+          "reviewed_ids": [
+            "e1",
+            "e2",
+            "e3",
+            "e4"
+          ],
+          "findings": [],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "07-scope-control",
+          "request_sha256": "2ce98a0732cf3061a9312142574f7f1097a17b20149f2702fd82f2e1b991dbcd",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 2.672000000005937,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 2165,
+            "total_tokens": 2205,
+            "completion_tokens": 40,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 2165
+            }
+          }
+        },
+        "prompt_sha256": "23cc853ead1e198f95a72a3f8fc4261bf8d5df8b231515c4515ee16b3865c8a0",
+        "schema_checked": true,
+        "review": {
+          "case_id": "07-scope-control",
+          "review_status": "pass",
+          "reviewed_ids": [
+            "population",
+            "jurisdiction",
+            "incidental",
+            "method",
+            "units"
+          ],
+          "findings": [],
+          "missing_evidence": []
+        }
+      },
+      {
+        "receipt": {
+          "case_id": "08-real-book-sample",
+          "request_sha256": "c65eb51e877a33e1261b301d1c70e5824e4f35aaebc449a38a386cf69838a5c2",
+          "sent": true,
+          "attempted": true,
+          "status_code": 200,
+          "elapsed_seconds": 22.125,
+          "model": "qwen3.8-max",
+          "usage": {
+            "prompt_tokens": 26387,
+            "total_tokens": 27534,
+            "completion_tokens": 1147,
+            "prompt_tokens_details": {
+              "cached_tokens": 1024,
+              "text_tokens": 26387
+            }
+          }
+        },
+        "prompt_sha256": "cf46a99c96059e71b21adf694304b277024a0881fd0993987f39d171f91df5c5",
+        "schema_checked": true,
+        "review": {
+          "case_id": "08-real-book-sample",
+          "review_status": "needs_changes",
+          "reviewed_ids": [
+            "exc_3af200c915ae90_0",
+            "exc_3af200c915ae90_1",
+            "exc_3af200c915ae90_4",
+            "exc_3af200c915ae90_5",
+            "exc_3af200c915ae90_6",
+            "exc_3af200c915ae90_9",
+            "exc_3af200c915ae90_10",
+            "exc_3af200c915ae90_11",
+            "exc_3af200c915ae90_12",
+            "exc_3af200c915ae90_19",
+            "exc_3af200c915ae90_25",
+            "exc_3af200c915ae90_39",
+            "exc_3af200c915ae90_57"
+          ],
+          "findings": [
+            {
+              "category": "roles",
+              "target_ids": [
+                "exc_3af200c915ae90_10"
+              ],
+              "field": "roles",
+              "issue": "Tagged as non_teaching, but the excerpt is a substantive transitional sentence introducing comparative contract-law history. It teaches that other jurisdictions had milestones before China's development and frames the next section; it is not purely administrative or objective text.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_10",
+                  "quote": "In this section, we will very briefly mention a few key milestones in the historical development of contract law in other jurisdictions before we discuss the history of contract law in China."
+                }
+              ],
+              "action": "Change role to introduction."
+            },
+            {
+              "category": "roles",
+              "target_ids": [
+                "exc_3af200c915ae90_19"
+              ],
+              "field": "roles",
+              "issue": "Tagged as exercise, but the excerpt completes the Article 2 definition of a contract and introduces related terms. It contains no learner task.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_19",
+                  "quote": "persons or other organizations as equal parties for the establishment, modification of a relationship involving the civil rights and obligations of such entities.”\n\nApart from the term ‘contract,’ you may come across other related terms in Chinese contract law. We explore these briefly below."
+                }
+              ],
+              "action": "Change role to formal or introduction."
+            },
+            {
+              "category": "roles",
+              "target_ids": [
+                "exc_3af200c915ae90_39"
+              ],
+              "field": "roles",
+              "issue": "Tagged as exercise, but the excerpt quotes supplementary statutory provisions on quotation procedures. It contains no learner task.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_39",
+                  "quote": "Article 18. The quotation term shall be no less than ten working days. The margin of price rise may be adjusted according to the prices offered by competitive buyers during the period of quotation."
+                }
+              ],
+              "action": "Change role to reference."
+            },
+            {
+              "category": "notes",
+              "target_ids": [
+                "exc_3af200c915ae90_10"
+              ],
+              "field": "synopsis",
+              "issue": "Synopsis claims the excerpt 'Introduces a comparison of milestones', but the retrieval summary correctly notes it 'supplies no dates, legal rules, or explanation'. The synopsis overstates the teaching content of a single transitional sentence.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_10",
+                  "quote": "In this section, we will very briefly mention a few key milestones in the historical development of contract law in other jurisdictions before we discuss the history of contract law in China."
+                }
+              ],
+              "action": "Revise synopsis to reflect that this is a brief transitional sentence, not a substantive introduction of comparisons."
+            },
+            {
+              "category": "topics",
+              "target_ids": [
+                "exc_3af200c915ae90_6"
+              ],
+              "field": "topic_ids",
+              "issue": "Assigned chinese-contract-law-history, but the excerpt teaches the economic function of contracts (Weber's rationalization, credit sales, corporations as contractual arrangements). This is general contract theory background, not historical development of Chinese contract law. The topic scope explicitly covers evolution 'from Hammurabi... to the 1999 unified PRC Contract Law' and excludes substantive doctrines.",
+              "evidence": [
+                {
+                  "excerpt_id": "exc_3af200c915ae90_6",
+                  "quote": "Contracts are at the core of the market economy. The reason for this is clear: business transactions are premised upon contractual relationships. The enforceability of contracts is a key to economic development."
+                }
+              ],
+              "action": "Remove chinese-contract-law-history. Propose a new topic for economic/sociological background of contract law if none exists, or leave unassigned if out of scope for this sample."
+            }
+          ],
+          "missing_evidence": []
+        }
+      }
+    ]
+  },
+  "preliminary_attempts": [
+    {
+      "run": "2026-09-21-qwen-review-v2",
+      "receipt": {
+        "case_id": "01-book-defects",
+        "request_sha256": "c17145a0ae4c4e16cd65d03af7160b9b8dd4260b42bc347f1bf8fa2280bb071f",
+        "sent": null,
+        "attempted": true,
+        "error": "ReadTimeout",
+        "elapsed_seconds": 181.35899999999674
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "01-book-defects",
+        "request_sha256": "68bc40812f4e7231674c54a7ed833969f95c7ce9e4746425fc5125c1cb0eb394",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 30.406000000002678,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 2350,
+          "total_tokens": 4011,
+          "completion_tokens": 1661,
+          "prompt_tokens_details": {
+            "cached_tokens": 0,
+            "text_tokens": 2350
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 1016,
+            "text_tokens": 1661
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "02-book-control",
+        "request_sha256": "2e55597beb4506af9581d8bc9d5abdf0621f2b409ffb282a30a718f18c570490",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 22.437000000005355,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 2404,
+          "total_tokens": 3581,
+          "completion_tokens": 1177,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 2404
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 1044,
+            "text_tokens": 1177
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "03-missing-scope",
+        "request_sha256": "51bc71ff6e3a56609070d10b5859f20e7c4801b35458efde46c7d466b63f7d4e",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 17.437999999994645,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 1575,
+          "total_tokens": 2240,
+          "completion_tokens": 665,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 1575
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 518,
+            "text_tokens": 665
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "04-context-defect",
+        "request_sha256": "004d6d4eb576889a1368250cc41c05b9c039c8399b815d5b77509ce7834a9f53",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 18.922000000005937,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 1739,
+          "total_tokens": 2536,
+          "completion_tokens": 797,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 1739
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 647,
+            "text_tokens": 797
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "05-context-control",
+        "request_sha256": "5360954f55dfb2baf53abb58901002499ac9b52c4e73e99c288382178e596b11",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 13.906999999991967,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 1738,
+          "total_tokens": 2300,
+          "completion_tokens": 562,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 1738
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 529,
+            "text_tokens": 562
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "06-scope-defects",
+        "request_sha256": "7b32ea8492ef3688f8453233bd3c16b61c2fac356d57a888ffffc028f5cce0f6",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 19.889999999999418,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 1982,
+          "total_tokens": 2933,
+          "completion_tokens": 951,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 1982
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 413,
+            "text_tokens": 951
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "07-scope-control",
+        "request_sha256": "ff8f00f86d3408c9ee41c397041d1fb9dfa2c97be1e2ca1f9d542241c49e71e0",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 16.375,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 2004,
+          "total_tokens": 2828,
+          "completion_tokens": 824,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 2004
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 781,
+            "text_tokens": 824
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-bounded",
+      "receipt": {
+        "case_id": "08-real-book-sample",
+        "request_sha256": "b05df9dfd4250ab2cedbcee4e08817aaabde1429eb255221ba6a3fb0e3ec2d8f",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 85.09299999999348,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 26213,
+          "total_tokens": 31392,
+          "completion_tokens": 5179,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 26213
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 4096,
+            "text_tokens": 5179
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-corrected-control",
+      "receipt": {
+        "case_id": "02-book-control",
+        "request_sha256": "f3c8b76df275d9adfacd01fe0f3fbcf7dee36a043195716b2c1d3eaad5a0905e",
+        "sent": true,
+        "attempted": true,
+        "status_code": 200,
+        "elapsed_seconds": 35.6869999999908,
+        "model": "qwen3.8-max",
+        "usage": {
+          "prompt_tokens": 2429,
+          "total_tokens": 4176,
+          "completion_tokens": 1747,
+          "prompt_tokens_details": {
+            "cached_tokens": 1024,
+            "text_tokens": 2429
+          },
+          "completion_tokens_details": {
+            "reasoning_tokens": 1705,
+            "text_tokens": 1747
+          }
+        }
+      }
+    },
+    {
+      "run": "2026-09-21-qwen-review-v2-final",
+      "receipt": {
+        "case_id": "01-book-defects",
+        "request_sha256": "c9dd78506314be77dddef15987b66e79474cf93611b01e780874084736b8dfd5",
+        "sent": true,
+        "attempted": true,
+        "status_code": 400,
+        "elapsed_seconds": 1.625
+      }
+    }
+  ],
+  "adjudication": {
+    "synthetic": "First strict pass missed lost full notes and overrejected one scope control. Refined prompt caught the lost notes and returned pass for the rechecked book and scope controls. Initial context/split/cross-domain-defect cases were not rerun after refinement.",
+    "refined_real_findings": [
+      {
+        "target": "exc_3af200c915ae90_10",
+        "category": "roles",
+        "verdict": "reject",
+        "reason": "The excerpt only announces the upcoming discussion. It does not teach historical milestones. The suggested chronological inference confuses discussion order with historical development."
+      },
+      {
+        "target": "exc_3af200c915ae90_19",
+        "category": "roles",
+        "verdict": "accept finding",
+        "reason": "Continuation of a legal definition, not a learner task. Final role selection still needs complete context."
+      },
+      {
+        "target": "exc_3af200c915ae90_39",
+        "category": "roles",
+        "verdict": "accept finding",
+        "reason": "Supplementary statutory lookup text, not a learner task."
+      },
+      {
+        "target": "exc_3af200c915ae90_10",
+        "category": "notes",
+        "verdict": "unnecessary wording change",
+        "reason": "Introduces a comparison can describe a transition. The existing non_teaching role and explicit no-teaching retrieval scope already prevent this from being a useful teaching hit."
+      },
+      {
+        "target": "exc_3af200c915ae90_6",
+        "category": "topics",
+        "verdict": "requires catalog triage; reject proposed removal/unassignment",
+        "reason": "The topic source_sections explicitly includes 1.1 Contract law: some background. Scope wording may need clarification, but the recommendation ignores that inclusion and suggests leaving teaching content unassigned."
+      }
+    ],
+    "real_known_misses": [
+      "Excerpt 6 is explanatory content retained as reference.",
+      "Excerpt 57 synopsis invents creditor direction; the supplied source says the debtor spontaneously declares repayment."
+    ],
+    "scope_limit": "Mixed-provenance candidate; two supported role defects were inherited. This is a small development set, not a blinded or held-out library-quality evaluation. No visual or numerical correctness was evaluated."
+  }
+}

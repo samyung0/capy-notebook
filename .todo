@@ -1,5 +1,7 @@
 low priority:
 
+Knowledge curate-loop and duplicate-result follow-up: todo-knowledge-curate-and-dedup.md (deferred; separate from Sol and optional Qwen book review).
+
 1.  use dynamic color paletts for solid colors (these should be user defined colors, system colors should use success/warning/info etc) (prob need an extra field like customColor and a bunch of type changes in backend go)
 2.  rate limiting, bot detection (can do some funny things if we have high bot traffic), analytics, promo, posthog
 3.  work on thinkg space

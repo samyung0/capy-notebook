@@ -214,6 +214,28 @@ Follow [the review contract](review.md) for role semantics, non-teaching text,
 short retrieval descriptions, applicability and necessary source-context links.
 The short fields supplement the full notes. Final topic assignment must retain
 them; indexing refuses metadata lost between review and final tags.
+The scheduler sends [sol-assignment.txt](sol-assignment.txt) verbatim with a
+separate assignment record and saves its exact wording/hash. Sol finishes with
+a reusable local text packet, which completes the Sol workflow. The developer
+can send saved packets for Qwen review whenever needed and have someone else
+assess its response; submission and polling are outside this workflow. Qwen checks
+roles, full notes, scope, topics and necessary context links; initial page checks
+stay with Sol. No Qwen material review, image cache or Sol feedback loop is
+required. `packet.py` produces fixed, self-contained review inputs locally;
+see the command and candidate format in [review.md](review.md). The realtime
+study loop continues using the user-selected model.
+Operational Sol packets stay local under the Git-ignored `data/knowledge-base/`.
+The first batch is in
+`sol-first-batch-2026-09-21/<book-id>/packet-exported.json`. The full backfill
+uses `sol-backfill-2026-09-21/inventory.json` and per-book, per-scope artifacts
+under that directory. The current main task orchestrates fresh Sol medium
+workers over the remaining existing excerpts; completed scopes are preserved
+across heartbeat runs. Saving a packet does not submit it to Qwen or upload it
+to Drive.
+The optional [Qwen batch commands](qwen-batch.md) prepare and submit selected
+saved packets, poll every ten minutes and store raw responses for later
+assessment. They require an explicit thinking-mode choice, preserve strict JSON
+output without token caps, and never apply findings or start Sol work.
 Topics follows review in the same Sol owner's assignment. Use `topics.py --run
 <run> --book <id> --review-context <full-review.json> --export-context <context>`
 to refresh the subject catalog and save the full reviewed context, rules and

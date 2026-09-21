@@ -1,0 +1,105 @@
+{
+  "case_id": "05-pages-mixed",
+  "mode": "material",
+  "targets": [
+    {
+      "target_id": "fit",
+      "required_checks": [
+        "grounding",
+        "page_verification"
+      ]
+    },
+    {
+      "target_id": "fit-b",
+      "required_checks": [
+        "grounding",
+        "page_verification"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "source_id": "os4",
+      "version": 3,
+      "title": "OpenIntro Statistics, 4th edition, screen-reader PDF",
+      "synthetic": false,
+      "excerpts": [
+        {
+          "excerpt_id": "os4-table-359",
+          "physical_pdf_page": 359,
+          "text": "Figure 8.14. Elmhurst least-squares fit. Columns: Estimate; Std. Error; t value; Pr(>|t|). (Intercept): 24319.3; 1291.5; 18.83; <0.0001. family income: -0.0431; 0.0108; -3.98; 0.0002."
+        }
+      ],
+      "source_sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+      "license": "CC BY-SA 3.0",
+      "source_url": "https://www.openintro.org/book/os/",
+      "text_note": "Faithful plain-text normalization of the table; verify against the attached original page."
+    },
+    {
+      "source_id": "toy-lab",
+      "version": 1,
+      "title": "Synthetic lab result",
+      "synthetic": true,
+      "excerpts": [
+        {
+          "excerpt_id": "toy-fit",
+          "physical_pdf_page": 12,
+          "text": "The demonstration software output lists a slope estimate of 8.20."
+        }
+      ]
+    }
+  ],
+  "images": [
+    {
+      "source_id": "os4",
+      "version": 3,
+      "physical_pdf_page": 359,
+      "path": "images/os4-p359.png",
+      "sha256": "036428b0daf3a1554ca8edf145f9d9b301e152e00c16860e50ea9c4541e2afd1",
+      "mime_type": "image/png"
+    }
+  ],
+  "learner_request": "Report the software coefficient estimates in the Elmhurst example.",
+  "draft_blocks": [
+    {
+      "id": "fit",
+      "text": "The source software table reports an intercept of 24319.3 and a family-income coefficient of -0.0431. These are estimates for this one-predictor Elmhurst fit.",
+      "cites": [
+        "os4-table-359"
+      ]
+    },
+    {
+      "id": "fit-b",
+      "text": "A separate demonstration dataset has a reported software slope of 8.20.",
+      "cites": [
+        "toy-fit"
+      ]
+    }
+  ],
+  "writer_record": {
+    "read_excerpt_ids": [
+      "os4-table-359",
+      "toy-fit"
+    ],
+    "captures": [
+      {
+        "source_id": "os4",
+        "physical_pdf_page": 359,
+        "status": "success"
+      },
+      {
+        "source_id": "toy-lab",
+        "physical_pdf_page": 12,
+        "status": "success",
+        "image_available_to_reviewer": false
+      }
+    ]
+  },
+  "image_availability": [
+    {
+      "source_id": "toy-lab",
+      "physical_pdf_page": 12,
+      "status": "unavailable"
+    }
+  ]
+}

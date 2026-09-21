@@ -1,0 +1,35 @@
+{
+  "case_ids": [
+    "01-claims",
+    "02-claims-control",
+    "03-pages",
+    "04-pages-other",
+    "05-pages-mixed",
+    "06-book",
+    "07-book-control",
+    "08-book-split",
+    "09-examples",
+    "10-extraction",
+    "11-extraction-control"
+  ],
+  "model": "qwen3.8-max",
+  "prompt_status": "draft awaiting developer review",
+  "source_pdf": {
+    "title": "OpenIntro Statistics",
+    "authors": [
+      "David Diez",
+      "Mine Cetinkaya-Rundel",
+      "Christopher D. Barr"
+    ],
+    "edition": "4th edition, screen-reader PDF updated 2022-10-21",
+    "source_url": "https://www.openintro.org/book/os/",
+    "license": "CC BY-SA 3.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+    "pdf_sha256": "e261e4aea0eb4f0fd2b9d340604918ee7145e1a98e00313575c88977b671cb40",
+    "physical_pdf_pages": [
+      358,
+      359
+    ],
+    "changes": "Full-page renders are unaltered. Plain-text excerpts are normalized, and incorrect candidate extractions are explicitly constructed test inputs."
+  }
+}

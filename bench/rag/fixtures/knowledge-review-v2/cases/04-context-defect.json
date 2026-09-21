@@ -1,0 +1,74 @@
+{
+  "case_id": "04-context-defect",
+  "provenance": "Synthetic context-link case; no numerical accuracy or duplicate audit is assigned.",
+  "source": {
+    "source_id": "context-fixture",
+    "title": "Regression exercises",
+    "synthetic": true,
+    "excerpts": [
+      {
+        "excerpt_id": "question-a",
+        "text": "Exercise A. Model rent using floor area as the only explanatory variable. Interpret the fitted slope in words."
+      },
+      {
+        "excerpt_id": "solution-a",
+        "text": "Solution to Exercise A. The fitted slope describes the predicted change in rent for a change in floor area. This solution uses the dataset and model specified in Exercise A."
+      },
+      {
+        "excerpt_id": "question-b",
+        "text": "Exercise B. Model house sale price using floor area and number of bedrooms together. Explain how the partial slope for area should be interpreted."
+      }
+    ]
+  },
+  "assignment": {
+    "scope": "selected excerpt; linked context supplied",
+    "target_ids": [
+      "solution-a"
+    ],
+    "fields": [
+      "roles",
+      "notes",
+      "scope",
+      "topics",
+      "context_links"
+    ]
+  },
+  "role_definitions": {
+    "introduction": "Explains a concept; objectives alone do not teach it.",
+    "formal": "States or develops a definition, method, theorem or derivation.",
+    "worked_example": "Demonstrates a method with an application or solution.",
+    "exercise": "Gives the learner an actual task or question.",
+    "summary": "Reviews content already taught.",
+    "reference": "Substantive lookup material, such as a formula table or glossary, not a bibliography.",
+    "non_teaching": "Contents, objectives, bibliography, credits or administration alone; stands alone with no topics."
+  },
+  "existing_topics": [
+    {
+      "id": "simple-regression",
+      "scope": "One explanatory variable."
+    }
+  ],
+  "proposed_topics": [],
+  "full_reviewed_notes": {
+    "solution-a": "Interprets the rent-versus-area slope for the model in Exercise A."
+  },
+  "final_tags": [
+    {
+      "excerpt_id": "solution-a",
+      "roles": [
+        "worked_example"
+      ],
+      "topic_ids": [
+        "simple-regression"
+      ],
+      "synopsis": "Interprets the rent-versus-area slope for the model in Exercise A.",
+      "retrieval": {
+        "summary": "Interpretation of the rent-versus-area slope.",
+        "scope": "This solution needs the givens and one-predictor model in Exercise A.",
+        "context_excerpt_ids": [
+          "question-b"
+        ]
+      }
+    }
+  ]
+}

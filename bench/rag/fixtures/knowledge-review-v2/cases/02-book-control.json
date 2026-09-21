@@ -1,0 +1,158 @@
+{
+  "case_id": "02-book-control",
+  "assignment": {
+    "scope": "whole supplied mini-book",
+    "expected_scope_ids": [
+      "all"
+    ],
+    "included_scope_ids": [
+      "all"
+    ],
+    "target_ids": [
+      "e1",
+      "e2",
+      "e3",
+      "e4"
+    ],
+    "fields": [
+      "roles",
+      "notes",
+      "scope",
+      "topics",
+      "context_links"
+    ]
+  },
+  "role_definitions": {
+    "introduction": "Explains a concept; objectives alone do not teach it.",
+    "formal": "States or develops a definition, method, theorem or derivation.",
+    "worked_example": "Demonstrates a method with an application or solution.",
+    "exercise": "Gives the learner an actual task or question.",
+    "summary": "Reviews content already taught.",
+    "reference": "Substantive lookup material, such as a formula table or glossary, not a bibliography.",
+    "non_teaching": "Contents, objectives, bibliography, credits or administration alone; stands alone with no topics."
+  },
+  "full_reviewed_notes": {
+    "e1": "Objectives list naming topics to be studied. It supplies no explanation or learner question.",
+    "e2": "The median is a middle value of an ordered data set. With an odd number of observations use the middle observation; with an even number use the average of the two central observations. This is a definition, not a worked calculation.",
+    "e3": "Simple linear regression describes a response using one explanatory variable and a straight-line model. The passage is conceptual and specifies no software. It does not discuss multiple-predictor models.",
+    "e4": "A bootstrap resample draws observations with replacement from the observed sample, retaining its size. Repeating this produces a collection of recomputed statistics used to investigate sampling variability. The passage explains resampling rather than defining an average."
+  },
+  "existing_topics": [
+    {
+      "id": "median",
+      "label": "Median",
+      "scope": "The middle of ordered observations."
+    },
+    {
+      "id": "simple-linear-regression",
+      "label": "Simple linear regression",
+      "scope": "A straight-line response model with one explanatory variable."
+    }
+  ],
+  "proposed_topics": [
+    {
+      "id": "bootstrap-resampling",
+      "label": "Bootstrap resampling",
+      "scope": "Resampling observations with replacement and recomputing statistics."
+    }
+  ],
+  "final_tags": [
+    {
+      "excerpt_id": "e1",
+      "roles": [
+        "non_teaching"
+      ],
+      "topic_ids": [],
+      "synopsis": "Objectives list naming topics to be studied. It supplies no explanation or learner question.",
+      "retrieval": {
+        "summary": "Objectives list.",
+        "scope": "No teaching content.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "e2",
+      "roles": [
+        "formal"
+      ],
+      "topic_ids": [
+        "median"
+      ],
+      "synopsis": "The median is a middle value of an ordered data set. With an odd number of observations use the middle observation; with an even number use the average of the two central observations. This is a definition, not a worked calculation.",
+      "retrieval": {
+        "summary": "Definition of the median.",
+        "scope": "General definition.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "e3",
+      "roles": [
+        "formal"
+      ],
+      "topic_ids": [
+        "simple-linear-regression"
+      ],
+      "synopsis": "Simple linear regression describes a response using one explanatory variable and a straight-line model. The passage is conceptual and specifies no software. It does not discuss multiple-predictor models.",
+      "retrieval": {
+        "summary": "Concept of simple linear regression.",
+        "scope": "Conceptual explanation with one explanatory variable; no software is specified.",
+        "context_excerpt_ids": []
+      }
+    },
+    {
+      "excerpt_id": "e4",
+      "roles": [
+        "formal"
+      ],
+      "topic_ids": [
+        "bootstrap-resampling"
+      ],
+      "synopsis": "A bootstrap resample draws observations with replacement from the observed sample, retaining its size. Repeating this produces a collection of recomputed statistics used to investigate sampling variability. The passage explains resampling rather than defining an average.",
+      "retrieval": {
+        "summary": "Bootstrap resampling.",
+        "scope": "Sampling with replacement.",
+        "context_excerpt_ids": []
+      }
+    }
+  ],
+  "deterministic_validation": {
+    "schema": "passed for this constructed fixture",
+    "id_coverage": "all assigned excerpts present",
+    "topic_ids": "all IDs exist in existing or proposed topics; semantic fit not checked"
+  },
+  "source": {
+    "source_id": "book-fixture",
+    "version": 1,
+    "title": "Statistics with R - synthetic mini-book",
+    "synthetic": true,
+    "excerpts": [
+      {
+        "excerpt_id": "e1",
+        "physical_pdf_page": 1,
+        "text": "Learning objectives: describe the median, explain simple linear regression, and describe bootstrap resampling."
+      },
+      {
+        "excerpt_id": "e2",
+        "physical_pdf_page": 2,
+        "text": "Order the observations. For an odd number of observations, the median is the middle observation. For an even number, it is the average of the two central observations."
+      },
+      {
+        "excerpt_id": "e3",
+        "physical_pdf_page": 3,
+        "text": "Simple linear regression uses a straight-line model to describe a response variable in terms of one explanatory variable."
+      },
+      {
+        "excerpt_id": "e4",
+        "physical_pdf_page": 4,
+        "text": "A bootstrap resample draws observations with replacement from the observed sample, retaining its size. Recompute a statistic on each of many such resamples to investigate its sampling variability."
+      }
+    ]
+  },
+  "final_topic_ids": [
+    "median",
+    "simple-linear-regression",
+    "bootstrap-resampling"
+  ],
+  "provenance": "Synthetic test data. Defects are deliberately seeded, not observed Sol errors. Control corrected after its first trial: removed an unsupported normally hedge from both baseline and final notes; request/response from that first trial retained."
+}

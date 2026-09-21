@@ -5,6 +5,7 @@ import json
 import enrich
 import knowledge_base_pilot as pilot
 import pytest
+from packet import build_packet
 
 from pipeline.retrieval.knowledge_metadata import indexed_text, validate_metadata
 
@@ -16,12 +17,24 @@ def test_review_import_preserves_full_notes_and_refuses_stale_or_invalid_context
     corpus_dir = tmp_path / "books/book"
     corpus_dir.mkdir(parents=True)
     excerpts = [
-        {"id": "objectives", "text": "Learning objectives", "pages": [1]},
-        {"id": "solution", "text": "The solution uses R.", "pages": [2]},
+        {
+            "id": "objectives",
+            "text": "Learning objectives",
+            "pages": [1],
+            "section_path": "Objectives",
+        },
+        {
+            "id": "solution",
+            "text": "The solution uses R.",
+            "pages": [2],
+            "section_path": "Solution",
+        },
     ]
+    book = {"id": "book", "title": "Test book", "sha256": "sha", "pages": 2}
     (corpus_dir / "corpus.json").write_text(
-        json.dumps({"book": {"sha256": "sha", "pages": 2}, "excerpts": excerpts})
+        json.dumps({"book": book, "excerpts": excerpts})
     )
+    (tmp_path / "manifest.json").write_text(json.dumps({"books": [book]}))
     notes = "Full existing synopsis " * 500
     tag = {
         "roles": ["introduction"],
@@ -115,6 +128,11 @@ def test_review_import_preserves_full_notes_and_refuses_stale_or_invalid_context
     assert indexed_text(text, metadata).startswith(text)
     assert metadata["scope"] in indexed_text(text, metadata)
 
+    notes_path = tmp_path / "reviewed-notes.json"
+    original_notes = json.dumps({"tags": {"objectives": tag}}).encode()
+    notes_path.write_bytes(original_notes)
+    baseline_hash = hashlib.sha256(original_notes).hexdigest()
+    artifact["tags"]["objectives"]["synopsis"] = "Lists learning objectives."
     artifact_path = tmp_path / "review.json"
     artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
     monkeypatch.setattr(
@@ -123,8 +141,30 @@ def test_review_import_preserves_full_notes_and_refuses_stale_or_invalid_context
     )
     enrich.main()
     saved_notes = json.loads((tmp_path / "reviewed-notes.json").read_text())
-    assert saved_notes["tags"]["objectives"]["synopsis"] == notes
+    assert saved_notes["tags"]["objectives"]["synopsis"] == "Lists learning objectives."
     assert saved_notes["tags"]["objectives"]["retrieval"] == metadata
+    packet_args = {
+        "run": tmp_path,
+        "review": artifact_path,
+        "catalog": tmp_path / "topics.json",
+        "case_id": "after-enrichment",
+        "baseline_sha256": baseline_hash,
+    }
+    with pytest.raises(ValueError, match="baseline hash"):
+        build_packet(**packet_args, baseline_notes=notes_path)
+    backup = (
+        tmp_path
+        / "retrieval-review-backups"
+        / hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+        / "reviewed-notes.json"
+    )
+    packet = build_packet(**packet_args, baseline_notes=backup)
+    assert packet["full_reviewed_notes"]["objectives"] == notes
+    assert packet["final_tags"][0]["synopsis"] == "Lists learning objectives."
+    assert (
+        packet["provenance"]["bindings"]["full_reviewed_notes"]["sha256"]
+        == baseline_hash
+    )
 
 
 @pytest.mark.asyncio

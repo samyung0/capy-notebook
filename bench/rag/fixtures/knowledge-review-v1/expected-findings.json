@@ -1,0 +1,126 @@
+{
+  "not_model_input": true,
+  "purpose": "Human-authored expectations for these small fixtures, not model results.",
+  "cases": {
+    "01-claims": {
+      "expected_status": "needs_changes",
+      "must_find": [
+        "b1 turns an association into a guarantee and generalizes schools to every industry.",
+        "b2 is unsupported by the read passages, regardless of whether the historical statement is true."
+      ],
+      "must_not_flag_or_must_preserve": [
+        "b3 source recommendation and clearly labeled practice activity."
+      ],
+      "note": ""
+    },
+    "02-claims-control": {
+      "expected_status": "pass",
+      "must_find": [],
+      "must_not_flag_or_must_preserve": [
+        "All three blocks; do not reject the labeled adaptation."
+      ],
+      "note": ""
+    },
+    "03-pages": {
+      "expected_status": "pass",
+      "must_find": [],
+      "must_not_flag_or_must_preserve": [
+        "The coefficient estimates are supported by both the table text and the actual page.",
+        "The hand-calculated 24,327 elsewhere on the page is not the software intercept and does not invalidate 24319.3."
+      ],
+      "note": ""
+    },
+    "04-pages-other": {
+      "expected_status": "incomplete",
+      "must_find": [
+        "Visual verification of the exact software table is unavailable: only page 358 is attached, while Figure 8.14 is on page 359."
+      ],
+      "must_not_flag_or_must_preserve": [
+        "Text support for the reported values still passes.",
+        "Do not replace 24319.3 by a value reconstructed from rounded statistics."
+      ],
+      "note": ""
+    },
+    "05-pages-mixed": {
+      "expected_status": "incomplete",
+      "must_find": [
+        "fit-b cannot be visually verified from a receipt without its image."
+      ],
+      "must_not_flag_or_must_preserve": [
+        "fit remains visually verified.",
+        "fit-b has text support; its value is not established as wrong."
+      ],
+      "note": ""
+    },
+    "06-book": {
+      "expected_status": "needs_changes",
+      "must_find": [
+        "e1 should be non_teaching with no topics.",
+        "median-new duplicates median.",
+        "e3 has no source-supported R requirement.",
+        "e4 is bootstrap resampling, not the median; a new topic is needed in this supplied catalog.",
+        "e4 loses the full reviewed synopsis."
+      ],
+      "must_not_flag_or_must_preserve": [
+        "e2 source definition and unchanged full notes.",
+        "e3 valid conceptual synopsis."
+      ],
+      "note": "These artifacts were constructed for testing; they are not recorded Sol outputs."
+    },
+    "07-book-control": {
+      "expected_status": "pass",
+      "must_find": [],
+      "must_not_flag_or_must_preserve": [
+        "All roles, topic reuse/new topic, full notes and source-supported scope."
+      ],
+      "note": "This tiny synthetic book tests the prompt, not large-book Sol reliability."
+    },
+    "08-book-split": {
+      "expected_status": [
+        "needs_changes",
+        "incomplete"
+      ],
+      "must_find": [
+        "Whole-book completion is unsupported; the second review scope is missing."
+      ],
+      "must_not_flag_or_must_preserve": [
+        "The supplied chapters can still be reviewed within their scope.",
+        "Do not invent the missing chapters or their topics."
+      ],
+      "note": "This intentionally supplies a failed validation receipt to test honesty. A live importer should reject this before any model call."
+    },
+    "09-examples": {
+      "expected_status": [
+        "pass",
+        "needs_changes"
+      ],
+      "must_find": [],
+      "must_not_flag_or_must_preserve": [
+        "a/b duplicate; a/c and a/d distinct; q/answer complementary.",
+        "Classifying a duplicate correctly is not itself a defective candidate artifact."
+      ],
+      "note": "No numeric source verification is requested in this comparison-only case. Either a pass with correct relations or a proposed duplicate grouping is acceptable; do not collapse c or d into a."
+    },
+    "10-extraction": {
+      "expected_status": "needs_changes",
+      "must_find": [
+        "The ratio is inverted: the image gives (sy/sx)R.",
+        "Income and aid columns are swapped in both mean and sd.",
+        "The question explicitly needs the summary statistics in stats-358."
+      ],
+      "must_not_flag_or_must_preserve": [
+        "The supplied correlation -0.499 is correct.",
+        "Keep the question linked to its actual data, not an unrelated example."
+      ],
+      "note": ""
+    },
+    "11-extraction-control": {
+      "expected_status": "pass",
+      "must_find": [],
+      "must_not_flag_or_must_preserve": [
+        "Correct formula, table column associations, correlation, and necessary context link."
+      ],
+      "note": ""
+    }
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "type": "object",
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review_status": {
+      "enum": [
+        "pass",
+        "needs_changes",
+        "incomplete"
+      ],
+      "type": "string"
+    },
+    "reviewed_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 1
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "enum": [
+              "roles",
+              "notes",
+              "scope",
+              "topics",
+              "context_links"
+            ],
+            "type": "string"
+          },
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1
+          },
+          "issue": {
+            "type": "string",
+            "minLength": 1
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "excerpt_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "excerpt_id",
+                "quote"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "action": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "category",
+          "target_ids",
+          "field",
+          "issue",
+          "evidence",
+          "action"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "required": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "target_ids",
+          "required"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "case_id",
+    "review_status",
+    "reviewed_ids",
+    "findings",
+    "missing_evidence"
+  ],
+  "additionalProperties": false
+}

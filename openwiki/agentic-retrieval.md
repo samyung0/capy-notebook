@@ -1210,6 +1210,37 @@ validates the owner's artifact, merges IDs/aliases and enforces the topic cap
 without a GLM call. Split-book owners assemble all review scopes before topics.
 Full notes and retrieval metadata
 are retained in `reviewed-notes.json` and final tags; indexing refuses their loss.
+The heartbeat dispatches the fixed `lab/knowledge/sol-assignment.txt` template
+with a separate assignment record. Sol finishes with reusable saved text packets
+embedding the assigned source/context, full notes, tags and catalog. The developer
+may submit them to Qwen whenever needed and assign another reviewer to assess
+the response. Submission and polling are outside the Sol workflow. Qwen checks roles, notes, scope,
+topics and context links against supplied text; numerical and page inspection
+remain initial Sol work. Qwen has no material review stage, no dedicated image
+cache and no Sol correction loop. The realtime user agent is unchanged.
+The fixed Sol prompt references concrete examples in `lab/knowledge/sol-examples.md`
+and `lab/knowledge/examples/book-review-packet.json`; assignments freeze those
+files with the review contract. `lab/knowledge/packet.py` emits the fixed text
+packet format locally without submitting it. Per-excerpt scope must expose
+missing source inputs instead of relying only on a book-level unresolved list.
+Packet export requires an explicit frozen original-note file and assignment hash;
+it rejects updated live notes used as the old baseline after enrichment. Existing
+immutable enrichment backups can supply the original bytes without reverting
+the live run.
+Observed failures are included in Sol's example file. Qwen's separate
+`bench/rag/fixtures/knowledge-review-v2/system-prompt.txt` embeds its examples
+directly, including no-op fixes and immutable old notes. The optional test helper
+accepts a saved `--packet` as well as fixture cases; it never applies findings.
+The separate `lab/knowledge/qwen_batch.py` commands freeze selected text packets,
+submit one durable Alibaba job and poll every 600 seconds with `poll --watch`.
+The operator explicitly selects thinking or non-thinking mode; both retain
+strict JSON Schema and no caller token caps. Inputs, endpoint and batch ID are
+saved for resuming; results match by custom ID and retain raw responses,
+partial failures and contract warnings for later assessment. Collection never
+applies suggestions or controls Sol publication. See
+[`qwen-batch.md`](../lab/knowledge/qwen-batch.md) for commands and recovery.
+Deferred curate-loop and duplicate-result work is tracked in
+[`todo-knowledge-curate-and-dedup.md`](../todo-knowledge-curate-and-dedup.md).
 Summaries are not compacted. Completed books progress through
 publication automatically; revised versions are verified before old versions
 are retired. The heartbeat is a

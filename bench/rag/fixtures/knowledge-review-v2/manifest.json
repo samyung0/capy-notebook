@@ -1,0 +1,19 @@
+{
+  "case_ids": [
+    "01-book-defects",
+    "02-book-control",
+    "03-missing-scope",
+    "04-context-defect",
+    "05-context-control",
+    "06-scope-defects",
+    "07-scope-control",
+    "08-real-book-sample",
+    "09-real-book-repaired-control"
+  ],
+  "model": "qwen3.8-max",
+  "scope": "Text-only book artifact review; no material/page/numerical review.",
+  "synthetic_case_count": 7,
+  "real_sample_target_count": 13,
+  "real_source_excerpt_count": 58,
+  "repaired_real_control_target_count": 3
+}

@@ -1,0 +1,80 @@
+{
+  "case_id": "illustrative-ribbon-solution",
+  "provenance": {
+    "description": "Synthetic format example only. All source text is invented for this example; hashes and agent identity below are placeholders, not run receipts.",
+    "book": {
+      "id": "illustrative-fractions",
+      "title": "Illustrative fraction lesson",
+      "sha256": "example-only-replace-with-actual-source-sha256"
+    },
+    "model_provenance": {
+      "model": "gpt-5.6-sol",
+      "reasoning_effort": "medium",
+      "agent_id": "example-only-replace-with-actual-agent-id",
+      "usage": "unknown"
+    },
+    "bindings": {
+      "corpus": {"path": "example/corpus.json", "sha256": "example-only-replace-with-actual-sha256"},
+      "full_reviewed_notes": {"path": "example/frozen-original-notes.json", "sha256": "example-only-replace-with-actual-assignment-baseline-sha256"},
+      "candidate": {"path": "example/review.json", "sha256": "example-only-replace-with-actual-sha256"},
+      "catalog": {"path": "example/catalog.json", "sha256": "example-only-replace-with-actual-sha256"}
+    }
+  },
+  "source": {
+    "source_id": "illustrative-fractions",
+    "title": "Illustrative fraction lesson",
+    "sha256": "example-only-replace-with-actual-source-sha256",
+    "excerpts": [
+      {"excerpt_id": "e-question", "text": "Two pieces of ribbon have lengths 1/2 and 1/3 of the same unit. Find their combined length.", "pages": [10], "section_path": "Adding fractions > Ribbon problem"},
+      {"excerpt_id": "e-solution", "text": "Using sixths, add 3/6 and 2/6 to obtain 5/6 of the original unit. This is the combined ribbon length.", "pages": [11], "section_path": "Adding fractions > Ribbon solution"}
+    ]
+  },
+  "assignment": {
+    "scope": "bounded excerpt review; no whole-book topic-completeness claim",
+    "target_ids": ["e-solution"],
+    "completed_ids": ["e-solution"],
+    "outside_assignment_ids": ["e-question"],
+    "fields": ["roles", "notes", "scope", "topics", "context_links"],
+    "metadata_coverage": "Retrieval metadata is supplied for the one target. This synthetic example makes no PDF inspection claim."
+  },
+  "role_definitions": {
+    "introduction": "Explains a concept; objectives alone do not teach it.",
+    "formal": "States or develops a definition, method, theorem or derivation.",
+    "worked_example": "Demonstrates a method with an application or solution.",
+    "exercise": "Gives the learner an actual task or question.",
+    "summary": "Reviews content already taught.",
+    "reference": "Substantive lookup material, such as a formula table or glossary, not a bibliography.",
+    "non_teaching": "Contents, objectives, bibliography, credits or administration alone; stands alone with no topics."
+  },
+  "topic_rules": "Reuse a catalog topic covering the same concept. Judge only this assigned excerpt's topic fit; this packet does not establish whole-book topic coverage.",
+  "existing_topics": [
+    {"id": "fraction-addition", "label": "Adding fractions", "aliases": ["addition of fractions", "common denominators"], "scope": "Addition of fractions representing quantities in the same unit using common denominators; excludes fraction multiplication.", "source_sections": "Adding fractions"}
+  ],
+  "proposed_topics": [],
+  "topic_proposal": null,
+  "topic_merge": null,
+  "final_topic_ids": ["fraction-addition"],
+  "full_reviewed_notes": {
+    "e-solution": "Solves the ribbon problem by expressing its two lengths in sixths, adding 3/6 and 2/6, and obtaining 5/6 of their common original unit. The preceding question provides the original lengths and the shared-unit condition."
+  },
+  "final_tags": [
+    {
+      "excerpt_id": "e-solution",
+      "roles": ["worked_example"],
+      "topic_ids": ["fraction-addition"],
+      "confidence": 0.95,
+      "synopsis": "Solves the ribbon problem by expressing its two lengths in sixths, adding 3/6 and 2/6, and obtaining 5/6 of their common original unit. The preceding question provides the original lengths and the shared-unit condition.",
+      "evidence": "Using sixths, add 3/6 and 2/6 to obtain 5/6 of the original unit.",
+      "proposed_topic": null,
+      "evidence_verified": true,
+      "retrieval": {
+        "summary": "Solves a ribbon-length addition problem using sixths.",
+        "scope": "The linked question supplies the original ribbon lengths and their common unit. This excerpt supplies the solution, without a software or classroom-role requirement.",
+        "context_excerpt_ids": ["e-question"]
+      }
+    }
+  ],
+  "inspection_records": [],
+  "validation_receipts": [],
+  "unresolved_items": ["Synthetic format example only; no actual source PDF, model run or page inspection exists."]
+}
