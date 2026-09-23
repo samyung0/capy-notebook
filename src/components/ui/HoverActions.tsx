@@ -29,7 +29,7 @@ export function HoverActions({
         // keep the trigger visible while its popover/menu is open
         'has-data-[state=open]:opacity-100',
         radialBackground &&
-          'bg-radial from-40% from-surface to-transparent group-hover:from-surface-hover-bg',
+          'bg-linear-to-l from-75% from-surface to-transparent group-hover:from-surface-hover-bg',
         className
       )}
     >

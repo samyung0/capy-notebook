@@ -321,6 +321,14 @@ credit rates and other model choices. Existing Flash Vision preferences move
 to Flash 4.1. Migration `0012` deletes the retained Flash Vision rows and the
 OpenAI GPT-5.6 Sol/Terra/Luna catalog, capacity and reasoning preference rows,
 since no production data depends on them. OpenAI provider code remains available.
+Migration `0026` publishes a new `deepseek-flash` configuration with default
+reasoning `high`. It keeps the current slot assignments and requires no
+user-preference migration. Migration `0027` removes Instant from enabled
+chat-capable configs and rejects adding it back at the database and ops boundaries.
+Settings use the catalog's remaining levels directly. Chat preference writes and
+pipeline requests reject Instant; chat compaction also uses the selected reasoning.
+The editor's explicit `instant` call policy stays separate from selectable levels;
+ops still requires its provider to support that mode.
 Migration `0011` deletes DeepSeek V4 Pro's catalog, capacity and reasoning
 preference rows. Pro had no shipped slot default; its optional chat/generate/quiz
 entries, agentic-loop certification and UI choices are removed. There is no

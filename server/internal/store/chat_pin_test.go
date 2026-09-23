@@ -48,8 +48,8 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if assistant.ProviderSlug != cfg.ProviderSlug || assistant.ModelSlug != cfg.ModelSlug || assistant.ModelVersion != cfg.Version {
 		t.Fatalf("start dropped the pin: %#v", assistant)
 	}
-	evidence := json.RawMessage(`{"tools":[{"name":"list_sources","text":"saved evidence"}],"passages":[]}`)
-	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, "", nil, evidence); err != nil {
+	evidence := json.RawMessage(`{"tools":[{"name":"list_sources","text":"saved evidence"}],"passages":[],"libraryExcerpts":[{"excerpt_id":"e_1","start":0,"section":"Cells","text":"saved library evidence"}]}`)
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, "", nil, evidence, ""); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := s.ListMessages(ctx, userID, conv.ID)
@@ -76,9 +76,18 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 		t.Fatalf("evidence = %v, want %v", saved, expected)
 	}
 	encoded, err := json.Marshal(prompt.History[0])
-	if err != nil || bytes.Contains(encoded, []byte("saved evidence")) {
+	if err != nil || bytes.Contains(encoded, []byte("saved evidence")) || bytes.Contains(encoded, []byte("saved library evidence")) {
 		t.Fatalf("private evidence leaked into browser message: %s, %v", encoded, err)
 	}
+	// A blocked turn keeps the safe error code when history is reloaded.
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "", "error", 1, nil, "", nil, nil, "response_flagged"); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err = s.ListMessages(ctx, userID, conv.ID)
+	if err != nil || len(msgs) != 1 || msgs[0].ErrorCode != "response_flagged" || msgs[0].Content != "" {
+		t.Fatalf("flagged response not persisted: %+v, %v", msgs, err)
+	}
+
 }
 
 func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
@@ -109,7 +118,7 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil, nil); err != nil {
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.PersistCheckpoint(ctx, conv.ID, ConversationCheckpoint{
@@ -486,7 +495,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 		       micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 		       true, ARRAY[]::text[]
 		  FROM model_configs
-		 WHERE provider_slug=$3 AND model_slug=$4 AND version=1`, ref.ProviderSlug, ref.ModelSlug, flashModelRef.ProviderSlug, flashModelRef.ModelSlug); err != nil {
+		 WHERE provider_slug=$3 AND model_slug=$4 AND enabled`, ref.ProviderSlug, ref.ModelSlug, flashModelRef.ProviderSlug, flashModelRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -583,7 +592,7 @@ func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
 		INSERT INTO model_configs
 		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
 		  '{"provider_slug":"openai","model_slug":"gpt-5.6-sol","platform_enabled":false,"slots":["generate","quiz"],"is_default_for":[]}'::jsonb)).*
-		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND version=1`); err != nil {
+		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -600,10 +609,14 @@ func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 	userID := newCreditsTestUser(t, s)
 	high := models.ThinkingHigh
 	medium := "medium"
+	instant := models.ThinkingInstant
 
 	// New accounts start on GLM; the per-model thinking under test is flash's.
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &flashModelRef}); err != nil {
 		t.Fatal(err)
+	}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatThinking: &instant}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("chat accepted instant: %v", err)
 	}
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
 		ChatThinking: &high,

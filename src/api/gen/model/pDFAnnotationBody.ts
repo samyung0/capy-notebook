@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PDFAnnotationBodyKind } from './pDFAnnotationBodyKind.ts';
+import type { PDFPoint } from './pDFPoint.ts';
 import type { PDFRect } from './pDFRect.ts';
 
 export interface PDFAnnotationBody {
@@ -16,9 +17,16 @@ export interface PDFAnnotationBody {
   /** @minimum 1 */
   page: number;
   /**
+     * @maxItems 4096
+     * @nullable
+     */
+  points?: PDFPoint[] | null;
+  /**
      * @minItems 1
      * @maxItems 1000
      */
   rects: PDFRect[];
   sourceIdentity: string;
+  /** @maxLength 2000 */
+  text?: string;
 }

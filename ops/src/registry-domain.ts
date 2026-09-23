@@ -45,6 +45,7 @@ export type RegistryAction =
 export type RegistryIssue = {
   code:
     | 'capacity'
+    | 'chat-thinking'
     | 'aliases'
     | 'missing-default'
     | 'embedding-acknowledgement'
@@ -379,6 +380,19 @@ export function assembleRegistryRequest(
         code: 'draft-not-used',
         message: `${rowId} has no usable configuration.`,
         rowId,
+      });
+      continue;
+    }
+    if (
+      rowCells.some((cell) => cell.slot === 'chat') &&
+      (source.thinkingLevels.includes('instant') ||
+        source.defaultThinking === 'instant')
+    ) {
+      issues.push({
+        code: 'chat-thinking',
+        message: `${modelRefLabel(source)} must remove Instant before it can be assigned to chat.`,
+        rowId,
+        slot: 'chat',
       });
       continue;
     }

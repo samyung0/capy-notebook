@@ -456,7 +456,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		) VALUES (
 			99, 'Ops', 'Role Model', $1, $2,
 			true, false, 100000,
-			ARRAY['instant','low']::text[], 'instant', '{}'::jsonb,
+			ARRAY['low','high']::text[], 'high', '{}'::jsonb,
 			ARRAY['chat'], 1, 1, 1, true, '{}'
 		)`, modelRef.ProviderSlug, modelRef.ModelSlug,
 	); err != nil {

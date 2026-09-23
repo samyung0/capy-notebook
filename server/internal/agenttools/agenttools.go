@@ -26,7 +26,8 @@ import (
 // excerpt_ids on both writes.
 // v7: the library taxonomy gains subjects over topics; browse_knowledge takes
 // exactly one of subject (its topics with counts) or topic (its excerpts).
-const ContractVersion = 7
+// v8: ledger upserts and material-backed library excerpt retention.
+const ContractVersion = 8
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -91,7 +92,7 @@ type Definition struct {
 	AllowedSlots       []Slot         `json:"allowedSlots"`
 	RequiredOperations []Operation    `json:"requiredOperations"`
 	// Retention applies after the answer completes; live tool results stay exact.
-	Retention ResultRetention `json:"retention" enum:"full,cited_passages,none"`
+	Retention ResultRetention `json:"retention" enum:"full,cited_passages,used_excerpts,none"`
 }
 
 type ResultRetention string
@@ -100,6 +101,7 @@ const (
 	RetainFull          ResultRetention = "full"
 	RetainCitedPassages ResultRetention = "cited_passages"
 	RetainNone          ResultRetention = "none"
+	RetainUsedExcerpts  ResultRetention = "used_excerpts"
 )
 
 // ResourceKind tags a ResourceRef.
@@ -403,7 +405,7 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "describe_documents",
 			Retention: RetainFull,
-			Description: "Return the detailed summaries of up to eight documents. Call " +
+			Description: "Return the detailed summaries of up to eight source files or notes. Call " +
 				"after list_sources when the short descriptors are not enough " +
 				"to decide, or when the question is about what a document covers " +
 				"as a whole.",
@@ -416,7 +418,7 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "read_document",
 			Retention: RetainCitedPassages,
-			Description: "Read a document in order from a given chunk index. Use after " +
+			Description: "Read a source file or note in order from a given chunk index. Use after " +
 				"search when a passage needs its surrounding argument, or to walk " +
 				"a short document end to end.",
 			InputSchema: obj(map[string]any{
@@ -434,8 +436,10 @@ func Definitions() []Definition {
 				"directly as an image. Use the file_id and 1-based page shown with a " +
 				"passage; only pages a shown passage cites can be captured. bbox is " +
 				"optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin " +
-				"top-left, to zoom into a table, figure or formula. Costs one tool " +
-				"call and a few seconds.",
+				"top-left, to zoom into a table, figure or formula. An uploaded image " +
+				"is one page: capture page 1 to see it; on a low-resolution image a " +
+				"bbox crops without adding detail, so the zoom may not help. Costs " +
+				"one tool call and a few seconds.",
 			InputSchema: obj(map[string]any{
 				"file_id": str(""),
 				"page":    map[string]any{"type": "integer", "minimum": 1},
@@ -486,7 +490,7 @@ func Definitions() []Definition {
 		}),
 		chatTool(Definition{
 			Name:      "read_knowledge",
-			Retention: RetainNone,
+			Retention: RetainUsedExcerpts,
 			Description: "Read a library excerpt in full, in order from a chunk index. Always " +
 				"read an excerpt before writing a material from it; a search hit is one " +
 				"chunk of it.",
@@ -523,22 +527,29 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "create_ledger",
 			Retention: RetainNone,
-			Description: "Curate mode: write the turn's progress ledger before any material is " +
-				"written. `body` restates what the learner asked for; `todos` lists the " +
-				"materials or sections to produce, one short line each. The ledger is shown " +
-				"back on every response; create_material and edit_document mark a todo done " +
-				"through their `todo` id. One call per user message; it appends to the " +
-				"conversation's ledger, and open todos carry across messages.",
+			Description: "Create or update the conversation's progress ledger. A non-null body replaces " +
+				"the current body; null or omission preserves it. Each string in todos adds a new " +
+				"todo with an assigned ID. An object {id, todo} adds that ID or overwrites its text. " +
+				"Use fresh IDs for new todos; completed IDs are not reused. Unmentioned todos stay " +
+				"unchanged. Pass only additions or edits, not the whole list. You may correct the " +
+				"ledger again in the same turn. At most 10 unfinished todos may exist, each a " +
+				"material or section to write. Material writes mark their todo done automatically; " +
+				"editing todo text does not change completion.",
 			InputSchema: obj(map[string]any{
-				"body": map[string]any{"type": "string", "maxLength": 2000},
+				"body": map[string]any{"type": []string{"string", "null"}, "maxLength": 2000},
 				"todos": map[string]any{
-					"type":     "array",
-					"minItems": 1,
-					"maxItems": 12,
-					"items":    map[string]any{"type": "string", "maxLength": 200},
+					"type": "array", "maxItems": 10,
+					"items": map[string]any{"anyOf": []any{
+						map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+						obj(map[string]any{
+							"id":   map[string]any{"type": "integer", "minimum": 0},
+							"todo": map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
+						}, "id", "todo"),
+					}},
 				},
-			}, "body", "todos"),
-			Concurrency:        "read",
+			}),
+			Mutates:            true,
+			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
 		chatTool(Definition{

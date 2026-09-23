@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   useDeleteOwnedFile,
-  useFile,
   useOwnedFiles,
   usePurgeTrashed,
   useRestoreTrashed,
@@ -15,6 +14,7 @@ import type {
   SourceFile,
   TrashItem,
 } from '@/api/types';
+import { ItemCard, ItemList } from '@/components/app/ItemCard';
 import {
   ListToolbar,
   type ListView,
@@ -25,32 +25,20 @@ import {
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
-import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
-import { FileIcon } from '@/components/ui/FileIcon';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
-import {
-  FileSelectionActions,
-  FileSelectionMark,
-} from '@/features/files/FileSelectionActions';
-import {
-  FileError,
-  FileLoading,
-  FileNotIndexedBanner,
-} from '@/features/files/FileStates';
-import { FileViewer } from '@/features/files/FileViewer';
+import { FileSelectionActions } from '@/features/files/FileSelectionActions';
 import { formatFileSize } from '@/features/files/fileUtils';
 import {
   collectSelectionPages,
   useFileSelection,
 } from '@/features/files/useFileSelection';
-import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { relativeTime } from '@/features/materials/MaterialListCard';
+import { ContentActions } from '@/features/workspace/ContentActions';
+import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { getLocale, m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
@@ -221,30 +209,6 @@ function ActiveFiles({
     { errorBoundary: false }
   );
   const revealRef = useLoadingReveal(isLoading);
-  const [openFileId, setOpenFileId] = useState<string | null>(null);
-  const [officeEditDirty, setOfficeEditDirty] = useState(false);
-  const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
-  const open = files.find((file) => file.id === openFileId) ?? null;
-  // The list omits `content`, so the viewer needs the full row. The header and
-  // the indexed banner render from the list entry meanwhile.
-  const {
-    data: viewerFile,
-    isError: viewerError,
-    isPending: viewerPending,
-    refetch: refetchViewer,
-  } = useFile(openFileId, { errorBoundary: false });
-
-  const openFile = (fileId: string) => {
-    if (openFileId !== fileId && !confirmViewerReplacement()) return;
-    setOfficeEditDirty(false);
-    setOpenFileId(fileId);
-  };
-
-  const closeFile = () => {
-    if (!confirmViewerReplacement()) return;
-    setOfficeEditDirty(false);
-    setOpenFileId(null);
-  };
 
   return (
     <>
@@ -342,59 +306,53 @@ function ActiveFiles({
           <p className="py-10 text-center text-fg-muted">{m.files_empty()}</p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
-            {view === 'grid' ? (
-              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))] gap-3">
-                {files.map((file) => (
-                  <ActiveFileCard
-                    busy={selection.busy}
-                    file={file}
-                    key={file.id}
-                    onOpen={() =>
-                      selection.selecting
-                        ? selection.toggle(file)
-                        : openFile(file.id)
-                    }
-                    selected={selection.isSelected(file)}
-                    selecting={selection.selecting}
-                    view="grid"
-                    workspaceName={
-                      workspaces.find(
-                        (workspace) => workspace.id === file.workspaceId
-                      )?.name ?? ''
-                    }
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-card border border-line">
-                <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr] md:gap-3">
-                  <div>{m.list_col_name()}</div>
-                  <div>{m.create_filter_workspace()}</div>
-                  <div>{m.list_col_details()}</div>
-                  <div>{m.files_sort_added()}</div>
-                </div>
-                {files.map((file) => (
-                  <ActiveFileCard
-                    busy={selection.busy}
-                    file={file}
-                    key={file.id}
-                    onOpen={() =>
-                      selection.selecting
-                        ? selection.toggle(file)
-                        : openFile(file.id)
-                    }
-                    selected={selection.isSelected(file)}
-                    selecting={selection.selecting}
-                    view="list"
-                    workspaceName={
-                      workspaces.find(
-                        (workspace) => workspace.id === file.workspaceId
-                      )?.name ?? ''
-                    }
-                  />
-                ))}
-              </div>
-            )}
+            <ItemList
+              columns={[
+                m.list_col_name(),
+                m.create_filter_workspace(),
+                m.list_col_details(),
+                m.files_sort_added(),
+              ]}
+              view={view}
+            >
+              {files.map((file) => (
+                <ItemCard
+                  actions={
+                    <ContentActions
+                      chapters={[]}
+                      content={toFileActionTarget(file)}
+                      display="menu"
+                      renameFieldLabel={m.files_file_name()}
+                      renameTitle={m.files_rename()}
+                      showMove={false}
+                      workspaceId={file.workspaceId}
+                    />
+                  }
+                  details={formatFileSize(file.sizeBytes)}
+                  icon={fileIconName(file)}
+                  key={file.id}
+                  link={{ params: { fileId: file.id }, to: '/files/$fileId' }}
+                  meta={relativeTime(file.addedAt)}
+                  selection={
+                    selection.selecting
+                      ? {
+                          busy: selection.busy,
+                          label: m.files_select_item({ name: file.name }),
+                          onToggle: () => selection.toggle(file),
+                          selected: selection.isSelected(file),
+                        }
+                      : undefined
+                  }
+                  title={file.name}
+                  view={view}
+                  workspace={
+                    workspaces.find(
+                      (workspace) => workspace.id === file.workspaceId
+                    )?.name ?? ''
+                  }
+                />
+              ))}
+            </ItemList>
             {hasNextPage && (
               <Button
                 className="self-center"
@@ -421,128 +379,7 @@ function ActiveFiles({
         open={!!deleteTargets}
         title={m.files_delete_selected_title()}
       />
-      <SimpleDialog
-        onClose={closeFile}
-        open={!!open}
-        title={open?.name}
-        width={760}
-      >
-        <div className="flex min-h-[50vh] flex-col">
-          {open && <FileNotIndexedBanner file={open} />}
-          <div className="min-h-0 flex-1">
-            {viewerFile ? (
-              <FileViewer
-                file={viewerFile}
-                onDirtyChange={setOfficeEditDirty}
-              />
-            ) : viewerError ? (
-              <FileError onRetry={() => void refetchViewer()} />
-            ) : (
-              openFileId && viewerPending && <FileLoading />
-            )}
-          </div>
-        </div>
-      </SimpleDialog>
     </>
-  );
-}
-
-function ActiveFileCard({
-  file,
-  workspaceName,
-  view,
-  onOpen,
-  selecting,
-  selected,
-  busy,
-}: {
-  file: SourceFile;
-  workspaceName: string;
-  view: ListView;
-  onOpen: () => void;
-  selecting: boolean;
-  selected: boolean;
-  busy: boolean;
-}) {
-  if (view === 'list') {
-    return (
-      <button
-        aria-label={
-          selecting ? m.files_select_item({ name: file.name }) : undefined
-        }
-        aria-pressed={selecting ? selected : undefined}
-        className={cn(
-          'grid w-full grid-cols-1 gap-1 border-divider border-t px-4 py-2.5 text-left hover:bg-surface-hover-bg md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr] md:items-center md:gap-3',
-          selecting && selected && 'bg-surface-hover-bg'
-        )}
-        disabled={busy}
-        onClick={onOpen}
-        type="button"
-      >
-        <span className="flex min-w-0 items-center gap-3.5">
-          {selecting && <FileSelectionMark selected={selected} />}
-          <FileIcon
-            className="size-4 -translate-y-px"
-            name={fileIconName(file)}
-          />
-          <span className="truncate font-bold">{file.name}</span>
-        </span>
-        <span className="truncate text-fg-secondary text-sm">
-          {workspaceName}
-        </span>
-        <span className="text-fg-muted text-sm">
-          {formatFileSize(file.sizeBytes)}
-        </span>
-        <span className="text-fg-muted text-sm">
-          {relativeTime(file.addedAt)}
-        </span>
-      </button>
-    );
-  }
-
-  return (
-    <Card
-      asChild
-      border="solid"
-      className={cn(
-        'relative gap-3 p-4.5 text-left leading-tight xl:p-5.5',
-        selecting && selected && 'ring-2 ring-accent'
-      )}
-      interactive
-    >
-      <button
-        aria-label={
-          selecting ? m.files_select_item({ name: file.name }) : undefined
-        }
-        aria-pressed={selecting ? selected : undefined}
-        disabled={busy}
-        onClick={onOpen}
-        type="button"
-      >
-        {selecting && (
-          <span className="absolute top-3 right-3">
-            <FileSelectionMark selected={selected} />
-          </span>
-        )}
-        <FileIcon className="size-5" name={fileIconName(file)} />
-        <span className="flex flex-1 flex-col gap-1">
-          <span className="t-subtitle line-clamp-2">{file.name}</span>
-          <span className="mt-1 flex min-w-0 items-center gap-1 text-fg-secondary text-xs">
-            <Icon
-              className="shrink-0 -translate-y-px text-fg-muted"
-              name="workspaces"
-              size={12}
-            />
-            <span className="truncate">
-              {workspaceName} · {formatFileSize(file.sizeBytes)}
-            </span>
-          </span>
-          <span className="t-meta text-fg-muted">
-            {relativeTime(file.addedAt)}
-          </span>
-        </span>
-      </button>
-    </Card>
   );
 }
 
@@ -697,51 +534,59 @@ function TrashTab({
           {items.length === 0 ? (
             <p className="text-fg-muted">{m.trash_empty()}</p>
           ) : null}
-          {items.length > 0 &&
-            (view === 'grid' ? (
-              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))] gap-3">
-                {items.map((item) => (
-                  <TrashCard
-                    busy={selection.busy}
-                    item={item}
-                    key={`${item.kind}:${item.id}:${item.episodeId}`}
-                    onPurge={() =>
-                      setPurgeRequest({ empty: false, items: [item] })
-                    }
-                    onRestore={() => void selection.run([item], restore)}
-                    onSelect={() => selection.toggle(item)}
-                    selected={selection.isSelected(item)}
-                    selecting={selection.selecting}
-                    view="grid"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-card border border-line">
-                <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:gap-3">
-                  <div>{m.list_col_name()}</div>
-                  <div>{m.create_filter_workspace()}</div>
-                  <div>{m.list_col_details()}</div>
-                  <div>{m.trash_expires({ date: '' }).trim()}</div>
-                  <div />
-                </div>
-                {items.map((item) => (
-                  <TrashCard
-                    busy={selection.busy}
-                    item={item}
-                    key={`${item.kind}:${item.id}:${item.episodeId}`}
-                    onPurge={() =>
-                      setPurgeRequest({ empty: false, items: [item] })
-                    }
-                    onRestore={() => void selection.run([item], restore)}
-                    onSelect={() => selection.toggle(item)}
-                    selected={selection.isSelected(item)}
-                    selecting={selection.selecting}
-                    view="list"
-                  />
-                ))}
-              </div>
-            ))}
+          {items.length > 0 && (
+            <ItemList
+              columns={[
+                m.list_col_name(),
+                m.create_filter_workspace(),
+                m.list_col_details(),
+                m.trash_expires({ date: '' }).trim(),
+              ]}
+              view={view}
+            >
+              {items.map((item) => (
+                <ItemCard
+                  actions={
+                    <Menu
+                      items={[
+                        {
+                          disabled: selection.busy,
+                          icon: 'undo',
+                          label: m.trash_restore(),
+                          onClick: () => void selection.run([item], restore),
+                        },
+                        {
+                          danger: true,
+                          disabled: selection.busy,
+                          icon: 'trash',
+                          label: m.trash_delete_forever(),
+                          onClick: () =>
+                            setPurgeRequest({ empty: false, items: [item] }),
+                        },
+                      ]}
+                    />
+                  }
+                  details={formatFileSize(item.sizeBytes)}
+                  icon={trashIconName(item)}
+                  key={`${item.kind}:${item.id}:${item.episodeId}`}
+                  meta={formatDate(item.purgeAfter)}
+                  selection={
+                    selection.selecting
+                      ? {
+                          busy: selection.busy,
+                          label: m.files_select_item({ name: item.title }),
+                          onToggle: () => selection.toggle(item),
+                          selected: selection.isSelected(item),
+                        }
+                      : undefined
+                  }
+                  title={item.title}
+                  view={view}
+                  workspace={item.workspaceName || m.trash_standalone()}
+                />
+              ))}
+            </ItemList>
+          )}
           {hasNextPage ? (
             <Button
               disabled={isFetchingNextPage || selection.busy}
@@ -781,122 +626,6 @@ function TrashTab({
         </div>
       </div>
     </>
-  );
-}
-
-function TrashCard({
-  item,
-  busy,
-  view,
-  onRestore,
-  onPurge,
-  selecting,
-  selected,
-  onSelect,
-}: {
-  item: TrashItem;
-  busy: boolean;
-  view: ListView;
-  onRestore: () => void;
-  onPurge: () => void;
-  selecting: boolean;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const icon = trashIconName(item);
-  const workspaceName = item.workspaceName || m.trash_standalone();
-  const expires = formatDate(item.purgeAfter);
-  const selectButton = selecting && (
-    <button
-      aria-label={m.files_select_item({ name: item.title })}
-      aria-pressed={selected}
-      className="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-      disabled={busy}
-      onClick={onSelect}
-      type="button"
-    />
-  );
-  const menu = (
-    <Menu
-      iconContainerClassName="p-0 size-fit"
-      items={[
-        {
-          disabled: busy,
-          icon: 'undo',
-          label: m.trash_restore(),
-          onClick: onRestore,
-        },
-        {
-          danger: true,
-          disabled: busy,
-          icon: 'trash',
-          label: m.trash_delete_forever(),
-          onClick: onPurge,
-        },
-      ]}
-    />
-  );
-
-  if (view === 'list') {
-    return (
-      <div
-        className={cn(
-          'relative grid grid-cols-1 gap-1 border-divider border-t px-4 py-2.5 md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
-          selecting && selected && 'bg-surface-hover-bg'
-        )}
-      >
-        {selectButton}
-        <div className="flex min-w-0 items-center gap-3.5">
-          {selecting && <FileSelectionMark selected={selected} />}
-          <FileIcon className="size-4 -translate-y-px" name={icon} />
-          <span className="truncate font-bold">{item.title}</span>
-        </div>
-        <span className="truncate text-fg-secondary text-sm">
-          {workspaceName}
-        </span>
-        <span className="text-fg-muted text-sm">
-          {formatFileSize(item.sizeBytes)}
-        </span>
-        <span className="text-fg-muted text-sm">{expires}</span>
-        <div className="relative z-10 flex justify-self-end">
-          {!selecting && menu}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <Card
-      border="solid"
-      className={cn(
-        'relative gap-3 p-4.5 leading-tight xl:p-5.5',
-        selecting && selected && 'ring-2 ring-accent'
-      )}
-    >
-      {selectButton}
-      <FileIcon className="size-5" name={icon} />
-      {selecting ? (
-        <div className="absolute top-3 right-3">
-          <FileSelectionMark selected={selected} />
-        </div>
-      ) : (
-        <div className="absolute top-2 right-2">{menu}</div>
-      )}
-      <div className="flex flex-1 flex-col gap-1">
-        <p className="t-subtitle line-clamp-2">{item.title}</p>
-        <p className="mt-1 flex min-w-0 items-center gap-1 text-fg-secondary text-xs">
-          <Icon
-            className="shrink-0 -translate-y-px text-fg-muted"
-            name="workspaces"
-            size={12}
-          />
-          <span className="truncate">
-            {workspaceName} · {formatFileSize(item.sizeBytes)}
-          </span>
-        </p>
-        <p className="t-meta text-fg-muted">{expires}</p>
-      </div>
-    </Card>
   );
 }
 

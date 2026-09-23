@@ -36,8 +36,8 @@ def _model() -> ModelConfig:
         model_name="Flash",
         provider_slug="deepseek",
         model_slug="deepseek-v4-flash",
-        thinking_levels=("instant", "low", "mid", "high", "max"),
-        default_thinking="instant",
+        thinking_levels=("low", "mid", "high", "max"),
+        default_thinking="high",
         context_window_tokens=100_000,
         slots=("chat",),
     )
@@ -97,8 +97,13 @@ def _text_chunks(text: str) -> list[str]:
 
 
 def _answer(*claims: tuple[str, list[int]]) -> str:
-    """The structured final answer the prompt asks for."""
-    return json.dumps({"answer": [{"text": t, "passages": p} for t, p in claims]})
+    """The final answer the prompt asks for: a program, one Md per claim."""
+    names = [f"c{i}" for i in range(len(claims))]
+    lines = ["root = Answer([" + ", ".join(names) + "])"]
+    for name, (text, passages) in zip(names, claims, strict=True):
+        marks = f", {json.dumps(passages)}" if passages else ""
+        lines.append(f"{name} = Md({json.dumps(text)}{marks})")
+    return "\n".join(lines) + "\n"
 
 
 def _script_stream(responses: list[AssembledResponse]):
@@ -765,8 +770,10 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
-            on_event(StreamEvent(kind="text", text='{"answer":[{"text":"Hel'))
-            on_event(StreamEvent(kind="text", text='lo","passages":[]}]}'))
+            program = _answer(("Hello", []))
+            cut = program.index("Hel") + 3
+            on_event(StreamEvent(kind="text", text=program[:cut]))
+            on_event(StreamEvent(kind="text", text=program[cut:]))
         await released.wait()
         return _assembled(_answer(("Hello", [])))
 
@@ -786,7 +793,9 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
                 released.set()
 
     await asyncio.wait_for(_consume(), timeout=2)
-    assert [e["text"] for e in events if e["type"] == "block_delta"] == ["Hel", "lo"]
+    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
+    # The first delta reached the consumer while the provider stream was open.
+    assert len(deltas) >= 2 and "".join(deltas) == _answer(("Hello", []))
 
 
 async def test_run_agent_answers_without_a_prime_search(monkeypatch):
@@ -806,7 +815,7 @@ async def test_run_agent_answers_without_a_prime_search(monkeypatch):
     assert "block_delta" in kinds
     assert {"type": "block_end", "blockId": "b1", "kind": "answer"} in events
     assert events[-1]["type"] == "done"
-    assert events[-1]["answer"] == "Chlorophyll absorbs red."
+    assert events[-1]["answer"] == _answer(("Chlorophyll absorbs red.", []))
     assert seen[0]["tools"] is not None
     assert seen[0]["response_format"] is None
     assert "create_material" not in [s["function"]["name"] for s in seen[0]["tools"]]
@@ -874,7 +883,7 @@ async def test_planning_text_with_tools_is_narration_then_answer(monkeypatch):
     assert len(seen) == 2
     tool_roles = [m["role"] for m in seen[1]["messages"] if m.get("role") == "tool"]
     assert tool_roles == ["tool"]
-    assert events[-1]["answer"] == "Chlorophyll absorbs red."
+    assert events[-1]["answer"] == _answer(("Chlorophyll absorbs red.", []))
     assert not any(
         isinstance(m.get("content"), str) and '"kind": "narration"' in m["content"]
         for m in seen[1]["messages"]
@@ -917,7 +926,8 @@ async def test_citation_sse_matches_numbers_shown_to_the_model(monkeypatch):
     assert [e["version"] for e in cite_events] == [1]
     assert cite_events[0]["final"] is True
     assert [c["chunkId"] for c in cite_events[0]["citations"]] == ["c1", "c2"]
-    assert events[-1]["answer"] == "See both. [1][2]"
+    assert events[-1]["answer"] == _answer(("See both.", [1, 2]))
+    assert [c["n"] for c in cite_events[0]["citations"]] == [1, 2]
 
 
 async def test_read_batch_runs_concurrently_in_call_order(monkeypatch):
@@ -1006,10 +1016,10 @@ async def test_per_response_and_turn_caps_return_one_result_per_id(monkeypatch):
     monkeypatch.setattr(agent.tools, "run", _run)
 
     await _collect("q", ToolContext(workspace_id="ws_1"))
-    assert len(ran) == TOOLS_PER_RESPONSE == 2
+    assert len(ran) == TOOLS_PER_RESPONSE == 4
     tool_msgs = [m for m in seen[1]["messages"] if m.get("role") == "tool"]
     assert [m["tool_call_id"] for m in tool_msgs] == [f"c{i}" for i in range(5)]
-    assert "2 tool-call limit" in tool_msgs[-1]["content"]
+    assert "4 tool-call limit" in tool_msgs[-1]["content"]
 
 
 async def test_cumulative_input_measurement_does_not_strip_tools(monkeypatch):
@@ -1081,8 +1091,8 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
 
     assert calls == ["list_sources"]
     assert purposes == ["agent", "terminal"]
-    assert formats == [None, agent.JSON_OBJECT]
-    assert events[-1]["answer"] == "Final from the paid tool result."
+    assert formats == [None, None]
+    assert events[-1]["answer"] == _answer(("Final from the paid tool result.", []))
 
 
 async def test_estimated_tokens_accumulate_across_rounds(monkeypatch):
@@ -1123,7 +1133,7 @@ async def test_compaction_completion_count_does_not_stop_the_turn(monkeypatch):
     monkeypatch.setattr(agent.compact, "compact_messages", _compact)
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
-    assert events[-1]["answer"] == "final"
+    assert events[-1]["answer"] == _answer(("final", []))
     assert events[-1]["telemetry"]["completionCalls"] == 21
     assert events[-1]["telemetry"]["compactionCalls"] == 20
 
@@ -1134,7 +1144,9 @@ async def test_empty_response_does_not_resend(monkeypatch):
 
     events = await _collect("q", ToolContext(workspace_id="ws_1"))
     assert len(seen) == 1
-    assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
+    assert events[-1]["type"] == "error"
+    assert events[-1]["code"] == "invalid_answer"
+    assert not any(e["type"] == "done" for e in events)
 
 
 async def test_internal_error_is_sanitized_and_carries_usage(monkeypatch):
@@ -1890,6 +1902,14 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
                         "materialKind": "note",
                         "editable": True,
                     },
+                    {
+                        "kind": "material",
+                        "id": "mat_2",
+                        "title": "Cells quiz",
+                        "format": "plate",
+                        "materialKind": "quiz",
+                        "editable": True,
+                    },
                 ]
             }
         )
@@ -1933,7 +1953,12 @@ async def test_list_sources_includes_materials_and_scoped_file_editability(
         assert "[pending]" in text
     else:
         assert "f_2" not in text and "two.txt" not in text
-    assert "Notes (id=mat_1, kind=material, editable=true)" in text
+    assert "Notes (id=mat_1, kind=material, material_kind=note, editable=true)" in text
+    # Only notes are outlined and indexed; the other kinds name their tools.
+    assert (
+        "Cells quiz (id=mat_2, kind=material, material_kind=quiz, editable=true); "
+        "inspect_document and edit_document take its id"
+    ) in text
 
 
 async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypatch):
@@ -1960,6 +1985,18 @@ async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypa
                         "type": "mermaid",
                         "text": "",
                         "properties": {"source": "graph TD"},
+                    },
+                    {
+                        "id": "r1",
+                        "type": "material_ref",
+                        "text": "",
+                        "properties": {"materialId": "mat_q", "refKind": "quiz"},
+                    },
+                    {
+                        "id": "r2",
+                        "type": "material_ref",
+                        "text": "",
+                        "properties": {"materialId": "", "refKind": "flashcards"},
                     },
                 ],
             },
@@ -1988,6 +2025,8 @@ async def test_inspect_document_renders_blocks_lines_and_office_entries(monkeypa
     assert "[b1] (p) hello" in text
     assert "    [qq1] (quiz_question) Why?" in text
     assert "source: graph TD" in text
+    assert "embedded quiz material id=mat_q: inspect it as kind material" in text
+    assert "embedded flashcards reference, not yet created" in text
     office = await tools.run(
         "inspect_document",
         {"target": {"kind": "source_file", "id": "f_1"}, "_tool_call_id": "c2"},
@@ -2078,7 +2117,7 @@ async def test_edit_document_refuses_a_file_outside_the_scope_and_invalid_comman
     assert invalid.error_code == "invalid_input" and calls["n"] == 0
 
 
-# ---------------------------------------------------------- structured answers
+# ------------------------------------------------------------ program answers
 
 
 def _stream_chunks(
@@ -2113,15 +2152,12 @@ def _stream_chunks(
     return _stream, seen
 
 
-async def _two_passage_turn(
-    monkeypatch, chunks: list[str], final: str, extra_finals=()
-):
+async def _two_passage_turn(monkeypatch, chunks: list[str], final: str):
     """One read_document step showing [1] and [2], then the answer stream."""
-    chunk_lists = [[], chunks] + [[] for _ in extra_finals]
+    chunk_lists = [[], chunks]
     finals = [
         _assembled("", [_call("read_document", '{"file_id":"f_1"}')]),
         _assembled(final),
-        *extra_finals,
     ]
     stream, seen = _stream_chunks(chunk_lists, finals)
 
@@ -2145,84 +2181,65 @@ async def _two_passage_turn(
     return events, seen
 
 
-async def test_json_answer_streams_as_prose_with_renumbered_citations(monkeypatch):
-    raw = '{"answer":[{"text":"Carbon is fixed.","passages":[2]},{"text":"Light is absorbed.","passages":[1,2]}]}'
+async def test_program_streams_through_with_citations_in_reading_order(monkeypatch):
+    # `b` is defined before `a` but read after it: the live list follows the
+    # stream, the final list follows the reading order, and `n` maps both.
+    raw = (
+        "root = Answer([a, b])\n"
+        'b = Md("Light is absorbed.", [1])\n'
+        'a = Md("Carbon is fixed.", [2])\n'
+    )
     chunks = [raw[i : i + 9] for i in range(0, len(raw), 9)]
-    events, _seen = await _two_passage_turn(monkeypatch, chunks, raw)
+    events, seen = await _two_passage_turn(monkeypatch, chunks, raw)
 
     deltas = [e["text"] for e in events if e["type"] == "block_delta"]
-    answer = "Carbon is fixed. [1]\n\nLight is absorbed. [2][1]"
-    assert "".join(deltas) == answer
-    # No raw JSON ever reached the stream.
-    assert not any("{" in d or '"passages"' in d for d in deltas)
-    assert events[-1]["answer"] == answer
+    assert "".join(deltas) == raw
+    assert events[-1]["answer"] == raw
+    assert seen[1]["response_format"] is None
     cites = [e for e in events if e["type"] == "citations"]
-    # Only the used list, growing as the markers appear: [1] = c2 first. The
-    # retrieved-but-unused passages never reach the browser.
+    # The live list follows the stream (`b` first); the final list is the
+    # reading order, sent once the whole program is parsed.
     assert [[c["chunkId"] for c in e["citations"]] for e in cites] == [
-        ["c2"],
+        ["c1"],
         ["c2", "c1"],
     ]
+    assert [c["n"] for c in cites[-1]["citations"]] == [2, 1]
     assert [e["version"] for e in cites] == [1, 2]
     assert all(e.get("final") for e in cites)
     assert events[-1]["telemetry"]["completionCalls"] == 2
 
 
-async def test_unfinished_json_answer_keeps_the_streamed_prose(monkeypatch):
-    raw = '{"answer":[{"text":"Carbon is fixed.","passages":[2]},{"text":"Cut off'
-    events, _seen = await _two_passage_turn(monkeypatch, [raw], raw)
-
-    assert events[-1]["answer"] == "Carbon is fixed. [1]\n\nCut off"
+async def test_unfinished_program_keeps_local_recovery_without_an_extra_call(
+    monkeypatch,
+):
+    raw = 'root = Answer([a, b])\na = Md("Carbon is fixed.", [2])\nb = Md("Cut off'
+    events, seen = await _two_passage_turn(monkeypatch, [raw], raw)
+    assert len(seen) == 2
+    assert sum(e["type"] == "block_start" for e in events) == 1
+    assert events[-1]["answer"] == raw
     final = [e for e in events if e["type"] == "citations"][-1]
     assert [c["chunkId"] for c in final["citations"]] == ["c2"]
     assert events[-1]["telemetry"]["completionCalls"] == 2
 
 
-async def test_plain_prose_answer_is_repaired_once_in_json_mode(monkeypatch):
-    prose = "Carbon is fixed [2]. Light is absorbed [1]."
-    repaired = _assembled(
-        '{"answer":[{"text":"Carbon is fixed.","passages":[2]},{"text":"Light is absorbed.","passages":[1]}]}'
-    )
-    events, seen = await _two_passage_turn(
-        monkeypatch, [prose[:10], prose[10:]], prose, [repaired]
-    )
-
-    # The prose was held back; the repaired rendering is the only text sent.
-    assert sum(e["type"] == "block_start" for e in events) == 1
-    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
-    assert deltas == ["Carbon is fixed. [1]\n\nLight is absorbed. [2]"]
-    assert events[-1]["answer"] == deltas[0]
-    repair_call = seen[2]
-    assert repair_call["tools"] is None
-    assert repair_call["response_format"] == agent.JSON_OBJECT
-    assert repair_call["messages"][-2:] == [
-        {"role": "assistant", "content": prose},
-        {"role": "user", "content": agent.chat_prompts.REPAIR_PROMPT},
-    ]
-    final = [e for e in events if e["type"] == "citations"][-1]
-    assert [c["chunkId"] for c in final["citations"]] == ["c2", "c1"]
-    assert events[-1]["telemetry"]["completionCalls"] == 3
-
-
-async def test_failed_repair_keeps_the_raw_prose_without_citations(monkeypatch):
-    prose = "Carbon is fixed [2]."
-    events, _seen = await _two_passage_turn(
-        monkeypatch, [prose], prose, [_assembled("still prose")]
-    )
-
+async def test_plain_prose_answer_uses_markdown_without_an_extra_call(monkeypatch):
+    prose = "Carbon is fixed."
+    events, seen = await _two_passage_turn(monkeypatch, [prose], prose)
+    assert len(seen) == 2
     assert events[-1]["answer"] == prose
+    assert [e["text"] for e in events if e["type"] == "block_delta"] == [prose]
     final = [e for e in events if e["type"] == "citations"][-1]
     assert final["citations"] == [] and final["final"] is True
 
 
-async def test_answer_call_without_tools_requests_json_mode(monkeypatch):
+async def test_answer_call_never_requests_json_mode(monkeypatch):
     stream, seen = _script_stream([_assembled(_answer(("ok", [])))])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
 
     await _collect("q", ToolContext(workspace_id="ws_1"))
     assert seen[0]["tools"] is None
-    assert seen[0]["response_format"] == agent.JSON_OBJECT
+    assert seen[0]["response_format"] is None
 
 
 async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
@@ -2278,7 +2295,7 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
         "bytes": len(jpeg),
     }
     assert capture_block["detail"] == "page 1"
-    assert events[-1]["answer"] == "Seen. [1]"
+    assert events[-1]["answer"] == _answer(("Seen.", [1]))
     # Telemetry counts the image by its 28 px patches (2 x 1), not its base64.
     with_image = agent.models.measure_request_context(
         seen[2]["messages"], model=_model()
@@ -2291,34 +2308,17 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
 @pytest.mark.parametrize(
     "raw",
     [
-        '{"answer": "Carbon is fixed [2]."}',
-        '{"answer": {"text": "Carbon is fixed.", "passages": [2]}}',
-        '{"answer": []}',
-        # Non-numeric passage entries: the claim text already streamed is
-        # reset by a repeated block_start and replaced by the repaired answer.
-        '{"answer": [{"text": "Carbon is fixed.", "passages": [2.0]}]}',
-        '{"answer": [{"text": "Carbon is fixed.", "passages": [true]}]}',
-        '{"answer": [{"text": "Carbon is fixed.", "passages": null}]}',
-        '{"answer": [{"text": "Carbon is fixed.", "passages": "2"}]}',
-        '{"answer": [{"text": "Carbon is fixed.", "passages": 2}]}',
-        '{"answer": [{"text": "Carbon is fixed.", "passages": {}}]}',
+        'root = Answer([a])\na = Nope("Carbon is fixed.", [2])\n',
+        'a = Md("Carbon is fixed.", [2])\n',
+        "root = Answer([a])\n",
+        'root = Md("Carbon is fixed.", [2])\n',
     ],
 )
-async def test_complete_json_of_the_wrong_shape_is_repaired(monkeypatch, raw):
-    repaired = _assembled('{"answer":[{"text":"Carbon is fixed.","passages":[2]}]}')
-    events, seen = await _two_passage_turn(
-        monkeypatch, [raw[:7], raw[7:]], raw, [repaired]
-    )
-
-    assert len(seen) == 3 and seen[2]["response_format"] == agent.JSON_OBJECT
-    # Whatever streamed before the shape was known, the last block_start
-    # resets it and the only text after it is the repaired answer.
-    starts = [i for i, e in enumerate(events) if e["type"] == "block_start"]
-    after = [e["text"] for e in events[starts[-1] :] if e["type"] == "block_delta"]
-    assert after == ["Carbon is fixed. [1]"]
-    assert events[-1]["answer"] == "Carbon is fixed. [1]"
-    final = [e for e in events if e["type"] == "citations"][-1]
-    assert [c["chunkId"] for c in final["citations"]] == ["c2"]
+async def test_invalid_program_stays_available_for_local_recovery(monkeypatch, raw):
+    events, seen = await _two_passage_turn(monkeypatch, [raw[:7], raw[7:]], raw)
+    assert len(seen) == 2
+    assert events[-1]["answer"] == raw
+    assert events[-1]["telemetry"]["completionCalls"] == 2
 
 
 async def test_attached_captures_count_against_the_compaction_budget(monkeypatch):
@@ -2358,11 +2358,13 @@ async def test_attached_captures_count_against_the_compaction_budget(monkeypatch
     assert extras == [0, 2240]
 
 
-async def test_quoted_passage_numbers_stream_like_integers(monkeypatch):
-    raw = '{"answer":[{"text":"Carbon is fixed.","passages":["2"]}]}'
+async def test_fenced_program_is_unwrapped(monkeypatch):
+    program = _answer(("Carbon is fixed.", [2]))
+    raw = "```openui-lang\n" + program + "```"
     events, seen = await _two_passage_turn(monkeypatch, [raw[:20], raw[20:]], raw)
     assert len(seen) == 2
-    assert events[-1]["answer"] == "Carbon is fixed. [1]"
+    deltas = [e["text"] for e in events if e["type"] == "block_delta"]
+    assert "".join(deltas) == program and events[-1]["answer"] == program
     final = [e for e in events if e["type"] == "citations"][-1]
     assert [c["chunkId"] for c in final["citations"]] == ["c2"]
 
@@ -2559,12 +2561,12 @@ async def test_curate_has_no_response_ceiling_while_todos_complete(
     assert events[-1]["answer"] == "Done."
 
 
-async def test_curate_stall_guard_turns_tools_off_after_four_barren_responses(
+async def test_curate_stall_guard_turns_tools_off_after_five_barren_responses(
     monkeypatch, library_on, caplog
 ):
     reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
     stream, seen = _script_stream(
-        [reading] * 4 + [_assembled("The library has nothing usable.")]
+        [reading] * 5 + [_assembled("The library has nothing usable.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
@@ -2578,7 +2580,7 @@ async def test_curate_stall_guard_turns_tools_off_after_four_barren_responses(
     ctx.ledger.add("Teach regression", ["one"])
     events = await _collect("teach me regression", ctx, model=_curate_model())
 
-    assert [call["tools"] is None for call in seen] == [False] * 4 + [True]
+    assert [call["tools"] is None for call in seen] == [False] * 5 + [True]
     assert events[-1]["answer"] == "The library has nothing usable."
     # The guard, not a planning ceiling, is what ended this turn.
     assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
@@ -2589,15 +2591,15 @@ async def test_errored_writes_extend_the_stall_guard_twice_at_most(
     monkeypatch, library_on, caplog
 ):
     """A refused create_material is an attempt at progress: each of the first
-    two grants two more responses, so the guard fires after eight, not four."""
+    two grants two more responses, so the guard fires after nine, not five."""
     writing = _assembled(
         "", [_call("create_material", '{"kind":"note","title":"x","todo":0}', "w")]
     )
     reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
     # Three refused writes plus reads: only two of the writes count, so the
-    # threshold is 4 + 2 + 2 = 8 barren responses before tools go off.
+    # threshold is 5 + 2 + 2 = 9 barren responses before tools go off.
     stream, seen = _script_stream(
-        [writing, writing, writing] + [reading] * 5 + [_assembled("Nothing written.")]
+        [writing, writing, writing] + [reading] * 6 + [_assembled("Nothing written.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
@@ -2612,9 +2614,9 @@ async def test_errored_writes_extend_the_stall_guard_twice_at_most(
     ctx.ledger.add("Teach regression", ["one"])
     events = await _collect("teach me regression", ctx, model=_curate_model())
 
-    assert [call["tools"] is None for call in seen] == [False] * 8 + [True]
+    assert [call["tools"] is None for call in seen] == [False] * 9 + [True]
     assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
-    assert "limit 8 after 3 errored writes" in caplog.text
+    assert "limit 9 after 3 errored writes" in caplog.text
 
 
 async def test_an_empty_curate_response_stalls_but_does_not_end_the_turn(
@@ -2635,19 +2637,19 @@ async def test_an_empty_curate_response_stalls_but_does_not_end_the_turn(
     assert events[-1]["telemetry"]["stopReason"] == "answer"
 
 
-async def test_five_empty_curate_responses_end_the_turn_on_the_stall_guard(
+async def test_six_empty_curate_responses_end_the_turn_on_the_stall_guard(
     monkeypatch, library_on
 ):
     """Counting them is the whole bound on a turn whose payer has no credit
-    cutoff: four empties turn the tools off, the fifth ends the turn."""
-    stream, seen = _script_stream([_assembled("")] * 5)
+    cutoff: five empties turn the tools off, the sixth ends the turn."""
+    stream, seen = _script_stream([_assembled("")] * 6)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     ctx = _curate_ctx()
     ctx.ledger.add("Teach regression", ["one"])
 
     events = await _collect("teach me regression", ctx, model=_curate_model())
 
-    assert [call["tools"] is None for call in seen] == [False] * 4 + [True]
+    assert [call["tools"] is None for call in seen] == [False] * 5 + [True]
     assert not events[-1]["answer"]
     assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
 
@@ -2688,13 +2690,14 @@ async def test_a_silent_terminal_call_in_curate_reports_the_credit_cutoff(
     assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
 
 
-async def test_a_second_create_ledger_in_the_same_turn_is_refused(
+async def test_repeated_ledger_edits_do_not_reset_the_stall_guard(
     monkeypatch, library_on
 ):
     planning = _assembled(
-        "", [_call("create_ledger", '{"body":"b","todos":["one"]}', "k")]
+        "",
+        [_call("create_ledger", '{"body":"b","todos":[{"id":0,"todo":"one"}]}', "k")],
     )
-    stream, seen = _script_stream([planning] * 5 + [_assembled("Nothing written.")])
+    stream, seen = _script_stream([planning] * 6 + [_assembled("Nothing written.")])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     outcomes: list[str] = []
 
@@ -2707,10 +2710,10 @@ async def test_a_second_create_ledger_in_the_same_turn_is_refused(
     ctx = _curate_ctx()
     events = await _collect("teach me regression", ctx, model=_curate_model())
 
-    # The first call is the ledger's, so only the four refused ones stall.
-    assert outcomes == ["succeeded"] + ["refused"] * 4
-    assert len(ctx.ledger.todos) == 1, "a refused call adds nothing"
-    assert [call["tools"] is None for call in seen] == [False] * 5 + [True]
+    # The first changed plan counts; repeated upserts do not.
+    assert outcomes == ["succeeded"] * 6
+    assert len(ctx.ledger.todos) == 1 and ctx.ledger.progress == 1
+    assert [call["tools"] is None for call in seen] == [False] * 6 + [True]
     assert events[-1]["answer"] == "Nothing written."
     assert events[-1]["telemetry"]["stopReason"] == "curate_stall"
 
@@ -2895,7 +2898,7 @@ async def test_curate_answer_is_plain_prose_with_no_citations(monkeypatch, libra
 
     system = seen[0]["messages"][0]["content"]
     assert "builds learning materials" in system, "the curate prompt was not selected"
-    assert "JSON object" not in system, "no structured-answer rule in curate mode"
+    assert "OpenUI Lang" not in system, "no program-answer rule in curate mode"
     assert seen[0]["response_format"] is None, "curate never asks for the claims JSON"
     assert not [e for e in events if e["type"] == "citations"]
     assert events[-1]["answer"] == "I created a note and a quiz."
@@ -2903,7 +2906,7 @@ async def test_curate_answer_is_plain_prose_with_no_citations(monkeypatch, libra
     assert deltas == "I created a note and a quiz."
 
 
-async def test_curate_allows_six_tool_calls_in_one_response(monkeypatch, library_on):
+async def test_curate_allows_four_tool_calls_in_one_response(monkeypatch, library_on):
     calls = [
         _call("read_knowledge", f'{{"excerpt_id":"e_{n}"}}', f"k{n}") for n in range(7)
     ]
@@ -2920,4 +2923,228 @@ async def test_curate_allows_six_tool_calls_in_one_response(monkeypatch, library
     events = await _collect("teach me regression", _curate_ctx(), model=_curate_model())
 
     outcomes = {e["callId"]: e["outcome"] for e in events if e["type"] == "tool_end"}
-    assert [outcomes[f"k{n}"] for n in range(7)] == ["succeeded"] * 6 + ["refused"]
+    assert [outcomes[f"k{n}"] for n in range(7)] == ["succeeded"] * 4 + ["refused"] * 3
+
+
+@pytest.mark.parametrize("followup", ["reuse", "changed", "missing", "compacted"])
+async def test_material_excerpt_evidence_survives_only_as_current_full_text(
+    monkeypatch, library_on, followup
+):
+    from unittest.mock import AsyncMock
+
+    source = {("a", 0): "First page", ("a", 4): "Second page", ("unused", 0): "Unused"}
+
+    async def read(args, ctx):
+        key = args["excerpt_id"], args.get("start", 0)
+        if key not in source:
+            return tools._refused("Unavailable")
+        ctx.ledger.note_read(*key, "Section")
+        return tools._result(source[key])
+
+    original_run = tools.run
+
+    async def run(name, args, ctx):
+        if name == "read_knowledge":
+            return await read(args, ctx)
+        if name in ("create_material", "edit_document"):
+            checked = await tools.curate_write(ctx, name, args)
+            if isinstance(checked, ToolResult):
+                return checked
+            _, todo = checked
+            effect = {
+                "operation": "created" if name == "create_material" else "edited",
+                "resource": {"kind": "material", "id": "mat_1", "title": "Study"},
+            }
+            if name == "create_material":
+                tools.note_created(ctx, effect, "note", args, todo)
+            else:
+                tools.note_appended(ctx, "mat_1", 1, todo)
+            return ToolResult(text_parts=["Saved"], effects=[effect])
+        return await original_run(name, args, ctx)
+
+    monkeypatch.setattr(tools, "run", run)
+    monkeypatch.setattr(tools, "_read_knowledge", read)
+    monkeypatch.setattr(tools.library, "provenance", AsyncMock(return_value=[]))
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                calls=[_call("create_ledger", '{"body":"Study","todos":["Note"]}')]
+            ),
+            _assembled(
+                calls=[
+                    _call(
+                        "read_knowledge",
+                        json.dumps({"excerpt_id": eid, "start": start}),
+                        str(i),
+                    )
+                    for i, (eid, start) in enumerate(source)
+                ]
+            ),
+            _assembled(
+                calls=[
+                    _call(
+                        "create_material",
+                        '{"kind":"note","title":"Study","content":"First page","excerpt_ids":["a"],"todo":0}',
+                    )
+                ]
+            ),
+            _assembled("Created."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    first_ctx = _curate_ctx()
+    first = await _collect("Make a note", first_ctx, model=_curate_model())
+    packed = first[-1]["toolEvidence"]["libraryExcerpts"]
+    assert [(p["excerpt_id"], p["start"], p["text"]) for p in packed] == [
+        ("a", 0, "First page"),
+        ("a", 4, "Second page"),
+    ]
+    history = [
+        {
+            "id": "m1",
+            "role": "assistant",
+            "content": "Created.",
+            "toolEvidence": first[-1]["toolEvidence"],
+        }
+    ]
+    # Repeated use moves each retained page to its newest owning turn.
+    history.append({**history[0], "id": "m2"})
+    if followup == "changed":
+        source = {key: text + " changed" for key, text in source.items()}
+    elif followup == "missing":
+        source.clear()
+    elif followup == "compacted":
+        original_compact = agent.compact.compact_messages
+
+        async def fold(messages, *args, **kwargs):
+            messages = await original_compact(messages, *args, **kwargs)
+            return [m for m in messages if m.get("_kind") != "source_evidence"] + [
+                {"role": "user", "_kind": "memory", "content": "Previously read a."}
+            ]
+
+        monkeypatch.setattr(agent.compact, "compact_messages", fold)
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                calls=[
+                    _call("create_ledger", '{"body":"Extend study","todos":["Extend"]}')
+                ]
+            ),
+            _assembled(
+                calls=[_call("edit_document", '{"excerpt_ids":["a"],"todo":1}', "edit")]
+            ),
+            _assembled("Finished."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ctx = _curate_ctx(ledger=tools.Ledger.from_stored(first_ctx.ledger.stored()))
+    second = [
+        e
+        async for e in agent.run_agent(
+            query="Extend it", ctx=ctx, history=history, model=_curate_model()
+        )
+    ]
+    outcome = next(
+        e["outcome"]
+        for e in second
+        if e["type"] == "tool_end" and e["callId"] == "edit"
+    )
+    assert outcome == ("succeeded" if followup == "reuse" else "refused")
+    replay = [
+        m
+        for m in seen[0]["messages"]
+        if m.get("_kind") == "source_evidence" and "full text below" in m["content"]
+    ]
+    assert len(replay) == (2 if followup == "reuse" else 0)
+    ledger = next(
+        m["content"] for m in seen[0]["messages"] if m.get("_kind") == "ledger"
+    )
+    assert ("- a Section" in ledger) == (followup == "reuse")
+    assert bool(second[-1]["toolEvidence"]["libraryExcerpts"]) == (followup == "reuse")
+    ordinary = await agent.evidence.history_turns(
+        history, ToolContext(workspace_id="ws_1")
+    )
+    assert not any("First page" in m["content"] for m in ordinary)
+
+
+@pytest.mark.parametrize("terminal_text", ["Created all requested materials.", ""])
+async def test_curate_tool_cap_runs_one_terminal_response(
+    monkeypatch, library_on, terminal_text
+):
+    # Exercise the boundary without paying for 160 actual tool calls.
+    monkeypatch.setattr(agent, "CURATE_TOOLS_PER_TURN", 3)
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                calls=[
+                    _call("read_knowledge", '{"excerpt_id":"a"}', str(i))
+                    for i in range(4)
+                ]
+            ),
+            _assembled(terminal_text),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def read(*args):
+        return ToolResult(text_parts=["Source"])
+
+    monkeypatch.setattr(tools, "run", read)
+    events = await _collect("Study", _curate_ctx(), model=_curate_model())
+    assert [e["outcome"] for e in events if e["type"] == "tool_end"].count(
+        "refused"
+    ) == 1
+    assert seen[-1]["tools"] is None
+    assert agent.curate_prompts.FINAL_NOTICE in next(
+        m["content"] for m in seen[-1]["messages"] if m.get("_kind") == "ledger"
+    )
+    assert events[-1]["telemetry"]["toolCallsTurn"] == 3
+    assert events[-1]["telemetry"]["stopReason"] == "tool_cap"
+
+
+@pytest.mark.parametrize("deltas, fails", [(True, False), (False, False), (True, True)])
+async def test_tool_protocol_in_text_flags_response_without_tools_or_repair(
+    monkeypatch, deltas, fails
+):
+    text = (
+        _answer(("Safe prefix", []))
+        + '<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="create_material">'
+    )
+    completed = []
+
+    async def stream(_messages, *, on_event, **_kwargs):
+        if deltas:
+            for character in text:
+                on_event(StreamEvent(kind="text", text=character))
+        completed.append(True)
+        if fails:
+            raise RuntimeError("provider disconnected after leaking protocol")
+        return _assembled(text, [_call("create_material")])
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("flagged response must neither call tools nor call a repair model")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.models, "complete_text", forbidden)
+    monkeypatch.setattr(agent.tools, "run", forbidden)
+    events = await _collect("help", ToolContext(workspace_id="ws", user_id="u"))
+    assert completed == [True]
+    assert events[-1]["code"] == "response_flagged"
+    assert events[-1]["message"] == "Response flagged due to safety concern"
+    assert not any(event["type"] == "tool_start" for event in events)
+    assert "DSML" not in "".join(event.get("text", "") for event in events)
+
+
+async def test_chat_rejects_instant_before_any_model_call(monkeypatch):
+    spec = replace(
+        _model(), thinking_levels=("instant", "high"), default_thinking="instant"
+    )
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("instant chat must fail before calling a model")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", forbidden)
+    events = await _collect(
+        "help", ToolContext(workspace_id="ws", user_id="u"), model=spec
+    )
+    assert events[-1]["code"] == "model_unavailable"

@@ -11,7 +11,7 @@ export function MaterialListItem({
   data: matRef,
   active,
   onOpen,
-  onDelete,
+  onDeleted,
   chapters,
   color,
   onMove,
@@ -22,7 +22,7 @@ export function MaterialListItem({
   data: MaterialRef;
   active: boolean;
   onOpen: () => void;
-  onDelete?: () => void;
+  onDeleted?: () => void;
   /** All workspace chapters, for the "Move to…" menu. */
   chapters: Chapter[];
   color?: UserColor;
@@ -65,9 +65,8 @@ export function MaterialListItem({
             'absolute top-1/2 right-1 -translate-y-[calc(50%-2px)]',
             active && 'from-surface-hover-bg'
           )}
-          includeDelete={!!onDelete}
+          onDeleted={onDeleted}
           onMove={(chapterId) => onMove?.(chapterId)}
-          onRequestDelete={onDelete}
           renameTitle={m.material_rename()}
           workspaceId={workspaceId}
         />

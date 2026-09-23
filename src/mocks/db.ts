@@ -48,6 +48,12 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import { isDue, isKnown, newSrsState, reviewSrs } from '@/lib/srs';
+import {
+  chatFixtures,
+  fixtureCitations,
+  fixtureResult,
+  mockChatModel,
+} from './chatFixtures';
 import { dialogFiles, dialogSourceFile } from './dialogFiles';
 import {
   buildEditorNoteValue,
@@ -1447,6 +1453,55 @@ export const chatMessages: WireMessage[] = [
     status: 'complete',
   },
 ];
+
+// Every preview is also a saved conversation, so history needs no streamed turn.
+chatFixtures.forEach((fixture, index) => {
+  const conversationId = `conv_${fixture.id}`;
+  const createdAt = hours(index + 4);
+  const result = fixtureResult(fixture);
+  conversations.push({
+    createdAt,
+    curate: false,
+    id: conversationId,
+    title: fixture.label,
+    updatedAt: createdAt,
+    workspaceId: 'ws_bio',
+  });
+  chatMessages.push(
+    {
+      content: fixture.prompt,
+      conversationId,
+      createdAt,
+      id: `${conversationId}_user`,
+      role: 'user',
+      status: 'complete',
+    },
+    {
+      ...mockChatModel,
+      ...result,
+      activity: [
+        {
+          callId: `${conversationId}_search`,
+          id: `${conversationId}_search`,
+          kind: 'tool',
+          name: 'search_workspace',
+          outcome: 'succeeded',
+        },
+      ],
+      citations:
+        result.errorCode === 'response_flagged'
+          ? []
+          : fixtureCitations(
+              fixture,
+              files.filter((file) => file.workspaceId === 'ws_bio')
+            ),
+      conversationId,
+      createdAt,
+      id: `${conversationId}_assistant`,
+      role: 'assistant',
+    }
+  );
+});
 
 export const publicWorkspaces: PublicWorkspace[] = [
   {

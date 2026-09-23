@@ -5,8 +5,11 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import type { Region } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
+import { IconButton } from '@/components/ui/IconButton';
+import { m } from '@/i18n';
 import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
+import { FileModeControl } from './FileModeControl';
 import { FileError } from './FileStates';
 import { PdfAnnotations } from './PdfAnnotations';
 
@@ -114,9 +117,11 @@ export default function PdfView({
   page,
   regions,
   annotationFile,
+  onDirtyChange,
   onRetry,
 }: {
   annotationFile?: { id: string; revision: number };
+  onDirtyChange?: (dirty: boolean) => void;
   onRetry?: () => void;
   url: string;
   /** 1-based page to scroll to once rendered, from a chat citation. */
@@ -124,6 +129,16 @@ export default function PdfView({
   regions?: Region[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [annotationBusy, setAnnotationBusy] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
+  useEffect(() => {
+    onDirtyChange?.(annotationBusy);
+    return () => onDirtyChange?.(false);
+  }, [annotationBusy, onDirtyChange]);
   const [numPages, setNumPages] = useState(0);
   const [retryVersion, setRetryVersion] = useState(0);
   const retry = () => {
@@ -246,59 +261,129 @@ export default function PdfView({
       );
     });
 
-    resizeObserver.observe(container);
+    if (scrollRef.current) resizeObserver.observe(scrollRef.current);
     return () => resizeObserver.disconnect();
   }, []);
 
+  useEffect(() => {
+    if (!containerRef.current || !scrollRef.current || !numPages) return;
+    const visible = new Map<Element, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting)
+            visible.set(entry.target, entry.intersectionRect.height);
+          else visible.delete(entry.target);
+        }
+        const page = [...visible].sort((a, b) => b[1] - a[1])[0]?.[0];
+        if (page instanceof HTMLElement)
+          setCurrentPage(Number(page.dataset.page));
+      },
+      { root: scrollRef.current, threshold: [0, 0.25, 0.5, 0.75, 1] }
+    );
+    containerRef.current.querySelectorAll('[data-page]').forEach((page) => {
+      observer.observe(page);
+    });
+    return () => observer.disconnect();
+  }, [numPages]);
   return (
-    <div
-      className="relative flex h-full w-full flex-col items-center"
-      ref={containerRef}
-      tabIndex={annotationFile ? 0 : undefined}
-    >
-      <Document
-        className="h-full w-full max-w-[800px]"
-        error={<FileError onRetry={retry} />}
-        file={url}
-        key={`${url}:${retryVersion}`}
-        loading={<Skeleton className="h-full w-full" />}
-        onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
-      >
-        <div className="flex w-full flex-col items-center gap-4">
-          {Array.from({ length: numPages }, (_, i) => {
-            const p = i + 1;
-            const pageRegions = citationRegions.filter(
-              (region) => region.page === p
-            );
-            return (
-              <LazyPdfPage
-                forceRender={p === 1 || p === targetPage}
-                key={p}
-                observeVisibility={observeVisibility}
-                onAspectRatio={p === 1 ? setPageAspectRatio : undefined}
-                onMeasured={() => {
-                  setPageMeasureVersion((value) => value + 1);
-                  if (p === targetPage && citationKey)
-                    setMeasuredCitationKey(citationKey);
-                }}
-                onRetry={retry}
-                pageNumber={p}
-                pageWidth={pageWidth}
-                placeholderAspectRatio={pageAspectRatio}
-                regions={pageRegions}
-              />
-            );
-          })}
-        </div>
-      </Document>
-      {annotationFile && numPages > 0 && (
-        <PdfAnnotations
-          containerRef={containerRef}
-          fileId={annotationFile.id}
-          renderVersion={`${numPages}:${pageWidth}:${pageAspectRatio}:${pageMeasureVersion}`}
-          revision={annotationFile.revision}
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <FileModeControl
+        canEdit={!!annotationFile}
+        disabled={annotationBusy}
+        mode={editing ? 'edit' : 'view'}
+        onChange={(mode) => setEditing(mode === 'edit')}
+      />
+      <div className="grid shrink-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 border-divider border-b px-3 py-1.5 lg:grid-cols-[minmax(max-content,1fr)_minmax(0,max-content)_minmax(max-content,1fr)]">
+        <span className="t-meta whitespace-nowrap text-fg-muted">
+          {numPages
+            ? m.pdf_page_count({ count: numPages, page: currentPage })
+            : m.common_loading()}
+        </span>
+        <div
+          aria-label={m.pdf_private_annotations()}
+          className="scroll-fade-x flex min-w-0 max-w-full items-center justify-self-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ref={setToolbar}
+          role="toolbar"
         />
-      )}
+        <div className="hidden items-center justify-self-end lg:flex">
+          <IconButton
+            disabled={zoom <= 0.5}
+            icon="zoomOut"
+            label={m.material_zoom_out()}
+            onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}
+            size="sm"
+            tooltip
+            variant="ghost-hover"
+          />
+          <IconButton
+            disabled={zoom >= 3}
+            icon="zoomIn"
+            label={m.material_zoom_in()}
+            onClick={() => setZoom((value) => Math.min(3, value + 0.25))}
+            size="sm"
+            tooltip
+            variant="ghost-hover"
+          />
+        </div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto" ref={scrollRef}>
+        <div
+          className="relative flex min-h-full w-max min-w-full flex-col items-center [&_.react-pdf__Page__textContent_span]:cursor-inherit"
+          ref={containerRef}
+          tabIndex={annotationFile ? 0 : undefined}
+        >
+          <div className="shrink-0" style={{ width: pageWidth * zoom }}>
+            <Document
+              className="shrink-0"
+              error={<FileError onRetry={retry} />}
+              file={url}
+              key={`${url}:${retryVersion}`}
+              loading={<Skeleton className="h-full w-full" />}
+              onLoadSuccess={(pdf) => setNumPages(pdf.numPages)}
+            >
+              <div className="flex w-full flex-col items-center gap-4">
+                {Array.from({ length: numPages }, (_, i) => {
+                  const p = i + 1;
+                  const pageRegions = citationRegions.filter(
+                    (region) => region.page === p
+                  );
+                  return (
+                    <LazyPdfPage
+                      forceRender={p === 1 || p === targetPage}
+                      key={p}
+                      observeVisibility={observeVisibility}
+                      onAspectRatio={p === 1 ? setPageAspectRatio : undefined}
+                      onMeasured={() => {
+                        setPageMeasureVersion((value) => value + 1);
+                        if (p === targetPage && citationKey)
+                          setMeasuredCitationKey(citationKey);
+                      }}
+                      onRetry={retry}
+                      pageNumber={p}
+                      pageWidth={pageWidth * zoom}
+                      placeholderAspectRatio={pageAspectRatio}
+                      regions={pageRegions}
+                    />
+                  );
+                })}
+              </div>
+            </Document>
+          </div>
+          {annotationFile && numPages > 0 && (
+            <PdfAnnotations
+              containerRef={containerRef}
+              editing={editing}
+              fileId={annotationFile.id}
+              key={`${annotationFile.id}:${annotationFile.revision}`}
+              onPendingChange={setAnnotationBusy}
+              renderVersion={`${numPages}:${zoom}:${pageWidth}:${pageAspectRatio}:${pageMeasureVersion}`}
+              revision={annotationFile.revision}
+              toolbar={toolbar}
+            />
+          )}
+        </div>
+      </div>
     </div>
   );
 }

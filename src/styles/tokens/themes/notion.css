@@ -8,6 +8,13 @@
 
 /* ---------------- NOTION · LIGHT ---------------- */
 [data-style="notion"][data-theme="latte"] {
+  /* Chart series, fixed order (validated for CVD on both surfaces). */
+  --chart-1: #4a3aa7;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #2a78d6;
+  --chart-5: #eda100;
+  --chart-6: #e87ba4;
   --surface-page: #ffffff;
   --surface-canvas: #ffffff;
   --surface-card-bg: #ffffff;
@@ -92,6 +99,13 @@
 
 /* ---------------- NOTION · DARK ---------------- */
 [data-style="notion"][data-theme="mocha"] {
+  /* Chart series, fixed order (validated for CVD on both surfaces). */
+  --chart-1: #9085e9;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #3987e5;
+  --chart-5: #c98500;
+  --chart-6: #d55181;
   --surface-page: #191919;
   --surface-canvas: #191919;
   --surface-card-bg: #202020;
@@ -176,6 +190,13 @@
 
 /* ---------------- NOTION · MACCHIATO (starts as a copy of mocha; tune independently) ---------------- */
 [data-style="notion"][data-theme="macchiato"] {
+  /* Chart series, fixed order (validated for CVD on both surfaces). */
+  --chart-1: #9085e9;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #3987e5;
+  --chart-5: #c98500;
+  --chart-6: #d55181;
   --surface-page: #191919;
   --surface-canvas: #191919;
   --surface-card-bg: #202020;

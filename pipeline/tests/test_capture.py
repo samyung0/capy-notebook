@@ -517,3 +517,169 @@ async def test_capture_uses_stored_format_after_rename(
     monkeypatch.setattr(capture, "_office_capture", office)
     assert await capture.render_file("ws_1", "f_1", 1, None, 100) == expected
     assert calls == ["pdf" if kind == "pdf" else f"source.{extension}"]
+
+
+# ------------------------------------------------------------- image sources
+
+
+def _png(width: int, height: int) -> bytes:
+    import io
+
+    from PIL import Image
+
+    # Half-transparent red: flattening on white must give pink, not dark red.
+    image = Image.new("RGBA", (width, height), (255, 0, 0, 128))
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def _image_row(data: bytes, name: str = "photo.png") -> dict:
+    import hashlib
+
+    return {
+        "kind": "image",
+        "name": name,
+        "parse_mode": "none",
+        "ever_parsed_successfully": False,
+        "blob_path": "sources/photo",
+        "source_sha256": hashlib.sha256(data).hexdigest(),
+        "size_bytes": len(data),
+    }
+
+
+def _attached(ctx: ToolContext, call_id: str):
+    import base64
+    import io
+
+    from PIL import Image
+
+    label, url = ctx.pending_images[call_id]
+    return label, Image.open(io.BytesIO(base64.b64decode(url.split(",", 1)[1])))
+
+
+async def test_image_source_is_its_own_page_one(monkeypatch):
+    data = _png(300, 200)
+    row = _image_row(data)
+
+    async def _source(workspace_id, file_id):
+        assert (workspace_id, file_id) == ("ws_1", "f_1")
+        return row
+
+    def download(key, path, limit):
+        assert key == "sources/photo" and limit == len(data)
+        Path(path).write_bytes(data)
+        return len(data), row["source_sha256"]
+
+    monkeypatch.setattr(capture.store, "file_page_source", _source)
+    monkeypatch.setattr(capture.blobstore, "download_file", download)
+    monkeypatch.setattr(tools.cfg, "capture_max_edge", 200)
+    ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "photo.png", "chapter_id": None, "chunks": 1}],
+    }
+    # The caption chunk carries no page: it cites the image as a whole.
+    tools.assign_citations(ctx, [_passage(None)])
+
+    whole = await tools._capture_page(
+        {"file_id": "f_1", "page": 1, "_tool_call_id": "a"}, ctx
+    )
+    assert not whole.refused, whole.text()
+    assert "[1]" in whole.text()
+    label, image = _attached(ctx, "a")
+    assert label.endswith("photo.png page 1")
+    assert image.size == (200, 133) and image.mode == "RGB"
+    red, green, blue = image.getpixel((100, 66))
+    assert red > 245 and 118 <= green <= 138 and 118 <= blue <= 138
+
+    boxed = await tools._capture_page(
+        {"file_id": "f_1", "page": 1, "bbox": [0, 0, 500, 1000], "_tool_call_id": "b"},
+        ctx,
+    )
+    assert not boxed.refused, boxed.text()
+    assert _attached(ctx, "b")[1].size == (150, 200)
+
+    # A page-less passage cites page 1 only, and the renderer agrees.
+    second = await tools._capture_page(
+        {"file_id": "f_1", "page": 2, "_tool_call_id": "c"}, ctx
+    )
+    assert second.refused and "Retrieve a passage" in second.text()
+    with pytest.raises(ValueError, match="an image has one page"):
+        capture._image_capture(row, 2, None, 200)
+
+
+async def test_text_source_still_refuses_through_the_renderer(monkeypatch):
+    async def _source(workspace_id, file_id):
+        return {
+            "kind": "txt",
+            "name": "notes.txt",
+            "parse_mode": "none",
+            "blob_path": "sources/notes",
+            "source_sha256": "",
+            "size_bytes": 12,
+        }
+
+    monkeypatch.setattr(capture.store, "file_page_source", _source)
+    ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [{"id": "f_1", "name": "notes.txt", "chapter_id": None, "chunks": 1}],
+    }
+    tools.assign_citations(ctx, [_passage(None)])
+    result = await tools._capture_page(
+        {"file_id": "f_1", "page": 1, "_tool_call_id": "a"}, ctx
+    )
+    assert result.refused and result.error_code == "unsupported_format"
+    assert "no retained PDF" in result.text()
+
+
+async def test_capture_refuses_a_note_as_a_note():
+    ctx = ToolContext(workspace_id="ws_1")
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {
+                "id": "mat_1",
+                "name": "Notes",
+                "chapter_id": None,
+                "chunks": 1,
+                "kind": "material",
+            }
+        ],
+    }
+    tools.assign_citations(ctx, [_passage(None, file_id="mat_1")])
+    result = await tools._capture_page(
+        {"file_id": "mat_1", "page": 1, "_tool_call_id": "a"}, ctx
+    )
+    assert result.refused and "That id is a note" in result.text()
+
+
+def test_image_capture_refuses_a_decompression_bomb_as_too_large(monkeypatch):
+    from PIL import Image
+
+    data = _png(300, 200)
+    row = _image_row(data)
+
+    def download(key, path, limit):
+        Path(path).write_bytes(data)
+        return len(data), row["source_sha256"]
+
+    monkeypatch.setattr(capture.blobstore, "download_file", download)
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    with pytest.raises(capture.CaptureUnavailable, match="too large"):
+        capture._image_capture(row, 1, None, 200)
+
+
+def test_image_capture_refuses_formats_pillow_cannot_read(monkeypatch):
+    data = b'<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'
+    row = _image_row(data, "logo.svg")
+
+    def download(key, path, limit):
+        Path(path).write_bytes(data)
+        return len(data), row["source_sha256"]
+
+    monkeypatch.setattr(capture.blobstore, "download_file", download)
+    with pytest.raises(capture.CaptureUnavailable) as err:
+        capture._image_capture(row, 1, None, 200)
+    assert err.value.code == "unsupported_format"

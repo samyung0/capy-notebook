@@ -181,12 +181,17 @@ const appRoutes = [
     () => import('@/routes/Learning'),
     ({ context: { queryClient: qc } }) => qc.prefetchQuery(attemptsQuery())
   ),
-  page(
-    '/materials/$materialId',
-    () => import('@/routes/MaterialOpen'),
-    ({ context: { queryClient: qc }, params }) =>
-      qc.prefetchQuery(materialQuery(params.materialId))
-  ),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/MaterialOpen')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient }, params }) => {
+      void queryClient.prefetchQuery(materialQuery(params.materialId));
+    },
+    path: '/materials/$materialId',
+    validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } =>
+      search.mode === 'edit' ? { mode: 'edit' } : {},
+  }),
+  page('/files/$fileId', () => import('@/routes/MaterialOpen')),
   createRoute({
     beforeLoad: () => {
       throw redirect({ replace: true, to: '/create' });

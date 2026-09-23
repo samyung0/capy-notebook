@@ -30,14 +30,18 @@ from PIL import Image
 from pipeline.config import cfg
 from pipeline.ingest.worker import _page_chunks
 from pipeline.parse import parser_client
-from pipeline.retrieval import agent, capture, contract, indexing, models, store, tools
+from pipeline.retrieval import (
+    agent,
+    capture,
+    contract,
+    indexing,
+    models,
+    openui,
+    store,
+    tools,
+)
 from pipeline.retrieval.confidence import OCR_REASON, OCR_SCORE, ocr_pages
 from pipeline.retrieval.search import search
-from pipeline.retrieval.structured import (
-    StreamRenderer,
-    parse_structured,
-    render_structured,
-)
 
 NATIVE_SOURCE = (
     Path(__file__).resolve().parents[2]
@@ -343,29 +347,22 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
         ctx.pending_images,
     )
     assert messages[-1]["content"][-1]["image_url"]["url"] == image_url
-    raw_answer = json.dumps(
-        {
-            "answer": [
-                {
-                    "text": "The violet observatory records the planet every night.",
-                    "passages": ["2"],
-                }
-            ]
-        }
+    raw_answer = (
+        "root = Answer([a])\n"
+        'a = Md("The violet observatory records the planet every night.", [2])\n'
     )
-    parsed_answer = parse_structured(raw_answer)
-    assert parsed_answer is not None
-    answer, order = render_structured(parsed_answer, len(ctx.citations))
-    stream = StreamRenderer(lambda: len(ctx.citations))
+    stream = openui.LangRenderer(lambda: len(ctx.citations))
     streamed = (
         "".join(
             stream.push(raw_answer[i : i + 7]) for i in range(0, len(raw_answer), 7)
         )
         + stream.finish()
     )
-    assert streamed == answer and order == [2] and answer.endswith("[1]")
+    order = stream.reading_order()
+    answer = stream.text
+    assert streamed == raw_answer == answer and stream.complete and order == [2]
     citations = agent._ordered_citations(ctx, order)
-    assert citations == [scan_hit.as_citation()]
+    assert citations == [{**scan_hit.as_citation(), "n": 2}]
     assert citations[0]["pageStart"] <= 2 <= citations[0]["pageEnd"]
     assert any(region["page"] == 2 for region in citations[0]["regions"])
     assert citations[0]["regions"] == scan_hit.regions

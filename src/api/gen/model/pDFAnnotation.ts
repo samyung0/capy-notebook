@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PDFAnnotationKind } from './pDFAnnotationKind.ts';
+import type { PDFPoint } from './pDFPoint.ts';
 import type { PDFRect } from './pDFRect.ts';
 
 export interface PDFAnnotation {
@@ -20,10 +21,17 @@ export interface PDFAnnotation {
   /** @minimum 1 */
   page: number;
   /**
+     * @maxItems 4096
+     * @nullable
+     */
+  points?: PDFPoint[] | null;
+  /**
      * @minItems 1
      * @maxItems 1000
      */
   rects: PDFRect[];
   sourceIdentity: string;
+  /** @maxLength 2000 */
+  text?: string;
   updatedAt: string;
 }

@@ -9,6 +9,7 @@ import {
 } from 'slate';
 import * as Y from 'yjs';
 import { fullGuard, type GuardRun, guardsEqual, rangeGuard } from './guards.js';
+import { MATERIAL_REF_TYPE } from './materialDocument.js';
 
 /**
  * Direct AI content edits on a Plate material or a plain-text source.
@@ -878,6 +879,12 @@ export function inspectMaterial(document: Y.Doc): InspectedBlock[] {
     }
     if (block.type === 'mermaid' && typeof block.source === 'string') {
       out.properties = { source: block.source };
+    }
+    if (block.type === MATERIAL_REF_TYPE) {
+      out.properties = {
+        materialId: String(block.materialId ?? ''),
+        refKind: String(block.refKind ?? ''),
+      };
     }
     if (hasMedia(block)) out.properties = { ...out.properties, media: 'true' };
     return out;

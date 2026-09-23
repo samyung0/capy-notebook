@@ -527,7 +527,9 @@ test('workspace settings tabs fit vertically and dialogs settle on whole pixels'
       'General',
       'Sharing',
       'Indexing',
-      'Workspace statistics',
+      'Statistics',
+      'Others',
+      'Danger',
     ]) {
       const button = dialog.getByRole('button', { exact: true, name });
       await button.click();

@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"math"
 	"regexp"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -17,12 +19,18 @@ type PDFRect struct {
 	Width  float64 `json:"width"`
 	Height float64 `json:"height"`
 }
+type PDFPoint struct {
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+}
 type PDFAnnotationBody struct {
-	SourceIdentity string    `json:"sourceIdentity"`
-	Page           int       `json:"page" minimum:"1"`
-	Kind           string    `json:"kind" enum:"highlight,rectangle,ellipse"`
-	Rects          []PDFRect `json:"rects" nullable:"false" minItems:"1" maxItems:"1000"`
-	Color          string    `json:"color" pattern:"^#[0-9a-fA-F]{6}$"`
+	SourceIdentity string     `json:"sourceIdentity"`
+	Page           int        `json:"page" minimum:"1"`
+	Kind           string     `json:"kind" enum:"highlight,rectangle,ellipse,pen,text"`
+	Rects          []PDFRect  `json:"rects" nullable:"false" minItems:"1" maxItems:"1000"`
+	Points         []PDFPoint `json:"points,omitempty" maxItems:"4096"`
+	Text           string     `json:"text,omitempty" maxLength:"2000"`
+	Color          string     `json:"color" pattern:"^#[0-9a-fA-F]{6}$"`
 }
 type PDFAnnotation struct {
 	PDFAnnotationBody
@@ -39,10 +47,31 @@ func validatePDFAnnotation(in PDFAnnotationBody) error {
 	if in.Page < 1 || !annotationColor.MatchString(in.Color) || len(in.Rects) < 1 || len(in.Rects) > 1000 {
 		return ErrConflict
 	}
-	if in.Kind != "highlight" && in.Kind != "rectangle" && in.Kind != "ellipse" {
+	if in.Kind != "highlight" && in.Kind != "rectangle" && in.Kind != "ellipse" && in.Kind != "pen" && in.Kind != "text" {
 		return ErrConflict
 	}
 	if in.Kind != "highlight" && len(in.Rects) != 1 {
+		return ErrConflict
+	}
+	if in.Kind == "pen" {
+		if len(in.Points) < 2 || len(in.Points) > 4096 {
+			return ErrConflict
+		}
+		for _, point := range in.Points {
+			for _, v := range []float64{point.X, point.Y} {
+				if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1000 {
+					return ErrConflict
+				}
+			}
+		}
+	} else if len(in.Points) != 0 {
+		return ErrConflict
+	}
+	if in.Kind == "text" {
+		if strings.TrimSpace(in.Text) == "" || utf8.RuneCountInString(in.Text) > 2000 {
+			return ErrConflict
+		}
+	} else if in.Text != "" {
 		return ErrConflict
 	}
 	for _, r := range in.Rects {
@@ -73,14 +102,17 @@ func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file strin
 	return fmt.Sprintf("revision:%d", revision), nil
 }
 
-const annotationColumns = `id,file_id,author_id,source_identity,page,kind,rects,color,created_at,updated_at`
+const annotationColumns = `id,file_id,author_id,source_identity,page,kind,rects,color,points,text,created_at,updated_at`
 
 func scanAnnotation(row pgx.Row) (PDFAnnotation, error) {
 	var out PDFAnnotation
-	var rects []byte
-	err := row.Scan(&out.ID, &out.FileID, &out.AuthorID, &out.SourceIdentity, &out.Page, &out.Kind, &rects, &out.Color, &out.CreatedAt, &out.UpdatedAt)
+	var rects, points []byte
+	err := row.Scan(&out.ID, &out.FileID, &out.AuthorID, &out.SourceIdentity, &out.Page, &out.Kind, &rects, &out.Color, &points, &out.Text, &out.CreatedAt, &out.UpdatedAt)
 	if err == nil {
 		err = json.Unmarshal(rects, &out.Rects)
+		if err == nil {
+			err = json.Unmarshal(points, &out.Points)
+		}
 	}
 	if isNoRows(err) {
 		err = ErrNotFound
@@ -136,11 +168,18 @@ func (s *Store) SavePDFAnnotation(ctx context.Context, actor, file, id string, i
 	if err != nil {
 		return PDFAnnotation{}, err
 	}
+	points := []byte("[]")
+	if len(in.Points) > 0 {
+		points, err = json.Marshal(in.Points)
+		if err != nil {
+			return PDFAnnotation{}, err
+		}
+	}
 	var row pgx.Row
 	if id == "" {
-		row = tx.QueryRow(ctx, `INSERT INTO pdf_annotations(id,file_id,author_id,source_identity,page,kind,rects,color) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING `+annotationColumns, uid("ann"), file, actor, in.SourceIdentity, in.Page, in.Kind, rects, in.Color)
+		row = tx.QueryRow(ctx, `INSERT INTO pdf_annotations(id,file_id,author_id,source_identity,page,kind,rects,color,points,text) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING `+annotationColumns, uid("ann"), file, actor, in.SourceIdentity, in.Page, in.Kind, rects, in.Color, points, in.Text)
 	} else {
-		row = tx.QueryRow(ctx, `UPDATE pdf_annotations SET page=$4,kind=$5,rects=$6,color=$7,updated_at=now() WHERE id=$1 AND file_id=$2 AND author_id=$3 AND source_identity=$8 RETURNING `+annotationColumns, id, file, actor, in.Page, in.Kind, rects, in.Color, identity)
+		row = tx.QueryRow(ctx, `UPDATE pdf_annotations SET page=$4,kind=$5,rects=$6,color=$7,points=$9,text=$10,updated_at=now() WHERE id=$1 AND file_id=$2 AND author_id=$3 AND source_identity=$8 RETURNING `+annotationColumns, id, file, actor, in.Page, in.Kind, rects, in.Color, identity, points, in.Text)
 	}
 	out, err := scanAnnotation(row)
 	if err != nil {

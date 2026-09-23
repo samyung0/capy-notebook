@@ -69,12 +69,19 @@
 
 /* ---------------- classroom · LIGHT ---------------- */
 [data-style="classroom"][data-theme="latte"] {
+  /* Chart series, fixed order (validated for CVD on both surfaces). */
+  --chart-1: #4a3aa7;
+  --chart-2: #eb6834;
+  --chart-3: #1baf7a;
+  --chart-4: #2a78d6;
+  --chart-5: #eda100;
+  --chart-6: #e87ba4;
   --surface-page: #f7f7f7; /* outer "device" */
   --surface-page-hover: #e6e9ea;
   --surface-canvas: #f4f6f5;
   --surface-card-bg: #ffffff;
-  --surface-card-dark-bg: #e6e9ea; /* dark card */
   --surface-card-hover-bg: #f7f8f8;
+  --surface-card-dark-bg: #e6e9ea; /* dark card */
   --surface-card-dark-hover-bg: #dfdfdf;
 
   --color-scrollbar: #afafaf;
@@ -158,6 +165,13 @@
 
 /* ---------------- classroom · DARK ---------------- */
 [data-style="classroom"][data-theme="mocha"] {
+  /* Chart series, fixed order (validated for CVD on both surfaces). */
+  --chart-1: #9085e9;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #3987e5;
+  --chart-5: #c98500;
+  --chart-6: #d55181;
   --surface-page: #121513;
   --surface-canvas: #0e100f;
   --surface-card-bg: #1c201e;
@@ -236,6 +250,13 @@
 
 /* ---------------- classroom · MACCHIATO (starts as a copy of mocha; tune independently) ---------------- */
 [data-style="classroom"][data-theme="macchiato"] {
+  /* Chart series, fixed order (validated for CVD on both surfaces). */
+  --chart-1: #9085e9;
+  --chart-2: #d95926;
+  --chart-3: #199e70;
+  --chart-4: #3987e5;
+  --chart-5: #c98500;
+  --chart-6: #d55181;
   --surface-page: #121513;
   --surface-canvas: #0e100f;
   --surface-card-bg: #1c201e;

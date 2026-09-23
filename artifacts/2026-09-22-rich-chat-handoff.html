@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rich chat answers · handoff</title>
+<style>
+:root{color-scheme:light dark;--fg:#1f1f1f;--muted:#5f5f5f;--line:#d9d9d9;--bg:#fff;--inset:#f5f5f3;--accent:#5b4aa8;--warn:#8a5a10;--warn-bg:#fbf3e2;--ok:#2f6f4e;--ok-bg:#e8f5ee}
+@media(prefers-color-scheme:dark){:root{--fg:#ececea;--muted:#a9a9a6;--line:#3a3a3a;--bg:#171717;--inset:#222;--accent:#c9bdf0;--warn:#e8c27a;--warn-bg:#2c2415;--ok:#8fd7b1;--ok-bg:#15301f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:960px;margin:auto;padding:28px 18px 64px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:16px;margin:30px 0 8px;padding-top:14px;border-top:1px solid var(--line)}h3{font-size:14px;margin:16px 0 6px}
+p{margin:6px 0}.muted{color:var(--muted)}.small{font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0}th,td{text-align:left;vertical-align:top;padding:6px 8px;border-bottom:1px solid var(--line)}th{font-size:12px;color:var(--muted);font-weight:600}
+code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}code{background:var(--inset);padding:1px 4px;border-radius:3px}pre{background:var(--inset);padding:10px 12px;border-radius:6px;overflow:auto;margin:8px 0}
+ul,ol{margin:6px 0 6px 20px;padding:0}li{margin:3px 0}
+.tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600}.open{background:var(--warn-bg);color:var(--warn)}.done{background:var(--ok-bg);color:var(--ok)}
+.box{border-left:3px solid var(--accent);padding:6px 12px;margin:10px 0;background:var(--inset)}
+</style>
+</head>
+<body><main>
+<h1>Rich chat answers (OpenUI Lang) · handoff</h1>
+<p class="muted small">State as of 2026-09-22. Working tree on <code>main</code>, uncommitted. Decisions live in <code>human/agentic-retrieval.md</code> (lines dated 2026-09-21 and 2026-09-22); behaviour docs in <code>openwiki/agentic-retrieval.md</code> (chat workflow item 5, "Citations and the frontend").</p>
+
+<h2>1. What was decided</h2>
+<table>
+<tr><th>Topic</th><th>Decision</th></tr>
+<tr><td>Answer format</td><td>Ordinary chat answers are OpenUI Lang programs rendered by <code>@openuidev/react-lang</code> through Capy-owned components. The claims-JSON contract and JSON response mode are gone. Agent tools, SSE transport and chat shell unchanged. Curate mode untouched (prose, <code>PlainRenderer</code>, its own prompt).</td></tr>
+<tr><td>Prompt</td><td>One fixed catalog on every ordinary-chat call; the model picks composition and length.</td></tr>
+<tr><td>Catalog</td><td>Md, Callout, Tabs/Tab, Steps/Step, Accordion/AccordionItem, Reveal, Tags, Facts/Fact, Cards/Card, Table/Row, Chart (bar, hbar, line, area, pie, stacked) + Series, ScatterChart + Point, AskUser. No images, follow-ups, general forms or mutation shortcuts. Tables and charts are leaves; no Tabs in Tabs, no Accordion in Accordion.</td></tr>
+<tr><td>Citations</td><td>Blocks name shown passage numbers in <code>passages</code>. Python validates (integers only, else repair), orders them in reading order, and the citation list carries each entry's <code>n</code>; the browser numbers markers by list position. Prose gets nearby chips; tables and charts cite beneath, rows individually when needed. Charts are cited or marked illustrative.</td></tr>
+<tr><td>Streaming and repair</td><td>Progressive rendering; one repair call for prose, no root, unknown component, unresolved reference, bad passages or a parse failure; a still-invalid result keeps the valid partial with an interruption notice. Text after a closing fence is dropped. No OpenUI Gateway or Autofix.</td></tr>
+<tr><td>Questions</td><td>AskUser blocks for any task (including gathering context before creating materials). Docked block (mock E) between list and composer: one question at a time, numbered choices, "something else" field, Skip, one Send that posts every answered question as an ordinary user message. New turn only: no tool, no held turn state, no question id. Latest completed reply only; skipped questions stay readable as "Asked:" lines; nothing persisted.</td></tr>
+<tr><td>Layout</td><td>Inline reply (mock A): open prose, borders only on tables, charts and interactive blocks.</td></tr>
+</table>
+
+<h2>2. How it works end to end</h2>
+<h3>What the model writes</h3>
+<pre>root = Answer([intro, tabs, cmp, ask])
+intro = Md("ACID names four guarantees.", [3])
+tabs = Tabs([t1])
+t1 = Tab("Atomicity", [a])
+a = Callout("info", "All or nothing", "Both updates happen or neither.", [3, 1])
+cmp = Table(["Property", "Question"], [r1], [1, 2], "The four guarantees")
+r1 = Row(["Atomicity", "Did the whole transfer happen?"], [1])
+ask = AskUser("Which guarantee should I go deeper on?", ["Atomicity", "Isolation"])</pre>
+<p>Passage numbers are the <code>[n]</code> the tool results showed this turn. Optional presentation arguments (unit, illustrative, caption, value) come after <code>passages</code>; the prompt says to write <code>null</code> to skip an earlier optional.</p>
+<h3>Python (<code>pipeline/pipeline/retrieval/openui.py</code>, <code>agent.py</code>)</h3>
+<ul>
+<li><code>LangRenderer</code> streams the text through unchanged, minus a wrapping code fence. Prose is held back until the response ends (narration, or an answer that ignored the format).</li>
+<li>Each completed statement is re-parsed with a small subset parser; the <code>citations</code> event grows in statement order. At the end the list is recomputed in reading order and sent as the <code>final</code> event; Go persists the last list.</li>
+<li>Validation: root present and an <code>Answer</code>, components known, references reachable from root resolve, <code>passages</code> lists are integers. Failure → one repair call (<code>REPAIR_PROMPT</code>); a valid repair replaces what streamed via a repeated <code>block_start</code>.</li>
+<li><code>messages.content</code> is the program. Prior assistant turns replay the program; the checkpoint summarizer gets the text projection (<code>text_of</code>). Evidence retention and search telemetry use the final cited order as before.</li>
+<li>Prompt: <code>prompts/chat.py</code> appends <code>prompts/openui_lang.txt</code> (about 2,000 tokens; whole system prompt about 2,900). The inline-marker sentence of the old base prompt is gone.</li>
+</ul>
+<h3>Browser (<code>src/features/workspace/chat/</code>)</h3>
+<ul>
+<li><code>schema.ts</code> is the single source of the catalog (zod props in positional order, descriptions, groups, prompt options). <code>pnpm gen:openui</code> writes the prompt text and <code>generated/openui_library.json</code>; <code>library.test.ts</code> fails on drift. A file-level biome ignore keeps the formatter from sorting zod keys, which would silently reorder arguments.</li>
+<li><code>LangAnswer.tsx</code> renders a program through the Renderer with the chat library; pre-format Markdown answers and rootless program-shaped text fall back to Streamdown; a completed program that stops early or reports parse errors shows the interruption notice. Citation chips look up <code>n</code> in the message's list.</li>
+<li>Blocks in <code>blocks/</code>: prose via Streamdown, tabs on the shared Tabs strip, native details for accordion and reveal, SVG charts themed by <code>--chart-1..6</code> (validated for colour-vision separation on both surfaces) with a values table, tables with row attribution, AskUser rendering "Asked:" lines on older replies.</li>
+<li><code>QuestionBlock.tsx</code> + <code>questions.ts</code>: questions extracted from the latest completed reply with OpenUI's parser; Send composes "question, answer" pairs into one message through the existing <code>send()</code>. Keys 1–9 pick options; Skip; Hide collapses to a bar; Send respects the composer cap.</li>
+<li><code>src/lib/openuiDevtools.ts</code> (first import in <code>main.tsx</code>) disables react-lang's dev-only inspector, which otherwise fetches a bundle from jsDelivr and overlays a deploy prompt.</li>
+</ul>
+<h3>Go</h3>
+<p><code>store.Citation</code> gains <code>N int json:"n,omitempty"</code>; OpenAPI and frontend types regenerated. Nothing else in the gateway changed.</p>
+
+<h2>3. Files</h2>
+<table>
+<tr><th>Area</th><th>New</th><th>Modified</th><th>Removed</th></tr>
+<tr><td>Frontend</td><td><code>src/features/workspace/chat/</code> (schema, generated, library, LangAnswer, QuestionBlock, questions, library.test, blocks/*), <code>src/lib/openuiDevtools.ts</code>, <code>scripts/gen-openui-prompt.ts</code></td><td><code>ChatPanel.tsx</code>, <code>api/types.ts</code>, <code>mocks/handlers.ts</code>, <code>main.tsx</code>, theme token files, <code>messages/en.json</code>, <code>messages/zh.json</code>, <code>package.json</code>, <code>pnpm-workspace.yaml</code></td><td></td></tr>
+<tr><td>Python</td><td><code>retrieval/openui.py</code>, <code>prompts/openui_lang.txt</code>, <code>generated/openui_library.json</code>, <code>tests/test_openui.py</code></td><td><code>retrieval/agent.py</code>, <code>prompts/chat.py</code>, <code>tests/test_agent.py</code>, <code>tests/test_odl_local_integration.py</code>, <code>tests/README.md</code>, <code>pyproject.toml</code> (package data)</td><td><code>retrieval/structured.py</code>, <code>tests/test_structured.py</code></td></tr>
+<tr><td>Go and docs</td><td></td><td><code>server/internal/store/chat.go</code>, <code>openapi.yaml</code>, <code>src/api/gen/*</code>, <code>openwiki/agentic-retrieval.md</code>, <code>openwiki/test-catalog.md</code>, <code>human/agentic-retrieval.md</code></td><td></td></tr>
+</table>
+<p class="small muted">Unrelated uncommitted work in the tree (bench, collaboration, agenttools, internal_documents, tools.py, capture.py, curate.py, todo files) is not part of this change.</p>
+
+<h2>4. Verification done</h2>
+<ul>
+<li>Suites: 115 pipeline tests (agent + openui), 73 workspace vitest tests, full <code>src</code> vitest run, Go store and gateway tests under the disposable database, <code>tsc</code>, biome and ruff clean. The wheel now ships both generated files.</li>
+<li>MSW preview: the mock streams a full program; tabs, callout, table with sources, bar chart with values toggle and illustrative label, citation chips, the docked question block, Send composing the message, and the "Asked:" line on the older reply were all checked in the browser.</li>
+<li>GLM 5.3 Flash through Ollama cloud, dummy passages, no tools, production prompt: the ACID question returned a valid program (intro, table with per-row passages, chart with the new argument order) cited in reading order; the short question returned two prose blocks citing one passage; the "what do you need from me" question returned empty content four times in a row, and the single repair call produced a valid program with three questions every time.</li>
+<li>Playground: <code>rag-playground-lab</code> launch config on port 8766 (an older playground from September 12 holds 8765). The frozen lab index container on the ingest host had exited and was started again; the effective prompt is visible in the UI and through <code>POST /api/prompt</code>.</li>
+</ul>
+
+<h2>5. Review history</h2>
+<table>
+<tr><th>Round</th><th>Outcome</th></tr>
+<tr><td>1</td><td>3 blocking, 11 should-fix, nits. All decided and fixed: package data, prompt contradiction, <code>passages</code> before optional args (Chart, ScatterChart, Card), strict integer passages, non-streaming failed-repair branch, rootless fallback, questions on incomplete replies, keyboard digits, chart tick guard, fence afterword, zip strictness, tests README, class-name constants, enum tokens in the projection, plurals, keys, cap.</td></tr>
+<tr><td>2</td><td>Table missed by round 1 (same optional-before-passages shape), narration fallback unreachable, gap notice missing dropped blocks, a fence inside an Md string truncating the program, stale parse result deciding the fallback, "Asked:" flashing mid-stream, docs lag. All decided and fixed.</td></tr>
+<tr><td>3</td><td>One regression from the round-2 fence fix plus three smaller points. <span class="tag open">Pending your go</span></td></tr>
+</table>
+
+<h2>6. Remaining items</h2>
+<table>
+<tr><th>#</th><th>Finding</th><th>Recommendation</th><th>Status</th></tr>
+<tr><td>1</td><td>The closing-fence detector checks only the first fence candidate per chunk. A code fence inside an Md string makes it decline, and the real closing fence later in the same chunk is never seen: wasted repair, and a failed repair persists the fence and afterword, which the browser then shows as raw source with no citations.</td><td>Iterate the candidates and stop at the first one outside a string; add the afterword to the new test.</td><td><span class="tag open">blocking</span></td></tr>
+<tr><td>2</td><td>The inside-string check re-tokenizes the whole program at every fence line (52 ms for a 2,000-character program with 40 code blocks).</td><td>Accept: the renderer already re-parses at every newline, so this doubles an existing cost rather than adding a new growth order.</td><td><span class="tag open">decide</span></td></tr>
+<tr><td>3</td><td>The interruption notice fires on parser errors that drop nothing (an extra argument, a type mismatch on a presentation flag).</td><td>Count only codes that drop content: unknown component, missing or null required argument, parse failure.</td><td><span class="tag open">should fix</span></td></tr>
+<tr><td>4</td><td>With the rootless fallback gated on "not streaming", a reply stopped after <code>root = Answer(</code> shows that text literally.</td><td>Gate on <code>complete</code> again and mark finished narration blocks complete, keeping the narration fallback.</td><td><span class="tag open">should fix</span></td></tr>
+<tr><td>5</td><td>Generated prompt boilerplate still mentions object literals and forms, which the catalog lacks.</td><td>One additional rule line each; the boilerplate itself is OpenUI's.</td><td><span class="tag open">nit</span></td></tr>
+<tr><td>6</td><td>No unit tests for the behavioural question-block fixes (digits with a focused radio, Skip on the last question, cap counter).</td><td>Leave out under the no-test-sprawl rule unless wanted.</td><td><span class="tag open">your call</span></td></tr>
+<tr><td>7</td><td>An AskUser written inside narration shows as an "Asked:" line and can never be answered.</td><td>Accept: the prompt tells the model to ask in the answer, and narration is prose by contract.</td><td><span class="tag open">accepted</span></td></tr>
+<tr><td>8</td><td>Live marker numbers can shift once at stream end when children are defined out of order.</td><td>Accepted in round 1; the final list is authoritative.</td><td><span class="tag done">accepted</span></td></tr>
+</table>
+
+<h2>7. Follow-ups outside this change</h2>
+<ul>
+<li>Prompt tuning on GLM 5.3 Flash: the question-style reply tends to land in the model's reasoning channel with empty content; the repair covers it today at the cost of one extra call. You said you would tune the prompt; the catalog text and rules live in <code>schema.ts</code> (<code>promptOptions</code>) and the base rules in <code>prompts/chat.py</code>.</li>
+<li>The lab index container on the ingest host has no restart policy, so it stays down after a host restart until started by hand.</li>
+<li>Marker numbering during streaming follows statement order until the final list arrives; a model that writes children out of order shows a one-time renumber.</li>
+<li>The <code>lab/playground</code> scripts still carry their own copy of the old claims helpers (<code>citations.py</code> "structured" mode); the playground itself runs the current agent, so only that optional mode is stale.</li>
+<li>The enum-argument list used by the text projection (<code>Callout.kind</code>, <code>Chart.kind</code>) is hand-maintained; the generated spec carries names, not types.</li>
+</ul>
+
+<h2>8. Commands</h2>
+<pre>pnpm gen:openui                        # after editing src/features/workspace/chat/schema.ts
+pnpm exec vitest run src/features/workspace
+pnpm exec tsc -b --noEmit
+cd pipeline &amp;&amp; uv run --extra test pytest -q tests/test_openui.py tests/test_agent.py
+pnpm test:go
+curl -s -X POST http://127.0.0.1:8766/api/prompt -H 'Content-Type: application/json' -d '{}'   # effective prompt from the playground</pre>
+<p class="small muted">Review reports: <code>review-1.md</code>, <code>review-2.md</code>, <code>review-3.md</code> in this session's scratchpad; the GLM probe script and its JSON output sit beside them.</p>
+</main></body></html>

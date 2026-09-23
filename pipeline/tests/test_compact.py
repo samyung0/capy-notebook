@@ -21,8 +21,8 @@ def _spec(**overrides) -> ModelConfig:
         "model_slug": "deepseek-v4-flash",
         "platform_enabled": True,
         "byok_enabled": True,
-        "thinking_levels": ("instant", "low"),
-        "default_thinking": "instant",
+        "thinking_levels": ("low", "high"),
+        "default_thinking": "high",
         "context_window_tokens": 20_000,
     }
     base.update(overrides)
@@ -134,6 +134,7 @@ async def test_checkpoint_prompt_uses_current_message_only_to_resolve_references
         seen["system"] = messages[0]["content"]
         seen["payload"] = json.loads(messages[1]["content"])
         seen["max_tokens"] = kwargs["max_tokens"]
+        assert kwargs.get("reasoning") is not False
         return "The third bullet was to reject every invalid id."
 
     monkeypatch.setattr(compact.models, "complete_text", fake_complete)

@@ -1,5 +1,7 @@
 import { delay, HttpResponse, http, type RequestHandler } from 'msw';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
+import { chatFixtureOptions, chatFixtures } from './chatFixtures';
+import { mockChatStream } from './chatStream';
 import { accountStatus, user, workspaces } from './db';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
 
@@ -74,6 +76,7 @@ export const authScenarios = [
 
 export const mockScenarioOptions = [
   { id: 'none', label: 'None (reset)' },
+  ...chatFixtureOptions,
   { id: 'checkout-free', label: 'Checkout: free account + failure' },
   {
     id: 'deletion-transfer-required',
@@ -110,6 +113,7 @@ export const mockScenarioOptions = [
   { id: 'chat-curate-mismatch', label: 'Chat curate flag disagrees' },
   { id: 'chat-curate-requires-editor', label: 'Chat curate needs edit access' },
   { id: 'collaboration-token', label: 'Collaboration token 503' },
+  { id: 'collab-chaos', label: 'Collaboration: chaos peers join and edit' },
   { id: 'offline', label: 'Browser offline' },
 ] as const;
 
@@ -163,6 +167,8 @@ const sseResponse = (events: unknown[]) => {
 export function getMockScenarioHandlers(
   scenario: MockScenarioId
 ): RequestHandler[] {
+  const chatFixture = chatFixtures.find(({ id }) => id === scenario);
+  if (chatFixture) return [mockChatStream(chatFixture)];
   const failure = failureScenarios.find(({ id }) => id === scenario);
   if (failure) return failureHandlers(failure);
   const auth = authScenarios.find(({ id }) => id === scenario);

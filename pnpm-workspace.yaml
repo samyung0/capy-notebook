@@ -7,6 +7,8 @@ packages:
 injectWorkspacePackages: true
 
 allowBuilds:
+  # Its postinstall only sends install telemetry; nothing to build.
+  "@openuidev/lang-core": false
   # Pulled in by @sentry/vite-plugin. Its postinstall fetches the platform
   # sentry-cli binary, which is what performs the source map upload.
   "@sentry/cli": true

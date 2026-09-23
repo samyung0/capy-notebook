@@ -29,7 +29,7 @@ type documentListItem struct {
 	ID           string                  `json:"id"`
 	Title        string                  `json:"title"`
 	Format       string                  `json:"format"`
-	MaterialKind string                  `json:"materialKind,omitempty"`
+	MaterialKind string                  `json:"materialKind"`
 	Editable     bool                    `json:"editable"`
 	Reason       string                  `json:"reason,omitempty"`
 }

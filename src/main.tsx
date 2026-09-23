@@ -1,3 +1,4 @@
+import './lib/openuiDevtools';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterContextProvider, RouterProvider } from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';

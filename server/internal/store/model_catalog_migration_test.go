@@ -27,7 +27,7 @@ func TestDeepSeekFlashMigrationPreservesPinsRatesAndCapacity(t *testing.T) {
 		INSERT INTO model_configs
 		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
 		  '{"model_slug":"deepseek-v4-flash-vision-exp","enabled":false,"is_default_for":[]}'::jsonb)).*
-		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
+		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled;
 		DELETE FROM model_configs WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
 		UPDATE model_configs SET enabled=true, is_default_for=ARRAY['generate','editor','quiz','ingest'],
 		  micros_per_input_token=177, micros_per_output_token=888, micros_per_cached_input_token=17
@@ -97,7 +97,7 @@ func TestDeepSeekFlashMigrationRefusesConflictingCatalog(t *testing.T) {
 	if _, err := tx.Exec(ctx, `INSERT INTO model_configs
 		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
 		  '{"model_slug":"deepseek-v4-flash-vision-exp","enabled":false,"is_default_for":[]}'::jsonb)).*
-		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash';
+		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled;
 		UPDATE model_configs SET enabled=true
 	  WHERE provider_slug='deepseek' AND model_slug='deepseek-v4-flash-vision-exp'`); err != nil {
 		t.Fatal(err)

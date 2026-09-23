@@ -15,6 +15,7 @@ export interface Message {
   content: string;
   conversationId: string;
   createdAt: string;
+  errorCode?: string;
   id: string;
   modelDisplayName?: string;
   modelSlug?: string;

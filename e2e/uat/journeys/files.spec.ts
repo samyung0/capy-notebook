@@ -163,7 +163,10 @@ test('text: browser edit automatically publishes durable UTF-8 source', async ({
   await processed(run, fileId, [marker]);
   await openFile(run, run.owner, workspaceId, fileId);
   await run.owner.page
-    .getByRole('button', { exact: true, name: 'Edit source text' })
+    .getByRole('combobox', { exact: true, name: 'Material mode' })
+    .click();
+  await run.owner.page
+    .getByRole('option', { exact: true, name: 'Edit' })
     .click();
   const edited = `${fact}\nThe launch code is CEDAR-42.\n${marker}\n`;
   await run.owner.page

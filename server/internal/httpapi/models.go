@@ -111,7 +111,9 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	for _, item := range items {
 		out.Models = append(out.Models, item.opt)
 	}
-	if selected, ok := findListed(items, out.SelectedModel); ok && selected.Thinking != nil {
+	if slot == models.SlotEditor {
+		out.SelectedThinking = models.ThinkingInstant
+	} else if selected, ok := findListed(items, out.SelectedModel); ok && selected.Thinking != nil {
 		resolved, err := listedCfg(items, out.SelectedModel).ResolveThinking(prefs.Thinking(slot))
 		if err != nil {
 			return nil, hErr(fmt.Errorf("%w: %v", store.ErrModelUnavailable, err))
@@ -219,9 +221,11 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		}
 		stored := prefs.Thinking(slot)
 		if slot == models.SlotEditor {
-			stored = models.ThinkingInstant
+			// Editor calls have a fixed policy, separate from selectable levels.
+			out.Thinking = models.ThinkingInstant
+		} else {
+			out.Thinking, err = cfg.ResolveThinking(stored)
 		}
-		out.Thinking, err = cfg.ResolveThinking(stored)
 		if err != nil {
 			return resolvedLLM{}, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 		}

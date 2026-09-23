@@ -1,7 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useRef, useState } from 'react';
-import { streamChat } from '@/api/chatStream';
+import { chatErrorMessage, streamChat } from '@/api/chatStream';
 import { qk } from '@/api/client';
 import type {
   ActivityBlock,
@@ -22,6 +22,9 @@ export function toChatMessage(row: WireMessage): ChatMessage {
     content: row.content,
     conversationId: row.conversationId,
     createdAt: row.createdAt,
+    error: row.errorCode
+      ? chatErrorMessage({ code: row.errorCode }, m.chat_failed())
+      : undefined,
     id: row.id,
     modelDisplayName: row.modelDisplayName ?? undefined,
     modelSlug: row.modelSlug ?? undefined,
@@ -186,14 +189,26 @@ export function useChatStream(workspaceId: string) {
       const ac = new AbortController();
       abortRef.current = ac;
 
-      const fail = (message: string) => {
+      const fail = (message: string, code?: string) => {
         if (terminal || ac.signal.aborted) return;
         terminal = true;
         complete('error');
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === currentId
-              ? { ...msg, error: message, status: 'error' }
+              ? {
+                  ...msg,
+                  ...(code === 'response_flagged'
+                    ? {
+                        citations: [],
+                        content: '',
+                        currentBlockId: undefined,
+                        currentBlockText: '',
+                      }
+                    : {}),
+                  error: message,
+                  status: 'error',
+                }
               : msg
           )
         );

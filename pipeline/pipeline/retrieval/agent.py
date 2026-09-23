@@ -2,11 +2,12 @@
 
 One user send is one turn. Each streamed model response is either narration
 (if it also calls tools) or the persisted answer (first completed response
-with text and no tools). The answer is a structured JSON list of claims that
-name their passages (``structured.py``); the agent renders the prose itself,
-renumbering citations 1..k in order of first appearance, and streams that prose
-claim by claim. One repair call rewrites a plain-prose answer as JSON; if that
-fails too, the raw text is the answer with no citations.
+with text and no tools). The answer is an OpenUI Lang program whose blocks
+name their passages (``openui.py``); the program streams through as written
+and the citation list follows it, each entry carrying the passage number the
+program cites so the browser numbers the markers 1..k in reading order. Local
+parser recovery keeps usable partial answers and Markdown stays readable;
+unusable output shows an error without another model request.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ from .chunking import estimate_tokens
 from .limits import (
     CURATE_MIN_CONTEXT_WINDOW_TOKENS,
     CURATE_STALL_RESPONSES,
+    CURATE_TOOLS_PER_TURN,
     CURATE_WRITE_ERROR_GRACE,
     CURATE_WRITE_ERROR_GRACE_MAX,
     KNOWLEDGE_TOOLS_PER_RESPONSE,
@@ -49,6 +51,7 @@ from .limits import (
     STOP_CURATE_STALL,
     STOP_ERROR,
     STOP_PLANNING_CAP,
+    STOP_TOOL_CAP,
     STOP_TURN_FAILED,
     TOOLS_PER_RESPONSE,
     TOOLS_PER_TURN,
@@ -57,14 +60,14 @@ from .limits import (
 
 # The curate write tools: an errored call is an attempt at progress.
 WRITE_TOOLS = frozenset({"create_material", "edit_document"})
-from .stream import AssembledResponse, StreamEvent, ToolCall
-from .structured import (
-    JSON_OBJECT,
-    PlainRenderer,
-    StreamRenderer,
-    parse_structured,
-    render_structured,
+from .openui import LangRenderer, PlainRenderer
+from .response_guard import (
+    FLAGGED_CODE,
+    FLAGGED_MESSAGE,
+    ResponseGuard,
+    contains_tool_protocol,
 )
+from .stream import AssembledResponse, StreamEvent, ToolCall
 from .tools import ToolContext, ToolResult, TurnFailed
 
 log = logging.getLogger("capy.retrieval.agent")
@@ -150,6 +153,12 @@ def _client_error(exc: BaseException) -> dict[str, Any]:
 def _busy_error(exc: elitellm.ProviderBusy) -> dict[str, Any]:
     event = events.error(models.BUSY_ERROR, models.BUSY_ERROR_CODE)
     event["retryAfterSeconds"] = models.busy_retry_after_s(exc)
+    return _with_usage(event)
+
+
+def _flagged_error(activity: list[dict[str, Any]]) -> dict[str, Any]:
+    event = events.error(FLAGGED_MESSAGE, FLAGGED_CODE)
+    event["activity"] = activity
     return _with_usage(event)
 
 
@@ -244,6 +253,13 @@ async def _run_turn(
     cited_order: list[int] = []
     block_n = 0
 
+    try:
+        if elitellm.resolve_thinking(spec) in ("", "instant"):
+            raise registry.RegistryError("Chat requires thinking to be enabled.")
+    except registry.RegistryError as exc:
+        yield _with_usage(events.error(str(exc), "model_unavailable"))
+        return
+
     if ctx.curate:
         reason = await _curate_unavailable(ctx, spec)
         if reason:
@@ -323,6 +339,7 @@ async def _run_turn(
     # responses stop changing the ledger, and it is its own stop reason.
     stalled = 0
     stall_stop = False
+    tool_stop = False
     # Errored writes earn the guard extra responses (limits.CURATE_WRITE_ERROR_GRACE).
     write_errors = 0
 
@@ -336,8 +353,9 @@ async def _run_turn(
             stall_limit = CURATE_STALL_RESPONSES + CURATE_WRITE_ERROR_GRACE * min(
                 write_errors, CURATE_WRITE_ERROR_GRACE_MAX
             )
-            tools_off = terminal_call or stalled >= stall_limit
-            if tools_off and not terminal_call:
+            tool_stop = budget.tool_calls_turn >= CURATE_TOOLS_PER_TURN
+            tools_off = terminal_call or tool_stop or stalled >= stall_limit
+            if tools_off and not terminal_call and not tool_stop:
                 stall_stop = True
                 log.warning(
                     "curate stall guard: %d responses completed no todo "
@@ -353,6 +371,7 @@ async def _run_turn(
         active_schemas = None if tools_off else schemas
 
         yield events.phase("planning")
+        guard = ResponseGuard()
         try:
 
             def _count() -> None:
@@ -365,14 +384,19 @@ async def _run_turn(
             # exchange over-counts its captures once; recompute inside compaction
             # if a turn ever fails on that margin.
             image_tokens = capture.image_tokens(ctx.captures, messages)
+            if ctx.curate:
+                ctx.library_evidence.activate(messages, ctx.ledger)
             ledger_message = _ledger_message(ctx, query, final=tools_off)
+            ledger_allowance = ""
             if ledger_message and ctx.curate and not tools_off:
                 remaining = stall_limit - stalled
-                ledger_message["content"] += (
+                ledger_allowance = (
                     f"\nResponses remaining without completing a todo: {remaining}. "
                     "Batch needed reads and page captures, then write from the evidence "
-                    "already read. Searching does not reset this allowance."
+                    "already read. Searching does not reset this allowance. "
+                    f"Tool calls remaining this turn: {CURATE_TOOLS_PER_TURN - budget.tool_calls_turn}."
                 )
+                ledger_message["content"] += ledger_allowance
             ledger_tokens = (
                 estimate_tokens(str(ledger_message["content"])) if ledger_message else 0
             )
@@ -414,6 +438,12 @@ async def _run_turn(
             if _client_gone(client):
                 budget.stop_reason = STOP_CLIENT_GONE
                 return
+            if ctx.curate:
+                # Compacted IDs/summaries cannot stand in for retained full reads.
+                ctx.library_evidence.activate(messages, ctx.ledger)
+                ledger_message = _ledger_message(ctx, query, final=tools_off)
+                if not tools_off:
+                    ledger_message["content"] += ledger_allowance
             request_messages = capture.inject_images(
                 _inject_ledger(
                     pending.inject(messages, pending_message), ledger_message
@@ -448,12 +478,6 @@ async def _run_turn(
                         if terminal_call
                         else accounting.PURPOSE_AGENT
                     ),
-                    # With tools offered, json_object made GLM skip the search
-                    # and invent an answer; the prompt rule carries the format.
-                    # A curate answer is plain prose, so it never asks for JSON.
-                    response_format=(
-                        None if ctx.curate or not tools_off else JSON_OBJECT
-                    ),
                 )
             )
 
@@ -470,15 +494,14 @@ async def _run_turn(
             renderer = (
                 PlainRenderer()
                 if ctx.curate
-                else StreamRenderer(lambda: len(ctx.citations))
+                else LangRenderer(lambda: len(ctx.citations))
             )
-            # Text is held back until its shape is known: a JSON answer streams
-            # as rendered prose from its first brace; plain prose (narration, or
-            # an answer that ignored the format) is emitted once the response
-            # ends, so the browser never sees text the turn will replace. The
-            # [k] markers are renumbered, so the citation list follows them.
+            # Text is held back until its shape is known: a program streams from
+            # its first statement; plain prose (narration, or an answer that
+            # ignored the format) is emitted once the response ends. The citation list
+            # grows as statements complete and is settled in reading order.
             started = False
-            sent_order = 0
+            sent_citations: list[dict[str, Any]] = []
             try:
                 while True:
                     ev = await pending_q.get()
@@ -486,18 +509,16 @@ async def _run_turn(
                         break
                     if ev.kind != "text" or not ev.text:
                         continue
-                    prose = renderer.push(ev.text)
+                    prose = renderer.push(guard.push(ev.text))
                     if prose and not _client_gone(client):
                         if not started:
                             yield events.block_start(block_id)
                             started = True
-                        if len(renderer.order) > sent_order:
-                            sent_order = len(renderer.order)
+                        if len(renderer.order) > len(sent_citations):
+                            sent_citations = _ordered_citations(ctx, renderer.order)
                             citation_version += 1
                             yield events.citations(
-                                _ordered_citations(ctx, renderer.order),
-                                citation_version,
-                                final=True,
+                                sent_citations, citation_version, final=True
                             )
                         yield events.block_delta(block_id, prose)
                 assembled = await asyncio.shield(finisher)
@@ -547,7 +568,7 @@ async def _run_turn(
             return
         except Exception as exc:
             log.exception("agent step failed")
-            event = _client_error(exc)
+            event = _flagged_error(activity) if guard.flagged else _client_error(exc)
             if not _client_gone(client):
                 yield event
             budget.stop_reason = STOP_ERROR
@@ -562,6 +583,16 @@ async def _run_turn(
             budget.stop_reason = STOP_CLIENT_GONE
             return
 
+        if guard.flagged or contains_tool_protocol(assembled.text):
+            budget.stop_reason = STOP_ERROR
+            yield _flagged_error(activity)
+            return
+
+        # Complete a harmless suffix that looked like the start of a marker.
+        tail = renderer.push(guard.finish())
+        if tail and started:
+            yield events.block_delta(block_id, tail)
+
         calls = assembled.tool_calls
         text = assembled.text.strip()
         state = accounting.current()
@@ -572,7 +603,7 @@ async def _run_turn(
             calls = []
         if calls:
             tail = renderer.finish()
-            narration = renderer.text if renderer.json_shaped else assembled.text
+            narration = renderer.text if renderer.answer_shaped else assembled.text
             if narration.strip():
                 if not started:
                     yield events.block_start(block_id)
@@ -659,30 +690,18 @@ async def _run_turn(
                 # No deltas reached us (a non-streaming adapter); render whole.
                 renderer.push(assembled.text)
             tail = renderer.finish()
-            if renderer.json_shaped and renderer.text and not renderer.invalid:
-                # Streamed as rendered prose; a JSON that did not close keeps
-                # the prose shown so far rather than a second answer. A closed
-                # object with an invalid shape is repaired below.
-                if not renderer.complete:
-                    log.warning(
-                        "structured answer did not parse; keeping streamed prose"
-                    )
+            if renderer.answer_shaped:
                 if not started:
                     yield events.block_start(block_id)
                     started = True
                     yield events.block_delta(block_id, renderer.text)
                 elif tail:
                     yield events.block_delta(block_id, tail)
-                answer, cited_order = renderer.text, list(renderer.order)
+                answer, cited_order = renderer.text, renderer.reading_order()
             else:
-                if renderer.invalid:
-                    log.warning("structured answer had an invalid shape; repairing")
-                answer, cited_order = await _repair_answer(
-                    request_messages, assembled.text, ctx, spec, budget
-                )
-                sent_order = 0
-                # A repeated block_start resets whatever prose was streamed
-                # before the bad entry arrived; the repaired text replaces it.
+                # Plain Markdown is already usable. Malformed programs above
+                # keep their local parser recovery; neither path calls the model again.
+                answer, cited_order = assembled.text, renderer.reading_order()
                 yield events.block_start(block_id)
                 started = True
                 yield events.block_delta(block_id, answer)
@@ -691,23 +710,35 @@ async def _run_turn(
                 # No citations in curate mode: the attribution the user sees is
                 # the provenance footer on each created material. An answer the
                 # stall guard forced still reports the guard.
-                budget.stop_reason = STOP_CURATE_STALL if stall_stop else STOP_ANSWER
+                budget.stop_reason = (
+                    STOP_TOOL_CAP
+                    if tool_stop
+                    else STOP_CURATE_STALL
+                    if stall_stop
+                    else STOP_ANSWER
+                )
                 break
+            cited = [n for n in cited_order if 1 <= n <= len(ctx.citations)]
             final_citations = await citation_regions.refine(
-                ctx.workspace_id,
-                [
-                    ctx.citations[n - 1]
-                    for n in cited_order
-                    if 1 <= n <= len(ctx.citations)
-                ],
+                ctx.workspace_id, [ctx.citations[n - 1] for n in cited]
             )
-            if not (
-                0 < sent_order == len(cited_order)
-            ) or final_citations != _ordered_citations(ctx, cited_order):
+            # Refinement rebuilds the dicts, so the passage number goes back on.
+            for citation, n in zip(final_citations, cited, strict=True):
+                citation["n"] = n
+            # The final list is sent whenever it differs from the live one, and
+            # at least once, so the relay always persists the answer's own list.
+            if final_citations != sent_citations or not sent_citations:
                 citation_version += 1
                 yield events.citations(final_citations, citation_version, final=True)
             budget.stop_reason = STOP_ANSWER
             break
+        if not ctx.curate:
+            budget.stop_reason = STOP_ERROR
+            await _record_searches(ctx, cited_order)
+            yield _with_usage(
+                events.error("The model returned an empty answer.", "invalid_answer")
+            )
+            return
         # No text and no tool calls. In curate that is one wasted response, not
         # the end of the turn: it completes no todo, so it counts against the
         # stall guard and the loop asks again. Once tools are already off there
@@ -718,7 +749,11 @@ async def _run_turn(
             stalled += 1
             continue
         budget.stop_reason = budget.stop_reason or (
-            STOP_CURATE_STALL if stall_stop else STOP_PLANNING_CAP
+            STOP_TOOL_CAP
+            if tool_stop
+            else STOP_CURATE_STALL
+            if stall_stop
+            else STOP_PLANNING_CAP
         )
         break
 
@@ -788,52 +823,13 @@ def _inject_ledger(
 
 
 def _ordered_citations(ctx: ToolContext, order: list[int]) -> list[dict[str, Any]]:
-    """The answer's citation list: used passages only, in [k] order."""
+    """The answer's citation list: used passages only, in the order the
+    markers are numbered, each carrying the passage number it stands for."""
     return [
-        ctx.citations[n - 1].as_citation()
+        {**ctx.citations[n - 1].as_citation(), "n": n}
         for n in order
         if 1 <= n <= len(ctx.citations)
     ]
-
-
-async def _repair_answer(
-    request_messages: list[dict[str, Any]],
-    raw: str,
-    ctx: ToolContext,
-    spec: models.ModelConfig,
-    budget: TurnBudget,
-) -> tuple[str, list[int]]:
-    """One tools-off JSON call that rewrites a plain-prose answer as claims.
-
-    The original prose was never streamed, so whichever text comes back here
-    is the one the browser sees. A second failure keeps the raw text with no
-    citations; the failure is logged with that text.
-    """
-    repair = [
-        *request_messages,
-        {"role": "assistant", "content": raw},
-        {"role": "user", "content": chat_prompts.REPAIR_PROMPT},
-    ]
-    budget.completion_calls += 1
-    try:
-        assembled = await models.stream_agent_response(
-            repair, model=spec, tools=None, response_format=JSON_OBJECT
-        )
-    except Exception:
-        log.warning("structured answer repair call failed", exc_info=True)
-        return raw, []
-    budget.reported_input_tokens += assembled.usage.input_tokens
-    budget.cached_read_tokens += assembled.usage.cached_read_tokens
-    budget.cache_write_tokens += assembled.usage.cache_write_tokens
-    budget.reasoning_tokens += assembled.usage.reasoning_tokens
-    items = parse_structured(assembled.text)
-    if items is None:
-        log.warning(
-            "structured answer repair did not parse; keeping raw prose: %r",
-            assembled.text[:2000],
-        )
-        return raw, []
-    return render_structured(items, len(ctx.citations))
 
 
 async def _record_searches(ctx: ToolContext, cited_order: list[int]) -> None:
@@ -989,6 +985,10 @@ async def _run_tools(
     for call, result in ordered:
         numbered = tools.assign_citations(ctx, result.passages)
         text = tools.limit_tool_result(tools.render_result(result, numbered))
+        if ctx.curate:
+            args = _parse_args(call.arguments)
+            ctx.library_evidence.observe(call.name, args, result, text, ctx.ledger)
+            ctx.library_evidence.wrote(call.name, args, result)
         definition = tools.contract.definition(call.name)
         if definition and definition["retention"] in ("full", "cited_passages"):
             ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
@@ -1019,7 +1019,11 @@ def _limit_for(
             "or search again in the next step."
         )
     if curate:
-        # No per-turn count in curate mode: a whole set of materials is one turn.
+        if budget.tool_calls_turn >= CURATE_TOOLS_PER_TURN:
+            return (
+                f"This turn already used its {CURATE_TOOLS_PER_TURN} tool-call limit. "
+                "Report the materials created and any remaining work."
+            )
         if accepted_here >= KNOWLEDGE_TOOLS_PER_RESPONSE:
             return (
                 f"This response already used its {KNOWLEDGE_TOOLS_PER_RESPONSE} "

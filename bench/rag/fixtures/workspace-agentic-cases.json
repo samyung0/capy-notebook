@@ -1,0 +1,627 @@
+{
+  "schema": "workspace-agentic-cases-v1",
+  "workspace_id": "odl_eval_odl_nocaption",
+  "candidate": {
+    "name": "lexical-protected-abstention",
+    "ceiling": 0.6,
+    "top_k": 5,
+    "per_file_cap": 4,
+    "candidates": 40,
+    "empty_text": "This search found no sufficiently close passage in the selected sources. It does not prove the answer is absent. Use a named source, identifier, or document read when there is a concrete lead; otherwise report what could not be supported."
+  },
+  "protocol": {
+    "primary": "source-supported final answer and citations after the complete agent loop",
+    "cases": "Previously inspected diagnostic sources and queries, not an independent heldout sample. Original ODL split labels retained only as provenance.",
+    "gold_fields_never_sent_to_agent": [
+      "source_ids",
+      "required_claims",
+      "evidence",
+      "rubric_notes",
+      "runtime_answerability",
+      "tags",
+      "family",
+      "split"
+    ],
+    "pair_order": "Alternate baseline/candidate order by case index; one complete turn at a time.",
+    "model": "glm-5.3-flash:cloud",
+    "thinking": "low",
+    "temperature": 0,
+    "repeats": "One pass across all cases, then one prespecified paired repeat each of workspace-lex-mayor and workspace-offtopic-sourdough.",
+    "notes": "Lab has no notes. File-scope controls remain active. All database sessions are read-only.",
+    "dynamic_topk": "Only eligible for a later bounded test if source-rebound evidence appears at ranks 6-10."
+  },
+  "cases": [
+    {
+      "id": "odl-agentic-001",
+      "split": "development",
+      "family": "normal-spread",
+      "language": "en",
+      "question": "What percentage of values fall within one standard deviation of the mean in a normal distribution?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-chapter-1"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "68% lie within one standard deviation above or below the mean."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-chapter-1",
+          "pdf_page": 2,
+          "literal_source_text": "refore it has the same units as the values.\nIn a normal distribution, 68% of all the values in a sample fall within \n±1 standard deviation of the mean, and this increases to 95% within ±2 \nstandard deviations of the mean (Figure 1.2).\nFigure 1.1 A normal distribution.\nFigure 1.2 Two different normal distribution curves – for both, 68% of the values fall \nwithin 1 standard deviation of the mean, and 95% fall within 2 standard deviations.\nmean\nValue (for example, height)\nFrequency\n(for example, number of\nstudents at each height)\nmean\nmean\nValue\n1s\nValue\nFrequency\nFrequency\n=68%\n68%\n95%\n+–\n2s\n=95%\n+–\nThese percentages are the same for all shapes of normal distribution \ncurves. The standard deviation tells us how much the data spreads out each \nside of the mean – that is, whether the distribution is tall and narrow or \nwide and ﬂ at – and this allows us to compare sets of data.\n1 In Figure 1.2, which sample shows the greatest variation?\nCalculating the standard deviation\nThe symbol for standard deviation is s. Remember that s is normally \ncalculated for a sample from the population. Standard deviation is calculated \nby entering the data into a scientiﬁ c o",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__en__biology-ib-chapter-1.pdf",
+          "text_locator_pdf_sha256": "8cd19abeee7dcb324a9cc8a0809aa4b8efa285b1cf29aa065f9231d8ee9c229e"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 0,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "odl-agentic-006",
+      "split": "heldout",
+      "family": "newspaper-harbour",
+      "language": "en",
+      "question": "What happened at the city council harbour vote?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__newspaper_scan"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "scan",
+        "partial_information"
+      ],
+      "required_claims": [
+        "The city council voted on the harbour plan the previous night."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__newspaper_scan",
+          "pdf_page": 1,
+          "source_cells_or_image_transcription": {
+            "headline": "Harbour vote shocks city",
+            "body": "City council voted last night on the harbour plan."
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "9a4d01e6b17f17d336eb4c56d8bcdd9be25f63d13c1cfdfab83c7d385d405ef1",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__newspaper_scan-p1.png",
+              "sha256": "e5831906530179d1157cf65a3a9a6c2e194fe062d5e780f92c73853bc62de4d5"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions.json",
+        "index": 18,
+        "sha256": "12aec1b7ee5dc6ba54d8865f121651ccda17d1ff0b81fbf841776565fdac1cdd",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "Do not invent a decision outcome from the headline. Synthetic scan, not a real news report.",
+        "The scan does not state approval/rejection, vote counts, or the city name. These omissions need not be volunteered, but no such detail may be invented."
+      ],
+      "runtime_answerability": "source_unavailable"
+    },
+    {
+      "id": "odl-agentic-014",
+      "split": "heldout",
+      "family": "maria-bridge",
+      "language": "es",
+      "question": "En el artículo sobre si los LLMs distinguen las variedades del español se menciona un proyecto cuyos modelos RoBERTa y GPT-2 se entrenaron con el archivo web de la Biblioteca Nacional. Según el otro documento, ¿qué centro lanzó ese proyecto y en qué año?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__variedades-espanol",
+        "rag__es__sesgo-linguistico-digital"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_source"
+      ],
+      "required_claims": [
+        "The project identified in the varieties paper is MarIA.",
+        "The other source associates it with Barcelona Supercomputing Center/Centro Nacional de Supercomputación and its start in 2021."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 2,
+          "literal_source_text": "trimento de otras.  \nEjemplos de ello los encontramos en modelos \ndel proyecto MarIA como RoBERTa y GPT-2, \ncuyos datos de entrenamiento, además de los del \ninglés, se obtuvieron de la Biblioteca Nacional \nEspañola, representando en un 50% a la variedad \nespañola peninsular (Muñoz-Basols et al. 2024: \n631). Lo mismo ocurre con el proyecto \nCEREAL (Corpus del Español REAL), dedicado \na compilar y a anotar documentos en español \nrecopilados de la web, puesto que la mayoría de \nsus datos, extraídos de OSCAR (Open Super-\nlarge \nCrawled \nALMAnaCH \nRepository), \nrepresentaban la variedad de español peninsular \n(España-Bonet y Barrón-Cedeño 2024: 3691).  \nEsta desproporción de datos no solo afecta a la \ncapacidad del modelo para interpretar y generar \nnuevos textos y",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__variedades-espanol.pdf",
+          "text_locator_pdf_sha256": "6e9ee0972e0932c99b3d26e2fb9a8618edfbf06b883c8c3c3f872aa76d43cb24"
+        },
+        {
+          "source_id": "rag__es__sesgo-linguistico-digital",
+          "pdf_page": 7,
+          "literal_source_text": ".\nRAE y ASALE, Telefóni-\nca, Google, X, Microsoft, \nAmazon, Facebook.\nMarIA\n(iniciado en 2021)\nPrimeros MLM para el \nespañol desarrollados con \nGPT-2.\n- Crear MLM entrenados \nen español.\nCentro Nacional de Super-\ncomputación \nBarcelona \n(CNS) - Supercomputing \nCenter (BSC), Biblioteca \nNacional de España.\nILENIA (impulso de las \nLenguas e Inteligencia \nArtificial). \nDentro \nde \nILENIA:\n- NEL-AINA (catalán) \n- NEL-VIVES (valenciano)\n- NEL-GAITU (euskera)\n- NEL-NÓS (gallego)\nImpulsar en España la \nnueva economía digi-\ntal basada en el lenguaje \nnatural que promueva el \nespañol y las lenguas coo-\nficiales (catalán, euskera, \ngallego y valenciano).\n- Recursos multilingües \nde texto, voz y traducción \nautomática en ",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__es__sesgo-linguistico-digital.pdf",
+          "text_locator_pdf_sha256": "a86f91bf87765a23a9e0b27b32c8b260242ffbc4a94de61074b57b7d856c0cbb"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-es-bridge.json",
+        "index": 0,
+        "sha256": "3ba82a4b87a1b457ba29d61f0ba1e6d2016e2a82ba62356460ce1b217919d03d",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "The National Library of Spain may be named as collaborator; BSC/CNS and2021 are required."
+      ],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "odl-agentic-018",
+      "split": "heldout",
+      "family": "wikipedia-corpus-bridge",
+      "language": "fr",
+      "question": "Quel dump de Wikipédia française CamemBERT utilise-t-il, et combien de tokens contient le sous-corpus français de WikiNER ?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__fr__camembert-taln",
+        "rag__fr__wikiner-fr-gold"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_source",
+        "cross_language"
+      ],
+      "required_claims": [
+        "CamemBERT uses the official French Wikipedia dump from April 2019.",
+        "The original French WikiNER subcorpus has approximately 3.5 million tokens."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__fr__camembert-taln",
+          "pdf_page": 3,
+          "literal_source_text": " entre OSCAR, peu ﬁltré voire bruité, et WIKIPEDIA, totalement édité.\n— Wikipedia, un corpus homogène en termes de genre et de style. Nous utilisons le dump français\nofﬁciel de Wikipedia (avril 2019). Le corpus est prétraité à l’aide de WikiExtractor 2.\nAﬁn de pouvoir comparer équitablement l’impact du type de données de pré-entraînement, nous\ncréons des échantillons aléatoires à partir de OSCAR et CCNET, et ce au niveau du document,\nde la même taille que celle de notre WIKIPEDIA, soit 4Go de texte brut non compressé. Ceci nous\npermet d’étudier également les effets de la taille des données d’entraînement sur les performances\ndes modèles.\n2. https://github.com/attardi/wikiextractor\n56\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__camembert-taln.pdf",
+          "text_locator_pdf_sha256": "5499969bf0f52657722c22220ee8f6f7fe763629d438a9a67d376b05e115dff3"
+        },
+        {
+          "source_id": "rag__fr__wikiner-fr-gold",
+          "pdf_page": 1,
+          "literal_source_text": "PER), location (LOC), organi-\nzation (ORG), and miscellaneous (MISC). All ten\nsub-corpora have the same size, comprising ap-\nproximately 3.5 million tokens, making it a very sub-\nstantial dataset. The annotations were produced\nin a semi-supervised manner, and there was no\nmanual verification for the corpus. Therefore, it is\nconsidered a silver standard corpus.\nIn this article, we describe the manual correction\nprocess implemented to create a gold standard\nversion of WikiNER. We will refer to this new cor-\npus as WikiNER-fr-gold in the following discussion.\nThis work involved manual correction of 20% of\nthe French portion of WikiNER, which we will re-\nfer to as WikiNER-fr. WikiNER-fr-gold comprises\n26,818 senten",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__fr__wikiner-fr-gold.pdf",
+          "text_locator_pdf_sha256": "d8c5b3f432b8c928224816ed8f155983b5e53ad48ac4e906f9d1c0c8918716ca"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-fr-bridge.json",
+        "index": 2,
+        "sha256": "586b47a3e3d2e3ea67b6984aa71b495a238fdc47b9302424be7c889c9ee92e59",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [
+        "700,000 tokens belongs to the revised20% gold subset; an answer may distinguish both, but must not substitute that figure for the original French subcorpus."
+      ],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "odl-agentic-025",
+      "split": "heldout",
+      "family": "mandarin-targets",
+      "language": "zh",
+      "question": "推普政策的两个时间目标是什么",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__zh_HK"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary",
+        "dates"
+      ],
+      "required_claims": [
+        "Initial popularization by 2010:70% of school/working-age people able to communicate in Mandarin.",
+        "Comprehensive popularization by 2050:90% able to communicate; dialect barriers move from initially eliminated to eliminated."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh_HK",
+          "pdf_page": 5,
+          "literal_source_text": "鋼、⺩王宇紅, 2007；市川斟, ⼩小松嵐, 2008； 陳章太, 2010)。在這個會議上，兩個推普\n⼯工作的⺫⽬目標被提出，⾸首先是“到2010年初步普及普通話”，相關的定義是“全國⼊入學年齡\n及⼯工作年齡階段有70%的⼈人能⽤用普通話交際，⽅方⾔言在交際中造成隔閡初步消除”，其次\n則是“2050年全⾯面普及普通話”，定義是“全國⼊入學年齡段及⼯工作年齡階段的⼈人有90%能\n⽤用普通話交際，⽅方⾔言在交際中造成的隔閡消除”。兩個⺫⽬目標的主要變化在於從普通話使\n⽤用群體的⽐比例從70%上升到90%，⽅方⾔言造成的隔閡從“初步消除”到完全地“消除”(詳⾒見李\n鋼、⺩王宇紅, 2007)。!\n!\n從這些提法中觸及的字眼與⽐比例，可以看到其針對對象。⾸首先，“⽅方⾔言”，推普並不\n    \n是針對全國所有⾮非以使⽤用北京話或北⽅方語系的群體，⽽而僅僅是針對“⽅方⾔言”亦即漢族內部\n使⽤用其它區域語⾔言的族群。其次，“90%”就可以算全覆蓋了。原因是2005及2010年的\n全國⼈人⼝口抽樣調查均顯⽰示漢族⼈人⼝口約佔全國90%，兩者正好相對應，推普政策並不以\n少數⺠民族為⺫⽬目標。這從另⼀一個⾓角度說明，推普的⺫⽬目的，是打造漢族內部的統⼀一⾝身份。\n統⼀一⾝身份的⺫⽬目標，事實上是⽐比簡單的消除不同區域間語⾔言交流上的不便要求得更⾼高。\n儘管與推普⼯工作有著各種聯繫的好些語⾔言學者都在著作中多次表⽰示過，推普只是為了\n⽅方便溝通交流，並不是要“消滅⽅方⾔言”(例如陳章太, 2010；詹伯慧, 2011)，但事實上，\n相關政策在執⾏行過程中的表現並並⾮非如此。例如，從李鋼、⺩王宇紅(2007)便在疏理各\n4\n???? = Thinking Hong Kong, Vol. 6 [2017], Art. 3\nhttps://commons.ln.edu.hk/thinkinghk/vol6/iss1/3\n",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-regression/prepared/rag__zh__zh_HK.pdf",
+          "text_locator_pdf_sha256": "37ee98f3cc724c6eb69a8fc8120e87ddccdf8c7169a57339402daa12311e9211"
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-zh.json",
+        "index": 9,
+        "sha256": "10293b918cc05880ae48a95966102db87701090b7ab3a901e56d373083a68bbb",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [],
+      "runtime_answerability": "source_unavailable"
+    },
+    {
+      "id": "odl-agentic-028",
+      "split": "heldout",
+      "family": "hominid-fire",
+      "language": "zh",
+      "question": "哪一种古人类最早开始使用火？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-sample-16-pages"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "cross_language",
+        "table",
+        "figure"
+      ],
+      "required_claims": [
+        "Homo erectus is the first hominid listed as using fire."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-sample-16-pages",
+          "pdf_page": 13,
+          "source_cells_or_image_transcription": {
+            "TableD.2 Homo erectus": "H. erectus were the first hominids to use fire",
+            "Lived": "1.8–0.3mya"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__biology-ib-sample-16-pages-p13.png",
+              "sha256": "d057d406a93d0854c9c6e24ac1620c9dc201384222752af744210977db9bd292"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-en-asked-zh.json",
+        "index": 14,
+        "sha256": "a5fd27e950c593dbec77643e9edf6e1f05fc18a5eb8874d4dfbcfe71b4133c93",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "odl-agentic-034",
+      "split": "heldout",
+      "family": "feedback-task",
+      "language": "zh",
+      "question": "跨语言反馈评语论文提出的 CLFCG 任务解决什么理解障碍？它构建的数据集把哪种学习者语句与哪种反馈语言配对？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "ccl-feedback"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "ordinary"
+      ],
+      "required_claims": [
+        "Non-native learners may struggle to understand target-language feedback, especially unfamiliar linguistic knowledge.",
+        "The task generates feedback in the learner’s native language; the dataset pairs English learner sentences with Chinese feedback."
+      ],
+      "evidence": [
+        {
+          "source_id": "ccl-feedback",
+          "pdf_page": 1,
+          "literal_source_text": "yuanan.blcu@gmail.com\n摘要\n反馈评语生成任务旨在为语言学习者的产出提供纠偏及解释性的评价，促进学习者写\n作能力的发展。现有研究主要聚焦于单语的反馈评语生成，如为英语学习者提供英文\n反馈评语，但这忽略了非母语学习者可能面临的理解障碍问题，尤其当评语中存在陌\n生的语言知识时。因此，本文提出跨语言反馈评语生成任务（CLFCG），目的是为语\n言学习者生成母语的反馈评语。本研究构建了首个英-中跨语言反馈评语生成数据集，\n该数据集包含英语学习者产出的语句与相应的中文反馈评语，并探索了基于流水线的\n预训练语言模型引导增强生成方法，将修正编辑、线索词语和语法术语等作为输入的\n附加信息，引导和提示生成模型。实验结果表明，附加引导信息的预训练语言模型流\n水线方法在自动评估（BLEU: 50.32）与人工评估（Precision: 62.84）上表现良好。本\n文对实验结果进行了深入分析，以期为跨语言反馈评语生成任务提供更多见解。\n关键词：智能辅助语言学习；反馈评语生成；跨语言文本生成；预训练语言模型\nCross-Lingual Feedback Comment Generation for Language\nLearners\nJiyuan An1,2, Lin Zhu1,2, Erhong Yang1,2*\n1National Language Resources Monitoring and Research Center for Print Media,\nBeijing Language and Culture University, Beijing\n2School of Information Science, Beijing Language and Culture University, Beijing\njiyuanan.blcu@gmail.com\nAbstract\nThe task of generating feedback comments is designed to furnish corrective and in-\nterpretative evaluations for the outputs of language learners, thereby facilitating the\nenhancement of their writing competencies. Predominantly, existing studies have con-\ncentrated on monolingual feedback generation, such as providing feedback in English\nfor learners of English. However, this approach neglects the comprehension ba",
+          "review_method": "PDF text from font-map repair used only as a locator; gold checked against original source pixels",
+          "coordinate_pdf_sha256": "6a67443bc89ae7d493464d1d2610f100b192745b6428909e8fc1fc889504b1a1",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-native-measured/extended-prefilter-r1/ccl-feedback/repaired.pdf",
+          "text_locator_pdf_sha256": "f0a42131121253c06ffd75b9b638c443c05adb330d25cd422c9d53c942008e0a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/ccl-feedback-p1-qa.png",
+              "sha256": "37280f2950747a6f65a5ea637f76bd2a3b3eb544a07f1f1f4a303eabf4fb1350"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "odl-agentic-055",
+      "split": "heldout",
+      "family": "rlhf-human-work",
+      "language": "zh",
+      "question": "在RLHF講義的「RLHF vs Instruction Fine-tuning」圖中，為何右側標示人類比較輕鬆？請說明兩側的人類分別要產生什麼訓練資料。",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__zh__zh_TW_llm"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "figure",
+        "comparison"
+      ],
+      "required_claims": [
+        "Instruction fine-tuning requires humans to write question-and-answer demonstrations.",
+        "RLHF asks humans to compare/rank model-generated responses; in the example answer2 is judged better.",
+        "The diagram labels producing demonstrations as more work and ranking as easier."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__zh__zh_TW_llm",
+          "pdf_page": 6,
+          "source_cells_or_image_transcription": {
+            "left": "Human provides question Taiwan highest mountain and answer玉山; 人類比較辛苦",
+            "right": "Model provides two responses; human says答案2比較好; 人類比較輕鬆"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "d55d954482a9a6404b9fe0b120aabf734de1c2045cd1928ba7fa1f544a32c92b",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__zh__zh_TW_llm-p6.png",
+              "sha256": "876534622a064b4040f1c19d27aa56c8626baa9c3529d37852dba69778a66817"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "odl-agentic-061",
+      "split": "heldout",
+      "family": "hongkong-future",
+      "language": "zh",
+      "question": "只根據《香港統計數字一覽2024年版》，香港2025年的全年失業率是多少？",
+      "scope_source_ids": [
+        "hongkong-figures"
+      ],
+      "source_ids": [
+        "hongkong-figures"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "date"
+      ],
+      "required_claims": [
+        "The 2024 edition does not establish2025 annual unemployment.",
+        "Do not substitute its 2023 rate 2.9% for 2025 or predict a value."
+      ],
+      "evidence": [
+        {
+          "source_id": "hongkong-figures",
+          "pdf_page": 8,
+          "literal_source_text": "s\n'000\n勞動人口\n千人\n2023\n3 822.3\n-0.9%\nLabour force\n'000\n失業率\n%\n2023\n 2.9\n—\nUnemployment rate\n實質工資指數（1992 年 9 月 = 100）\n2023\n 126.6\n+0.4%\nReal Wage Index (Sep. 1992 = 100)\n整體出口貨值\n十億港元\n2023\n4,177.4\n+0.1%\nValue of total exports\nHK$ billion\n整體出口貨量指數（2022 年 = 100）\n2023\n 88.4\n-3.2%\nQuantum index of total exports (Year 2022 = 100)\n進口貨值\n十億港元\n2023\n4,645.0\n-0.3%\nValue of imports\nHK$ billion\n進口貨量指數（2022 年 = 100）\n2023\n 90.8\n-3.6%\nQuantum index of imports (Year 2022 = 100)\n按人口平均計算的本地生產總值 — 以當時市價計算@\n港元\n2023\n396,933\n+0.9%\nPer capita GDP at current market prices@\nHK$\n本地生產總值@\n十億港元\n2023\nGDP@\nHK$ billion\n以當時市價計算  At current market prices\n2,991.3\n+1.1%\n以 2021 年環比物量計算  In chained (2021) dollars\n2,851.2\n-0.6%\n國際收支平衡 — 經常賬戶差額@\n十億港元\n2023\n276.8\n—\nBoP — current account balance@\nHK$ billion\n綜",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/hongkong-figures.pdf",
+          "text_locator_pdf_sha256": "c3490cc7c1664ce8e75edcce55898be58dc21fceade53b3c1cbfd7f30411f2d9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/hongkong-figures-p8.png",
+              "sha256": "b36c674ada1b7a0c287bbafe647fb806af73d606082b94c8aeca21ba81784a78"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [],
+      "runtime_answerability": "unanswerable"
+    },
+    {
+      "id": "odl-agentic-063",
+      "split": "heldout",
+      "family": "calor-unlisted-model",
+      "language": "fr",
+      "question": "Uniquement d’après le tableau 1 de l’étude sur les facteurs de complexité et Calor, quel pourcentage de réponses correctes Qwen3.8 Flash obtient-il ?",
+      "scope_source_ids": [
+        "taln-complexity"
+      ],
+      "source_ids": [
+        "taln-complexity"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "table"
+      ],
+      "required_claims": [
+        "Table 1 does not evaluate Qwen3.8 Flash, so its score cannot be supplied.",
+        "Do not infer a Qwen score from another model or claim the model cannot exist."
+      ],
+      "evidence": [
+        {
+          "source_id": "taln-complexity",
+          "pdf_page": 5,
+          "literal_source_text": "tion manuelle pour l’ensemble des 1821 questions composant le\ncorpus.\nModel\ntype\nadapt\n#param\nRouge-L\n% réponses correctes\nCamemBERT\nclassif.\nFT\n335M\n0.82\n78\nT5-LARGE\ngene.\nFT\n738M\n0.81\n77\nFLAN-T5-LARGE\ngene.\nFT\n783M\n0.80\n79\nMT5-LARGE\ngene.\nFT\n1.2B\n0.80\n77\nLLAMA-2\ngene.\nLoRA\n7B\n0.69\n72\nMixtral-8x7b\ngene.\nprompt\n47B\n0.80\n82\nGPT 3.5\ngene.\nprompt\n175B\n0.72\n82\nTABLE 1 – Description des 7 modèles de langage utilisés dans nos expériences avec le score ROUGE-\nL moyen et le pourcentage de réponses annotées comme correctes sur le corpus d’évaluation\nDans l’ensemble, les performances des différents modèles sur notre corpus sont considérablement\nplus basses par rapport à celles rapportées dans des tâches analogues telles que SQuAD 4 ou MultiRC\ndans SuperGLUE 5. Cet écart peut être attribué en partie aux caractéristiques du corpus Calor ,\naux différences entre le corpus d’affinage FQuAD et le corpus d’évaluation Calor comme discuté\nprécédemment, et aussi à l’absence d’optimisation du modèle via hyperparamétrage.\nLes scores ROUGE-L des modèles de génération basés sur T5 et du modèle de classification basé\nsur CamemB",
+          "review_method": "source PDF text; original source pixels checked where separately recorded",
+          "coordinate_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "text_locator_pdf": "bench/parsers/reports/local/2026-09-09-odl-third-pass/inputs/taln-complexity.pdf",
+          "text_locator_pdf_sha256": "bf082a428310d35390cc83cb475094f143642dd8cfc1c165a2144cca85215294",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/taln-complexity-p5.png",
+              "sha256": "e2743fbd22715c38064f650ac44ccda4950896112d8909d1a9e7b99a9f949968"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [],
+      "runtime_answerability": "unanswerable"
+    },
+    {
+      "id": "odl-agentic-064",
+      "split": "heldout",
+      "family": "resnet-table2",
+      "language": "en",
+      "question": "Using only Table 2 of Deep Residual Learning for Image Recognition, what is the standard deviation across runs of the 34-layer ResNet’s top-1 error?",
+      "scope_source_ids": [
+        "resnet"
+      ],
+      "source_ids": [
+        "resnet"
+      ],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "table"
+      ],
+      "required_claims": [
+        "Table 2 reports a top-1 error value but no across-run standard deviation.",
+        "Do not report 25.03% as a standard deviation or assume zero variation."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Table2 visible columns": [
+              "plain",
+              "ResNet"
+            ],
+            "rows": [
+              "18layers",
+              "34layers"
+            ],
+            "34layer ResNet value": "25.03 top-1 error%",
+            "not reported": "across-run standard deviation"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p5.png",
+              "sha256": "eb96acd497beb4b762977d05cfc46a621c70710e4af86eb80bad6191a62406c6"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [],
+      "runtime_answerability": "unanswerable"
+    },
+    {
+      "id": "workspace-lex-mayor",
+      "split": "diagnostic",
+      "family": "affiliation-identifier",
+      "language": "es",
+      "question": "Quiénes son Marina Mayor-Rocher y Pedro Reviriego?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "lexical-risk"
+      ],
+      "required_claims": [
+        "Marina Mayor-Rocher and Pedro Reviriego are coauthors of the paper about distinguishing Spanish varieties.",
+        "Mayor-Rocher is affiliated with Universidad Autónoma de Madrid; Reviriego with Universidad Politécnica de Madrid."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 1
+        }
+      ],
+      "rubric_notes": [
+        "Affiliation numerals are glued to names in this frozen index. Evaluate whether the agent compensates with a title/name search or document read."
+      ],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "workspace-lex-dfki",
+      "split": "diagnostic",
+      "family": "identifier",
+      "language": "en",
+      "question": "What does the German large-language-model report say about DFKI?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__de__grosse-sprachmodelle"
+      ],
+      "answerability": "answerable",
+      "tags": [
+        "lexical",
+        "cross-language"
+      ],
+      "required_claims": [
+        "DFKI is the German Research Center for Artificial Intelligence.",
+        "The report lists DFKI among the organizations involved in implementing OpenGPT-X."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__de__grosse-sprachmodelle",
+          "pdf_page": 17
+        }
+      ],
+      "rubric_notes": [],
+      "runtime_answerability": "answerable"
+    },
+    {
+      "id": "workspace-offtopic-sourdough",
+      "split": "diagnostic",
+      "family": "far-negative",
+      "language": "en",
+      "question": "Using my uploaded sources, how do I make sourdough bread at home?",
+      "scope_source_ids": null,
+      "source_ids": [],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "far-negative"
+      ],
+      "required_claims": [
+        "The searched sources do not provide a sourdough recipe; do not invent one as source-backed."
+      ],
+      "evidence": [],
+      "rubric_notes": [
+        "Outside-source general knowledge is allowed only when explicitly labelled. Avoid claiming that a single search proves workspace-wide absence."
+      ],
+      "runtime_answerability": "unanswerable"
+    },
+    {
+      "id": "workspace-offtopic-revolution",
+      "split": "diagnostic",
+      "family": "lexical-near-negative",
+      "language": "en",
+      "question": "Using my uploaded sources, explain the French Revolution in three sentences.",
+      "scope_source_ids": null,
+      "source_ids": [],
+      "answerability": "unanswerable",
+      "tags": [
+        "missing_evidence",
+        "near-negative"
+      ],
+      "required_claims": [
+        "The French-language NLP papers do not supply a history of the French Revolution; do not cite them as if they do."
+      ],
+      "evidence": [],
+      "rubric_notes": [],
+      "runtime_answerability": "unanswerable"
+    }
+  ]
+}

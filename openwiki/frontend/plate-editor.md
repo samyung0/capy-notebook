@@ -105,6 +105,11 @@ mention autocomplete rather than the document.
 
 ## Editor lifecycle
 
+Materials opened from Create use the same `CenterContent` frame as workspace
+materials, defaulting to View. The `/materials/:id` route retains the app
+sidebar, uses only the navigation back icon before the title, and hides
+workspace actions. A newly created standalone note requests `?mode=edit`.
+
 The interactive path is:
 
 ```text
@@ -115,11 +120,18 @@ CenterContent
             └── Plate + YjsPlugin
                 └── CollaborationProvider
                     ├── NoteToolbar
-                    ├── PlateContent
+                    ├── scroll box
+                    │   ├── PlateContent
+                    │   └── FloatingToolbar (edit only)
                     ├── EditorCommandPalette
-                    ├── FloatingToolbar (edit only)
                     └── AiMenu (edit only)
 ```
+
+`FloatingToolbar` lives inside the scroll box because floating-ui only watches
+scroll on the toolbar's own overflow ancestors; as a sibling of that box it
+stayed pinned while the selected block scrolled away. Its buttons are the same
+`ToolbarButton` the top row uses, so both rows share one icon colour, size and
+hover treatment; the Ask AI button only overrides the square width.
 
 `NoteEditor` requests the room token only for edit/comment mode.
 `NoteEditorCore` owns one garbage-collected `Y.Doc`, configures remote cursor

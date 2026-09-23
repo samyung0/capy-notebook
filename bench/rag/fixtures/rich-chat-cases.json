@@ -1,0 +1,77 @@
+[
+  {
+    "id": "brief",
+    "question": "What is atomicity? Keep it brief.",
+    "evidence": true
+  },
+  {
+    "id": "compare",
+    "question": "Compare atomicity, isolation and durability in a small table, with a source for each row.",
+    "evidence": true
+  },
+  {
+    "id": "tabs",
+    "question": "Explain the transfer example using tabs for atomicity and durability, then give one practical warning.",
+    "evidence": true
+  },
+  {
+    "id": "steps",
+    "question": "Walk me through the transfer as numbered steps, and hide the answer to a quick self-check until I open it.",
+    "evidence": true
+  },
+  {
+    "id": "code",
+    "question": "Show a fenced SQL transaction example in Markdown and explain which guarantee it demonstrates.",
+    "evidence": true
+  },
+  {
+    "id": "math",
+    "question": "Show the balance equation before and after the transfer, using inline math, then list the key facts.",
+    "evidence": true
+  },
+  {
+    "id": "cards",
+    "question": "Give me three concise concept cards, then optional detail in an accordion.",
+    "evidence": true
+  },
+  {
+    "id": "bar",
+    "question": "Chart Alice and Bob's balances before and after the transfer as a grouped bar chart in USD. Include sources.",
+    "evidence": true
+  },
+  {
+    "id": "horizontal",
+    "question": "Use a horizontal bar chart to compare Alice and Bob's starting balances in USD.",
+    "evidence": true
+  },
+  {
+    "id": "pie",
+    "question": "Show the starting allocation of the total balance as a pie chart and as one stacked bar.",
+    "evidence": true
+  },
+  {
+    "id": "line",
+    "question": "Plot the three hourly account-total measurements as a line chart, and show the same measurements as an area chart.",
+    "evidence": true
+  },
+  {
+    "id": "scatter",
+    "question": "Plot transaction count against latency as a scatter chart with the provided point labels.",
+    "evidence": true
+  },
+  {
+    "id": "questions",
+    "question": "I want you to create study materials. What do you need to know from me first? Ask up to three questions with choices.",
+    "evidence": false
+  },
+  {
+    "id": "free_text",
+    "question": "Ask me which topic I struggle with, using a free-text question rather than suggested choices.",
+    "evidence": false
+  },
+  {
+    "id": "chinese",
+    "question": "请用中文简要解释原子性和持久性，引用资料，并问我想先练习哪个概念。",
+    "evidence": true
+  }
+]

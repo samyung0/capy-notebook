@@ -17,6 +17,7 @@ import {
 import { Separator } from '@/components/ui/Separator';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
 import { Input, InputTitle } from '../../components/ui/Input';
 import { MATERIALMODE_ICON } from '../materials/materialIconMappings';
@@ -115,6 +116,7 @@ export function ShareDialog({
   onShareRoleChange,
   canManageMembers = false,
   embedded = false,
+  containerClassName,
 }: {
   embedded?: boolean;
   open: boolean;
@@ -132,6 +134,7 @@ export function ShareDialog({
   canManageMembers?: boolean;
   shareRole?: SharedRole;
   onShareRoleChange?: (role: SharedRole) => void | Promise<unknown>;
+  containerClassName?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const [savingField, setSavingField] = useState<SavingField | null>(null);
@@ -224,7 +227,7 @@ export function ShareDialog({
 
   const content = (
     <>
-      <div className="flex flex-col gap-6">
+      <div className={cn('flex flex-col gap-6', containerClassName)}>
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
             <InputTitle>{m.share_visibility()}</InputTitle>

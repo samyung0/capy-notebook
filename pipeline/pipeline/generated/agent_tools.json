@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "operations": [
     "source.read",
     "material.read",
@@ -96,7 +96,7 @@
     {
       "name": "describe_documents",
       "version": 1,
-      "description": "Return the detailed summaries of up to eight documents. Call after list_sources when the short descriptors are not enough to decide, or when the question is about what a document covers as a whole.",
+      "description": "Return the detailed summaries of up to eight source files or notes. Call after list_sources when the short descriptors are not enough to decide, or when the question is about what a document covers as a whole.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -130,7 +130,7 @@
     {
       "name": "read_document",
       "version": 1,
-      "description": "Read a document in order from a given chunk index. Use after search when a passage needs its surrounding argument, or to walk a short document end to end.",
+      "description": "Read a source file or note in order from a given chunk index. Use after search when a passage needs its surrounding argument, or to walk a short document end to end.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -169,7 +169,7 @@
     {
       "name": "capture_page",
       "version": 1,
-      "description": "Render one source page, or a boxed region of it, and read it directly as an image. Use the file_id and 1-based page shown with a passage; only pages a shown passage cites can be captured. bbox is optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin top-left, to zoom into a table, figure or formula. Costs one tool call and a few seconds.",
+      "description": "Render one source page, or a boxed region of it, and read it directly as an image. Use the file_id and 1-based page shown with a passage; only pages a shown passage cites can be captured. bbox is optional: [x0, y0, x1, y1] on a 0-1000 grid over the page, origin top-left, to zoom into a table, figure or formula. An uploaded image is one page: capture page 1 to see it; on a low-resolution image a bbox crops without adding detail, so the zoom may not help. Costs one tool call and a few seconds.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -323,7 +323,7 @@
       "requiredOperations": [
         "library.read"
       ],
-      "retention": "none"
+      "retention": "used_excerpts"
     },
     {
       "name": "capture_knowledge_page",
@@ -372,33 +372,55 @@
     {
       "name": "create_ledger",
       "version": 1,
-      "description": "Curate mode: write the turn's progress ledger before any material is written. `body` restates what the learner asked for; `todos` lists the materials or sections to produce, one short line each. The ledger is shown back on every response; create_material and edit_document mark a todo done through their `todo` id. One call per user message; it appends to the conversation's ledger, and open todos carry across messages.",
+      "description": "Create or update the conversation's progress ledger. A non-null body replaces the current body; null or omission preserves it. Each string in todos adds a new todo with an assigned ID. An object {id, todo} adds that ID or overwrites its text. Use fresh IDs for new todos; completed IDs are not reused. Unmentioned todos stay unchanged. Pass only additions or edits, not the whole list. You may correct the ledger again in the same turn. At most 10 unfinished todos may exist, each a material or section to write. Material writes mark their todo done automatically; editing todo text does not change completion.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "body": {
             "maxLength": 2000,
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "todos": {
             "items": {
-              "maxLength": 200,
-              "type": "string"
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "todo": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "todo"
+                  ],
+                  "type": "object"
+                }
+              ]
             },
-            "maxItems": 12,
-            "minItems": 1,
+            "maxItems": 10,
             "type": "array"
           }
         },
-        "required": [
-          "body",
-          "todos"
-        ],
         "type": "object"
       },
-      "mutates": false,
+      "mutates": true,
       "usesEmbedding": false,
-      "concurrency": "read",
+      "concurrency": "mutate",
       "allowedSlots": [
         "chat"
       ],

@@ -8,14 +8,16 @@ completed history into the memory turn the next response reads.
 from __future__ import annotations
 
 import json
+from importlib import resources
 from typing import Any
 
+from ..retrieval import openui
 from . import curate as curate_prompts
 from .locale import response_language_rule
 
 # The playground's former ``structured-glm-tencent`` prompt (2026-09-12 lab runs),
 # minus its hard-coded locale line, which ``response_language_rule`` supplies,
-# plus the structured-answer rule. The capture rule is part of the base prompt
+# plus the answer-program rule. The capture rule is part of the base prompt
 # on purpose: the softer wording of an addon was ignored in the lab runs.
 SYSTEM_PROMPT = (
     "You are a study assistant answering strictly from the user's own uploaded "
@@ -31,11 +33,10 @@ SYSTEM_PROMPT = (
     "with supplied pending edits applied.\n"
     "- Reuse previously retrieved passages when they answer the question. Search "
     "when evidence is missing, or read the document when a passage is incomplete. Ground "
-    "important claims in retrieved passages with best effort. Cite them inline "
-    "as [1], [2] using the numbers shown with each passage. Do not cite every "
-    "source that is in your chain of thoughts, only cite sources that is "
-    "directly relevant to your answer. Do not cite the same source twice in "
-    "the same reply.\n"
+    "important claims in retrieved passages with best effort, naming the numbers "
+    "shown with each passage. Do not cite every source that is in your chain of "
+    "thoughts, only cite sources that is directly relevant to your answer. List a "
+    "passage once per block.\n"
     "- If the passages do not answer the question, say so plainly and say what "
     "the sources do cover. Never fill a gap from general knowledge without "
     "labelling it as outside the sources.\n"
@@ -63,7 +64,8 @@ CAPTURE_RULE = (
     "capture when their uncertain text matters to the answer. The captured image "
     "is the source of truth. If capture is unavailable or the detail is illegible, "
     "say it could not be verified instead of guessing. This rule applies to "
-    "sources with pages; text-only sources and user-supplied values need no capture."
+    "sources with pages and to uploaded images, which are one page each; "
+    "text-only sources and user-supplied values need no capture."
 )
 
 FOLLOW_REFERENCES_RULE = (
@@ -73,31 +75,27 @@ FOLLOW_REFERENCES_RULE = (
     "does not establish that the workspace lacks it."
 )
 
-# The shape `retrieval/structured.py` parses and renders back into prose.
-STRUCTURED_RULE = (
-    "Final answer format: a response that calls no tools is the final answer "
-    'and must be only a JSON object {"answer": [{"text": "...", "passages": '
-    "[n, ...]}, ...]}. Each item is one claim or short paragraph of Markdown in "
-    "reading order. passages lists the numbers of the shown passages that "
-    "support that item, most direct first, or [] when the sources do not cover "
-    "it. Put no [n] markers inside text. Text that accompanies a tool call "
-    "stays plain prose."
-)
-REPAIR_PROMPT = (
-    "Rewrite your previous reply as the required JSON object with exactly the "
-    "same content and passage numbers. Output only the JSON."
-)
+# The answer format: an OpenUI Lang program over the chat component catalog.
+# The text is generated from the frontend library (`pnpm gen:openui`), so the
+# model and the renderer agree on every component; `retrieval/openui.py`
+# parses answers against the spec generated alongside it.
+LANG_RULE = (
+    resources.files("pipeline.prompts").joinpath("openui_lang.txt").read_text("utf-8")
+).strip()
 
 
 def system_prompt(locale: str | None) -> str:
-    return "\n- ".join(
-        (
-            SYSTEM_PROMPT,
-            response_language_rule(locale),
-            FOLLOW_REFERENCES_RULE,
-            CAPTURE_RULE,
-            STRUCTURED_RULE,
+    return (
+        "\n- ".join(
+            (
+                SYSTEM_PROMPT,
+                response_language_rule(locale),
+                FOLLOW_REFERENCES_RULE,
+                CAPTURE_RULE,
+            )
         )
+        + "\n\n"
+        + LANG_RULE
     )
 
 
@@ -182,9 +180,13 @@ Return only the compacted memory."""
 
 
 def _checkpoint_turn(turn: dict[str, Any]) -> dict[str, str]:
+    # An assistant answer is a component program; the summarizer reads its text.
+    content = str(turn.get("content") or "")
+    if turn.get("role") == "assistant":
+        content = openui.text_of(content)
     return {
         "role": str(turn.get("role") or "user"),
-        "content": str(turn.get("content") or ""),
+        "content": content,
         **(
             {"provenance": "untrusted_source_data"}
             if turn.get("_kind") == "source_evidence"

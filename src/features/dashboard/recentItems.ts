@@ -11,6 +11,7 @@ export const RECENT_ITEM_LIMIT = 20;
 export type RecentItem =
   | {
       createdAt: string;
+      file: SourceFile;
       fileKind: FileKind;
       id: string;
       kind: 'file';
@@ -22,6 +23,7 @@ export type RecentItem =
       createdAt: string;
       id: string;
       kind: 'material';
+      ref: MaterialRef;
       title: string;
       type: MaterialRefType;
       workspaceId: string;
@@ -42,6 +44,7 @@ export function mergeRecentItems(
   const items: RecentItem[] = [
     ...files.map((file) => ({
       createdAt: file.addedAt,
+      file,
       fileKind: file.kind,
       id: file.id,
       kind: 'file' as const,
@@ -53,6 +56,7 @@ export function mergeRecentItems(
       createdAt: ref.createdAt,
       id: ref.id,
       kind: 'material' as const,
+      ref,
       title: ref.title,
       type: ref.type,
       workspaceId,

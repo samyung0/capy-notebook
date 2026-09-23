@@ -22,7 +22,7 @@ function config(
     contextWindowTokens: 128_000,
     createdAt: '2026-08-24T12:00:00Z',
     createdBy: '',
-    defaultThinking: slots.includes('retrieval') ? '' : 'instant',
+    defaultThinking: slots.includes('retrieval') ? '' : 'high',
     embeddingDefaultEligible: slots.includes('retrieval'),
     embeddingValidationError: '',
     enabled: true,
@@ -40,7 +40,7 @@ function config(
     slots,
     thinkingLevels: slots.includes('retrieval')
       ? []
-      : ['instant', 'low', 'mid', 'high', 'max'],
+      : ['low', 'mid', 'high', 'max'],
     updatedAt: '2026-08-24T12:00:00Z',
     updatedBy: '',
     version: 1,
@@ -274,4 +274,19 @@ describe('missingRuntimeConfig', () => {
       missingRuntimeConfig({ ...row, platformEnabled: false }, credentials)
     ).toEqual([]);
   });
+});
+
+it('rejects Instant on a chat assignment, including a non-default level', () => {
+  const snapshot = registry();
+  snapshot.configs[0].thinkingLevels = ['instant', 'high'];
+  snapshot.configs[0].defaultThinking = 'high';
+  const result = assembleRegistryRequest(
+    snapshot,
+    createRegistryState(snapshot)
+  );
+  expect(result.valid).toBe(false);
+  if (!result.valid)
+    expect(result.issues.some((issue) => issue.code === 'chat-thinking')).toBe(
+      true
+    );
 });

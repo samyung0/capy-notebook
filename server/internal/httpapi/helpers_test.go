@@ -196,3 +196,17 @@ func TestNormalizeGenerateTitle(t *testing.T) {
 		t.Fatalf("trimmed = %q, want Cell quiz", got)
 	}
 }
+
+func TestRelayChatPreservesResponseFlagged(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"type":"error","code":"response_flagged","message":"Response flagged due to safety concern"}`+"\n\n")
+	}))
+	defer upstream.Close()
+	a := &api{pipe: pipeline.New(upstream.URL, "")}
+	err := a.relayChat(context.Background(), "", nil, store.Conversation{ID: "c", WorkspaceID: "w"}, resolvedLLM{}, "cr_1", "hello", "m1", store.ConversationPrompt{}, func(pipeChatEvent) {})
+	var event *chatEventError
+	if !errors.As(err, &event) || event.Code != "response_flagged" {
+		t.Fatalf("safety error became generic: %v", err)
+	}
+}

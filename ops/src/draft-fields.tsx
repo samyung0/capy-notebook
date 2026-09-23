@@ -59,6 +59,7 @@ export function applyProvider(
 }
 
 export function DraftFields({
+  chat = false,
   capabilities,
   registerCapacity,
   capacityErrors,
@@ -70,6 +71,7 @@ export function DraftFields({
   setDraft,
   setParamsText,
 }: {
+  chat?: boolean;
   capabilities: Capability[];
   registerCapacity: UseFormRegister<CapacityFields>;
   capacityErrors: FieldErrors<CapacityFields>;
@@ -324,7 +326,13 @@ export function DraftFields({
             >
               <Checkbox
                 checked={draft.thinkingLevels.includes(level)}
-                disabled={embedding || !allowedThinking.includes(level)}
+                disabled={
+                  embedding ||
+                  !allowedThinking.includes(level) ||
+                  (chat &&
+                    level === 'instant' &&
+                    !draft.thinkingLevels.includes(level))
+                }
                 id={`${idPrefix}-thinking-${level}`}
                 onCheckedChange={(checked) =>
                   toggleThinking(level, checked === true)
@@ -352,7 +360,11 @@ export function DraftFields({
             <option value="">None</option>
           ) : (
             draft.thinkingLevels.map((level) => (
-              <option key={level} value={level}>
+              <option
+                disabled={chat && level === 'instant'}
+                key={level}
+                value={level}
+              >
                 {level}
               </option>
             ))

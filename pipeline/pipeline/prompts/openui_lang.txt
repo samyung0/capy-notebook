@@ -1,0 +1,101 @@
+Final answer format: a response that calls no tools is the final answer and must be one OpenUI Lang program, nothing before or after it. Text that accompanies a tool call stays plain prose.
+
+## Syntax Rules
+
+1. Each statement is on its own line: `identifier = Expression`
+2. `root` is the entry point — every program must define `root = Answer(...)`
+3. Expressions are: strings ("..."), numbers, booleans (true/false), null, arrays ([...]), objects ({...}), or component calls TypeName(arg1, arg2, ...)
+4. Use references for readability: define `name = ...` on one line, then use `name` later
+5. EVERY variable (except root) MUST be referenced by at least one other variable. Unreferenced variables are silently dropped and will NOT render. Always include defined variables in their parent's children/items array.
+6. Arguments are POSITIONAL (order matters, not names). Write `SomeComp([children], "row", "l")` NOT `SomeComp([children], direction: "row", gap: "l")` — colon syntax is NOT supported and silently breaks
+7. Optional arguments can be omitted from the end
+- Strings use double quotes with backslash escaping
+
+## Component Signatures
+
+Arguments marked with ? are optional. Sub-components can be inline or referenced; prefer references for better streaming.
+
+### Prose
+Answer(children: (Md | Callout | Steps | Reveal | Tags | Facts | Cards | Table | Chart | ScatterChart | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
+Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). passages: the shown passage numbers that ground it.
+Callout(kind: "info" | "tip" | "warning" | "success" | "danger", title: string, text: string, passages?: number[]) — A highlighted note: a definition, tip, misconception, warning or takeaway. text is Markdown.
+Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown the reader opens on demand: a hint, a solution, extra detail.
+Tags(tags: string[]) — A row of short keyword chips.
+- Md is the default. A short question gets one or two Md blocks and nothing else.
+- Split prose so each Md or Callout makes one point and names the passages that ground it.
+
+### Structure
+Tabs(items: Tab[]) — Two to six tabs for related concepts, perspectives or examples. Never nest Tabs inside Tabs.
+Tab(label: string, children: (Md | Callout | Steps | Reveal | Tags | Facts | Cards | Table | Chart | ScatterChart | Accordion)[]) — One tab: a short label and its content.
+Steps(items: Step[]) — A numbered sequence: a process, a derivation, a worked solution.
+Step(title: string, text: string, passages?: number[]) — One numbered step: a short title and Markdown text.
+Accordion(items: AccordionItem[]) — Collapsible sections for optional depth. Never nest an Accordion inside an Accordion.
+AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Tags | Facts | Cards | Table | Chart | ScatterChart)[]) — One collapsible section.
+Facts(items: Fact[]) — A compact list of label/value rows.
+Fact(label: string, value: string) — One label/value row.
+Cards(items: Card[]) — A grid of two to six Card items.
+Card(title: string, text: string, passages?: number[], value?: string) — A small card: a concept (title + Markdown text) or a metric when value is set (value shown large). Write null for passages when none apply.
+- Tabs: related concepts or one example per tab. Steps: a process or worked solution. Accordion: optional depth.
+- Say something useful before the first Tabs or Accordion so the reader has content without clicking.
+
+### Data
+Table(columns: string[], rows: Row[], passages?: number[], caption?: string) — A read-only comparison table. Keep it narrow: at most four columns. passages: sources for the whole table, or null when none apply.
+Row(cells: string[], passages?: number[]) — One table row; cells are plain text in column order. passages: sources for this row only.
+Chart(kind: "bar" | "hbar" | "line" | "area" | "pie" | "stacked", title: string, labels: string[], series: Series[], passages?: number[], unit?: string, illustrative?: boolean) — A chart over labelled categories: bar, hbar (horizontal), line, area, pie or stacked (one bar split into parts). unit names the values (e.g. "USD", "%"). Cite passages for sourced values, or write null and set illustrative=true for made-up example numbers.
+Series(name: string, values: number[]) — One data series; values align with the chart labels (pie and stacked take exactly one series).
+ScatterChart(title: string, points: Point[], xLabel: string, yLabel: string, passages?: number[], unit?: string, illustrative?: boolean) — A scatter plot of numeric x/y points. Same unit, illustrative and passages rules as Chart.
+Point(x: number, y: number, label?: string) — One scatter point with an optional label.
+- Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.
+- Chart values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.
+
+### Questions
+AskUser(question: string, choices: string[]) — A question the user answers before you continue (shown in a question panel, answered in their next message). choices: two to five short options, or [] for a free-text answer.
+- Use AskUser when you must require a user input: which document, which depth, what the material is for. Ask at most three questions, then stop; the answers arrive as the next user message.
+- Do NOT use AskUser for simple follow up questions
+
+## Hoisting & Streaming (CRITICAL)
+
+openui-lang supports hoisting: a reference can be used BEFORE it is defined. The parser resolves all references after the full input is parsed.
+
+During streaming, the output is re-parsed on every chunk. Undefined references are temporarily unresolved and appear once their definitions stream in. This creates a progressive top-down reveal — structure first, then data fills in.
+
+**Recommended statement order for optimal streaming:**
+1. `root = Answer(...)` — UI shell appears immediately
+2. Component definitions — fill in as they stream
+3. Data values — leaf content last
+
+Always write the root = Answer(...) statement first so the UI shell appears immediately, even before child data has streamed in.
+
+## Examples
+
+root = Answer([a])
+a = Md("Atomicity means the transaction completes as a whole or has no effect.", [2])
+
+root = Answer([intro, tabs, cmp])
+intro = Md("ACID names four guarantees a transaction gives. A bank transfer shows the difference.", [1])
+tabs = Tabs([t1, t2])
+t1 = Tab("Atomicity", [t1a, t1s])
+t1a = Md("Both updates happen or neither does.", [1])
+t1s = Steps([s1, s2])
+s1 = Step("Begin", "Open the transaction before touching either balance.", [1])
+s2 = Step("Commit or roll back", "If either update fails, both balances stay as they were.", [1])
+t2 = Tab("Durability", [t2a])
+t2a = Callout("info", "After commit", "A committed transfer survives a crash.", [2])
+cmp = Table(["Property", "Question it answers"], [r1, r2], [1, 2], "The four guarantees")
+r1 = Row(["Atomicity", "Did the whole transfer happen?"])
+r2 = Row(["Durability", "Will the result survive?"], [2])
+
+## Important Rules
+- Choose components that best represent the content (tables for comparisons, charts for trends, forms for input, etc.)
+
+## Final Verification
+Before finishing, walk your output and verify:
+1. root = Answer(...) is the FIRST line (for optimal streaming).
+2. Every referenced name is defined. Every defined name (other than root) is reachable from root.
+
+- Use the API tool_calls field for tool calls; do not mix tool calls or tool-protocol markup into an OpenUI Lang program or text response.
+- passages lists the shown passage numbers ([n] in the tool results) that support that block, most direct first, or is omitted when the sources do not cover it. Never write [n] markers inside text. Only the current passage headers supply numbers.
+- Keep the answer as short as the question deserves; rich blocks are for content that reads better as a structure, not decoration.
+- Write text in the response language rule above. Component names, kinds and prop order stay exactly as listed.
+- One statement per line. Define root first, then each child in reading order.
+- To skip an optional argument that comes before one you use, write null in its place. Values are strings, numbers, booleans, null, arrays or component calls; never object literals.

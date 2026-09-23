@@ -38,7 +38,7 @@ export interface ChatStreamHandlers {
   onBlockStart?: (blockId: string) => void;
   onCitations?: (citations: Citation[], version: number) => void;
   onDone?: (e: StreamDone) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string, code?: string) => void;
   onPendingSources?: (event: { fileIds: string[]; omitted: boolean }) => void;
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
@@ -69,7 +69,7 @@ export interface ChatStreamBody {
   text: string;
 }
 
-function errorMessage(payload: unknown, fallback: string): string {
+export function chatErrorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback;
   const body = payload as {
     code?: unknown;
@@ -78,7 +78,9 @@ function errorMessage(payload: unknown, fallback: string): string {
     message?: unknown;
   };
   if (body.code === 'source_changed') return m.error_source_changed_body();
-  if (body.code === 'agent_failed') return m.chat_failed();
+  if (body.code === 'response_flagged') return m.chat_response_flagged();
+  if (body.code === 'agent_failed' || body.code === 'invalid_answer')
+    return m.chat_failed();
   if (body.code === 'curate_mismatch') return m.chat_curate_locked();
   if (body.code === 'curate_requires_editor') {
     return m.chat_curate_requires_editor();
@@ -106,10 +108,10 @@ export async function streamChat(
   signal?: AbortSignal
 ): Promise<void> {
   let terminal = false;
-  const reportError = (message: string) => {
+  const reportError = (message: string, code?: string) => {
     if (terminal || signal?.aborted) return;
     terminal = true;
-    handlers.onError?.(message);
+    handlers.onError?.(message, code);
   };
   let res: Response;
   try {
@@ -135,7 +137,7 @@ export async function streamChat(
       ? 'The chat connection could not be opened.'
       : `${res.status} ${res.statusText}`;
     const payload = res.ok ? null : await res.json().catch(() => null);
-    reportError(errorMessage(payload, fallback));
+    reportError(chatErrorMessage(payload, fallback));
     return;
   }
 
@@ -242,7 +244,10 @@ export async function streamChat(
         });
         break;
       case 'error':
-        reportError(errorMessage(ev, ev.message ?? 'stream error'));
+        reportError(
+          chatErrorMessage(ev, ev.message ?? 'stream error'),
+          ev.code
+        );
         break;
     }
   };

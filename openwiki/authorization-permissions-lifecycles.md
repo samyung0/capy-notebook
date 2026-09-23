@@ -670,8 +670,19 @@ source epoch or the material `room_schema` so stale clients cannot resume.
 `DELETE /api/trash/{kind}/{id}` are owner-only; a background sweep purges rows
 past `purge_after`, which then reaches the blob outbox like any deletion.
 
-The Files page's Select mode works in grid and list views. It replaces
-sort/filter with selection actions; Select all finishes pagination for the
+Trash covers `source_file` and `material` only: there is no workspace trash.
+Deleting a workspace is `DELETE FROM workspaces`, so its files and materials go
+by foreign-key cascade without passing through trash, and any of its rows
+already carrying a `trashed_at` are destroyed with it rather than surviving to
+`purge_after`. Both workspace delete confirmations say so.
+
+The Files page's Select mode works in grid and list views. Files, Trash and
+Create render items through one `ItemCard`/`ItemList` pair; outside Select
+mode each card's link covers the whole card and a top-right menu carries the
+item actions (Files: the same Rename/Properties/Delete `ContentActions` as the
+workspace tree, without Move; Trash: Restore and Delete permanently). Select
+mode replaces sort/filter with selection actions, swaps every card's link and
+menu for a toggle, and Select all finishes pagination for the
 current filters before updating the selection. Active-file Delete confirms
 moving the selected files to trash. Trash offers Restore and confirmed permanent
 deletion, plus Empty trash, which loads every page and confirms the collected
@@ -684,7 +695,8 @@ operation; remaining items stay selected for a manual retry.
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),
 [trash sweep](../server/cmd/api/trash_worker.go#L1),
-[Files selection](../src/routes/Files.tsx), and
+[Files selection](../src/routes/Files.tsx),
+[shared item card](../src/components/app/ItemCard.tsx), and
 [selection state](../src/features/files/useFileSelection.ts).
 
 ### Unrecorded stable objects

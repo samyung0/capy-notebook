@@ -12,6 +12,7 @@ export interface Citation {
   fileName: string;
   kind?: string;
   materialId?: string;
+  n?: number;
   pageEnd?: number;
   pageStart?: number;
   /** @nullable */

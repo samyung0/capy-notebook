@@ -19,7 +19,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import requests
@@ -30,6 +30,7 @@ from ..generated import MATERIAL_TITLE_MAX
 from ..prompts import curate as curate_prompts
 from . import capture, contract, library, pending, store
 from .chunking import clip_to_tokens, estimate_tokens
+from .library_evidence import CurateEvidence
 from .limits import TurnBudget
 from .search import Passage, SearchStats, search
 
@@ -76,7 +77,7 @@ class ToolResult:
 # so the tail is what a later turn can still act on.
 STORED_MATERIALS = 50
 STORED_REQUESTS = 5
-STORED_TODOS = 24
+STORED_TODOS = 10
 
 
 @dataclass
@@ -139,8 +140,8 @@ class Ledger:
     It belongs to the conversation, not the turn: the requests the learner has
     made, the todos they were broken into and the materials produced all carry
     across turns through ``conversations.ledger``. A turn loads it, adds its own
-    request and todos with ``create_ledger``, marks todos done as the writes
-    land, and stores it again at turn end. Excerpt reads are this turn's only.
+    request and updates todos with ``create_ledger``, marks todos done as the writes
+    land, and stores it again at turn end. Retained full library evidence can also satisfy reads.
 
     It rides right after the query on every call and is never part of the
     message history, so it is the one place the model sees what it has done.
@@ -154,7 +155,7 @@ class Ledger:
     next_todo_id: int = 0
     # This turn only, and never stored: what the model read to write with.
     reads: list[LedgerRead] = field(default_factory=list)
-    # create_ledger already ran this turn, so a second call is refused.
+    # Only the first changed plan in a turn counts toward the stall guard.
     written: bool = False
     # Something this turn changed has to be written back at turn end.
     dirty: bool = False
@@ -301,6 +302,7 @@ class ToolContext:
     # citations. The ledger is loaded from the chat request at turn start.
     curate: bool = False
     ledger: Ledger = field(default_factory=Ledger)
+    library_evidence: CurateEvidence = field(default_factory=CurateEvidence)
     # The library's subjects that hold excerpts, fetched once per turn for the
     # browse_knowledge description, and the topics of each subject browsed
     # this turn, which is where search_knowledge topic ids come from.
@@ -590,10 +592,17 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     if isinstance(body, ToolResult):
         return body
-    documents = body["items"]
-    sources = {item["id"]: item for item in documents if item["kind"] == "source_file"}
     outline = await store.workspace_outline(ctx.workspace_id)
-    allowed = None if ctx.file_ids is None else set(ctx.file_ids)
+    return _source_listing(outline, body["items"], ctx.file_ids)
+
+
+def _source_listing(
+    outline: dict[str, Any],
+    documents: list[dict[str, Any]],
+    file_ids: list[str] | None,
+) -> ToolResult:
+    sources = {item["id"]: item for item in documents if item["kind"] == "source_file"}
+    allowed = None if file_ids is None else set(file_ids)
     lines: list[str] = []
     by_chapter: dict[str | None, list[dict[str, Any]]] = {}
     for file in outline["files"]:
@@ -615,10 +624,7 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     materials = [item for item in documents if item["kind"] == "material"]
     if materials:
         lines.append("\n## Study materials")
-        lines.extend(
-            f"- {item['title']} (id={item['id']}, kind=material, editable={str(item['editable']).lower()})"
-            for item in materials
-        )
+        lines.extend(_material_line(item) for item in materials)
     return _result(
         "\n".join(lines)
         if lines
@@ -692,6 +698,17 @@ async def _describe_note(note_id: str, workspace_id: str) -> str:
     return head + "\n" + (excerpt or "(empty note)")
 
 
+def _material_line(item: dict[str, Any]) -> str:
+    line = (
+        f"- {item['title']} (id={item['id']}, kind=material, "
+        f"material_kind={item['materialKind']}, editable={str(item['editable']).lower()})"
+    )
+    if item["materialKind"] != "note":
+        # Only notes are indexed and outlined; the other kinds read as blocks.
+        line += "; inspect_document and edit_document take its id"
+    return line
+
+
 def _file_line(file: dict[str, Any], editable: bool) -> str:
     head = (
         f"- {file['name']} (file_id={file['id']}, kind=source_file, "
@@ -733,11 +750,13 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 
 def _cites_page(passage: Passage, file_id: str, page: int) -> bool:
-    return bool(
-        passage.file_id == file_id
-        and passage.page_start
-        and passage.page_start <= page <= (passage.page_end or passage.page_start)
-    )
+    if passage.file_id != file_id:
+        return False
+    if passage.page_start is None:
+        # A page-less passage (an image's caption, a text file) cites page 1
+        # only; render_file knows whether that file has a page to show.
+        return page == 1
+    return passage.page_start <= page <= (passage.page_end or passage.page_start)
 
 
 async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -756,6 +775,9 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             code="limit_reached",
         )
     file_id, page, bbox = args["file_id"], args["page"], args.get("bbox")
+    refused = await _refuse_note_as_file(ctx, file_id)
+    if refused is not None:
+        return refused
     resolved = await _resolve_scope(ctx, {"file_ids": [file_id]})
     if isinstance(resolved, ToolResult):
         return resolved
@@ -1051,29 +1073,49 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 
 async def _create_ledger(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Add this turn's request and its todos to the conversation's ledger.
-
-    One call per user message, before any write. Todos are completed through
-    the write tools, so a second call has nothing to do and is refused.
-    """
-    body = str(args.get("body") or "").strip()
-    todos = [
-        str(todo).strip() for todo in (args.get("todos") or []) if str(todo).strip()
-    ]
-    if not body or not todos:
-        return _refused("create_ledger needs a body and at least one todo.")
-    if ctx.ledger.written:
+    """Apply ledger edits atomically, preserving work and stable todo IDs."""
+    ledger = ctx.ledger
+    body = args.get("body")
+    if not ledger.exists and body is None:
         return _refused(
-            "The ledger for this message already exists. Todos are completed by "
-            "passing their id to create_material or edit_document, not by "
-            "calling create_ledger again."
+            "Supply body to create the first ledger; null only keeps an existing body."
         )
-    added = ctx.ledger.add(body, todos)
-    listing = "\n".join(f"[ ] {todo.id}. {todo.text}" for todo in added)
+    todos = {todo.id: replace(todo) for todo in ledger.todos}
+    next_id = ledger.next_todo_id
+    for item in args.get("todos", []):
+        text = (item if isinstance(item, str) else item["todo"]).strip()
+        if not text:
+            return _refused("Each todo needs non-empty text.")
+        if isinstance(item, str):
+            todos[next_id] = LedgerTodo(id=next_id, text=text)
+            next_id += 1
+        else:
+            todo_id = item["id"]
+            if todo_id not in todos:
+                if todo_id < ledger.next_todo_id:
+                    return _refused(
+                        f"Todo {todo_id} was already used. Add a new todo with a fresh ID or a string."
+                    )
+                todos[todo_id] = LedgerTodo(id=todo_id, text=text)
+                next_id = max(next_id, todo_id + 1)
+            else:
+                todos[todo_id].text = text
+    if sum(not todo.done for todo in todos.values()) > STORED_TODOS:
+        return _refused(
+            "The ledger can hold at most 10 unfinished todos; this update changed nothing."
+        )
+    requests = ledger.requests if body is None else [body]
+    updated = list(todos.values())
+    if updated == ledger.todos and requests == ledger.requests:
+        return _result("Ledger unchanged.")
+    ledger.requests, ledger.todos, ledger.next_todo_id = requests, updated, next_id
+    # Only the first plan write in a turn counts as progress, as in production.
+    if not ledger.written:
+        ledger.progress += 1
+    ledger.written = ledger.dirty = True
+    listing = "\n".join(f"[ ] {t.id}. {t.text}" for t in ledger.todos if not t.done)
     return _result(
-        f"Added {len(added)} todos to the ledger:\n{listing}\n\n"
-        "Read the excerpts one todo needs, then write it with create_material or "
-        "edit_document, passing that todo's id."
+        f"Ledger updated.\nBody: {ledger.requests[-1]}\n\nOpen todos:\n{listing or '(none)'}"
     )
 
 
@@ -1254,18 +1296,13 @@ def _material_size(kind: str, args: dict[str, Any]) -> str:
 
 
 def _next_move(ledger: Ledger) -> str:
-    """What a refused write should do instead: pick an open todo, or stop.
-
-    A ledger with nothing open has no next write in it. Declaring more work is
-    refused too (one create_ledger per message), so the only move left is to
-    finish the turn.
-    """
+    """Explain how to complete open work or extend the plan."""
     listing = ", ".join(str(todo_id) for todo_id in ledger.open_todos())
     if not listing:
         return (
             "Every todo on the ledger is done. Finish this turn by replying with "
-            "the list of materials you created; more work needs the learner's "
-            "next message."
+            "the list of materials you created, or add a todo if the learner requested "
+            "more work that is not covered yet."
         )
     return f"Open todos: {listing}."
 
@@ -1330,7 +1367,7 @@ async def curate_write(
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return _refused(
-            f"Excerpts {unread} were not read in this turn. read_knowledge each "
+            f"Excerpts {unread} have no read or retained full text in this turn. read_knowledge each "
             "of them before writing from it."
         )
     if not excerpt_ids:
@@ -1727,6 +1764,16 @@ def _render_inspection(body: dict[str, Any]) -> str:
             )
         if props.get("source") is not None:
             lines.append(f"    source: {props['source']}")
+        if props.get("refKind"):
+            if props.get("materialId"):
+                lines.append(
+                    f"    embedded {props['refKind']} material id={props['materialId']}: "
+                    "inspect it as kind material"
+                )
+            else:
+                lines.append(
+                    f"    embedded {props['refKind']} reference, not yet created"
+                )
     for line in body.get("lines") or []:
         lines.append(f"{line.get('start')}: {line.get('text')}")
     for entry in body.get("entries") or []:
@@ -1858,7 +1905,12 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     definition = spec.definition
     if not set(definition["requiredOperations"]) <= ctx.operations:
         return False
-    if definition["mutates"] and not (_gateway_ready() and ctx.user_id):
+    # The ledger changes in memory and is flushed separately at turn end.
+    if (
+        spec.name != "create_ledger"
+        and definition["mutates"]
+        and not (_gateway_ready() and ctx.user_id)
+    ):
         return False
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.

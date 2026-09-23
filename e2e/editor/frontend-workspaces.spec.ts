@@ -121,7 +121,7 @@ test('workspace cards open settings and statistics without entering the workspac
   await expect(settings).toBeVisible();
   await expect(page).toHaveURL(/\/workspaces$/);
   await settings
-    .getByRole('button', { exact: true, name: 'Workspace statistics' })
+    .getByRole('button', { exact: true, name: 'Statistics' })
     .click();
   await expect(
     settings.getByText('Average score', { exact: true })
@@ -197,13 +197,14 @@ test('workspace sorting shows direction and stays open while reversing order', a
   await expect(cards.first()).toBeVisible();
   await trigger.click();
   const menu = page.getByRole('menu');
+  // Created is the default (2026-09-21), so it needs no click first.
   for (const [label, descending, ascending] of [
-    ['Last accessed', 'Newest first', 'Oldest first'],
     ['Created', 'Newest first', 'Oldest first'],
+    ['Last accessed', 'Newest first', 'Oldest first'],
     ['Chapters', 'Most first', 'Fewest first'],
     ['Files', 'Most first', 'Fewest first'],
   ]) {
-    if (label !== 'Last accessed') {
+    if (label !== 'Created') {
       await menu
         .getByRole('menuitem', { name: `${label} ${descending}` })
         .click();

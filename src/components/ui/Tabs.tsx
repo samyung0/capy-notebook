@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn';
 
-type Tab = string | { value: string; label: string };
+type Tab = string | { value: string; label: string; tone?: 'danger' };
 
 export interface TabsProps {
   bottomBorder?: boolean;
@@ -10,7 +10,8 @@ export interface TabsProps {
   value: string;
 }
 
-const norm = (t: Tab) => (typeof t === 'string' ? { label: t, value: t } : t);
+const norm = (t: Tab) =>
+  typeof t === 'string' ? { label: t, tone: undefined, value: t } : t;
 
 export function Tabs({
   tabs,
@@ -37,7 +38,11 @@ export function Tabs({
               bottomBorder && 'border-b-2',
               active
                 ? 'border-action font-bold text-fg'
-                : 'border-transparent text-fg-muted hover:text-fg'
+                : 'border-transparent text-fg-muted hover:text-fg',
+              t.tone === 'danger' &&
+                (active
+                  ? 'border-solid-error text-solid-error'
+                  : 'text-solid-error hover:text-tint-error-fg')
             )}
             key={t.value}
             onClick={() => onChange?.(t.value)}

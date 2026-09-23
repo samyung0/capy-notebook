@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -123,5 +124,65 @@ func TestMaterialUpdateCannotTouchProvenance(t *testing.T) {
 	if stored.Provenance == nil || len(stored.Provenance.Books) != 1 ||
 		stored.Provenance.Books[0].ID != "ahss" {
 		t.Fatalf("provenance = %+v, want the stored record untouched", stored.Provenance)
+	}
+}
+
+// An embedded quiz is reachable by the id its parent note's inspection shows:
+// the internal inspect and edit routes take the child id like any material.
+func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	var targets []string
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Target struct {
+				ID string `json:"id"`
+			} `json:"target"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		targets = append(targets, body.Target.ID)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/internal/documents/inspect" {
+			_, _ = w.Write([]byte(`{"roomSchema":1,"blocks":[{"id":"q1","type":"quiz","text":""}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"operationId":"op","outcome":"succeeded","kind":"edit_document"}`))
+	}))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_embed_note", "Lecture", "# Lecture\n\nBody."))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := decodeReceipt(t, rec).Effect.Resource.ID
+	cleanupMaterial(t, st, noteID)
+	quiz, err := st.CreateEmbeddedMaterial(context.Background(), "u_editor", noteID, store.EmbeddedDraft{
+		Kind:      "quiz",
+		Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/documents/inspect", pipeSecret, map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"target": map[string]any{"kind": "material", "id": quiz.ID},
+	})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"materialKind":"quiz"`) {
+		t.Fatalf("inspect status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_embed_edit",
+		"target":   map[string]any{"kind": "material", "id": quiz.ID},
+		"commands": []map[string]any{{"type": "remove_question", "question_id": "q1"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("edit status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(targets) != 2 || targets[0] != quiz.ID || targets[1] != quiz.ID {
+		t.Fatalf("authority targets = %v, want the embedded quiz twice", targets)
 	}
 }

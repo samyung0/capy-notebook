@@ -219,7 +219,7 @@ export function ListViewToggle({
   onViewChange: (view: ListView) => void;
 }) {
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0">
       <ViewButton
         active={view === 'grid'}
         icon="grid"
@@ -254,7 +254,7 @@ function ViewButton({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        'px-1',
+        'px-1.5',
         !active && 'text-fg-muted hover:text-fg',
         className,
         active && 'bg-surface-hover-bg hover:bg-surface-hover-bg'

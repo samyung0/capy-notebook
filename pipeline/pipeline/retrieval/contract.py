@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-SUPPORTED_VERSION = 7
+SUPPORTED_VERSION = 8
 
 
 def _load() -> dict[str, Any]:
@@ -42,7 +42,12 @@ DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"
 
 _validators: dict[str, Draft202012Validator] = {}
 for _name, _definition in DEFINITIONS.items():
-    if _definition.get("retention") not in ("full", "cited_passages", "none"):
+    if _definition.get("retention") not in (
+        "full",
+        "cited_passages",
+        "used_excerpts",
+        "none",
+    ):
         raise RuntimeError(f"tool {_name} must declare conversation-result retention")
     Draft202012Validator.check_schema(_definition["inputSchema"])
     _validators[_name] = Draft202012Validator(_definition["inputSchema"])

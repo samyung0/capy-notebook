@@ -1,7 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
 import type React from 'react';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
-import { Streamdown } from 'streamdown';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { api, isApiError } from '@/api/client';
 import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
@@ -28,6 +27,9 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPairDark } from '@/lib/userColor';
+import { LangAnswer } from './chat/LangAnswer';
+import { QuestionBlock } from './chat/QuestionBlock';
+import { extractQuestions } from './chat/questions';
 import { chatInputLimit } from './chatInputLimit';
 import { curateToggleDisabled, curateToggleVisible } from './curateToggle';
 import type { TabAction } from './PanelTabRow';
@@ -207,10 +209,12 @@ function EffectCard({
 
 function ActivityList({
   blocks,
+  citations,
   onOpenResource,
   onUndone,
 }: {
   blocks: ActivityBlock[];
+  citations?: Citation[];
   onOpenResource?: (ref: ResourceRef) => void;
   onUndone?: (
     operationId: string,
@@ -222,13 +226,14 @@ function ActivityList({
     <div className="mb-2 flex flex-col gap-2">
       {blocks.map((block) =>
         block.kind === 'narration' ? (
-          <div
-            className="streamdown-body text-fg-muted text-sm [&_p]:my-1"
-            key={block.id}
-          >
-            <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-              {block.text}
-            </Streamdown>
+          <div className="text-fg-muted text-sm" key={block.id}>
+            <LangAnswer
+              citations={citations}
+              complete
+              content={block.text}
+              latest={false}
+              streaming={false}
+            />
           </div>
         ) : (
           <div className="flex flex-col gap-1.5" key={block.id}>
@@ -286,12 +291,15 @@ function ActivityList({
 function AssistantBubble({
   msg,
   streaming,
+  latest,
   onOpenCitation,
   onOpenResource,
   onUndone,
 }: {
   msg: ChatMessage;
   streaming: boolean;
+  /** The last message of the thread: its questions live in the question block. */
+  latest: boolean;
   onOpenCitation?: (citation: Citation) => void;
   onOpenResource?: (ref: ResourceRef) => void;
   onUndone?: (
@@ -319,39 +327,33 @@ function AssistantBubble({
     <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
       <ActivityList
         blocks={msg.activity ?? []}
+        citations={msg.citations}
         onOpenResource={onOpenResource}
         onUndone={onUndone}
       />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
-        <div className="streamdown-body mb-2 text-fg-muted text-sm [&_p]:my-1">
-          <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-            {msg.currentBlockText}
-          </Streamdown>
+        <div className="mb-2 text-fg-muted text-sm">
+          <LangAnswer
+            citations={msg.citations}
+            complete={false}
+            content={msg.currentBlockText}
+            latest={false}
+            streaming
+          />
         </div>
       ) : null}
       <PlanningHint visible={!!waiting} />
       {empty && streaming && msg.status === 'streaming' && !waiting ? (
         <Spinner />
       ) : answer ? (
-        <div className="streamdown-body max-w-none [&_p]:my-1.5 [&_pre]:my-2">
-          <Streamdown
-            className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-            components={{
-              ol: ({ children }) => (
-                <ol className="ml-4 list-outside list-decimal whitespace-normal">
-                  {children}
-                </ol>
-              ),
-              ul: ({ children }) => (
-                <ul className="ml-4 list-outside list-disc whitespace-normal">
-                  {children}
-                </ul>
-              ),
-            }}
-          >
-            {answer}
-          </Streamdown>
-        </div>
+        <LangAnswer
+          citations={msg.citations}
+          complete={msg.status === 'complete'}
+          content={answer}
+          latest={latest}
+          onOpenCitation={onOpenCitation}
+          streaming={streaming && msg.status === 'streaming'}
+        />
       ) : null}
       {msg.status === 'aborted' && (
         <p className="mt-1 py-1 text-fg-muted italic">{m.chat_stopped()}</p>
@@ -432,6 +434,20 @@ export function ChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const lightPair = userColorPairDark(color);
+
+  // Questions belong to the latest completed reply only: once anything is
+  // sent, unanswered ones stay readable in the bubble and are never re-asked.
+  const last = messages.at(-1);
+  const questions = useMemo(
+    () =>
+      !streaming &&
+      !curate &&
+      last?.role === 'assistant' &&
+      last.status === 'complete'
+        ? extractQuestions(last.content)
+        : [],
+    [curate, last, streaming]
+  );
 
   // Seed local state when a previously-saved conversation is opened.
   useEffect(() => {
@@ -565,7 +581,7 @@ export function ChatPanel({
             )}
           </div>
         )}
-        {messages.map((msg) =>
+        {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div
               className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5"
@@ -576,6 +592,11 @@ export function ChatPanel({
           ) : (
             <AssistantBubble
               key={msg.id}
+              latest={
+                index === messages.length - 1 &&
+                msg.status !== 'aborted' &&
+                msg.status !== 'error'
+              }
               msg={msg}
               onOpenCitation={onOpenCitation}
               onOpenResource={onOpenResource}
@@ -585,6 +606,15 @@ export function ChatPanel({
           )
         )}
       </div>
+
+      {questions.length > 0 && last ? (
+        <QuestionBlock
+          disabled={streaming}
+          key={last.id}
+          onSend={(answer) => void send(answer, curate)}
+          questions={questions}
+        />
+      ) : null}
 
       <div className="grow-0 p-3">
         <div
@@ -600,7 +630,11 @@ export function ChatPanel({
             )}
             onChange={(e) => setText(e.target.value)}
             placeholder={
-              curate ? m.chat_curate_placeholder() : m.chat_placeholder()
+              curate
+                ? m.chat_curate_placeholder()
+                : questions.length
+                  ? m.chat_question_placeholder()
+                  : m.chat_placeholder()
             }
             rows={2}
             value={text}
@@ -660,7 +694,6 @@ export function ChatPanel({
               label={streaming ? m.chat_stop() : m.chat_send()}
               onClick={streaming ? stop : submit}
               size="sm"
-              strokeWidth={2.5}
               variant="accent"
             >
               <span

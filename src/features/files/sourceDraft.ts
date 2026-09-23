@@ -1,3 +1,5 @@
+import { USE_MSW } from '@/api/auth';
+
 export interface SourceDraft {
   base: Uint8Array;
   baseSourceSHA256: string;
@@ -37,6 +39,8 @@ function openDrafts(): Promise<IDBDatabase> {
 }
 
 export async function readSourceDrafts(fileId: string): Promise<SourceDraft[]> {
+  // MSW resets its database on reload. A durable draft belongs to that old Y.Doc.
+  if (USE_MSW) return [];
   const database = await openDrafts();
   try {
     return await new Promise((resolve, reject) => {
@@ -54,6 +58,7 @@ export async function readSourceDrafts(fileId: string): Promise<SourceDraft[]> {
 }
 
 export async function writeSourceDraft(draft: SourceDraft): Promise<void> {
+  if (USE_MSW) return;
   const database = await openDrafts();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -72,6 +77,7 @@ export async function writeSourceDraft(draft: SourceDraft): Promise<void> {
 export async function clearSourceDrafts(
   drafts: Pick<SourceDraft, 'id' | 'version'>[]
 ): Promise<void> {
+  if (USE_MSW) return;
   const database = await openDrafts();
   try {
     await new Promise<void>((resolve, reject) => {

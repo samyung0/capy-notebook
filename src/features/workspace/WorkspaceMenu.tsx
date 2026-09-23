@@ -70,14 +70,14 @@ export function WorkspaceMenu({
       <ButtonTooltip label={m.workspace_switch()} side="bottom">
         <DropdownMenuTrigger asChild>
           <Button
-            className="flex h-9 min-w-0 items-center gap-3 px-1.5 pr-2"
+            className="group/ws-trigger flex h-9 min-w-0 items-center gap-2 px-2"
             iconRight="chevronDown"
-            iconRightClassName="text-fg-muted"
-            variant="ghost-hover"
+            iconRightClassName="text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/ws-trigger:rotate-180"
+            variant="gray"
           >
             <img
               alt=""
-              className="size-6.5 shrink-0 -translate-y-px rounded-md"
+              className="size-5 shrink-0 -translate-y-px rounded-md"
               src={iconUrl(workspace.iconId)}
             />
             <span className="t-body min-w-0 truncate font-semibold">

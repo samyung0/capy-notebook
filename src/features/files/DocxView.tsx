@@ -3,6 +3,7 @@ import type { ViewableFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { FileModeControl } from './FileModeControl';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 
@@ -54,48 +55,35 @@ export default function DocxView({
             ? m.files_office_page_count({ count: runtime.analysis.pageCount })
             : m.files_office_opening_document()}
         </span>
-        {runtime.saving && (
-          <span className="t-meta">{m.files_office_saving()}</span>
-        )}
-        {canEdit && runtime.mode === 'view' && runtime.analysis && (
-          <Button onClick={() => runtime.setRuntimeMode('edit')} size="sm">
-            {m.action_edit()}
-          </Button>
-        )}
-        {runtime.mode === 'edit' && (
-          <>
-            <span className="t-meta text-fg-muted">
-              {runtime.status === 'saved'
-                ? m.editor_status_saved()
-                : runtime.handoff
-                  ? m.source_edit_handoff()
-                  : runtime.status === 'offline'
-                    ? m.source_edit_offline()
-                    : ''}
-            </span>
-            <Button
-              disabled={!runtime.ready || runtime.handoff}
-              onClick={() => {
-                void runtime.save().catch(() => {});
-              }}
-              size="sm"
-            >
-              {m.action_save()}
-            </Button>
-          </>
-        )}
-        {runtime.mode === 'edit' && (
-          <Button
-            disabled={!runtime.ready || runtime.saving || runtime.handoff}
-            onClick={() => {
-              void runtime.setRuntimeMode('view');
-            }}
-            size="sm"
-            variant="outline"
-          >
-            {m.source_edit_done()}
-          </Button>
-        )}
+        <FileModeControl
+          canEdit={canEdit}
+          disabled={
+            runtime.mode === 'view'
+              ? !runtime.analysis
+              : !runtime.ready || runtime.saving || runtime.handoff
+          }
+          mode={runtime.mode}
+          onChange={(mode) => {
+            void runtime.setRuntimeMode(mode);
+          }}
+          onSave={() => {
+            void runtime.save().catch(() => {});
+          }}
+          saveDisabled={!runtime.ready || runtime.handoff}
+          status={
+            runtime.saving
+              ? m.files_office_saving()
+              : runtime.mode === 'edit'
+                ? runtime.status === 'saved'
+                  ? m.editor_status_saved()
+                  : runtime.handoff
+                    ? m.source_edit_handoff()
+                    : runtime.status === 'offline'
+                      ? m.source_edit_offline()
+                      : undefined
+                : undefined
+          }
+        />
       </div>
       {runtime.error && (
         <p className="border-line border-b px-3 py-2 text-sm text-tint-error-fg">

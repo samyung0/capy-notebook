@@ -1,4 +1,5 @@
 reports/local/
+fixtures/local/2026-09-21-workspace-opening/
 fixtures/local/2026-09-13-full-document-controls/
 fixtures/local/2026-09-16-knowledge-base/*.pdf
 *.tar.gz

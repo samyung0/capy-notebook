@@ -105,7 +105,7 @@ the related `reconnecting` status.
 
 ## Streaming failures
 
-Chat SSE failures stay on the assistant turn. An explicit `error` frame
+Chat SSE failures stay on the assistant turn. A `response_flagged` error clears the current answer and citations and shows the localized "Response flagged due to safety concern" notice. Its code is saved in message metadata so history reloads keep that notice; completed tool activity remains visible. An explicit `error` frame
 (including `ai_unavailable` when the retrieval handshake fails), and a
 stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A

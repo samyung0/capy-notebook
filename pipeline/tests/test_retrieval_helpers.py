@@ -519,32 +519,98 @@ def _curate_ctx() -> ToolContext:
     )
 
 
-async def test_create_ledger_appends_this_turn_and_refuses_a_second_call():
+def test_create_ledger_upserts_atomically_and_preserves_progress(monkeypatch):
+    import asyncio
+    from dataclasses import asdict
+
+    monkeypatch.setattr(tools.library, "enabled", lambda: True)
+
+    def apply(args, target):
+        return asyncio.run(tools.run("create_ledger", args, target))
+
     ctx = _curate_ctx()
 
-    first = await tools._create_ledger(
-        {"body": "Teach linear regression", "todos": ["note", "quiz"]}, ctx
-    )
+    def update(**args):
+        return asyncio.run(tools.run("create_ledger", args, ctx))
 
-    assert "Added 2 todos to the ledger" in first.text()
-    assert ctx.ledger.exists and ctx.ledger.progress == 1
+    assert (
+        update(body="Cells", todos=["Plan cell biology", "Quiz"]).outcome == "succeeded"
+    )
+    ctx.ledger.note_read("exc_1", 0, "Cells")
     ctx.ledger.note_material(
         tools.LedgerMaterial(
-            id="mat_1", kind="note", title="T", size="9 tokens", todo=0
+            id="mat_1", kind="quiz", title="Quiz", size="2 questions", todo=1
         )
     )
     assert ctx.ledger.progress == 2
-
-    again = await tools._create_ledger(
-        {"body": "Teach it differently", "todos": ["flashcards"]}, ctx
+    assert (
+        update(
+            body="Advanced cell biology",
+            todos=[{"id": 0, "todo": "Write an advanced guide"}],
+        ).outcome
+        == "succeeded"
     )
+    assert ctx.ledger.requests == ["Advanced cell biology"]
+    assert ctx.ledger.todo(0).text == "Write an advanced guide"
+    assert ctx.ledger.next_todo_id == 2 and len(ctx.ledger.todos) == 2
+    assert ctx.ledger.todo(1).done and ctx.ledger.todo(1).material_id == "mat_1"
+    assert ctx.ledger.read_ids() == {"exc_1"} and len(ctx.ledger.materials) == 1
+    assert ctx.ledger.progress == 2  # Replanning does not buy extra stall responses.
 
-    assert again.refused and "already exists" in again.text()
-    assert [t.done for t in ctx.ledger.todos] == [True, False], "nothing was reset"
-    assert ctx.ledger.progress == 2, "the refused call is not progress"
+    assert (
+        update(
+            body=None,
+            todos=[
+                {"id": 0, "todo": "First revision"},
+                {"id": 0, "todo": "Last revision"},
+            ],
+        ).outcome
+        == "succeeded"
+    )
+    assert ctx.ledger.todo(0).text == "Last revision"
+    assert ctx.ledger.requests == ["Advanced cell biology"]
+    assert update(todos=[{"id": 0, "todo": "Guide"}]).outcome == "succeeded"
+    assert ctx.ledger.requests == ["Advanced cell biology"]
+    assert update(body="").outcome == "succeeded"
+    assert ctx.ledger.requests == [""]  # Empty is non-null and replaces the body.
+    assert update(body="Current plan").outcome == "succeeded"
 
-    empty = await tools._create_ledger({"body": "", "todos": ["x"]}, ctx)
-    assert empty.refused
+    assert update(todos=[f"Section {i}" for i in range(9)]).outcome == "succeeded"
+    assert len(ctx.ledger.open_todos()) == 10
+    assert update(todos=[{"id": 0, "todo": "Corrected guide"}]).outcome == "succeeded"
+    before = asdict(ctx.ledger)
+    for args in (
+        {"body": "Should not land", "todos": ["Eleventh todo"]},
+        {"body": "Should not land", "todos": [{"id": 999, "todo": "Eleventh ID"}]},
+        {"body": "Should not land", "todos": [{"id": 0, "todo": " "}]},
+        {"todos": [{"id": "0", "todo": "Invalid ID"}]},
+    ):
+        assert update(**args).refused
+        assert asdict(ctx.ledger) == before
+    assert update(body=None, todos=[]).outcome == "succeeded"
+    assert asdict(ctx.ledger) == before
+    restored = tools.Ledger.from_stored(ctx.ledger.stored())
+    assert restored.stored() == ctx.ledger.stored()
+    assert not restored.written and restored.requests == ["Current plan"]
+    restored_ctx = _curate_ctx()
+    restored_ctx.ledger = restored
+    assert apply(
+        {"todos": [{"id": 1, "todo": "Reuse completed ID"}]}, restored_ctx
+    ).refused
+    # The reported failing shape included explicit IDs for both old and new todos.
+    fresh = _curate_ctx()
+    assert apply({"body": "Plan", "todos": ["Planning"]}, fresh).outcome == "succeeded"
+    assert (
+        apply(
+            {
+                "body": "Advanced cells",
+                "todos": [{"id": 0, "todo": "Guide"}, {"id": 1, "todo": "Quiz"}],
+            },
+            fresh,
+        ).outcome
+        == "succeeded"
+    )
+    assert fresh.ledger.next_todo_id == 2 and fresh.ledger.open_todos() == [0, 1]
 
 
 async def test_a_later_turn_continues_the_stored_ledger():
@@ -575,12 +641,46 @@ async def test_a_later_turn_continues_the_stored_ledger():
     )
 
     out = ctx.ledger.stored()
-    assert out["requests"] == ["Teach linear regression", "Now flashcards too"]
+    assert out["requests"] == ["Now flashcards too"]
     assert out["todos"] == [{"id": 2, "text": "flashcards"}]
     assert [m["id"] for m in out["materials"]] == ["mat_1", "mat_2"]
     assert [m["todo"] for m in out["materials"]] == [0, 1], "the ids they closed"
     assert out["next_todo_id"] == 3
     assert "reads" not in out, "reads are this turn's only"
+
+
+async def test_ledger_caps_unfinished_todos_across_turns_at_ten():
+    schema = contract.DEFINITIONS["create_ledger"]["inputSchema"]
+    assert schema["properties"]["todos"]["maxItems"] == tools.STORED_TODOS == 10
+    assert contract.validate_args(
+        "create_ledger", {"body": "Too much", "todos": ["note"] * 11}
+    )
+    previous = tools.Ledger()
+    previous.add("First plan", [f"note {i}" for i in range(9)])
+    ctx = _curate_ctx()
+    ctx.ledger = tools.Ledger.from_stored(previous.stored())
+    before = ctx.ledger.stored()
+
+    refused = await tools._create_ledger(
+        {"body": "More work", "todos": ["quiz", "flashcards"]}, ctx
+    )
+    assert refused.refused and "at most 10" in refused.text()
+    assert ctx.ledger.stored() == before
+    assert not ctx.ledger.written and ctx.ledger.progress == 0
+
+    added = await tools._create_ledger({"body": "More work", "todos": ["quiz"]}, ctx)
+    assert not added.refused and len(ctx.ledger.open_todos()) == 10
+    ctx.ledger = tools.Ledger.from_stored(ctx.ledger.stored())
+    full = await tools._create_ledger({"body": "More work", "todos": ["cards"]}, ctx)
+    assert full.refused
+    ctx.ledger.note_material(
+        tools.LedgerMaterial(
+            id="mat_1", kind="note", title="Done", size="1 token", todo=0
+        )
+    )
+    added = await tools._create_ledger({"body": "More work", "todos": ["cards"]}, ctx)
+    assert not added.refused and len(ctx.ledger.open_todos()) == 10
+    assert ctx.ledger.next_todo_id == 11, "completed todo ids are never reused"
 
 
 def test_the_stored_ledger_keeps_only_what_the_next_turn_needs():
@@ -617,14 +717,14 @@ def test_the_stored_ledger_keeps_only_what_the_next_turn_needs():
 
 def test_the_stored_ledger_keeps_the_newest_open_todos_only():
     """Open todos are the array a term-long conversation grows without end, so
-    the oldest go: the newest 24 are the ones the learner is still waiting on."""
+    stored snapshots retain at most the newest 10."""
     ledger = tools.Ledger()
     ledger.add("Teach me everything", [f"todo {i}" for i in range(30)])
 
     out = ledger.stored()
 
     assert len(out["todos"]) == tools.STORED_TODOS
-    assert [t["id"] for t in out["todos"]] == list(range(6, 30)), "the oldest 6 go"
+    assert [t["id"] for t in out["todos"]] == list(range(20, 30))
     assert out["next_todo_id"] == 30, "the counter does not follow the drop"
 
 
@@ -732,8 +832,7 @@ async def test_a_curate_edit_of_a_source_file_carries_no_ledger_rules():
 
 
 async def test_a_write_with_every_todo_done_is_told_to_finish_the_turn():
-    """The refusal has to name the only move left: a second create_ledger is
-    refused too, so the turn ends with the answer."""
+    """Finished todos stay finished; the learner can extend the plan."""
     ctx = _curate_ctx()
     await tools._create_ledger({"body": "b", "todos": ["one"]}, ctx)
     ctx.ledger.todos[0].done = True
@@ -743,7 +842,7 @@ async def test_a_write_with_every_todo_done_is_told_to_finish_the_turn():
     assert isinstance(refused, tools.ToolResult) and refused.refused
     assert "Every todo on the ledger is done" in refused.text()
     assert "list of materials you created" in refused.text()
-    assert "next message" in refused.text()
+    assert "add a todo" in refused.text()
 
 
 def test_ledger_renders_the_requests_todos_materials_and_inputs():
@@ -1037,7 +1136,7 @@ async def test_pipeline_chat_defense_rejects_query_character_overflow(character)
         configVersion=1,
         userId="u_1",
         paidBy="platform",
-        thinking="instant",
+        thinking="high",
         query=character * (service.CHAT_CHARACTER_LIMIT + 1),
         workspaceId="ws_1",
         contractVersion=contract.VERSION,
@@ -1224,3 +1323,21 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
     assert "Chlorophyll absorbs" in seen[0]
     assert "Chlorophyll" in descriptor
     assert summary
+
+
+def test_chat_request_requires_enabled_thinking():
+    from pydantic import ValidationError
+
+    from pipeline.retrieve.service import ChatStreamReq
+
+    fields = {
+        "query": "hello",
+        "workspaceId": "ws",
+        "contractVersion": contract.VERSION,
+        "operations": [],
+        "spendSessionId": "cr_1",
+    }
+    for thinking in ("instant", "", "off", None):
+        with pytest.raises(ValidationError):
+            ChatStreamReq(**fields, thinking=thinking)
+    assert ChatStreamReq(**fields, thinking="high").thinking == "high"

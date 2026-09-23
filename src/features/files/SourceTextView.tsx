@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import type { ViewableFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
+import { FileModeControl } from './FileModeControl';
 import { SourceTextEditor } from './SourceTextEditor';
 import { useSourceSession } from './useSourceSession';
 
@@ -67,53 +68,34 @@ export function SourceTextView({
   };
   return (
     <div className="flex h-full min-h-[60vh] flex-col">
-      <div className="flex min-h-10 items-center justify-end gap-2 border-line border-b px-2">
-        {editing ? (
-          <>
-            <span className="t-meta mr-auto text-fg-muted">
-              {source.handoff
-                ? m.source_edit_handoff()
-                : source.status === 'saved'
-                  ? m.editor_status_saved()
-                  : source.status === 'saving'
-                    ? m.files_office_saving()
-                    : source.status === 'offline'
-                      ? m.source_edit_offline()
-                      : ''}
-            </span>
-            <Button
-              disabled={source.handoff}
-              onClick={() => {
-                void source.save().catch(() => {});
-              }}
-              size="sm"
-            >
-              {m.action_save()}
-            </Button>
-            <Button
-              disabled={leaving || source.handoff}
-              onClick={() => {
-                void done().catch(() => {});
-              }}
-              size="sm"
-            >
-              {m.source_edit_done()}
-            </Button>
-          </>
-        ) : (
-          canEdit && (
-            <Button
-              onClick={() => {
-                setJoined(true);
-                setEditing(true);
-              }}
-              size="sm"
-            >
-              {m.source_edit_raw()}
-            </Button>
-          )
-        )}
-      </div>
+      <FileModeControl
+        canEdit={canEdit}
+        disabled={leaving || source.handoff}
+        mode={editing ? 'edit' : 'view'}
+        onChange={(mode) => {
+          if (mode === 'edit') {
+            setJoined(true);
+            setEditing(true);
+          } else void done().catch(() => {});
+        }}
+        onSave={() => {
+          void source.save().catch(() => {});
+        }}
+        saveDisabled={source.handoff}
+        status={
+          editing
+            ? source.handoff
+              ? m.source_edit_handoff()
+              : source.status === 'saved'
+                ? m.editor_status_saved()
+                : source.status === 'saving'
+                  ? m.files_office_saving()
+                  : source.status === 'offline'
+                    ? m.source_edit_offline()
+                    : undefined
+            : undefined
+        }
+      />
       {source.error && (
         <p className="px-3 py-2 text-tint-error-fg">
           {source.error}

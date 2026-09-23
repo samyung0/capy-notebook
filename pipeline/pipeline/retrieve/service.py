@@ -221,6 +221,7 @@ def _bind_llm(req: LLMPin) -> None:
 
 
 class ChatStreamReq(LLMPin):
+    thinking: Literal["low", "mid", "high", "max"]
     query: str = Field(min_length=1, max_length=65_536)
     workspaceId: str
     # Trusted context from the gateway, never from model arguments: the shared

@@ -49,7 +49,7 @@ func insertLLM(t *testing.T, pool *pgxpool.Pool, version int, slug string, slots
 		) VALUES (
 			$1, 'Test', 'Model', 'deepseek', $2,
 			true, false, 100000,
-			ARRAY['instant','low','mid','high','max']::text[], 'instant',
+			ARRAY['low','mid','high','max']::text[], 'high',
 			$3::jsonb, $4::text[], 250, 1000, 250, true, $5::text[]
 		)`, version, slug, testLLMParams, slots, defaults)
 	if err != nil {
@@ -91,6 +91,11 @@ func TestGetLoadsPinnedVersionOnMissAndNeverFallsBack(t *testing.T) {
 func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 	pool, reg := openRegistry(t)
 	ctx := context.Background()
+	var nextVersion int
+	if err := pool.QueryRow(ctx, `SELECT max(version)+1 FROM model_configs
+		WHERE provider_slug=$1 AND model_slug=$2`, flashRef.ProviderSlug, flashRef.ModelSlug).Scan(&nextVersion); err != nil {
+		t.Fatal(err)
+	}
 	flash, err := reg.Get(ctx, flashRef, 1)
 	if err != nil {
 		t.Fatal(err)
@@ -110,15 +115,15 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
-		) VALUES (2, 'DeepSeek', 'Flash v2', 'deepseek', 'deepseek-flash',
+		) VALUES ($2, 'DeepSeek', 'New Flash version', 'deepseek', 'deepseek-flash',
 			true, true, 1000000,
-			ARRAY['instant','low','mid','high','max']::text[], 'instant',
-			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams)
+			ARRAY['low','mid','high','max']::text[], 'high',
+			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams, nextVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2 AND version=2`, flashRef.ProviderSlug, flashRef.ModelSlug)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`, flashRef.ProviderSlug, flashRef.ModelSlug, nextVersion)
 		_, _ = pool.Exec(context.Background(), `
 			UPDATE model_configs
 			   SET is_default_for = array_append(is_default_for, 'chat')
@@ -129,7 +134,24 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if old.ModelSlug != flash.ModelSlug {
-		t.Fatalf("v1 changed after v2 landed: %q vs %q", old.ModelSlug, flash.ModelSlug)
+		t.Fatalf("v1 changed after a newer version landed: %q vs %q", old.ModelSlug, flash.ModelSlug)
+	}
+}
+
+func TestDeepSeekDefaultReasoningHigh(t *testing.T) {
+	_, reg := openRegistry(t)
+	cfg, err := reg.ResolveUser(context.Background(), flashRef, SlotChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := cfg.ResolveThinking(""); err != nil || got != ThinkingHigh {
+		t.Fatalf("DeepSeek default reasoning = %q, error = %v", got, err)
+	}
+	if slices.Contains(cfg.ThinkingLevels, ThinkingInstant) {
+		t.Fatal("chat still advertises instant")
+	}
+	if _, err := cfg.ResolveThinking(ThinkingInstant); err == nil {
+		t.Fatal("chat accepted instant")
 	}
 }
 
@@ -292,7 +314,7 @@ func TestOneDefaultPerSlot(t *testing.T) {
 			enabled, is_default_for
 		) VALUES (1, 'Dup', 'Dup', 'deepseek', $1,
 			true, false, 100000,
-			ARRAY['instant']::text[], 'instant',
+			ARRAY['high']::text[], 'high',
 			$2::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY['chat'])`, slug, testLLMParams)
 	if err == nil {
 		t.Fatal("two chat defaults")
@@ -362,7 +384,7 @@ func TestResolveThinking(t *testing.T) {
 }
 
 func TestValidateThinking(t *testing.T) {
-	if err := ValidateThinking([]string{SlotChat}, []string{"instant", "high"}, "instant"); err != nil {
+	if err := ValidateThinking([]string{SlotChat, SlotEditor}, []string{"low", "high"}, "high"); err != nil {
 		t.Fatal(err)
 	}
 	if err := ValidateThinking([]string{SlotRetrieval}, nil, ""); err != nil {
@@ -377,8 +399,8 @@ func TestValidateThinking(t *testing.T) {
 	if err := ValidateThinking([]string{SlotCaptioning}, []string{"instant"}, "instant"); err == nil {
 		t.Fatal("vision row with thinking")
 	}
-	if err := ValidateThinking([]string{SlotEditor}, []string{"low", "high"}, "high"); err == nil {
-		t.Fatal("editor row without instant")
+	if err := ValidateThinking([]string{SlotChat}, []string{"instant", "high"}, "high"); err == nil {
+		t.Fatal("chat row offers instant")
 	}
 }
 
@@ -419,11 +441,11 @@ func TestCatalogRefusesBrokenThinking(t *testing.T) {
 			thinking_levels, default_thinking, params, slots,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
-		) VALUES (1, 'Bad', 'Editor', 'deepseek', $1,
-			true, false, 100000, ARRAY['low','high']::text[], 'high',
-			'{}'::jsonb, ARRAY['editor'], 250, 1000, 250, true, ARRAY[]::text[])`, slug+"-editor")
+		) VALUES (1, 'Bad', 'Chat', 'deepseek', $1,
+			true, false, 100000, ARRAY['instant','high']::text[], 'high',
+			'{}'::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, slug+"-chat")
 	if err == nil {
-		t.Fatal("editor row without instant")
+		t.Fatal("chat row with instant")
 	}
 	_, err = pool.Exec(ctx, `
 		INSERT INTO model_configs (

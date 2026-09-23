@@ -36,6 +36,7 @@ describe('file icons', () => {
 
   it('maps every material type', () => {
     expect(materialIconName('quiz')).toBe('stackblitz');
-    expect(materialIconName('note')).toBe('markdown');
+    expect(materialIconName('note')).toBe('java-enum');
+    expect(materialIconName('diagram')).toBe('api-blueprint');
   });
 });

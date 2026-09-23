@@ -56,6 +56,25 @@ describe('material edit commands', () => {
     expect(inspectMaterial(document)[0].text).toBe('alpha beta');
   });
 
+  it('exposes an embedded material reference by id and kind', () => {
+    const document = material([
+      paragraph('b1', 'intro'),
+      {
+        children: [{ text: '' }],
+        id: 'r1',
+        materialId: 'mat_q',
+        refKind: 'quiz',
+        type: 'material_ref',
+      },
+    ]);
+    expect(inspectMaterial(document)[1]).toEqual({
+      id: 'r1',
+      properties: { materialId: 'mat_q', refKind: 'quiz' },
+      text: '',
+      type: 'material_ref',
+    });
+  });
+
   it('undoes its own deletion immediately and refuses once the gap was written and reverted', () => {
     const document = material([
       paragraph('b1', 'alpha'),

@@ -41,9 +41,15 @@ describe('mock user scenarios', () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(getMockScenarioHandlers('none')).toEqual([]);
     expect(getMockScenarioHandlers('offline')).toEqual([]);
+    // Runtime-only scenarios change client state, not handlers.
+    const runtimeOnly = [
+      'none',
+      'offline',
+      'connection-reconnecting',
+      'collab-chaos',
+    ];
     for (const id of ids) {
-      if (id === 'none' || id === 'offline' || id === 'connection-reconnecting')
-        continue;
+      if (runtimeOnly.includes(id)) continue;
       expect(getMockScenarioHandlers(id).length).toBeGreaterThan(0);
     }
   });
@@ -163,7 +169,7 @@ describe('mock user scenarios', () => {
         { curate: true, text: 'Teach me' },
         { onError }
       );
-      expect(onError).toHaveBeenCalledWith(message);
+      expect(onError).toHaveBeenCalledWith(message, undefined);
     }
   });
 
