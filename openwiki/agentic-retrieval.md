@@ -683,6 +683,39 @@ the applied corpus and records its receipt. After a publish, `intake.py`
 verification compares each live figure's notes and excluded flag, each
 excerpt's `figure_ids` and the book's `figure_exclusions` with the run.
 
+A library book's figure records come from `knowledge_base_pilot.figure_records`
+and `drawing_records`, which `parse` and `refresh-figures` (the builder's
+figures stage) both run. There are three kinds:
+
+- `parser_image`: the parser's image and chart blocks. Blocks 2 units or
+  thinner on the 0-1000 grid are left out; they are formula bars and rules
+  drawn as images (decision 2026-09-23).
+- `caption_page_reference`: `Figure N:` caption lines with no image block,
+  boxed as the whole page.
+- `vector_drawing`: drawings in the source PDF that the parser does not report
+  (decision 2026-09-23). The source PDF must match the book's sha256.
+
+For `vector_drawing`, PyMuPDF clusters each page's visible paths with an 8 pt
+gap. A cluster becomes a record unless any of these holds:
+
+- Its shorter side is under 30 units.
+- It lies wholly in the top or bottom 100 units.
+- Over a fifth of its area is inside a parser table block or image record.
+- It frames text: word boxes cover over 20% of its area, or over 2% when a
+  rectangle frame spans it or it is all level lines. This catches callouts,
+  code blocks and ruled tables.
+- Apart from its frame, it holds only fills no taller than 45 pt and
+  hairlines: formulas and logos set as glyph outlines, and empty boxes.
+
+The id is `fig_<source14>_p<page>_<x0>_<y0>` (the rounded top-left corner), so
+it never collides with the block-index ids of the other kinds. `block_index` is
+the last block that starts above the drawing, and the record takes that block's
+section path. Excerpts link these records the way they link parser images.
+
+The box covers the drawn paths only; axis labels set as text can fall outside
+it. Published books keep their records. Thresholds, the sample measurement and
+the known misses are in `bench/rag/reports/2026-09-23-vector-figures.md`.
+
 Standalone image uploads (`captionMode: standalone`, route `image_caption`) are
 still described once with the pinned vision model so the file is searchable,
 and `capture_page` shows the image itself (decision 2026-09-21): an upload is
