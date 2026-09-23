@@ -317,18 +317,20 @@ that carry a leading or trailing decimal or Roman folio are grouped by folio
 kind, folio minus page index, top or bottom, band, font and size, whatever
 their title. A group on three or more pages becomes discarded running banners
 when some title, with digits and Roman numerals stripped, repeats on two
-pages. Bare folios join with an empty title. The group's page offset must also
-show elsewhere in the book, in one of two ways. One is a margin block outside
-the group with the same folio kind and offset that is a bare page number or
-carries a title the group does not use; front matter numbered apart therefore
-keeps its own proof. The other is group members on both the left and right
-halves of the page, as on facing pages. Another part of the same numbered
+pages. Bare folios join with an empty title. A page-top group must also show its
+page offset elsewhere in the book, in one of two ways. One is a margin block
+outside the group with the same folio kind and offset that is a bare page
+number or carries a title the group does not use; front matter numbered apart
+therefore keeps its own proof. The other is group members on both the left and
+right halves of the page, as on facing pages. Another part of the same numbered
 series proves nothing, even when ODL typed it as a paragraph, gave it no span
-evidence or split it into another band or font size. So a one-sided Exercise N,
-Question N or Step N series stays a heading unless the book prints page numbers
-at the same offset; the residual is a series that alternates page halves, which
-geometry cannot tell from facing-page heads. Numbered slide titles with no
-repeated title also stay headings. A repeated literal title in a narrow margin band
+evidence or split it into another band or font size. So a one-sided page-top
+Exercise N, Question N or Step N series stays a heading unless the book prints
+page numbers at the same offset; the residual is a series that alternates page
+halves, which geometry cannot tell from facing-page heads. Bottom-margin groups
+need no such proof: centred or full-width footers are often a book's only page
+numbering. Numbered slide titles with no repeated title also stay headings. A
+repeated literal title in a narrow margin band
 also establishes a running-banner family; alternating titles in that band
 require each rendered line to match an earlier or same-page body heading in
 larger type. Every discarded banner retains its former heading-level boundary

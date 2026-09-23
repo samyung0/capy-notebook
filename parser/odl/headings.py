@@ -347,7 +347,7 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             if found:
                 (kind, folio), title = found
                 shown[kind, folio - page_index].append((index, title))
-    for (kind, offset, *_), group in families.items():
+    for (kind, offset, top, *_), group in families.items():
         # A folio that tracks the page proves the band whatever the title,
         # but only a repeated title separates it from numbered slide titles.
         titles: dict[str, set[int]] = defaultdict(set)
@@ -355,15 +355,24 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             titles[title].add(page)
         members = {index for index, _, _ in group}
         boxes = [blocks[index]["bbox"] for index in members]
-        # Exercise N or Question N also rises with the page. It is a folio only
-        # when the book shows that offset elsewhere: on a bare page number or a
-        # banner with another title (a sibling of the same series, typed as a
-        # paragraph or split off by band or size, proves nothing), or on this
-        # family's banners of the facing (left and right) pages.
-        proven = any(
-            index not in members and (not title or title not in titles)
-            for index, title in shown[kind, offset]
-        ) or (any(box[2] < 500 for box in boxes) and any(box[0] > 500 for box in boxes))
+        # A page-top Exercise N or Question N also rises with the page. It is
+        # a folio only when the book shows that offset elsewhere: on a bare page
+        # number or a banner with another title (a sibling of the same series,
+        # typed as a paragraph or split off by band or size, proves nothing),
+        # or on this family's banners of the facing (left and right) pages.
+        # Bottom-margin families need no such proof: centred and full-width
+        # footers are often a book's only page numbering.
+        proven = (
+            not top
+            or any(
+                index not in members and (not title or title not in titles)
+                for index, title in shown[kind, offset]
+            )
+            or (
+                any(box[2] < 500 for box in boxes)
+                and any(box[0] > 500 for box in boxes)
+            )
+        )
         if (
             proven
             and len({page for _, page, _ in group}) >= 3

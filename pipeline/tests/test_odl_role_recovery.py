@@ -276,7 +276,8 @@ def _folio(label, page):
 
 
 @pytest.mark.parametrize(
-    ("title", "y"), [("Exercise {}", 72), ("Step {}", 35), ("{}", 35)]
+    ("title", "y"),
+    [("Exercise {}", 72), ("Question {}", 72), ("Step {}", 35), ("{}", 35)],
 )
 @pytest.mark.parametrize("folio_shift", [None, 0, 20])
 def test_numbered_page_tops_are_banners_only_at_the_offset_the_book_shows(
@@ -325,6 +326,41 @@ def test_a_numbered_series_cannot_prove_its_own_page_offset(split):
             assert len({round(b["bbox"][1] / 10) for b in blocks}) == 2
         assert all(65 < b["bbox"][1] < b["bbox"][3] < 100 for b in blocks)
         assert correct_roles(blocks, document) == blocks
+
+
+@pytest.mark.parametrize("layout", ["centred", "full-width"])
+def test_bottom_footers_that_are_the_only_page_numbers_are_removed(layout):
+    # The offset guard is for page-top headings. A centred or full-width footer
+    # shows no side and is often the book's only page numbering.
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(3):
+            page = document.new_page()
+            if layout == "centred":
+                block = _printed_heading(page, f"Page | {number + 1}", 800, 3, x=280)
+            else:
+                page.insert_text((60, 800), "Innovation Toolkit", fontsize=10)
+                page.insert_text((520, 800), str(number + 1), fontsize=10)
+                rect = page.search_for("Innovation Toolkit")[0]
+                rect |= page.search_for(str(number + 1))[-1]
+                block = {
+                    "type": "text",
+                    "text": f"Innovation Toolkit {number + 1}",
+                    "text_level": 3,
+                    "page_idx": number,
+                    "bbox": [
+                        rect.x0 / page.rect.width * 1000,
+                        rect.y0 / page.rect.height * 1000,
+                        rect.x1 / page.rect.width * 1000,
+                        rect.y1 / page.rect.height * 1000,
+                    ],
+                }
+            blocks.append(block)
+        assert all(b["bbox"][0] < 500 < b["bbox"][2] for b in blocks)
+        assert all(b["bbox"][1] > 900 for b in blocks)
+        result = correct_roles(blocks, document)
+        assert all(b["type"] == "discarded" for b in result)
+        assert all(b["_heading_boundary_level"] == 3 for b in result)
 
 
 @pytest.mark.parametrize("front", ["roman", "arabic"])

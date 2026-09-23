@@ -1,9 +1,15 @@
 # Parser v6: running heads, folios and section paths
 
-2026-09-23. This covers the parser identity `odl-2.5.7-refined-rapidocr-v6` and
-the replay evidence behind it. `CHUNKER_VERSION` stays v11. Nothing was
-deployed, re-parsed or rebuilt. The fresh-parse gate has not run yet (see
-"Not measured").
+2026-09-23. This covers the parser identity `odl-2.5.7-refined-rapidocr-v6`,
+the replay evidence behind it, and the fresh-parse gate. `CHUNKER_VERSION`
+stays v11. Nothing was deployed, ingested or published.
+
+**The fresh-parse gate passes on the option A code.** The first gate, on v6 as
+committed in `f062de40`, failed. Seven documents were worse than v5, because
+the offset guard kept bottom-margin running footers that v5 removed. Option A
+limits the guard to page-top groups, as the decision's wording says. A fresh
+gate of that code has no document worse than v5, and every other check is at
+least as good. See "Fresh-parse gate" and Q3 in `parser-fix-questions.md`.
 
 ## Why
 
@@ -34,20 +40,25 @@ parser lines in `human/agentic-retrieval.md`.
     two of them.
   - Bare folios join the rule with an empty title.
   - This replaces the old rule that bound banners to one title.
-- **Offset guard (review findings M6 and R2-M1).** A group also needs its page
-  offset shown elsewhere in the book, in one of two ways:
+- **Offset guard (review findings M6, R2-M1 and the gate's Q3).** A page-top
+  group also needs its page offset shown elsewhere in the book, in one of two
+  ways:
   - a margin block outside the group with the same folio kind and offset that
     is a bare page number or carries a title the group does not use;
   - group members on both the left and right halves of the page, as on facing
     pages.
 
-  Exercise N, Question N and Step N headings rise with the page too. Another
-  part of the same series proves nothing: a heading ODL typed as a paragraph,
-  one without span evidence, or one split into a sibling group by band or font
-  size. So a one-sided series stays a heading unless the book prints page
-  numbers at the same offset. Because the match is by kind and offset, front
-  matter numbered separately (Roman or Arabic) proves its own banners through
-  its own page numbers.
+  Page-top Exercise N, Question N and Step N headings rise with the page too.
+  Another part of the same series proves nothing: a heading ODL typed as a
+  paragraph, one without span evidence, or one split into a sibling group by
+  band or font size. So a one-sided page-top series stays a heading unless the
+  book prints page numbers at the same offset. Because the match is by kind and
+  offset, front matter numbered separately (Roman or Arabic) proves its own
+  banners through its own page numbers.
+
+  Bottom-margin groups need no such proof. The decision covers "a numbered
+  page-top heading", and centred or full-width footers are often a book's only
+  page numbering (Q3; the committed `f062de40` applied the guard to them too).
 - **Scope boundary.** Every removed banner keeps its former heading level as a
   neutral scope boundary (the 2026-09-20 BOJ lesson). Before, only alternating
   banners kept it.
@@ -103,6 +114,9 @@ Replay sets, all local and ignored:
   - the PDFs under `fixtures/local/`.
 
 ## Results
+
+These are replay results on saved outputs. The fresh-parse gate below
+supersedes their "no document is worse" for the seven documents it names.
 
 Baseline is the v5 rules replayed on the saved output. The lenient and
 `--strict` runs give identical results. The first offset guard (M6) changed no
@@ -221,21 +235,149 @@ Unit probes cover the rest:
 - The reviewer accepted one residual: a one-per-page series that alternates
   page halves (two columns) looks like facing-page heads and is removed.
 
-## Not measured
+## What the replay cannot see
 
-- **Fresh parses.** Review finding M5 is still open. It covers the heading
-  release and scope gold, body retention, outline anchors and a PPTX deck with
-  numbered slide titles. It runs later on the rebuilt v6 image.
-- **Banners v5 already removed.** The replay cannot re-evaluate them, and the
-  saved outputs hold 12,592. On a fresh parse each one also gets a neutral
-  boundary, which can drop ancestry below its level or make outline-root
-  promotion abstain. Chemistry's 37 root promotions are safe: its boundaries
-  sit at level 35 and its roots started at levels 3–4. The reviewer's check of
-  the 23 intake books found only removed banner components among lost
-  ancestors.
+- **Banners v5 already removed.** The replay cannot re-evaluate them (12,592
+  in the saved outputs). On a fresh parse, v6 judges each one again. It may
+  give it a neutral boundary, or keep it as a heading if the offset guard
+  refuses its group. The fresh-parse gate measures both effects.
 - **Lost ancestors.** `measure.py` counts a dropped ancestor as no issue, so
-  "no book is worse" does not cover it on its own. The reviewer's check above
-  fills that gap for the intake books only.
+  "no book is worse" does not cover it on its own. The gate's ancestry check
+  covers it.
+
+## Fresh-parse gate (review M5)
+
+### Setup
+
+- **Arms.** Both run the parser service over the multipart `/file_parse`
+  route with the builder container's env and limits (7 GiB, 4 CPUs,
+  1,800-second deadline):
+  - v6: the builder container, image `capy-kb-parser:pilot-v6`, code
+    `f062de40`, port 18091;
+  - v5: a temporary copy of the kept v5 container, image
+    `capy-kb-parser:pilot-v5`, port 18092, removed afterwards.
+
+  Chemistry and biology exceed the 200 MiB source cap. Both arms parsed them in
+  temporary copies with only the cap raised to 512 MiB, one container at a
+  time.
+- **Sources.** 66 per arm, 16,924 pages:
+  - the 40 regression documents, which include both gold sets;
+  - physics (outline roots);
+  - the 23 intake books;
+  - `fixtures/docs/jp_llm2.pptx`, a real 84-slide lecture deck with slide
+    numbers and titles that repeat across slides;
+  - a numbered-title variant of that deck. Every title gains a section number
+    that advances when the title changes, and three consecutive titles end in
+    `Step 1..3`.
+- **Measures.** [`gate_parser_fresh.py`](../scripts/gate_parser_fresh.py)
+  packs both arms with the production chunker, then reports:
+  - body retention;
+  - outline anchors and roots;
+  - v5 banners that v6 keeps as headings;
+  - the gold witnesses;
+  - an ancestry diff over every body block both arms emit;
+  - wrong-path chunks for the intake books, using `measure.py`.
+- **Caveat.** The multipart route returns no font-repaired `parsed.pdf`, so
+  both arms measure against the original PDF.
+
+### Results (v5 → v6 as committed in `f062de40`, fresh)
+
+| Check | Result |
+| --- | --- |
+| Body retention | 0 unexplained losses; 83 missing units, all banners or page numbers v6 removed |
+| Outline anchors | 4,889 / 4,889 retained |
+| Outline-root promotions | 270 / 270 retained, no new abstention: chemistry 25, biology 50, physics 25, BCcampus 14, LibreOffice 16, OECD 6 |
+| Heading-release gold (20) | v5 13 pass / 6 fail / 1 abstain (matches its record) → v6 14 / 5 / 1: case 08, LibreOffice `14 \| Preface`, fixed |
+| Heading-scope gold (6) | 6 / 6 in both arms |
+| Lost ancestry | 143,592 body blocks compared, no outline-confirmed ancestor lost; 20,610 lost components are removed banners, and the 502 other lost headings sampled are running heads v6 still leaves as headings, chart titles (the BOJ pattern), a table row and a promoted sentence |
+| Guard decks | all slide titles survive in both decks, numbered and Step N included |
+| v5 banners kept as headings | **681, all bottom-margin footers, in 7 documents** |
+| Wrong-path chunks, 17 report books | 1,521 → 1,366 |
+| Wrong-path chunks, all 23 books | **2,199 → 2,388** |
+
+- **Other gold changes.** OECD case 13 also loses its residual
+  `Executive summary › 19` folio child. Case 12 (the R running title) is now a
+  running banner rather than a diagram label, still a pass.
+- **Deck bullet demotions.** The only deck changes are bullet demotions: six
+  list items, plus one real slide title, `■MoE を含む言語モデルにおけるスケール則`.
+  That title is demoted because of the `■`, the accepted review finding m10.
+
+### The failure (v6 as committed)
+
+Seven documents are worse than v5.
+
+| Document | Footers kept | Wrong chunks v5 → v6 | Footer |
+| --- | ---: | ---: | --- |
+| business-plan-development-guide | 133 | 1 → 214 | same title with page number |
+| entrepreneurship-and-innovation-toolkit | 88 | 0 → 215 | `Entrepreneurship and Innovation Toolkit 4` |
+| public-policy-origins-practice-and-analysis | 137 | 2 → 197 | same title with page number |
+| overview-of-healthcare-compliance | 124 | 31 → 168 | `Page \| 1`, centred |
+| private-pilot-for-airplane-category | 79 | 163 → 181 | `Private Pilot … ACS (FAA-S-ACS-6C) 1`, full width |
+| ecb-annual2024 | 109 | – (402 body blocks gain a footer ancestor) | full width |
+| census-income2024 | 11 | – (46 body blocks gain a footer ancestor) | full width, alternating ends |
+
+v5's title-bound rule removed each of these. The v6 offset guard keeps them
+for two reasons. First, a centred or full-width box never shows left and right
+sides. Second, the footer is the book's only page numbering, so no other
+margin block shows the offset.
+
+### Options measured
+
+Each option was measured by re-running role correction on the fresh v6 output
+from a scratch copy of the parser. A control run of the unchanged v6 rules
+differs from the true fresh parse in three documents (business plan, forallx,
+INSEE), so these numbers are close to, but not exactly, fresh parses.
+
+| Option | Footers kept | Documents worse than v5 | Wrong chunks, 17 books | Wrong chunks, 23 books |
+| --- | ---: | ---: | ---: | ---: |
+| v6 as committed | 681 | 7 | 1,366 | 2,388 |
+| A: offset guard on page-top groups only | 0 | 0 | 996 | 1,610 |
+| C: also prove by the folio switching ends | 449 | 4 | 1,151 | 1,960 |
+
+Under A, anchors, roots and body text are unchanged, and no outline-confirmed
+ancestor is lost. Option A matches the decision's wording ("a numbered page-top
+heading").
+
+### Option A, gated fresh
+
+The parent adopted A (Q3). `parser/odl/headings.py` now treats a bottom-margin
+folio group as proven, and page-top groups keep the guard. Tests add a centred
+and a full-width bottom footer that are a book's only page numbering (both
+removed), and `Question N` joins the page-top probes (still headings).
+
+The gated code is exactly the code to be committed:
+
+- **Build.** The image `capy-kb-parser:scratch-v6a` was built from the working
+  tree's parser files with `RELEASE_SHA` set to HEAD `bac9dbc3` as a
+  placeholder. Its `headings.py`, `furniture.py` and `app.py` match the working
+  tree byte for byte, line endings aside.
+- **Run.** The image ran on port 18093 with the builder container's env and
+  limits, plus the 512 MiB source cap. It fresh-parsed all 66 sources, which
+  were compared with the fresh v5 arm above.
+- **Cleanup.** Container and image were removed afterwards.
+
+| Check | v5 | v6 as committed | v6 option A |
+| --- | --- | --- | --- |
+| Documents worse than v5 | – | 7 | **0** |
+| v5 footers kept as headings | – | 681 | **0** |
+| Unexplained body losses | – | 0 | 0 |
+| Outline anchors | 4,889 | 4,889 | 4,889 |
+| Outline-root promotions | 270 | 270 | 270 |
+| Outline-confirmed ancestors lost | – | 0 | 0 |
+| Heading-release gold | 13 / 6 / 1 | 14 / 5 / 1 | 14 / 5 / 1 |
+| Scope gold | 6 / 6 | 6 / 6 | 6 / 6 |
+| Wrong chunks, 17 report books | 1,521 | 1,366 | **996** |
+| Wrong chunks, 6 later books | 678 | 1,022 | **614** |
+
+- **Footer documents.** The seven regressed documents are back to v5 or better:
+  entrepreneurship 0, business plan 1, public policy 2, healthcare 31 and
+  private pilot 163 wrong chunks. ECB and census keep no footer.
+- **Everything else.** Gold witness states, both guard decks and all other
+  documents match the first v6 run.
+- **Fresh numbers match the scratch measurement.** The fresh result equals the
+  estimate made on re-run v6 output (996 and 1,610 wrong chunks for the 17 and
+  23 books).
+- **Result: pass.**
 
 ## Reproduction
 
@@ -251,3 +393,23 @@ uv run --project pipeline python bench/parsers/scripts/replay_heading_roles.py b
 
 The span-rule and re-spacing comparisons were one-off variants of the same
 replay; their numbers are recorded in `parser-fix-questions.md`.
+
+The gate, with raw outputs under the ignored
+`reports/local/2026-09-23-parser-v6-gate/`:
+
+```sh
+uv run --project pipeline python bench/parsers/scripts/gate_parser_fresh.py deck \
+  bench/parsers/fixtures/docs/jp_llm2.pptx GATE/decks/jp_llm2-numbered.pptx
+PARSER_TOKEN_V5=... PARSER_TOKEN_V6=... uv run --project pipeline python \
+  bench/parsers/scripts/gate_parser_fresh.py parse --manifest GATE/gate.json \
+  --arm v5=http://127.0.0.1:18092 --arm v6=http://127.0.0.1:18091 --output GATE
+uv run --project pipeline python bench/parsers/scripts/gate_parser_fresh.py compare \
+  --manifest GATE/gate.json --output GATE --arms v5 v6 \
+  --gold bench/parsers/fixtures/heading-release-gold-2026-09-20.json \
+         bench/parsers/fixtures/heading-scope-release-gold-2026-09-20.json \
+  --measure-dir data/knowledge-base/opus-intake-2026-09-23/section-paths
+```
+
+The option trees `v6A`, `v6C` and the control `v6R` were produced by a scratch
+script that swaps the guard expression in a copy of `parser/odl`. Compare them
+with `--arms v5 v6A` and so on.
