@@ -1,0 +1,226 @@
+[
+  {
+    "id": "p01",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Worked example. Dataset A has x = [1, 2, 3] and y = [3, 5, 7], both in metres. Fit simple least-squares regression of y on x. The fitted line is y-hat = 1 + 2x; all residuals are zero. No software is required."
+    },
+    "right": {
+      "text": "Worked example. Dataset A has x = [1, 2, 3] and y = [3, 5, 7], both in metres. Fit simple least-squares regression of y on x. The fitted line is y-hat = 1 + 2x; all residuals are zero. No software is required."
+    },
+    "expected_equivalent": true,
+    "expected_same_example": true,
+    "rationale": "Complete identical teaching content."
+  },
+  {
+    "id": "p02",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Worked example. Dataset A has x = [1, 2, 3] and y = [3, 5, 7], both in metres. Fit simple least-squares regression of y on x. The fitted line is y-hat = 1 + 2x; all residuals are zero. No software is required."
+    },
+    "right": {
+      "text": "Worked example. Dataset A has x = [1, 2, 3] and y = [3, 5, 7], both in metres. Fit simple least-squares regression of y on x. The fitted line is y-hat = 1 + 2x; all residuals are zero. No software is required.\nNew task. Use the fitted line at x = 4 to predict y = 9 metres. This extrapolates beyond the observed x range and requires the linear trend to continue."
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Containment loses the extra prediction and applicability warning."
+  },
+  {
+    "id": "p03",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Recorded pressure: 5 MPa. This is the measured pressure in the vessel."
+    },
+    "right": {
+      "text": "Recorded pressure: 5 mPa. This is the measured pressure in the vessel."
+    },
+    "expected_equivalent": false,
+    "expected_same_example": null,
+    "rationale": "Case-folding changes case-sensitive units into a false exact match."
+  },
+  {
+    "id": "p04",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Worked example: the same Elmhurst gift-aid sample, simple regression on family income. Both variables are in dollars. The software intercept is 24319.3 and slope is -0.0431."
+    },
+    "right": {
+      "text": "Worked example: the same Elmhurst gift-aid sample, simple regression on family income. Both variables are in thousands of dollars. The software intercept is 24.3193 and slope is -0.0431."
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Same underlying example, distinct units and coefficients must survive."
+  },
+  {
+    "id": "p05",
+    "cohort": "synthetic",
+    "left": {
+      "text": "On Dataset A, estimate the simple regression of y on x in R. Run lm(y ~ x, data = A), then summary(fit). This lesson teaches those R commands."
+    },
+    "right": {
+      "text": "On Dataset A, estimate the simple regression of y on x in jamovi. Open Regression, choose Linear Regression, set y as dependent variable and x as covariate. This lesson teaches those jamovi steps."
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Same dataset and method do not make software instructions interchangeable."
+  },
+  {
+    "id": "p06",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Exercise. For data x = [1, 2, 3] and y = [3, 5, 7], find the least-squares slope and intercept without software."
+    },
+    "right": {
+      "text": "Exercise. For data x = [1, 2, 3] and y = [3, 5, 7], find the least-squares slope and intercept without software.\nSolution. The slope is 2 and the intercept is 1, because every point lies on y = 1 + 2x."
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Exercise and answer are complementary, not interchangeable roles."
+  },
+  {
+    "id": "p07",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Book A, excerpt 10. Using Table 1 above, calculate the fitted slope. Required context: A:table1. The table is not supplied."
+    },
+    "right": {
+      "text": "Book B, excerpt 20. Using Table 1 above, calculate the fitted slope. Required context: B:table1. The table is not supplied."
+    },
+    "expected_equivalent": false,
+    "expected_same_example": null,
+    "rationale": "Missing givens prevent comparing either example or teaching content."
+  },
+  {
+    "id": "p08",
+    "cohort": "synthetic",
+    "left": {
+      "text": "Worked example. Dataset A has x = [1, 2, 3] and y = [3, 5, 7], both in metres. Fit simple least-squares regression of y on x. The fitted line is y-hat = 1 + 2x; all residuals are zero. No software is required."
+    },
+    "right": {
+      "text": "For Dataset A, the three observations are (1, 3), (2, 5), and (3, 7). Both coordinates measure metres. A hand calculation of simple least-squares regression predicting y from x gives intercept 1 and slope 2. Thus y-hat = 1 + 2x and each residual equals zero."
+    },
+    "expected_equivalent": true,
+    "expected_same_example": true,
+    "rationale": "Paraphrase preserves the complete data, method, units and solution."
+  },
+  {
+    "id": "p09",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_f213361bf057b0_566_v3"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_0689cddaba206d_703_v3"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Elmhurst is shared; dollars/thousands and amount of worked calculation differ."
+  },
+  {
+    "id": "p10",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_f213361bf057b0_564_v3"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_f213361bf057b0_566_v3"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Conditions and summary statistics complement the fitted-line calculation."
+  },
+  {
+    "id": "p11",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-general/baseline/run.json",
+      "excerpt_id": "exc_64ed84430ae3b2_261_v2"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-general/baseline/run.json",
+      "excerpt_id": "exc_64ed84430ae3b2_262_v2"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Adjacent parts of the exam-score worked example, not complete equivalent excerpts."
+  },
+  {
+    "id": "p12",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-r/baseline/run.json",
+      "excerpt_id": "exc_dd1e65de648fb2_998_v2"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-r/baseline/run.json",
+      "excerpt_id": "exc_dd1e65de648fb2_1020_v2"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "The parenthood data support different simple and multiple regression tasks."
+  },
+  {
+    "id": "p13",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_0689cddaba206d_703_v3"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-r/baseline/run.json",
+      "excerpt_id": "exc_0689cddaba206d_705_v3"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Calculating the Elmhurst fit and interpreting its coefficients are distinct teaching content."
+  },
+  {
+    "id": "p14",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/high/bayesian-exercises/baseline/run.json",
+      "excerpt_id": "exc_dd1e65de648fb2_1200_v2"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/high/bayesian-exercises/baseline/run.json",
+      "excerpt_id": "exc_dd1e65de648fb2_1201_v2"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": true,
+    "rationale": "Prior and likelihood are distinct required parts of the umbrella example."
+  },
+  {
+    "id": "p15",
+    "cohort": "saved_real",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_f213361bf057b0_566_v3"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-general/baseline/run.json",
+      "excerpt_id": "exc_64ed84430ae3b2_262_v2"
+    },
+    "expected_equivalent": false,
+    "expected_same_example": false,
+    "rationale": "Elmhurst aid and student exam scores are different datasets."
+  },
+  {
+    "id": "p16",
+    "cohort": "trace_copy_control",
+    "left": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/regression-by-hand/baseline/run.json",
+      "excerpt_id": "exc_f213361bf057b0_566_v3"
+    },
+    "right": {
+      "trace": "bench/rag/reports/2026-09-21-knowledge-scope-implementation/distinct-regression-examples/baseline/run.json",
+      "excerpt_id": "exc_f213361bf057b0_566_v3"
+    },
+    "expected_equivalent": true,
+    "expected_same_example": true,
+    "rationale": "Two saved complete reads of exactly the same source excerpt."
+  }
+]

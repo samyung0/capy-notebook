@@ -59,6 +59,17 @@ computational questions, findings in
 
 ### rag
 
+[`rich_chat_validity.py`](rag/scripts/rich_chat_validity.py) samples the current
+rich-chat prompt with frozen synthetic evidence through Tencent GLM and official
+DeepSeek, with GLM at Low and DeepSeek at High. It uses the production request builders, no retries, and no repair
+requests. Run `uv run python bench/rag/scripts/rich_chat_validity.py
+bench/rag/reports/local/<fresh-directory> --repeats 2`; credentials are read in
+memory from the UAT worker. Re-score saved output without network access by
+replacing `--repeats 2` with `--score`. The sibling TypeScript scorer uses the
+official parser and local recovery checks. Add `--model deepseek` or `--model glm`
+to limit the live sample to one provider. These are format samples, not
+production failure-rate measurements or retrieval-quality tests.
+
 `rag/scripts/rag_eval.py` is a live retrieval diagnostic that
 runs the production `search()` against a real workspace inside the pipeline
 image. Its question sets in `rag/fixtures/` are keyed to `CHUNKER_VERSION` and to
@@ -113,6 +124,59 @@ then audits returned artifacts. Its [example-guided rerun report](rag/reports/20
 separates structural validation from source and annotation quality. The
 [deduplication research note](rag/reports/2026-09-21-knowledge-duplicate-strategy.md)
 separates duplicate discovery from result grouping and recommends a bounded test.
+The [retrieval improvement directions](rag/reports/2026-09-21-retrieval-improvement-directions.md)
+assess both retrievers against the frozen results and live counts, test top-k
+and abstention rules with [`topk_abstention_eval.py`](rag/scripts/topk_abstention_eval.py)
+(lab workspace and live library, read-only) and through the agent loop with
+[`topk_abstention_agent.py`](rag/scripts/topk_abstention_agent.py) (local
+Ollama GLM), and propose the dedup refinement workflow.
+The [next-moves review](rag/reports/2026-09-21-retrieval-next-moves-review.md)
+audits those saved results, separates result crowding from excerpt equivalence,
+and records a bounded [Qwen pair-review probe](rag/scripts/knowledge_dedup_probe.py).
+Its initial proposals are followed by the separate workspace and library
+agent-loop experiments below; no reranker was tested again.
+
+[`workspace_agentic_retrieval.py`](rag/scripts/workspace_agentic_retrieval.py)
+compares current five-passage workspace search against lexical-protected
+distance abstention through the actual chat loop. Fifteen paired requests and
+two paired repeats use Ollama GLM and hash-verified local source PDFs, with
+read-only access to the isolated lab index. The
+[workspace report](rag/reports/2026-09-21-workspace-agentic-retrieval.md)
+separates unavailable sources from search misses and recommends identifier
+lookup/recovery work instead of deploying the abstention rule.
+
+[`workspace_opening_agentic.py`](rag/scripts/workspace_opening_agentic.py)
+tests a first-chunk heading in the existing source catalog through 20 fresh
+Ollama turns, with an isolated runtime, read-only lab data and scoped controls.
+The [opening-recovery report](rag/reports/2026-09-21-workspace-opening-agentic.md)
+finds no final-answer improvement and identifies tools-off finalization as a
+separate failure. Its `check` command validates the schedule and scoped-exclusion
+fixture without services.
+
+[`knowledge_agentic_breadth.py`](rag/scripts/knowledge_agentic_breadth.py)
+compares five versus ten knowledge excerpts through the existing curate loop,
+with 40 candidates and the unchanged tool-output limit. It runs six paired
+requests plus two paired repeats on Ollama GLM, uses the library reader role
+in read-only transactions, and saves materials locally. Run `--check` without
+services or `--suite --output <fresh-local-directory>` for the live comparison.
+Use `--b2-account` to read source PDFs with the locally authorized B2 CLI account.
+Live access requires authorization. The runner records source versions and
+excerpt-metadata hashes before and after each turn. See the
+[agent-loop breadth report](rag/reports/2026-09-21-knowledge-agentic-breadth.md)
+for outcomes: ten results improve saved-note counts, but the current capture
+rule remains unmet. Its follow-up distinguishes that compliance score from
+factual quality and proposes trusting Sol-reviewed text while comparing current
+search with compact previews and selective reads. The earlier text-only
+preflight is kept separate.
+
+[`knowledge_compact_agent.py`](rag/scripts/knowledge_compact_agent.py) tests the
+subsequent requested package: up to 20 compact previews, full evidence through
+`read_knowledge`, no capture tool and prompt-steered finishing within the same
+stall guard. Eight paired requests plus two paired repeats run from a frozen
+local runtime copy with read-only library access. The
+[compact-curate report](rag/reports/2026-09-21-knowledge-compact-finish.md)
+records the protocol and outcomes. Run `--check` offline or `--suite --output
+<fresh-directory>` with authorized library and B2 access.
 
 The four subdirectories are frozen experiments, each with its own README,
 reproduction steps, and report. They describe completed runs on a preserved lab
@@ -137,3 +201,9 @@ stay where they are.
 Developer-PC tools that are not measurements live under [`lab/`](../lab/):
 the agentic-loop playground (`lab/playground`) and the knowledge-base builder
 (`lab/knowledge`). Both reuse bench fixtures and the pilot scripts here.
+
+The 2026-09-22 curate promotion uses the shared application ledger updates and
+material-backed excerpt retention in the playground.
+[`knowledge_retention_agent.py`](rag/scripts/knowledge_retention_agent.py)
+runs a two-turn reuse check against the selected preset with local materials;
+see [promotion results](rag/reports/2026-09-22-curate-application-promotion.md).

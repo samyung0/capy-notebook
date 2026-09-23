@@ -192,7 +192,11 @@ export function Header({
   readOnly,
   workspaceId,
   leading,
+  standalone = false,
+  fileControls,
 }: {
+  standalone?: boolean;
+  fileControls?: ReactNode;
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
@@ -228,19 +232,14 @@ export function Header({
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   return (
-    <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
+    <div className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-3 pl-4 lg:pr-5">
       {leading}
-      {leading && (
-        <span className="shrink-0 font-normal text-line-strong text-xl leading-none">
-          /
-        </span>
-      )}
-      <div className="flex min-w-0 items-center gap-1 sm:ml-1">
-        <FileIcon className="size-4.5 shrink-0" name={icon} />
+      <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
+        <FileIcon className="size-5 shrink-0 -translate-y-px" name={icon} />
         <h2
           className={cn(
-            'ml-1 min-w-0 flex-1 truncate',
-            leading ? 't-body font-semibold' : 't-subtitle translate-y-px'
+            'min-w-0 flex-1 truncate',
+            leading ? 't-body font-semibold' : 't-subtitle'
           )}
         >
           {title ?? '--'}
@@ -248,7 +247,7 @@ export function Header({
         {statusLabel && (
           <span
             className={cn(
-              '-translate-y-px self-end px-1 text-fg-muted text-xs leading-(--subtitle-line-height)',
+              't-meta px-1 text-fg-muted leading-(--subtitle-line-height)',
               editorStatus?.mode === 'edit' &&
                 editorStatus.saveState === 'error' &&
                 'text-solid-error'
@@ -261,6 +260,7 @@ export function Header({
         )}
       </div>
       <div className="ml-auto flex items-center">
+        {item.kind === 'file' && fileControls}
         {item.kind === 'material' && activeMode === 'view' && materialKind && (
           <MaterialViewActions kind={materialKind} materialId={item.id} />
         )}
@@ -273,7 +273,12 @@ export function Header({
           >
             <SelectTrigger
               aria-label={m.material_mode()}
-              className="px-1.5 py-2"
+              /* The base trigger stretches and pushes its chevron out with
+               * justify-between, which reads as a third, wider gap next to the
+               * icon/label pair. Held to content width here so icon, label,
+               * chevron and the action menu all sit 8px apart; the trailing 8px
+               * comes from the action button's own left padding. */
+              className="w-auto justify-start py-2 pr-0 pl-1.5 max-md:[&_div>span]:hidden"
               variant="ghost-hover"
             >
               <SelectValue />
@@ -352,11 +357,14 @@ export function Header({
           }
           menuIconContainerClassName={cn(
             'shrink-0',
-            leading && 'px-1 py-2.5 text-fg-muted [&>svg]:size-4.25'
+            leading && 'px-2 py-2.5 [&>svg]:size-4.25 [&>svg]:-translate-y-px'
           )}
           onDeleted={onDeleted}
-          readOnly={readOnly}
+          readOnly={
+            readOnly || (material ? !material.capabilities.canEdit : false)
+          }
           renameFieldLabel={m.files_file_name()}
+          showMove={!standalone}
           workspaceId={workspaceId}
         />
       </div>

@@ -23,6 +23,7 @@ import type {
   MaterialListParams,
   MaterialListSort,
 } from '@/api/types';
+import { ItemList } from '@/components/app/ItemCard';
 import {
   type FilterSection,
   ListToolbar,
@@ -32,8 +33,8 @@ import {
 } from '@/components/app/ListToolbar';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import type { MenuItem } from '@/components/ui/Menu';
 import { Menu } from '@/components/ui/Menu';
@@ -77,25 +78,6 @@ function readView(): ListView {
 }
 
 function materialLink(item: MaterialListItem) {
-  if (item.kind === 'quiz') {
-    return linkOptions({
-      params: { quizId: item.id },
-      to: '/quizzes/$quizId/attempt',
-    });
-  }
-  if (item.kind === 'flashcards') {
-    return linkOptions({
-      params: { flashcardSetId: item.id },
-      to: '/flashcards/$flashcardSetId',
-    });
-  }
-  if (item.workspaceId) {
-    return linkOptions({
-      params: { workspaceId: item.workspaceId },
-      search: { material: item.id },
-      to: '/workspaces/$workspaceId',
-    });
-  }
   return linkOptions({
     params: { materialId: item.id },
     to: '/materials/$materialId',
@@ -221,6 +203,7 @@ export default function Create() {
             onSuccess: (material) =>
               navigate({
                 params: { materialId: material.id },
+                search: { mode: 'edit' },
                 to: '/materials/$materialId',
               }),
           }
@@ -327,7 +310,11 @@ export default function Create() {
         {
           icon: 'quiz',
           label: m.quiz_start(),
-          onClick: () => navigate(materialLink(item)),
+          onClick: () =>
+            navigate({
+              params: { quizId: item.id },
+              to: '/quizzes/$quizId/attempt',
+            }),
         },
         {
           icon: 'settings',
@@ -343,7 +330,11 @@ export default function Create() {
       items.push({
         icon: 'flashcards',
         label: m.action_study(),
-        onClick: () => navigate(materialLink(item)),
+        onClick: () =>
+          navigate({
+            params: { flashcardSetId: item.id },
+            to: '/flashcards/$flashcardSetId',
+          }),
       });
     } else {
       items.push({
@@ -425,38 +416,25 @@ export default function Create() {
           <p className="py-10 text-center text-fg-muted">{m.create_empty()}</p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
-            {view === 'grid' ? (
-              <div className="grid w-full grid-cols-[repeat(auto-fill,minmax(min(100%,250px),1fr))] gap-3">
-                {items.map((item) => (
-                  <MaterialCard
-                    item={item}
-                    key={item.id}
-                    link={materialLink(item)}
-                    menu={menuFor(item)}
-                    view="grid"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-card border border-line">
-                <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:gap-3">
-                  <div>{m.list_col_name()}</div>
-                  <div>{m.create_filter_workspace()}</div>
-                  <div>{m.list_col_details()}</div>
-                  <div>{m.list_col_updated()}</div>
-                  <div />
-                </div>
-                {items.map((item) => (
-                  <MaterialCard
-                    item={item}
-                    key={item.id}
-                    link={materialLink(item)}
-                    menu={menuFor(item)}
-                    view="list"
-                  />
-                ))}
-              </div>
-            )}
+            <ItemList
+              columns={[
+                m.list_col_name(),
+                m.create_filter_workspace(),
+                m.list_col_details(),
+                m.list_col_updated(),
+              ]}
+              view={view}
+            >
+              {items.map((item) => (
+                <MaterialCard
+                  item={item}
+                  key={item.id}
+                  link={materialLink(item)}
+                  menu={menuFor(item)}
+                  view={view}
+                />
+              ))}
+            </ItemList>
             {hasNextPage && (
               <Button
                 className="self-center"
@@ -513,14 +491,13 @@ export default function Create() {
           title={m.flashcards_share_title({ name: sharing.title })}
         />
       )}
-      <ConfirmDialog
-        body={m.confirm_delete_body()}
+      <TrashConfirmDialog
+        name={deleting?.title ?? ''}
         onClose={() => setDeleting(null)}
         onConfirm={() => {
           if (deleting) deleteMaterial(deleting.id);
         }}
         open={!!deleting}
-        title={m.confirm_delete_title({ name: deleting?.title ?? '' })}
       />
     </PanelWithInvertedRadius>
   );

@@ -12,4 +12,6 @@ export const PDFAnnotationBodyKind = {
   highlight: 'highlight',
   rectangle: 'rectangle',
   ellipse: 'ellipse',
+  pen: 'pen',
+  text: 'text',
 } as const;

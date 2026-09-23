@@ -1,7 +1,6 @@
 import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
 import {
-  createConversationBodyTitleMax,
   createMaterialBodyTitleMax,
   createSourceUploadBodyNameMax,
 } from '@/api/gen/validators';
@@ -20,7 +19,9 @@ import type {
   Question,
   Quiz,
   SearchResult,
+  SourceCollaborationToken,
   SourceFile,
+  SourceSession,
   Tag,
   TagInput,
   Task,
@@ -46,6 +47,8 @@ import {
 } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
+import { mockChatStream } from './chatStream';
+import { sourceRoom, sourceRoomName, sourceRoomState } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
 
@@ -94,8 +97,8 @@ function mockCatalogModels() {
   const hasOpenAI = Boolean(db.llmCredentials.openai);
   const hasDeepSeek = Boolean(db.llmCredentials.deepseek);
   const thinking = {
-    default: 'instant',
-    levels: ['instant', 'low', 'mid', 'high', 'max'],
+    default: 'high',
+    levels: ['low', 'mid', 'high', 'max'],
   };
   return [
     {
@@ -117,7 +120,7 @@ function mockCatalogModels() {
       providerSlug: 'openai',
       thinking: {
         default: 'mid',
-        levels: ['instant', 'low', 'mid', 'high', 'max'],
+        levels: ['low', 'mid', 'high', 'max'],
       },
       usesUserKey: hasOpenAI,
     },
@@ -162,7 +165,7 @@ interface MockInviteCandidate {
 
 const mockDiscussions: MaterialDiscussion[] = [];
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
-const mockWorkspaceMembers: WorkspaceMember[] = [
+export const mockWorkspaceMembers: WorkspaceMember[] = [
   {
     createdAt: new Date().toISOString(),
     name: 'Morgan Lee',
@@ -178,6 +181,37 @@ const mockInviteCandidates: MockInviteCandidate[] = [
     name: 'Morgan Lee',
   },
 ];
+
+const SOURCE_EPOCH = 1;
+
+/** Text sources get a live mock session: the room is seeded from the file's
+ * mock link, so its Yjs state is what the sidecar would hand out. Office and
+ * binary kinds have no fixture bytes, so they answer 503 like `dialogFiles`. */
+function mockSourceSession(fileId: string): SourceSession | null {
+  const file = db.files.find((row) => row.id === fileId);
+  const link = db.fileLinks[fileId];
+  if (!(file && link?.url.startsWith('data:text/plain'))) return null;
+  const text = decodeURIComponent(link.url.slice(link.url.indexOf(',') + 1));
+  const room = sourceRoom(fileId, SOURCE_EPOCH, text);
+  return {
+    access: 'write',
+    baseRevision: file.revision,
+    baseSourceSHA256: `mock-${fileId}-${file.revision}`,
+    checkpoint: room.version,
+    epoch: SOURCE_EPOCH,
+    fileId,
+    format: 'text',
+    indexedBaseline: `mock-${fileId}-${file.revision}`,
+    indexedCheckpoint: 0,
+    netTokens: 0,
+    pendingEffects: null,
+    room: sourceRoomName(fileId, SOURCE_EPOCH),
+    sourceIdentity: `mock-${fileId}`,
+    sourceURL: link.url,
+    state: sourceRoomState(room),
+    workspaceId: file.workspaceId,
+  };
+}
 
 const editorStateCacheName = 'capy-notebook-editor-e2e-state-v1';
 const editorStateRequest = (materialId: string) =>
@@ -468,10 +502,33 @@ export const handlers = [
     () => new HttpResponse(null, { status: 503 })
   ),
   http.get('/api/files/:id/source-session', ({ params }) => {
-    if (!dialogFiles.some((file) => file.id === params.id)) return;
+    if (dialogFiles.some((file) => file.id === params.id)) {
+      return HttpResponse.json(
+        { detail: 'Mock source session unavailable.', status: 503 },
+        { status: 503 }
+      );
+    }
+    const session = mockSourceSession(String(params.id));
+    return session
+      ? HttpResponse.json(session)
+      : HttpResponse.json(
+          { detail: 'Only text sources have a mock session.', status: 503 },
+          { status: 503 }
+        );
+  }),
+  http.post('/api/files/:id/collaboration-token', ({ params }) => {
+    const session = mockSourceSession(String(params.id));
+    if (!session) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json(
-      { detail: 'Mock source session unavailable.', status: 503 },
-      { status: 503 }
+      {
+        access: 'write',
+        epoch: session.epoch,
+        expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+        room: session.room,
+        token: 'mock-collaboration-token',
+        url: 'mock://collaboration',
+      } satisfies SourceCollaborationToken,
+      { status: 201 }
     );
   }),
   http.post('/__mock/auth/:operation', async () => {
@@ -2000,140 +2057,7 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  /* ---------------- chat streaming (SSE) ----------------
-     Mirrors the Go gateway: persists the user turn, streams the answer
-     token-by-token as `data: {type,...}` events, then saves the assistant
-     turn. Honors the client AbortController so Stop works in dev. */
-  http.post('/api/workspaces/:id/chat/stream', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      conversationId?: string;
-      curate?: boolean;
-      text: string;
-    };
-    const now = new Date().toISOString();
-
-    let conv = body.conversationId
-      ? db.conversations.find((c) => c.id === body.conversationId)
-      : undefined;
-    if (!conv) {
-      conv = {
-        createdAt: now,
-        curate: body.curate ?? false,
-        id: uid('conv'),
-        title: '',
-        updatedAt: now,
-        workspaceId: params.id as string,
-      };
-      db.conversations.push(conv);
-    }
-    if (!conv.title)
-      conv.title = [...body.text]
-        .slice(0, createConversationBodyTitleMax)
-        .join('');
-    db.chatMessages.push({
-      citations: null,
-      content: body.text,
-      conversationId: conv.id,
-      createdAt: now,
-      id: uid('m'),
-      role: 'user',
-      status: 'complete',
-    });
-
-    const convId = conv.id;
-    const assistantId = uid('m');
-    const citations = db.files.slice(0, 2).map((f) => ({
-      fileId: f.id,
-      fileName: f.name,
-      snippet: 'Relevant passage from your source…',
-    }));
-    const answer =
-      `Based on your sources, **${body.text.replace(/\?$/, '')}** connects to the key ideas in your materials.\n\n` +
-      '- The cell membrane regulates transport\n' +
-      '- Energy is produced in the **mitochondria**\n' +
-      '- Genetic information lives in the nucleus';
-    const words = answer.split(' ');
-
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const send = (o: unknown) =>
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
-        send({
-          conversationId: convId,
-          messageId: assistantId,
-          modelDisplayName: 'DeepSeek Flash',
-          modelSlug: 'deepseek-flash',
-          modelVersion: 1,
-          providerSlug: 'deepseek',
-          type: 'start',
-        });
-        await delay(120);
-        send({ phase: 'running_tools', type: 'phase' });
-        send({
-          callId: 'call_mock_search',
-          detail: body.text.slice(0, 40),
-          name: 'search_workspace',
-          type: 'tool_start',
-        });
-        await delay(160);
-        send({
-          callId: 'call_mock_search',
-          outcome: 'succeeded',
-          type: 'tool_end',
-        });
-        send({ citations, type: 'citations' });
-        send({ phase: 'answering', type: 'phase' });
-        send({ blockId: 'mock-answer', type: 'block_start' });
-        let acc = '';
-        for (const w of words) {
-          if (request.signal.aborted) break;
-          await delay(35);
-          acc += w + ' ';
-          send({ blockId: 'mock-answer', text: w + ' ', type: 'block_delta' });
-        }
-        send({ blockId: 'mock-answer', kind: 'answer', type: 'block_end' });
-        const aborted = request.signal.aborted;
-        db.chatMessages.push({
-          activity: [
-            {
-              callId: 'call_mock_search',
-              detail: body.text.slice(0, 40),
-              id: 'call_mock_search',
-              kind: 'tool',
-              name: 'search_workspace',
-              outcome: 'succeeded',
-            },
-          ],
-          citations,
-          content: acc.trim(),
-          conversationId: convId,
-          createdAt: new Date().toISOString(),
-          id: assistantId,
-          modelDisplayName: 'DeepSeek Flash',
-          modelSlug: 'deepseek-flash',
-          modelVersion: 1,
-          providerSlug: 'deepseek',
-          role: 'assistant',
-          status: aborted ? 'aborted' : 'complete',
-        });
-        conv!.updatedAt = new Date().toISOString();
-        if (!aborted)
-          send({
-            status: 'complete',
-            tokenCount: words.length,
-            type: 'done',
-          });
-        controller.close();
-      },
-    });
-    return new HttpResponse(stream, {
-      headers: {
-        'Cache-Control': 'no-cache',
-        'Content-Type': 'text/event-stream',
-      },
-    });
-  }),
+  mockChatStream(),
   /* Plate/@ai-sdk UI-message stream. This mirrors the production protocol so
      editor integration can be developed under MSW without provider calls. */
   http.post('/api/workspaces/:id/ai/command', async ({ request }) => {

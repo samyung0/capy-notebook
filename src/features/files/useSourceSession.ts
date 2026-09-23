@@ -1,4 +1,3 @@
-import { HocuspocusProvider } from '@hocuspocus/provider';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { api } from '@/api/client';
@@ -12,6 +11,7 @@ import {
   sourceRecoveryDrafts,
   writeSourceDraft,
 } from './sourceDraft';
+import { createSourceProvider, type SourceProvider } from './sourceProvider';
 
 export type SourceSaveState =
   | 'connecting'
@@ -84,7 +84,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
   );
   const [synced, setSynced] = useState(false);
   const runtime = useRef<{
-    provider: HocuspocusProvider;
+    provider: SourceProvider;
     checkpoint: () => void;
     sequence: number;
     acknowledged: number;
@@ -117,7 +117,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     let latestDraft: SourceDraft | undefined;
     let recoveryDrafts: SourceDraft[] | null = null;
     let cancelled = false;
-    let provider: HocuspocusProvider | null = null;
+    let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let draftWrites = Promise.resolve();
@@ -213,7 +213,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         acknowledged: -1,
         checkpoint: () => {},
         pending,
-        provider: null as unknown as HocuspocusProvider,
+        provider: null as unknown as SourceProvider,
         recovery: false,
         sequence: restoredDrafts.length ? 1 : 0,
       };
@@ -227,7 +227,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         );
       };
       active.checkpoint = checkpoint;
-      provider = new HocuspocusProvider({
+      provider = createSourceProvider({
         document: shared,
         name: session.room,
         onAuthenticationFailed: ({ reason }) => {

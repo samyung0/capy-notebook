@@ -40,6 +40,7 @@ type Message struct {
 	Role             string          `json:"role"`
 	Content          string          `json:"content"`
 	Status           string          `json:"status"`
+	ErrorCode        string          `json:"errorCode,omitempty"`
 	Citations        []Citation      `json:"citations,omitempty"`
 	Activity         []ActivityBlock `json:"activity,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`
@@ -58,15 +59,18 @@ type Message struct {
 type Citation struct {
 	// Kind is "material" when the passage came from an indexed note; then
 	// MaterialID names the note and FileID is empty.
-	Kind       string   `json:"kind,omitempty"`
-	MaterialID string   `json:"materialId,omitempty"`
-	FileID     string   `json:"fileId"`
-	ChunkID    string   `json:"chunkId,omitempty"`
-	FileName   string   `json:"fileName"`
-	Snippet    string   `json:"snippet"`
-	PageStart  *int     `json:"pageStart,omitempty"`
-	PageEnd    *int     `json:"pageEnd,omitempty"`
-	Regions    []Region `json:"regions,omitempty"`
+	Kind       string `json:"kind,omitempty"`
+	MaterialID string `json:"materialId,omitempty"`
+	FileID     string `json:"fileId"`
+	ChunkID    string `json:"chunkId,omitempty"`
+	// N is the passage number the answer program cites; the entry's position
+	// in the list is the number the reader sees.
+	N         int      `json:"n,omitempty"`
+	FileName  string   `json:"fileName"`
+	Snippet   string   `json:"snippet"`
+	PageStart *int     `json:"pageStart,omitempty"`
+	PageEnd   *int     `json:"pageEnd,omitempty"`
+	Regions   []Region `json:"regions,omitempty"`
 }
 
 // ActivityBlock is one completed narration or tool-display item persisted on
@@ -150,6 +154,7 @@ type Region struct {
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.
 type msgMetadata struct {
+	ErrorCode        string          `json:"errorCode,omitempty"`
 	ToolEvidence     json.RawMessage `json:"toolEvidence,omitempty"`
 	Citations        []Citation      `json:"citations,omitempty"`
 	Activity         []ActivityBlock `json:"activity,omitempty"`
@@ -385,6 +390,7 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
 		m.Activity = meta.Activity
+		m.ErrorCode = meta.ErrorCode
 		m.ProviderSlug = meta.ProviderSlug
 		m.ModelSlug = meta.ModelSlug
 		m.ModelVersion = meta.ModelVersion
@@ -529,7 +535,7 @@ func (s *Store) StartAssistantMessage(ctx context.Context, userID, convID string
 // (complete | aborted | error), token count and citations for an assistant row.
 // Uses a fresh context so persistence still succeeds when the request context
 // was cancelled by a client disconnect.
-func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string, activity []ActivityBlock, toolEvidence json.RawMessage) error {
+func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string, activity []ActivityBlock, toolEvidence json.RawMessage, errorCode string) error {
 	// Committed mutation receipts are the authority for effects: a lost SSE
 	// frame or an early disconnect must not erase a material the turn created.
 	ops, err := messageOperationsTx(ctx, s.pool, msgID)
@@ -537,7 +543,7 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 		return err
 	}
 	activity = mergeOperationEffects(activity, ops)
-	meta, err := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID, Activity: activity, ToolEvidence: toolEvidence})
+	meta, err := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID, Activity: activity, ToolEvidence: toolEvidence, ErrorCode: errorCode})
 	if err != nil {
 		return err
 	}

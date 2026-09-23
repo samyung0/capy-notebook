@@ -2,9 +2,12 @@
 
 The pixels have to be inside the provider request the agent builds mid-turn,
 so the retrieval host keeps a size-bounded copy of each source PDF (keyed by
-the stored object's path) and renders with PyMuPDF. Office sources convert temporarily through the parser queue; text and store-only sources have no
-page model and refuse. The JPEG rides in a user message placed after the tool
-results of its step, because chat-completions tool messages carry text only.
+the stored object's path) and renders with PyMuPDF. Office sources convert
+temporarily through the parser queue; an uploaded image is its own one page,
+oriented and flattened with Pillow as captioning does (first frame only); text
+and store-only sources have no page model and refuse. The JPEG rides in a user
+message placed after the tool results of its step, because chat-completions
+tool messages carry text only.
 Images live on the turn's ``ToolContext`` and are never persisted.
 
 ``capture_knowledge_page`` renders a library book the same way, from the
@@ -23,6 +26,7 @@ import math
 import os
 import tempfile
 import time
+import warnings
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -221,12 +225,76 @@ def _office_capture(
         ) from exc
 
 
+def _image_capture(
+    row: dict, page: int, bbox: list[float] | None, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    """An uploaded image is one page: its own bytes, oriented and flattened
+    like captioning does, cropped to the box and shrunk to ``max_edge``."""
+    if page != 1:
+        raise ValueError("an image has one page")
+    if bbox:
+        x0, y0, x1, y1 = bbox
+        if not (x0 < x1 and y0 < y1):
+            raise ValueError("bbox must be [x0, y0, x1, y1] with x0 < x1 and y0 < y1")
+    else:
+        bbox = [0, 0, 1000, 1000]
+    from PIL import Image, ImageOps, UnidentifiedImageError
+
+    with tempfile.TemporaryDirectory(prefix="capy-image-capture-") as directory:
+        source = Path(directory) / "source"
+        downloaded = blobstore.download_file(
+            str(row["blob_path"]), str(source), int(row["size_bytes"])
+        )
+        if (
+            downloaded is None
+            or downloaded[0] != int(row["size_bytes"])
+            or (row.get("source_sha256") and downloaded[1] != row["source_sha256"])
+        ):
+            raise CaptureUnavailable(
+                "the source bytes are unavailable", "unavailable_target"
+            )
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(source) as opened:
+                    # ponytail: first frame only; later GIF frames are not captured
+                    frame = ImageOps.exif_transpose(opened).convert("RGBA")
+        except (Image.DecompressionBombWarning, Image.DecompressionBombError) as exc:
+            raise CaptureUnavailable("this image is too large to render") from exc
+        except (OSError, ValueError, UnidentifiedImageError) as exc:
+            # SVG and formats this Pillow build lacks: the caption still covers them.
+            raise CaptureUnavailable("this image format cannot be rendered") from exc
+    width, height = frame.size
+    clip = frame.crop(
+        (
+            round(width * bbox[0] / 1000),
+            round(height * bbox[1] / 1000),
+            round(width * bbox[2] / 1000),
+            round(height * bbox[3] / 1000),
+        )
+    )
+    if clip.width == 0 or clip.height == 0:
+        raise ValueError("bbox selects an empty region")
+    clip.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+    flat = Image.new("RGB", clip.size, "white")
+    flat.paste(clip, mask=clip.getchannel("A"))
+    buffer = io.BytesIO()
+    flat.save(buffer, "JPEG", quality=JPEG_QUALITY)
+    return buffer.getvalue(), [float(v) for v in bbox], flat.size
+
+
 async def render_file(
     workspace_id: str, file_id: str, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
     row = await store.file_page_source(workspace_id, file_id)
     if row is None:
         raise CaptureUnavailable("the file is not available", "unavailable_target")
+    if row.get("kind") == "image":
+        if not row.get("blob_path"):
+            raise CaptureUnavailable(
+                "the source has no stored bytes", "unavailable_target"
+            )
+        return await asyncio.to_thread(_image_capture, row, page, bbox, max_edge)
     office_format = {"doc": "docx", "sheet": "xlsx", "slides": "pptx"}.get(
         row.get("kind")
     )

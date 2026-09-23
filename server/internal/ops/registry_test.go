@@ -338,7 +338,7 @@ func TestRegistrySaveRevalidatesExistingRowsAgainstSlotRequirements(t *testing.T
 		) VALUES (
 			1, 'Stale', 'Chat', $1, $2,
 			true, false, 100000,
-			ARRAY['instant']::text[], 'instant', '{}'::jsonb,
+			ARRAY['high']::text[], 'high', '{}'::jsonb,
 			ARRAY['chat'], 1, 1, 1, true, '{}'
 		)`, ref.ProviderSlug, ref.ModelSlug,
 	); err != nil {
@@ -374,7 +374,7 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 		) VALUES (
 			1, 'Retired', 'Model', $1, $2,
 			true, false, 100000,
-			ARRAY['instant']::text[], 'instant', '{}'::jsonb,
+			ARRAY['high']::text[], 'high', '{}'::jsonb,
 			ARRAY['chat','generate','editor','quiz'], 1, 1, 1, true, '{}'
 		)`, retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {

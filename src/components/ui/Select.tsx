@@ -81,7 +81,7 @@ function SelectTrigger({
       ) : showDownIcon ? (
         <SelectPrimitive.Icon asChild>
           <Icon
-            className="size-4 text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/select-trigger:rotate-180"
+            className="size-4 -translate-y-px text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/select-trigger:rotate-180"
             name="chevronDown"
           />
         </SelectPrimitive.Icon>
@@ -190,8 +190,11 @@ function SelectItem({
       <SelectPrimitive.ItemText>
         {iconAndValue ? (
           <div className="flex items-center gap-2">
-            <Icon className="size-4.5" name={iconAndValue.icon} />
-            <span className="translate-y-px">{iconAndValue.label}</span>
+            <Icon
+              className="size-4.5 -translate-y-px"
+              name={iconAndValue.icon}
+            />
+            <span>{iconAndValue.label}</span>
           </div>
         ) : (
           children

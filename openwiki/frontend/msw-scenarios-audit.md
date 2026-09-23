@@ -40,6 +40,35 @@ to examine a failed background refresh with cached data still visible.
 The mock chat stream uses the current `block_start` / `block_delta` /
 `block_end` protocol so partial answers and tool results render while streaming.
 
+### OpenUI chat previews
+
+In **Biology 101 → Chat → History**, each **OpenUI:** or **OpenUI failure:**
+conversation opens a saved preview immediately. The original plain-text cell
+answer remains available. In **User scenarios**, choose the matching OpenUI
+scenario, apply it, then send any message in a workspace's Chat tab to stream
+that fixture. The panel's **Biology 101** shortcut opens the seeded workspace.
+
+The fixtures cover prose/code/math and CJK text; tabs, steps, accordions and
+reveals; concept/metric cards, facts, tags and all callout styles; cited tables;
+bar, horizontal bar, line, area, pie, stacked and scatter charts; and a docked
+three-question block with choices and free text. **Slow stream / Stop** exposes
+progressive rendering and cancellation. Clear the scenario for the default
+overview response. These are fixed fixtures, so question submissions receive
+the selected fixture again until the scenario is changed or cleared.
+
+Failure previews include plain Markdown fallback, a partially recovered program,
+an invalid chart alongside a valid one, an unusable program, an empty answer,
+an interrupted connection and `response_flagged`. The flagged preview first
+streams readable content and a citation, then sends the gateway's safety error.
+The UI clears the answer/citations and retains completed tool activity. No raw
+tool-protocol markup is sent to the browser. Reopening the saved conversation
+keeps the error. All new streamed previews persist in the in-memory mock database;
+a full page reload restores the seeded examples.
+
+Edit `src/mocks/chatFixtures.ts` to change an example. The default handler and
+scenario overrides share `src/mocks/chatStream.ts`; both use the production
+SSE consumer, renderer and history hydration.
+
 The auth shim exists only behind Vite's MSW development alias. It sends local
 operation names to `/__mock/auth/*`; it sends no entered email, password,
 verification code or photo. Normal sign-in accepts locally valid input and
@@ -75,11 +104,33 @@ part of adding development tools.
 - **Suppressed writes:** PDF annotation writes, flashcard study progress,
   notification read operations and task updates have paths that suppress their
   errors. A request failure alone cannot create a missing error component.
-- **Source collaboration:** successful source sessions, source WebSocket
-  collaboration/checkpoints, Office runtime recovery and local-draft conflicts
-  still lack a complete MSW implementation. File/Office error previews cover
-  their startup failures. `src/mocks/collaboration.ts` implements the Plate
-  material provider, not the separate source provider.
+- **Source collaboration:** `src/mocks/collaboration.ts` is an in-page stand-in
+  for the sidecar: one Y.Doc per room with document and awareness fan-out to
+  every participant. It backs the Plate `mock` provider for notes and, through
+  `registerMockSourceProvider` in `src/features/files/sourceProvider.ts`, the
+  source editor for text files: `GET /api/files/{id}/source-session` seeds a
+  `source:<id>:epoch:1` room from the file's mock link and returns its Yjs state,
+  `POST /api/files/{id}/collaboration-token` answers `mock://collaboration`, and
+  a checkpoint rewrites the mock link so View shows the edit without changing
+  the file's revision. MSW skips durable browser draft reads and writes, since
+  those drafts would otherwise survive a reset of the mock database. Inbound updates
+  carry the receiving provider as Yjs origin, as Hocuspocus does. A room is
+  checkpointed and dropped with its last participant, including edits still
+  waiting for the editor's save debounce. Encoded checkpoints preserve Yjs
+  identities and versions when a room reopens. Rooms, checkpoints and links are
+  module state, so a reload reseeds them. Under MSW a missing mock registration throws rather than
+  opening a real socket. Office and binary kinds still answer 503 (no fixture
+  bytes), and handoff, epoch changes, recovery and local-draft conflicts are
+  not reproduced.
+- **Chaos peers:** the `collab-chaos` scenario ports
+  `collaboration/scripts/chaos-peers.ts` into the page (`src/mocks/chaosPeers.ts`):
+  three synthetic editors per open room join through the mock room, show
+  cursors, type snippets every 0.7–2.8 s, leave after 6–20 s and rejoin after
+  2–8 s, and appear as workspace editors in the members list while the
+  scenario runs. They follow whichever material or text-source rooms have a
+  real participant and stop when the scenario is reset. Peer edits use the same
+  checkpoint path as the app's editors. Idle peer groups are retired when their
+  room disappears or is replaced, so reopening creates peers for the new room.
 - **Cloud format mismatch:** default cloud inspection returns a DOCX while the
   default import completion creates a PDF. This prevents realistic successful
   Office import coverage. The direct fixtures expose the error components.

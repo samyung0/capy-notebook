@@ -13,16 +13,14 @@ import {
   usePluginOption,
 } from 'platejs/react';
 import { PopupMotion } from '@/components/ui/PopupMotion';
-import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
 import { insertInlineEquation } from './editorCommands';
-import { EDITOR_SHORTCUTS } from './toolbar/ToolbarButton';
+import { EDITOR_SHORTCUTS, ToolbarButton } from './toolbar/ToolbarButton';
 
 export function FloatingToolbar() {
   return features.editorAi ? (
@@ -89,59 +87,67 @@ function FloatingToolbarChrome({
       >
         {showAi && (
           <>
-            <FloatingButton
+            <ToolbarButton
+              className="w-auto px-2"
               label={m.editor_ai_commands()}
               onClick={() => openAiMenu(editor)}
               shortcut={EDITOR_SHORTCUTS.ai}
+              tooltipSide="top"
             >
               <EditorIcon name="sparkles" />{' '}
               <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
-            </FloatingButton>
+            </ToolbarButton>
             <Separator />
           </>
         )}
-        <FloatingButton
+        <ToolbarButton
           label={m.editor_bold()}
           onClick={() => mark(KEYS.bold)}
           shortcut={EDITOR_SHORTCUTS.bold}
+          tooltipSide="top"
         >
           <EditorIcon name="bold" />
-        </FloatingButton>
-        <FloatingButton
+        </ToolbarButton>
+        <ToolbarButton
           label={m.editor_italic()}
           onClick={() => mark(KEYS.italic)}
           shortcut={EDITOR_SHORTCUTS.italic}
+          tooltipSide="top"
         >
           <EditorIcon name="italic" />
-        </FloatingButton>
-        <FloatingButton
+        </ToolbarButton>
+        <ToolbarButton
           label={m.editor_underline()}
           onClick={() => mark(KEYS.underline)}
           shortcut={EDITOR_SHORTCUTS.underline}
+          tooltipSide="top"
         >
           <EditorIcon name="underline" />
-        </FloatingButton>
-        <FloatingButton
+        </ToolbarButton>
+        <ToolbarButton
           label={m.editor_strikethrough()}
           onClick={() => mark(KEYS.strikethrough)}
           shortcut={EDITOR_SHORTCUTS.strikethrough}
+          tooltipSide="top"
         >
           <EditorIcon name="strikethrough" />
-        </FloatingButton>
-        <FloatingButton
+        </ToolbarButton>
+        <ToolbarButton
           label={m.editor_inline_code()}
           onClick={() => mark(KEYS.code)}
           shortcut={EDITOR_SHORTCUTS.code}
+          tooltipSide="top"
         >
           <EditorIcon name="code" />
-        </FloatingButton>
-        <FloatingButton
+        </ToolbarButton>
+        <ToolbarButton
           label={m.editor_inline_equation()}
           onClick={() => insertInlineEquation(editor)}
+          tooltipSide="top"
         >
           <EditorIcon name="sigma" />
-        </FloatingButton>
-        <FloatingButton
+        </ToolbarButton>
+        <ToolbarButton
           label={m.editor_link()}
           onClick={() =>
             (
@@ -150,55 +156,24 @@ function FloatingToolbarChrome({
               ) as HTMLButtonElement | null
             )?.click()
           }
+          tooltipSide="top"
         >
           <EditorIcon name="link" />
-        </FloatingButton>
+        </ToolbarButton>
         {canEdit && collaboration && (
           <>
             <Separator />
-            <FloatingButton
+            <ToolbarButton
               label={m.editor_comment()}
               onClick={collaboration.openComment}
+              tooltipSide="top"
             >
               <EditorIcon name="commentAdd" />
-            </FloatingButton>
+            </ToolbarButton>
           </>
         )}
       </PopupMotion>
     </div>
-  );
-}
-
-function FloatingButton({
-  label,
-  shortcut,
-  children,
-  onClick,
-  active,
-}: {
-  label: string;
-  shortcut?: string;
-  children: React.ReactNode;
-  onClick: () => void;
-  active?: boolean;
-}) {
-  return (
-    <ButtonTooltip label={label} shortcut={shortcut}>
-      <button
-        aria-label={label}
-        aria-pressed={active}
-        className={cn(
-          'flex h-8 shrink-0 items-center gap-1 rounded-button px-2 text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
-          active && 'bg-tint-accent-1 text-tint-accent-1-fg'
-        )}
-        data-plate-prevent-deselect
-        onClick={onClick}
-        onMouseDown={(event) => event.preventDefault()}
-        type="button"
-      >
-        {children}
-      </button>
-    </ButtonTooltip>
   );
 }
 

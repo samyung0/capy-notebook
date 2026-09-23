@@ -431,6 +431,9 @@ components:
           type: string
         materialId:
           type: string
+        "n":
+          format: int64
+          type: integer
         pageEnd:
           format: int64
           type: integer
@@ -2048,6 +2051,8 @@ components:
         createdAt:
           format: date-time
           type: string
+        errorCode:
+          type: string
         id:
           type: string
         modelDisplayName:
@@ -2283,11 +2288,19 @@ components:
             - highlight
             - rectangle
             - ellipse
+            - pen
+            - text
           type: string
         page:
           format: int64
           minimum: 1
           type: integer
+        points:
+          items:
+            $ref: "#/components/schemas/PDFPoint"
+          maxItems: 4096
+          nullable: true
+          type: array
         rects:
           items:
             $ref: "#/components/schemas/PDFRect"
@@ -2295,6 +2308,9 @@ components:
           minItems: 1
           type: array
         sourceIdentity:
+          type: string
+        text:
+          maxLength: 2000
           type: string
         updatedAt:
           format: date-time
@@ -2328,11 +2344,19 @@ components:
             - highlight
             - rectangle
             - ellipse
+            - pen
+            - text
           type: string
         page:
           format: int64
           minimum: 1
           type: integer
+        points:
+          items:
+            $ref: "#/components/schemas/PDFPoint"
+          maxItems: 4096
+          nullable: true
+          type: array
         rects:
           items:
             $ref: "#/components/schemas/PDFRect"
@@ -2341,12 +2365,28 @@ components:
           type: array
         sourceIdentity:
           type: string
+        text:
+          maxLength: 2000
+          type: string
       required:
         - sourceIdentity
         - page
         - kind
         - rects
         - color
+      type: object
+    PDFPoint:
+      additionalProperties: false
+      properties:
+        x:
+          format: double
+          type: number
+        "y":
+          format: double
+          type: number
+      required:
+        - x
+        - "y"
       type: object
     PDFRect:
       additionalProperties: false

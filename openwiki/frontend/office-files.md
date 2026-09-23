@@ -19,6 +19,14 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 | DOCX | yes | yes | BetterOffice DOCX viewer/editor WASM |
 | PDF | yes | private annotations | React PDF over PDF.js |
 
+Create cards open `/materials/:id` and Files cards open `/files/:id` in View.
+Both routes use the workspace's `CenterContent` header and renderers, with
+the app sidebar and a back icon. They omit workspace navigation and Move to
+chapter. `FileModeControl` portals file View/Edit and Save controls into that
+shared header while each runtime retains its save and collaboration lifecycle.
+New standalone notes request Edit explicitly; workspace material defaults and
+the dedicated quiz/study actions retain their existing behavior.
+
 ## Repository boundary
 
 The fork is a Git submodule at `vendor/betteroffice`, pinned to a reviewed
@@ -266,13 +274,25 @@ comparison and asset extraction run in a worker thread.
 
 ## Private PDF annotations
 
-Native PDFs support private text highlights, rectangles, ellipses and erasing.
+Native PDFs support private text highlights, pen strokes, text, rectangles,
+ellipses and erasing.
 Annotations belong to the actor and exact source identity. They use normalized
 page coordinates and do not alter downloads, retrieval evidence or material
-collaboration. The toolbar follows the document cursor, chooses space above
-when needed and hides without document focus. Highlight mode applies marks to
-text selections. Selecting Eraser clears an existing selection immediately;
-otherwise pointer erasing removes touched marks.
+collaboration. View/Edit lives in the shared document header. A fixed single-row
+PDF toolbar shows plain Page x of x, centered drawing tools and Undo/Redo, and
+zoom buttons at the right. Below lg, zoom is hidden and the center tools scroll
+horizontally with `scroll-fade-x` and no scrollbar. Menus render in portals so
+the scrolling mask does not clip them.
+
+Draw chooses Pen or Highlight; Text collects a label before placement; Shape
+chooses Rectangle or Ellipse. Highlight applies to text selections, and choosing
+it for a fully highlighted selection removes just that selected portion.
+The eraser cursor is a 48px-radius circle and removes marks it crosses. Session
+undo/redo records inverse API operations, remaps restored annotation IDs and
+resets when the viewer unmounts or the source identity changes. The marks remain
+durable and private. Failed or partly completed batches clear unreliable history
+and refetch the saved marks. Pen geometry is bounded to 4096 points and text to
+2000 characters by the store and generated contract.
 
 ## Verification
 

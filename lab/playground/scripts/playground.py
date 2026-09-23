@@ -87,30 +87,30 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # "wire_model": "glm-5.3-flash", "body": "zai"}. body picks the request builder.
     "model": {
         "provider_slug": "deepseek",
-        "model_slug": "deepseek-v4-flash-vision-exp",
+        "model_slug": "deepseek-flash",
         "version": 1,
-        "thinking": "instant",
+        "thinking": "high",
         "transport": None,
     },
     # null keeps the production system prompt; a string replaces it wholesale.
     "system_prompt": None,
     "prompt_addon": "",
+    "tool_descriptions": {},
     "tools": [
         "search_workspace",
         "list_sources",
         "describe_documents",
         "read_document",
     ],
-    # knowledge_tools_per_response and stall_responses are the curate caps
-    # (KNOWLEDGE_TOOLS_PER_RESPONSE, CURATE_STALL_RESPONSES); the other three
-    # bound ordinary chat, which curate ignores.
+    # tools_per_turn applies to both modes; curate additionally uses its
+    # knowledge_tools_per_response and stall_responses settings.
     "limits": {
         "planning_responses": 12,
         "tools_per_response": 4,
         "tools_per_turn": 12,
         "captures_per_turn": 3,
-        "knowledge_tools_per_response": 6,
-        "stall_responses": 4,
+        "knowledge_tools_per_response": 4,
+        "stall_responses": 5,
     },
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
@@ -152,6 +152,12 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
             out[key].update(value)
         else:
             out[key] = value
+    descriptions = out["tool_descriptions"]
+    if not isinstance(descriptions, dict) or any(
+        name not in ALLOWED_TOOLS or not isinstance(text, str)
+        for name, text in descriptions.items()
+    ):
+        raise HTTPException(400, "tool_descriptions must map known tool names to text")
     return out
 
 
@@ -179,9 +185,9 @@ def model_spec(model: dict[str, Any]):
         params=adhoc.get("params") or {"temperature": 0.3},
         slots=(registry.Slot.CHAT, registry.Slot.CAPTIONING),
         thinking_levels=tuple(
-            adhoc.get("thinking_levels") or ("instant", "low", "mid", "high", "max")
+            adhoc.get("thinking_levels") or ("low", "mid", "high", "max")
         ),
-        default_thinking=model.get("thinking") or "instant",
+        default_thinking=model.get("thinking") or "high",
         context_window_tokens=int(adhoc.get("context_window_tokens") or 200000),
     )
 
@@ -199,16 +205,45 @@ def effective_prompt(c: dict[str, Any], base: str | None = None) -> str:
         base = (curate_prompts if c["curate"] else chat_prompts).system_prompt(
             c["locale"]
         )
-    text = c["system_prompt"] or base
+    text = base if c["system_prompt"] is None else c["system_prompt"]
     use_capture = capture.NAME in c["tools"] and c["capture"]["addon"]
     # A curate answer is plain prose listing the materials; it has no citations.
     structured = c["answer"]["citations"] == "structured" and not c["curate"]
-    return (
+    prompt = (
         text
         + (c["prompt_addon"] or "")
         + (capture.ADDON if use_capture else "")
         + (citations.STRUCTURED_ADDON if structured else "")
     )
+    return prompt
+
+
+SUBJECT_CATALOG = "\n\nSubjects this library holds (browse one for its topic ids):\n"
+
+
+def tool_prompt(function: dict[str, Any]) -> str:
+    description = function["description"]
+    if function["name"] == "browse_knowledge":
+        return description.partition(SUBJECT_CATALOG)[0]
+    return description
+
+
+def configured_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
+    """Replace descriptions while retaining the live catalog and argument schemas."""
+    import capture
+
+    # The playground's configurable capture handler replaces the production tool.
+    result = copy.deepcopy(
+        [s for s in schemas if s["function"]["name"] != capture.NAME]
+        + ([capture.SCHEMA] if capture.NAME in c["tools"] else [])
+    )
+    for schema in result:
+        function = schema["function"]
+        name = function["name"]
+        if name in c["tool_descriptions"]:
+            catalog = function["description"][len(tool_prompt(function)) :]
+            function["description"] = c["tool_descriptions"][name] + catalog
+    return result
 
 
 def material_id(assistant_message_id: str, call_id: str) -> str:
@@ -228,6 +263,38 @@ def merge_books(
             {*current.get("excerptIds", []), *book.get("excerptIds", [])}
         )
     return list(merged.values())
+
+
+async def list_sources_locally(ctx, state: dict[str, Any]):
+    """List the developer-selected workspace without a gateway or a user session."""
+    from pipeline.retrieval import store, tools
+
+    outline = await store.workspace_outline(ctx.workspace_id)
+    documents = [
+        {"id": f["id"], "kind": "source_file", "editable": False}
+        for f in outline["files"]
+        if f.get("kind") != "material"
+    ]
+    pool = await store.pool()
+    async with pool.connection() as conn:
+        cursor = await conn.execute(
+            "SELECT id, title, kind FROM materials WHERE workspace_id = %s "
+            "AND trashed_at IS NULL AND parent_material_id IS NULL ORDER BY position, created_at",
+            (ctx.workspace_id,),
+        )
+        materials = [dict(row) for row in await cursor.fetchall()]
+    for items, editable in ((materials, False), (state["materials"], True)):
+        documents.extend(
+            {
+                "id": m["id"],
+                "title": m["title"],
+                "kind": "material",
+                "materialKind": m["kind"],
+                "editable": editable,
+            }
+            for m in items
+        )
+    return tools._source_listing(outline, documents, ctx.file_ids)
 
 
 async def create_material_locally(
@@ -332,7 +399,7 @@ def ledger_state(ledger) -> dict[str, Any]:
     """The ledger two ways. The top level is the turn as the model sees it: every
     todo with the id the rendered ledger shows, plus this turn's reads and
     progress. `stored` is what the gateway would persist at turn end - the
-    newest 24 open todos, the last 5 requests and 50 materials - so watching it
+    newest 10 open todos, the last 5 requests and 50 materials - so watching it
     shrink is how the bound is checked. `--ledger` and the config's `ledger`
     field read `stored`, so a follow-up turn starts where a real one would."""
     return {
@@ -430,6 +497,7 @@ class Turn:
         history: list[dict[str, Any]],
         resolver: PdfResolver,
         checkpoint: dict[str, Any] | None = None,
+        ledger: dict[str, Any] | None = None,
     ):
         self.config, self.question, self.history, self.resolver = (
             config,
@@ -438,6 +506,7 @@ class Turn:
             resolver,
         )
         self.checkpoint = checkpoint
+        self.ledger = ledger
         self.id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         self.run_dir = RUNS / self.id
         self.state: dict[str, Any] = {
@@ -463,7 +532,14 @@ class Turn:
         from pipeline.elitellm import client as llm_client
         from pipeline.prompts import chat as chat_prompts
         from pipeline.prompts import curate as curate_prompts
-        from pipeline.retrieval import agent, compact, models, search, store, tools
+        from pipeline.retrieval import (
+            agent,
+            compact,
+            models,
+            search,
+            store,
+            tools,
+        )
         from pipeline.retrieval.chunking import estimate_tokens
 
         c, state = self.config, self.state
@@ -492,7 +568,9 @@ class Turn:
             else frozenset({"source.read", "material.read"}),
             file_ids=c["scope_file_ids"] or None,
             assistant_message_id=self.id,
-            ledger=starting_ledger(c["ledger"] if curate else None),
+            ledger=tools.Ledger.from_stored(self.ledger)
+            if curate and self.ledger is not None
+            else starting_ledger(c["ledger"] if curate else None),
         )
         saved = {
             "system_prompt": chat_prompts.system_prompt,
@@ -517,6 +595,7 @@ class Turn:
             "curate_caps": (
                 agent.KNOWLEDGE_TOOLS_PER_RESPONSE,
                 agent.CURATE_STALL_RESPONSES,
+                agent.CURATE_TOOLS_PER_TURN,
             ),
             "cfg": (
                 cfg.agent_max_steps,
@@ -536,7 +615,9 @@ class Turn:
                 for s in saved["schemas_for"](ctx_)
                 if s["function"]["name"] in offered
             ]
-            return out + ([capture.SCHEMA] if use_capture else [])
+            schemas = configured_tools(c, out)
+            state["tool_schemas"] = schemas
+            return schemas
 
         async def run(name, args, ctx_):
             record = {
@@ -573,6 +654,8 @@ class Turn:
                     )
             elif problem:
                 result = tools._refused(problem)
+            elif name == "list_sources":
+                result = await list_sources_locally(ctx_, state)
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
@@ -880,9 +963,14 @@ class Turn:
             c["limits"]["tools_per_response"],
             c["limits"]["tools_per_turn"],
         )
-        agent.KNOWLEDGE_TOOLS_PER_RESPONSE, agent.CURATE_STALL_RESPONSES = (
+        (
+            agent.KNOWLEDGE_TOOLS_PER_RESPONSE,
+            agent.CURATE_STALL_RESPONSES,
+            agent.CURATE_TOOLS_PER_TURN,
+        ) = (
             c["limits"]["knowledge_tools_per_response"],
             c["limits"]["stall_responses"],
+            c["limits"]["tools_per_turn"],
         )
         (
             cfg.agent_max_steps,
@@ -1065,9 +1153,11 @@ class Turn:
             agent.PLANNING_RESPONSES, agent.TOOLS_PER_RESPONSE, agent.TOOLS_PER_TURN = (
                 saved["agent_caps"]
             )
-            agent.KNOWLEDGE_TOOLS_PER_RESPONSE, agent.CURATE_STALL_RESPONSES = saved[
-                "curate_caps"
-            ]
+            (
+                agent.KNOWLEDGE_TOOLS_PER_RESPONSE,
+                agent.CURATE_STALL_RESPONSES,
+                agent.CURATE_TOOLS_PER_TURN,
+            ) = saved["curate_caps"]
             (
                 cfg.agent_max_steps,
                 cfg.search_top_k,
@@ -1085,6 +1175,7 @@ class Turn:
             "question": self.question,
             "history": self.history,
             "system_prompt": system_prompt(c["locale"]),
+            "tool_schemas": state.get("tool_schemas", []),
             "answer": done.get("answer", ""),
             "answer_raw": done.get("answer_raw"),
             "repair_raw": state.get("repair_raw"),
@@ -1104,6 +1195,7 @@ class Turn:
             "captures": state["captures"],
             "compactions": state["compactions"],
             "checkpoint_in": self.checkpoint,
+            "ledger_in": self.ledger,
             "events": recorded,
             # Curate: what the loop read and wrote. Materials carry their own
             # provenance books, which is the attribution a real material keeps.
@@ -1124,8 +1216,11 @@ class Turn:
 
 
 def build_app(target: str):
+    from pipeline import registry
     from pipeline.config import cfg
-    from pipeline.retrieval import library, store
+    from pipeline.prompts import chat as chat_prompts
+    from pipeline.prompts import curate as curate_prompts
+    from pipeline.retrieval import library, store, tools
 
     # There is no gateway here: create_material and edit_document are handled in
     # process and write files. This only makes tool admission decide as it does
@@ -1135,6 +1230,12 @@ def build_app(target: str):
     app = FastAPI(title="Capy agentic playground")
     resolver = PdfResolver(target)
     turn_lock = asyncio.Lock()
+    # A running turn temporarily patches prompts and schemas with its own config.
+    production_schemas = tools.schemas_for
+    production_prompts = {
+        False: chat_prompts.system_prompt,
+        True: curate_prompts.system_prompt,
+    }
 
     async def library_summary() -> dict[str, Any] | None:
         """What curate turns read: the live library's current books, their
@@ -1233,8 +1334,6 @@ def build_app(target: str):
     @app.post("/api/prompt")
     async def prompt(request: Request):
         """The two layers a turn sends: the system prompt and the tools array."""
-        import capture
-
         from pipeline.retrieval import contract, tools
 
         c = merged(await request.json())
@@ -1249,7 +1348,9 @@ def build_app(target: str):
             )
             await tools.load_library_catalog(ctx)
             schemas = [
-                s for s in tools.schemas_for(ctx) if s["function"]["name"] in c["tools"]
+                s
+                for s in production_schemas(ctx)
+                if s["function"]["name"] in c["tools"]
             ]
         else:
             schemas = [
@@ -1257,9 +1358,16 @@ def build_app(target: str):
                 for name in c["tools"]
                 if name in contract.DEFINITIONS
             ]
-        if capture.NAME in c["tools"]:
-            schemas.append(capture.SCHEMA)
-        return {"prompt": effective_prompt(c), "tools": schemas}
+        return {
+            "prompt": effective_prompt(
+                c, production_prompts[bool(c["curate"])](c["locale"])
+            ),
+            "tools": configured_tools(c, schemas),
+            "tool_prompts": {
+                s["function"]["name"]: tool_prompt(s["function"])
+                for s in configured_tools({**c, "tool_descriptions": {}}, schemas)
+            },
+        }
 
     @app.post("/api/turn")
     async def turn(request: Request):
@@ -1271,6 +1379,12 @@ def build_app(target: str):
                 400,
                 f"this server runs against {target}; the config targets {config['target']}",
             )
+        try:
+            spec = model_spec(config["model"])
+            if spec.resolve_thinking(config["model"]["thinking"]) in ("", "instant"):
+                raise registry.RegistryError("Chat requires thinking to be enabled.")
+        except registry.RegistryError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
         async def relay():
             async with turn_lock:
@@ -1280,6 +1394,7 @@ def build_app(target: str):
                     body.get("history") or [],
                     resolver,
                     body.get("checkpoint"),
+                    body.get("ledger"),
                 )
                 async for event in run.events():
                     yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
@@ -1320,6 +1435,182 @@ def check() -> None:
         "tools_per_turn": 3,
     }
     assert merged({"system_prompt": "x"})["system_prompt"] == "x"
+    schemas = [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": "production" + catalog,
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+        for name, catalog in (
+            ("search_knowledge", ""),
+            ("browse_knowledge", SUBJECT_CATALOG + "math: Mathematics (10 excerpts)"),
+        )
+    ]
+    config = merged(
+        {
+            "tool_descriptions": {
+                "search_knowledge": "custom search",
+                "browse_knowledge": "custom browse",
+            }
+        }
+    )
+    customized = configured_tools(config, schemas)
+    assert customized[0]["function"]["description"] == "custom search"
+    assert customized[1]["function"]["description"] == (
+        "custom browse" + SUBJECT_CATALOG + "math: Mathematics (10 excerpts)"
+    )
+    assert (
+        customized[1]["function"]["parameters"] == schemas[1]["function"]["parameters"]
+    )
+    assert tool_prompt(schemas[1]["function"]) == "production"
+    assert schemas[0]["function"]["description"] == "production"
+    assert configured_tools(merged({}), schemas) == schemas
+    for invalid in (None, [], {"unknown": "x"}, {"search_knowledge": 1}):
+        try:
+            merged({"tool_descriptions": invalid})
+        except HTTPException as exc:
+            assert exc.status_code == 400
+        else:
+            raise AssertionError(f"accepted invalid tool_descriptions: {invalid}")
+    # Preview requests must not inherit the monkeypatches of an active turn.
+    from tempfile import TemporaryDirectory
+    from unittest.mock import AsyncMock, patch
+
+    import httpx
+
+    from pipeline import registry
+    from pipeline.prompts import chat, curate
+    from pipeline.retrieval import agent, evidence, tools
+
+    async def check_preview():
+        app = build_app("local")
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://playground"
+        ) as client:
+            with patch.object(
+                registry.registry,
+                "get",
+                side_effect=registry.RegistryError(
+                    "model config not found: missing v1"
+                ),
+            ):
+                response = await client.post(
+                    "/api/turn",
+                    json={
+                        "config": {"target": "local"},
+                        "question": "Summarize the PDF",
+                    },
+                )
+            assert response.status_code == 400
+            assert response.json() == {"detail": "model config not found: missing v1"}
+            for mode in (False, True):
+                c = merged(
+                    {
+                        "curate": mode,
+                        "tools": [*DEFAULT_CONFIG["tools"], "capture_page"],
+                    }
+                )
+                expected = effective_prompt(c)
+                with (
+                    patch.object(chat, "system_prompt", return_value="active turn"),
+                    patch.object(curate, "system_prompt", return_value="active turn"),
+                    patch.object(tools, "load_library_catalog", new=AsyncMock()),
+                ):
+                    response = await client.post("/api/prompt", json=c)
+                assert response.status_code == 200
+                assert response.json()["prompt"] == expected
+                names = [s["function"]["name"] for s in response.json()["tools"]]
+                assert names.count("capture_page") == 1
+            stored = {
+                "requests": ["Study cells"],
+                "next_todo_id": 2,
+                "todos": [{"id": 1, "text": "Make a quiz"}],
+                "materials": [],
+            }
+            history = [
+                {
+                    "id": "m2",
+                    "role": "assistant",
+                    "content": "Created the note.",
+                    "toolEvidence": {
+                        "tools": [
+                            {"name": "create_material", "text": "Created note mat_1"}
+                        ],
+                        "passages": [],
+                    },
+                }
+            ]
+            checkpoint = {"summary": "Earlier study goals", "throughMessageId": "m0"}
+
+            async def continued_agent(**kw):
+                names = [s["function"]["name"] for s in tools.schemas_for(kw["ctx"])]
+                assert names.count("capture_page") == 1
+                listed = await tools.run("list_sources", {}, kw["ctx"])
+                assert listed.text_parts == ["Local workspace sources"]
+                assert kw["ctx"].ledger.stored() == stored
+                assert not kw["ctx"].ledger.reads
+                assert kw["history"] == history
+                assert kw["checkpoint"] == checkpoint
+                replayed = await evidence.history_turns(kw["history"], kw["ctx"])
+                assert "Created note mat_1" in replayed[-1]["content"]
+                assert tools.mutates("create_ledger")
+                updated = await tools.run(
+                    "create_ledger",
+                    {
+                        "body": "Updated study goals",
+                        "todos": [{"id": 1, "todo": "Advanced quiz"}],
+                        "_tool_call_id": "revise",
+                    },
+                    kw["ctx"],
+                )
+                assert updated.outcome == "succeeded"
+                yield {"type": "done", "answer": "Continued."}
+
+            c = merged(
+                {
+                    "target": "local",
+                    "curate": True,
+                    "tools": ["create_ledger", "capture_page", "list_sources"],
+                    "model": {"adhoc": {"provider_name": "test"}},
+                }
+            )
+            with (
+                TemporaryDirectory() as directory,
+                patch.dict(globals(), RUNS=Path(directory)),
+                patch.dict(
+                    globals(),
+                    list_sources_locally=AsyncMock(
+                        return_value=tools._result("Local workspace sources")
+                    ),
+                ),
+                patch.object(agent, "run_agent", continued_agent),
+                patch.object(tools.library, "enabled", return_value=True),
+            ):
+                response = await client.post(
+                    "/api/turn",
+                    json={
+                        "config": c,
+                        "question": "Continue",
+                        "history": history,
+                        "checkpoint": checkpoint,
+                        "ledger": stored,
+                    },
+                )
+                assert response.status_code == 200
+                assert '"answer": "Continued."' in response.text
+                saved = json.loads(next(Path(directory).glob("*/run.json")).read_text())
+                assert saved["ledger_in"] == stored
+                assert saved["ledger"]["stored"] == {
+                    **stored,
+                    "requests": ["Updated study goals"],
+                    "todos": [{"id": 1, "text": "Advanced quiz"}],
+                }
+        assert effective_prompt(merged({"system_prompt": ""}), "production") == ""
+
+    asyncio.run(check_preview())
     assert (
         material_id("m_1", "call_1")
         == material_id("m_1", "call_1")

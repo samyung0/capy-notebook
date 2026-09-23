@@ -85,8 +85,9 @@ export const FILE_ICON_NAMES = [
   'svg',
   'stackblitz',
   'java-enum',
+  'vhs',
   'forgejo',
-  'drawio',
+  'api-blueprint',
 ] as const;
 
 export type FileIconName = (typeof FILE_ICON_NAMES)[number];

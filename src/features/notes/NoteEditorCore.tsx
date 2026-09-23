@@ -628,8 +628,11 @@ export function NoteEditorCore({
                   </>
                 )}
               </div>
+              {/* Inside the scroller on purpose: floating-ui only listens to
+               * scroll on the toolbar's own overflow ancestors, so a sibling
+               * of this box would stay pinned while the block scrolls away. */}
+              {mode === 'edit' && <FloatingToolbar />}
             </div>
-            {mode === 'edit' && <FloatingToolbar />}
             <EditorCommandPalette />
             {mode === 'edit' && editorAiEnabled(allowExternalAssets) && (
               <AiMenu />

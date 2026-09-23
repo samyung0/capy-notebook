@@ -404,6 +404,7 @@ export const ListMessagesResponseItem = zod.object({
   "fileName": zod.string(),
   "kind": zod.string().optional(),
   "materialId": zod.string().optional(),
+  "n": zod.int().optional(),
   "pageEnd": zod.int().optional(),
   "pageStart": zod.int().optional(),
   "regions": zod.array(zod.object({
@@ -416,6 +417,7 @@ export const ListMessagesResponseItem = zod.object({
   "content": zod.string(),
   "conversationId": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
+  "errorCode": zod.string().optional(),
   "id": zod.string(),
   "modelDisplayName": zod.string().optional(),
   "modelSlug": zod.string().optional(),
@@ -857,7 +859,11 @@ export const ListPDFAnnotationsParams = zod.object({
 
 export const listPDFAnnotationsResponseColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 
+export const listPDFAnnotationsResponsePointsMax = 4096;
+
 export const listPDFAnnotationsResponseRectsMax = 1000;
+
+export const listPDFAnnotationsResponseTextMax = 2000;
 
 
 
@@ -868,8 +874,12 @@ export const ListPDFAnnotationsResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "fileId": zod.string(),
   "id": zod.string(),
-  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
+  "points": zod.array(zod.object({
+  "x": zod.number(),
+  "y": zod.number()
+})).max(listPDFAnnotationsResponsePointsMax).nullish(),
   "rects": zod.array(zod.object({
   "height": zod.number(),
   "width": zod.number(),
@@ -877,6 +887,7 @@ export const ListPDFAnnotationsResponseItem = zod.object({
   "y": zod.number()
 })).min(1).max(listPDFAnnotationsResponseRectsMax),
   "sourceIdentity": zod.string(),
+  "text": zod.string().max(listPDFAnnotationsResponseTextMax).optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
 export const ListPDFAnnotationsResponse = zod.array(ListPDFAnnotationsResponseItem)
@@ -891,26 +902,39 @@ export const CreatePDFAnnotationParams = zod.object({
 
 export const createPDFAnnotationBodyColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 
+export const createPDFAnnotationBodyPointsMax = 4096;
+
 export const createPDFAnnotationBodyRectsMax = 1000;
+
+export const createPDFAnnotationBodyTextMax = 2000;
 
 
 
 export const CreatePDFAnnotationBody = zod.object({
   "color": zod.string().regex(createPDFAnnotationBodyColorRegExp),
-  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
+  "points": zod.array(zod.object({
+  "x": zod.number(),
+  "y": zod.number()
+})).max(createPDFAnnotationBodyPointsMax).nullish(),
   "rects": zod.array(zod.object({
   "height": zod.number(),
   "width": zod.number(),
   "x": zod.number(),
   "y": zod.number()
 })).min(1).max(createPDFAnnotationBodyRectsMax),
-  "sourceIdentity": zod.string()
+  "sourceIdentity": zod.string(),
+  "text": zod.string().max(createPDFAnnotationBodyTextMax).optional()
 })
 
 export const createPDFAnnotationResponseColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 
+export const createPDFAnnotationResponsePointsMax = 4096;
+
 export const createPDFAnnotationResponseRectsMax = 1000;
+
+export const createPDFAnnotationResponseTextMax = 2000;
 
 
 
@@ -921,8 +945,12 @@ export const CreatePDFAnnotationResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "fileId": zod.string(),
   "id": zod.string(),
-  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
+  "points": zod.array(zod.object({
+  "x": zod.number(),
+  "y": zod.number()
+})).max(createPDFAnnotationResponsePointsMax).nullish(),
   "rects": zod.array(zod.object({
   "height": zod.number(),
   "width": zod.number(),
@@ -930,6 +958,7 @@ export const CreatePDFAnnotationResponse = zod.object({
   "y": zod.number()
 })).min(1).max(createPDFAnnotationResponseRectsMax),
   "sourceIdentity": zod.string(),
+  "text": zod.string().max(createPDFAnnotationResponseTextMax).optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
 
@@ -955,26 +984,39 @@ export const UpdatePDFAnnotationParams = zod.object({
 
 export const updatePDFAnnotationBodyColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 
+export const updatePDFAnnotationBodyPointsMax = 4096;
+
 export const updatePDFAnnotationBodyRectsMax = 1000;
+
+export const updatePDFAnnotationBodyTextMax = 2000;
 
 
 
 export const UpdatePDFAnnotationBody = zod.object({
   "color": zod.string().regex(updatePDFAnnotationBodyColorRegExp),
-  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
+  "points": zod.array(zod.object({
+  "x": zod.number(),
+  "y": zod.number()
+})).max(updatePDFAnnotationBodyPointsMax).nullish(),
   "rects": zod.array(zod.object({
   "height": zod.number(),
   "width": zod.number(),
   "x": zod.number(),
   "y": zod.number()
 })).min(1).max(updatePDFAnnotationBodyRectsMax),
-  "sourceIdentity": zod.string()
+  "sourceIdentity": zod.string(),
+  "text": zod.string().max(updatePDFAnnotationBodyTextMax).optional()
 })
 
 export const updatePDFAnnotationResponseColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 
+export const updatePDFAnnotationResponsePointsMax = 4096;
+
 export const updatePDFAnnotationResponseRectsMax = 1000;
+
+export const updatePDFAnnotationResponseTextMax = 2000;
 
 
 
@@ -985,8 +1027,12 @@ export const UpdatePDFAnnotationResponse = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "fileId": zod.string(),
   "id": zod.string(),
-  "kind": zod.enum(['highlight', 'rectangle', 'ellipse']),
+  "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
+  "points": zod.array(zod.object({
+  "x": zod.number(),
+  "y": zod.number()
+})).max(updatePDFAnnotationResponsePointsMax).nullish(),
   "rects": zod.array(zod.object({
   "height": zod.number(),
   "width": zod.number(),
@@ -994,6 +1040,7 @@ export const UpdatePDFAnnotationResponse = zod.object({
   "y": zod.number()
 })).min(1).max(updatePDFAnnotationResponseRectsMax),
   "sourceIdentity": zod.string(),
+  "text": zod.string().max(updatePDFAnnotationResponseTextMax).optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
 

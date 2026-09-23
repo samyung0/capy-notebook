@@ -1,0 +1,171 @@
+{
+  "components": [
+    {
+      "name": "Answer",
+      "props": [
+        "children"
+      ]
+    },
+    {
+      "name": "Md",
+      "props": [
+        "text",
+        "passages"
+      ]
+    },
+    {
+      "name": "Callout",
+      "props": [
+        "kind",
+        "title",
+        "text",
+        "passages"
+      ]
+    },
+    {
+      "name": "Tabs",
+      "props": [
+        "items"
+      ]
+    },
+    {
+      "name": "Tab",
+      "props": [
+        "label",
+        "children"
+      ]
+    },
+    {
+      "name": "Steps",
+      "props": [
+        "items"
+      ]
+    },
+    {
+      "name": "Step",
+      "props": [
+        "title",
+        "text",
+        "passages"
+      ]
+    },
+    {
+      "name": "Accordion",
+      "props": [
+        "items"
+      ]
+    },
+    {
+      "name": "AccordionItem",
+      "props": [
+        "title",
+        "children"
+      ]
+    },
+    {
+      "name": "Reveal",
+      "props": [
+        "title",
+        "text",
+        "passages"
+      ]
+    },
+    {
+      "name": "Tags",
+      "props": [
+        "tags"
+      ]
+    },
+    {
+      "name": "Facts",
+      "props": [
+        "items"
+      ]
+    },
+    {
+      "name": "Fact",
+      "props": [
+        "label",
+        "value"
+      ]
+    },
+    {
+      "name": "Cards",
+      "props": [
+        "items"
+      ]
+    },
+    {
+      "name": "Card",
+      "props": [
+        "title",
+        "text",
+        "passages",
+        "value"
+      ]
+    },
+    {
+      "name": "Table",
+      "props": [
+        "columns",
+        "rows",
+        "passages",
+        "caption"
+      ]
+    },
+    {
+      "name": "Row",
+      "props": [
+        "cells",
+        "passages"
+      ]
+    },
+    {
+      "name": "Chart",
+      "props": [
+        "kind",
+        "title",
+        "labels",
+        "series",
+        "passages",
+        "unit",
+        "illustrative"
+      ]
+    },
+    {
+      "name": "Series",
+      "props": [
+        "name",
+        "values"
+      ]
+    },
+    {
+      "name": "ScatterChart",
+      "props": [
+        "title",
+        "points",
+        "xLabel",
+        "yLabel",
+        "passages",
+        "unit",
+        "illustrative"
+      ]
+    },
+    {
+      "name": "Point",
+      "props": [
+        "x",
+        "y",
+        "label"
+      ]
+    },
+    {
+      "name": "AskUser",
+      "props": [
+        "question",
+        "choices"
+      ]
+    }
+  ],
+  "root": "Answer"
+}

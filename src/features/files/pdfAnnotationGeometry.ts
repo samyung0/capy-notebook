@@ -9,6 +9,54 @@ export interface PdfSelection {
   rects: PdfRect[];
 }
 const EPSILON = 0.01;
+type Point = { x: number; y: number };
+
+function distanceToSegment(point: Point, start: Point, end: Point) {
+  const dx = end.x - start.x,
+    dy = end.y - start.y;
+  const length = dx * dx + dy * dy;
+  const t = length
+    ? Math.max(
+        0,
+        Math.min(
+          1,
+          ((point.x - start.x) * dx + (point.y - start.y) * dy) / length
+        )
+      )
+    : 0;
+  return Math.hypot(point.x - start.x - t * dx, point.y - start.y - t * dy);
+}
+
+/** A pen's enclosing box is only a broad phase; empty space is not ink. */
+export function eraserIntersectsPen(
+  start: Point,
+  end: Point,
+  points: readonly Point[],
+  radius: number
+) {
+  return points.some((b, index) => {
+    if (index === 0) return false;
+    const a = points[index - 1];
+    const dx = end.x - start.x,
+      dy = end.y - start.y;
+    const sx = b.x - a.x,
+      sy = b.y - a.y;
+    const cross = dx * sy - dy * sx;
+    if (cross !== 0) {
+      const t = ((a.x - start.x) * sy - (a.y - start.y) * sx) / cross;
+      const u = ((a.x - start.x) * dy - (a.y - start.y) * dx) / cross;
+      if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return true;
+    }
+    return (
+      Math.min(
+        distanceToSegment(start, a, b),
+        distanceToSegment(end, a, b),
+        distanceToSegment(a, start, end),
+        distanceToSegment(b, start, end)
+      ) <= radius
+    );
+  });
+}
 
 export function intersection(a: PdfRect, b: PdfRect): PdfRect | null {
   const x = Math.max(a.x, b.x),
@@ -146,30 +194,6 @@ export function pdfTextSelection(container: HTMLElement): PdfSelection[] {
   return [...pages].map(([page, rects]) => ({ page, rects }));
 }
 
-export function toolbarPosition(
-  cursor: { x: number; y: number },
-  viewport: { left: number; top: number; right: number; bottom: number },
-  width: number,
-  height: number
-) {
-  const margin = 8;
-  return {
-    left: Math.max(
-      viewport.left + margin,
-      Math.min(cursor.x, viewport.right - width - margin)
-    ),
-    top: Math.max(
-      viewport.top + margin,
-      Math.min(
-        cursor.y + height + 16 <= viewport.bottom
-          ? cursor.y + 12
-          : cursor.y - height - 12,
-        viewport.bottom - height - margin
-      )
-    ),
-  };
-}
-
 export function segmentIntersectsRect(
   start: { x: number; y: number },
   end: { x: number; y: number },
@@ -192,4 +216,33 @@ export function segmentIntersectsRect(
     if (near > far) return false;
   }
   return true;
+}
+
+/** Screen-space circle swept between pointer events, including rounded corners. */
+export function eraserIntersectsRect(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  rect: PdfRect,
+  radius: number
+) {
+  if (
+    segmentIntersectsRect(start, end, {
+      height: rect.height,
+      width: rect.width + radius * 2,
+      x: rect.x - radius,
+      y: rect.y,
+    }) ||
+    segmentIntersectsRect(start, end, {
+      height: rect.height + radius * 2,
+      width: rect.width,
+      x: rect.x,
+      y: rect.y - radius,
+    })
+  )
+    return true;
+  return [rect.x, rect.x + rect.width].some((x) =>
+    [rect.y, rect.y + rect.height].some(
+      (y) => distanceToSegment({ x, y }, start, end) <= radius
+    )
+  );
 }

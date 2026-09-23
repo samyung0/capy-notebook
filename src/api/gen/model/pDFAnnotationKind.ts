@@ -12,4 +12,6 @@ export const PDFAnnotationKind = {
   highlight: 'highlight',
   rectangle: 'rectangle',
   ellipse: 'ellipse',
+  pen: 'pen',
+  text: 'text',
 } as const;

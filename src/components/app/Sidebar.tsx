@@ -46,7 +46,7 @@ function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
         : []),
     ],
     tools: [
-      { icon: 'write', label: m.nav_create(), to: '/create' },
+      { icon: 'sparkles', label: m.nav_create(), to: '/create' },
       { icon: 'circleCheck', label: m.nav_learning(), to: '/learning' },
       { icon: 'files', label: m.nav_files(), to: '/files' },
       ...(features.tasks
@@ -162,7 +162,7 @@ export function Sidebar({
       theme="page"
     >
       <nav>
-        <div className="flex items-center justify-between px-2 pt-1 pb-6">
+        <div className="flex items-center justify-between px-3 pt-1 pb-6">
           <div className="flex items-center gap-3">
             {/* <LogoMark size={36} /> */}
             <h1 className={cn('t-card-title font-extrabold tracking-tight')}>

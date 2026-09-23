@@ -1241,6 +1241,11 @@ func bindEliteLLMDraft(draft *gridDraft, slots []string) error {
 		)
 	}
 	for _, slot := range slots {
+		if slot == models.SlotEditor {
+			if allowed, reason := catalog.AllowsThinking(slug, []string{models.ThinkingInstant}); !allowed {
+				return codedValidation("invalid_thinking", reason, modelSlug, slot, "editor requires a provider with instant mode")
+			}
+		}
 		if err := validateSlotAssignment(slug, modelSlug, draft.Capabilities, slot); err != nil {
 			return err
 		}

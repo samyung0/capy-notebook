@@ -132,6 +132,11 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 	}
 	var body struct {
 		SelectedThinking string `json:"selectedThinking"`
+		Models           []struct {
+			Thinking struct {
+				Levels []string `json:"levels"`
+			} `json:"thinking"`
+		} `json:"models"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -139,5 +144,16 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 	// A fresh account is pinned to zai/glm-5.3-flash, whose floor is "low".
 	if body.SelectedThinking != "low" {
 		t.Fatalf("resolved thinking = %+v, want low", body)
+	}
+	for _, model := range body.Models {
+		for _, level := range model.Thinking.Levels {
+			if level == "instant" {
+				t.Fatal("chat catalog offers instant")
+			}
+		}
+	}
+	rec = doReq(t, h, http.MethodGet, "/api/models?slot=editor", "u_owner", nil)
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.SelectedThinking != "instant" {
+		t.Fatalf("editor fixed reasoning changed: %d %s", rec.Code, rec.Body.String())
 	}
 }

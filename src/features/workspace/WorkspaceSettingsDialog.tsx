@@ -1,20 +1,47 @@
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
+  useCloneWorkspace,
+  useDeleteWorkspace,
   useUpdateWorkspace,
   useUpdateWorkspaceSharing,
   useWorkspaceStats,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { InputTitle } from '@/components/ui/Input';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
+import { toastCloneError } from '@/lib/authToasts';
+import { trackItemCloned } from '@/lib/observability';
 import { ShareDialog } from './ShareDialog';
 import { sourcePercentages } from './sourcePercentages';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
+
+/** Title, hint, action. The same shape the Sharing tab's rows use. */
+function SettingRow({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-1">
+        <InputTitle>{title}</InputTitle>
+        <p className="t-meta text-fg-muted">{hint}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
 
 export function WorkspaceSettingsDialog({
   workspace,
@@ -22,13 +49,25 @@ export function WorkspaceSettingsDialog({
   onClose,
   initialTab = 'general',
 }: {
-  initialTab?: 'general' | 'sharing' | 'indexing' | 'statistics';
+  initialTab?:
+    | 'general'
+    | 'sharing'
+    | 'indexing'
+    | 'statistics'
+    | 'others'
+    | 'danger';
   workspace: Workspace;
   open: boolean;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<string>(initialTab);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const navigate = useNavigate();
   const { mutateAsync: update, isPending: saving } = useUpdateWorkspace();
+  const { mutate: cloneWorkspace, isPending: cloning } = useCloneWorkspace({
+    errorToast: false,
+  });
+  const { mutate: deleteWorkspace, isPending: deleting } = useDeleteWorkspace();
   const { mutateAsync: updateSharing, isPending: sharing } =
     useUpdateWorkspaceSharing();
   const {
@@ -63,10 +102,22 @@ export function WorkspaceSettingsDialog({
           { label: m.workspace_sharing(), value: 'sharing' },
           { label: m.workspace_indexing(), value: 'indexing' },
           { label: m.workspace_stats_title(), value: 'statistics' },
+          ...(workspace.canClone
+            ? [{ label: m.workspace_tab_others(), value: 'others' }]
+            : []),
+          ...(workspace.capabilities.canManageMembers
+            ? [
+                {
+                  label: m.workspace_tab_danger(),
+                  tone: 'danger' as const,
+                  value: 'danger',
+                },
+              ]
+            : []),
         ]}
         value={tab}
       />
-      <div className="h-full flex-1 px-1 py-5">
+      <div className="mt-1 h-full flex-1 px-3 py-5">
         {tab === 'general' && (
           <WorkspaceFormEditDialog
             embedded
@@ -79,6 +130,7 @@ export function WorkspaceSettingsDialog({
         {tab === 'sharing' && (
           <ShareDialog
             canManageMembers={workspace.capabilities.canManageMembers}
+            containerClassName="-mt-3"
             embedded
             link={`/w/${workspace.id}`}
             onClose={onClose}
@@ -229,7 +281,71 @@ export function WorkspaceSettingsDialog({
             </label>
           </div>
         )}
+        {tab === 'others' && workspace.canClone && (
+          <div className="flex flex-col gap-6">
+            <SettingRow
+              hint={m.workspace_clone_hint()}
+              title={m.action_clone_workspace()}
+            >
+              <Button
+                className="rounded-input"
+                disabled={cloning}
+                iconLeft="clone"
+                onClick={() =>
+                  cloneWorkspace(workspace.id, {
+                    onError: (err) => toastCloneError(err, 'workspace'),
+                    onSuccess: ({ workspace: cloned }) => {
+                      trackItemCloned('workspace');
+                      onClose();
+                      navigate({
+                        params: { workspaceId: cloned.id },
+                        to: '/workspaces/$workspaceId',
+                      });
+                    },
+                  })
+                }
+                variant="outline"
+              >
+                {cloning ? m.action_cloning() : m.action_clone()}
+              </Button>
+            </SettingRow>
+          </div>
+        )}
+        {tab === 'danger' && workspace.capabilities.canManageMembers && (
+          /* Keeps its own padding: the error border is the grouping. */
+          <div className="rounded-card border border-solid-error/40 p-4">
+            <SettingRow
+              hint={m.workspace_delete_hint()}
+              title={m.workspace_delete_action()}
+            >
+              <Button
+                className="h-fit rounded-input py-2.5"
+                disabled={deleting}
+                iconLeft="trash"
+                onClick={() => setConfirmDelete(true)}
+                variant="danger"
+              >
+                {m.action_delete()}
+              </Button>
+            </SettingRow>
+          </div>
+        )}
       </div>
+      <ConfirmDialog
+        body={m.workspace_delete_confirm_body()}
+        confirmLabel={m.trash_delete_forever()}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          deleteWorkspace(workspace.id, {
+            onSuccess: () => {
+              onClose();
+              navigate({ to: '/workspaces' });
+            },
+          });
+        }}
+        open={confirmDelete}
+        title={m.workspace_delete_confirm_title({ name: workspace.name })}
+      />
     </SimpleDialog>
   );
 }

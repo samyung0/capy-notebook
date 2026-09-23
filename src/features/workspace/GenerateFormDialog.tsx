@@ -411,7 +411,7 @@ export function GenerateFormDialog({
             size="lg"
             variant="accent"
           >
-            {pending ? <Spinner /> : m.workspace_tab_generate()}
+            {pending ? <Spinner /> : m.action_generate()}
           </Button>
         </DialogFooter>
       </DialogContent>

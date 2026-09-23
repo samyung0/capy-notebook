@@ -252,6 +252,9 @@ func validateThinkingPatch(thinking string) error {
 }
 
 func assertCatalogThinking(ctx context.Context, tx pgx.Tx, ref models.Ref, slot, thinking string) error {
+	if slot == models.SlotChat && thinking == models.ThinkingInstant {
+		return ErrNotFound
+	}
 	var levels []string
 	err := tx.QueryRow(ctx, `
 		SELECT thinking_levels FROM model_configs

@@ -173,6 +173,30 @@
   }
 }
 
+@keyframes scroll-fade-y {
+  from {
+    --scroll-fade-start: 0px;
+    --scroll-fade-end: 28px;
+  }
+  to {
+    --scroll-fade-start: 28px;
+    --scroll-fade-end: 0px;
+  }
+}
+@utility scroll-fade-y {
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 var(--scroll-fade-start),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent
+  );
+  @supports (animation-timeline: scroll()) {
+    animation: scroll-fade-y linear both;
+    animation-timeline: scroll(self block);
+  }
+}
+
 @utility top-inset-bar-shape {
   width: var(--top-inset-bar-width);
   height: var(--top-inset-bar-height);

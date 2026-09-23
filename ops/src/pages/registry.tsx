@@ -84,6 +84,7 @@ function parseParams(
 
 function DraftDialog({
   capabilities,
+  chat,
   config,
   onCreate,
   onOpenChange,
@@ -91,6 +92,7 @@ function DraftDialog({
   providers,
 }: {
   capabilities: Capability[];
+  chat: boolean;
   config: CatalogConfig | undefined;
   onCreate: (draft: DraftConfig) => void;
   onOpenChange: (open: boolean) => void;
@@ -152,6 +154,7 @@ function DraftDialog({
           <DraftFields
             capabilities={capabilities}
             capacityErrors={errors}
+            chat={chat}
             draft={draft}
             embedding={embedding}
             idPrefix="draft"
@@ -688,6 +691,9 @@ function RegistryEditor({ registry }: { registry: Registry }) {
 
       <DraftDialog
         capabilities={registry.capabilities}
+        chat={[...state.cells.values()].some(
+          (cell) => cell.rowId === cloneRow && cell.slot === 'chat'
+        )}
         config={cloneRow ? latestConfig(registry, cloneRow) : undefined}
         key={cloneRow ?? 'closed'}
         onCreate={createDraft}

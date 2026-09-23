@@ -208,12 +208,13 @@ export default function WorkspaceOpen() {
   // Files lives on the left when pinned, and Generate is gone for a read-only
   // visitor: either way the rail falls back to Chat.
   const railTab: PanelTab = railTabs.includes(tab) ? tab : 'chat';
+  // Generate is the Create page's twin, so it borrows that label and glyph.
   const tabLabel = (t: PanelTab) =>
     t === 'files'
       ? m.workspace_tab_files()
       : t === 'chat'
         ? m.workspace_tab_chat()
-        : m.workspace_tab_generate();
+        : m.nav_create();
   function showTab(next: PanelTab) {
     setTab(next);
     if (layout === 'one') setToolsOpen(true);
@@ -249,7 +250,7 @@ export default function WorkspaceOpen() {
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
       beforeReplace={confirmViewerReplacement}
-      contentClassName={layout === 'two' ? 'pt-2' : undefined}
+      contentClassName={layout === 'three' ? undefined : 'pt-2'}
       generating={generating}
       onOpenItem={setOpenItem}
       onRenameChapter={(ch) =>
@@ -320,10 +321,11 @@ export default function WorkspaceOpen() {
           item={openItem}
           leading={
             <>
-              <div className="mr-4 flex items-center gap-1">
+              <div className="mr-2 flex items-center gap-1 lg:mr-4">
                 <IconButton
-                  className="px-1 text-fg-muted"
+                  className="px-1 text-fg-muted hover:text-fg"
                   icon="navigationBack"
+                  iconClassName="-translate-y-px"
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/workspaces' })}
                   size="sm"
@@ -333,8 +335,9 @@ export default function WorkspaceOpen() {
                 {xl && (
                   <IconButton
                     aria-pressed={pinned}
-                    className="px-1 text-fg-muted"
+                    className="px-1 text-fg-muted hover:text-fg"
                     icon="panelLeft"
+                    iconClassName="-translate-y-px"
                     label={
                       pinned
                         ? m.workspace_unpin_files()
@@ -347,30 +350,32 @@ export default function WorkspaceOpen() {
                   />
                 )}
               </div>
-              <WorkspaceMenu
-                cloning={cloneWorkspaceIsPending}
-                onClone={
-                  readOnly && canClone
-                    ? () =>
-                        cloneWorkspace(workspaceId, {
-                          onError: (err) => toastCloneError(err, 'workspace'),
-                          onSuccess: ({ workspace }) => {
-                            trackItemCloned('workspace');
-                            userToast({
-                              title: m.workspace_cloned(),
-                              variant: 'success',
-                            });
-                            navigate({
-                              params: { workspaceId: workspace.id },
-                              to: '/workspaces/$workspaceId',
-                            });
-                          },
-                        })
-                    : undefined
-                }
-                onOpenSettings={rowProps.onOpenSettings}
-                workspace={ws}
-              />
+              {lg && (
+                <WorkspaceMenu
+                  cloning={cloneWorkspaceIsPending}
+                  onClone={
+                    readOnly && canClone
+                      ? () =>
+                          cloneWorkspace(workspaceId, {
+                            onError: (err) => toastCloneError(err, 'workspace'),
+                            onSuccess: ({ workspace }) => {
+                              trackItemCloned('workspace');
+                              userToast({
+                                title: m.workspace_cloned(),
+                                variant: 'success',
+                              });
+                              navigate({
+                                params: { workspaceId: workspace.id },
+                                to: '/workspaces/$workspaceId',
+                              });
+                            },
+                          })
+                      : undefined
+                  }
+                  onOpenSettings={rowProps.onOpenSettings}
+                  workspace={ws}
+                />
+              )}
             </>
           }
           onDeleted={() => setOpenItem(null)}
@@ -401,19 +406,36 @@ export default function WorkspaceOpen() {
           <div className="relative min-h-0 flex-1">
             {viewer}
             {!toolsOpen && (
-              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-line bg-surface p-1 shadow-pop">
+              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 rounded-full border border-line bg-surface p-1 shadow-pop">
                 {panelTabs.map((t) => (
                   <Button
-                    className="h-9 rounded-full px-3.5"
+                    aria-label={tabLabel(t)}
+                    className="h-9 rounded-full px-3.5 max-sm:px-3"
                     iconLeft={TAB_ICON[t]}
                     key={t}
                     onClick={() => showTab(t)}
                     size="sm"
                     variant="ghost-hover"
                   >
-                    {tabLabel(t)}
+                    <span className="max-sm:hidden">{tabLabel(t)}</span>
                   </Button>
                 ))}
+                {/* The workspace menu is hidden at this width, so settings
+                 * would otherwise be unreachable from an open workspace. */}
+                {rowProps.onOpenSettings && (
+                  <Button
+                    aria-label={m.workspace_settings()}
+                    className="h-9 rounded-full px-3.5 max-sm:px-3"
+                    iconLeft="settings"
+                    onClick={rowProps.onOpenSettings}
+                    size="sm"
+                    variant="ghost-hover"
+                  >
+                    <span className="max-sm:hidden">
+                      {m.workspace_settings_short()}
+                    </span>
+                  </Button>
+                )}
               </div>
             )}
           </div>

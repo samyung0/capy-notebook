@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { qk } from '@/api/client';
 import { queryClient, showErrorToast } from '@/api/queryClient';
 import { worker } from '@/mocks/browser';
+import { setChaosPeers } from '@/mocks/chaosPeers';
 import {
   getMockScenarioHandlers,
   type MockScenarioId,
@@ -55,8 +56,10 @@ export default function MockScenarioPanel() {
 
   useEffect(() => {
     worker.use(...getMockScenarioHandlers(storedMockScenario()));
+    setChaosPeers(storedMockScenario() === 'collab-chaos');
     return () => {
       onlineManager.setOnline(true);
+      setChaosPeers(false);
       worker.resetHandlers();
       queryClient.setQueryData(qk.eventStream, { status: 'connected' });
     };
@@ -77,6 +80,7 @@ export default function MockScenarioPanel() {
     const handlers = getMockScenarioHandlers(scenario);
     if (handlers.length > 0) worker.use(...handlers);
     onlineManager.setOnline(scenario !== 'offline');
+    setChaosPeers(scenario === 'collab-chaos');
     setActive(scenario);
     storeMockScenario(scenario);
     try {
@@ -131,6 +135,12 @@ export default function MockScenarioPanel() {
             </select>
           </label>
           {option && 'hint' in option && <p>{option.hint}</p>}
+          {selected.startsWith('chat-openui-') && (
+            <p>
+              Saved previews are also in Biology 101 → Chat → History. Clear the
+              scenario to return to the default overview response.
+            </p>
+          )}
           {selected.startsWith('auth-') && (
             <p>
               Use the auth links below. Any valid email, password and nonempty
@@ -175,6 +185,7 @@ export default function MockScenarioPanel() {
               ['/sso-callback', 'SSO callback'],
               ['/workspace-invites/mock-preview', 'Invitation'],
               ['/', 'Dashboard'],
+              ['/workspaces/ws_bio', 'Biology 101'],
             ].map(([path, label]) => (
               <button
                 className="h-8 rounded-button border border-line px-2 text-left"

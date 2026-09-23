@@ -91,7 +91,9 @@ export function PanelTabRow({
         {!compact &&
           actions.map((action) => (
             <IconButton
-              className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
+              className={
+                'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
+              }
               disabled={action.disabled}
               icon={action.icon}
               key={action.label}
@@ -107,7 +109,9 @@ export function PanelTabRow({
             items={addItems}
             trigger={
               <IconButton
-                className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
+                className={
+                  'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
+                }
                 icon="plusCircle"
                 label={m.action_add_file()}
                 size="sm"
@@ -123,7 +127,9 @@ export function PanelTabRow({
                 items={folded}
                 trigger={
                   <IconButton
-                    className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
+                    className={
+                      'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
+                    }
                     icon="moreVertical"
                     label={m.a11y_more_actions()}
                     size="sm"
@@ -134,7 +140,9 @@ export function PanelTabRow({
             )
           : onOpenSettings && (
               <IconButton
-                className={'p-0 px-0.75 py-0.5 text-fg-muted xl:px-1.25'}
+                className={
+                  'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
+                }
                 icon="settings"
                 label={m.workspace_settings()}
                 onClick={onOpenSettings}

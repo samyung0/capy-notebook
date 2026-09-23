@@ -3,6 +3,7 @@
 
 - Developer Epo requested (2026-09-13) UAT cloud import fixes: give Google Picker exclusive focus and pointer interaction, prevent duplicate picker launches, enable multiple file selection, and report picker failures to Sentry. src/features/workspace/AddSourceDialog.tsx src/lib/googlePicker.ts
 - Developer Epo requested (2026-09-15) broader MSW frontend user scenarios, reachable sign-in/sign-up/password-reset pages, and developer buttons opening real dialogs with dummy data when normal mock flows cannot reach them. src/mocks/scenarios.ts src/components/dev/MockScenarioPanel.tsx
+- Developer Epo requested (2026-09-22) MSW chat history and User scenarios include the OpenUI designs and failure states for UI development through the real chat renderer and stream parser. src/mocks/chatFixtures.ts src/mocks/chatStream.ts src/mocks/scenarios.ts src/mocks/db.ts
 
 - Developer Epo requested (2026-09-16) Biology 101 file-state fixtures reachable as ordinary files, PDF failures using FileError, and an ownership-transfer preview without an underlying mock member dialog. src/mocks/dialogFiles.ts src/features/files/PdfView.tsx src/components/dev/MockDialogPreview.tsx
 

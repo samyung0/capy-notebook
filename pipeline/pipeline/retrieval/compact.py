@@ -122,7 +122,6 @@ def _summary_input_fits(
         ),
         spec,
         max_tokens=SUMMARY_MAX_TOKENS,
-        reasoning=False,
     )
 
 
@@ -141,7 +140,7 @@ async def _summarize_batch(
         turns=turns,
         current_user_message=current_user_message,
     )
-    if not fits_request(messages, spec, max_tokens=SUMMARY_MAX_TOKENS, reasoning=False):
+    if not fits_request(messages, spec, max_tokens=SUMMARY_MAX_TOKENS):
         raise ContextTooLarge(
             "The conversation cannot be summarized without truncating protected context."
         )
@@ -151,7 +150,6 @@ async def _summarize_batch(
         messages,
         model=spec,
         max_tokens=SUMMARY_MAX_TOKENS,
-        reasoning=False,
         call_purpose=purpose,
     )
     summary = (raw or "").strip()

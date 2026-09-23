@@ -158,6 +158,7 @@ img.capture {
         <button id="resetPrompt" type="button">
           Back to production prompt
         </button>
+        <span class="muted" id="promptStatus" role="status"></span>
         <span class="muted"
           >Apply writes the text above into <code>system_prompt</code> and
           clears <code>prompt_addon</code> and <code>capture.addon</code>; reset
@@ -165,11 +166,31 @@ img.capture {
         >
       </div>
     </details>
-    <details>
-      <summary>
-        Tools array sent with the request (name, description, argument schema)
-      </summary>
-      <pre id="toolsJson"></pre>
+    <details id="toolPrompts">
+      <summary>Tool prompts</summary>
+      <label>Tool <select id="toolName"></select></label>
+      <textarea
+        id="toolPrompt"
+        disabled
+        aria-label="Tool description"
+        spellcheck="false"
+        style="min-height:180px"
+      ></textarea>
+      <div class="row">
+        <button id="applyToolPrompt" type="button" disabled>Apply tool prompt</button>
+        <button id="resetToolPrompt" type="button" disabled>Reset tool prompt</button>
+        <span class="muted" id="toolPromptStatus" role="status"></span>
+      </div>
+      <p class="muted">
+        Apply writes this description into <code>tool_descriptions</code>. Save
+        stores it with the config. Reset restores this tool's production
+        description. Argument schemas stay fixed; the live subject catalog is
+        appended automatically to <code>browse_knowledge</code>.
+      </p>
+      <details>
+        <summary>Tools array sent with the request</summary>
+        <pre id="toolsJson"></pre>
+      </details>
     </details>
     <details>
       <summary>Files in workspace</summary>
@@ -202,10 +223,15 @@ const $ = (id) => document.getElementById(id);
 let state = null,
   history = [],
   checkpoint = null,
+  ledger = null,
   nextId = 1,
   log = $('log'),
   active = null;
 const k = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+let previewVersion = 0,
+  promptDirty = false,
+  toolPrompts = {},
+  toolDrafts = {};
 
 async function loadState() {
   state = await (await fetch('/api/state')).json();
@@ -263,14 +289,20 @@ function mergedConfig(c) {
   return out;
 }
 $('fill').onclick = () => setConfig(mergedConfig(currentConfig()));
-function setConfig(c) {
+function setConfig(c, resetDrafts = false) {
+  if (resetDrafts) {
+    promptDirty = false;
+    toolDrafts = {};
+    $('promptStatus').textContent = '';
+  }
+  const version = ++previewVersion;
   $('json').value = JSON.stringify(c, null, 2);
   const m = c.model || state.defaults.model;
-  for (const o of $('models').options) {
+  const modelOption = [...$('models').options].find((o) => {
     const [p, s, v] = JSON.parse(o.value);
-    o.selected =
-      p === m.provider_slug && s === m.model_slug && v === (m.version || 1);
-  }
+    return p === m.provider_slug && s === m.model_slug && v === (m.version || 1);
+  });
+  $('models').value = modelOption?.value || '';
   $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
   $('curate').checked = !!c.curate;
   // A config may carry the frozen request it was written for.
@@ -285,14 +317,30 @@ function setConfig(c) {
     headers: { 'content-type': 'application/json' },
     method: 'POST',
   })
-    .then((r) => r.json())
+    .then(async (r) => {
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    })
     .then((p) => {
-      $('prompt').value = p.prompt;
+      if (version !== previewVersion) return;
+      if (!promptDirty) $('prompt').value = p.prompt;
       $('toolsJson').textContent = JSON.stringify(p.tools, null, 2);
+      toolPrompts = p.tool_prompts;
+      const selected = $('toolName').value;
+      $('toolName').innerHTML = Object.keys(toolPrompts)
+        .map((name) => `<option>${name}</option>`)
+        .join('');
+      if (Object.hasOwn(toolPrompts, selected)) $('toolName').value = selected;
+      showToolPrompt();
+    })
+    .catch((e) => {
+      if (version === previewVersion)
+        $('status').textContent = 'Prompt preview: ' + e.message;
     });
   fetch(`/api/workspaces/${c.workspace_id}/files`)
     .then((r) => r.json())
     .then((files) => {
+      if (version !== previewVersion) return;
       $('files').textContent = files
         .map((f) => `${f.id}  ${f.name}  ${f.chunks} chunks  ${f.status}`)
         .join('\n');
@@ -300,7 +348,7 @@ function setConfig(c) {
 }
 async function loadConfig(name) {
   const c = await (await fetch(`/api/configs/${name}`)).json();
-  setConfig(c.raw);
+  setConfig(c.raw, true);
   $('saveas').value = name;
 }
 $('configs').onchange = () => loadConfig($('configs').value);
@@ -314,9 +362,12 @@ $('save').onclick = async () => {
   });
   $('status').textContent = r.ok ? `saved ${name}` : await r.text();
   if (r.ok) {
-    await loadState();
+    if (![...$('configs').options].some((option) => option.value === name)) {
+      const option = document.createElement('option');
+      option.value = option.textContent = name;
+      $('configs').appendChild(option);
+    }
     $('configs').value = name;
-    await loadConfig(name);
   }
 };
 $('models').onchange = () => {
@@ -327,7 +378,7 @@ $('models').onchange = () => {
   c.model = {
     model_slug,
     provider_slug,
-    thinking: (c.model && c.model.thinking) || thinking || 'instant',
+    thinking: (c.model && c.model.thinking) || thinking || 'high',
     version,
   };
   setConfig(c);
@@ -361,6 +412,7 @@ $('clear').onclick = () => {
   active = null;
   history = [];
   checkpoint = null;
+  ledger = null;
   log.innerHTML = '';
   resetPanels();
   $('status').textContent = 'idle';
@@ -372,22 +424,69 @@ function resetPanels() {
 }
 $('json').onchange = () => {
   try {
-    setConfig(currentConfig());
+    setConfig(currentConfig(), true);
   } catch (e) {
     $('status').textContent = 'JSON: ' + e.message;
   }
+};
+$('prompt').oninput = () => {
+  promptDirty = true;
+  $('promptStatus').textContent = 'Draft: apply before running';
 };
 $('applyPrompt').onclick = () => {
   const c = currentConfig();
   c.system_prompt = $('prompt').value;
   c.prompt_addon = '';
   c.capture = { ...(c.capture || {}), addon: false };
+  promptDirty = false;
+  $('promptStatus').textContent = 'Applied to config';
   setConfig(c);
 };
 $('resetPrompt').onclick = () => {
   const c = currentConfig();
   c.system_prompt = null;
+  promptDirty = false;
+  $('promptStatus').textContent = '';
   setConfig(c);
+};
+
+function showToolPrompt() {
+  const name = $('toolName').value;
+  const draft = Object.hasOwn(toolDrafts, name);
+  const applied = currentConfig().tool_descriptions || {};
+  $('toolPrompt').value =
+    toolDrafts[name] ?? applied[name] ?? toolPrompts[name] ?? '';
+  $('toolPromptStatus').textContent = draft
+    ? 'Draft: apply before running'
+    : Object.hasOwn(applied, name)
+      ? 'Custom description applied'
+      : 'Production description';
+  for (const id of ['toolPrompt', 'applyToolPrompt', 'resetToolPrompt'])
+    $(id).disabled = !Object.hasOwn(toolPrompts, name);
+}
+$('toolName').onchange = showToolPrompt;
+$('toolPrompt').oninput = () => {
+  toolDrafts[$('toolName').value] = $('toolPrompt').value;
+  $('toolPromptStatus').textContent = 'Draft: apply before running';
+};
+$('applyToolPrompt').onclick = () => {
+  const name = $('toolName').value;
+  const c = currentConfig();
+  c.tool_descriptions = {
+    ...c.tool_descriptions,
+    [name]: $('toolPrompt').value,
+  };
+  delete toolDrafts[name];
+  setConfig(c);
+  showToolPrompt();
+};
+$('resetToolPrompt').onclick = () => {
+  const name = $('toolName').value;
+  const c = currentConfig();
+  delete c.tool_descriptions?.[name];
+  delete toolDrafts[name];
+  setConfig(c);
+  showToolPrompt();
 };
 
 function card(cls, html) {
@@ -528,6 +627,7 @@ function render(ev, runId) {
     return;
   }
   if (ev.type === 'ledger') {
+    ledger = ev.stored;
     renderLedger(ev);
     return;
   }
@@ -620,11 +720,12 @@ function render(ev, runId) {
       'stat',
       `<b>done</b> stop=${esc(ev.telemetry && ev.telemetry.stopReason)} planning=${ev.telemetry && ev.telemetry.planningRounds} tools=${ev.telemetry && ev.telemetry.toolCallsTurn} tokens=${ev.tokenCount ?? '?'}`
     );
-    if (ev.answer)
+    if (ev.answer || ev.toolEvidence)
       history.push({
-        content: ev.answer,
+        content: ev.answer || '',
         id: 'm' + nextId++,
         role: 'assistant',
+        toolEvidence: ev.toolEvidence,
       });
     return;
   }
@@ -665,6 +766,7 @@ $('run').onclick = async () => {
         checkpoint,
         config: currentConfig(),
         history,
+        ledger,
         question,
       }),
       headers: { 'content-type': 'application/json' },
@@ -709,14 +811,23 @@ $('runs').onclick = async (e) => {
   const id = e.target.dataset.run;
   if (!id) return;
   e.preventDefault();
+  if (active) active.abort();
+  active = null;
   const run = await (await fetch(`/api/runs/${id}`)).json();
   log.innerHTML = '';
-  history = [];
+  history = run.history || [];
+  checkpoint = run.checkpoint_in || null;
+  ledger = run.ledger?.stored || null;
+  nextId =
+    1 + Math.max(0, ...history.map((m) => Number(/^m(\d+)$/.exec(m.id)?.[1]) || 0));
+  history.push({ content: run.question, id: 'm' + nextId++, role: 'user' });
   resetPanels();
   configCard('run ' + id, run.config, run.system_prompt);
   card('', `<b>You</b><br>${esc(run.question)}`);
   for (const ev of run.events) render(ev, id);
   if (run.answer) card('answer', esc(run.answer));
+  $('status').textContent =
+    `Conversation restored: ${history.length} messages${checkpoint ? ' · checkpoint' : ''}${ledger ? ' · ledger' : ''}`;
 };
 loadState();
 </script>

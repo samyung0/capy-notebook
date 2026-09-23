@@ -3,7 +3,6 @@ import {
   useChapters,
   useCreateNote,
   useDeleteChapter,
-  useDeleteMaterial,
   useFiles,
   useMaterials,
   useMoveMaterial,
@@ -17,7 +16,6 @@ import type {
   MaterialRefType,
   SourceFile,
 } from '@/api/types';
-import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
@@ -90,7 +88,6 @@ export function FilesPanel({
   const { data: materials } = useMaterials(workspaceId);
   const { mutate: reorder } = useReorderChapters(workspaceId);
   const { mutate: delChapter } = useDeleteChapter(workspaceId);
-  const { mutate: delMaterial } = useDeleteMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: reorderContent } = useReorderContent(workspaceId);
   const { mutate: createNote } = useCreateNote(workspaceId);
@@ -103,7 +100,6 @@ export function FilesPanel({
     edge: 'before' | 'after';
   } | null>(null);
   const draggedItemRef = useRef<ContentOrderItem | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<MaterialRef | null>(null);
 
   const unfiled = files?.filter((f) => f.chapterId === null) ?? [];
   const unfiledMaterials =
@@ -280,7 +276,11 @@ export function FilesPanel({
         color="purple"
         data={mt}
         key={`${mt.type}:${mt.id}`}
-        onDelete={readOnly ? undefined : () => setPendingDelete(mt)}
+        onDeleted={() => {
+          if (openItem?.kind === 'material' && openItem.id === mt.id) {
+            onOpenItem(null);
+          }
+        }}
         onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
         onOpen={() => onOpenItem({ id: mt.id, kind: 'material' })}
         readOnly={readOnly}
@@ -382,7 +382,7 @@ export function FilesPanel({
       {renderTabRow(actions)}
       <div
         className={cn(
-          'min-h-0 flex-1 overflow-auto px-2.5 pb-2',
+          'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-2',
           contentClassName
         )}
       >
@@ -482,15 +482,17 @@ export function FilesPanel({
               unfiledMaterials.length > 0 ||
               generating) && (
               <div className="rounded-button">
-                <div
-                  className={cn(
-                    't-label px-1.5 py-1.5 text-fg-muted',
-                    dropTarget === 'unfiled-files' &&
-                      'border-line-strong border-b-2'
-                  )}
-                >
-                  {m.nav_section_others()}
-                </div>
+                {chapters.length > 0 && (
+                  <div
+                    className={cn(
+                      't-label px-1.5 py-1.5 text-fg-muted',
+                      dropTarget === 'unfiled-files' &&
+                        'border-line-strong border-b-2'
+                    )}
+                  >
+                    {m.nav_section_others()}
+                  </div>
+                )}
                 <div {...dropZone('unfiled-files', null)}>
                   {contentFor(null).map((item) =>
                     renderContentItem(item, null)
@@ -523,24 +525,6 @@ export function FilesPanel({
           </div>
         )}
       </div>
-      <ConfirmDialog
-        body={m.confirm_delete_body()}
-        danger
-        onClose={() => setPendingDelete(null)}
-        onConfirm={() => {
-          if (!pendingDelete) return;
-          const id = pendingDelete.id;
-          delMaterial(id, {
-            onSuccess: () => {
-              if (openItem?.kind === 'material' && openItem.id === id) {
-                onOpenItem(null);
-              }
-            },
-          });
-        }}
-        open={!!pendingDelete}
-        title={m.confirm_delete_title({ name: pendingDelete?.title ?? '' })}
-      />
     </div>
   );
 }

@@ -23,15 +23,15 @@ func TestQuizGradeUsesSlotDefault(t *testing.T) {
 		UPDATE model_configs SET is_default_for=array_remove(is_default_for, 'quiz');
 		INSERT INTO model_configs
 		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
-		  '{"model_slug":"quiz-default-test","slots":["quiz"],"is_default_for":["quiz"]}'::jsonb)).*
-		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND version=1`); err != nil {
+		  '{"version":1,"model_slug":"quiz-default-test","slots":["quiz"],"is_default_for":["quiz"]}'::jsonb)).*
+		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		if _, err := s.Pool().Exec(ctx, `
 			DELETE FROM model_configs WHERE provider_slug='deepseek' AND model_slug='quiz-default-test';
 			UPDATE model_configs SET is_default_for=array_append(is_default_for, 'quiz')
-			WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND version=1`); err != nil {
+			WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled`); err != nil {
 			t.Error(err)
 		}
 	})
@@ -63,7 +63,7 @@ func TestQuizGradeUsesSlotDefault(t *testing.T) {
 	}
 	body := <-forwarded
 	if body["providerSlug"] != "deepseek" || body["modelSlug"] != "quiz-default-test" ||
-		body["configVersion"] != float64(1) || body["paidBy"] != "platform" || body["thinking"] != "instant" {
+		body["configVersion"] != float64(1) || body["paidBy"] != "platform" || body["thinking"] != "high" {
 		t.Fatalf("wrong quiz pin: %#v", body)
 	}
 }

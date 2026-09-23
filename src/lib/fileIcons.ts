@@ -133,10 +133,10 @@ const EXTENSION_ICON: Record<string, FileIconName> = {
 };
 
 const MATERIAL_ICON: Record<MaterialRefType, FileIconName> = {
-  diagram: 'drawio',
-  flashcards: 'java-enum',
+  diagram: 'api-blueprint',
+  flashcards: 'vhs',
   mindmap: 'forgejo',
-  note: 'markdown',
+  note: 'java-enum',
   quiz: 'stackblitz',
 };
 

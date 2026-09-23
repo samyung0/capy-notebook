@@ -1,124 +1,118 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { api } from '@/api/client';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
-import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
+import { PdfAnnotationToolbar, type PdfTool } from './PdfAnnotationToolbar';
 import {
   clientRectToPage,
   eraseRects,
+  eraserIntersectsPen,
+  eraserIntersectsRect,
   fullyHighlighted,
   intersection,
-  type PdfRect,
   type PdfSelection,
   pdfTextSelection,
   rotateRect,
-  segmentIntersectsRect,
-  toolbarPosition,
 } from './pdfAnnotationGeometry';
+import { usePdfAnnotations } from './usePdfAnnotations';
 
-type PrivatePdfAnnotation = PDFAnnotation;
-type AnnotationInput = PDFAnnotationBody;
-type Tool = PrivatePdfAnnotation['kind'] | 'eraser';
-const CLIPPED_OVERFLOW = /(auto|scroll|hidden|clip)/;
-const COLORS = ['#facc15', '#4ade80', '#60a5fa', '#f472b6'];
+type Point = { x: number; y: number };
+const ERASER_RADIUS = 48;
+const ERASER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="98" height="98"><circle cx="49" cy="49" r="48" fill="#ffffff33" stroke="white" stroke-width="2"/><circle cx="49" cy="49" r="47" fill="none" stroke="#333"/></svg>')}") 49 49, none`;
 
 export function PdfAnnotations({
   containerRef,
+  toolbar,
   fileId,
   revision,
   renderVersion,
+  editing,
+  onPendingChange,
 }: {
   containerRef: RefObject<HTMLDivElement | null>;
+  toolbar: HTMLElement | null;
   fileId: string;
   revision: number;
   renderVersion: string;
+  editing: boolean;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const sourceIdentity = `revision:${revision}`;
-  const queryKey = ['file', fileId, 'private-annotations'];
-  const cache = useQueryClient();
-  const { data: annotations = [], isError } = useQuery({
-    meta: { errorBoundary: false },
-    queryFn: () =>
-      api.get<PrivatePdfAnnotation[]>(`/files/${fileId}/annotations`),
-    queryKey,
+  const {
+    annotations,
+    change,
+    isPending,
+    isSaving,
+    unavailable,
+    isError,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
+  } = usePdfAnnotations(fileId, sourceIdentity);
+  const [tool, setTool] = useState<PdfTool>('select');
+  const [color, setColor] = useState('#d94848');
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState<PDFAnnotationBody | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const stateRef = useRef({
+    annotations,
+    change,
+    color,
+    editing,
+    isPending,
+    redo,
+    text,
+    tool,
+    undo,
   });
-  const { mutateAsync: change, isPending } = useMutation({
-    mutationFn: async (changes: {
-      create?: AnnotationInput[];
-      update?: PrivatePdfAnnotation[];
-      remove?: string[];
-    }) => {
-      // Serial writes keep partial erasing deterministic. The query is refetched even on failure.
-      for (const id of changes.remove ?? [])
-        await api.del(`/files/${fileId}/annotations/${id}`);
-      for (const mark of changes.update ?? [])
-        await api.patch(`/files/${fileId}/annotations/${mark.id}`, {
-          color: mark.color,
-          kind: mark.kind,
-          page: mark.page,
-          rects: mark.rects,
-          sourceIdentity: mark.sourceIdentity,
-        });
-      for (const mark of changes.create ?? [])
-        await api.post(`/files/${fileId}/annotations`, mark);
-    },
-    onSettled: () => cache.invalidateQueries({ queryKey }),
-    scope: { id: `pdf-annotations:${fileId}` },
-  });
-  const [tool, setTool] = useState<Tool | null>(null);
-  const [color, setColor] = useState(COLORS[0]);
-  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
-  const [focused, setFocused] = useState(false);
-  const [draft, setDraft] = useState<{ page: number; rect: PdfRect } | null>(
-    null
-  );
-  const [layout, setLayout] = useState(0);
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const current = annotations.filter(
-    (mark) => mark.sourceIdentity === sourceIdentity
-  );
-  const stateRef = useRef({ change, color, current, isPending, tool });
-  stateRef.current = { change, color, current, isPending, tool };
+  stateRef.current = {
+    annotations,
+    change,
+    color,
+    editing,
+    isPending,
+    redo,
+    text,
+    tool,
+    undo,
+  };
+  const selectedRef = useRef<PdfSelection[]>([]);
+  useEffect(() => {
+    onPendingChange?.(isSaving || dragging);
+    return () => onPendingChange?.(false);
+  }, [isSaving, dragging, onPendingChange]);
 
-  async function applySelection(
-    selection: PdfSelection[],
-    mode: 'highlight' | 'eraser',
-    toggle: boolean
-  ) {
+  function applyHighlight(selection: PdfSelection[], toggle: boolean) {
     const state = stateRef.current;
-    if (!selection.length || state.isPending || isError) return;
+    if (!selection.length || state.isPending || !state.editing) return;
     const erase =
-      mode === 'eraser' ||
-      (toggle &&
-        selection.every((part) =>
-          fullyHighlighted(
-            part.rects,
-            state.current
-              .filter(
-                (mark) => mark.page === part.page && mark.kind === 'highlight'
-              )
-              .flatMap((mark) => mark.rects)
-          )
-        ));
+      toggle &&
+      selection.every((part) =>
+        fullyHighlighted(
+          part.rects,
+          state.annotations
+            .filter(
+              (mark) => mark.page === part.page && mark.kind === 'highlight'
+            )
+            .flatMap((mark) => mark.rects)
+        )
+      );
     if (!erase) {
-      await state
-        .change({
-          create: selection.map((part) => ({
-            ...part,
-            color: state.color,
-            kind: 'highlight',
-            sourceIdentity,
-          })),
-        })
-        .catch(() => {});
+      void state.change({
+        create: selection.map((part) => ({
+          ...part,
+          color: state.color,
+          kind: 'highlight',
+          sourceIdentity,
+        })),
+      });
       return;
     }
-    const update: PrivatePdfAnnotation[] = [],
+    const update: PDFAnnotation[] = [],
       remove: string[] = [];
-    for (const mark of state.current) {
+    for (const mark of state.annotations) {
+      if (mark.kind !== 'highlight') continue;
       const cuts = selection
         .filter((part) => part.page === mark.page)
         .flatMap((part) => part.rects);
@@ -126,365 +120,384 @@ export function PdfAnnotations({
         !cuts.some((cut) => mark.rects.some((rect) => intersection(rect, cut)))
       )
         continue;
-      const rects =
-        mark.kind === 'highlight' ? eraseRects(mark.rects, cuts) : [];
+      const rects = eraseRects(mark.rects, cuts);
       if (rects.length) update.push({ ...mark, rects });
       else remove.push(mark.id);
     }
-    await state.change({ remove, update }).catch(() => {});
+    void state.change({ remove, update });
   }
-  const applyRef = useRef(applySelection);
-  applyRef.current = applySelection;
+  const highlightRef = useRef(applyHighlight);
+  highlightRef.current = applyHighlight;
+  const chooseTool = (next: PdfTool) => {
+    if (next === 'highlight' && selectedRef.current.length) {
+      applyHighlight(selectedRef.current, true);
+      window.getSelection()?.removeAllRanges();
+    }
+    selectedRef.current = [];
+    setTool(next);
+  };
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const placeCursor = (x: number, y: number) => {
-      const bounds = container.getBoundingClientRect();
-      setCursor({ x: x - bounds.left, y: y - bounds.top });
-    };
     let drag: {
       page: HTMLElement;
-      x: number;
-      y: number;
-      eraseIds: Set<string>;
-      lastX: number;
-      lastY: number;
+      start: Point;
+      last: Point;
+      points: Point[];
+      removed: Set<string>;
+      tool: PdfTool;
     } | null = null;
-    const insideToolbar = (target: EventTarget | null) =>
-      target instanceof Node && toolbarRef.current?.contains(target);
-    const hitMarks = (x: number, y: number, page: HTMLElement) => {
-      const point = clientRectToPage(
-        { height: 6, left: x - 3, top: y - 3, width: 6 },
+    const point = (event: PointerEvent) => ({
+      x: event.clientX,
+      y: event.clientY,
+    });
+    const normalized = (p: Point, page: HTMLElement) => {
+      const { x, y } = clientRectToPage(
+        { height: 0, left: p.x, top: p.y, width: 0 },
         page
       );
-      return stateRef.current.current
-        .filter(
-          (mark) =>
-            mark.page === Number(page.dataset.page) &&
-            mark.rects.some((rect) => intersection(rect, point))
+      return { x, y };
+    };
+    const hit = (start: Point, end: Point) => {
+      const page = document
+        .elementFromPoint(end.x, end.y)
+        ?.closest<HTMLElement>('[data-page]');
+      if (!drag || !page || !container.contains(page)) return;
+      const bounds = page.getBoundingClientRect();
+      const rotation = Number(page.dataset.rotation ?? 0);
+      for (const mark of stateRef.current.annotations) {
+        if (mark.page !== Number(page.dataset.page)) continue;
+        if (
+          mark.rects.some((raw) => {
+            const rect = rotateRect(raw, rotation);
+            return eraserIntersectsRect(
+              start,
+              end,
+              {
+                height: (rect.height * bounds.height) / 1000,
+                width: (rect.width * bounds.width) / 1000,
+                x: bounds.left + (rect.x * bounds.width) / 1000,
+                y: bounds.top + (rect.y * bounds.height) / 1000,
+              },
+              ERASER_RADIUS
+            );
+          }) &&
+          (mark.kind !== 'pen' ||
+            eraserIntersectsPen(
+              start,
+              end,
+              (mark.points ?? []).map((point) => {
+                const rotated = rotateRect(
+                  { ...point, height: 0, width: 0 },
+                  rotation
+                );
+                return {
+                  x: bounds.left + (rotated.x * bounds.width) / 1000,
+                  y: bounds.top + (rotated.y * bounds.height) / 1000,
+                };
+              }),
+              ERASER_RADIUS + Math.max(bounds.width, bounds.height) / 1000
+            ))
         )
-        .map((mark) => mark.id);
+          drag.removed.add(mark.id);
+      }
+    };
+    const makeDraft = (end: Point): PDFAnnotationBody | null => {
+      if (!drag) return null;
+      const { color, text } = stateRef.current;
+      const kind = drag.tool;
+      if (
+        kind !== 'pen' &&
+        kind !== 'text' &&
+        kind !== 'rectangle' &&
+        kind !== 'ellipse'
+      )
+        return null;
+      const rect = clientRectToPage(
+        {
+          height: Math.abs(end.y - drag.start.y),
+          left: Math.min(drag.start.x, end.x),
+          top: Math.min(drag.start.y, end.y),
+          width: Math.abs(end.x - drag.start.x),
+        },
+        drag.page
+      );
+      const body: PDFAnnotationBody = {
+        color,
+        kind,
+        page: Number(drag.page.dataset.page),
+        rects: [rect],
+        sourceIdentity,
+      };
+      if (kind === 'pen') {
+        const points = drag.points.map((p) => normalized(p, drag!.page));
+        const x = Math.max(0, Math.min(...points.map((p) => p.x)) - 1),
+          y = Math.max(0, Math.min(...points.map((p) => p.y)) - 1);
+        body.rects = [
+          {
+            height: Math.min(
+              1000 - y,
+              Math.max(...points.map((p) => p.y)) - y + 1
+            ),
+            width: Math.min(
+              1000 - x,
+              Math.max(...points.map((p) => p.x)) - x + 1
+            ),
+            x,
+            y,
+          },
+        ];
+        body.points = points;
+      }
+      if (kind === 'text') {
+        if (!text) return null;
+        const p = normalized(drag.start, drag.page);
+        const x = Math.min(999, p.x),
+          y = Math.min(980, p.y);
+        body.rects = [
+          {
+            height: 20,
+            width: Math.min(1000 - x, Math.max(20, [...text].length * 12)),
+            x,
+            y,
+          },
+        ];
+        body.text = text;
+      }
+      return body;
     };
     const down = (event: PointerEvent) => {
-      if (insideToolbar(event.target)) return;
+      const state = stateRef.current;
       if (
-        !(event.target instanceof Element) ||
-        !container.contains(event.target)
-      ) {
-        setFocused(false);
+        !state.editing ||
+        state.isPending ||
+        event.button !== 0 ||
+        !(event.target instanceof Element)
+      )
         return;
-      }
       const page = event.target.closest<HTMLElement>('[data-page]');
-      if (!page || stateRef.current.isPending) return;
-      setFocused(true);
-      placeCursor(event.clientX, event.clientY);
-      if (stateRef.current.tool && stateRef.current.tool !== 'highlight') {
-        event.preventDefault();
-        container.focus({ preventScroll: true });
-        window.getSelection()?.removeAllRanges();
-        drag = {
-          eraseIds: new Set(hitMarks(event.clientX, event.clientY, page)),
-          lastX: event.clientX,
-          lastY: event.clientY,
-          page,
-          x: event.clientX,
-          y: event.clientY,
-        };
-      }
+      if (
+        !page ||
+        !container.contains(page) ||
+        state.tool === 'select' ||
+        state.tool === 'highlight'
+      )
+        return;
+      event.preventDefault();
+      container.focus({ preventScroll: true });
+      window.getSelection()?.removeAllRanges();
+      const start = point(event);
+      drag = {
+        last: start,
+        page,
+        points: [start],
+        removed: new Set(),
+        start,
+        tool: state.tool,
+      };
+      setDragging(true);
+      if (state.tool === 'eraser') hit(start, start);
+      else setDraft(makeDraft(start));
     };
     const move = (event: PointerEvent) => {
       if (!drag) return;
-      if (stateRef.current.tool === 'eraser') {
-        const page = document
-          .elementFromPoint(event.clientX, event.clientY)
-          ?.closest<HTMLElement>('[data-page]');
-        if (page && container.contains(page)) {
-          const start = clientRectToPage(
-            { height: 0, left: drag.lastX, top: drag.lastY, width: 0 },
-            page
-          );
-          const end = clientRectToPage(
-            { height: 0, left: event.clientX, top: event.clientY, width: 0 },
-            page
-          );
-          for (const mark of stateRef.current.current)
-            if (
-              mark.page === Number(page.dataset.page) &&
-              mark.rects.some((rect) => segmentIntersectsRect(start, end, rect))
-            )
-              drag.eraseIds.add(mark.id);
-          drag.lastX = event.clientX;
-          drag.lastY = event.clientY;
-        }
-      } else {
-        setDraft({
-          page: Number(drag.page.dataset.page),
-          rect: clientRectToPage(
-            {
-              height: Math.abs(event.clientY - drag.y),
-              left: Math.min(drag.x, event.clientX),
-              top: Math.min(drag.y, event.clientY),
-              width: Math.abs(event.clientX - drag.x),
-            },
-            drag.page
-          ),
-        });
+      const end = point(event);
+      if (drag.tool === 'eraser') hit(drag.last, end);
+      else {
+        if (
+          drag.tool === 'pen' &&
+          drag.points.length < 4096 &&
+          Math.hypot(end.x - drag.last.x, end.y - drag.last.y) >= 1
+        )
+          drag.points.push(end);
+        setDraft(makeDraft(end));
       }
+      drag.last = end;
+    };
+    const cancel = () => {
+      drag = null;
+      setDraft(null);
+      setDragging(false);
     };
     const up = (event: PointerEvent) => {
-      if (insideToolbar(event.target)) return;
-      const state = stateRef.current;
       if (drag) {
-        if (state.tool === 'eraser')
-          void state.change({ remove: [...drag.eraseIds] }).catch(() => {});
-        else if (state.tool === 'rectangle' || state.tool === 'ellipse') {
-          const rect = clientRectToPage(
-            {
-              height: Math.abs(event.clientY - drag.y),
-              left: Math.min(drag.x, event.clientX),
-              top: Math.min(drag.y, event.clientY),
-              width: Math.abs(event.clientX - drag.x),
-            },
-            drag.page
-          );
-          if (rect.width > 1 && rect.height > 1)
-            void state
-              .change({
-                create: [
-                  {
-                    color: state.color,
-                    kind: state.tool,
-                    page: Number(drag.page.dataset.page),
-                    rects: [rect],
-                    sourceIdentity,
-                  },
-                ],
-              })
-              .catch(() => {});
+        if (drag.tool === 'eraser') {
+          hit(drag.last, point(event));
+          void stateRef.current.change({ remove: [...drag.removed] });
+        } else {
+          if (drag.tool === 'pen' && drag.points.length === 1)
+            drag.points.push(point(event));
+          const body = makeDraft(point(event));
+          if (body?.rects.every((rect) => rect.width > 0 && rect.height > 0))
+            void stateRef.current.change({ create: [body] });
         }
-        placeCursor(event.clientX, event.clientY);
-        drag = null;
-        setDraft(null);
+        cancel();
       } else if (
-        state.tool === 'highlight' &&
+        stateRef.current.editing &&
+        stateRef.current.tool === 'highlight' &&
         event.target instanceof Node &&
         container.contains(event.target)
       ) {
-        placeCursor(event.clientX, event.clientY);
-        void applyRef.current(pdfTextSelection(container), 'highlight', false);
+        highlightRef.current(pdfTextSelection(container), false);
+        selectedRef.current = [];
+        window.getSelection()?.removeAllRanges();
       }
     };
-    const focus = (event: FocusEvent) => {
+    const keydown = (event: KeyboardEvent) => {
       if (
-        !insideToolbar(event.target) &&
-        event.target instanceof Node &&
+        !stateRef.current.editing ||
+        !(event.target instanceof Node) ||
         !container.contains(event.target)
       )
-        setFocused(false);
+        return;
+      if (event.key === 'Escape') {
+        cancel();
+        setTool('select');
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (!stateRef.current.isPending)
+          (event.shiftKey ? stateRef.current.redo : stateRef.current.undo)();
+      }
     };
-    const blur = () => setFocused(false);
-    const reposition = () => setLayout((value) => value + 1);
-    const observer = new ResizeObserver(reposition);
-    observer.observe(container);
-    document.addEventListener('pointerdown', down);
+    container.addEventListener('pointerdown', down);
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', up);
-    document.addEventListener('focusin', focus);
-    window.addEventListener('blur', blur);
-    window.addEventListener('scroll', reposition, true);
+    document.addEventListener('pointercancel', cancel);
+    container.addEventListener('keydown', keydown);
+    window.addEventListener('blur', cancel);
     return () => {
-      observer.disconnect();
-      document.removeEventListener('pointerdown', down);
+      container.removeEventListener('pointerdown', down);
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', up);
-      document.removeEventListener('focusin', focus);
-      window.removeEventListener('blur', blur);
-      window.removeEventListener('scroll', reposition, true);
+      document.removeEventListener('pointercancel', cancel);
+      container.removeEventListener('keydown', keydown);
+      window.removeEventListener('blur', cancel);
     };
-  }, [containerRef, fileId, sourceIdentity]);
-
+  }, [containerRef, sourceIdentity]);
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+    if (!editing) selectedRef.current = [];
     container.style.cursor =
-      tool === null || tool === 'highlight'
+      !editing || tool === 'select' || tool === 'highlight'
         ? 'text'
         : tool === 'eraser'
-          ? 'cell'
+          ? ERASER_CURSOR
           : 'crosshair';
+    container.style.touchAction =
+      editing && tool !== 'select' && tool !== 'highlight' ? 'none' : '';
     return () => {
       container.style.cursor = '';
+      container.style.touchAction = '';
     };
-  }, [containerRef, tool]);
-
-  useEffect(() => {
-    const toolbar = toolbarRef.current;
-    if (!focused || !toolbar) return;
-    const observer = new ResizeObserver(() => setLayout((value) => value + 1));
-    observer.observe(toolbar);
-    return () => observer.disconnect();
-  }, [focused]);
-
+  }, [containerRef, editing, tool]);
   const pages = containerRef.current
     ? [...containerRef.current.querySelectorAll<HTMLElement>('[data-page]')]
     : [];
-  const overlays = pages.map((page) => {
-    const number = Number(page.dataset.page),
-      rotation = Number(page.dataset.rotation ?? 0);
-    const marks = current.filter((mark) => mark.page === number);
-    if (draft?.page === number)
-      marks.push({
-        authorId: '',
-        color,
-        createdAt: '',
-        fileId,
-        id: 'draft',
-        kind: tool === 'ellipse' ? 'ellipse' : 'rectangle',
-        page: number,
-        rects: [draft.rect],
-        sourceIdentity,
-        updatedAt: '',
-      });
-    return createPortal(
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[2] h-full w-full"
-        preserveAspectRatio="none"
-        viewBox="0 0 1000 1000"
-      >
-        {marks.flatMap((mark) =>
-          mark.rects.map((raw, i) => {
-            const rect = rotateRect(raw, rotation);
-            return mark.kind === 'ellipse' ? (
-              <ellipse
-                cx={rect.x + rect.width / 2}
-                cy={rect.y + rect.height / 2}
-                fill="none"
-                key={`${mark.id}:${i}`}
-                rx={rect.width / 2}
-                ry={rect.height / 2}
-                stroke={mark.color}
-                strokeWidth={2}
-              />
-            ) : (
-              <rect
-                key={`${mark.id}:${i}`}
-                {...rect}
-                fill={mark.kind === 'highlight' ? mark.color : 'none'}
-                fillOpacity={0.35}
-                stroke={mark.kind === 'highlight' ? 'none' : mark.color}
-                strokeWidth={2}
-              />
-            );
-          })
-        )}
-      </svg>,
-      page,
-      `annotations:${number}`
-    );
-  });
   void renderVersion;
-  void layout;
-  const bounds = containerRef.current?.getBoundingClientRect();
-  const viewport = containerRef.current
-    ? visiblePdfBounds(containerRef.current)
-    : null;
-  const position =
-    cursor && bounds && viewport
-      ? toolbarPosition(
-          { x: cursor.x + bounds.left, y: cursor.y + bounds.top },
-          viewport,
-          toolbarRef.current?.offsetWidth ?? 300,
-          toolbarRef.current?.offsetHeight ?? 42
-        )
-      : null;
-  const labels = {
-    ellipse: m.pdf_ellipse(),
-    eraser: m.pdf_eraser(),
-    highlight: m.pdf_highlight(),
-    rectangle: m.pdf_rectangle(),
-  };
   return (
     <>
-      {overlays}
+      {toolbar &&
+        createPortal(
+          <PdfAnnotationToolbar
+            canRedo={canRedo}
+            canUndo={canUndo}
+            color={color}
+            disabled={!editing || isPending || unavailable}
+            onColor={setColor}
+            onDrawOpen={() => {
+              // Capture only the current selection before the menu takes focus.
+              selectedRef.current = containerRef.current
+                ? pdfTextSelection(containerRef.current)
+                : [];
+            }}
+            onRedo={redo}
+            onText={setText}
+            onTool={chooseTool}
+            onUndo={undo}
+            tool={tool}
+          />,
+          toolbar
+        )}
       {isError && (
-        <p className="p-2 text-sm text-tint-error-fg">
-          {m.pdf_annotations_failed()}
+        <p className="px-3 py-2 text-sm text-tint-error-fg" role="alert">
+          {unavailable
+            ? m.pdf_annotations_failed()
+            : m.pdf_annotations_write_failed()}
         </p>
       )}
-      {focused && position && (
-        <div
-          aria-label={m.pdf_private_annotations()}
-          className="fixed z-40 flex max-w-[calc(100vw-16px)] flex-wrap items-center gap-1 rounded-lg border border-line bg-surface p-1 shadow-lg"
-          onPointerDown={(event) => event.preventDefault()}
-          ref={toolbarRef}
-          role="toolbar"
-          style={{
-            ...position,
-            maxWidth: viewport
-              ? viewport.right - viewport.left - 16
-              : undefined,
-          }}
-        >
-          {(Object.keys(labels) as Tool[]).map((value) => (
-            <Button
-              aria-pressed={tool === value}
-              disabled={isPending || isError}
-              key={value}
-              onClick={() => {
-                setTool(value);
-                const container = containerRef.current;
-                if (container && (value === 'highlight' || value === 'eraser'))
-                  void applySelection(pdfTextSelection(container), value, true);
-              }}
-              size="sm"
-              variant={tool === value ? 'surface' : 'ghost-hover'}
-            >
-              {labels[value]}
-            </Button>
-          ))}
-          {COLORS.map((value) => (
-            <button
-              aria-label={m.pdf_annotation_color({ color: value })}
-              aria-pressed={value === color}
-              className={cn(
-                'h-5 w-5 rounded-full border-2',
-                value === color ? 'border-fg' : 'border-transparent'
+      {pages.map((page) => {
+        const number = Number(page.dataset.page),
+          rotation = Number(page.dataset.rotation ?? 0);
+        const marks: PDFAnnotationBody[] = [
+          ...annotations.filter((mark) => mark.page === number),
+          ...(draft?.page === number ? [draft] : []),
+        ];
+        return createPortal(
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-[2] h-full w-full"
+            preserveAspectRatio="none"
+            viewBox="0 0 1000 1000"
+          >
+            <g transform={`rotate(${rotation} 500 500)`}>
+              {marks.map((mark, index) =>
+                mark.kind === 'pen' ? (
+                  <polyline
+                    fill="none"
+                    key={index}
+                    points={mark.points?.map((p) => `${p.x},${p.y}`).join(' ')}
+                    stroke={mark.color}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                  />
+                ) : (
+                  mark.rects.map((rect, i) =>
+                    mark.kind === 'text' ? (
+                      <text
+                        fill={mark.color}
+                        fontSize={20}
+                        key={`${index}:${i}`}
+                        lengthAdjust="spacingAndGlyphs"
+                        textLength={rect.width}
+                        x={rect.x}
+                        y={rect.y + 16}
+                      >
+                        {mark.text}
+                      </text>
+                    ) : mark.kind === 'ellipse' ? (
+                      <ellipse
+                        cx={rect.x + rect.width / 2}
+                        cy={rect.y + rect.height / 2}
+                        fill="none"
+                        key={`${index}:${i}`}
+                        rx={rect.width / 2}
+                        ry={rect.height / 2}
+                        stroke={mark.color}
+                        strokeWidth={2}
+                      />
+                    ) : (
+                      <rect
+                        {...rect}
+                        fill={mark.kind === 'highlight' ? mark.color : 'none'}
+                        fillOpacity={0.35}
+                        key={`${index}:${i}`}
+                        stroke={mark.kind === 'highlight' ? 'none' : mark.color}
+                        strokeWidth={2}
+                      />
+                    )
+                  )
+                )
               )}
-              key={value}
-              onClick={() => setColor(value)}
-              style={{ backgroundColor: value }}
-              type="button"
-            />
-          ))}
-        </div>
-      )}
+            </g>
+          </svg>,
+          page,
+          `annotations:${number}`
+        );
+      })}
     </>
   );
-}
-
-function visiblePdfBounds(element: HTMLElement) {
-  const bounds = element.getBoundingClientRect();
-  const visible = {
-    bottom: Math.min(window.innerHeight, bounds.bottom),
-    left: Math.max(0, bounds.left),
-    right: Math.min(window.innerWidth, bounds.right),
-    top: Math.max(0, bounds.top),
-  };
-  for (
-    let parent = element.parentElement;
-    parent;
-    parent = parent.parentElement
-  ) {
-    const style = window.getComputedStyle(parent);
-    if (CLIPPED_OVERFLOW.test(`${style.overflowX} ${style.overflowY}`)) {
-      const clip = parent.getBoundingClientRect();
-      visible.left = Math.max(visible.left, clip.left);
-      visible.top = Math.max(visible.top, clip.top);
-      visible.right = Math.min(visible.right, clip.right);
-      visible.bottom = Math.min(visible.bottom, clip.bottom);
-    }
-  }
-  return visible;
 }

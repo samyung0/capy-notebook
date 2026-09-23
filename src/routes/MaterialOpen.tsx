@@ -1,85 +1,81 @@
-import { Link, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useMaterial } from '@/api/hooks';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { useFile, useMaterial, useWorkspace } from '@/api/hooks';
+import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Icon } from '@/components/ui/Icon';
-import { Tabs } from '@/components/ui/Tabs';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
+import { IconButton } from '@/components/ui/IconButton';
 import { FileError, FileLoading } from '@/features/files/FileStates';
-import { MaterialContent } from '@/features/materials/CenterContent';
-import {
-  type MaterialMode,
-  materialModePolicy,
-  resolveMaterialMode,
-} from '@/features/materials/modePolicy';
+import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
+import { CenterContent } from '@/features/materials/CenterContent';
 import { m } from '@/i18n';
 
-/** A material outside any workspace: a standalone note, or a single-material
- * clone. Quizzes and flashcard sets keep their own study routes; this page
- * renders the same body the workspace center pane uses. */
+/** Library items retain their ownership; this route only changes their frame. */
 export default function MaterialOpen() {
-  const params = useParams({ strict: false });
-  const materialId = (params as { materialId: string }).materialId;
-  const {
-    data: material,
-    fetchStatus,
-    isError,
-    isLoading,
-  } = useMaterial(materialId, { errorBoundary: false });
-  const [mode, setMode] = useState<MaterialMode | null>(null);
-  const policy = material
-    ? materialModePolicy(material.kind, material.capabilities)
-    : null;
-  const activeMode = policy ? resolveMaterialMode(mode, policy) : 'view';
+  const { materialId, fileId } = useParams({ strict: false });
+  const search = useSearch({ strict: false });
+  const navigate = useNavigate();
+  const materialQuery = useMaterial(materialId ?? null, {
+    errorBoundary: false,
+  });
+  const fileQuery = useFile(fileId ?? null, { errorBoundary: false });
+  const { data, fetchStatus, isError, isPending } = fileId
+    ? fileQuery
+    : materialQuery;
+  const workspaceId = data?.workspaceId ?? '';
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
+  const [dirty, setDirty] = useState(false);
+  const confirmReplace = useOfficeEditGuard(dirty);
+  const back = () => navigate({ to: fileId ? '/files' : '/create' });
+  const item = fileId
+    ? { id: fileId, kind: 'file' as const }
+    : materialId
+      ? { id: materialId, kind: 'material' as const }
+      : null;
 
+  // From lg up the document owns the full frame and its header's back button is
+  // the way out; below lg the inset bar stays, since it carries the only nav
+  // (the sidebar is hidden there).
   return (
-    <PanelWithInvertedRadius>
-      <PageHeader
-        actions={
-          policy?.modes.includes('edit') ? (
-            <Tabs
-              bottomBorder={false}
-              className="w-auto"
-              onChange={(value) => setMode(value as MaterialMode)}
-              tabs={[
-                { label: m.material_mode_edit(), value: 'edit' },
-                { label: m.material_mode_view(), value: 'view' },
-              ]}
-              value={activeMode === 'view' ? 'view' : 'edit'}
-            />
-          ) : undefined
-        }
-        title={
-          <span className="flex min-w-0 items-center gap-2">
-            <Link
-              aria-label={m.material_open_back()}
-              className="flex size-8 shrink-0 items-center justify-center rounded-button text-fg-muted hover:bg-surface-hover-bg hover:text-fg"
-              to="/create"
-            >
-              <Icon name="arrowLeft" size={18} />
-            </Link>
-            <span className="truncate">{material?.title ?? ''}</span>
-          </span>
-        }
-      />
-      <div className="min-h-0 flex-1 overflow-hidden px-6 pb-4">
-        {fetchStatus === 'paused' && !material ? (
+    <div className="flex h-full min-h-0 flex-col gap-2.5">
+      <TopInsetBar className="w-full lg:hidden" />
+      <Panel sectionClassName="h-full gap-0">
+        {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
-        ) : isLoading ? (
+        ) : isPending ? (
           <FileLoading />
-        ) : isError || !material ? (
+        ) : isError || !data ? (
           <FileError />
         ) : (
-          <MaterialContent
-            allowExternalAssets={activeMode !== 'view'}
-            forceReadOnly={false}
-            key={`${materialId}:${activeMode}`}
-            materialId={materialId}
-            mode={activeMode}
-            onEditorStatusChange={() => {}}
+          <CenterContent
+            beforeFileDelete={confirmReplace}
+            chapters={[]}
+            item={item}
+            key={`${item?.kind}:${item?.id}`}
+            leading={
+              <IconButton
+                icon="navigationBack"
+                iconClassName="-translate-y-px"
+                label={fileId ? m.nav_files() : m.nav_create()}
+                onClick={back}
+                size="sm"
+                tooltip
+                variant="ghost-hover"
+              />
+            }
+            onDeleted={back}
+            onFileViewerDirtyChange={setDirty}
+            readOnly={fileId ? workspace?.capabilities.canEdit !== true : false}
+            requestedMode={
+              'mode' in search && search.mode === 'edit' ? 'edit' : 'view'
+            }
+            standalone
+            workspaceId={workspaceId}
           />
         )}
-      </div>
-    </PanelWithInvertedRadius>
+      </Panel>
+    </div>
   );
 }

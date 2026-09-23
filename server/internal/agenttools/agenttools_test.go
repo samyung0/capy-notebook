@@ -26,7 +26,7 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 			t.Fatalf("%s: mutate flag and concurrency class disagree", def.Name)
 		}
 		switch def.Retention {
-		case RetainFull, RetainCitedPassages, RetainNone:
+		case RetainFull, RetainCitedPassages, RetainUsedExcerpts, RetainNone:
 		default:
 			t.Fatalf("%s: missing conversation-result retention", def.Name)
 		}

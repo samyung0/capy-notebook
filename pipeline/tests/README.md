@@ -4,7 +4,7 @@ Two tiers:
 
 | tier | files | needs | cost |
 | --- | --- | --- | --- |
-| **offline unit** | `test_chunking.py`, `test_retrieval_helpers.py`, `test_parser_client.py`, `test_parser_app.py`, `test_odl_refine.py`, `test_confidence.py`, `test_ingest_capacity.py`, `test_ingest_worker.py`, `test_agent.py`, `test_structured.py`, `test_capture.py`, `test_ai_adapter.py` | nothing | free, ~7s |
+| **offline unit** | `test_chunking.py`, `test_retrieval_helpers.py`, `test_parser_client.py`, `test_parser_app.py`, `test_odl_refine.py`, `test_confidence.py`, `test_ingest_capacity.py`, `test_ingest_worker.py`, `test_agent.py`, `test_openui.py`, `test_capture.py`, `test_ai_adapter.py` | nothing | free, ~7s |
 | **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py`, `test_indexing.py`, `test_model_configs_lock.py` | Docker | free, ~13s |
 
 **No test asserts pipeline behaviour through a recorded model response.** There

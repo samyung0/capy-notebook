@@ -20,6 +20,8 @@ Knowledge curate-loop and duplicate-result follow-up: todo-knowledge-curate-and-
 
 high PRIORITIES:
 openui
+adjust default chat message as steer if within a turn
+instruct llm to update curate browse_knnowledge tool prompt for updated topic counts everytime a publish occurs (new deploy needed?)
 offline idea -> duckdb-wasm with opfs (but what data can we store? cannot really edit because of collab server? or show warning that local data can fail to write if collab server state is newer, but still permit)
 check upload session timeout (shouldnt have 15 minutes, ttl is 5 minutes for the link alr)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
@@ -31,8 +33,6 @@ check upload session timeout (shouldnt have 15 minutes, ttl is 5 minutes for the
 check how search files/chunks work
 1. check pg pool connections setup, esp for llm search
 2. what happens when server restarts? dlq, job queue, pending credit settling, etc basically what lives in the ram vs what lives in db (extreme case: what happens when server shuts down mid transaction)
-3. how to make a summary/description page for workspaces that is seo friendly? use ISR if tanstack router supports it? Only expose endpoint that shows chapters and file names for link shared and public workspaces (for the summary page of workspaces). To retrieve file content/any other info, user must log in first (i.e. viewing/commenting/editing workspace which is on a different page than the summary must require user login to prevent abuse)
-4. make a less crowded UI for workspaces
 5. persist quiz attemp in localstorage or some kind of cache, so closing tab or refreshing doesnt lose the progress
 6. track material generations and display progress bar like how filelistitem does it?
 7. remove time limit for quiz

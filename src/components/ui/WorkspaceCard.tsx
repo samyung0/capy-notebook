@@ -159,11 +159,12 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             workspaceId={workspace.id}
           />
           <ConfirmDialog
-            body={m.confirm_delete_body()}
+            body={m.workspace_delete_confirm_body()}
+            confirmLabel={m.trash_delete_forever()}
             onClose={() => setConfirmDelete(false)}
             onConfirm={() => deleteWorkspace(workspace.id)}
             open={confirmDelete}
-            title={m.confirm_delete_title({ name: workspace.name })}
+            title={m.workspace_delete_confirm_title({ name: workspace.name })}
           />
         </>
       )}

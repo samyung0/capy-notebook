@@ -60,7 +60,12 @@ where = ["pipeline"]
 include = ["pipeline*"]
 
 [tool.setuptools.package-data]
-pipeline = ["elitellm/providers.json", "generated/agent_tools.json"]
+pipeline = [
+    "elitellm/providers.json",
+    "generated/agent_tools.json",
+    "generated/openui_library.json",
+    "prompts/openui_lang.txt",
+]
 
 [tool.ruff]
 extend-exclude = ["bench", "lab", "tmp", "vendor"]

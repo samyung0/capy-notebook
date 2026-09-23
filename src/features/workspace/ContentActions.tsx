@@ -12,7 +12,8 @@ import {
   useUpdateMaterial,
 } from '@/api/hooks';
 import type { Chapter, UserColor } from '@/api/types';
-import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
@@ -23,18 +24,17 @@ import { cn } from '@/lib/cn';
 import type { ContentActionTarget } from './contentActionTarget';
 
 export function ContentActions({
+  showMove = true,
   beforeDelete,
   chapters,
   color,
   content,
   display,
   hoverClassName,
-  includeDelete = true,
   leadingItems = [],
   menuIconContainerClassName,
   onDeleted,
   onMove,
-  onRequestDelete,
   propertiesClassName = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
   propertyLabelClassName = 'text-fg-muted',
   renameFieldLabel,
@@ -42,18 +42,17 @@ export function ContentActions({
   readOnly = false,
   workspaceId,
 }: {
+  showMove?: boolean;
   beforeDelete?: () => boolean;
   chapters: Chapter[];
   color?: UserColor;
   content?: ContentActionTarget;
   display: 'hover' | 'menu';
   hoverClassName?: string;
-  includeDelete?: boolean;
   leadingItems?: MenuItem[];
   menuIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (chapterId: string | null) => void;
-  onRequestDelete?: () => void;
   propertiesClassName?: string;
   propertyLabelClassName?: string;
   readOnly?: boolean;
@@ -84,26 +83,26 @@ export function ContentActions({
               setRenameOpen(true);
             },
           },
-          {
-            icon: 'files' as const,
-            label: m.content_move_file(),
-            onClick: () => setMoveOpen(true),
-          },
+          ...(showMove
+            ? [
+                {
+                  icon: 'files' as const,
+                  label: m.content_move_file(),
+                  onClick: () => setMoveOpen(true),
+                },
+              ]
+            : []),
           {
             icon: 'help' as const,
             label: m.content_properties(),
             onClick: () => setPropertiesOpen(true),
           },
-          ...(includeDelete
-            ? [
-                {
-                  danger: true,
-                  icon: 'trash' as const,
-                  label: m.action_delete(),
-                  onClick: onRequestDelete ?? (() => setConfirmOpen(true)),
-                },
-              ]
-            : []),
+          {
+            danger: true,
+            icon: 'trash' as const,
+            label: m.action_delete(),
+            onClick: () => setConfirmOpen(true),
+          },
         ]
       : []),
   ];
@@ -231,17 +230,14 @@ export function ContentActions({
             </dl>
           </SimpleDialog>
 
-          {includeDelete && !onRequestDelete && (
-            <ConfirmDialog
-              body={m.confirm_delete_body()}
-              onClose={() => setConfirmOpen(false)}
-              onConfirm={() => {
-                if (deleteContent()) setConfirmOpen(false);
-              }}
-              open={confirmOpen}
-              title={m.confirm_delete_title({ name: content.name })}
-            />
-          )}
+          <TrashConfirmDialog
+            name={content.name}
+            onClose={() => setConfirmOpen(false)}
+            onConfirm={() => {
+              if (deleteContent()) setConfirmOpen(false);
+            }}
+            open={confirmOpen}
+          />
 
           <MoveToChapterDialog
             chapters={chapters}

@@ -136,6 +136,7 @@ export * from './pDFAnnotation.ts';
 export * from './pDFAnnotationBody.ts';
 export * from './pDFAnnotationBodyKind.ts';
 export * from './pDFAnnotationKind.ts';
+export * from './pDFPoint.ts';
 export * from './pDFRect.ts';
 export * from './planTier.ts';
 export * from './privacy.ts';

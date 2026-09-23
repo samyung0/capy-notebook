@@ -1,0 +1,263 @@
+{
+  "schema": "workspace-opening-v1",
+  "candidate": "Append the existing first-chunk section_path to each in-scope file line in list_sources. Preserve original text, file status, count, and order. No change to search, identifiers or k=5.",
+  "schedule": "One alternating-order pair for each of eight cases, then two additional alternating-order pairs for workspace-opening-mayor. 20 turns total.",
+  "primary": "Supported final claims and citations; false refusals, scope/identifier confusion, and whole-turn tokens/latency.",
+  "controls": "GPT-2 vs GPT-20, scoped author exclusion, English/German DFKI, Chinese/English fire, another footnoted author header, ResNet table near-miss.",
+  "cases": [
+    {
+      "id": "workspace-opening-mayor",
+      "family": "affiliation-identifier",
+      "language": "es",
+      "question": "Quiénes son Marina Mayor-Rocher y Pedro Reviriego?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "tags": [
+        "lexical-risk"
+      ],
+      "required_claims": [
+        "Marina Mayor-Rocher and Pedro Reviriego are coauthors of the paper about distinguishing Spanish varieties.",
+        "Mayor-Rocher is affiliated with Universidad Autónoma de Madrid; Reviriego with Universidad Politécnica de Madrid."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 1
+        }
+      ],
+      "rubric_notes": [
+        "Affiliation numerals are glued to names in this frozen index. Evaluate whether the agent compensates with a title/name search or document read."
+      ],
+      "runtime_answerability": "answerable",
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-wikiner-authors",
+      "question": "Who are Danrun Cao, Nicolas Béchet and Pierre-François Marteau, and which institutions does their article list for them?",
+      "language": "en",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__fr__wikiner-fr-gold"
+      ],
+      "runtime_answerability": "answerable",
+      "required_claims": [
+        "Coauthors of WikiNER-fr-gold.",
+        "All three: Univ. Bretagne Sud / CNRS / IRISA.",
+        "Danrun Cao additionally: OctopusMind."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__fr__wikiner-fr-gold",
+          "pdf_page": 1
+        }
+      ],
+      "tags": [
+        "author",
+        "affiliation-footnotes",
+        "cross-language"
+      ],
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-dfki",
+      "family": "identifier",
+      "language": "en",
+      "question": "What does the German large-language-model report say about DFKI?",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__de__grosse-sprachmodelle"
+      ],
+      "tags": [
+        "lexical",
+        "cross-language"
+      ],
+      "required_claims": [
+        "DFKI is the German Research Center for Artificial Intelligence.",
+        "The report lists DFKI among the organizations involved in implementing OpenGPT-X."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__de__grosse-sprachmodelle",
+          "pdf_page": 17
+        }
+      ],
+      "rubric_notes": [],
+      "runtime_answerability": "answerable",
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-fire",
+      "family": "hominid-fire",
+      "language": "zh",
+      "question": "哪一种古人类最早开始使用火？",
+      "scope_source_ids": null,
+      "source_ids": [
+        "rag__en__biology-ib-sample-16-pages"
+      ],
+      "tags": [
+        "cross_language",
+        "table",
+        "figure"
+      ],
+      "required_claims": [
+        "Homo erectus is the first hominid listed as using fire."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__en__biology-ib-sample-16-pages",
+          "pdf_page": 13,
+          "source_cells_or_image_transcription": {
+            "TableD.2 Homo erectus": "H. erectus were the first hominids to use fire",
+            "Lived": "1.8–0.3mya"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "3dfd95d688b13d32414f2ad4f46c436a200cc102313f5837247d7c7fbc59daf9",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/rag__en__biology-ib-sample-16-pages-p13.png",
+              "sha256": "d057d406a93d0854c9c6e24ac1620c9dc201384222752af744210977db9bd292"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": {
+        "file": "bench/rag/fixtures/questions-en-asked-zh.json",
+        "index": 14,
+        "sha256": "a5fd27e950c593dbec77643e9edf6e1f05fc18a5eb8874d4dfbcfe71b4133c93",
+        "question_verbatim": true,
+        "expect_indices_used_as_gold": false
+      },
+      "rubric_notes": [],
+      "runtime_answerability": "answerable",
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-author-excluded",
+      "question": "Solo según el documento seleccionado, ¿quiénes son Marina Mayor-Rocher y Pedro Reviriego y cuáles son sus afiliaciones?",
+      "language": "es",
+      "scope_source_ids": [
+        "rag__es__sesgo-linguistico-digital"
+      ],
+      "source_ids": [
+        "rag__es__sesgo-linguistico-digital"
+      ],
+      "runtime_answerability": "unanswerable",
+      "required_claims": [
+        "The selected paper does not establish the requested coauthorship or affiliations.",
+        "Do not use the excluded variedades-espanol source or present UAM/UPM as grounded in the selected source."
+      ],
+      "evidence": [],
+      "tags": [
+        "scope-exclusion",
+        "author"
+      ],
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-gpt2",
+      "question": "Según el artículo seleccionado sobre las variedades del español, ¿a qué proyecto pertenecen los modelos RoBERTa y GPT-2 y de dónde se obtuvieron sus datos en español?",
+      "language": "es",
+      "scope_source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "runtime_answerability": "answerable",
+      "required_claims": [
+        "MarIA.",
+        "Biblioteca Nacional Española / Biblioteca Nacional de España."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 2
+        }
+      ],
+      "tags": [
+        "genuine-alphanumeric-identifier",
+        "scoped"
+      ],
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-gpt20",
+      "question": "Solo según el artículo seleccionado sobre las variedades del español, ¿de qué proyecto es GPT-20 y qué datos usó para entrenarse?",
+      "language": "es",
+      "scope_source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "source_ids": [
+        "rag__es__variedades-espanol"
+      ],
+      "runtime_answerability": "unanswerable",
+      "required_claims": [
+        "The source does not establish a GPT-20 project or training data.",
+        "Do not silently substitute GPT-2 or claim GPT-20 cannot exist."
+      ],
+      "evidence": [
+        {
+          "source_id": "rag__es__variedades-espanol",
+          "pdf_page": 2
+        }
+      ],
+      "tags": [
+        "identifier-near-miss",
+        "scoped"
+      ],
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    },
+    {
+      "id": "workspace-opening-resnet-sd",
+      "family": "resnet-table2",
+      "language": "en",
+      "question": "Using only Table 2 of Deep Residual Learning for Image Recognition, what is the standard deviation across runs of the 34-layer ResNet’s top-1 error?",
+      "scope_source_ids": [
+        "resnet"
+      ],
+      "source_ids": [
+        "resnet"
+      ],
+      "tags": [
+        "missing_evidence",
+        "table"
+      ],
+      "required_claims": [
+        "Table 2 reports a top-1 error value but no across-run standard deviation.",
+        "Do not report 25.03% as a standard deviation or assume zero variation."
+      ],
+      "evidence": [
+        {
+          "source_id": "resnet",
+          "pdf_page": 5,
+          "source_cells_or_image_transcription": {
+            "Table2 visible columns": [
+              "plain",
+              "ResNet"
+            ],
+            "rows": [
+              "18layers",
+              "34layers"
+            ],
+            "34layer ResNet value": "25.03 top-1 error%",
+            "not reported": "across-run standard deviation"
+          },
+          "review_method": "original coordinate PDF pixels",
+          "coordinate_pdf_sha256": "1e0651b6810ecba34a3dbc5b5b0209226f889004607c1f203540a48d64e5a93a",
+          "source_pixel_evidence": [
+            {
+              "path": "bench/rag/reports/local/2026-09-09-odl-agentic-source/source-pages/resnet-p5.png",
+              "sha256": "eb96acd497beb4b762977d05cfc46a621c70710e4af86eb80bad6191a62406c6"
+            }
+          ]
+        }
+      ],
+      "legacy_provenance": null,
+      "rubric_notes": [],
+      "runtime_answerability": "unanswerable",
+      "provenance": "Existing diagnostic source, source-checked. Not an independent holdout."
+    }
+  ]
+}

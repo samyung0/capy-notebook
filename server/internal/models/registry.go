@@ -168,6 +168,9 @@ func IsKnownThinking(level string) bool {
 }
 
 func (c Config) ResolveThinking(stored string) (string, error) {
+	if containsString(c.Slots, SlotChat) && (stored == ThinkingInstant || (stored == "" && c.DefaultThinking == ThinkingInstant)) {
+		return "", fmt.Errorf("chat models require thinking")
+	}
 	if stored == "" {
 		if containsString(c.ThinkingLevels, c.DefaultThinking) {
 			return c.DefaultThinking, nil
@@ -182,13 +185,9 @@ func (c Config) ResolveThinking(stored string) (string, error) {
 
 func ValidateThinking(slots, levels []string, defaultThinking string) error {
 	hasLLM := false
-	hasEditor := false
 	for _, slot := range slots {
 		if IsLLMSlot(slot) {
 			hasLLM = true
-		}
-		if slot == SlotEditor {
-			hasEditor = true
 		}
 	}
 	if !hasLLM {
@@ -208,8 +207,8 @@ func ValidateThinking(slots, levels []string, defaultThinking string) error {
 	if defaultThinking == "" || !containsString(levels, defaultThinking) {
 		return fmt.Errorf("default thinking must be one of this row's levels")
 	}
-	if hasEditor && !containsString(levels, ThinkingInstant) {
-		return fmt.Errorf("editor rows must support instant thinking")
+	if containsString(slots, SlotChat) && containsString(levels, ThinkingInstant) {
+		return fmt.Errorf("chat rows must not offer instant thinking")
 	}
 	return nil
 }

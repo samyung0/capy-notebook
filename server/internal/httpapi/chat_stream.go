@@ -240,6 +240,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		genID        string
 		tokens       int
 		usage        pipeUsage
+		errorCode    string
 	)
 
 	// library.read is granted per curate turn; the actor can edit, because a
@@ -287,6 +288,17 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				send(ev)
 			}
 		case "done", "error":
+			if ev.Type == "error" {
+				errorCode = ev.Code
+				if ev.Code == "response_flagged" {
+					answer.Reset()
+					currentText.Reset()
+					citations = nil
+				}
+			}
+			if len(ev.Activity) > 0 {
+				activity = ev.Activity
+			}
 			if !ev.Usage.empty() {
 				usage = ev.Usage
 			}
@@ -299,9 +311,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			if ev.Answer != "" {
 				answer.Reset()
 				answer.WriteString(ev.Answer)
-			}
-			if len(ev.Activity) > 0 {
-				activity = ev.Activity
 			}
 			genID = ev.GenerationID
 			toolEvidence = ev.ToolEvidence
@@ -324,7 +333,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	if tokens == 0 {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
-	if err := a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity, toolEvidence); err != nil {
+	if err := a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity, toolEvidence, errorCode); err != nil {
 		obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_finalize"})
 	}
 	charge.settle(saveCtx)
@@ -443,7 +452,7 @@ func (a *api) relayChat(
 				}
 				if ev.Type == "error" {
 					onEvent(ev)
-					if ev.Code == "provider_busy" {
+					if ev.Code == "provider_busy" || ev.Code == "response_flagged" {
 						return &chatEventError{
 							Code: ev.Code, Message: ev.Message,
 							RetryAfterSeconds: ev.RetryAfterSeconds,
