@@ -243,7 +243,13 @@ to refresh the subject catalog and save the full reviewed context, rules and
 input hashes. The owner produces `reused`/`proposed` topics, then imports them
 with `--proposal <proposal.json>` instead of `--export-context`. This path makes
 no GLM call. The helper validates the source/corpus/review binding and provenance,
-merges against the current catalog and enforces the 96-topic limit. The same
+merges against the current catalog and enforces the 96-topic limit. Topic IDs
+are unique library-wide: a proposed new ID that another subject already holds
+is refused, and a proposal may list such IDs under `shared` to tag the book's
+excerpts with another subject's live topic without redefining it. The merge
+records a shared topic in `topics.json` with `shared: true`, its live subject
+and definition; the loader never upserts it and refuses any publish that would
+move a topic to another subject. The same
 owner assigns final IDs from the merged result while retaining full notes.
 See [the review contract](review.md) for the proposal format and split-book
 ownership. `--output <path>` keeps a trial separate from canonical `topics.json`.

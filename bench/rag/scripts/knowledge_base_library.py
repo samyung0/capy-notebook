@@ -17,7 +17,9 @@ loaded by `schema` and refreshed by every `publish`; each manifest book names
 its `subject_id`. Topics come from the run (`<run>/topics.json`, written by the
 builder's topics stage) or, for the pilot run, from the manifest's `topics`, and
 are upserted under the book's subject; a topic whose id is a subject id is
-refused. After a book's excerpts are written, and again when a version is
+refused. Topic ids are unique library-wide: a shared topic (another subject's,
+marked `shared` in topics.json) is never upserted, and a publish that would move
+a topic to another subject is refused. After a book's excerpts are written, and again when a version is
 retired, topics no tagged excerpt of a current or retained version references
 are dropped.
 
@@ -370,7 +372,7 @@ def drop_unreferenced_topics(conn) -> int:
 
 
 def book_topics(run: Path, manifest: dict, book: dict, subjects: dict) -> list[dict]:
-    """The topics this publish upserts under the book's subject.
+    """The book's topics: its own under the book's subject, shared ones under theirs.
 
     A builder run writes `<run>/topics.json` from its topics stage; the pilot
     run has none and its manifest carries the hand-written catalog. A topic
@@ -399,7 +401,45 @@ def book_topics(run: Path, manifest: dict, book: dict, subjects: dict) -> list[d
                 f"with subject {topic['id']!r} ({subjects[topic['id']]['label']}); "
                 "rename the topic"
             )
-    return [t | {"subject_id": book["subject_id"]} for t in topics]
+    # A shared topic belongs to another subject and keeps it (topics.merge).
+    return [
+        t if t.get("shared") else t | {"subject_id": book["subject_id"]} for t in topics
+    ]
+
+
+def topic_subjects(conn, topics: list[dict]) -> dict[str, str]:
+    """The live subject of each of these topic ids that exists."""
+    return dict(
+        conn.execute(
+            "SELECT id, subject_id FROM library_topics WHERE id = ANY(%s)",
+            ([t["id"] for t in topics],),
+        ).fetchall()
+    )
+
+
+def topic_upserts(topics: list[dict], live: dict[str, str]) -> list[dict]:
+    """The topics a publish may upsert, given the live subject of each id.
+
+    Topic ids are unique library-wide (decision 2026-09-23). A shared topic is
+    another subject's and must be live there; it is never upserted. No upsert
+    moves an existing topic to another subject: the clash fails loudly.
+    """
+    for topic in topics:
+        subject = live.get(topic["id"])
+        if topic.get("shared") and (
+            not topic.get("subject_id") or subject != topic["subject_id"]
+        ):
+            raise PilotError(
+                f"shared topic {topic['id']!r} is not live under subject "
+                f"{topic.get('subject_id')!r} (found {subject!r}); a shared entry "
+                "keeps its subject_id from the merge"
+            )
+        if not topic.get("shared") and subject not in (None, topic["subject_id"]):
+            raise PilotError(
+                f"topic {topic['id']!r} belongs to subject {subject!r}; publishing it "
+                f"under {topic['subject_id']!r} would move it. Share it or rename it"
+            )
+    return [t for t in topics if not t.get("shared")]
 
 
 def section_summary(corpus: dict) -> str:
@@ -574,11 +614,14 @@ def publish_book(
         )
         figures = figure_rows(book_corpus, captures)
         insert_figures(target, content_id, version, figures)
-        for topic in topics:
-            target.execute(
+        for topic in topic_upserts(topics, topic_subjects(target, topics)):
+            # The WHERE also holds against a concurrent publish that claimed the id
+            # after the lookup: a row of another subject is left alone and refused.
+            upserted = target.execute(
                 "INSERT INTO library_topics VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
-                "subject_id=EXCLUDED.subject_id, label=EXCLUDED.label, aliases=EXCLUDED.aliases, "
-                "scope=EXCLUDED.scope, source_sections=EXCLUDED.source_sections",
+                "label=EXCLUDED.label, aliases=EXCLUDED.aliases, "
+                "scope=EXCLUDED.scope, source_sections=EXCLUDED.source_sections "
+                "WHERE library_topics.subject_id = EXCLUDED.subject_id RETURNING id",
                 (
                     topic["id"],
                     topic["subject_id"],
@@ -587,7 +630,12 @@ def publish_book(
                     topic["scope"],
                     topic.get("source_sections", ""),
                 ),
-            )
+            ).fetchone()
+            if upserted is None:
+                raise PilotError(
+                    f"topic {topic['id']!r} is held by another subject; "
+                    f"publishing it under {topic['subject_id']!r} would move it"
+                )
         for r in model_runs:
             target.execute(
                 "INSERT INTO library_model_runs VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",

@@ -99,7 +99,7 @@ def table_of_contents(corpus: dict) -> list[str]:
     return list(seen)
 
 
-def library_topics(subject_id: str) -> list[dict]:
+def library_rows(sql: str, params: tuple) -> list[tuple]:
     import psycopg
 
     url = os.environ.get("LIBRARY_DATABASE_URL")
@@ -108,11 +108,25 @@ def library_topics(subject_id: str) -> list[dict]:
             "LIBRARY_DATABASE_URL is not set; the library tunnel and .env.local are needed"
         )
     with psycopg.connect(url) as conn:
-        rows = conn.execute(
-            "SELECT id, label, aliases, scope, source_sections FROM library_topics WHERE subject_id=%s ORDER BY id",
-            (subject_id,),
-        ).fetchall()
+        return conn.execute(sql, params).fetchall()
+
+
+def library_topics(subject_id: str) -> list[dict]:
+    rows = library_rows(
+        "SELECT id, label, aliases, scope, source_sections FROM library_topics WHERE subject_id=%s ORDER BY id",
+        (subject_id,),
+    )
     return [dict(zip(TOPIC_FIELDS, row)) for row in rows]
+
+
+def other_topics(subject_id: str) -> dict[str, dict]:
+    """Live topics of every other subject by id, with their subject. Topic ids
+    are unique library-wide: a book may share one, never redefine it."""
+    rows = library_rows(
+        "SELECT id, label, aliases, scope, source_sections, subject_id FROM library_topics WHERE subject_id<>%s ORDER BY id",
+        (subject_id,),
+    )
+    return {row[0]: dict(zip((*TOPIC_FIELDS, "subject_id"), row)) for row in rows}
 
 
 def merge(
@@ -120,11 +134,15 @@ def merge(
     answer: dict,
     subject_id: str,
     subject_ids: set[str] = frozenset(),
+    others: dict[str, dict] | None = None,
 ) -> dict:
     """Reused ids that exist; proposed topics that clash with nothing by id,
     label or alias (a clash maps to the existing topic instead). A proposed id
     equal to a subject id is renamed with a `-basics` suffix: the loader
-    refuses the collision and browse_knowledge dispatches on the argument."""
+    refuses the collision and browse_knowledge dispatches on the argument.
+    A new id that another subject holds (`others`) is refused; the answer's
+    `shared` ids reuse such topics as they are, marked shared with their subject."""
+    others = others or {}
     by_id = {t["id"]: t for t in existing}
     existing_ids = set(by_id)
     by_name = {}
@@ -148,12 +166,21 @@ def merge(
             if clash in existing_ids and clash not in reused:
                 reused.append(clash)
             continue
+        if topic["id"] in others:
+            raise SystemExit(
+                f"proposed topic {topic['id']!r} already exists under subject "
+                f"{others[topic['id']]['subject_id']!r}; list it under shared to reuse it"
+            )
         if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", topic["id"]):
             raise SystemExit(f"proposed topic id {topic['id']!r} is not kebab-case")
         proposed.append({k: topic[k] for k in TOPIC_FIELDS})
         by_id[topic["id"]] = topic
         for n in names:
             by_name.setdefault(n, topic["id"])
+    shared = list(dict.fromkeys(answer.get("shared", [])))
+    unknown = [i for i in shared if i not in others]
+    if unknown:
+        raise SystemExit(f"shared topics must be live under another subject: {unknown}")
     total = len(existing) + len(proposed)
     if total > MAX_TOPICS:
         raise SystemExit(
@@ -161,9 +188,12 @@ def merge(
         )
     return {
         "subject_id": subject_id,
-        "topics": [by_id[i] for i in reused] + proposed,
+        "topics": [by_id[i] for i in reused]
+        + proposed
+        + [{**others[i], "shared": True} for i in shared],
         "reused": reused,
         "proposed": proposed,
+        "shared": shared,
         "mapped": mapped,
         "renamed": renamed,
         "subject_total": total,
@@ -226,7 +256,16 @@ def import_proposal(
     validate(answer, SCHEMA)
     unknown = set(answer["reused"]) - {topic["id"] for topic in existing}
     if unknown:
-        raise ValueError(f"topic proposal reuses unknown IDs: {sorted(unknown)}")
+        raise ValueError(
+            f"topic proposal reuses unknown IDs: {sorted(unknown)} "
+            "(a topic of another subject goes under shared)"
+        )
+    # Optional: topics of other subjects this book tags without redefining them.
+    answer["shared"] = artifact.get("shared", [])
+    if not isinstance(answer["shared"], list) or not all(
+        isinstance(i, str) for i in answer["shared"]
+    ):
+        raise ValueError("topic proposal shared must be a list of topic IDs")
     provenance = artifact.get("model_provenance", {})
     if not all(
         isinstance(provenance.get(k), str) and provenance[k].strip()
@@ -341,7 +380,9 @@ def main() -> None:
             proposal_input(book, corpus_path, args.review_context),
             existing,
         )
-        result = merge(existing, combined, subject_id, subject_ids)
+        result = merge(
+            existing, combined, subject_id, subject_ids, other_topics(subject_id)
+        )
         result["model"] = model
         result["input_context"] = "reviewed-excerpts"
         (args.output or args.run / "topics.json").write_text(
@@ -389,7 +430,9 @@ def main() -> None:
         "reused": [topic for answer in answers for topic in answer.value["reused"]],
         "proposed": [topic for answer in answers for topic in answer.value["proposed"]],
     }
-    result = merge(existing, combined, subject_id, subject_ids)
+    result = merge(
+        existing, combined, subject_id, subject_ids, other_topics(subject_id)
+    )
     answer = answers[0]
     result["model"] = {
         "model": answer.model,

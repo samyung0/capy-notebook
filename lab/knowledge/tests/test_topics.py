@@ -220,6 +220,7 @@ def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
         str(review),
     ]
     monkeypatch.setattr(topics, "library_topics", lambda subject: EXISTING)
+    monkeypatch.setattr(topics, "other_topics", lambda subject: OTHERS)
 
     def no_model_call(*args, **kwargs):
         pytest.fail("Delegated topics must not call another model")
@@ -239,6 +240,7 @@ def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
         },
         "reused": ["sampling"],
         "proposed": [proposal("regression", "Linear regression")],
+        "shared": ["business-models"],
     }
     proposal_path.write_text(json.dumps(artifact), encoding="utf-8")
     monkeypatch.setattr(
@@ -246,7 +248,12 @@ def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
     )
     topics.main()
     candidate = json.loads(output.read_text(encoding="utf-8"))
-    assert [t["id"] for t in candidate["topics"]] == ["sampling", "regression"]
+    assert [t["id"] for t in candidate["topics"]] == [
+        "sampling",
+        "regression",
+        "business-models",
+    ]
+    assert candidate["shared"] == ["business-models"]
     assert candidate["model"]["endpoint"] == "codex-subagent"
     assert candidate["model"]["usage"] is None
     assert not (tmp_path / "topics.json").exists()
@@ -264,3 +271,112 @@ def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
     proposal_path.write_text(json.dumps(artifact), encoding="utf-8")
     with pytest.raises(ValidationError):
         topics.main()
+
+
+OTHERS = {
+    "business-models": {
+        **proposal("business-models", "Business models"),
+        "subject_id": "business-fundamentals",
+    }
+}
+
+
+def test_a_new_topic_id_held_by_another_subject_is_refused():
+    answer = {"reused": [], "proposed": [proposal("business-models", "Models")]}
+    with pytest.raises(SystemExit, match="under subject 'business-fundamentals'"):
+        topics.merge(EXISTING, answer, "entrepreneurship", others=OTHERS)
+    with pytest.raises(SystemExit, match="live under another subject"):
+        topics.merge(EXISTING, {**answer, "proposed": [], "shared": ["sampling"]}, "s")
+
+
+def test_a_shared_topic_is_reused_as_its_subject_defines_it():
+    import knowledge_base_pilot as pilot
+
+    answer = {"reused": ["sampling"], "proposed": [], "shared": ["business-models"]}
+    merged = topics.merge(EXISTING, answer, "entrepreneurship", others=OTHERS)
+    shared = merged["topics"][-1]
+    assert shared == {**OTHERS["business-models"], "shared": True}
+    assert merged["shared"] == ["business-models"] and merged["subject_total"] == 2
+    tag = {
+        "roles": ["formal"],
+        "topic_ids": ["business-models"],
+        "confidence": 0.9,
+        "evidence": "a business model",
+        "synopsis": "s",
+    }
+    tags, _ = pilot.tag_outputs(
+        {"e": tag},
+        {"e": {"text": "What is a business model?"}},
+        {t["id"] for t in merged["topics"]},
+    )
+    assert tags["e"]["evidence_verified"]
+
+
+def test_the_loader_never_moves_a_topic_and_never_upserts_a_shared_one(tmp_path):
+    import knowledge_base_library as library
+    from knowledge_base_batch import save_json
+
+    own = proposal("venture-financing", "Venture financing")
+    shared = {**OTHERS["business-models"], "shared": True}
+    save_json(
+        tmp_path / "topics.json",
+        {"subject_id": "entrepreneurship", "topics": [own, shared]},
+    )
+    book = {"id": "b", "subject_id": "entrepreneurship"}
+    loaded = library.book_topics(tmp_path, {}, book, {"entrepreneurship": {}})
+    assert [t["subject_id"] for t in loaded] == [
+        "entrepreneurship",
+        "business-fundamentals",
+    ]
+    live = {"business-models": "business-fundamentals"}
+    assert library.topic_upserts(loaded, live) == [loaded[0]]
+    with pytest.raises(library.PilotError, match="would move it"):
+        library.topic_upserts(loaded, {**live, "venture-financing": "finance"})
+    with pytest.raises(library.PilotError, match="not live under subject"):
+        library.topic_upserts(loaded, {})
+    unbound = {k: v for k, v in shared.items() if k != "subject_id"}  # hand-edited
+    with pytest.raises(library.PilotError, match="keeps its subject_id"):
+        library.topic_upserts([unbound], live)
+
+
+def test_the_loader_looks_up_live_subjects_by_topic_id():
+    import knowledge_base_library as library
+
+    class Conn:
+        def execute(self, sql, params):
+            self.sql, self.params = sql, params
+            return self
+
+        def fetchall(self):
+            return [("business-models", "business-fundamentals")]
+
+    conn = Conn()
+    topics_ = [proposal("business-models", "B"), proposal("venture-financing", "V")]
+    assert library.topic_subjects(conn, topics_) == {
+        "business-models": "business-fundamentals"
+    }
+    assert "WHERE id = ANY(%s)" in conn.sql
+    assert conn.params == (["business-models", "venture-financing"],)
+
+
+def test_a_proposal_names_shared_topics_as_a_list(tmp_path):
+    expected = {"book_id": "book"}
+    artifact = {
+        "input": expected,
+        "model_provenance": {
+            "model": "m",
+            "reasoning_effort": "medium",
+            "agent_id": "a",
+        },
+        "reused": [],
+        "proposed": [],
+        "shared": "business-models",
+    }
+    path = tmp_path / "proposal.json"
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    with pytest.raises(ValueError, match="shared must be a list"):
+        topics.import_proposal(path, expected, EXISTING)
+    artifact["shared"] = ["business-models"]
+    path.write_text(json.dumps(artifact), encoding="utf-8")
+    answer, _ = topics.import_proposal(path, expected, EXISTING)
+    assert answer["shared"] == ["business-models"]

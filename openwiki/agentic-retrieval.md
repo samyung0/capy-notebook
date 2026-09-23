@@ -1050,6 +1050,18 @@ rollback never lands on excerpts whose topics are gone; `retire` runs the same
 drop after deleting the version's rows, which is when a retained version's
 topics may go. The pilot's 32 topics all sit under `statistics`.
 
+Topic ids are unique library-wide (decision 2026-09-23). A book may tag its
+excerpts with another subject's topic without redefining it: its owner's
+proposal lists the id under `shared`, and the merge records the topic in
+`topics.json` as `shared` with its live subject and definition. A proposed new
+topic whose id another subject holds is refused. The loader never upserts a
+shared topic (it must be live under its recorded subject) and refuses any
+publish that would move an existing topic to another subject, so an id clash
+fails loudly instead of flipping the topic between subjects, as
+`business-models` did between Business Fundamentals and Entrepreneurship. A
+shared topic stays under its own subject when browsing, so the borrowing
+book's excerpts appear there.
+
 Versions are per book, not per dataset. There is one workspace row, the
 constant `library`, and one file per book. Publishing a book loads its content
 under a new content id, records version n+1 in `library_book_versions` with the
