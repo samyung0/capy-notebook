@@ -259,6 +259,11 @@ DRAWING_OVERLAP = 0.2  # share of a drawing inside a parser table or image recor
 DRAWING_TEXT = 0.2  # word-box share of a drawing that makes it a text frame
 DRAWING_FRAMED_TEXT = 0.02  # the same inside a frame or among level lines only
 DRAWING_GLYPH = 45  # points: fills this short are glyph outlines (formulas, logos)
+# A 'Figure N:' caption line this far below a drawing labels it (page-1000 units;
+# chart axis labels set as text sit between them). Measured in
+# bench/rag/reports/2026-09-24-captioned-drawings.md.
+CAPTION_GAP = 115
+CAPTION_OVERLAP = 30  # a drawing's box may reach this far into its caption line
 
 
 def _inked(path: dict) -> bool:
@@ -291,10 +296,42 @@ def _frame(path: dict, cluster) -> bool:
     )
 
 
+def caption_pairs(
+    captions: list[dict], drawings: list[dict]
+) -> list[tuple[dict, dict]]:
+    """Each caption record paired with the drawing record it labels.
+
+    A caption labels a drawing on its page when its line starts at most
+    CAPTION_GAP below the drawing's bottom (or CAPTION_OVERLAP inside it) and
+    either overlaps it horizontally or, as a short left-aligned line, ends left
+    of a drawing that spans the page's middle. Closest pairs go first; a caption
+    labels one drawing and a drawing takes one caption.
+    """
+    candidates = []
+    for caption in captions:
+        x0, y0, x1, _ = caption["caption_bbox"]
+        for drawing in drawings:
+            left, _, right, bottom = drawing["bbox"]
+            if (
+                caption["page"] == drawing["page"]
+                and -CAPTION_OVERLAP <= y0 - bottom <= CAPTION_GAP
+                and ((x0 < right and left < x1) or x1 <= left < 500 < right)
+            ):
+                candidates.append((y0 - bottom, caption["id"], drawing["id"]))
+    by_id = {f["id"]: f for f in captions + drawings}
+    pairs, used = [], set()
+    for _, caption, drawing in sorted(candidates):
+        if caption not in used and drawing not in used:
+            used |= {caption, drawing}
+            pairs.append((by_id[caption], by_id[drawing]))
+    return pairs
+
+
 def drawing_records(
     book: dict, blocks: list[dict], source_id: str, figures: list[dict]
 ) -> list[dict]:
-    """Figure records for the vector drawings in the book PDF.
+    """`figures` (figure_records' output) plus records for the book PDF's
+    vector drawings.
 
     PyMuPDF joins each page's visible paths into clusters. A cluster is kept
     unless it is small, sits in the top or bottom margin band, has over
@@ -307,6 +344,10 @@ def drawing_records(
     drawing, and that block's index orders it among the page's records. Ids
     name the page and the rounded top-left corner, so they never meet the
     block-index ids.
+
+    A drawing that a caption record labels (caption_pairs) takes that
+    caption's text, box, block index, section path and excluded flag, and the
+    caption record is dropped: one record per captioned vector figure.
     """
     import pymupdf
 
@@ -411,7 +452,20 @@ def drawing_records(
                         else [],
                     }
                 )
-    return records
+    captions = [f for f in figures if f["geometry_kind"] == "caption_page_reference"]
+    fields = (
+        "caption_bbox",
+        "original_caption",
+        "block_index",
+        "section_path",
+        "excluded",  # from caption_bbox, the box intake.py's exclusions name
+        "exclusion_evidence",
+    )
+    merged = set()
+    for caption, record in caption_pairs(captions, records):
+        record.update({k: caption[k] for k in fields})
+        merged.add(caption["id"])
+    return [f for f in figures if f["id"] not in merged] + records
 
 
 def build_excerpts(
@@ -567,7 +621,7 @@ def parse_books(manifest: dict, config: dict, run: Path, selected: str | None) -
             )
             encoded.append(value)
         figures = figure_records(blocks, identity, book.get("figure_exclusions", []))
-        figures += drawing_records(book, blocks, identity, figures)
+        figures = drawing_records(book, blocks, identity, figures)
         excerpts = build_excerpts(encoded, identity, figures)
         with fitz.open(source) as pdf:
             pages = len(pdf)
@@ -649,11 +703,11 @@ def refresh_figures(manifest: dict, run: Path) -> None:
             f["id"]: {k: f[k] for k in FIGURE_NOTES if k in f}
             for f in corpus["figures"]
         }
-        corpus["figures"] = figure_records(
+        figures = figure_records(
             blocks, corpus["source_id"], corpus["book"].get("figure_exclusions", [])
         )
-        corpus["figures"] += drawing_records(
-            corpus["book"], blocks, corpus["source_id"], corpus["figures"]
+        corpus["figures"] = drawing_records(
+            corpus["book"], blocks, corpus["source_id"], figures
         )
         for figure in corpus["figures"]:
             figure.update(notes.get(figure["id"], {}))

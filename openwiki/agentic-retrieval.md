@@ -690,8 +690,8 @@ figures stage) both run. There are three kinds:
 - `parser_image`: the parser's image and chart blocks. Blocks 2 units or
   thinner on the 0-1000 grid are left out; they are formula bars and rules
   drawn as images (decision 2026-09-23).
-- `caption_page_reference`: `Figure N:` caption lines with no image block,
-  boxed as the whole page.
+- `caption_page_reference`: `Figure N:` caption lines with no image block and
+  no vector drawing they label, boxed as the whole page.
 - `vector_drawing`: drawings in the source PDF that the parser does not report
   (decision 2026-09-23). The source PDF must match the book's sha256.
 
@@ -711,6 +711,21 @@ The id is `fig_<source14>_p<page>_<x0>_<y0>` (the rounded top-left corner), so
 it never collides with the block-index ids of the other kinds. `block_index` is
 the last block that starts above the drawing, and the record takes that block's
 section path. Excerpts link these records the way they link parser images.
+
+A captioned drawing is one record (decision 2026-09-24,
+`knowledge_base_pilot.caption_pairs`). A `Figure N:` caption line labels a
+drawing on its page when the line starts at most 115 units below the drawing's
+bottom (or up to 30 units inside its box) and either overlaps it horizontally
+or, as a short left-aligned line, ends left of a drawing that spans the page's
+middle. Closest pairs go first, one caption per drawing. The drawing keeps its
+id and box and takes the caption's text, `caption_bbox`, block index, section
+path and excluded flag, and no `caption_page_reference` record is made for that
+caption. The record then links to the excerpt holding the caption, and
+`intake.py exclude-figures` names it by its caption box, which is the box the
+excluded flag comes from on a refresh. Captions beside or above a drawing, and
+captions whose figure got no drawing record, keep their whole-page record. A
+multi-panel figure's caption labels one panel. The measurement is in
+`bench/rag/reports/2026-09-24-captioned-drawings.md`.
 
 The box covers the drawn paths only; axis labels set as text can fall outside
 it. Published books keep their records. Thresholds, the sample measurement and

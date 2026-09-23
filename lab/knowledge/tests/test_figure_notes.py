@@ -139,7 +139,8 @@ def test_notes_reach_the_search_text_at_refresh_and_nothing_else_moves(run):
 
 
 def test_refresh_figures_keeps_the_notes_and_applies_exclusions(run, monkeypatch):
-    monkeypatch.setattr(pilot, "drawing_records", lambda *_: [])  # no source PDF
+    # No source PDF: no drawings, so figure_records' output comes back as is.
+    monkeypatch.setattr(pilot, "drawing_records", lambda *args: args[-1])
     path = run / "books/b/corpus.json"
     corpus, _ = noted(run)
     noted_figures = copy.deepcopy(corpus["figures"])

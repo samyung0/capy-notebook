@@ -509,6 +509,53 @@ def test_vector_diagram_is_a_figure_but_text_frames_rules_and_glyphs_are_not(tmp
     assert build_excerpts(chunks, "source", [figure])[0]["figure_ids"] == [figure["id"]]
 
 
+def test_captioned_vector_drawing_is_one_record(tmp_path):
+    import pymupdf
+
+    pdf = pymupdf.open()
+    page = pdf.new_page(width=600, height=800)
+    # A centred diagram, grid box ~[367, 212, 633, 412].
+    page.draw_circle((300, 250), 60)
+    page.draw_line((220, 330), (380, 170))
+    path = tmp_path / "book.pdf"
+    pdf.save(path)
+    book = {"id": "book", "pdf_path": str(path), "sha256": sha_file(path)}
+    blocks = [
+        {"type": "text", "text_level": 1, "text": "Convexity", "page_idx": 0},
+        {"type": "text", "text": "Intro", "page_idx": 0, "bbox": [80, 100, 900, 150]},
+        # A short left-aligned caption line under the diagram, and one too far below.
+        {
+            "type": "text",
+            "text": "Figure 1.1: A set.",
+            "page_idx": 0,
+            "bbox": [150, 430, 330, 450],
+        },
+        {
+            "type": "text",
+            "text": "Figure 1.2: A photo.",
+            "page_idx": 0,
+            "bbox": [150, 700, 400, 720],
+        },
+    ]
+    exclusions = [{"page": 1, "bbox": [150, 430, 330, 450]}]  # intake.py: caption_bbox
+    figures = drawing_records(
+        book, blocks, "source", figure_records(blocks, "source", exclusions)
+    )
+    kinds = {f["geometry_kind"]: f for f in figures}
+    assert len(figures) == 2
+    drawing, caption = kinds["vector_drawing"], kinds["caption_page_reference"]
+    assert drawing["original_caption"] == ["Figure 1.1: A set."]
+    assert drawing["caption_bbox"] == [150, 430, 330, 450]
+    assert (drawing["block_index"], drawing["section_path"]) == (2, "Convexity")
+    assert drawing["id"].startswith("fig_source_p1_") and drawing["excluded"]
+    assert (caption["id"], caption["excluded"]) == ("fig_source_3", False)
+    region = {"page": 1, "bbox": [150, 430, 330, 450]}
+    chunks = [{"id": "c", "section_path": "Other", "text": "", "regions": [region]}]
+    assert build_excerpts(chunks, "source", [drawing])[0]["figure_ids"] == [
+        drawing["id"]
+    ]
+
+
 def test_query_tags_use_catalog_aliases_only():
     topics = [
         {
