@@ -22,7 +22,9 @@ retired, topics no tagged excerpt of a current or retained version references
 are dropped.
 
 `schema` creates the schema and adds the nullable reviewed retrieval metadata
-column to existing libraries. It preserves published source data and versions.
+column and the figure label, credit and decorative columns to existing
+libraries. It preserves published source data and versions. Run it once
+against a library before publishing with a loader newer than its columns.
 
 Run it in the pipeline's environment, which owns psycopg and boto3:
 `uv run --project pipeline python bench/rag/scripts/knowledge_base_library.py
@@ -106,20 +108,31 @@ def versioned(identifier: str, version: int) -> str:
 def corpus_identity(book_corpus: dict, pin: dict, tags: dict) -> str:
     """Everything that decides a book version's content, in one digest: the
     parse, the embedding pin and each excerpt's tag outcome (a retag or a
-    topic rename changes the excerpt rows, so it is a new version)."""
-    return digest(
-        {
-            "source_id": book_corpus["source_id"],
-            "content_hash": book_corpus["content_hash"],
-            "parser_fingerprint": book_corpus["parser_fingerprint"],
-            "chunker_version": book_corpus["chunker_version"],
-            "release_sha": book_corpus["release_sha"],
-            "pin": pin,
-            "tags": {
-                e["id"]: tags["tags"].get(e["id"]) for e in book_corpus["excerpts"]
-            },
+    topic rename changes the excerpt rows, so it is a new version).
+
+    A book whose figures carry a book agent's notes (`apply_figure_notes` writes
+    all four fields on every record; transcribe never writes `decorative`) also
+    covers its figure notes and excluded flags, so a figure-only cleanup is a
+    new version. Every other book keeps exactly the identity it had before.
+    """
+    from knowledge_base_pilot import FIGURE_NOTES
+
+    identity = {
+        "source_id": book_corpus["source_id"],
+        "content_hash": book_corpus["content_hash"],
+        "parser_fingerprint": book_corpus["parser_fingerprint"],
+        "chunker_version": book_corpus["chunker_version"],
+        "release_sha": book_corpus["release_sha"],
+        "pin": pin,
+        "tags": {e["id"]: tags["tags"].get(e["id"]) for e in book_corpus["excerpts"]},
+    }
+    if any("decorative" in f for f in book_corpus["figures"]):
+        # get: a transcribe --redo pops label and description and keeps the rest
+        identity["figures"] = {
+            f["id"]: {k: f.get(k) for k in (*FIGURE_NOTES, "excluded")}
+            for f in book_corpus["figures"]
         }
-    )
+    return digest(identity)
 
 
 def excerpt_rows(corpus: dict, tags: dict) -> list[dict]:
@@ -187,11 +200,53 @@ def figure_rows(corpus: dict, captures: dict) -> list[dict]:
                 "book_id": corpus["book"]["id"],
                 "capture_path": relative_path(capture["path"]) if capture else None,
                 "capture_pixel_size": capture["pixel_size"] if capture else None,
-                # The builder's transcribe stage writes it; pilot corpora have none.
+                # The builder's transcribe stage or a book agent's figures.json
+                # writes these; pilot corpora have none.
                 "description": figure.get("description", ""),
+                "label": figure.get("label", ""),
+                "credit": figure.get("credit", ""),
+                "decorative": figure.get("decorative", False),
             }
         )
     return rows
+
+
+FIGURE_COLUMNS = (
+    "content_id,id,book_id,page,bbox,caption_bbox,space,geometry_kind,block_index,"
+    "original_caption,original_footnote,section_path,excluded,exclusion_evidence,"
+    "capture_path,capture_pixel_size,description,label,credit,decorative"
+)
+
+
+def insert_figures(target, content_id: str, version: int, figures: list[dict]) -> None:
+    target.cursor().executemany(
+        f"INSERT INTO library_figures ({FIGURE_COLUMNS}) VALUES({','.join(['%s'] * 20)})",
+        [
+            (
+                content_id,
+                versioned(f["id"], version),
+                f["book_id"],
+                f["page"],
+                f["bbox"],
+                f["caption_bbox"],
+                f["space"],
+                f["geometry_kind"],
+                f["block_index"],
+                Jsonb(f["original_caption"]),
+                Jsonb(f["original_footnote"]),
+                f["section_path"],
+                f["excluded"],
+                Jsonb(f["exclusion_evidence"]),
+                f["capture_path"],
+                f["capture_pixel_size"],
+                f["description"],
+                f["label"],
+                f["credit"],
+                f["decorative"],
+            )
+            for f in figures
+        ],
+    )
 
 
 def model_run_rows(run: Path) -> list[dict]:
@@ -359,7 +414,8 @@ def apply_schema() -> dict:
     """Create the library schema exactly as `LIBRARY_SCHEMA` writes it and load
     the subjects fixture.
 
-    The additive retrieval metadata column preserves existing book versions.
+    The additive retrieval metadata and figure note columns preserve existing
+    book versions.
     """
     with connect() as conn:
         conn.execute(SCHEMA)
@@ -517,31 +573,7 @@ def publish_book(
             ],
         )
         figures = figure_rows(book_corpus, captures)
-        target.cursor().executemany(
-            "INSERT INTO library_figures VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
-            [
-                (
-                    content_id,
-                    versioned(f["id"], version),
-                    f["book_id"],
-                    f["page"],
-                    f["bbox"],
-                    f["caption_bbox"],
-                    f["space"],
-                    f["geometry_kind"],
-                    f["block_index"],
-                    Jsonb(f["original_caption"]),
-                    Jsonb(f["original_footnote"]),
-                    f["section_path"],
-                    f["excluded"],
-                    Jsonb(f["exclusion_evidence"]),
-                    f["capture_path"],
-                    f["capture_pixel_size"],
-                    f["description"],
-                )
-                for f in figures
-            ],
-        )
+        insert_figures(target, content_id, version, figures)
         for topic in topics:
             target.execute(
                 "INSERT INTO library_topics VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT (id) DO UPDATE SET "
@@ -1065,6 +1097,7 @@ def check() -> None:
         "chunker_version": "v10",
         "release_sha": "sha",
         "excerpts": [{"id": "e1"}, {"id": "e2"}],
+        "figures": [],
     }
     tagged = {
         "tags": {"e1": {"roles": ["formal"], "topic_ids": ["t1"]}},

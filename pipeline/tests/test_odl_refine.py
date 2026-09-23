@@ -81,16 +81,19 @@ def _pdf(tmp_path: Path, draw) -> Path:
     return path
 
 
+@pytest.mark.parametrize("folio_y", [780, 40])
 @pytest.mark.parametrize(
     "folios", [["| 7 |", "| 8 |", "| 9 |"], ["xvi", "xvii", "xviii"]]
 )
-def test_source_folios_require_isolation_and_repeated_page_offsets(folios) -> None:
+def test_source_folios_require_isolation_and_repeated_page_offsets(
+    folios, folio_y
+) -> None:
     document = pymupdf.open()
     blocks = []
     for i, folio in enumerate(folios):
         page = document.new_page(width=600, height=800)
         page.insert_text((60, 100), "Keep this short prose.")
-        page.insert_text((290, 780), folio, fontsize=10)
+        page.insert_text((290, folio_y), folio, fontsize=10)
         for source in page.get_text("blocks"):
             blocks.append(
                 {
@@ -115,9 +118,9 @@ def test_source_folios_require_isolation_and_repeated_page_offsets(folios) -> No
         if b["type"] == "page_number"
     )
     assert furniture.mark_page_numbers(blocks[:4], document) == blocks[:4]
-    # The same values beside a bottom-of-page table label are not folios.
+    # The same values beside a margin table label are not folios.
     for page in document:
-        page.insert_text((60, 780), "Measured value", fontsize=10)
+        page.insert_text((60, folio_y), "Measured value", fontsize=10)
     assert furniture.mark_page_numbers(blocks, document) == blocks
     document.close()
 

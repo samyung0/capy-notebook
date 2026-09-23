@@ -13,7 +13,10 @@ from pathlib import Path
 
 import pymupdf
 
+from .furniture import _folio
 from .order import normal, repair_page
+
+BULLET = re.compile(r"^\s*[•●▪◦‣⁃∙·■□☐➢✓✔]")
 
 
 def _literal(text: str) -> str:
@@ -23,6 +26,21 @@ def _literal(text: str) -> str:
 def _outline_title(text: str) -> str:
     return _literal(
         re.sub(r"^(?:chapter\s+)?\d+(?:\.\d+)*[.\s]+", "", text, flags=re.IGNORECASE)
+    )
+
+
+def _centred(span: tuple[float, float, float, float], rect: pymupdf.Rect) -> bool:
+    return rect.contains(
+        pymupdf.Point((span[0] + span[2]) / 2, (span[1] + span[3]) / 2)
+    )
+
+
+def _thin(span: tuple[float, float, float, float], rect: pymupdf.Rect) -> bool:
+    """An ODL box can be shorter than its glyphs: the span's horizontal centre
+    lies in the box and they overlap by half the smaller height."""
+    overlap = min(span[3], rect.y1) - max(span[1], rect.y0)
+    return rect.x0 <= (span[0] + span[2]) / 2 <= rect.x1 and overlap >= 0.5 * min(
+        span[3] - span[1], rect.height
     )
 
 
@@ -62,19 +80,14 @@ def _source_spans(
             box[2] * page.rect.width / 1000,
             box[3] * page.rect.height / 1000,
         )
-        spans = [
-            s
-            for s in pages[page_index]
-            if rect.contains(
-                pymupdf.Point(
-                    (s["bbox"][0] + s["bbox"][2]) / 2,
-                    (s["bbox"][1] + s["bbox"][3]) / 2,
-                )
-            )
-        ]
         text = block.get("text", "")
-        if spans and _literal(text) == _literal(" ".join(s["text"] for s in spans)):
-            evidence[index] = spans
+        # The thin-box test runs only when centre containment finds no match,
+        # so it never replaces evidence the centre test already proves.
+        for inside in (_centred, _thin):
+            spans = [s for s in pages[page_index] if inside(s["bbox"], rect)]
+            if spans and _literal(text) == _literal(" ".join(s["text"] for s in spans)):
+                evidence[index] = spans
+                break
     return evidence
 
 
@@ -247,6 +260,26 @@ def _additional_banners(
     return banners
 
 
+def _folio_title(text: str) -> tuple[tuple[str, int], str] | None:
+    """A leading or trailing folio (decimal first) and the rest as a title key
+    with its digits and Roman numerals stripped."""
+    value = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+    words = value.strip(" |•·–—-").split()
+    if not words:
+        return None
+    for kind in ("decimal", "roman"):
+        for word, rest in ((words[0], words[1:]), (words[-1], words[:-1])):
+            folio = _folio(word)
+            if folio and folio[0] == kind:
+                title = " ".join(w for w in rest if not _folio(w))
+                return folio, _literal(re.sub(r"\d+", "", title))
+    return None
+
+
+def _folio_band(box: list[float]) -> bool:
+    return 0 <= box[1] < box[3] < 100 or 900 < box[1] < box[3] <= 1000
+
+
 def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Correct source-backed heading roles before any section context is built."""
     outline = {
@@ -255,34 +288,30 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         if page > 0
     }
     evidence = _source_spans(blocks, document)
-    banners: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    families: dict[tuple, list[tuple[int, int, str]]] = defaultdict(list)
     roles: dict[int, str] = {}
     for index, spans in evidence.items():
         block = blocks[index]
         text, box, page_index = block["text"], block["bbox"], block["page_idx"]
         if (page_index, _outline_title(text)) in outline:
             continue
-        margin = 0 <= box[1] < box[3] <= 65 or 935 <= box[1] < box[3] <= 1000
-        if margin:
-            value = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
-            leading = re.fullmatch(r"(\d{1,4})\s+(.+)", value)
-            trailing = re.fullmatch(r"(.+?)\s+(\d{1,4})", value)
-            title, folio = (
-                (leading[2], leading[1])
-                if leading
-                else ((trailing[1], trailing[2]) if trailing else ("", ""))
+        found = _folio_title(text) if _folio_band(box) else None
+        if found:
+            (kind, folio), title = found
+            style = max(spans, key=lambda s: len(s["text"]))
+            key = (
+                kind,
+                folio - page_index,
+                box[3] < 100,
+                round(box[1] / 10),
+                style["font"],
+                round(style["size"]),
             )
-            if any(c.isalpha() for c in title):
-                style = max(spans, key=lambda s: len(s["text"]))
-                key = (
-                    title,
-                    int(folio) - page_index,
-                    box[3] <= 65,
-                    round(box[1] / 10),
-                    style["font"],
-                    round(style["size"]),
-                )
-                banners[key].append((index, page_index))
+            families[key].append((index, page_index, title))
+        if 0 <= box[1] < box[3] <= 65 or 935 <= box[1] < box[3] <= 1000:
+            continue
+        if BULLET.match(text):
+            roles[index] = "bullet-item"
             continue
         if re.match(
             r"^(?:figure|fig\.|table)\s+\d+(?:[.\-]\d+)*(?:[.:\s])", text.casefold()
@@ -308,9 +337,39 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         ordered = sorted(spans, key=lambda s: s["bbox"][0])
         if any(b["bbox"][0] - a["bbox"][2] >= 4 * size for a, b in pairwise(ordered)):
             roles[index] = "diagram-label"
-    for group in banners.values():
-        if len({page for _, page in group}) >= 3:
-            roles.update((index, "running-banner") for index, _ in group)
+    # Page offsets the margins show, by folio kind, so front matter numbered
+    # apart from the body (Roman or Arabic) proves its own banners.
+    shown: dict[tuple[str, int], list[tuple[int, str]]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        box, page_index = block.get("bbox") or [], block.get("page_idx")
+        if len(box) == 4 and type(page_index) is int and _folio_band(box):
+            found = _folio_title(str(block.get("text") or ""))
+            if found:
+                (kind, folio), title = found
+                shown[kind, folio - page_index].append((index, title))
+    for (kind, offset, *_), group in families.items():
+        # A folio that tracks the page proves the band whatever the title,
+        # but only a repeated title separates it from numbered slide titles.
+        titles: dict[str, set[int]] = defaultdict(set)
+        for _, page, title in group:
+            titles[title].add(page)
+        members = {index for index, _, _ in group}
+        boxes = [blocks[index]["bbox"] for index in members]
+        # Exercise N or Question N also rises with the page. It is a folio only
+        # when the book shows that offset elsewhere: on a bare page number or a
+        # banner with another title (a sibling of the same series, typed as a
+        # paragraph or split off by band or size, proves nothing), or on this
+        # family's banners of the facing (left and right) pages.
+        proven = any(
+            index not in members and (not title or title not in titles)
+            for index, title in shown[kind, offset]
+        ) or (any(box[2] < 500 for box in boxes) and any(box[0] > 500 for box in boxes))
+        if (
+            proven
+            and len({page for _, page, _ in group}) >= 3
+            and any(len(pages) >= 2 for pages in titles.values())
+        ):
+            roles.update((index, "running-banner") for index in members)
     additional = _additional_banners(blocks, evidence, outline) - roles.keys()
     roles.update((index, "running-banner") for index in additional)
     result = list(blocks)
@@ -319,9 +378,8 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         result[index].pop("text_level", None)
         if role == "running-banner":
             result[index]["type"] = "discarded"
-            if index in additional:
-                # Keep its former scope reset without making its text an ancestor.
-                result[index]["_heading_boundary_level"] = blocks[index]["text_level"]
+            # Keep its former scope reset without making its text an ancestor.
+            result[index]["_heading_boundary_level"] = blocks[index]["text_level"]
     return correct_outline_roots(result, document, evidence)
 
 

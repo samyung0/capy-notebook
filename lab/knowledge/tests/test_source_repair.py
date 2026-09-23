@@ -332,3 +332,215 @@ def test_disposition_only_source_review_still_needs_source_bindings(repair_run):
             baseline_sha256=sha(baseline.read_bytes()),
             source_review=full,
         )
+
+
+def bind_page(run, artifact, page):
+    image = run / f"page-{page}.png"
+    image.write_bytes(f"synthetic page {page}".encode())
+    artifact["inspection_records"].append(
+        {
+            "pdf_page": page,
+            "rendered_page_path": str(image),
+            "rendered_page_sha256": sha(image.read_bytes()),
+            "observation": f"Page {page} prints the section heading.",
+        }
+    )
+
+
+def path_only(artifact, corpus, path="1 Notation › 1.1 Division"):
+    """Turn the fixture's text repair into a locator-only correction of c1."""
+    repair = artifact["source_repairs"][0]
+    del repair["text"]
+    repair.update(kind="section_path", section_path=path)
+    artifact["tags"]["e1"]["evidence"] = corpus["chunks"][0]["text"]
+    return repair
+
+
+def test_section_path_repair_moves_only_the_locator(repair_run):
+    from transcribe import refresh
+
+    run, corpus, artifact, _, _, _ = repair_run
+    path = "1 Notation › 1.1 Division"
+    bind_page(run, artifact, 2)  # a contents page outside the chunk
+    path_only(artifact, corpus, path)["pdf_pages"] = [2]
+    before = (run / "books/book/corpus.json").read_bytes()
+    projected = enrich.repaired_corpus(corpus, artifact, sha(before))
+    chunk, excerpt = projected["chunks"][0], projected["excerpts"][0]
+    assert chunk["text"] == corpus["chunks"][0]["text"]
+    assert chunk["section_path"] == excerpt["section_path"] == path
+    assert (excerpt["id"], excerpt["chunk_ids"]) == ("e1", ["c1"])
+    assert chunk["indexed_text"] == f"{path}\n\n{chunk['text']}"
+    assert chunk["source_repairs"][0]["original_section_path"] == ""
+    unchanged = copy.deepcopy(corpus)
+    refresh(unchanged)
+    assert projected["content_hash"] != unchanged["content_hash"]
+    assert projected["excerpts"][1] == corpus["excerpts"][1]
+    enrich.validate(run, artifact)
+
+
+def test_one_repair_fixes_text_and_path_together(repair_run):
+    run, corpus, artifact, new, _, _ = repair_run
+    bind_page(run, artifact, 2)
+    repair = artifact["source_repairs"][0]
+    repair.update(section_path="1 Notation", pdf_pages=[1, 2])
+    projected = enrich.repaired_corpus(corpus, artifact, artifact["base_corpus_sha256"])
+    chunk, excerpt = projected["chunks"][0], projected["excerpts"][0]
+    assert (chunk["text"], chunk["section_path"]) == (new, "1 Notation")
+    assert (excerpt["text"], excerpt["section_path"]) == (new, "1 Notation")
+    repair["pdf_pages"] = [2]  # the text change still needs its own chunk's page
+    with pytest.raises(ValueError, match="outside its chunk"):
+        enrich.repaired_corpus(corpus, artifact, artifact["base_corpus_sha256"])
+
+
+@pytest.mark.parametrize("defect", ["no_op", "unbound_page", "changed_text"])
+def test_section_path_repair_rejects_no_op_unbound_or_text_change(repair_run, defect):
+    _, corpus, artifact, _, _, _ = repair_run
+    repair = path_only(artifact, corpus)
+    if defect == "no_op":
+        repair["section_path"] = corpus["chunks"][0]["section_path"]
+    if defect == "unbound_page":
+        repair["pdf_pages"] = [2]
+    if defect == "changed_text":
+        repair["text"] = "A different passage."
+    with pytest.raises(ValueError, match="no-op|inspection"):
+        enrich.repaired_corpus(corpus, artifact, artifact["base_corpus_sha256"])
+
+
+def test_follow_up_apply_binds_the_already_repaired_corpus(repair_run, monkeypatch):
+    run, _, artifact, new, _, _ = repair_run
+    corpus_path, backups = (
+        run / "books/book/corpus.json",
+        run / "retrieval-review-backups",
+    )
+
+    def apply(path, *stage):
+        monkeypatch.setattr(
+            "sys.argv",
+            ["enrich", "--run", str(run), "--artifact", str(path), "--apply", *stage],
+        )
+        enrich.main()
+
+    first = run / "review.json"
+    first.write_text(json.dumps(artifact), encoding="utf-8")
+    apply(first)
+    repaired = corpus_path.read_bytes()
+    follow = copy.deepcopy(artifact)
+    follow.update(
+        base_corpus_sha256=sha(repaired),
+        base_tags_sha256=sha((run / "tags.json").read_bytes()),
+    )
+    repair = follow["source_repairs"][0]
+    del repair["text"]
+    repair.update(
+        kind="section_path",
+        section_path="1 Notation",
+        original_text_sha256=sha(new.encode()),
+    )
+    second = run / "follow-up.json"
+    second.write_text(json.dumps(follow), encoding="utf-8")
+    with pytest.raises(ValueError, match="corpus changed"):
+        enrich.validate(run, copy.deepcopy(artifact))
+    apply(second, "--stage", "source-cleanup")  # the review's receipt stays
+    states = {
+        d: enrich.load(run / "models" / d / "state.json")
+        for d in ("retrieval-review", "source-cleanup")
+    }
+    assert states["retrieval-review"]["artifact_sha256"] == sha(first.read_bytes())
+    assert states["source-cleanup"]["artifact_sha256"] == sha(second.read_bytes())
+    chunk = enrich.load(corpus_path)["chunks"][0]
+    assert (chunk["text"], chunk["section_path"]) == (new, "1 Notation")
+    assert [r["kind"] for r in chunk["source_repairs"]] == [
+        "transcription",
+        "section_path",
+    ]
+    assert {p.name for p in backups.iterdir()} == {
+        sha(first.read_bytes()),
+        sha(second.read_bytes()),
+    }
+    assert (backups / sha(second.read_bytes()) / "corpus.json").read_bytes() == repaired
+    applied = corpus_path.read_bytes()
+    enrich.resume_apply(run, second)
+    assert corpus_path.read_bytes() == applied
+
+
+def test_topic_context_accepts_only_a_validated_path_correction(
+    repair_run, monkeypatch
+):
+    import topics
+
+    run, corpus, artifact, _, _, _ = repair_run
+    book = {**corpus["book"], "subject_id": "statistics", "edition": "1"}
+    (run / "manifest.json").write_text(json.dumps({"books": [book]}), encoding="utf-8")
+    bind_page(run, artifact, 2)
+    artifact["source_repairs"][0]["section_path"] = "1 Notation"
+    artifact["source_repairs"][0]["pdf_pages"] = [1, 2]
+    projected = enrich.repaired_corpus(corpus, artifact, artifact["base_corpus_sha256"])
+    full_tags = {**enrich.load(run / "tags.json")["tags"], **artifact["tags"]}
+    full = {**artifact, "tags": full_tags, "corrected_excerpts": projected["excerpts"]}
+    review, context = run / "full-review.json", run / "context.json"
+    review.write_text(json.dumps(full), encoding="utf-8")
+    monkeypatch.setattr(topics, "library_topics", lambda subject: [])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "topics.py",
+            *("--run", str(run), "--book", "book"),
+            *("--review-context", str(review), "--export-context", str(context)),
+        ],
+    )
+    topics.main()
+    exported = enrich.load(context)
+    assert exported["reviewed_excerpts"][0]["section_path"] == "1 Notation"
+    del full["source_repairs"][0]["section_path"]  # the same path, unrepaired
+    review.write_text(json.dumps(full), encoding="utf-8")
+    with pytest.raises(ValueError, match="boundary"):
+        topics.main()
+
+
+def test_path_form_is_the_chunkers_breadcrumb():
+    assert enrich.path_form("") and enrich.path_form("1 Notation › 1.1 Division")
+    for path in (
+        "1 Notation › › 1.1",
+        "1 Notation ›  1.1",
+        "1 Notation\n1.1",
+        "›",
+        None,
+    ):
+        assert not enrich.path_form(path), path
+
+
+def test_refresh_figures_refuses_a_repaired_book(repair_run):
+    import knowledge_base_pilot as pilot
+
+    run, corpus, artifact, _, _, _ = repair_run
+    book = {**corpus["book"], "edition": "1", "source_url": "https://b.test"}
+    book["license"] = "CC BY 4.0"
+    (run / "manifest.json").write_text(json.dumps({"books": [book]}), encoding="utf-8")
+    repaired = enrich.repaired_corpus(corpus, artifact, artifact["base_corpus_sha256"])
+    repaired["source_id"] = pilot.book_identity(book)
+    path = run / "books/book/corpus.json"
+    path.write_text(json.dumps(repaired), encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(pilot.PilotError, match="source repairs"):
+        pilot.refresh_figures({"books": [book]}, run)
+    assert path.read_bytes() == before
+
+
+def test_older_codex_provenance_names_its_model(repair_run, monkeypatch):
+    run, _, artifact, _, _, _ = repair_run
+    artifact["model_provenance"] = {"transport": "codex-subagent"}
+    with pytest.raises(ValueError, match="naming the model"):
+        enrich.validate(run, copy.deepcopy(artifact))
+    artifact["model_provenance"] = {"requested_model": "gpt-6-sol"}
+    enrich.validate(run, copy.deepcopy(artifact))
+    runtime = {"requested_model": "gpt-6-sol", "actual_runtime_model": "unknown"}
+    assert enrich.model_name(runtime) == "unknown"
+    review = run / "review.json"
+    review.write_text(json.dumps(artifact), encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv",
+        ["enrich", "--run", str(run), "--artifact", str(review), "--apply"],
+    )
+    enrich.main()
+    state = enrich.load(run / "models/retrieval-review/state.json")
+    assert state["model"] == "gpt-6-sol"

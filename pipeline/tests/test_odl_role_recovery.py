@@ -106,8 +106,11 @@ def test_repeated_body_text_survives_both_shared_entrypoints_with_its_region():
     assert blocks == before
 
 
-def _printed_heading(page, text, y, level, *, fontsize=11):
-    page.insert_text((60, y), text, fontsize=fontsize)
+def _printed_heading(page, text, y, level, *, fontsize=11, html=False, x=60):
+    if html:  # a Unicode font for glyphs outside Latin-1, such as bullets
+        page.insert_htmlbox(pymupdf.Rect(x, y - 15, 500, y + 15), text)
+    else:
+        page.insert_text((x, y), text, fontsize=fontsize)
     rects = page.search_for(text)
     rect = rects[-1]
     if "\n" in text:
@@ -171,6 +174,191 @@ def test_alternating_banners_need_a_proven_band_and_larger_source_titles(seed_pa
         ]
         assert blocks == before
         assert correct_roles(result, document) == result
+
+
+def _side(number):
+    return 60 if number % 2 == 0 else 380
+
+
+@pytest.mark.parametrize(
+    ("case", "y", "titles", "removed"),
+    [
+        # Section running heads change title; one repeat proves the band.
+        ("titles", 35, ["{} Motion", "Forces {}", "{} Motion", "Heat {}"], True),
+        ("wide-bottom-band", 780, ["Chapter 1 | {}"] * 3, True),
+        ("bare-top-folio", 35, ["{}"] * 3, True),
+        ("numbered-slides", 35, ["{} Introduction", "{} Method", "{} Results"], False),
+    ],
+)
+def test_page_tracking_folios_make_running_banners_whatever_their_title(
+    case, y, titles, removed
+):
+    # Facing pages print the banner on alternate sides, which shows the offset.
+    with pymupdf.open() as document:
+        blocks = []
+        for number, title in enumerate(titles):
+            page = document.new_page()
+            blocks.append(
+                _printed_heading(
+                    page, title.format(number + 12), y, 2, fontsize=10, x=_side(number)
+                )
+            )
+        if case == "wide-bottom-band":
+            assert all(900 < b["bbox"][1] < 935 for b in blocks)
+        result = correct_roles(blocks, document)
+        if removed:
+            assert all(b["type"] == "discarded" for b in result)
+            assert all(b["_heading_boundary_level"] == 2 for b in result)
+            assert [(b["text"], b["bbox"]) for b in result] == [
+                (b["text"], b["bbox"]) for b in blocks
+            ]
+            assert correct_roles(result, document) == result
+        else:
+            assert result == blocks
+
+
+def test_removed_folio_banners_end_an_earlier_chart_label_scope():
+    # The BOJ regression: dropping banners must not carry a label onward.
+    with pymupdf.open() as document:
+        page = document.new_page()
+        blocks = [
+            _printed_heading(page, "Financial system", 150, 1, fontsize=18),
+            _printed_heading(page, "Chart label", 300, 3, fontsize=8),
+        ]
+        for number, title in enumerate(["Banks", "Markets", "Banks"], start=1):
+            page = document.new_page()
+            blocks.append(
+                _printed_heading(page, f"{number + 4} {title}", 35, 3, x=_side(number))
+            )
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": f"Prose on page {number}.",
+                    "page_idx": number,
+                    "bbox": [100, 200, 800, 250],
+                }
+            )
+        result = correct_roles(blocks, document)
+        assert [b["type"] for b in result[2::2]] == ["discarded"] * 3
+        chunks = pack_blocks(result, frozenset())
+        for number in (1, 2, 3):
+            chunk = next(c for c in chunks if f"Prose on page {number}." in c.text)
+            assert chunk.section_path == "Financial system"
+
+
+def test_thin_odl_boxes_still_prove_running_heads():
+    # Media's ODL boxes cover only the top 45% of the glyphs, so no span
+    # centre falls inside; the thin-box retry must still find the evidence.
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(3):
+            page = document.new_page()
+            title = f"{number + 2} Media, Society, Culture and You"
+            block = _printed_heading(page, title, 35, 2, fontsize=10, x=_side(number))
+            top, bottom = block["bbox"][1], block["bbox"][3]
+            block["bbox"][3] = top + 0.45 * (bottom - top)
+            span = page.get_text("dict")["blocks"][0]["lines"][0]["spans"][0]
+            centre = (span["bbox"][1] + span["bbox"][3]) / 2 / page.rect.height * 1000
+            assert centre > block["bbox"][3]
+            blocks.append(block)
+        result = correct_roles(blocks, document)
+        assert all(b["type"] == "discarded" for b in result)
+        assert all(b["_heading_boundary_level"] == 2 for b in result)
+
+
+def _folio(label, page):
+    return {
+        "type": "text",
+        "text": label,
+        "page_idx": page,
+        "bbox": [480, 955, 520, 970],
+    }
+
+
+@pytest.mark.parametrize(
+    ("title", "y"), [("Exercise {}", 72), ("Step {}", 35), ("{}", 35)]
+)
+@pytest.mark.parametrize("folio_shift", [None, 0, 20])
+def test_numbered_page_tops_are_banners_only_at_the_offset_the_book_shows(
+    title, y, folio_shift
+):
+    # These numbers rise with the page like folios, one per page on one side.
+    # Only printed page numbers with the same page offset make them banners.
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(3):
+            page = document.new_page()
+            blocks.append(_printed_heading(page, title.format(number + 1), y, 2))
+        if title.startswith("Exercise"):
+            assert all(65 < b["bbox"][1] < b["bbox"][3] < 100 for b in blocks)
+        if folio_shift is not None:
+            blocks += [_folio(str(page + 1 + folio_shift), page) for page in range(3)]
+        result = correct_roles(blocks, document)
+        if folio_shift == 0:
+            assert [b["type"] for b in result[:3]] == ["discarded"] * 3
+            assert result[3:] == blocks[3:]
+        else:
+            assert result == blocks
+
+
+@pytest.mark.parametrize(
+    "split", ["paragraph", "no-evidence", "two-bands", "two-sizes"]
+)
+def test_a_numbered_series_cannot_prove_its_own_page_offset(split):
+    # ODL can type one Exercise heading as a paragraph, lose its span evidence,
+    # or split the series into families by band or size. The other part of the
+    # series must not stand in for the page numbers the book shows.
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(4 if split == "paragraph" else 6):
+            page = document.new_page()
+            y = 77 if split == "two-bands" and number % 2 else 72
+            size = 13 if split == "two-sizes" and number >= 3 else 11
+            blocks.append(
+                _printed_heading(page, f"Exercise {number + 1}", y, 2, fontsize=size)
+            )
+        if split == "paragraph":
+            blocks[-1].pop("text_level")
+        elif split == "no-evidence":
+            blocks[2]["bbox"][2] = blocks[2]["bbox"][0] + 5
+        elif split == "two-bands":
+            assert len({round(b["bbox"][1] / 10) for b in blocks}) == 2
+        assert all(65 < b["bbox"][1] < b["bbox"][3] < 100 for b in blocks)
+        assert correct_roles(blocks, document) == blocks
+
+
+@pytest.mark.parametrize("front", ["roman", "arabic"])
+def test_front_matter_numbered_apart_proves_its_own_running_heads(front):
+    # Front matter i-iii (or 1-3), then the body restarts at 1 on page 4.
+    with pymupdf.open() as document:
+        blocks = []
+        for index in range(6):
+            page = document.new_page()
+            if index < 3:
+                label = (
+                    ["i", "ii", "iii"][index] if front == "roman" else str(index + 1)
+                )
+                title = f"{label} Preface"
+            else:
+                label = str(index - 2)
+                title = f"{label} Motion"
+            blocks.append(_printed_heading(page, title, 35, 2))
+            blocks.append(_folio(label, index))
+        result = correct_roles(blocks, document)
+        assert [b["type"] for b in result[::2]] == ["discarded"] * 6
+        assert result[1::2] == blocks[1::2]
+
+
+def test_headings_that_start_with_a_bullet_become_body_text():
+    with pymupdf.open() as document:
+        page = document.new_page()
+        bullet = _printed_heading(page, "• Safety", 150, 3, html=True)
+        plain = _printed_heading(page, "Safety", 250, 3)
+        result = correct_roles([bullet, plain], document)
+        assert result[0]["_source_role"] == "bullet-item"
+        assert "text_level" not in result[0]
+        assert result[0]["text"] == "• Safety" and result[0]["type"] == "text"
+        assert result[1] == plain
 
 
 @pytest.mark.parametrize("entrypoint", ["chunker", "plain-packer", "table-packer"])
@@ -435,7 +623,7 @@ def test_source_roles_abstain_on_outline_mismatch_and_preserve_body(tmp_path):
     for i in range(3):
         page = document.new_page(width=600, height=800)
         text = f"{i + 1} CHAPTER 1. SCIENCE"
-        page.insert_text((60, 25), text)
+        page.insert_text((_side(i), 25), text)  # facing pages show the offset
         block(page, text, page.search_for(text)[0])
     page = document[0]
     for y, text in [

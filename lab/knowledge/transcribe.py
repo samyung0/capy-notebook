@@ -27,7 +27,8 @@ transcriptions and the ledger and submits a new task.
 Figures: each returned figure is matched to the corpus figures on its page by
 printed label, else by order; the description is written to the figure and
 appended as "[Figure <label>] <description>" to the `indexed_text` of the first
-chunk of the excerpt that lists the figure (never to `text`).
+chunk of the excerpt that lists the figure (never to `text`), unless the figure
+is decorative.
 
   python lab/knowledge/transcribe.py --run <run_dir> --book <id> [--live] [--redo]
 """
@@ -339,9 +340,14 @@ def figure_note(figure: dict) -> str:
 
 def rebuild_indexed_text(corpus: dict) -> None:
     """section_path + text, plus the notes of the described figures the
-    chunk's excerpt lists first (on the excerpt's first chunk)."""
+    chunk's excerpt lists first (on the excerpt's first chunk); decorative
+    figures add none, excluded ones keep theirs."""
     notes: dict[str, list[str]] = {}
-    described = {f["id"]: f for f in corpus["figures"] if f.get("description")}
+    described = {
+        f["id"]: f
+        for f in corpus["figures"]
+        if f.get("description") and not f.get("decorative")
+    }
     seen = set()
     for excerpt in corpus["excerpts"]:
         for figure_id in excerpt["figure_ids"]:

@@ -307,17 +307,37 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v5` plus the release SHA.
-Before table recovery, source-matched folio banners recurring on three pages
-become discarded blocks. A repeated literal title in a narrow margin band also
-establishes a running-banner family; alternating titles in that band require
-each rendered line to match an earlier or same-page body heading in larger type.
-Newly discarded banners retain their former heading-level boundary without
-adding their text to ancestry. Both chunking paths clear that level and deeper
-levels, so removing a banner does not extend a chart label into later pages.
-This boundary behavior is part of chunker v11.
-Numbered captions and widely separated, unbold diagram
-labels lose heading status while retaining literal text and geometry. PDF outline
+`odl-2.5.7-refined-rapidocr-v6` plus the release SHA.
+Heading roles need source evidence: the PDF spans whose centre lies in the
+heading's box must spell its text. Only when they do not is a second test
+tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
+lies in the box and whose vertical overlap covers half the smaller height.
+Before table recovery, margin headings (top `y1 < 100`, bottom `y0 > 900`)
+that carry a leading or trailing decimal or Roman folio are grouped by folio
+kind, folio minus page index, top or bottom, band, font and size, whatever
+their title. A group on three or more pages becomes discarded running banners
+when some title, with digits and Roman numerals stripped, repeats on two
+pages. Bare folios join with an empty title. The group's page offset must also
+show elsewhere in the book, in one of two ways. One is a margin block outside
+the group with the same folio kind and offset that is a bare page number or
+carries a title the group does not use; front matter numbered apart therefore
+keeps its own proof. The other is group members on both the left and right
+halves of the page, as on facing pages. Another part of the same numbered
+series proves nothing, even when ODL typed it as a paragraph, gave it no span
+evidence or split it into another band or font size. So a one-sided Exercise N,
+Question N or Step N series stays a heading unless the book prints page numbers
+at the same offset; the residual is a series that alternates page halves, which
+geometry cannot tell from facing-page heads. Numbered slide titles with no
+repeated title also stay headings. A repeated literal title in a narrow margin band
+also establishes a running-banner family; alternating titles in that band
+require each rendered line to match an earlier or same-page body heading in
+larger type. Every discarded banner retains its former heading-level boundary
+without adding its text to ancestry. Both chunking paths clear that level and
+deeper levels, so removing a banner does not extend a chart label into later
+pages. This boundary behavior is part of chunker v11.
+Headings that start with a bullet glyph, numbered captions and widely
+separated, unbold diagram labels lose heading status while retaining literal
+text and geometry. PDF outline
 matches are protected; rotated pages and ambiguous source matches abstain.
 Source-confirmed outline roots become level 1 only when every root has a unique
 literal match. This ends stale front-matter ancestry while preserving real
@@ -637,7 +657,29 @@ parser caption and footnote text only. The chat agent reaches figures through
 passage text is not enough. Library books are the exception: the builder's transcribe
 stage describes each figure (what it visibly shows) into
 `library_figures.description` and the search text of the first chunk of the
-excerpt that lists it (decision 2026-09-20).
+excerpt that lists it (decision 2026-09-20). During the 2026-09-23 intake
+cleanup, book agents record each figure's printed label and caption, a
+one-sentence description, its printed credit and licence and a decorative flag
+in a `figures.json`, which `knowledge_base_pilot.apply_figure_notes` writes onto
+the corpus (bound to the corpus hash and covering every figure record once);
+`refresh-figures` carries the four fields over by figure id. It must not run on
+a repaired book and refuses one whose chunks carry source repairs: it rebuilds
+excerpts by grouping chunks on their section paths, so after path corrections it
+would renumber them. Figure changes on a repaired book go through
+`intake.py exclude-figures` and `apply_figure_notes` instead. The loader
+publishes them to `library_figures.label`, `description`, `credit` and
+`decorative`. Decorative figures add nothing to the search text; excluded
+figures keep their note there. `read_knowledge` lists the excerpt's figures
+after its text, leaving out decorative and excluded ones, so a model can pick
+one before capturing its page; the `figures:` ids that read, search and browse
+print leave the same figures out. In the intake cleanup, `intake.py
+figure-notes` applies a book's `figures.json` after `exclude-figures`, then
+rebuilds every chunk's search text (chunk text, excerpts and `content_hash`
+unchanged), so a figure-only cleanup republishes correct search text. It backs
+up the bound corpus first, and a rerun after an interrupted write recognises
+the applied corpus and records its receipt. After a publish, `intake.py`
+verification compares each live figure's notes and excluded flag, each
+excerpt's `figure_ids` and the book's `figure_exclusions` with the run.
 
 Standalone image uploads (`captionMode: standalone`, route `image_caption`) are
 still described once with the pinned vision model so the file is searchable.
@@ -715,8 +757,10 @@ is retained separately as historical evidence):
 
 - Unique short prose survives section boundaries and final tails. A tail
   containing only carried overlap is omitted. `CAPY_CHUNK_MIN_TOKENS` is removed.
-  Source-matched isolated decimal/Roman folios are classified as page numbers
-  only after font, location and page offset agree across at least three pages.
+  Source-matched isolated decimal/Roman folios, below every other line at the
+  page bottom or above every other line at the top, are classified as page
+  numbers only after font, location and page offset agree across at least
+  three pages.
 
 - **Frozen furniture.** The parser decides the running headers and footers on
   the block list *before* source-geometry table recovery and ships the texts
@@ -1029,7 +1073,8 @@ version, and `retire` drops a retained version's content rows.
   confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching every
   requested facet; hits fold into excerpts by best chunk, so `top_k` counts
   excerpts rather than chunks, each returning with a compact reviewed teaching
-  description and scope, roles, topics, pages, figure ids and the hit chunk.
+  description and scope, roles, topics, pages, figure ids (without decorative
+  or excluded figures) and the hit chunk.
   Non-teaching excerpts are excluded. Repeated identical hit text within one
   book is collapsed; similarity alone does not collapse different books.
   An empty result under a role filter carries the verified counts by role
@@ -1066,6 +1111,10 @@ version, and `retire` drops a retained version's content rows.
   `read_knowledge` includes the full reviewed synopsis on the first page and
   shows scope and source-context links. A link can be conditional on a
   particular exercise or claim, as explained by scope; it is not a prerequisite.
+  Every page ends with the excerpt's figures, one line each (id, label,
+  description, credit, ordered by page), read in one query that skips
+  decorative and excluded figures; a figure without a label or description
+  shows its id alone.
 - `provenance(excerpt_ids)`: one entry per source book (id, title, authors,
   edition, licence, licence url, source url, the book version read and the
   excerpt ids used), which is what a curated material stores and its
@@ -1116,7 +1165,11 @@ a topic whose id is a subject id is refused before any database work, naming
 the topic and the subject. The corpus identity a publish is refused on covers
 the parse, the embedding pin and each excerpt's tag outcome, so a retag or a
 topic rename over an unchanged parse publishes as the next version (the
-statistics books went to version 2 this way on 2026-09-19).
+statistics books went to version 2 this way on 2026-09-19). A book whose
+figures carry a book agent's notes (any record with `decorative`, which only
+`apply_figure_notes` writes) also covers each figure's label, description,
+credit, decorative and excluded values, so a figure-only cleanup republishes;
+every other book keeps the identity it had (decision 2026-09-23).
 Each book's publish upserts its topics, writes chunks, vectors, excerpts and
 figures, swaps the pointer, then drops unreferenced topics and reports
 `topics_dropped` in its receipt. A run without `captures.json` publishes its
@@ -1127,7 +1180,12 @@ gets its model-run receipts from each `models/<stage>/state.json` (the
 subjects that hold topics, with topic and excerpt counts. The loader owns
 additive schema updates. Applying the schema adds nullable
 `library_excerpts.retrieval` metadata to existing versions without replacing
-source data. NULL means the excerpt's scope has not been reviewed.
+source data. NULL means the excerpt's scope has not been reviewed. It also
+appends `library_figures.label`, `credit` (both default `''`) and `decorative`
+(default false) with `ADD COLUMN IF NOT EXISTS`. `publish` does not apply the
+schema, so run `schema` once against a library before publishing with a loader
+whose figure insert names those columns; a loader that still inserts the 17
+older values positionally keeps working against the migrated table.
 
 The local knowledge-base builder (`lab/knowledge/`, plan
 `artifacts/2026-09-19-knowledge-builder-plan.md`, agent instructions and
@@ -1167,7 +1225,8 @@ decided items stay decided and a rule change needs no new batch. Each returned
 figure is matched to the corpus figures on its page by printed label, else by
 order; the description lands on `library_figures.description` at publish and,
 as `[Figure <label>] <description>`, on the `indexed_text` of the first chunk
-of the excerpt that lists the figure, never on `text`. The tag stage then sends
+of the excerpt that lists the figure (unless it is decorative), never on
+`text`. The tag stage then sends
 the corrected excerpts text-only, eight per request with the candidate topics
 as id, label and aliases in the system prefix, thinking capped at 4,096 tokens
 in Batch; excerpts missing from a reply are re-sent singly live; evidence must
@@ -1230,7 +1289,10 @@ the live run.
 The existing-excerpt backfill also repairs readable extraction defects through
 `lab/knowledge/source-repair.md`. Sol emits exact chunk replacements tied to
 original corpus/text hashes and inspected page-image hashes, preserving the PDF,
-locators and old full notes. `enrich.py` validates and projects repaired excerpt
+IDs, pages, regions and old full notes. When asked, a `section_path` repair
+corrects a chunk's breadcrumb to the printed heading chain, supported by any
+inspected page of the book; an affected excerpt takes its first chunk's path,
+as the builder forms excerpts. `enrich.py` validates and projects repaired excerpt
 and indexed text before apply, which backs up the original corpus. The parent
 serializes import, reindexing and replacement publication, and verifies published
 chunk text. Saved unresolved issues from earlier Sol assignments remain in a

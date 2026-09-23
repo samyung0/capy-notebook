@@ -29,7 +29,9 @@ plus `base_corpus_sha256`, `source_pdf_path` and `source_repairs`. The corpus ha
 binds the exact original `corpus.json` bytes. Each repair names one existing chunk
 owned by an assigned excerpt. Hash the chunk's original UTF-8 text. Replace its
 complete text, keeping all unrelated content. Keep IDs, ordering, pages, regions,
-section paths, figure IDs and chunk membership unchanged. Split corrections over
+figure IDs and chunk membership unchanged. Keep section paths unchanged too,
+unless the assignment or the parent asks for path corrections; then correct
+each wrong path as a `section_path` repair (below). Split corrections over
 their actual source chunks instead of moving an entire multi-page excerpt into
 one chunk. Every changed chunk needs exact supporting page inspections.
 
@@ -59,12 +61,47 @@ one chunk. Every changed chunk needs exact supporting page inspections.
 }
 ```
 
-Repair kinds are `transcription`, `diagram_description`, or `extraction_duplicate`.
-The JSON above illustrates added fields, not a complete review. Include the usual
+Repair kinds are `transcription`, `diagram_description`, `extraction_duplicate`
+or `section_path`. The JSON above illustrates added fields, not a complete review. Include the usual
 book/source/base-tag hashes, full tags, provenance, reviewed IDs and receipts.
 Add a hash to the actual inspection record for every supporting page; retaining
 other older inspection records without that extra field is allowed. Reopen the
 saved image when making a new recovery judgment and record actual provenance.
+
+Correct a section path only when the assignment or the parent asks, as a
+`section_path` repair. A chunk's correct path is the chain of printed section
+headings in force where the chunk starts, taken from the book's heading
+hierarchy and its printed contents, joined by ` › ` like the chunker's paths
+(keep a book-title root when the book's correct paths carry one). Running heads,
+page numbers, list items, callout or box titles, captions, credits and glossary
+headwords are not path elements. Text that exists only in a path moves into the
+chunk text as a `transcription` repair.
+
+```json
+{
+  "excerpt_id": "existing-excerpt-id",
+  "chunk_id": "existing-chunk-id",
+  "original_text_sha256": "SHA256 of the chunk's current text",
+  "section_path": "2 Sleep Stages › 2.1 REM Sleep",
+  "kind": "section_path",
+  "reason": "Page 40 prints 2.1 REM Sleep under chapter 2; the parser took a running head.",
+  "pdf_pages": [7, 40]
+}
+```
+
+Kind `section_path` changes only the path: omit `text` or repeat the current
+text exactly. The other kinds may also carry `section_path`, so one entry fixes
+a chunk's text and path together; a chunk takes one entry. `pdf_pages` of a path
+change may be any page of the book that shows the correct path (the heading or
+a contents page), each bound by an inspection record; an entry that also changes
+text needs at least one of its chunk's pages. `enrich.py` keeps IDs, pages,
+regions and membership, records `original_section_path` in the chunk's repair
+provenance, rebuilds indexed text and the content hash, and gives an affected
+excerpt its first chunk's path, as the builder does when it forms excerpts.
+Figure records keep their parser paths. Each path-corrected excerpt still needs
+its tag and a `repair_assessment` record. Never run `refresh-figures` (the
+builder's figures stage) on a repaired book: it regroups excerpts by path and
+would renumber them, so it refuses any book whose chunks carry source repairs.
 
 Update affected full notes, evidence, roles and retrieval scope to match the
 repaired source. Remove obsolete missing-content warnings only for content

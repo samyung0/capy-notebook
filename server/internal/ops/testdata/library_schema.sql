@@ -72,6 +72,11 @@ CREATE TABLE IF NOT EXISTS library_figures (
   -- What the figure visibly shows, from the builder's transcribe stage; empty for the pilot books.
   description text NOT NULL DEFAULT '', PRIMARY KEY (content_id, id)
 );
+-- Book agents' figure notes: the printed label and caption, the printed credit
+-- and licence, and whether the record is decorative (header band, icon, ornament).
+ALTER TABLE library_figures ADD COLUMN IF NOT EXISTS label text NOT NULL DEFAULT '';
+ALTER TABLE library_figures ADD COLUMN IF NOT EXISTS credit text NOT NULL DEFAULT '';
+ALTER TABLE library_figures ADD COLUMN IF NOT EXISTS decorative boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS library_model_runs (
   book_id text NOT NULL, content_id text NOT NULL REFERENCES rag_contents, stage text NOT NULL,
   transport text NOT NULL, model text NOT NULL,

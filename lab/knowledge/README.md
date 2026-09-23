@@ -159,7 +159,8 @@ keep their decision. Figures: each returned figure is matched to the corpus
 figures on its page by printed label, else by order; the description is stored
 on the figure (`library_figures.description` at publish) and appended as
 `[Figure <label>] <description>` to the `indexed_text` of the first chunk of
-the excerpt that lists the figure, never to `text`. Each run writes
+the excerpt that lists the figure (not for decorative figures), never to
+`text`. Each run writes
 `<run>/transcribe-<timestamp>.json` (pages, aligned, changed, held,
 unaligned_short, figures described, usage); `transcribe.json` holds the held
 ledger. `--redo` reverts, discards the transcriptions and the ledger, archives

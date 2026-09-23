@@ -446,13 +446,42 @@ def corpora(manifest: dict, run: Path) -> list[dict]:
     return result
 
 
+# Written onto a figure record after parse (transcribe, book agents' figures.json);
+# refresh-figures carries them over by figure id. It refuses a repaired book.
+FIGURE_NOTES = {"label": str, "description": str, "credit": str, "decorative": bool}
+
+
 def refresh_figures(manifest: dict, run: Path) -> None:
-    for corpus in corpora(manifest, run):
+    """Rebuild figure records and excerpts from the parse; never on a repaired book.
+
+    build_excerpts regroups chunks by section path, so after enrich.py source
+    repairs (a corrected path above all) it would renumber the excerpts that
+    tags, notes and published IDs refer to.
+    """
+    books = corpora(manifest, run)
+    repaired = [
+        c["book"]["id"]
+        for c in books
+        if any(chunk.get("source_repairs") for chunk in c["chunks"])
+    ]
+    if repaired:
+        raise PilotError(
+            f"{', '.join(repaired)}: chunks carry source repairs; refresh-figures would "
+            "regroup and renumber the excerpts. Change figures without it (intake.py "
+            "exclude-figures, intake.py figure-notes)."
+        )
+    for corpus in books:
         path = run / "books" / corpus["book"]["id"]
         blocks = read_json(path / "parsed/content_list.json")
+        notes = {
+            f["id"]: {k: f[k] for k in FIGURE_NOTES if k in f}
+            for f in corpus["figures"]
+        }
         corpus["figures"] = figure_records(
             blocks, corpus["source_id"], corpus["book"].get("figure_exclusions", [])
         )
+        for figure in corpus["figures"]:
+            figure.update(notes.get(figure["id"], {}))
         corpus["excerpts"] = build_excerpts(
             corpus["chunks"], corpus["source_id"], corpus["figures"]
         )
@@ -480,6 +509,47 @@ def refresh_figures(manifest: dict, run: Path) -> None:
                 }
             )
         )
+
+
+def apply_figure_notes(corpus: dict, corpus_sha256: str, notes: dict) -> int:
+    """Write a book agent's figures.json onto a corpus's figure records, in
+    place; how many. `corpus_sha256` is the hash of the corpus.json read.
+
+    `notes` is {book_id, corpus_sha256, figures: [{figure_id, page, label,
+    description, credit, decorative}]}, written against that exact corpus.json
+    and covering each of its figure records once. Only the four note fields
+    change; the caller saves the corpus and refreshes its search text
+    (`transcribe.refresh`).
+    """
+    book_id = notes["book_id"]
+    if book_id != corpus["book"]["id"] or corpus_sha256 != notes["corpus_sha256"]:
+        raise PilotError(f"{book_id}: figures.json was written for another corpus")
+    figures = {f["id"]: f for f in corpus["figures"]}
+    fields = {"figure_id": str, "page": int, **FIGURE_NOTES}
+    entries = notes["figures"]
+    for entry in entries:
+        if (
+            not isinstance(entry, dict)
+            or set(entry) != set(fields)
+            or any(type(entry[k]) is not t for k, t in fields.items())
+        ):
+            raise PilotError(f"{book_id}: malformed figure note {entry!r}")
+    ids = [entry["figure_id"] for entry in entries]
+    if sorted(ids) != sorted(figures):
+        raise PilotError(
+            f"{book_id}: figures.json must name each corpus figure once "
+            f"(unknown {sorted(set(ids) - set(figures))[:5]}, "
+            f"missing {sorted(set(figures) - set(ids))[:5]}, "
+            f"repeated {len(ids) - len(set(ids))})"
+        )
+    for entry in entries:
+        if entry["page"] != figures[entry["figure_id"]]["page"]:
+            raise PilotError(
+                f"{book_id}: {entry['figure_id']} is not on page {entry['page']}"
+            )
+    for entry in entries:
+        figures[entry["figure_id"]].update({k: entry[k] for k in FIGURE_NOTES})
+    return len(entries)
 
 
 SCHEMA = """

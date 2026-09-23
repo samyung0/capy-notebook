@@ -92,8 +92,9 @@ def _folio(text: str) -> tuple[str, int] | None:
 def mark_page_numbers(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Classify isolated, source-matched folios with a repeated ordinal offset.
 
-    A short value alone is insufficient. It must sit below all body lines,
-    match PDF glyphs, and share font, location and page offset on three pages.
+    A short value alone is insufficient. It must sit below all body lines (or
+    above them in the top margin), match PDF glyphs, and share font, location
+    and page offset on three pages.
     """
     groups: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
     page_lines: dict[int, list[dict]] = {}
@@ -103,11 +104,12 @@ def mark_page_numbers(blocks: list[dict], document: pymupdf.Document) -> list[di
         if (
             block.get("type") != "text"
             or len(box) != 4
-            or box[1] <= 900
+            or not (box[1] > 900 or box[3] < 100)
             or folio is None
             or type(page_idx) is not int
         ):
             continue
+        top = box[3] < 100
         page = document[page_idx]
         if page.rotation:
             continue
@@ -145,7 +147,12 @@ def mark_page_numbers(blocks: list[dict], document: pymupdf.Document) -> list[di
             continue
         style = spans[0]
         if any(
-            other is not line and other["bbox"][3] > line["bbox"][1] - style["size"]
+            other is not line
+            and (
+                other["bbox"][1] < line["bbox"][3] + style["size"]
+                if top
+                else other["bbox"][3] > line["bbox"][1] - style["size"]
+            )
             for other in lines
         ):
             continue

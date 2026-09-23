@@ -12,6 +12,13 @@ The production decision records are:
   versionable raw results, machine specifications, artifact inventory, and
   supplemental measurements for the August 31 run.
 
+## Heading-role replay
+
+`replay_heading_roles.py` replays the working-tree `correct_roles` and
+`mark_page_numbers` against a baseline git revision on saved outputs and their
+PDFs, without the Java stage. The [parser v6 report](reports/2026-09-23-parser-v6-section-paths.md)
+describes its modes, the replay sets and what the replay cannot see.
+
 ## Local ODL repair verification
 
 `verify_odl_runtime.py` exercises an explicitly supplied loopback parser and

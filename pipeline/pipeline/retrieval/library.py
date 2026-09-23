@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS library_figures (
   -- What the figure visibly shows, from the builder's transcribe stage; empty for the pilot books.
   description text NOT NULL DEFAULT '', PRIMARY KEY (content_id, id)
 );
+-- Book agents' figure notes: the printed label and caption, the printed credit
+-- and licence, and whether the record is decorative (header band, icon, ornament).
+ALTER TABLE library_figures ADD COLUMN IF NOT EXISTS label text NOT NULL DEFAULT '';
+ALTER TABLE library_figures ADD COLUMN IF NOT EXISTS credit text NOT NULL DEFAULT '';
+ALTER TABLE library_figures ADD COLUMN IF NOT EXISTS decorative boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS library_model_runs (
   book_id text NOT NULL, content_id text NOT NULL REFERENCES rag_contents, stage text NOT NULL,
   transport text NOT NULL, model text NOT NULL,
@@ -329,6 +334,9 @@ class ExcerptRead:
     next_start: int | None
     first: int
     last: int
+    # The excerpt's figures a model may pick (id, label, description, credit);
+    # decorative and excluded ones are left out.
+    figures: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -354,13 +362,21 @@ def _validate_facets(
 
 
 async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
-    """Excerpts of the books' current versions only, by id."""
+    """Excerpts of the books' current versions only, by id. Their figure ids
+    leave out decorative and excluded figures, which a model never picks."""
     if not ids:
         return {}
     cur = await conn.execute(
         """
         SELECT e.id, e.book_id, b.title, e.section_path, e.roles, e.topic_ids,
-               e.confidence, e.synopsis, e.pages, e.figure_ids, e.chunk_ids, e.retrieval
+               e.confidence, e.synopsis, e.pages, e.chunk_ids, e.retrieval,
+               ARRAY(
+                 SELECT u.id FROM unnest(e.figure_ids) WITH ORDINALITY AS u(id, n)
+                 WHERE NOT EXISTS (
+                   SELECT 1 FROM library_figures f
+                   WHERE f.content_id = e.content_id AND f.id = u.id
+                     AND (f.excluded OR f.decorative))
+                 ORDER BY u.n) AS figure_ids
         FROM library_excerpts e
         JOIN rag_file_contents fc
           ON fc.content_id = e.content_id AND fc.workspace_id = %s
@@ -555,6 +571,21 @@ async def read_excerpt(
             (WORKSPACE, excerpt_id, start, count + 1),
         )
         rows = [dict(row) for row in await cur.fetchall()]
+        figures = []
+        if excerpt.figure_ids:
+            cur = await conn.execute(
+                """
+                SELECT f.id, f.label, f.description, f.credit
+                FROM rag_file_contents fc
+                JOIN library_figures f
+                  ON f.content_id = fc.content_id AND f.id = ANY(%s)
+                WHERE fc.file_id = %s AND fc.workspace_id = %s
+                  AND NOT f.excluded AND NOT f.decorative
+                ORDER BY f.page, f.block_index
+                """,
+                (excerpt.figure_ids, excerpt.book_id, WORKSPACE),
+            )
+            figures = [dict(row) for row in await cur.fetchall()]
     more = len(rows) > count
     rows = rows[:count]
     return ExcerptRead(
@@ -564,6 +595,7 @@ async def read_excerpt(
         next_start=rows[-1]["chunk_idx"] + 1 if more else None,
         first=int(bounds.get("first") or 0),
         last=int(bounds.get("last") or 0),
+        figures=figures,
     )
 
 

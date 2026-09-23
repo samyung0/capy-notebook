@@ -10,6 +10,7 @@ import argparse
 import copy
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -74,8 +75,39 @@ def assessment_ids(
     return covered
 
 
+def path_form(path) -> bool:
+    """The chunker's breadcrumb: printed headings joined by " › " (chunking._section_path).
+
+    Each heading is one trimmed line without a separator of its own; a wholly
+    empty path (a cover or front-matter chunk before any heading) is allowed.
+    """
+    return isinstance(path, str) and (
+        path == ""
+        or all(
+            part == part.strip() and len(part.splitlines()) == 1 and "›" not in part
+            for part in path.split(" › ")
+        )
+    )
+
+
+def model_name(provenance) -> str:
+    """The model an artifact names: `model`, else `actual_runtime_model`, else
+    `requested_model` (older Codex reviews); empty when it names none."""
+    if not isinstance(provenance, dict):
+        return ""
+    for key in ("model", "actual_runtime_model", "requested_model"):
+        name = str(provenance.get(key) or "").strip()
+        if name:
+            return name
+    return ""
+
+
 def repaired_corpus(corpus: dict, artifact: dict, base_sha256: str) -> dict:
-    """Project source-bound chunk repairs without changing frozen inputs."""
+    """Project source-bound chunk repairs without changing frozen inputs.
+
+    A repair may carry `section_path`, the corrected breadcrumb; kind
+    `section_path` changes only that locator. IDs, pages and membership stay.
+    """
     repairs = artifact.get("source_repairs", [])
     if not isinstance(repairs, list):
         raise ValueError("source_repairs must be a list")
@@ -100,7 +132,7 @@ def repaired_corpus(corpus: dict, artifact: dict, base_sha256: str) -> dict:
     projected = copy.deepcopy(corpus)
     chunks = {chunk["id"]: chunk for chunk in projected["chunks"]}
     excerpts = {excerpt["id"]: excerpt for excerpt in corpus["excerpts"]}
-    seen, affected, checked_pages = set(), set(), set()
+    seen, affected, moved, checked_pages = set(), set(), set(), set()
     inspections = artifact.get("inspection_records", [])
     for repair in repairs:
         if not isinstance(repair, dict):
@@ -116,22 +148,29 @@ def repaired_corpus(corpus: dict, artifact: dict, base_sha256: str) -> dict:
         ):
             raise ValueError("source repair must uniquely name an assigned chunk")
         chunk = chunks[chunk_id]
-        before = chunk["text"]
+        before, old_path = chunk["text"], chunk["section_path"]
         if hashlib.sha256(before.encode("utf-8")).hexdigest() != repair.get(
             "original_text_sha256"
         ):
             raise ValueError(f"source repair original text differs: {chunk_id}")
-        text, kind, pages = (
-            repair.get("text"),
-            repair.get("kind"),
-            repair.get("pdf_pages"),
-        )
+        kind, pages = repair.get("kind"), repair.get("pdf_pages")
+        text = repair.get("text", before if kind == "section_path" else None)
+        moves_path = "section_path" in repair
+        path = repair.get("section_path", old_path)
+        if kind == "section_path":
+            changes_text = False
+            valid = moves_path and text == before
+        else:
+            changes_text = True
+            valid = (
+                kind in {"transcription", "diagram_description", "extraction_duplicate"}
+                and isinstance(text, str)
+                and text != before
+                and (bool(text.strip()) or kind == "extraction_duplicate")
+            )
         if (
-            not isinstance(text, str)
-            or text == before
-            or (not text.strip() and kind != "extraction_duplicate")
-            or kind
-            not in {"transcription", "diagram_description", "extraction_duplicate"}
+            not valid
+            or (moves_path and (not path_form(path) or path == old_path))
             or not isinstance(repair.get("reason"), str)
             or not repair["reason"].strip()
             or not isinstance(pages, list)
@@ -143,7 +182,16 @@ def repaired_corpus(corpus: dict, artifact: dict, base_sha256: str) -> dict:
         if kind == "diagram_description" and "[Diagram description:" not in text:
             raise ValueError("diagram descriptions must be labelled in source text")
         chunk_pages = {region["page"] for region in chunk["regions"]}
-        if not set(pages) <= chunk_pages & set(excerpts[excerpt_id]["pages"]):
+        chunk_pages &= set(excerpts[excerpt_id]["pages"])
+        if moves_path:
+            # A printed heading or contents page anywhere in the book supports
+            # a path; a text change in the same repair still needs its chunk's page.
+            outside = any(
+                not 1 <= page <= corpus["book"]["pages"] for page in pages
+            ) or (changes_text and not chunk_pages & set(pages))
+        else:
+            outside = not set(pages) <= chunk_pages
+        if outside:
             raise ValueError(f"source repair page is outside its chunk: {chunk_id}")
         for page in pages:
             if page in checked_pages:
@@ -169,12 +217,20 @@ def repaired_corpus(corpus: dict, artifact: dict, base_sha256: str) -> dict:
             {
                 **repair,
                 "original_text": before,
+                **({"original_section_path": old_path} if moves_path else {}),
                 "model_provenance": artifact["model_provenance"],
             }
         )
-        chunk["text"] = text
+        chunk["text"], chunk["section_path"] = text, path
         seen.add(chunk_id)
         affected.add(excerpt_id)
+        if moves_path:
+            moved.add(excerpt_id)
+    # The builder's rule (knowledge_base_pilot.build_excerpts): an excerpt takes
+    # its first chunk's path, also when its chunks now disagree.
+    for excerpt in projected["excerpts"]:
+        if excerpt["id"] in moved:
+            excerpt["section_path"] = chunks[excerpt["chunk_ids"][0]]["section_path"]
     from transcribe import refresh
 
     refresh(projected)
@@ -204,8 +260,8 @@ def validate(run: Path, artifact: dict) -> tuple[dict, dict]:
     reviewed = artifact["tags"]
     if not reviewed or not set(reviewed) <= set(excerpts):
         raise ValueError("review must name existing excerpts in this book")
-    if not artifact.get("model_provenance"):
-        raise ValueError("review needs model provenance")
+    if not model_name(artifact.get("model_provenance")):
+        raise ValueError("review needs model provenance naming the model")
     inspections = artifact.get("inspection_records")
     if not isinstance(inspections, list) or not inspections:
         raise ValueError("review needs page-image inspection records")
@@ -310,7 +366,14 @@ def main() -> None:
         action="store_true",
         help="Finish the existing exact-artifact apply plan",
     )
+    parser.add_argument(
+        "--stage",
+        default="retrieval-review",
+        help="models/<stage> receipt this apply writes; a later cleanup names its own so the review's stays",
+    )
     args = parser.parse_args()
+    if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", args.stage):
+        parser.error("--stage must be a kebab-case directory name")
     if args.resume:
         if not args.apply:
             parser.error("--resume requires --apply")
@@ -342,13 +405,15 @@ def main() -> None:
             )
             (backup / "corpus.json").write_bytes(original)
             write(backup / "expected-corpus.json", corpus)
-        model_dir = args.run / "models/retrieval-review"
+        model_dir = args.run / "models" / args.stage
         write(
             backup / "expected-state.json",
             {
                 "status": "complete",
-                "transport": "codex-subagent",
-                "model": "gpt-5.6-sol",
+                "transport": artifact["model_provenance"].get(
+                    "transport", "codex-subagent"
+                ),
+                "model": model_name(artifact["model_provenance"]),
                 "model_provenance": artifact["model_provenance"],
                 "review_artifact": str(args.artifact.resolve()),
                 "artifact_sha256": digest,

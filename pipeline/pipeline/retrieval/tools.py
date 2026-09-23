@@ -867,6 +867,16 @@ def _excerpt_facets(excerpt: library.Excerpt) -> str:
     return " | ".join(parts)
 
 
+def _excerpt_figures(figures: list[dict[str, Any]]) -> str:
+    """One line per figure a model may pick; the id alone until it is labelled."""
+    lines = []
+    for figure in figures:
+        note = " — ".join(p for p in (figure["label"], figure["description"]) if p)
+        credit = f" (credit: {figure['credit']})" if figure["credit"] else ""
+        lines.append(f"- {figure['id']}" + (f": {note}" if note else "") + credit)
+    return "\n\nFigures:\n" + "\n".join(lines) if lines else ""
+
+
 def _excerpt_scope(excerpt: library.Excerpt) -> str:
     if excerpt.retrieval is None:
         return "Scope not reviewed. Check the source's applicability before using it."
@@ -1046,6 +1056,7 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
         + "\n\n"
         + body
+        + _excerpt_figures(read.figures)
         + tail
     )
 
