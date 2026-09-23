@@ -1442,6 +1442,29 @@ stays retained behind it. Nothing is pinned per environment.
    belongs to a broader role. Viewer mutation requests must fail before the
    application opens the admin pool.
 
+5. **Ligature keyword vectors (one-off, decision 2026-09-24).** After the
+   pipeline release that maps `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ` in `tokenize_for_search` is
+   live, rebuild the lexical vector of chunks indexed before it with
+   `pipeline/scripts/reindex_ligatures.py`. It rewrites only `search` on rows
+   whose `indexed_text` holds one of those characters and whose vector is
+   stale, prints `{"candidates", "stale"}` as JSON, and is safe to rerun: a
+   second run reports `"stale": 0`. Run `--dry-run` first each time.
+   - UAT and production: on the Coolify host, in that resource's retrieval
+     container, which already holds `DATABASE_URL`:
+     `docker exec retrieval-<resource-uuid> python pipeline/scripts/reindex_ligatures.py app --dry-run`,
+     then the same command without `--dry-run`.
+   - Local: from the repository root against the full-local database,
+     `uv run python pipeline/scripts/reindex_ligatures.py app`
+     (`DATABASE_URL` defaults to the compose database on `localhost:5432`).
+   - Shared library (§7.3): from the developer PC through the tunnel, with the
+     owner URL from `.env.local`,
+     `PGHOSTADDR=127.0.0.1 PGCONNECT_TIMEOUT=10 uv run --env-file .env.local python pipeline/scripts/reindex_ligatures.py library`.
+     It covers every stored book version. Also run `pilot` with
+     `DATABASE_URL` set to the builder's pilot database
+     (`data/knowledge-base/config.json`), since `publish` copies vectors from
+     there; otherwise a later publish from a run indexed before the mapping
+     brings the old vectors back.
+
 ---
 
 ## 9. Changing models in the registry

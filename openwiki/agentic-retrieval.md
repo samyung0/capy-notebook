@@ -881,6 +881,21 @@ hybrid search silently returns nothing for Chinese/Japanese/Korean. Changing
 a configuration or the detector is a `CHUNKER_VERSION` bump: rows indexed
 under another config do not match stemmed queries.
 
+The tokenizer also maps the typographic ligatures `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ`
+(U+FB00–U+FB06) to their letters (decision 2026-09-24). Postgres indexes them
+as written, so a PDF's `ﬁnd` or `eﬀect` never met a typed `find` or
+`effect`; on 2026-09-24, 21,168 non-reference chunks across the shared
+library's current and retained versions carried one. Only the lexical input
+changes; `text`, `indexed_text`, embeddings and `pipeline_identity` stay the
+same, so quotes and citations still match the printed PDF. Rows indexed
+before the mapping are rebuilt in place by
+`pipeline/scripts/reindex_ligatures.py` (`app` for `rag_chunks`, `library`
+for every stored version in `library_chunks`, `pilot` for the builder's pilot
+database the loader copies from; runbook §8) instead of a `CHUNKER_VERSION`
+bump, which would re-parse every donor and every library book. It rebuilds
+each row with its own `lang` configuration and keeps a reference list's empty
+vector.
+
 ### Donor reuse
 
 Before parsing, the worker hashes the uploaded bytes (`files.source_sha256`) by

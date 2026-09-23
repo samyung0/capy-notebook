@@ -473,6 +473,18 @@ def test_a_stray_cjk_character_does_not_shatter_the_latin_text():
     assert "H" not in tokens
 
 
+def test_printed_ligatures_meet_typed_letters():
+    """PDFs print 'ﬁ', 'ﬀ', 'ﬂ' as one character each, which Postgres indexes
+    as written; the index and a typed query have to agree on plain letters."""
+    indexed = tokenize_for_search("the eﬀect of ﬂow on ﬁnal 光合作用").split()
+    query = search_query_terms("effect flow final 光合作用")
+
+    assert set(query.all_of.split()) <= set(indexed)
+    assert "光合" in indexed and "合作" in indexed and "作用" in indexed
+    assert query.cjk_runs == 1
+    assert tokenize_for_search("ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ") == "ff fi fl ffi ffl st st"
+
+
 def test_query_terms_are_or_joined_for_websearch_tsquery():
     terms = search_query_terms("光合作用")
 

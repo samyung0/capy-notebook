@@ -1046,6 +1046,63 @@ async def test_cjk_is_retrievable_through_the_bigram_tokenizer(workspace):
     assert rows and rows[0]["text"].startswith("光合作用")
 
 
+async def test_ligature_vectors_written_before_the_mapping_are_rebuilt(workspace):
+    """PDFs print 'ﬀ' and 'ﬂ' as one character each and Postgres indexed them
+    as written, so 'effect flow' never reached the passage. The one-off
+    recompute rebuilds only those rows, keeps a reference list's empty vector
+    and the printed text, and a rerun finds nothing stale."""
+    import importlib.util
+    from pathlib import Path
+
+    import psycopg
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "reindex_ligatures.py"
+    spec = importlib.util.spec_from_file_location("reindex_ligatures", script)
+    reindex_ligatures = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reindex_ligatures)
+
+    file_id = workspace.add_file("fluid.txt")
+    printed = "The eﬀect of ﬂow on pressure"
+    await _write(workspace, file_id, ["Unrelated text", printed, "Ref ﬁnal list"])
+    with psycopg.connect(workspace.dsn) as conn:
+        # What the writers stored before the mapping, and a reference list.
+        conn.execute(
+            "UPDATE rag_chunks SET search = to_tsvector('english', indexed_text) WHERE id = %s",
+            (f"{file_id}_c1",),
+        )
+        conn.execute(
+            "UPDATE rag_chunks SET search = ''::tsvector WHERE id = %s",
+            (f"{file_id}_c2",),
+        )
+
+    async def top() -> str:
+        rows = await store.hybrid_search(
+            workspace_id=workspace.id,
+            vector=_unit_vector(999),
+            terms=search_query_terms("effect flow"),
+            file_ids=None,
+            candidates=10,
+        )
+        return rows[0]["text"]
+
+    assert await top() == "Unrelated text"
+
+    with psycopg.connect(workspace.dsn) as conn:
+        counts = [
+            reindex_ligatures.reindex(conn, "rag_chunks", dry_run=dry_run)["stale"]
+            for dry_run in (True, False, False)
+        ]
+    assert counts == [1, 1, 0]
+    assert await top() == printed
+    assert (
+        workspace.scalar(
+            "SELECT search = ''::tsvector FROM rag_chunks WHERE id = %s",
+            (f"{file_id}_c2",),
+        )
+        is True
+    )
+
+
 async def test_a_french_chunk_is_stemmed_and_destopped_in_french(workspace):
     """'english' on French text keeps 'les', 'des', 'du' as index terms and
     never matches 'plante' to 'plantes'. Each chunk is indexed with its own
