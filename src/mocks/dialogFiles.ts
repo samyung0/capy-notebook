@@ -73,6 +73,12 @@ export const dialogFiles = [
     kind: 'txt',
     name: 'Edit source error.txt',
   },
+  {
+    hasBytes: true,
+    id: 'mock-preview-text-load',
+    kind: 'txt',
+    name: 'Broken preview.txt',
+  },
 ] satisfies Array<Pick<SourceFile, 'id' | 'name' | 'kind' | 'hasBytes'>>;
 
 export function dialogSourceFile(id: string): SourceFile {

@@ -7,7 +7,6 @@ import {
   redirect,
 } from '@tanstack/react-router';
 import {
-  allFilesQuery,
   attemptQuery,
   attemptsQuery,
   billingQuery,
@@ -20,6 +19,7 @@ import {
   exploreFlashcardSetsQuery,
   exploreQuizzesQuery,
   exploreWorkspacesQuery,
+  fileQuery,
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
@@ -30,6 +30,8 @@ import {
   ownedFilesQuery,
   ownedMaterialsQuery,
   quizQuery,
+  recentFilesQuery,
+  recentMaterialsQuery,
   tasksQuery,
   usageQuery,
   workspaceQuery,
@@ -72,6 +74,12 @@ const authShellRoute = createRoute({
   component: AuthShellRoute,
   getParentRoute: () => rootRoute,
   id: 'auth-shell',
+  // Every signed-in page reads /me, which also carries the account banner's
+  // lifecycle. Starting it with the route, not when the shell chunk mounts,
+  // puts it in the first wave on every page.
+  loader: ({ context: { queryClient: qc } }) => {
+    qc.prefetchQuery(meQuery());
+  },
 });
 
 const page = <const T extends string>(
@@ -83,7 +91,16 @@ const page = <const T extends string>(
     component: lazyRouteComponent(importer),
     getParentRoute: () => authShellRoute,
     path,
-    ...(loader ? { loader } : {}),
+    // Discard whatever the loader returns: an expression-bodied
+    // `() => qc.prefetchQuery(...)` hands back the prefetch promise, and the
+    // router would then hold the whole branch, shell included, until it settles.
+    ...(loader
+      ? {
+          loader: (args: Parameters<Loader>[0]) => {
+            loader(args);
+          },
+        }
+      : {}),
   });
 
 const publicRoutes = [
@@ -98,8 +115,9 @@ const publicRoutes = [
     component: SharedQuizRoute,
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
-    loader: ({ context: { queryClient: qc }, params }) =>
-      qc.prefetchQuery(quizQuery(params.quizId)),
+    loader: ({ context: { queryClient: qc }, params }) => {
+      qc.prefetchQuery(quizQuery(params.quizId));
+    },
     path: '/share/quizzes/$quizId',
   }),
   createRoute({
@@ -139,9 +157,9 @@ const appRoutes = [
     component: lazyRouteComponent(() => import('@/routes/Dashboard')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(meQuery());
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(allFilesQuery());
+      qc.prefetchInfiniteQuery(recentFilesQuery());
+      qc.prefetchInfiniteQuery(recentMaterialsQuery());
       qc.prefetchQuery(canvasesQuery());
     },
     path: '/',
@@ -152,10 +170,12 @@ const appRoutes = [
     ({ context: { queryClient: qc } }) =>
       qc.prefetchQuery(workspacesQuery({ sort: 'created', tag: [] }))
   ),
+  // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
     getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc }, params }) => {
+    loaderDeps: ({ search }) => ({ file: search.file }),
+    loader: ({ context: { queryClient: qc }, deps, params }) => {
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
@@ -163,6 +183,10 @@ const appRoutes = [
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));
+      // The open file rides the first wave instead of waiting for the page to
+      // render. An open material is left out on purpose: its body is the
+      // document itself, and the heavy-document gate must see the list first.
+      if (deps.file) qc.prefetchQuery(fileQuery(deps.file));
     },
     path: '/workspaces/$workspaceId',
     staticData: { hideSidebar: true },
@@ -261,8 +285,9 @@ const appRoutes = [
     },
     component: lazyRouteComponent(() => import('@/routes/Tasks')),
     getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc } }) =>
-      qc.prefetchQuery(tasksQuery()),
+    loader: ({ context: { queryClient: qc } }) => {
+      qc.prefetchQuery(tasksQuery());
+    },
     path: '/tasks',
   }),
   ...(features.thinking
@@ -307,7 +332,6 @@ const appRoutes = [
     component: lazyRouteComponent(() => import('@/routes/Settings')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(meQuery());
       qc.prefetchQuery(modelsQuery('chat'));
       qc.prefetchQuery(modelsQuery('generate'));
       qc.prefetchQuery(billingQuery());

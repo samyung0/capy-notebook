@@ -129,11 +129,16 @@ func (a *api) getIngestSlots(ctx context.Context, _ *struct{}) (*ingestSlotsOutp
 }
 
 func (a *api) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
-	u, err := a.s.Me(ctx, userID(ctx))
+	uid := userID(ctx)
+	u, err := a.s.Me(ctx, uid)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &meOutput{Body: u}, nil
+	account, err := a.s.AccountAccess(ctx, uid)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &meOutput{Body: apimodel.User{User: u, Account: account}}, nil
 }
 
 func (a *api) updateMe(ctx context.Context, in *updateMeInput) (*meOutput, error) {

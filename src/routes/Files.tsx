@@ -24,7 +24,7 @@ import {
 } from '@/components/app/ListToolbar';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
@@ -448,9 +448,13 @@ function TrashTab({
       >
         <p>{m.trash_load_failed()}</p>
         <p className="t-meta">{error?.message}</p>
-        <Button onClick={() => refetch()} size="sm" variant="ghost-hover">
+        <ErrorAction
+          iconLeftClassName="me-1"
+          onClick={() => refetch()}
+          size="sm"
+        >
           {m.trash_retry()}
-        </Button>
+        </ErrorAction>
       </div>
     );
   }

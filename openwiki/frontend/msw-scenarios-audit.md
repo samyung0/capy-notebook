@@ -14,14 +14,13 @@ error policies, mutations, mock handlers, feature flags, and streaming events.
 ## Added coverage
 
 Use **User scenarios** in the lower-right corner of the MSW development app.
-Apply a scenario before opening its dialog or performing its action. The selected
-scenario survives links and reloads in the same tab. **Clear** removes the
-scenario override; it does not undo edits made to the in-memory mock database.
-A full reload recreates the database.
-
-The panel lists the concrete request and instructions for the new HTTP failures.
-**Clear cached responses when applying** exposes initial-load errors. Uncheck it
-to examine a failed background refresh with cached data still visible.
+The September 23 restructuring replaces fault toggles with one-click journeys.
+A button prepares the `ws_scenarios` fixtures, navigates, performs real form or
+editor actions, then waits for the owning application UI. **Run again** repeats
+setup; **Reset** clears dedicated fixtures and faults. Reload does not replay
+a submission. Temporary failures retire after rendering so explicit retries
+can succeed. Permanent permission/account scenarios survive reload until Reset.
+Pending import scenarios keep their polling response until Reset.
 
 | Area | Coverage |
 | --- | --- |
@@ -35,7 +34,7 @@ to examine a failed background refresh with cached data still visible.
 | Study | Quiz reads/edit/grading/submission/results; flashcard reads/progress save. |
 | Settings | Profile, model/key reads and writes, subscription/usage, checkout/portal, notification reads/preferences, integrations. A free-account checkout scenario exposes the payment action on the otherwise Pro seed. |
 | Feature-flagged pages | Read failures for Explore, Schedule, Tasks and Thinking. Existing VITE_FEATURE_* flags still control access. |
-| Global | Offline and reconnecting banners, initial vs cached read failure, root render and chunk-load probes. |
+| Global | Offline and reconnecting status previews; real route-not-found navigation. |
 
 The mock chat stream uses the current `block_start` / `block_delta` /
 `block_end` protocol so partial answers and tool results render while streaming.
@@ -44,17 +43,14 @@ The mock chat stream uses the current `block_start` / `block_delta` /
 
 In **Biology 101 → Chat → History**, each **OpenUI:** or **OpenUI failure:**
 conversation opens a saved preview immediately. The original plain-text cell
-answer remains available. In **User scenarios**, choose the matching OpenUI
-scenario, apply it, then send any message in a workspace's Chat tab to stream
-that fixture. The panel's **Biology 101** shortcut opens the seeded workspace.
+answer remains available. In **User scenarios**, click the matching OpenUI button. It opens the dedicated workspace Chat tab and
+sends a fixture prompt through the real composer.
 
 The fixtures cover prose/code/math and CJK text; tabs, steps, accordions and
 reveals; concept/metric cards, facts, tags and all callout styles; cited tables;
 bar, horizontal bar, line, area, pie, stacked and scatter charts; and a docked
 three-question block with choices and free text. **Slow stream / Stop** exposes
-progressive rendering and cancellation. Clear the scenario for the default
-overview response. These are fixed fixtures, so question submissions receive
-the selected fixture again until the scenario is changed or cleared.
+progressive rendering and cancellation. Reset the scenario for the default overview response. The launcher retires temporary overrides after the resulting response is visible.
 
 Failure previews include plain Markdown fallback, a partially recovered program,
 an invalid chart alongside a valid one, an unusable program, an empty answer,
@@ -79,8 +75,8 @@ its existing MSW auth bypass.
 Direct launchers reuse `OnboardingDialog`, `AddSourceDialog`,
 `SourceDetailsDialog`, `WorkspaceStatsDialog`, `TaskEditDialog`, the existing
 ownership-transfer confirmation, and `FileViewer`. These are the existing
-components with fixture data. File probes intentionally use missing bytes or
-failed local resources; they do not simulate a successful Office session.
+components with fixture data. Broken-file launchers use missing bytes or failed
+local resources. The separate Office save journeys open valid files before editing.
 
 ## Remaining product and mock gaps
 
@@ -88,7 +84,7 @@ These findings are observable with the new scenarios. They were not changed as
 part of adding development tools.
 
 - **Suppressed reads:** Dashboard workspace lists, search, notifications,
-  billing/usage, model selection, member roster and chat history have consumers
+  billing/usage, model selection, tag suggestions, member roster and chat history have consumers
   that opt out of boundaries and omit a local error state. Depending on cache
   state they can show empty, disabled or apparently healthy content. See
   `src/routes/Dashboard.tsx`, `src/components/app/TopInsetBar.tsx`,
@@ -101,27 +97,29 @@ part of adding development tools.
   `too_many_streams`. Server-shaped envelopes for these codes can reach generic
   error handling. The new scenarios preserve that envelope so this gap remains
   visible; the coded SSE fixtures separately reach the stream-specific UI.
-- **Suppressed writes:** PDF annotation writes, flashcard study progress,
+- **Suppressed writes:** Flashcard study progress,
   notification read operations and task updates have paths that suppress their
   errors. A request failure alone cannot create a missing error component.
-- **Source collaboration:** `src/mocks/collaboration.ts` is an in-page stand-in
-  for the sidecar: one Y.Doc per room with document and awareness fan-out to
-  every participant. It backs the Plate `mock` provider for notes and, through
-  `registerMockSourceProvider` in `src/features/files/sourceProvider.ts`, the
-  source editor for text files: `GET /api/files/{id}/source-session` seeds a
-  `source:<id>:epoch:1` room from the file's mock link and returns its Yjs state,
-  `POST /api/files/{id}/collaboration-token` answers `mock://collaboration`, and
-  a checkpoint rewrites the mock link so View shows the edit without changing
-  the file's revision. MSW skips durable browser draft reads and writes, since
-  those drafts would otherwise survive a reset of the mock database. Inbound updates
-  carry the receiving provider as Yjs origin, as Hocuspocus does. A room is
-  checkpointed and dropped with its last participant, including edits still
-  waiting for the editor's save debounce. Encoded checkpoints preserve Yjs
-  identities and versions when a room reopens. Rooms, checkpoints and links are
-  module state, so a reload reseeds them. Under MSW a missing mock registration throws rather than
-  opening a real socket. Office and binary kinds still answer 503 (no fixture
-  bytes), and handoff, epoch changes, recovery and local-draft conflicts are
-  not reproduced.
+- **Office export warning:** after a runtime export failure, a successful
+  subsequent export can leave the host warning visible because its local error
+  state is separate from the source checkpoint error. The draft remains
+  downloadable. See `src/features/files/useOfficeRuntime.ts`.
+- **Checkout rejection:** the checkout failure shows its toast but also rejects
+  an unhandled promise in the click handler. See `src/routes/Billing.tsx`.
+- **Source collaboration:** the in-page provider can fail the next checkpoint
+  and announce a new source epoch. Journeys wait for a successful open, make a
+  real edit, then trigger the failure. Failed saves keep the mounted editor;
+  replacement with pending edits enters the existing recovery UI. Dedicated
+  text and valid DOCX/XLSX/PPTX fixtures preserve encoded checkpoint identities
+  in session storage. Ordinary mock rooms remain in memory.
+- **Draft recovery:** explicit `mock-scenario-*` files use the existing draft
+  transaction code in `capy-source-drafts-msw-scenarios`. The seeded older
+  lineage opens through the real recovery logic, including Download draft and
+  Discard draft. Reset clears only dedicated scenario drafts. Browser tests
+  reload and read this database without replacing the storage functions.
+- **Note permissions:** removing edit capability after opening follows the
+  parent material guard and shows a static preview. The inner note-editor
+  permission message is not reachable through that path.
 - **Chaos peers:** the `collab-chaos` scenario ports
   `collaboration/scripts/chaos-peers.ts` into the page (`src/mocks/chaosPeers.ts`):
   three synthetic editors per open room join through the mock room, show
@@ -135,11 +133,11 @@ part of adding development tools.
   default import completion creates a PDF. This prevents realistic successful
   Office import coverage. The direct fixtures expose the error components.
 - **External systems:** real Clerk challenge/session behavior, Google/Microsoft
-  picker frames, B2 upload PUTs, events reconnection transport and Office workers
-  are not reproduced by these HTTP scenarios. The browser events stream is
+  picker frames, B2 upload PUTs, events reconnection transport and remote Office
+  workers are not reproduced by these scenarios. Office editing does run the
+  local native engine. The browser events stream is
   deliberately disabled in MSW; its reconnecting preview sets the cached status.
-- **PDF annotations:** successful annotation CRUD has no baseline MSW handlers;
-  the new user scenarios make read/write failures deterministic.
+- **PDF annotations:** baseline MSW handlers now persist annotation CRUD in memory. `annotations-load` shows a read-error toast with Retry; `annotations-save` shows the write warning while the PDF remains visible.
 - **Unreachable normal openers:** ownership transfer has no normal setter for
   its target, and `WorkspaceStatsDialog` and `TaskEditDialog` have no normal
   callers. The panel now opens them directly. Feature-flagged pages remain
@@ -148,8 +146,7 @@ part of adding development tools.
   Create includes 85 additional standalone study notes, and trash includes 87
   archived source files with restorable records and byte links. Both lists paginate
   at 40 items by default; the MSW trash endpoint honors `cursor`, `limit`, and
-  `workspaceId`. Trash dates use a rolling 30-day retention window. Scenario reset
-  changes handlers, not the database or local editor drafts; reload to reseed.
+  `workspaceId`. Trash dates use a rolling 30-day retention window. Scenario reset rebuilds its dedicated fixture rows; normal seed data remains.
 
 ## Validation
 
@@ -158,3 +155,31 @@ sign-in rejection, sign-up code verification and password reset. Unit checks
 cover scenario identifiers, state-only scenarios, auth stage isolation/reset,
 server-shaped errors, the real import/study endpoint paths, and chat warning/text/effect delivery through the production SSE parser. The repository
 frontend tests, TypeScript and formatting/lint checks are run for this change.
+
+## Application error journeys, 2026-09-23
+
+The artificial **Error containers** dialog and toast gallery have been removed.
+Page and panel failures come from actual route/query failures; text/Office
+warnings come from the source provider or runtime; Page not found uses the
+router's unmatched-URL fallback. Existing intentionally broken file/material
+rows still open ordinary Biology 101 URLs and survive reload.
+
+Office save journeys load valid files and native checkpoint state, edit through
+runtime controls, then fail a source checkpoint. The export journey arms a
+one-shot development fault at the real runtime export operation and invokes
+that operation by switching to View. The iframe stays mounted. These previews
+do not verify a remote Office worker or a live collaboration socket.
+
+Offline previews drive Query's online status, not `navigator.onLine`. Use
+`e2e/errors/error-surfaces.spec.ts` for browser network emulation and
+`workers/site/src/index.test.ts` for server-rendered public summary errors.
+Neither is equivalent to an MSW response override.
+
+`e2e/editor/scenario-journeys.spec.ts` checks one-click editor failures, retained
+edits, explicit page/form retry, draft download/discard/reload, Office export
+recovery, pending auth cancellation and note guard behavior.
+`e2e/editor/file-errors.spec.ts` covers preview retries and actual workspace
+launchers. Office fixture checkpoints are generated from the matching
+`e2e/fixtures/files/basic` files using BetterOffice's `seedOffice` helper.
+Regenerate with `pnpm exec tsx scripts/dev/seed-scenario-office.ts` after changing
+these fixtures or the BetterOffice pin.

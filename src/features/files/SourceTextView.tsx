@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import type { ViewableFile } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import { WarningBanner } from '@/components/banners/WarningBanner';
+import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { FileModeControl } from './FileModeControl';
 import { SourceTextEditor } from './SourceTextEditor';
@@ -97,26 +98,37 @@ export function SourceTextView({
         }
       />
       {source.error && (
-        <p className="px-3 py-2 text-tint-error-fg">
-          {source.error}
-          {source.doc && (
-            <Button onClick={downloadDraft} size="sm" variant="ghost-hover">
-              {m.source_edit_download_draft()}
-            </Button>
-          )}
-          {source.status === 'recovery' && (
-            <Button
-              disabled={source.discarding}
-              onClick={() => {
-                void source.discardDraft();
-              }}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.source_edit_discard_draft()}
-            </Button>
-          )}
-        </p>
+        <WarningBanner
+          action={
+            <>
+              {source.doc && (
+                <ErrorAction
+                  iconLeft="download"
+                  iconLeftClassName="me-1"
+                  onClick={downloadDraft}
+                  size="sm"
+                >
+                  {m.source_edit_download_draft()}
+                </ErrorAction>
+              )}
+              {source.status === 'recovery' && (
+                <ErrorAction
+                  disabled={source.discarding}
+                  iconLeft="trash"
+                  iconLeftClassName="me-1"
+                  onClick={() => {
+                    void source.discardDraft();
+                  }}
+                  size="sm"
+                >
+                  {m.source_edit_discard_draft()}
+                </ErrorAction>
+              )}
+            </>
+          }
+          icon="fileError"
+          message={source.error}
+        />
       )}
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (

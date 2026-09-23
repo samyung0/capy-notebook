@@ -505,6 +505,12 @@ Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
 [onboarding dialog](../src/features/auth/OnboardingDialog.tsx), and
 [name endpoint](../server/internal/httpapi/huma_account.go).
 
+`GET /api/me` carries the resolved lifecycle as `account` (state, plan,
+storage used and limit, grace and purge dates), which the account banner reads;
+there is no separate status endpoint. A locked account never sees that body:
+the middleware refuses every route, `/me` included, with the lock code, and the
+banner reads the code off the error.
+
 If the middleware cannot load account lifecycle state, authenticated requests
 fail closed with `503 account_state_unavailable`. Database failure is not
 treated as an active account and is distinct from a real `403` account lock.
@@ -691,6 +697,16 @@ not included. Trash targets retain their episode IDs. Actions use the existing
 per-item endpoints sequentially, stop at the first failure, and remove only
 successful items from the selection. The error toast explains the failed
 operation; remaining items stay selected for a manual retry.
+
+`GET /api/files` and `GET /api/materials` list what the caller owns by
+default: files and materials in their own workspaces plus their standalone
+materials, which is what Files and Create show. `scope=member` adds every
+workspace where the caller is an explicit member, under the workspace list's
+rule that a deleted or deletion-pending owner hides the workspace. Link or
+public workspaces the caller has only opened never appear, and neither do other
+users' standalone materials. The dashboard's Recent Files uses member scope and
+offers Rename/Properties/Delete only where the workspace's `capabilities` allow
+editing; a standalone material there is always the caller's own.
 
 Sources: [trash lifecycle](../server/internal/store/trash.go#L1),
 [trash routes](../server/internal/httpapi/huma_trash.go#L1),

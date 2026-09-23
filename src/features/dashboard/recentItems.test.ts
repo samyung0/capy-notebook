@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { MaterialRef, SourceFile, Workspace } from '@/api/types';
+import type { MaterialListItem, SourceFile, Workspace } from '@/api/types';
 import { mergeRecentItems } from './recentItems';
 
 const workspace = {
+  capabilities: { canEdit: true },
   id: 'ws_1',
   name: 'Biology',
 } as Workspace;
@@ -25,22 +26,23 @@ function file(id: string, addedAt: string, workspaceId = 'ws_1'): SourceFile {
 
 function material(
   id: string,
-  createdAt: string
-): { ref: MaterialRef; workspaceId: string; workspaceName: string } {
+  createdAt: string,
+  workspaceId = 'ws_1'
+): MaterialListItem {
   return {
-    ref: {
-      chapterId: null,
-      createdAt,
-      id,
-      maxDepth: 1,
-      nodeCount: 1,
-      position: 0,
-      sizeBytes: 1,
-      title: id,
-      type: 'note',
-    },
-    workspaceId: 'ws_1',
-    workspaceName: 'Biology',
+    chapterId: null,
+    chapterName: '',
+    createdAt,
+    id,
+    kind: 'note',
+    parentMaterialId: '',
+    parentTitle: '',
+    privacy: 'private',
+    sizeBytes: 1,
+    title: id,
+    updatedAt: createdAt,
+    workspaceId,
+    workspaceName: workspaceId ? 'Biology' : '',
   };
 }
 
@@ -70,5 +72,26 @@ describe('mergeRecentItems', () => {
       title: 'f_1.pdf',
       workspaceName: 'Biology',
     });
+  });
+
+  it('allows edits in editable workspaces and on standalone materials only', () => {
+    const viewer = {
+      capabilities: { canEdit: false },
+      id: 'ws_2',
+      name: 'Shared',
+    } as Workspace;
+    const items = mergeRecentItems(
+      [file('f_shared', '2026-04-01T00:00:00.000Z', 'ws_2')],
+      [
+        material('m_own', '2026-03-01T00:00:00.000Z'),
+        material('m_solo', '2026-02-01T00:00:00.000Z', ''),
+      ],
+      [workspace, viewer]
+    );
+    expect(items.map((item) => [item.id, item.canEdit])).toEqual([
+      ['f_shared', false],
+      ['m_own', true],
+      ['m_solo', true],
+    ]);
   });
 });

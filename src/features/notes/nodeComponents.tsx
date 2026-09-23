@@ -325,7 +325,7 @@ function CalloutIcon({ variant }: { variant: CalloutVariant }) {
     case 'success':
       return <EditorIcon className={className} name="circleCheck" />;
     case 'warning':
-      return <EditorIcon className={className} name="warning" />;
+      return <EditorIcon className={className} name="error" />;
     case 'danger':
       return <EditorIcon className={className} name="circleX" />;
     default:

@@ -119,23 +119,6 @@ export const RequestAccountDeletionResponse = zod.object({
 
 
 /**
- * @summary Resolved account lifecycle state
- */
-export const GetAccountStatusResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "deletionRequestedAt": zod.iso.datetime({"offset":true}).optional(),
-  "graceEndsAt": zod.iso.datetime({"offset":true}).optional(),
-  "planTier": zod.enum(['free', 'pro']),
-  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
-  "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
-  "storageLimitBytes": zod.int(),
-  "storageUsedBytes": zod.int(),
-  "suspendedReason": zod.string().optional(),
-  "userId": zod.string()
-})
-
-
-/**
  * @summary List attempts
  */
 export const ListAttemptsResponseItem = zod.object({
@@ -691,8 +674,9 @@ export const ExploreWorkspacesResponse = zod.array(ExploreWorkspacesResponseItem
 
 
 /**
- * @summary List the caller's files across owned workspaces
+ * @summary List files across the caller's owned or member workspaces
  */
+export const listOwnedFilesQueryScopeDefault = `owned`;
 export const listOwnedFilesQuerySortDefault = `added`;
 export const listOwnedFilesQueryDirDefault = `desc`;
 export const listOwnedFilesQueryLimitDefault = 40;
@@ -702,7 +686,8 @@ export const listOwnedFilesQueryLimitMax = 100;
 
 export const ListOwnedFilesQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated file kinds'),
-  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids the caller owns'),
+  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
+  "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the caller\'s workspaces; member: also every workspace they are a member of'),
   "sort": zod.enum(['added', 'name', 'size', 'kind']).default(listOwnedFilesQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedFilesQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedFilesQueryLimitMax).default(listOwnedFilesQueryLimitDefault),
@@ -1617,8 +1602,9 @@ export const UpdateLabelResponse = zod.object({
 
 
 /**
- * @summary List the caller's notes, quizzes and flashcard sets
+ * @summary List notes, quizzes and flashcard sets across the caller's owned or member workspaces
  */
+export const listOwnedMaterialsQueryScopeDefault = `owned`;
 export const listOwnedMaterialsQuerySortDefault = `updated`;
 export const listOwnedMaterialsQueryDirDefault = `desc`;
 export const listOwnedMaterialsQueryLimitDefault = 40;
@@ -1627,9 +1613,10 @@ export const listOwnedMaterialsQueryLimitMax = 100;
 
 
 export const ListOwnedMaterialsQueryParams = zod.object({
-  "kind": zod.string().optional().describe('Comma-separated kinds: note, quiz, flashcards'),
-  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids the caller owns'),
-  "location": zod.enum(['', 'workspace', 'embedded', 'standalone']).optional().describe('Where the material lives; empty means anywhere'),
+  "kind": zod.string().optional().describe('Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards'),
+  "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
+  "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere'),
+  "scope": zod.enum(['owned', 'member']).default(listOwnedMaterialsQueryScopeDefault).describe('owned: the caller\'s workspaces and standalone materials; member: also every workspace they are a member of'),
   "sort": zod.enum(['updated', 'created', 'title', 'kind']).default(listOwnedMaterialsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedMaterialsQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedMaterialsQueryLimitMax).default(listOwnedMaterialsQueryLimitDefault),
@@ -2137,6 +2124,18 @@ export const UpdateMaterialSharingResponse = zod.object({
  */
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "account": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deletionRequestedAt": zod.iso.datetime({"offset":true}).optional(),
+  "graceEndsAt": zod.iso.datetime({"offset":true}).optional(),
+  "planTier": zod.enum(['free', 'pro']),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
+  "storageLimitBytes": zod.int(),
+  "storageUsedBytes": zod.int(),
+  "suspendedReason": zod.string().optional(),
+  "userId": zod.string()
+}),
   "avatarIconId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
   "chatModel": zod.object({
@@ -2177,6 +2176,18 @@ export const UpdateMeBody = zod.object({
 
 export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "account": zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deletionRequestedAt": zod.iso.datetime({"offset":true}).optional(),
+  "graceEndsAt": zod.iso.datetime({"offset":true}).optional(),
+  "planTier": zod.enum(['free', 'pro']),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
+  "storageLimitBytes": zod.int(),
+  "storageUsedBytes": zod.int(),
+  "suspendedReason": zod.string().optional(),
+  "userId": zod.string()
+}),
   "avatarIconId": zod.string().optional(),
   "avatarUrl": zod.string().optional(),
   "chatModel": zod.object({

@@ -10,9 +10,18 @@ export interface SourceDraft {
   version: string;
 }
 
+// Only explicit recovery fixtures may use storage in MSW. They share the real
+// transaction code, but never the real account database.
+function mockDraft(fileId: string) {
+  return fileId.split(':').at(-1)?.startsWith('mock-scenario-') === true;
+}
+
 function openDrafts(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('capy-source-drafts', 2);
+    const request = indexedDB.open(
+      USE_MSW ? 'capy-source-drafts-msw-scenarios' : 'capy-source-drafts',
+      2
+    );
     request.onupgradeneeded = () => {
       const database = request.result;
       const store = database.createObjectStore('sessionDrafts', {
@@ -40,7 +49,7 @@ function openDrafts(): Promise<IDBDatabase> {
 
 export async function readSourceDrafts(fileId: string): Promise<SourceDraft[]> {
   // MSW resets its database on reload. A durable draft belongs to that old Y.Doc.
-  if (USE_MSW) return [];
+  if (USE_MSW && !mockDraft(fileId)) return [];
   const database = await openDrafts();
   try {
     return await new Promise((resolve, reject) => {
@@ -58,7 +67,7 @@ export async function readSourceDrafts(fileId: string): Promise<SourceDraft[]> {
 }
 
 export async function writeSourceDraft(draft: SourceDraft): Promise<void> {
-  if (USE_MSW) return;
+  if (USE_MSW && !mockDraft(draft.fileId)) return;
   const database = await openDrafts();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -75,15 +84,18 @@ export async function writeSourceDraft(draft: SourceDraft): Promise<void> {
 
 /** Remove only the exact snapshots included in an acknowledged checkpoint. */
 export async function clearSourceDrafts(
-  drafts: Pick<SourceDraft, 'id' | 'version'>[]
+  drafts: Pick<SourceDraft, 'id' | 'version' | 'fileId'>[]
 ): Promise<void> {
-  if (USE_MSW) return;
+  const eligible = USE_MSW
+    ? drafts.filter((draft) => mockDraft(draft.fileId))
+    : drafts;
+  if (!eligible.length) return;
   const database = await openDrafts();
   try {
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction('sessionDrafts', 'readwrite');
       const store = transaction.objectStore('sessionDrafts');
-      for (const draft of drafts) {
+      for (const draft of eligible) {
         const request = store.get(draft.id);
         request.onsuccess = () => {
           if (request.result?.version === draft.version) store.delete(draft.id);

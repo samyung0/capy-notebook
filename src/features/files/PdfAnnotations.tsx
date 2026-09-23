@@ -1,6 +1,7 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
+import { WarningBanner } from '@/components/banners/WarningBanner';
 import { m } from '@/i18n';
 import { PdfAnnotationToolbar, type PdfTool } from './PdfAnnotationToolbar';
 import {
@@ -44,7 +45,7 @@ export function PdfAnnotations({
     isPending,
     isSaving,
     unavailable,
-    isError,
+    writeError,
     canUndo,
     canRedo,
     undo,
@@ -421,12 +422,8 @@ export function PdfAnnotations({
           />,
           toolbar
         )}
-      {isError && (
-        <p className="px-3 py-2 text-sm text-tint-error-fg" role="alert">
-          {unavailable
-            ? m.pdf_annotations_failed()
-            : m.pdf_annotations_write_failed()}
-        </p>
+      {writeError && (
+        <WarningBanner message={m.pdf_annotations_write_failed()} />
       )}
       {pages.map((page) => {
         const number = Number(page.dataset.page),

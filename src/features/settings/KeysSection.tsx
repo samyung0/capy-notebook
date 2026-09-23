@@ -6,7 +6,7 @@ import {
   useUpsertLLMCredential,
 } from '@/api/hooks';
 import type { LLMCredentialProvider } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { providerLabel } from './ModelPicker';
@@ -106,15 +106,15 @@ export function KeysSection() {
               ? credentialError(error)
               : m.settings_llm_keys_load_failed()}
           </p>
-          <Button
+          <ErrorAction
+            iconLeftClassName="me-1"
             onClick={() => {
               void refetch();
             }}
             size="sm"
-            variant="ghost"
           >
             {m.error_action_retry()}
-          </Button>
+          </ErrorAction>
         </div>
       ) : null}
       <div className="mt-4 flex flex-col gap-5">

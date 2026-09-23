@@ -1585,10 +1585,12 @@ A curate turn builds materials instead of answering:
   Reading the library's subject list is part of that check, so a library that
   is down fails here rather than 30 seconds into the first tool call, and an
   empty list is a library that is not published rather than a turn that spends
-  its whole stall budget on empty results. The subject list (id, label,
-  aliases, tagged-excerpt count; about 600 tokens once a dozen subjects hold
-  books) is appended to the `browse_knowledge` description only, and
-  `search_knowledge` points at it. Topic ids are never in a description: the
+  its whole stall budget on empty results. The subject list is appended to
+  the `browse_knowledge` description only, as explicit subject browse calls
+  with tagged-excerpt counts. Labels and aliases are omitted. The tool and
+  parameter descriptions distinguish subject IDs from the returned `topic_id`
+  values accepted by `search_knowledge.topics` and `browse_knowledge.topic`.
+  Direct search can omit `topics`. Topic ids are never in a description: the
   model browses a subject to get them, and `browse_knowledge` remembers each
   subject's topics on the `ToolContext` for the turn, so a `search_knowledge`
   whose topic ids were browsed is validated from that cache and one whose ids
@@ -1767,7 +1769,10 @@ A curate turn builds materials instead of answering:
   shared tool schema, with no playground policy overrides. `--ledger` or the
   config's `ledger` field can seed the stored ledger from an earlier run.
   The page shows the requests, the todos with their state, the materials
-  and the turn's reads. Its tool prompt editor saves per-tool description
+  and the turn's reads. Each material entry opens a native dialog with its saved
+  content, quiz answer fields or flashcards, provenance and raw JSON. History
+  restoration loads the final saved materials as well as replaying events.
+  Its tool prompt editor saves per-tool description
   overrides in `tool_descriptions`; previews and model requests apply the same
   overrides while retaining argument schemas and the live `browse_knowledge`
   subject catalog. `run.json` records the offered `tool_schemas`. Late preview

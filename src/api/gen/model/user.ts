@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { AccountStatus } from './accountStatus.ts';
 import type { PlanTier } from './planTier.ts';
 import type { Ref } from './ref.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
@@ -11,6 +12,7 @@ import type { SubscriptionStatus } from './subscriptionStatus.ts';
 export interface User {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  account: AccountStatus;
   avatarIconId?: string;
   avatarUrl?: string;
   chatModel: Ref;

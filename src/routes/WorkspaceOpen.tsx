@@ -249,6 +249,7 @@ export default function WorkspaceOpen() {
   );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
+      {...addProps}
       beforeReplace={confirmViewerReplacement}
       contentClassName={layout === 'three' ? undefined : 'pt-2'}
       generating={generating}
@@ -321,9 +322,9 @@ export default function WorkspaceOpen() {
           item={openItem}
           leading={
             <>
-              <div className="mr-2 flex items-center gap-1 lg:mr-4">
+              <div className="mr-2 flex items-center gap-0 lg:mr-4">
                 <IconButton
-                  className="px-1 text-fg-muted hover:text-fg"
+                  className="p-1.25 text-fg-muted hover:text-fg"
                   icon="navigationBack"
                   iconClassName="-translate-y-px"
                   label={m.workspace_back_to()}
@@ -335,7 +336,7 @@ export default function WorkspaceOpen() {
                 {xl && (
                   <IconButton
                     aria-pressed={pinned}
-                    className="px-1 text-fg-muted hover:text-fg"
+                    className="p-1.25 text-fg-muted hover:text-fg"
                     icon="panelLeft"
                     iconClassName="-translate-y-px"
                     label={
@@ -406,7 +407,7 @@ export default function WorkspaceOpen() {
           <div className="relative min-h-0 flex-1">
             {viewer}
             {!toolsOpen && (
-              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 rounded-full border border-line bg-surface p-1 shadow-pop">
+              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 rounded-full border border-line bg-surface p-1 shadow-sm">
                 {panelTabs.map((t) => (
                   <Button
                     aria-label={tabLabel(t)}
@@ -474,8 +475,8 @@ export default function WorkspaceOpen() {
                   {filesPanel((actions) => (
                     <PanelTabRow
                       actions={actions}
+                      compact={false}
                       title={m.workspace_tab_files()}
-                      {...rowProps}
                       {...addProps}
                     />
                   ))}

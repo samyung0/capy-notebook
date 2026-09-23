@@ -3,12 +3,20 @@ import { redirectAfterAuth } from '@/features/auth/clerk';
 
 type Result = { error: { message: string } | null; status?: string };
 
+const requests = new Set<AbortController>();
+export function cancelMockAuthRequests() {
+  for (const request of requests) request.abort();
+}
+
 // Deliberately send no entered passwords, email addresses, codes or photos.
 // These local-only endpoints model outcomes, never an identity provider.
 export async function mockAuthAction(operation: string): Promise<Result> {
+  const controller = new AbortController();
+  requests.add(controller);
   try {
     const response = await fetch(`/__mock/auth/${operation}`, {
       method: 'POST',
+      signal: controller.signal,
     });
     if (!response.ok) throw new Error('Mock auth request failed');
     return await response.json();
@@ -16,6 +24,8 @@ export async function mockAuthAction(operation: string): Promise<Result> {
     return {
       error: { message: 'Unable to reach the mock authentication service.' },
     };
+  } finally {
+    requests.delete(controller);
   }
 }
 

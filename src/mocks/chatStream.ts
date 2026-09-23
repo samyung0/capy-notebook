@@ -135,17 +135,18 @@ export function mockChatStream(fixture?: ChatFixture) {
             }
           } finally {
             const result = fixtureResult(selected, content, stopped());
-            chatMessages.push({
-              ...mockChatModel,
-              ...result,
-              activity,
-              citations:
-                result.errorCode === 'response_flagged' ? [] : citations,
-              conversationId: current.id,
-              createdAt: new Date().toISOString(),
-              id: messageId,
-              role: 'assistant',
-            });
+            if (conversations.includes(current))
+              chatMessages.push({
+                ...mockChatModel,
+                ...result,
+                activity,
+                citations:
+                  result.errorCode === 'response_flagged' ? [] : citations,
+                conversationId: current.id,
+                createdAt: new Date().toISOString(),
+                id: messageId,
+                role: 'assistant',
+              });
             current.updatedAt = new Date().toISOString();
             if (!cancelled) controller.close();
           }

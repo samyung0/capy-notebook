@@ -840,15 +840,11 @@ async def load_library_catalog(ctx: ToolContext) -> None:
 
 
 def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
-    lines = []
-    for subject in catalog:
-        aliases = ", ".join(str(a) for a in (subject.get("aliases") or []))
-        lines.append(
-            f"- {subject['id']}: {subject['label']}"
-            + (f" (also: {aliases})" if aliases else "")
-            + f" — {int(subject.get('excerpts') or 0)} excerpts"
-        )
-    return "\n".join(lines)
+    return "\n".join(
+        f"- browse_knowledge({json.dumps({'subject': subject['id']})})"
+        f" ({int(subject.get('excerpts') or 0)} excerpts)"
+        for subject in catalog
+    )
 
 
 async def _unknown_topics(ctx: ToolContext, topics: list[str]) -> list[str]:
@@ -944,8 +940,9 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     unknown = await _unknown_topics(ctx, topics)
     if unknown:
         return _refused(
-            f"Unknown topic ids {unknown}. Topic ids come from browsing a subject "
-            "listed in the browse_knowledge description."
+            f"Unknown topic ids {unknown}. Use a subject browse call listed in "
+            "browse_knowledge and pass the returned topic_id values, not the "
+            "subject ID or label. Or omit topics for a direct search."
         )
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
@@ -977,11 +974,11 @@ def _subject_browse(result: dict[str, Any]) -> str:
     """One line per topic with its count; the topic ids are what search takes."""
     subject = result["subject"]
     topics = result["topics"]
-    head = f"{subject['id']}: {subject['label']} — {len(topics)} topics"
+    head = f"Subject {subject['id']!r}: {len(topics)} topics"
     if not topics:
         return f"{head}. The library holds no topic for this subject yet."
     lines = [
-        f"- {t['id']}: {t['label']}"
+        f"- topic_id={json.dumps(t['id'])}: {t['label']}"
         + (f" — {t['scope']}" if t.get("scope") else "")
         + f" ({int(t.get('excerpts') or 0)} excerpts)"
         for t in topics
@@ -990,8 +987,8 @@ def _subject_browse(result: dict[str, Any]) -> str:
         head
         + "\n"
         + "\n".join(lines)
-        + "\n\nBrowse a topic id next to see its excerpts by role and book, or "
-        "pass topic ids to search_knowledge."
+        + "\n\nUse these topic_id values in search_knowledge.topics to filter a "
+        "search, or in browse_knowledge.topic to see excerpts by role and book."
     )
 
 

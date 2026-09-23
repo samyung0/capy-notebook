@@ -26,6 +26,13 @@ Do not report the same failure through multiple surfaces.
 Queries stay fresh for five minutes by default. Notifications and workspace
 chapter, file, and material lists use five seconds and refetch on window focus
 when stale. The workspace list options also apply to route prefetches.
+Route loaders only prime the cache and never return the prefetch: a returned
+promise makes TanStack Router hold the whole matched branch, app shell
+included, until that one request settles, which serialized `/me` and the shell's
+other reads a round trip behind each page's first query. `page()` in
+`src/router.ts` discards any return value; hand-written routes use block
+bodies. The auth-shell route itself prefetches `/me`, so every page starts it in
+the first wave.
 File and material detail queries also use five seconds, but retain the global
 disabled focus refetching. Reopening stale details refreshes them; live material
 editing continues to receive content through Yjs.
@@ -156,33 +163,35 @@ message under the result card without the mutation toast.
 
 ## Development scenario panel
 
-Run the Vite development app with MSW enabled (the default, or
-`VITE_USE_MSW=true`). Open **User scenarios** in the lower-right corner, choose
-a scenario, and apply it. Applying first resets previous runtime overrides, so
-only one scenario is active. **Clear** restores the normal mock handlers.
+Run Vite with MSW enabled. Each **User scenarios** button prepares dedicated
+fixtures, opens the real application page or product dialog, performs the edit
+or submission, and injects its failure through MSW or the collaboration mock.
+There is no Apply step. The panel reports a setup failure if a required control
+or response cannot be reached. It does not render a replacement error component.
 
-The panel includes authentication page links and direct previews of the real
-onboarding, source import, statistics, task, ownership-transfer and file dialogs.
-Authentication forms use local mock operations in MSW; any locally valid input
-works unless the chosen scenario rejects that step. No credentials or photos
-are sent to Clerk. For code/reset errors, reach the relevant step before applying
-the failure.
+**Run again** starts the journey afresh. **Reset** closes its editor, clears its
+fixture drafts and temporary faults, and returns to Workspaces. Temporary faults
+are retired after the application renders their result, so the next explicit
+Save or Retry can succeed. Permanent permission/account states survive reload
+until Reset. Pending imports keep polling until Reset closes their dialog.
+Reload remembers the selected button but does not replay actions.
+Explicit source fixtures retain their checkpoint identities and epochs in
+session storage; their drafts use the real IndexedDB code in the separate
+`capy-source-drafts-msw-scenarios` database. Ordinary MSW source files continue
+to skip durable drafts.
 
-Scenarios survive page links and reloads in the same tab. **Clear** restores the
-normal handlers but does not undo mock database edits. Keep **Clear cached
-responses when applying** checked for initial-load failures; uncheck it to retain
-cached data during a failed refresh. The panel shows per-scenario usage hints.
+Actual onboarding, source import, workspace settings, task, and transfer dialogs
+remain available. Artificial error-container and toast galleries have been
+removed. File/material buttons open the normal workspace header and viewer;
+Page not found navigates to an unmatched application URL. Auth uses the local
+MSW shim and does not send entered credentials or photos to Clerk.
 
-The offline scenario drives TanStack Query's `onlineManager`. The reconnecting
-scenario sets the events-stream status cache because the real events connection
-is disabled in MSW. Clearing, changing scenario, or unmounting the panel restores
-these states. Boundary probes throw a regular render error or a chunk-load-shaped
-`TypeError`; use Retry/Reload afterward.
-
-The panel and auth mock alias are enabled only in MSW development. Production
-and `VITE_USE_MSW=false` continue using Clerk. See the
-[coverage audit](msw-scenarios-audit.md) for added paths and remaining cases where
-the product currently suppresses errors or transport mocks are incomplete.
+Offline and reconnecting buttons only preview application status. Real network
+loss requires Playwright browser offline emulation; public summary failures
+require the site worker tests. Feature-flagged pages keep their existing gates.
+When the application suppresses an error or a parent guard handles it first,
+the journey explains that behavior instead of inventing an inner error state.
+See the [coverage audit](msw-scenarios-audit.md) for those limits.
 
 ## Stable test selectors
 
@@ -245,3 +254,37 @@ Workspace invitations render in the auth main/Panel layout outside `AppShell`.
 `AuthGate` handles client authentication and preserves the invitation return URL.
 The ownership-transfer developer preview renders the shared confirmation alone.
 Workspace statistics are a settings tab, reachable from owner/editor card menus.
+
+File previews use `FileError` for Office, CSV/TSV, text/Markdown/JSON, image,
+audio and PDF failures. Manual retry refreshes signed links and restarts only
+the preview, even when the URL is unchanged. CSV/text retries retain their
+`SourceTextView` session. Office retry is view-only and reloads the source
+session, bytes and iframe. The Office iframe reports errors to the host,
+which owns error presentation; recoverable errors keep editors mounted.
+PDF annotation-load failures use `userToast` with Retry to refetch private marks
+without reloading the PDF. The file viewer reports the request failure even
+while PDF bytes are loading or the PDF cannot render. Repeated failures reuse one toast per file; recovery
+or closing the viewer dismisses it. Office/text recovery and PDF annotation
+write errors use `WarningBanner`, with recovery actions supplied through its
+optional action slot. Statistics and
+indexing tabs share an `ErrorState` panel with normalized copy and manual retry.
+
+Error actions use `ErrorAction` from `Button.tsx`: ghost-hover with the left
+Hugeicons refresh icon by default. Back, download, discard and toast navigation
+actions select their own semantic icon. File errors no longer override button
+radius or weight. User scenarios reaches these controls through application failures; the panel
+does not mount standalone error-container previews.
+
+User scenarios → Workspace files and materials opens real Biology 101 file or
+material URLs. Fixtures appear in the normal file tree and survive reloads;
+seeded material failures include load, decode and diagram-render errors.
+
+General error displays and warning banners default to `error` (`Alert02Icon`).
+The icon map no longer includes `warning` or imports `AlertCircleIcon`; warning
+toast/callout variants retain their colors and use the `error` glyph.
+`FileError` and `FileEmpty` use `fileError` (`FileExclamationPointIcon`). Office
+and source-text error/recovery banners explicitly request that icon through
+`WarningBanner`. `FileError` accepts an icon override: note edit-permission
+failures use `securityWarning`, while user-info and collaboration-service
+failures use `error`. Normalized network/offline and permission icons remain
+specific to their causes.

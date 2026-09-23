@@ -149,7 +149,7 @@ export const failureScenarios = [
     status: 403,
   },
   {
-    hint: 'Open workspace settings → Statistics.',
+    hint: 'Open workspace settings → Statistics or Indexing. The dummy Workspace statistics dialog also works.',
     id: 'workspace-stats',
     label: 'Workspace statistics 500',
     method: 'get',
@@ -341,6 +341,15 @@ export const failureScenarios = [
     label: 'Material metadata 500',
     method: 'patch',
     paths: ['/api/materials/:id/metadata'],
+    status: 500,
+  },
+  {
+    code: 'material_content_unreadable',
+    hint: 'Open a note or generated material to show the unreadable-content error.',
+    id: 'material-unreadable',
+    label: 'Material content unreadable 500',
+    method: 'get',
+    paths: ['/api/materials/:id'],
     status: 500,
   },
   {
@@ -677,7 +686,7 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Draw an annotation on a PDF. The current component suppresses write errors.',
+    hint: 'Open Cell structure.pdf in Biology 101, switch to Edit, then draw an annotation. The PDF stays visible with an inline warning.',
     id: 'annotations-save',
     label: 'PDF annotation save 500',
     method: 'post',

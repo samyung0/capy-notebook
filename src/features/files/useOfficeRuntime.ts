@@ -174,6 +174,16 @@ export function useOfficeRuntime({
     setError(config.error);
   }, [revision, mode, config.error]);
 
+  const retryView = () => {
+    if (mode !== 'view') return;
+    initializedFrame.current = -1;
+    setFrameLoaded(false);
+    setFrameGeneration((value) => value + 1);
+    setViewBytes(null);
+    setAnalysis(null);
+    setError(config.error);
+  };
+
   // View mode reads the published base plus the saved checkpoint, so a viewer
   // sees what was last saved rather than what was last published. The
   // checkpoint rides along only when it is ahead of the indexed one; the
@@ -199,7 +209,7 @@ export function useOfficeRuntime({
         if (!controller.signal.aborted) setError(toError(value).message);
       });
     return () => controller.abort();
-  }, [file.id, revision, mode, config.error, viewBytes]);
+  }, [file.id, revision, mode, config.error, viewBytes, frameGeneration]);
 
   useEffect(() => {
     if (!frameLoaded || initializedFrame.current === frameGeneration) return;
@@ -442,6 +452,7 @@ export function useOfficeRuntime({
     iframeUrl: config.url,
     mode,
     ready: mode === 'view' ? !!analysis : replicaReady,
+    retryView,
     save: checkpoint,
     saving: leaving || source.status === 'saving',
     setFrameLoaded,

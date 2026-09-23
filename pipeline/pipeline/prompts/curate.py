@@ -24,7 +24,7 @@ SYSTEM_PROMPT = """You are a study assistant who builds learning materials for t
 Work in this sequence:
 1. Before calling any tool, you MUST establish the learner's study scope, difficulty and material type from what they actually said, including earlier messages. Do not choose a level or material type for them. If any requirement is missing or unclear, you MUST ask a concise clarification and end this response without creating a ledger, searching or writing materials. For example, "I want to study cell biology" specifies the scope but leaves the level and material type unanswered. Keep the specific scope they asked for, such as Calculus, Differential Equations, or Differential Equations using scipy; do not narrow or broaden it. Difficulty depends on the subject: introductory aerodynamics can still be college level, while a manual may have no academic level. Material type includes a brief introduction, detailed or broad guide, focused study, quiz or practice exercises. If a user does not give clear requirements after the response, state what you propose up-front and let the user acknowledge. Reuse requirements already given in the conversation; do not ask again for established details.
 2. Look at the ledger. Reuse open todos that already cover the request. Otherwise use create_ledger to state the current requirements and goals, with one todo per material or section. Strings add todos; {"id": 0, "todo": "Replacement text"} adds or overwrites that ID. Unmentioned todos stay unchanged. A non-null body replaces the ledger body; null or omission preserves it. You may correct the plan again within this turn. Keep at most 10 unfinished todos across the conversation.
-3. Search directly using the requested scope, or browse a subject for topic IDs and coverage. browse_knowledge with a subject id lists topics with excerpt counts; with a topic id it lists excerpt coverage and roles. search_knowledge finds a specific idea or teaching role. If suitable sources are missing, acknowledge that gap without changing the learner's requirements.
+3. Search directly using the requested scope, or use a subject browse call listed in browse_knowledge to retrieve its topic IDs and excerpt counts. Subject IDs are only for browse_knowledge.subject. Use the returned topic_id values in search_knowledge.topics, or omit topics for a direct search. browse_knowledge with a topic ID lists excerpt coverage and roles. search_knowledge finds a specific idea or teaching role. If suitable sources are missing, acknowledge that gap without changing the learner's requirements.
 4. Select excerpts and read the evidence one open todo needs with read_knowledge. A search result is a selection aid, not a full read. Full retained excerpts from earlier successful material writes have been checked against the current library and count as already read while their text remains in context. Reuse them without searching or reading the same evidence again. An excerpt ID, ledger entry or compacted summary alone does not count; read again if the full retained text is gone or changed.
 5. As soon as one todo has enough evidence, write that material or section with create_material or edit_document. Pass the excerpt_ids used and the open todo ID it completes. Every supplied excerpt must have been read this turn or be retained as full text in context. Every successful write completes exactly one open todo. Search again only for a concrete missing requirement.
 6. Repeat reading and writing until the requested work is done. Do not keep exploring once the available evidence covers it, or invent unsupported content to close a todo.
@@ -83,15 +83,19 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "excerpt is one section of one book. `roles` filters what the excerpt "
         "teaches: introduction, formal, worked_example, exercise, summary, "
         "reference. Results include the hit passage and reviewed scope; full notes "
-        "are in read_knowledge. `topics` optionally takes known topic ids from "
-        "browse_knowledge; omit it for a direct or cross-topic search. Use this when you need a specific role or a specific "
+        "are in read_knowledge. `topics` takes the exact `topic_id` values returned "
+        'by browse_knowledge({"subject": "<subject ID>"}); omit it for a direct or '
+        "cross-topic search. Subject IDs and labels are not topic filters. "
+        "Use this when you need a specific role or a specific "
         "idea; an empty result under a role filter reports what those topics do "
         "hold by role, so relax the filter on purpose instead of rewording."
     ),
     "browse_knowledge": (
         "List what the library holds. Pass exactly one of `subject` or `topic`. "
-        "A subject id (from the list below) returns its topics with excerpt "
-        "counts, which is where topic ids come from. A topic id returns verified "
+        "Use a subject browse call listed below to retrieve its topics with "
+        "excerpt counts. Subject IDs are only for `subject`; use the returned "
+        "`topic_id` values in search_knowledge.topics or this tool's `topic`. "
+        "A topic ID returns verified "
         "excerpt counts by role and by book, then a page of excerpts with their "
         "section paths and reviewed scope. Browse when you need topic IDs or "
         "coverage; a direct search needs no preceding browse."

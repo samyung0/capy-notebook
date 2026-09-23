@@ -105,6 +105,43 @@ img.capture {
   font-size: 12px;
   color: #555;
 }
+.material-button {
+  display: block;
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 1px solid #eee;
+  background: transparent;
+  color: #246;
+  text-align: left;
+  cursor: pointer;
+}
+#materialDialog {
+  box-sizing: border-box;
+  width: min(900px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+}
+#materialDialog::backdrop {
+  background: #0006;
+}
+#materialDialog .row {
+  justify-content: space-between;
+}
+#materialTitle {
+  margin: 0;
+  font-size: 18px;
+}
+#materialContent {
+  max-height: none;
+  padding: 12px 0;
+  background: transparent;
+  font: inherit;
+  overflow-wrap: anywhere;
+}
 </style>
 <div class="wrap">
   <div class="col">
@@ -217,6 +254,18 @@ img.capture {
     <div class="runs" id="runs"></div>
   </div>
 </div>
+<dialog id="materialDialog" aria-labelledby="materialTitle">
+  <div class="row">
+    <h2 id="materialTitle"></h2>
+    <button id="closeMaterial" type="button" autofocus>Close</button>
+  </div>
+  <p id="materialMeta" class="muted"></p>
+  <pre id="materialContent"></pre>
+  <details>
+    <summary>Saved JSON</summary>
+    <pre id="materialJson"></pre>
+  </details>
+</dialog>
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
@@ -418,6 +467,7 @@ $('clear').onclick = () => {
   $('status').textContent = 'idle';
 };
 function resetPanels() {
+  if ($('materialDialog').open) $('materialDialog').close();
   for (const id of Object.keys(materials)) delete materials[id];
   renderMaterials();
   $('ledger').innerHTML = `<span class="muted">curate turns only</span>`;
@@ -539,10 +589,42 @@ function renderMaterials() {
     Object.values(materials)
       .map(
         (m) =>
-          `<div class="cite"><b>${esc(m.title)}</b> · ${esc(m.kind)} · ${esc(m.size)}<br><span class="muted">${esc(m.id)} · ${m.provenance ? esc(m.provenance.books.map((b) => b.title).join('; ')) : 'no provenance'}${m.edits && m.edits.length ? ` · ${m.edits.length} edits` : ''}</span></div>`
+          `<button type="button" class="material-button" data-material="${encodeURIComponent(m.id)}"><b>${esc(m.title)}</b> · ${esc(m.kind)} · ${esc(m.size)}<br><span class="muted">${esc(m.id)} · ${m.provenance ? esc(m.provenance.books.map((b) => b.title).join('; ')) : 'no provenance'}${m.edits && m.edits.length ? ` · ${m.edits.length} edits` : ''}</span></button>`
       )
       .join('') || `<span class="muted">none yet</span>`;
 }
+function materialText(m) {
+  const parts = m.content ? [m.content] : [];
+  for (const [i, q] of (m.questions || []).entries()) {
+    const lines = [`Question ${i + 1}: ${q.prompt ?? q.question ?? ''}`];
+    for (const [j, option] of (q.options || []).entries()) {
+      const value = typeof option === 'string' ? option : option?.value;
+      lines.push(`${String.fromCharCode(65 + j)}. ${value ?? JSON.stringify(option)}`);
+      if (option?.explanation) lines.push(`   ${option.explanation}`);
+    }
+    if (q.correct !== undefined) lines.push(`Correct (saved): ${JSON.stringify(q.correct)}`);
+    if (q.answer !== undefined) lines.push(`Answer (saved): ${JSON.stringify(q.answer)}`);
+    if (q.explanation) lines.push(`Explanation: ${q.explanation}`);
+    parts.push(lines.join('\n'));
+  }
+  for (const [i, card] of (m.cards || []).entries()) {
+    parts.push(`Card ${i + 1}\nFront: ${card.front}\nBack: ${card.back}`);
+  }
+  return parts.join('\n\n') || JSON.stringify(m, null, 2);
+}
+$('materials').onclick = (event) => {
+  const button = event.target.closest('button[data-material]');
+  if (!button) return;
+  const m = materials[decodeURIComponent(button.dataset.material)];
+  if (!m) return;
+  $('materialTitle').textContent = m.title;
+  $('materialMeta').textContent = [m.kind, m.size, m.id,
+    ...(m.provenance?.books || []).map((b) => b.title)].join(' · ');
+  $('materialContent').textContent = materialText(m);
+  $('materialJson').textContent = JSON.stringify(m, null, 2);
+  $('materialDialog').showModal();
+};
+$('closeMaterial').onclick = () => $('materialDialog').close();
 function configCard(label, c, prompt) {
   const cap = (c.tools || []).includes('capture_page')
     ? (c.capture && c.capture.mode) || 'pixels'
@@ -825,6 +907,8 @@ $('runs').onclick = async (e) => {
   configCard('run ' + id, run.config, run.system_prompt);
   card('', `<b>You</b><br>${esc(run.question)}`);
   for (const ev of run.events) render(ev, id);
+  for (const material of run.materials || []) materials[material.id] = material;
+  renderMaterials();
   if (run.answer) card('answer', esc(run.answer));
   $('status').textContent =
     `Conversation restored: ${history.length} messages${checkpoint ? ' · checkpoint' : ''}${ledger ? ' · ledger' : ''}`;

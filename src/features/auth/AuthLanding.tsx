@@ -125,13 +125,13 @@ function OAuthButtons({ onError }: { onError: (message: string) => void }) {
       <div className="mt-4 flex flex-wrap gap-2">
         <ButtonCard
           buttonText={'Google'}
-          className="w-full flex-1 gap-1.5! py-3"
+          className="w-full flex-1"
           componentBeforeText={<GoogleIcon className="h-6 w-6 shrink-0" />}
           onClick={() => void start('oauth_google')}
         />
         <ButtonCard
           buttonText={'Microsoft'}
-          className="w-full flex-1 gap-1.5! py-3"
+          className="w-full flex-1"
           componentBeforeText={<MicrosoftIcon className="h-6 w-6 shrink-0" />}
           onClick={() => void start('oauth_microsoft')}
         />

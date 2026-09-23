@@ -1,7 +1,8 @@
 import type { SourceFile } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
+import { ErrorAction } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
+import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useOnlineStatus } from '@/lib/online';
@@ -22,10 +23,12 @@ export function FileLoading({
 }
 
 export function FileError({
+  icon = 'fileError',
   title = m.error_file_title(),
   message = m.error_file_body(),
   onRetry,
 }: {
+  icon?: IconName;
   title?: string;
   message?: string;
   onRetry?: () => void;
@@ -34,12 +37,13 @@ export function FileError({
     <ErrorState
       action={
         onRetry && (
-          <Button className="font-bold" onClick={onRetry} variant="ghost-hover">
+          <ErrorAction iconLeftClassName="me-1.5" onClick={onRetry}>
             {m.error_action_retry()}
-          </Button>
+          </ErrorAction>
         )
       }
       description={message}
+      icon={icon}
       title={title}
       variant="panel"
     />
@@ -53,7 +57,14 @@ export function FileEmpty({
   title?: string;
   message?: string;
 }) {
-  return <ErrorState description={message} title={title} variant="panel" />;
+  return (
+    <ErrorState
+      description={message}
+      icon="fileError"
+      title={title}
+      variant="panel"
+    />
+  );
 }
 
 /** Shown under the file header when ingest did not write retrieval chunks. */

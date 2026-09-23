@@ -33,6 +33,7 @@ export function ContentActions({
   hoverClassName,
   leadingItems = [],
   menuIconContainerClassName,
+  hoverIconContainerClassName,
   onDeleted,
   onMove,
   propertiesClassName = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
@@ -51,6 +52,7 @@ export function ContentActions({
   hoverClassName?: string;
   leadingItems?: MenuItem[];
   menuIconContainerClassName?: string;
+  hoverIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (chapterId: string | null) => void;
   propertiesClassName?: string;
@@ -144,7 +146,11 @@ export function ContentActions({
   return (
     <>
       {!readOnly && display === 'hover' && (
-        <HoverActions className={hoverClassName} items={items} />
+        <HoverActions
+          className={hoverClassName}
+          iconContainerClassName={hoverIconContainerClassName}
+          items={items}
+        />
       )}
       {display === 'menu' && (
         <Menu

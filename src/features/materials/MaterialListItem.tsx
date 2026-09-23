@@ -35,14 +35,13 @@ export function MaterialListItem({
   return (
     <div
       className={cn(
-        'group relative flex items-center rounded-button hover:bg-surface-hover-bg',
-        generating ? 'pr-1' : 'pr-1.5',
+        'group relative flex items-center rounded-button px-2 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
         active && 'bg-surface-hover-bg'
       )}
     >
       <button
         className={cn(
-          'flex w-full items-center gap-2 rounded-button px-1.5 py-1.5 text-left',
+          'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
           active && 'font-bold'
         )}
         disabled={generating}
@@ -62,8 +61,8 @@ export function MaterialListItem({
           content={toMaterialActionTarget(matRef)}
           display="hover"
           hoverClassName={cn(
-            'absolute top-1/2 right-1 -translate-y-[calc(50%-2px)]',
-            active && 'from-surface-hover-bg'
+            'absolute top-1/2 right-1 -translate-y-1/2',
+            active && 'bg-surface-hover-bg'
           )}
           onDeleted={onDeleted}
           onMove={(chapterId) => onMove?.(chapterId)}

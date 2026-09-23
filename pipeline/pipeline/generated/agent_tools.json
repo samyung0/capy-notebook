@@ -213,7 +213,7 @@
     {
       "name": "search_knowledge",
       "version": 1,
-      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. `topics` takes topic ids from browsing a subject with browse_knowledge. An empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
+      "description": "Search the shared knowledge library of verified textbook excerpts. One excerpt is one section of one book. `roles` filters what the excerpt teaches: introduction, formal, worked_example, exercise, summary, reference. `topics` takes exact topic_id values returned by browse_knowledge with a subject. Subject IDs and labels are not topic filters; omit topics for a direct search. An empty result under a role filter reports what those topics do hold by role, so relax the filter on purpose instead of rewording.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -231,7 +231,7 @@
             "type": "array"
           },
           "topics": {
-            "description": "Topic ids to restrict to, from a subject browse.",
+            "description": "Exact topic_id values returned by browse_knowledge with a subject. Subject IDs and labels are not accepted. Omit for a direct search.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -259,7 +259,7 @@
     {
       "name": "browse_knowledge",
       "version": 1,
-      "description": "List what the library holds. Pass exactly one of subject or topic. A subject id returns its topics with excerpt counts, which is where topic ids come from; a topic id returns verified excerpt counts by role and by book, then a page of excerpts with their section paths and synopses. Browse the subject before the topic, and the topic before searching.",
+      "description": "List what the library holds. Pass exactly one of subject or topic. Use a subject browse call listed below to retrieve its topics with excerpt counts. Subject IDs are only for subject; use the returned topic_id values in search_knowledge.topics or this tool's topic. A topic ID returns verified excerpt counts by role and by book, then a page of excerpts with their section paths and reviewed scope. A direct search needs no preceding browse.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -269,12 +269,12 @@
             "type": "integer"
           },
           "subject": {
-            "description": "Subject id from the subject list.",
+            "description": "Subject ID from a browse call in this tool's description. Retrieves topic IDs for search_knowledge.topics.",
             "minLength": 1,
             "type": "string"
           },
           "topic": {
-            "description": "Topic id from a subject browse.",
+            "description": "Exact topic_id returned by a subject browse. Retrieves excerpt coverage; do not pass a subject ID or label.",
             "minLength": 1,
             "type": "string"
           }

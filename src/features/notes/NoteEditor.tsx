@@ -72,6 +72,7 @@ export function NoteEditor({
   if (!material.capabilities.canEdit) {
     return (
       <FileError
+        icon="securityWarning"
         message={m.editor_mode_unavailable_body()}
         title={m.editor_mode_unavailable()}
       />
@@ -177,11 +178,11 @@ function CollaborativeNoteEditor({
   }
 
   if (!meData || meIsError) {
-    return <FileError message={m.editor_user_info_failed()} />;
+    return <FileError icon="error" message={m.editor_user_info_failed()} />;
   }
 
   if (!collaborationTokenData || collaborationTokenIsError) {
-    return <FileError message={m.editor_collab_unavailable()} />;
+    return <FileError icon="error" message={m.editor_collab_unavailable()} />;
   }
 
   return (

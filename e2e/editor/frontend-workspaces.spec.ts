@@ -94,14 +94,13 @@ test('signup resend has a cooldown and a failed resend remains retryable', async
   await page.clock.fastForward(60_000);
   await expect(resend).toBeEnabled();
 
-  await page.getByText('User scenarios', { exact: true }).click();
-  await page
-    .getByRole('combobox', { exact: true, name: 'Scenario' })
-    .selectOption('auth-send-code');
-  await page
-    .getByRole('button', { exact: true, name: 'Apply scenario' })
-    .click();
-  await page.getByText('User scenarios', { exact: false }).first().click();
+  await page.evaluate(async () => {
+    const browserPath = '/src/mocks/browser.ts';
+    const scenarioPath = '/src/mocks/scenarios.ts';
+    const { worker } = await import(browserPath);
+    const { getMockScenarioHandlers } = await import(scenarioPath);
+    worker.use(...getMockScenarioHandlers('auth-send-code'));
+  });
   await resend.click();
   await expect(page.getByRole('alert')).toContainText(
     'Unable to send a verification code'

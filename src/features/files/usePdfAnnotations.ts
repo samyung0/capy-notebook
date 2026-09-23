@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { api } from '@/api/client';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
@@ -20,19 +25,24 @@ export function annotationBody(mark: PDFAnnotationBody): PDFAnnotationBody {
   };
 }
 
+/** Shared so the viewer can start the read as soon as it knows the file is a
+ * PDF, instead of after the whole document has downloaded and parsed. */
+export const pdfAnnotationsQuery = (fileId: string) =>
+  queryOptions({
+    meta: { errorBoundary: false },
+    queryFn: () => api.get<PDFAnnotation[]>(`/files/${fileId}/annotations`),
+    queryKey: ['file', fileId, 'private-annotations'],
+  });
+
 /** History records inverse operations, never snapshots of another tab's marks. */
 export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
   const cache = useQueryClient();
-  const queryKey = ['file', fileId, 'private-annotations'];
+  const { queryKey } = pdfAnnotationsQuery(fileId);
   const {
     data = [],
     isError: readError,
     isPending: loading,
-  } = useQuery({
-    meta: { errorBoundary: false },
-    queryFn: () => api.get<PDFAnnotation[]>(`/files/${fileId}/annotations`),
-    queryKey,
-  });
+  } = useQuery(pdfAnnotationsQuery(fileId));
   const history = useRef<{
     undo: AnnotationChanges[];
     redo: AnnotationChanges[];
@@ -131,7 +141,6 @@ export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
     canRedo: history.current.redo.length > 0,
     canUndo: history.current.undo.length > 0,
     change: run,
-    isError: readError || writeError,
     isPending: isPending || loading,
     isSaving: isPending,
     redo: () => {
@@ -143,5 +152,6 @@ export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
       const action = history.current.undo.at(-1);
       if (action) void run(action, 'undo');
     },
+    writeError,
   };
 }

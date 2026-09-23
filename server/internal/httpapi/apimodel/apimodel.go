@@ -52,6 +52,16 @@ func ToTagRefs(vs []TagInput) []store.TagRef {
 	return out
 }
 
+// User is the signed-in user plus their resolved account lifecycle. Every page
+// needs both, the second for the over-quota and deletion banners, so the
+// lifecycle rides on /me rather than costing each page load a second request.
+// Locked accounts never reach the body: the auth middleware answers every
+// route, /me included, with the lock code.
+type User struct {
+	store.User
+	Account store.AccountStatus `json:"account"`
+}
+
 /* ------------------------------------------------------------------ responses
 
    Pass-through contracts: the stored model already has the exact wire shape, so
@@ -59,7 +69,6 @@ func ToTagRefs(vs []TagInput) []store.TagRef {
    avoiding pointless copy structs. */
 
 type (
-	User               = store.User
 	Chapter            = store.Chapter
 	File               = store.File
 	FilePage           = store.FilePage

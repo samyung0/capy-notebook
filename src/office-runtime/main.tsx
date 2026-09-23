@@ -70,7 +70,6 @@ function OfficeRuntime() {
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [citation, setCitation] = useState<OfficeCitation | null>(null);
   const [mode, setMode] = useState<OfficeMode>('view');
-  const [error, setError] = useState<string | null>(null);
   const revisionRef = useRef<number | null>(null);
   const epochRef = useRef<number | null>(null);
   const replicaRef = useRef<OfficeReplica | null>(null);
@@ -158,6 +157,15 @@ function OfficeRuntime() {
   );
 
   useEffect(() => {
+    let failScenarioExport = false;
+    const armScenarioExport = () => {
+      failScenarioExport = true;
+    };
+    if (import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false')
+      window.addEventListener(
+        'capy-scenario-export-failure',
+        armScenarioExport
+      );
     const receive = (event: MessageEvent<unknown>) => {
       if (
         event.source !== window.parent ||
@@ -183,7 +191,6 @@ function OfficeRuntime() {
         revisionRef.current = message.revision;
         epochRef.current = message.collaboration?.epoch ?? null;
         setCanEdit(message.canEdit);
-        setError(null);
         setMode(nextMode);
         setCitation(nextMode === 'view' ? (message.citation ?? null) : null);
         const bytes =
@@ -252,6 +259,12 @@ function OfficeRuntime() {
       ) {
         await flush();
         const revision = revisionRef.current;
+        if (failScenarioExport) {
+          failScenarioExport = false;
+          throw new Error(
+            'The document could not be exported. Your edits are still here.'
+          );
+        }
         void exporterRef
           .current()
           .then((exported) => {
@@ -281,6 +294,10 @@ function OfficeRuntime() {
       window.removeEventListener('pointerup', finishPointer);
       window.removeEventListener('pointercancel', finishPointer);
       window.removeEventListener('message', receive);
+      window.removeEventListener(
+        'capy-scenario-export-failure',
+        armScenarioExport
+      );
       unsubscribeRef.current?.();
     };
   }, []);
@@ -289,7 +306,6 @@ function OfficeRuntime() {
   const reportError = useCallback(
     (value: Error) => {
       if (runtimeRevision === undefined) return;
-      setError(value.message);
       post({
         message: value.message,
         revision: runtimeRevision,
@@ -310,12 +326,6 @@ function OfficeRuntime() {
     return (
       <div className="office-runtime-state">
         {m.files_office_runtime_loading_file()}
-      </div>
-    );
-  if (error)
-    return (
-      <div className="office-runtime-state">
-        {m.files_office_runtime_open_failed()}
       </div>
     );
 

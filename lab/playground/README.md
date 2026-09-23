@@ -89,6 +89,12 @@ the materials themselves are written as
 `local/runs/<id>/materials/<id>.json`.
 `local/` is git-ignored; `configs/` is committed so config changes are reviewable.
 
+Each entry in the right-hand Materials panel opens a dialog with the saved note,
+quiz questions/options/answer fields, or flashcards. The dialog also exposes the
+original saved JSON and provenance. This works during a run and after restoring
+one from history. Answer fields are shown as saved, without guessing whether a
+legacy numeric answer is zero-based or one-based. Use Close or Escape to return.
+
 ## Config
 
 Fields absent from a config take the defaults in `DEFAULT_CONFIG`
@@ -128,6 +134,13 @@ with the rendered box as its region.
 
 ## Curate mode
 
+Select the `curate` preset to load the saved curate prompt, tool list and caps.
+The Curate mode checkbox changes the mode and adds its tools while preserving
+an explicit custom `system_prompt`. Library tools require the header to show a
+configured library. The local review launcher on port 18766 now provides both
+the read-only frozen workspace and the read-only shared library, with a local
+copy of the saved `curate` preset alongside its workspace presets.
+
 `curate: true` runs the production curate loop (`configs/curate.json`; its
 `question` field prefills the question box). The other config, `configs/chat.json`,
 is ordinary chat with the production prompt, tools and caps against a UAT
@@ -138,6 +151,12 @@ library tools and `create_ledger`, no planning ceiling, and the curate caps from
 `limits.tools_per_turn` and `limits.stall_responses`. The consolidated `curate`
 preset uses the application prompt with four tools per response, 160 per turn
 and five responses without progress. It retains GLM high through Tencent.
+
+The initial `browse_knowledge` catalog shows explicit subject browse calls,
+such as `browse_knowledge({"subject": "general-biology"})`, with excerpt counts.
+It omits subject aliases and the full topic list. Each subject call returns
+`topic_id` values for `search_knowledge.topics` or `browse_knowledge.topic`.
+Direct searches can omit `topics` entirely.
 The answer is plain prose with no citations, and the page shows the ledger's
 requests, its todos with their state, its materials and the turn's reads beside
 the runs list. The config's

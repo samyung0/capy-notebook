@@ -90,8 +90,10 @@ function InviteContent() {
             </Button>
             <Button
               disabled={acceptIsPending || !token}
+              iconLeft={retryError ? 'refresh' : undefined}
+              iconLeftClassName="me-1"
               onClick={() => accept(token)}
-              variant="accent"
+              variant={retryError ? 'ghost-hover' : 'accent'}
             >
               {acceptIsPending
                 ? m.invite_accepting()

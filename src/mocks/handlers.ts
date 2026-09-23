@@ -51,6 +51,7 @@ import { mockChatStream } from './chatStream';
 import { sourceRoom, sourceRoomName, sourceRoomState } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
+import { scenarioSourceSession } from './scenarioFixtures';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
 function listParams(href: string) {
@@ -76,12 +77,18 @@ function sortBy<T>(key: (row: T) => string | number, asc: boolean) {
 }
 
 import { dialogFiles } from './dialogFiles';
+import { errorMaterials } from './errorMaterials';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
 
 /** Map a material's storage kind to the left-panel ref type. */
 const refType = (kind: Material['kind']): MaterialRefType => kind;
 
 const latency = () => delay(1000 + Math.random() * 220);
+/** /me carries the account lifecycle, as the server's does. */
+const meBody = () => ({
+  ...db.user,
+  account: { ...db.accountStatus, userId: db.user.id },
+});
 const GENERATE_KINDS: GenerateOptions['kind'][] = [
   'flashcards',
   'quiz',
@@ -187,7 +194,11 @@ const SOURCE_EPOCH = 1;
 /** Text sources get a live mock session: the room is seeded from the file's
  * mock link, so its Yjs state is what the sidecar would hand out. Office and
  * binary kinds have no fixture bytes, so they answer 503 like `dialogFiles`. */
-function mockSourceSession(fileId: string): SourceSession | null {
+async function mockSourceSession(
+  fileId: string
+): Promise<SourceSession | null> {
+  const scenario = await scenarioSourceSession(fileId);
+  if (scenario) return scenario;
   const file = db.files.find((row) => row.id === fileId);
   const link = db.fileLinks[fileId];
   if (!(file && link?.url.startsWith('data:text/plain'))) return null;
@@ -438,6 +449,20 @@ function trashMaterial(id: string, kind?: string) {
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+/** Clear only state created by the dedicated User scenarios workspace. */
+export function resetScenarioHandlerState(workspaceId: string) {
+  for (const rows of [mockWorkspaceMembers, mockWorkspaceInvites]) {
+    for (let i = rows.length - 1; i >= 0; i--)
+      if (rows[i].workspaceId === workspaceId) rows.splice(i, 1);
+  }
+  for (const id of Object.keys(pdfAnnotations))
+    if (id.startsWith('mock-scenario-')) delete pdfAnnotations[id];
+  for (const key of sourceImportResponses.keys())
+    if (key.startsWith(`${workspaceId}:`)) sourceImportResponses.delete(key);
+  for (const [id, job] of sourceImports)
+    if (job.workspaceId === workspaceId) sourceImports.delete(id);
+}
+
 export const handlers = [
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
@@ -501,14 +526,14 @@ export const handlers = [
     '/__mock/preview/unavailable',
     () => new HttpResponse(null, { status: 503 })
   ),
-  http.get('/api/files/:id/source-session', ({ params }) => {
+  http.get('/api/files/:id/source-session', async ({ params }) => {
     if (dialogFiles.some((file) => file.id === params.id)) {
       return HttpResponse.json(
         { detail: 'Mock source session unavailable.', status: 503 },
         { status: 503 }
       );
     }
-    const session = mockSourceSession(String(params.id));
+    const session = await mockSourceSession(String(params.id));
     return session
       ? HttpResponse.json(session)
       : HttpResponse.json(
@@ -516,8 +541,8 @@ export const handlers = [
           { status: 503 }
         );
   }),
-  http.post('/api/files/:id/collaboration-token', ({ params }) => {
-    const session = mockSourceSession(String(params.id));
+  http.post('/api/files/:id/collaboration-token', async ({ params }) => {
+    const session = await mockSourceSession(String(params.id));
     if (!session) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json(
       {
@@ -540,13 +565,7 @@ export const handlers = [
   }),
 
   /* ---------------- me ---------------- */
-  http.get('/api/me', async () => HttpResponse.json(db.user)),
-  http.get('/api/account/status', async () =>
-    HttpResponse.json({
-      ...db.accountStatus,
-      userId: db.user.id,
-    })
-  ),
+  http.get('/api/me', async () => HttpResponse.json(meBody())),
   http.get('/api/account/deletion', async () => {
     const toDestroy = db.workspaces.filter((ws) => ws.role === 'owner');
     return HttpResponse.json({
@@ -594,7 +613,7 @@ export const handlers = [
       db.user.avatarIconId = body.avatarIconId;
       db.user.avatarUrl = `/icons/${body.avatarIconId}.svg`;
     }
-    return HttpResponse.json(db.user);
+    return HttpResponse.json(meBody());
   }),
   http.patch('/api/me/locale', async ({ request }) => {
     const body = (await request.json()) as { locale?: string };
@@ -1573,20 +1592,21 @@ export const handlers = [
   }),
   /* ---------------- study materials ---------------- */
   http.get('/api/materials', async ({ request }) => {
-    const { asc, limit, list, offset, param, sort } = listParams(request.url);
+    const { asc, limit, list, offset, sort } = listParams(request.url);
     const kinds = list('kind');
     const wsIds = list('workspaceId');
-    const location = param('location');
+    const locations = list('location');
     const allowed = kinds.length ? kinds : ['note', 'quiz', 'flashcards'];
     const rows = db.materials
       .filter((mt) => {
         if (!allowed.includes(mt.kind)) return false;
         if (wsIds.length && !wsIds.includes(mt.workspaceId)) return false;
-        const embedded = !!mt.parentMaterialId;
-        if (location === 'embedded') return embedded;
-        if (location === 'workspace') return !!mt.workspaceId && !embedded;
-        if (location === 'standalone') return !mt.workspaceId && !embedded;
-        return true;
+        const location = mt.parentMaterialId
+          ? 'embedded'
+          : mt.workspaceId
+            ? 'workspace'
+            : 'standalone';
+        return !locations.length || locations.includes(location);
       })
       .sort(
         sortBy(
@@ -1733,6 +1753,20 @@ export const handlers = [
     return HttpResponse.json(mt, { status: 201 });
   }),
   http.get('/api/materials/:id', async ({ params }) => {
+    const fixture = errorMaterials.find((item) => item.id === params.id);
+    if (fixture?.failure) {
+      return HttpResponse.json(
+        {
+          detail: 'Mock material could not be loaded.',
+          status: 500,
+          ...(fixture.failure === 'unreadable'
+            ? { errors: [{ message: 'material_content_unreadable' }] }
+            : {}),
+        },
+        { status: 500 }
+      );
+    }
+
     await hydrateEditorState(String(params.id));
     const mt = db.materials.find((x) => x.id === params.id);
     return mt ? HttpResponse.json(mt) : new HttpResponse(null, { status: 404 });

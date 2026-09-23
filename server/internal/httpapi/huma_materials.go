@@ -39,9 +39,10 @@ type createStandaloneMaterialInput struct {
 	Body apimodel.CreateMaterialReq
 }
 type materialsListInput struct {
-	Kind        string `query:"kind" doc:"Comma-separated kinds: note, quiz, flashcards"`
-	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids the caller owns"`
-	Location    string `query:"location" enum:",workspace,embedded,standalone" doc:"Where the material lives; empty means anywhere"`
+	Kind        string `query:"kind" doc:"Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards"`
+	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
+	Location    string `query:"location" doc:"Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere"`
+	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"`
 	Sort        string `query:"sort" enum:"updated,created,title,kind" default:"updated"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
@@ -77,7 +78,7 @@ type updateMaterialSharingInput struct {
 
 func (a *api) registerMaterials(api huma.API) {
 	const tag = "Materials"
-	reg(api, http.MethodGet, "/api/materials", "listOwnedMaterials", tag, "List the caller's notes, quizzes and flashcard sets", http.StatusOK, a.listOwnedMaterials)
+	reg(api, http.MethodGet, "/api/materials", "listOwnedMaterials", tag, "List notes, quizzes and flashcard sets across the caller's owned or member workspaces", http.StatusOK, a.listOwnedMaterials)
 	regWithMaxBody(api, http.MethodPost, "/api/materials", "createStandaloneMaterial", tag, "Create a standalone note", http.StatusCreated, materialRequestMaxBytes, a.createStandaloneMaterial)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/materials", "listMaterials", tag, "List study materials", http.StatusOK, a.listMaterials)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/materials", "createMaterial", tag, "Create a note material", http.StatusCreated, materialRequestMaxBytes, a.createMaterial)
@@ -143,13 +144,20 @@ func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materia
 func (a *api) listOwnedMaterials(ctx context.Context, in *materialsListInput) (*materialPageOutput, error) {
 	for _, kind := range csv(in.Kind) {
 		switch kind {
-		case "note", "quiz", "flashcards":
+		case "note", "quiz", "flashcards", "mindmap", "diagram":
 		default:
 			return nil, huma.Error400BadRequest("unsupported material kind")
 		}
 	}
+	for _, location := range csv(in.Location) {
+		switch location {
+		case "workspace", "embedded", "standalone":
+		default:
+			return nil, huma.Error400BadRequest("unsupported material location")
+		}
+	}
 	page, err := a.s.ListOwnedMaterials(ctx, userID(ctx), store.MaterialListFilter{
-		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Location: in.Location,
+		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Locations: csv(in.Location), Member: in.Scope == "member",
 		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Cursor: in.Cursor,
 	})
 	if err != nil {

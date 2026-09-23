@@ -764,7 +764,6 @@
   "files_office_presentation_frame_title": "{name} 的演示文稿查看器",
   "files_office_document_frame_title": "{name} 的文档查看器",
   "files_office_runtime_loading_file": "正在加载文件…",
-  "files_office_runtime_open_failed": "无法打开此文件。",
   "files_office_runtime_loading": "正在加载…",
   "files_office_runtime_loading_editor": "正在加载编辑器…",
   "files_office_no_slides": "没有幻灯片",

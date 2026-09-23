@@ -12,6 +12,8 @@ const makeElement = () => ({
   children: [],
   dataset: {},
   appendChild(child) { this.children.push(child); },
+  showModal() { this.open = true; },
+  close() { this.open = false; },
 });
 const element = (id) => {
   if (!elements.has(id))
@@ -168,6 +170,7 @@ const savedRun = {
   history: [{ id: 'm1', role: 'user', content: 'Hello' }, { id: 'm2', role: 'assistant', content: 'What subject?' }],
   checkpoint_in: runCheckpoint,
   ledger: { stored: storedLedger },
+  materials: [{ id: 'mat_1', kind: 'note', title: 'Cells', content: '# Cells\n<script>source text</script>', size: '100 tokens' }],
   events: [{ type: 'done', answer: 'Created the note.', toolEvidence: evidence }],
 };
 const configBeforeRestore = element('json').value;
@@ -176,6 +179,25 @@ assert.equal(pending.at(-1).url, '/api/runs/saved');
 pending.at(-1).resolve({ json: async () => savedRun });
 await loading;
 assert.equal(element('json').value, configBeforeRestore);
+const openMaterial = (id) => element('materials').onclick({
+  target: { closest: () => ({ dataset: { material: encodeURIComponent(id) } }) },
+});
+openMaterial('mat_1');
+assert.equal(element('materialDialog').open, true);
+assert.equal(element('materialTitle').textContent, 'Cells');
+assert.equal(element('materialContent').textContent, '# Cells\n<script>source text</script>');
+assert.equal(JSON.parse(element('materialJson').textContent).id, 'mat_1');
+element('closeMaterial').onclick();
+assert.equal(element('materialDialog').open, false);
+render({ type: 'material', id: 'quiz_1', kind: 'quiz', title: 'Cells quiz', questions: [
+  { question: 'Which option?', options: ['First', { value: 'Second', explanation: 'Option explanation' }], answer: 'B', explanation: 'Answer explanation' },
+] });
+openMaterial('quiz_1');
+assert.match(element('materialContent').textContent, /B\. Second\n   Option explanation/);
+assert.match(element('materialContent').textContent, /Answer \(saved\): "B"\nExplanation: Answer explanation/);
+render({ type: 'material', id: 'cards_1', kind: 'flashcards', title: 'Cells cards', cards: [{ front: 'Cell?', back: 'Unit of life' }] });
+openMaterial('cards_1');
+assert.match(element('materialContent').textContent, /Front: Cell\?\nBack: Unit of life/);
 turn = submit();
 assert.deepEqual(turn.body.history.map((m) => m.content), ['Hello', 'What subject?', 'Study cells', 'Created the note.']);
 assert.equal(new Set(turn.body.history.map((m) => m.id)).size, 4);
@@ -192,6 +214,8 @@ assert.equal(turn.body.history[0].content, 'Study cells');
 assert.ok(turn.body.history.some((m) => m.toolEvidence));
 await turn.finished;
 element('clear').onclick();
+assert.equal(element('materialDialog').open, false);
+assert.match(element('materials').innerHTML, /none yet/);
 turn = submit();
 assert.deepEqual(turn.body.history, []);
 assert.equal(turn.body.checkpoint, null);

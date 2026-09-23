@@ -1,6 +1,5 @@
 import {
   Alert02Icon,
-  AlertCircleIcon,
   Archive01Icon,
   ArrowDown02Icon,
   ArrowExpand01Icon,
@@ -271,7 +270,6 @@ const HugeIcons = {
   upload: Upload01Icon,
   view: ViewIcon,
   wand: MagicWand01Icon,
-  warning: AlertCircleIcon,
   wifiError: WifiError02Icon,
   wifiOff: WifiOff02Icon,
   workspaces: Book02Icon,

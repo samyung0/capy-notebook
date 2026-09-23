@@ -68,7 +68,7 @@ const CALLOUT: Record<
   },
   warning: {
     className: 'bg-tint-warning text-tint-warning-fg',
-    icon: 'warning',
+    icon: 'error',
   },
 };
 

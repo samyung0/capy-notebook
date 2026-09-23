@@ -122,6 +122,7 @@ export function GeneratePanel({
           {TILES.map((k) => (
             <ButtonCard
               buttonText={tileLabel(k)}
+              className="font-medium! [font-size:var(--body-font-size)]!"
               componentBeforeText={
                 <FileIcon className="size-5.5" name={materialIconName(k)} />
               }

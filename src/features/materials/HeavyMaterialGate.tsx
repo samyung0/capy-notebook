@@ -21,7 +21,7 @@ export function HeavyMaterialGate({
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 px-6 text-center">
       <span className="flex size-14 items-center justify-center rounded-card bg-tint-warning text-tint-warning-fg">
-        <Icon className="size-6.5" name="warning" />
+        <Icon className="size-6.5" name="error" />
       </span>
       <div className="flex max-w-md flex-col gap-1.5">
         <p className="t-card-title font-bold">{m.material_heavy_title()}</p>

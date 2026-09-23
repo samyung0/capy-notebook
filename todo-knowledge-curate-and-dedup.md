@@ -7,17 +7,29 @@ records live follow-up reuse, ledger correction and clarification checks. The
 separate compact twenty-preview experiment and broader output-quality work
 remain deferred.
 
-Next knowledge experiment: compare five current search hits with 20 compact
-previews on unseen requests, holding the promoted prompt, ledger, retention and
-conditional capture policy fixed. Use the actual Tencent agent loop and assess
-source support, completion and full-turn cost before changing the application.
+The [September 23 Tencent comparison](bench/rag/reports/2026-09-23-knowledge-compact-tencent.md)
+completed eight full turns with fixed prompts and one read-only library snapshot.
+Twenty compact previews reduced search calls from 16 to 9, but total input
+tokens and time were almost unchanged and quiz defects remained. Keep compact
+discovery experimental. The immediate correctness issue is that all four fresh
+quiz payloads saved locally fail the application's material converter. Expose
+the actual question contract and align playground validation before counting
+quiz completion; this fix remains proposed, not applied.
 
-The [workspace terminal-response test](bench/rag/reports/2026-09-22-workspace-terminal-agentic.md)
-also completed: explicit final-answer steering recovered all three author-lookup
-attempts that reached the tools-off response. Before promotion, force both
-supported and unsupported/scoped-missing cases to that boundary on Tencent and
-Ollama. Existing negative controls finished before the instruction was used.
-Keep workspace ranking, five-hit search and catalog unchanged meanwhile.
+The [Tencent workspace follow-up](bench/rag/reports/2026-09-23-workspace-terminal-tencent.md)
+tested supported, scoped-missing and unsupported terminal contexts. Tencent high
+finished all baseline replays, so the earlier Ollama final-answer instruction
+remains unpromoted. Fresh loops recovered the author evidence but failed the
+structured answer format. Keep workspace ranking, five-hit search and catalog
+unchanged while testing concrete identifier and multilingual recovery leads.
+This does not establish that retrieval algorithms have no remaining value.
+
+[Saved playground cases](bench/rag/reports/2026-09-23-playground-retrieval-cases.md)
+include fresh workspace formatting failures, curate quiz inconsistencies,
+overconfident absence wording, a historical cell-biology regression and a
+supported binomial control. Use Tencent TokenHub for further tests. The
+developer will tune prompts; disclose any proposed prompt edits before making
+them.
 
 Status: initial agent-loop diagnostics are complete; the remaining changes below
 are deferred while source building continues. These items are not publication
@@ -64,9 +76,15 @@ Current application retrieval defaults remain unchanged.
 - [x] Test the combined compact search/no-capture/bounded-finish prompt package
   in actual loops, preserving the existing ledger and stall mechanics. Record
   source fidelity and full-turn cost separately from saved-note counts.
-- [ ] Validate 20 compact previews against five current hits on unseen requests,
+- [x] Validate 20 compact previews against five current hits on unseen requests,
   holding the other promoted curate mechanisms fixed. Keep discovery summaries
   separate from full evidence reads; missing reviewed scope remains unknown.
+  The four paired Tencent cases show fewer searches without an aggregate cost
+  or clean material-quality improvement; promotion remains deferred.
+- [ ] Expose the actual quiz question contract and match local playground
+  acceptance to the application converter. Current local quiz writes accept
+  payloads the application rejects. Then retest content consistency with
+  application-valid payloads.
 - [ ] Exercise longer follow-ups and material edits through real in-turn
   compaction. Offline checks cover evidence invalidation and the 160-call cap;
   the live promotion cases reused retained text but did not reach either bound.

@@ -107,26 +107,31 @@ export const mockScenarioOptions = [
   { id: 'storage-quota', label: 'Upload storage quota 403' },
   { id: 'account-suspended', label: 'Account suspended' },
   { id: 'account-over-quota', label: 'Account over quota' },
-  { id: 'workspace-flaky', label: 'Workspace GET flaky (1 in 3)' },
+  { id: 'workspace-flaky', label: 'Workspace: intermittent request failed' },
   { id: 'chat-sse-error', label: 'Chat SSE error frame' },
   { id: 'chat-stream-close', label: 'Chat stream closes early' },
   { id: 'chat-curate-mismatch', label: 'Chat curate flag disagrees' },
   { id: 'chat-curate-requires-editor', label: 'Chat curate needs edit access' },
   { id: 'collaboration-token', label: 'Collaboration token 503' },
   { id: 'collab-chaos', label: 'Collaboration: chaos peers join and edit' },
-  { id: 'offline', label: 'Browser offline' },
+  { id: 'offline', label: 'Offline status preview' },
 ] as const;
 
 export type MockScenarioId = (typeof mockScenarioOptions)[number]['id'];
 
-export function storedMockScenario(): MockScenarioId {
-  const saved = sessionStorage.getItem('capy.mockScenario');
-  return mockScenarioOptions.find(({ id }) => id === saved)?.id ?? 'none';
-}
-
-export function storeMockScenario(scenario: MockScenarioId) {
-  sessionStorage.setItem('capy.mockScenario', scenario);
-}
+export const LAST_SCENARIO = 'capy.scenario.last';
+export const permanentScenarios: readonly string[] = [
+  'file-list-forbidden',
+  'account-locked',
+  'workspace-401',
+  'workspace-404',
+  'invite-unavailable',
+  'account-suspended',
+  'account-deleted',
+  'account-deletion-pending',
+  'account-over-quota',
+  'account-grace',
+];
 
 export function humaCodedError(
   code: 'account_over_quota' | 'account_suspended' | 'storage_quota_exceeded',
@@ -334,16 +339,21 @@ export function getMockScenarioHandlers(
     case 'account-deleted':
     case 'account-deletion-pending':
       return [
-        http.get('/api/account/status', () =>
+        // The account lifecycle rides on /me, as it does on the server.
+        http.get('/api/me', () =>
           HttpResponse.json({
-            ...accountStatus,
-            graceEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-            state:
-              scenario === 'account-grace'
-                ? 'over_quota_grace'
-                : scenario === 'account-deleted'
-                  ? 'deleted'
-                  : 'deletion_pending',
+            ...user,
+            account: {
+              ...accountStatus,
+              graceEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+              state:
+                scenario === 'account-grace'
+                  ? 'over_quota_grace'
+                  : scenario === 'account-deleted'
+                    ? 'deleted'
+                    : 'deletion_pending',
+              userId: user.id,
+            },
           })
         ),
       ];
@@ -451,7 +461,8 @@ export function getMockScenarioHandlers(
       ];
     case 'account-suspended':
       return [
-        http.get('/api/account/status', () =>
+        // The auth middleware refuses every route for a suspended account.
+        http.get('/api/me', () =>
           HttpResponse.json(
             humaCodedError(
               'account_suspended',
@@ -463,13 +474,16 @@ export function getMockScenarioHandlers(
       ];
     case 'account-over-quota':
       return [
-        http.get('/api/account/status', () =>
+        http.get('/api/me', () =>
           HttpResponse.json({
-            planTier: 'free',
-            state: 'over_quota_frozen',
-            storageLimitBytes: 1024,
-            storageUsedBytes: 2048,
-            userId: 'u_mock',
+            ...user,
+            account: {
+              planTier: 'free',
+              state: 'over_quota_frozen',
+              storageLimitBytes: 1024,
+              storageUsedBytes: 2048,
+              userId: user.id,
+            },
           })
         ),
         http.post('/api/workspaces/:id/materials', () =>

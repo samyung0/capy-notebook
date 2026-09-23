@@ -35,7 +35,7 @@ import {
 import { getLocale, m, setLocale as setParaglideLocale } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
-import { STYLES, THEMES, useTheme } from '@/theme/ThemeProvider';
+import { STYLES, THEMES, useTheme } from '@/theme/theme';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 

@@ -605,7 +605,7 @@ export function NoteEditorCore({
           >
             <NoteToolbar />
             <div className="min-h-0 flex-1 overflow-auto">
-              <div className="mx-auto min-h-full w-full max-w-7xl">
+              <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
                 {/* The room replaces the projection copy the moment it syncs,
                  * so painting that copy first renders the whole document
                  * twice — seconds of it on a near-limit note. Anything other

@@ -6,7 +6,7 @@ export function ErrorState({
   action,
   className,
   description,
-  icon = 'warning',
+  icon = 'error',
   testId,
   title,
   variant,

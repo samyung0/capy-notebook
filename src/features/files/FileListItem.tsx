@@ -1,6 +1,5 @@
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Spinner } from '@/components/ui/feedback';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
@@ -39,16 +38,16 @@ export function FileListItem({
   const failed = file.status === 'failed';
 
   return (
-    <div className="flex flex-col">
+    <div className="relative flex flex-col">
       <div
         className={cn(
-          'group relative flex items-center rounded-button hover:bg-surface-hover-bg',
+          'group relative flex items-center rounded-button px-2 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!',
           active && 'bg-surface-hover-bg'
         )}
       >
         <button
           className={cn(
-            'flex w-full items-center gap-1.5 rounded-button px-1.5 py-1.5 pl-2 text-left',
+            'flex w-full items-center gap-1.5 rounded-button py-1.5 text-left',
             active && 'font-bold',
             ingesting && 'cursor-default'
           )}
@@ -59,18 +58,13 @@ export function FileListItem({
           <FileIcon className="size-3.75" name={fileIconName(file)} />
           <span
             className={cn(
-              'line-clamp-1 flex-1 translate-y-px truncate',
+              'line-clamp-2 flex-1 translate-y-px',
               failed && 'text-solid-error'
             )}
           >
             {file.name}
           </span>
         </button>
-        {ingesting && (
-          <div className="mr-0.5">
-            <Spinner />
-          </div>
-        )}
         {!readOnly && (
           <ContentActions
             beforeDelete={beforeDelete}
@@ -79,8 +73,8 @@ export function FileListItem({
             content={toFileActionTarget(file)}
             display="hover"
             hoverClassName={cn(
-              'absolute top-1/2 right-1 -translate-y-[calc(50%-2px)]',
-              active && 'from-surface-hover-bg'
+              'absolute top-1/2 right-1 -translate-y-1/2',
+              active && 'bg-surface-hover-bg'
             )}
             onDeleted={() => onDeleted?.(file.id)}
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
@@ -91,13 +85,13 @@ export function FileListItem({
         )}
       </div>
       {failed && (
-        <div className="pl-2 font-medium text-solid-error text-xs">
+        <div className="t-label z-10 -mt-1 mb-0.5 px-2 font-medium text-fg-muted tracking-normal">
           {m.files_processing_error()}
         </div>
       )}
       {ingesting && (
-        <div className="mr-1.5 mb-0.5 ml-6">
-          <ProgressBar height={4} tone={color} value={file.ingestPct ?? 0} />
+        <div className="z-10 -mt-0.5 mr-1.5 mb-0.5 px-2">
+          <ProgressBar height={4} tone={color} value={50} />
         </div>
       )}
     </div>

@@ -1,7 +1,7 @@
 import { useQueryErrorResetBoundary } from '@tanstack/react-query';
 import { type ErrorComponentProps, Link } from '@tanstack/react-router';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { Button } from '@/components/ui/Button';
+import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { describeError, privateErrorDescription } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
@@ -68,11 +68,12 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
         >
           <ErrorState
             action={
-              <Button
+              <ErrorAction
+                iconLeftClassName="me-1"
                 onClick={reload ? () => window.location.reload() : this.reset}
               >
                 {reload ? m.error_action_reload() : m.error_action_retry()}
-              </Button>
+              </ErrorAction>
             }
             className={
               this.props.variant === 'page' ? 'h-full w-full' : undefined
@@ -118,9 +119,12 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
       >
         <ErrorState
           action={
-            <Button onClick={reload ? () => window.location.reload() : retry}>
+            <ErrorAction
+              iconLeftClassName="me-1"
+              onClick={reload ? () => window.location.reload() : retry}
+            >
               {reload ? m.error_action_reload() : m.error_action_retry()}
-            </Button>
+            </ErrorAction>
           }
           description={description.description}
           icon={description.icon}
@@ -144,14 +148,15 @@ export function ShareRouteErrorComponent({ reset }: ErrorComponentProps) {
       >
         <ErrorState
           action={
-            <Button
+            <ErrorAction
+              iconLeftClassName="me-1"
               onClick={() => {
                 resetQueries();
                 reset();
               }}
             >
               {m.error_action_funny()}
-            </Button>
+            </ErrorAction>
           }
           description={description.description}
           testId="private-or-unavailable"
@@ -172,9 +177,13 @@ export function RouteNotFoundComponent() {
       >
         <ErrorState
           action={
-            <Button asChild iconLeft="chevronLeft">
+            <ErrorAction
+              asChild
+              iconLeft="chevronLeft"
+              iconLeftClassName="me-1"
+            >
               <Link to="/">{m.error_action_go_back()}</Link>
-            </Button>
+            </ErrorAction>
           }
           description={m.error_not_found_page_body()}
           title={m.error_not_found_page_title()}

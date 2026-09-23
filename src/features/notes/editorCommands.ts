@@ -445,7 +445,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_quiz();
     },
     group: 'blockElements',
-    icon: 'warning',
+    icon: 'error',
     id: 'quiz',
     get label() {
       return m.editor_quiz();

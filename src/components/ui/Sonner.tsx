@@ -2,10 +2,10 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { toast as sonnerToast } from 'sonner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { Button } from './Button';
+import { Button, ErrorAction } from './Button';
 import { Card } from './Card';
 import { ContentSwap } from './ContentSwap';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
 
 const sonnerCardVariants = cva(
@@ -36,6 +36,7 @@ function Toast(props: ToastProps) {
     showCloseButton = true,
     variant = 'default',
   } = props;
+  const ActionButton = variant === 'error' ? ErrorAction : Button;
   return (
     <Card
       border="solid"
@@ -60,7 +61,7 @@ function Toast(props: ToastProps) {
           <Icon className="size-5" name="error" strokeWidth={2} />
         )}
         {variant === 'warning' && (
-          <Icon className="size-5" name="warning" strokeWidth={2} />
+          <Icon className="size-5" name="error" strokeWidth={2} />
         )}
         {variant === 'success' && (
           <Icon className="size-5" name="check" strokeWidth={2} />
@@ -84,8 +85,9 @@ function Toast(props: ToastProps) {
       </div>
       {button && (
         <div className="ml-5 shrink-0">
-          <Button
-            className="translate-y-1 rounded-md px-2.5"
+          <ActionButton
+            className="rounded-input"
+            iconLeft={button.iconLeft}
             onClick={() => {
               button.onClick();
               sonnerToast.dismiss(id);
@@ -93,7 +95,7 @@ function Toast(props: ToastProps) {
             size="sm"
           >
             {button.label}
-          </Button>
+          </ActionButton>
         </div>
       )}
     </Card>
@@ -102,6 +104,7 @@ function Toast(props: ToastProps) {
 
 interface ToastProps extends VariantProps<typeof sonnerCardVariants> {
   button?: {
+    iconLeft?: IconName;
     label: string;
     onClick: () => void;
   };

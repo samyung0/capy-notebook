@@ -54,7 +54,7 @@ export function invalidateForEffects(
       }
     } else {
       void qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
-      void qc.invalidateQueries({ queryKey: qk.allFiles });
+      void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       if (effect.operation !== 'created') {
         void qc.invalidateQueries({ queryKey: qk.file(effect.resource.id) });
       }

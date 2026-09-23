@@ -80,6 +80,7 @@ export default defineConfig(({ mode }) => {
         '@betteroffice/xlsx-react',
         '@wllama/wllama',
       ],
+      include: ['pdfjs-dist/legacy/build/pdf.mjs'],
     },
     plugins: [
       react(),

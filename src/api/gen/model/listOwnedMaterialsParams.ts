@@ -5,22 +5,26 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListOwnedMaterialsDir } from './listOwnedMaterialsDir.ts';
-import type { ListOwnedMaterialsLocation } from './listOwnedMaterialsLocation.ts';
+import type { ListOwnedMaterialsScope } from './listOwnedMaterialsScope.ts';
 import type { ListOwnedMaterialsSort } from './listOwnedMaterialsSort.ts';
 
 export type ListOwnedMaterialsParams = {
 /**
- * Comma-separated kinds: note, quiz, flashcards
+ * Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards
  */
 kind?: string;
 /**
- * Comma-separated workspace ids the caller owns
+ * Comma-separated workspace ids
  */
 workspaceId?: string;
 /**
- * Where the material lives; empty means anywhere
+ * Comma-separated places the material lives: workspace, embedded, standalone; empty means anywhere
  */
-location?: ListOwnedMaterialsLocation;
+location?: string;
+/**
+ * owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of
+ */
+scope?: ListOwnedMaterialsScope;
 sort?: ListOwnedMaterialsSort;
 dir?: ListOwnedMaterialsDir;
 /**

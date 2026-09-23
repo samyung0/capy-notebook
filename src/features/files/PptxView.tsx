@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import type { ViewableFile } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import { WarningBanner } from '@/components/banners/WarningBanner';
+import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileModeControl } from './FileModeControl';
+import { FileError } from './FileStates';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 
@@ -42,9 +44,7 @@ export default function PptxView({
 
   if (runtime.error && !runtime.analysis && runtime.mode === 'view') {
     return (
-      <p className="py-8 text-center text-tint-error-fg">
-        {m.files_pptx_failed()}
-      </p>
+      <FileError onRetry={runtime.retryView} title={m.files_pptx_failed()} />
     );
   }
   return (
@@ -86,32 +86,48 @@ export default function PptxView({
         />
       </div>
       {runtime.error && (
-        <p className="border-line border-b px-3 py-2 text-sm text-tint-error-fg">
-          {runtime.error}
-          {runtime.mode === 'edit' && (
-            <Button
-              onClick={() => {
-                void runtime.downloadDraft().catch(() => {});
-              }}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.source_edit_download_draft()}
-            </Button>
-          )}
-          {runtime.status === 'recovery' && (
-            <Button
-              disabled={runtime.discarding}
-              onClick={() => {
-                void runtime.discardDraft();
-              }}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.source_edit_discard_draft()}
-            </Button>
-          )}
-        </p>
+        <WarningBanner
+          action={
+            <>
+              {runtime.mode === 'view' && (
+                <ErrorAction
+                  iconLeftClassName="me-1"
+                  onClick={runtime.retryView}
+                  size="sm"
+                >
+                  {m.error_action_retry()}
+                </ErrorAction>
+              )}
+              {runtime.mode === 'edit' && (
+                <ErrorAction
+                  iconLeft="download"
+                  iconLeftClassName="me-1"
+                  onClick={() => {
+                    void runtime.downloadDraft().catch(() => {});
+                  }}
+                  size="sm"
+                >
+                  {m.source_edit_download_draft()}
+                </ErrorAction>
+              )}
+              {runtime.status === 'recovery' && (
+                <ErrorAction
+                  disabled={runtime.discarding}
+                  iconLeft="trash"
+                  iconLeftClassName="me-1"
+                  onClick={() => {
+                    void runtime.discardDraft();
+                  }}
+                  size="sm"
+                >
+                  {m.source_edit_discard_draft()}
+                </ErrorAction>
+              )}
+            </>
+          }
+          icon="fileError"
+          message={runtime.error}
+        />
       )}
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (

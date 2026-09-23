@@ -178,6 +178,23 @@ local runtime copy with read-only library access. The
 records the protocol and outcomes. Run `--check` offline or `--suite --output
 <fresh-directory>` with authorized library and B2 access.
 
+[`knowledge_compact_tencent.py`](rag/scripts/knowledge_compact_tencent.py)
+compares five current hits with twenty compact previews on four new paired
+requests, holding the promoted prompts and mechanisms fixed. Tencent high and
+one exported read-only database snapshot keep the comparison independent of
+concurrent book publishing. The [results](rag/reports/2026-09-23-knowledge-compact-tencent.md)
+separate supported content, local writes and actual application quiz acceptance.
+Run `--check` offline, or `--output <fresh-directory>` for the live suite.
+
+[`workspace_terminal_tencent.py`](rag/scripts/workspace_terminal_tencent.py)
+replays three saved tools-off contexts with and without the existing terminal
+instruction, then runs two fresh full loops through the current runtime and
+saved playground chat prompt. The [Tencent report](rag/reports/2026-09-23-workspace-terminal-tencent.md)
+keeps the instruction unpromoted. Commands are `check`, `run` and `fresh`.
+Failing outputs and a supported control are available in
+[playground history](rag/reports/2026-09-23-playground-retrieval-cases.md) for
+developer-led prompt tuning.
+
 The four subdirectories are frozen experiments, each with its own README,
 reproduction steps, and report. They describe completed runs on a preserved lab
 image — the scripts will not run against a production deployment.

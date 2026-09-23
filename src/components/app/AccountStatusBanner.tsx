@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { isAccountBlockingError } from '@/api/client';
-import { useAccountStatus, useMe } from '@/api/hooks';
+import { useMe } from '@/api/hooks';
 import { AccountState } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { getLocale, m } from '@/i18n';
@@ -26,13 +26,12 @@ function blockingCodeFromError(err: unknown): string | null {
 
 /** Lifecycle warnings + full-screen block for locked accounts. */
 export function AccountStatusBanner() {
-  const { data: statusData, error: statusError } = useAccountStatus({
-    errorBoundary: false,
-  });
-  const { error: meError } = useMe({ errorBoundary: false });
+  // A locked account never gets a /me body: the auth middleware answers every
+  // route with the lock code, so the error carries it instead.
+  const { data: me, error: meError } = useMe({ errorBoundary: false });
+  const statusData = me?.account;
 
   const blockingCode =
-    blockingCodeFromError(statusError) ??
     blockingCodeFromError(meError) ??
     (statusData?.state === AccountState.suspended
       ? 'account_suspended'

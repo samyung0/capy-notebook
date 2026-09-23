@@ -7,13 +7,20 @@ import {
   type CsvPreviewCell,
   type CsvPreviewResult,
 } from './csvPreviewCore';
+import { FileError } from './FileStates';
 
 type WorkerResponse =
   | { result: CsvPreviewResult; type: 'result' }
   | { message: string; type: 'error' };
 
 /** Lightweight, read-only CSV preview. Modern Office files use BetterOffice. */
-export default function CsvView({ url }: { url: string }) {
+export default function CsvView({
+  url,
+  onRetry,
+}: {
+  url: string;
+  onRetry: () => void;
+}) {
   const [result, setResult] = useState<CsvPreviewResult | null>(null);
   const [error, setError] = useState(false);
 
@@ -38,11 +45,7 @@ export default function CsvView({ url }: { url: string }) {
   }, [url]);
 
   if (error) {
-    return (
-      <p className="py-8 text-center text-tint-error-fg">
-        {m.files_sheet_failed()}
-      </p>
-    );
+    return <FileError onRetry={onRetry} title={m.files_sheet_failed()} />;
   }
   if (!result) return <Skeleton className="h-[60vh] w-full" />;
   if (result.rows.length === 0) {

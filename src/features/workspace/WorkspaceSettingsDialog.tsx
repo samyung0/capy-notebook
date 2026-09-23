@@ -8,7 +8,8 @@ import {
   useWorkspaceStats,
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import { ErrorState } from '@/components/app/ErrorState';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { InputTitle } from '@/components/ui/Input';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
@@ -17,6 +18,7 @@ import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
+import { describeError } from '@/lib/errors';
 import { trackItemCloned } from '@/lib/observability';
 import { ShareDialog } from './ShareDialog';
 import { sourcePercentages } from './sourcePercentages';
@@ -74,8 +76,20 @@ export function WorkspaceSettingsDialog({
     data: stats,
     isPending,
     isError,
+    error,
     refetch,
   } = useWorkspaceStats(open ? workspace.id : '', { errorBoundary: false });
+  const statsError = isError ? (
+    <ErrorState
+      {...describeError(error)}
+      action={
+        <ErrorAction iconLeftClassName="me-1" onClick={() => void refetch()}>
+          {m.error_action_retry()}
+        </ErrorAction>
+      }
+      variant="panel"
+    />
+  ) : null;
   const counts = stats
     ? [stats.indexed, stats.notIndexed, stats.notIndexable]
     : [];
@@ -149,9 +163,7 @@ export function WorkspaceSettingsDialog({
         )}
         {tab === 'statistics' &&
           (isError ? (
-            <Button onClick={() => void refetch()} variant="ghost">
-              {m.action_retry()}
-            </Button>
+            statsError
           ) : isPending ? (
             <p role="status">{m.common_loading()}</p>
           ) : (
@@ -180,9 +192,7 @@ export function WorkspaceSettingsDialog({
         {tab === 'indexing' && (
           <div className="flex flex-col gap-6">
             {isError ? (
-              <button onClick={() => void refetch()} type="button">
-                {m.action_retry()}
-              </button>
+              statsError
             ) : isPending ? (
               <p>{m.common_loading()}</p>
             ) : (

@@ -1,5 +1,6 @@
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { FileError } from './FileStates';
 import { clampImageZoom, IMAGE_MIN_ZOOM } from './fileUtils';
 
 /** Clamp pan so the scaled image can't be dragged past the viewport edges. */
@@ -58,12 +59,15 @@ export function ImageViewer({
   alt,
   zoom,
   onZoomChange,
+  onRetry,
 }: {
   url: string;
   alt: string;
   zoom: number;
   onZoomChange?: (next: number) => void;
+  onRetry: () => void;
 }) {
+  const [failed, setFailed] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -282,15 +286,18 @@ export function ImageViewer({
     }
   }
 
+  if (failed) return <FileError onRetry={onRetry} />;
+
   return (
     <div
-      className={`absolute inset-0 overflow-hidden p-3 ${
+      className={cn(
+        'absolute inset-0 overflow-hidden p-3',
         canPan
           ? dragging
             ? 'cursor-grabbing'
             : 'cursor-grab'
           : 'cursor-default'
-      }`}
+      )}
       onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -311,6 +318,7 @@ export function ImageViewer({
           )}
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
+          onError={() => setFailed(true)}
           onLoad={() => updateOffset(offsetRef.current.x, offsetRef.current.y)}
           ref={imgRef}
           src={url}

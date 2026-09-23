@@ -298,7 +298,14 @@ service and the database on write; a document that already exists always opens.
 shows `HeavyMaterialGate` when either passes `MATERIAL_RENDER_WARNING`, offering
 read-only (static `MaterialPreview`, no Yjs handshake and no editing plugins) or
 open-anyway. Absent list metadata always opens: the gate must never become a
-door the reader cannot pass. When the API cannot decode stored content it
+door the reader cannot pass. Nothing downloads the document before the reader
+chooses: `GET /api/materials/{id}` carries the whole `content` envelope, so the
+viewer header takes the title and kind from the list entry and the capabilities
+from the workspace (a workspace material's capabilities come from the same
+role), and reads the body only on the standalone page or for a material the
+list does not carry, which the gate cannot weigh anyway. The workspace route
+loader prefetches an open file for the same reason it leaves an open material
+alone. When the API cannot decode stored content it
 answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`
 report as "this note could not be loaded" rather than "not found".
 

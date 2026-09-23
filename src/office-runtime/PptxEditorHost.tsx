@@ -31,6 +31,25 @@ export function PptxEditorHost({
     });
     return () => onExporter(null);
   }, [onExporter]);
+  useEffect(() => {
+    if (!(import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false'))
+      return;
+    // The canvas requires trusted pointer capture. Use the same native text
+    // command for this developer journey, then its ordinary replica broadcast.
+    const editScenario = (event: Event) => {
+      const api = apiRef.current;
+      const text: unknown = (event as CustomEvent).detail;
+      const story = api?.handle
+        .snapshot()
+        .slides[0]?.shapes.flatMap((shape) => shape.textStories)[0];
+      if (!api || !story || typeof text !== 'string') return;
+      api.handle.insertText(story.id, 0, text);
+      api.refresh();
+    };
+    window.addEventListener('capy-scenario-edit-slide', editScenario);
+    return () =>
+      window.removeEventListener('capy-scenario-edit-slide', editScenario);
+  }, []);
   const [fonts, setFonts] = useState<Awaited<
     ReturnType<typeof loadPptxFonts>
   > | null>(null);

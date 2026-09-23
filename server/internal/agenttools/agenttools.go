@@ -460,12 +460,13 @@ func Definitions() []Definition {
 			Description: "Search the shared knowledge library of verified textbook excerpts. " +
 				"One excerpt is one section of one book. `roles` filters what the excerpt " +
 				"teaches: introduction, formal, worked_example, exercise, summary, reference. " +
-				"`topics` takes topic ids from browsing a subject with browse_knowledge. An " +
+				"`topics` takes exact topic_id values returned by browse_knowledge with a subject. " +
+				"Subject IDs and labels are not topic filters; omit topics for a direct search. An " +
 				"empty result under a role filter reports what those topics do hold by role, " +
 				"so relax the filter on purpose instead of rewording.",
 			InputSchema: obj(map[string]any{
 				"query":  str(""),
-				"topics": idList("Topic ids to restrict to, from a subject browse.", 0, 8),
+				"topics": idList("Exact topic_id values returned by browse_knowledge with a subject. Subject IDs and labels are not accepted. Omit for a direct search.", 0, 8),
 				"roles":  idList("Excerpt roles to restrict to.", 0, 6),
 			}, "query"),
 			UsesEmbedding:      true,
@@ -476,13 +477,14 @@ func Definitions() []Definition {
 			Name:      "browse_knowledge",
 			Retention: RetainNone,
 			Description: "List what the library holds. Pass exactly one of subject or topic. " +
-				"A subject id returns its topics with excerpt counts, which is where topic " +
-				"ids come from; a topic id returns verified excerpt counts by role and by " +
-				"book, then a page of excerpts with their section paths and synopses. " +
-				"Browse the subject before the topic, and the topic before searching.",
+				"Use a subject browse call listed below to retrieve its topics with excerpt counts. " +
+				"Subject IDs are only for subject; use the returned topic_id values in " +
+				"search_knowledge.topics or this tool's topic. A topic ID returns verified " +
+				"excerpt counts by role and by book, then a page of excerpts with their " +
+				"section paths and reviewed scope. A direct search needs no preceding browse.",
 			InputSchema: obj(map[string]any{
-				"subject": str("Subject id from the subject list."),
-				"topic":   str("Topic id from a subject browse."),
+				"subject": str("Subject ID from a browse call in this tool's description. Retrieves topic IDs for search_knowledge.topics."),
+				"topic":   str("Exact topic_id returned by a subject browse. Retrieves excerpt coverage; do not pass a subject ID or label."),
 				"page":    map[string]any{"type": "integer", "minimum": 1, "default": 1},
 			}),
 			Concurrency:        "read",

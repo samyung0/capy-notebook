@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { Panel } from '@/components/app/layout';
-import { Button } from '@/components/ui/Button';
+import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { ErrorState } from './ErrorState';
 
@@ -21,11 +21,15 @@ export function WorkspaceError({
       <ErrorState
         action={
           backTo ? (
-            <Link preload="intent" to={backTo}>
-              <Button iconLeft="chevronLeft" variant="ghost">
+            <ErrorAction
+              asChild
+              iconLeft="navigationBack"
+              iconLeftClassName="me-1"
+            >
+              <Link preload="intent" to={backTo}>
                 {backLabel}
-              </Button>
-            </Link>
+              </Link>
+            </ErrorAction>
           ) : undefined
         }
         description={description}

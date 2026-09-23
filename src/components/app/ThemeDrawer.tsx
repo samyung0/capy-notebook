@@ -8,7 +8,7 @@ import {
   THEMES,
   type Theme,
   useTheme,
-} from '@/theme/ThemeProvider';
+} from '@/theme/theme';
 import { ButtonCard } from '../ui/ButtonCard';
 import { Card } from '../ui/Card';
 import { InputTitle } from '../ui/Input';

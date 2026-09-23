@@ -5,6 +5,7 @@ import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { AddSourceMode } from './AddSourceDialog';
+import { addSourceMenuItems } from './addSourceMenuItems';
 
 export interface TabAction {
   disabled?: boolean;
@@ -37,27 +38,7 @@ export function PanelTabRow({
   onOpenSettings?: () => void;
 }) {
   const addItems: MenuItem[] = onAddSource
-    ? [
-        {
-          icon: 'upload',
-          label: m.action_upload_or_import(),
-          onClick: () => onAddSource('upload'),
-        },
-        {
-          icon: 'newFile',
-          label: m.action_new_file(),
-          onClick: () => onAddSource('create'),
-        },
-        ...(onAddChapter
-          ? [
-              {
-                icon: 'archive' as const,
-                label: m.action_add_chapter(),
-                onClick: onAddChapter,
-              },
-            ]
-          : []),
-      ]
+    ? addSourceMenuItems(onAddSource, onAddChapter)
     : [];
   const folded: MenuItem[] = [
     ...actions,
@@ -86,14 +67,12 @@ export function PanelTabRow({
         tabs
       )}
       <div
-        className={cn('flex shrink-0 items-center gap-0.5', !title && 'mb-1.5')}
+        className={cn('flex shrink-0 items-center gap-0', !title && 'mb-1.5')}
       >
         {!compact &&
           actions.map((action) => (
             <IconButton
-              className={
-                'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
-              }
+              className={'p-1.25 text-fg-muted hover:text-fg'}
               disabled={action.disabled}
               icon={action.icon}
               key={action.label}
@@ -109,9 +88,7 @@ export function PanelTabRow({
             items={addItems}
             trigger={
               <IconButton
-                className={
-                  'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
-                }
+                className={'p-1.25 text-fg-muted hover:text-fg'}
                 icon="plusCircle"
                 label={m.action_add_file()}
                 size="sm"
@@ -127,9 +104,7 @@ export function PanelTabRow({
                 items={folded}
                 trigger={
                   <IconButton
-                    className={
-                      'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
-                    }
+                    className={'p-1.25 text-fg-muted hover:text-fg'}
                     icon="moreVertical"
                     label={m.a11y_more_actions()}
                     size="sm"
@@ -140,9 +115,7 @@ export function PanelTabRow({
             )
           : onOpenSettings && (
               <IconButton
-                className={
-                  'p-0 px-0.75 py-0.5 text-fg-muted hover:text-fg xl:px-1.25'
-                }
+                className={'p-1.25 text-fg-muted hover:text-fg'}
                 icon="settings"
                 label={m.workspace_settings()}
                 onClick={onOpenSettings}

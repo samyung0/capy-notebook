@@ -67,14 +67,14 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatalf("membership does not surface another owner's materials: %+v", memberView.Items)
 	}
 
-	embeddedOnly, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Location: "embedded"})
+	embeddedOnly, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Locations: []string{"embedded"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(embeddedOnly.Items) != 1 || embeddedOnly.Items[0].ID != embedded.ID {
 		t.Fatalf("embedded filter = %+v", embeddedOnly.Items)
 	}
-	standaloneOnly, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Location: "standalone", Kinds: []string{"note"}})
+	standaloneOnly, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Locations: []string{"standalone"}, Kinds: []string{"note"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,5 +122,38 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	}
 	if len(memberFiles.Items) != 0 {
 		t.Fatalf("membership does not surface another owner's files: %+v", memberFiles.Items)
+	}
+
+	// Member scope adds the workspaces the caller belongs to, never another
+	// owner's standalone rows, and hides a deletion-pending owner's workspace.
+	shared, err := s.ListOwnedMaterials(ctx, memberID, MaterialListFilter{
+		Member: true, Locations: []string{"workspace", "standalone"}, Kinds: []string{"note", "quiz", "mindmap"}, Sort: "title", Ascending: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shared.Items) != 2 || shared.Items[0].ID != note.ID || shared.Items[1].Title != "Map" {
+		t.Fatalf("member materials = %+v", shared.Items)
+	}
+	sharedFiles, err := s.ListOwnedFiles(ctx, memberID, FileListFilter{Member: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sharedFiles.Items) != 1 || sharedFiles.Items[0].ID != file.ID {
+		t.Fatalf("member files = %+v", sharedFiles.Items)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET deletion_requested_at=now() WHERE id=$1`, ownerID); err != nil {
+		t.Fatal(err)
+	}
+	hidden, err := s.ListOwnedMaterials(ctx, memberID, MaterialListFilter{Member: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hiddenFiles, err := s.ListOwnedFiles(ctx, memberID, FileListFilter{Member: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hidden.Items) != 0 || len(hiddenFiles.Items) != 0 {
+		t.Fatalf("deletion-pending owner still listed: %+v %+v", hidden.Items, hiddenFiles.Items)
 	}
 }

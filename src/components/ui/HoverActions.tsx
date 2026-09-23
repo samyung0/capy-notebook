@@ -7,7 +7,6 @@ export interface HoverActionsProps {
   className?: string;
   iconContainerClassName?: string;
   items: MenuItem[];
-  radialBackground?: boolean;
 }
 
 /**
@@ -20,7 +19,6 @@ export function HoverActions({
   align = 'end',
   iconContainerClassName,
   className,
-  radialBackground = true,
 }: HoverActionsProps) {
   return (
     <div
@@ -28,17 +26,15 @@ export function HoverActions({
         'opacity-0 transition-opacity ease-(--motion-ease-smooth-out) focus-within:opacity-100 group-hover:opacity-100',
         // keep the trigger visible while its popover/menu is open
         'has-data-[state=open]:opacity-100',
-        radialBackground &&
-          'bg-linear-to-l from-75% from-surface to-transparent group-hover:from-surface-hover-bg',
+        'scroll-fade-x animate-none! bg-surface pl-2 [--scroll-fade-start:8px] group-hover:bg-surface-hover-bg',
         className
       )}
+      data-slot="hover-actions"
     >
       <Menu
         align={align}
         iconContainerClassName={cn(
-          'p-1.5 active:scale-[0.8]',
-          radialBackground &&
-            'translate-x-0.5 -translate-y-0.5 p-2.5 hover:bg-transparent',
+          'p-1.5 hover:bg-transparent active:scale-[0.8]',
           iconContainerClassName
         )}
         items={items}

@@ -1,7 +1,6 @@
 import { type ReactNode, useRef, useState } from 'react';
 import {
   useChapters,
-  useCreateNote,
   useDeleteChapter,
   useFiles,
   useMaterials,
@@ -19,6 +18,8 @@ import type {
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Menu } from '@/components/ui/Menu';
 import { FileListItem } from '@/features/files/FileListItem';
 import { fileIsIngesting } from '@/features/files/fileUtils';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
@@ -26,6 +27,8 @@ import type { OpenItem } from '@/features/materials/openItem';
 import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import type { AddSourceMode } from './AddSourceDialog';
+import { addSourceMenuItems } from './addSourceMenuItems';
 import type { TabAction } from './PanelTabRow';
 
 const GENERATING_MATERIAL: Record<
@@ -55,7 +58,7 @@ type WorkspaceContentItem =
     };
 
 // Native drag-and-drop: rows expose their content type and id. Drops on a
-// content row insert before/after that row; the Others bucket appends.
+// content row insert before/after that row; chapter and tree backgrounds append.
 const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 
 /** The chapter tree with its files and materials. Lives in the right panel's
@@ -71,6 +74,8 @@ export function FilesPanel({
   onRenameChapter,
   renderTabRow,
   contentClassName,
+  onAddSource,
+  onAddChapter,
 }: {
   workspaceId: string;
   readOnly: boolean;
@@ -82,6 +87,8 @@ export function FilesPanel({
   onRenameChapter: (chapter: Chapter) => void;
   renderTabRow: (actions: TabAction[]) => ReactNode;
   contentClassName?: string;
+  onAddSource?: (mode: AddSourceMode) => void;
+  onAddChapter?: () => void;
 }) {
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
@@ -90,9 +97,9 @@ export function FilesPanel({
   const { mutate: delChapter } = useDeleteChapter(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: reorderContent } = useReorderContent(workspaceId);
-  const { mutate: createNote } = useCreateNote(workspaceId);
 
   const [openChapters, setOpenChapters] = useState<Record<string, boolean>>({});
+  const [dragging, setDragging] = useState(false);
   // Drop-target line while dragging workspace content.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [insertTarget, setInsertTarget] = useState<{
@@ -100,6 +107,7 @@ export function FilesPanel({
     edge: 'before' | 'after';
   } | null>(null);
   const draggedItemRef = useRef<ContentOrderItem | null>(null);
+  const draggedChapterRef = useRef<string | null>(null);
 
   const unfiled = files?.filter((f) => f.chapterId === null) ?? [];
   const unfiledMaterials =
@@ -152,7 +160,9 @@ export function FilesPanel({
     return null;
   }
   function clearDragState() {
+    setDragging(false);
     draggedItemRef.current = null;
+    draggedChapterRef.current = null;
     setDropTarget(null);
     setInsertTarget(null);
   }
@@ -170,8 +180,9 @@ export function FilesPanel({
       setOpenChapters((state) => ({ ...state, [chapterId]: true }));
   }
   function onItemDrop(chapterId: string | null, e: React.DragEvent) {
-    if (readOnly) return;
+    if (readOnly || !hasDraggedContent(e)) return;
     e.preventDefault();
+    e.stopPropagation();
     const dragged = draggedContent(e);
     clearDragState();
     if (dragged) moveContent(dragged, chapterId, contentFor(chapterId).length);
@@ -180,12 +191,15 @@ export function FilesPanel({
     if (readOnly) return {};
     return {
       onDragLeave: (e: React.DragEvent) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node))
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
           setDropTarget((t) => (t === key ? null : t));
+          setInsertTarget((t) => (t?.key === key ? null : t));
+        }
       },
       onDragOver: (e: React.DragEvent) => {
         if (hasDraggedContent(e)) {
           e.preventDefault();
+          e.stopPropagation();
           e.dataTransfer.dropEffect = 'move';
           if (dropTarget !== key) setDropTarget(key);
           setInsertTarget(null);
@@ -201,6 +215,10 @@ export function FilesPanel({
     const key = `${item.type}:${item.id}`;
     if (readOnly) return {};
     return {
+      onDragLeave: (e: React.DragEvent) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node))
+          setInsertTarget((t) => (t?.key === key ? null : t));
+      },
       onDragOver: (e: React.DragEvent) => {
         if (!hasDraggedContent(e)) return;
         e.preventDefault();
@@ -217,6 +235,7 @@ export function FilesPanel({
         );
       },
       onDrop: (e: React.DragEvent) => {
+        if (!hasDraggedContent(e)) return;
         e.preventDefault();
         e.stopPropagation();
         const dragged = draggedContent(e);
@@ -242,26 +261,55 @@ export function FilesPanel({
       },
     };
   }
-  function contentListDropZone() {
+  function chapterDropZone(chapter: Chapter) {
+    const key = `chapter:${chapter.id}`;
+    const contentZone = dropZone(key, chapter.id);
     if (readOnly) return {};
     return {
-      onDragOverCapture: (e: React.DragEvent) => {
-        if (!hasDraggedContent(e)) return;
-        const target = e.target as HTMLElement;
-        if (!target.closest('[data-workspace-content-row]')) return;
+      ...contentZone,
+      onDragOver: (e: React.DragEvent) => {
+        if (!draggedChapterRef.current) return contentZone.onDragOver?.(e);
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
+        setDropTarget(null);
+        const rect = e.currentTarget.getBoundingClientRect();
+        const edge =
+          e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+        setInsertTarget((current) =>
+          current?.key === key && current.edge === edge
+            ? current
+            : { edge, key }
+        );
       },
-      onDropCapture: (e: React.DragEvent) => {
-        const target = e.target as HTMLElement;
-        if (
-          hasDraggedContent(e) &&
-          target.closest('[data-workspace-content-row]')
-        ) {
-          e.preventDefault();
-        }
+      onDrop: (e: React.DragEvent) => {
+        const dragged = draggedChapterRef.current;
+        if (!dragged) return contentZone.onDrop?.(e);
+        e.preventDefault();
+        e.stopPropagation();
+        clearDragState();
+        if (dragged === chapter.id || !chapters) return;
+        const ids = chapters.map((ch) => ch.id).filter((id) => id !== dragged);
+        const rect = e.currentTarget.getBoundingClientRect();
+        const after = e.clientY >= rect.top + rect.height / 2;
+        ids.splice(ids.indexOf(chapter.id) + (after ? 1 : 0), 0, dragged);
+        reorder(ids);
       },
     };
+  }
+  function insertionLine(key: string) {
+    return (
+      insertTarget?.key === key && (
+        <div
+          className={cn(
+            'pointer-events-none absolute right-1 left-1 z-10 h-0 border-solid-accent-1 border-t-2',
+            insertTarget.edge === 'before'
+              ? 'top-0 -translate-y-1/2'
+              : 'bottom-0 translate-y-1/2'
+          )}
+        />
+      )
+    );
   }
   const isFileActive = (id: string) =>
     openItem?.kind === 'file' && openItem.id === id;
@@ -300,10 +348,17 @@ export function FilesPanel({
         key={key}
         {...contentDropZone(item, chapterId)}
         className="relative"
-        data-workspace-content-row
+        data-workspace-content-row={key}
         draggable={draggable}
         onDragEnd={clearDragState}
         onDragStart={(e) => {
+          if (!draggable) {
+            e.preventDefault();
+            return;
+          }
+          // Plate's window-level HTML5 backend cancels unregistered native drags.
+          e.stopPropagation();
+          setDragging(true);
           const dragged: ContentOrderItem = { id: item.id, type: item.type };
           draggedItemRef.current = dragged;
           e.dataTransfer.setData(
@@ -315,14 +370,7 @@ export function FilesPanel({
           e.dataTransfer.effectAllowed = 'move';
         }}
       >
-        {insertTarget?.key === key && (
-          <div
-            className={cn(
-              'pointer-events-none absolute right-1 left-1 z-10 h-0 border-line-strong border-t-2',
-              insertTarget.edge === 'before' ? 'top-0' : 'bottom-0'
-            )}
-          />
-        )}
+        {insertionLine(key)}
         {item.type === 'file' ? (
           <FileListItem
             active={isFileActive(item.id)}
@@ -351,22 +399,6 @@ export function FilesPanel({
   }
 
   const actions: TabAction[] = [
-    ...(readOnly
-      ? []
-      : [
-          {
-            icon: 'newNote' as const,
-            label: m.workspace_new_note(),
-            onClick: () =>
-              createNote(
-                {},
-                {
-                  onSuccess: (mt) =>
-                    onOpenItem({ id: mt.id, kind: 'material' }),
-                }
-              ),
-          },
-        ]),
     {
       icon: 'folderCollapse',
       label: m.workspace_collapse_chapters(),
@@ -378,25 +410,65 @@ export function FilesPanel({
   ];
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      className={cn(
+        'group/file-tree relative flex h-full min-h-0 flex-col',
+        dragging && '[&_[data-slot=hover-actions]]:hidden',
+        dropTarget === 'unfiled-files' &&
+          'outline-2 outline-solid-accent-1 -outline-offset-2'
+      )}
+      data-dragging={dragging || undefined}
+    >
       {renderTabRow(actions)}
       <div
+        {...dropZone('unfiled-files', null)}
         className={cn(
-          'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-2',
+          'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-(--scroll-fade-bottom-padding) [--scroll-fade-bottom-padding:--spacing(2)]',
+          !readOnly &&
+            onAddSource &&
+            '[--scroll-fade-bottom-padding:--spacing(20)]',
           contentClassName
         )}
+        data-workspace-file-tree
       >
         {!chapters && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
         )}
         {chapters && (
           <div className="flex flex-col gap-3">
-            <div className="flex flex-col">
+            <div className="flex flex-col empty:hidden">
               {chapters.map((ch, idx) => {
                 const expanded = openChapters[ch.id] ?? true;
                 return (
-                  <div className="rounded-button" key={ch.id}>
-                    <div className="group relative flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg">
+                  <div
+                    {...chapterDropZone(ch)}
+                    className={cn(
+                      'relative rounded-button',
+                      dropTarget === `chapter:${ch.id}` && 'bg-tint-accent-1/70'
+                    )}
+                    data-workspace-chapter={ch.id}
+                    key={ch.id}
+                  >
+                    {insertionLine(`chapter:${ch.id}`)}
+                    <div
+                      className="group relative flex items-center rounded-button py-1.5 pr-1.5 hover:bg-surface-hover-bg group-data-[dragging]/file-tree:bg-transparent!"
+                      draggable={!readOnly}
+                      onDragEnd={clearDragState}
+                      onDragStart={(e) => {
+                        if (readOnly) {
+                          e.preventDefault();
+                          return;
+                        }
+                        e.stopPropagation();
+                        setDragging(true);
+                        draggedChapterRef.current = ch.id;
+                        e.dataTransfer.setData(
+                          'application/x-capy-chapter',
+                          ch.id
+                        );
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                    >
                       <button
                         aria-expanded={expanded}
                         className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left"
@@ -459,10 +531,7 @@ export function FilesPanel({
                       )}
                     </div>
                     {expanded && (
-                      <div
-                        {...contentListDropZone()}
-                        className="flex flex-col pl-5"
-                      >
+                      <div className="flex flex-col pl-5">
                         {contentFor(ch.id).map((item) =>
                           renderContentItem(item, ch.id)
                         )}
@@ -483,17 +552,11 @@ export function FilesPanel({
               generating) && (
               <div className="rounded-button">
                 {chapters.length > 0 && (
-                  <div
-                    className={cn(
-                      't-label px-1.5 py-1.5 text-fg-muted',
-                      dropTarget === 'unfiled-files' &&
-                        'border-line-strong border-b-2'
-                    )}
-                  >
+                  <div className="t-label px-1.5 py-1.5 text-fg-muted">
                     {m.nav_section_others()}
                   </div>
                 )}
-                <div {...dropZone('unfiled-files', null)}>
+                <div>
                   {contentFor(null).map((item) =>
                     renderContentItem(item, null)
                   )}
@@ -525,6 +588,26 @@ export function FilesPanel({
           </div>
         )}
       </div>
+      {!readOnly && onAddSource && (
+        <div
+          className="absolute right-4 bottom-4 z-10 flex"
+          data-workspace-add-menu
+        >
+          <Menu
+            items={addSourceMenuItems(onAddSource, onAddChapter)}
+            trigger={
+              <IconButton
+                className="size-11 rounded-full p-2.5 text-solid-accent-1 active:scale-100"
+                icon="plus"
+                label={m.action_add_file()}
+                strokeWidth={2.2}
+                variant="ghost-hover"
+              />
+            }
+            variant="morph"
+          />
+        </div>
+      )}
     </div>
   );
 }

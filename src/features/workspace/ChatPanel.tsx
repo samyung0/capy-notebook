@@ -324,7 +324,7 @@ function AssistantBubble({
   const answer = msg.content || draft || '';
   const empty = !answer && !msg.activity?.length && !waiting;
   return (
-    <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
+    <div className="mr-auto max-w-[92%] py-2.5 xl:px-3.5">
       <ActivityList
         blocks={msg.activity ?? []}
         citations={msg.citations}
@@ -551,7 +551,7 @@ export function ChatPanel({
       </Dialog>
 
       <div
-        className="flex flex-1 flex-col gap-4 self-stretch overflow-auto p-4"
+        className="flex flex-1 flex-col gap-4 self-stretch overflow-auto px-2 py-4 2xl:px-4"
         ref={scrollRef}
       >
         {!messages.length && (
@@ -584,7 +584,7 @@ export function ChatPanel({
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div
-              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5"
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page py-2.5 xl:px-3.5"
               key={msg.id}
             >
               {msg.content}
@@ -682,7 +682,7 @@ export function ChatPanel({
               </span>
             )}
             <IconButton
-              className="rounded-lg p-1.75"
+              className="p-2.5"
               disabled={!streaming && inputLimit.exceeded}
               icon="send"
               iconClassName={cn(

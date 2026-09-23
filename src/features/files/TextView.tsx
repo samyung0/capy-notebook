@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { FileError } from './FileStates';
 
 const MaterialPreview = lazy(() =>
   import('@/features/materials/MaterialPreview').then((mod) => ({
@@ -12,8 +13,10 @@ const MaterialPreview = lazy(() =>
 export default function TextView({
   markdown,
   url,
+  onRetry,
 }: {
   markdown?: boolean;
+  onRetry: () => void;
   url: string;
 }) {
   const [text, setText] = useState<string | null>(null);
@@ -40,11 +43,7 @@ export default function TextView({
   }, [url]);
 
   if (error) {
-    return (
-      <p className="py-8 text-center text-tint-error-fg">
-        {m.files_text_failed()}
-      </p>
-    );
+    return <FileError onRetry={onRetry} title={m.files_text_failed()} />;
   }
   if (text == null) {
     return <Skeleton className="h-[60vh] w-full" />;

@@ -336,7 +336,11 @@ export default function PdfView({
           <div className="shrink-0" style={{ width: pageWidth * zoom }}>
             <Document
               className="shrink-0"
-              error={<FileError onRetry={retry} />}
+              error={
+                <div className="absolute inset-0">
+                  <FileError onRetry={retry} />
+                </div>
+              }
               file={url}
               key={`${url}:${retryVersion}`}
               loading={<Skeleton className="h-full w-full" />}

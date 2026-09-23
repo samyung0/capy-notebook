@@ -8,6 +8,7 @@ import {
 } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { SkeletonList } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
 import {
   Popover,
@@ -19,15 +20,19 @@ import { m } from '@/i18n';
 import { NotificationItem } from '../../features/notification/NotificationItem';
 
 export function NotificationsBell() {
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useNotifications({ errorBoundary: false });
+  const [open, setOpen] = useState(false);
+  // The list loads on first open, not on every page: the dot and its label
+  // come from the unread count, which is all a closed bell shows.
+  const [wanted, setWanted] = useState(false);
+  if (open && !wanted) setWanted(true);
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } =
+    useNotifications({ errorBoundary: false }, wanted);
   const { data: unreadCount } = useUnreadNotificationCount({
     errorBoundary: false,
   });
   const { mutate: markNotificationRead } = useMarkNotificationRead();
   const { mutate: markRead } = useMarkNotificationsRead();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
   const notifications = data?.pages.flatMap((page) => page.items) ?? [];
   const previous = useRef({
     ids: new Set<string>(),
@@ -102,7 +107,8 @@ export function NotificationsBell() {
             )}
           </div>
           <div className="max-h-96 overflow-auto">
-            {!notifications.length && (
+            {isPending && <SkeletonList className="p-2" count={3} />}
+            {!isPending && !notifications.length && (
               <div className="px-4 py-6 text-center text-fg-muted">
                 {m.notifications_empty()}
               </div>

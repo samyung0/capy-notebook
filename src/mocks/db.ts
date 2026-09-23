@@ -60,6 +60,7 @@ import {
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
+import { errorMaterials } from './errorMaterials';
 import { seedNotes } from './noteContent';
 import { embeddedSeeds } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
@@ -154,7 +155,8 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
   return d.toISOString();
 }
 
-export const user: User = {
+// The account lifecycle lives in `accountStatus`; handlers compose /me from both.
+export const user: Omit<User, 'account'> = {
   avatarIconId: 'avataaars-01',
   avatarUrl: '/icons/avataaars-01.svg',
   chatModel: {
@@ -1307,6 +1309,30 @@ const seedMaterials: MaterialDraft[] = [
   },
 ];
 for (const draft of seedMaterials) materials.push(makeMaterial(draft));
+
+for (const fixture of errorMaterials) {
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(
+        fixture.kind === 'diagram'
+          ? [mermaidNode('flowchart LR\n  A[Unclosed node')]
+          : [{ children: [{ text: 'Error preview fixture.' }], type: 'p' }]
+      ),
+      createdAt: days(1),
+      id: fixture.id,
+      kind: fixture.kind,
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: fixture.title,
+      workspaceId: 'ws_bio',
+      workspaceName: 'Biology 101',
+    })
+  );
+}
 
 /* Rich Plate notes live in mocks/noteContent (one fixture set per workspace). */
 for (const note of seedNotes) {

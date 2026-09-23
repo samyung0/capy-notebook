@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { getLocale, m } from '@/i18n';
-import { THEMES } from '@/theme/ThemeProvider';
+import { THEMES } from '@/theme/theme';
 
 /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
  * when a diagram is actually rendered. */

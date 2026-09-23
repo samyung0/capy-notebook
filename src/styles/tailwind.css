@@ -173,13 +173,19 @@
   }
 }
 
-@keyframes scroll-fade-y {
+@keyframes scroll-fade-y-start {
   from {
     --scroll-fade-start: 0px;
-    --scroll-fade-end: 28px;
   }
   to {
-    --scroll-fade-start: 28px;
+    --scroll-fade-start: 36px;
+  }
+}
+@keyframes scroll-fade-y-end {
+  from {
+    --scroll-fade-end: 36px;
+  }
+  to {
     --scroll-fade-end: 0px;
   }
 }
@@ -192,8 +198,14 @@
     transparent
   );
   @supports (animation-timeline: scroll()) {
-    animation: scroll-fade-y linear both;
+    animation: scroll-fade-y-start linear both, scroll-fade-y-end linear both;
     animation-timeline: scroll(self block);
+    /* Clear the bottom fade as the last row reaches the viewport edge,
+       before the trailing padding scrolls into view. */
+    animation-range:
+      0px 36px,
+      calc(100% - var(--scroll-fade-bottom-padding, 0px) - 36px)
+      calc(100% - var(--scroll-fade-bottom-padding, 0px));
   }
 }
 

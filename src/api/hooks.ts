@@ -214,14 +214,6 @@ export function useDeleteLLMCredential() {
   });
 }
 
-export const accountStatusQuery = () =>
-  queryOptions({
-    queryFn: () => api.get<AccountStatus>('/account/status'),
-    queryKey: qk.accountStatus,
-  });
-export const useAccountStatus = (options?: QueryUiOptions) =>
-  useQuery({ ...accountStatusQuery(), meta: queryMeta(options) });
-
 export const deletionPreflightQuery = () =>
   queryOptions({
     queryFn: () => api.get<DeletionPreflight>('/account/deletion'),
@@ -239,7 +231,7 @@ export function useRequestAccountDeletion() {
       void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
     },
     onSuccess: (status) => {
-      qc.setQueryData(qk.accountStatus, status);
+      qc.setQueryData<User>(qk.me, (me) => me && { ...me, account: status });
       void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
       void qc.invalidateQueries({ queryKey: qk.me });
     },
@@ -258,7 +250,7 @@ export function useTransferWorkspace(workspaceId: string) {
       void qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) });
       void qc.invalidateQueries({ queryKey: qk.workspaces() });
       void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
-      void qc.invalidateQueries({ queryKey: qk.accountStatus });
+      void qc.invalidateQueries({ queryKey: qk.me });
     },
   });
 }
@@ -275,7 +267,9 @@ export const useSearch = (q: string, options?: QueryUiOptions) =>
 type NotificationCache = InfiniteData<NotificationPage, string>;
 export type EventStreamState = { status: 'connected' | 'disconnected' };
 
-export const useNotifications = (options?: QueryUiOptions) =>
+/** `enabled` lets the bell skip the list until its popover opens; the badge
+ * rides on the separate unread count. */
+export const useNotifications = (options?: QueryUiOptions, enabled = true) =>
   useInfiniteQuery<
     NotificationPage,
     Error,
@@ -283,6 +277,7 @@ export const useNotifications = (options?: QueryUiOptions) =>
     typeof qk.notifications,
     string
   >({
+    enabled,
     getNextPageParam: (page) => page.next || undefined,
     initialPageParam: '',
     meta: queryMeta(options),
@@ -844,14 +839,15 @@ export const useFiles = (wsId: string, options?: QueryUiOptions) =>
     refetchOnWindowFocus: true,
   });
 
-export const useFile = (id: string | null, options?: QueryUiOptions) =>
-  useQuery({
+export const fileQuery = (id: string | null) =>
+  queryOptions({
     enabled: !!id,
-    meta: queryMeta(options),
     queryFn: () => api.get<SourceFile>(`/files/${id}`),
     queryKey: qk.file(id ?? ''),
     staleTime: 5000,
   });
+export const useFile = (id: string | null, options?: QueryUiOptions) =>
+  useQuery({ ...fileQuery(id), meta: queryMeta(options) });
 
 /** Query string for the owner-scoped listings: comma-joined lists, blanks
  * dropped, the page cursor last. */
@@ -881,6 +877,7 @@ export const ownedFilesQuery = (params: FileListParams = {}) => ({
         {
           dir: params.dir,
           kind: params.kinds,
+          scope: params.scope,
           sort: params.sort,
           workspaceId: params.workspaceIds,
         },
@@ -893,15 +890,9 @@ export const ownedFilesQuery = (params: FileListParams = {}) => ({
 export const useOwnedFiles = (params: FileListParams = {}) =>
   useInfiniteQuery(ownedFilesQuery(params));
 
-/** The owner's 30 newest files, for the dashboard recents. */
-export const allFilesQuery = () =>
-  queryOptions({
-    queryFn: () =>
-      api.get<FilePage>('/files?limit=30').then((page) => page.items),
-    queryKey: qk.allFiles,
-  });
-export const useAllFiles = (options?: QueryUiOptions) =>
-  useQuery({ ...allFilesQuery(), meta: queryMeta(options) });
+/** The dashboard recents: newest files across every workspace the caller is
+ * a member of. The first page covers the card, which shows 20 items. */
+export const recentFilesQuery = () => ownedFilesQuery({ scope: 'member' });
 
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
@@ -910,6 +901,7 @@ export function useUpdateFile(wsId: string) {
       api.patch<SourceFile>(`/files/${id}`, body),
     onSuccess: (file) => {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
       qc.invalidateQueries({ queryKey: qk.file(file.id) });
       qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
     },
@@ -948,7 +940,6 @@ export function useMoveFile(wsId: string) {
 }
 function invalidateAfterFileDelete(qc: QueryClient, wsId: string) {
   qc.invalidateQueries({ queryKey: qk.files(wsId) });
-  qc.invalidateQueries({ queryKey: qk.allFiles });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
   qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
@@ -1012,7 +1003,6 @@ export const useTrash = (wsId: string | undefined, enabled: boolean) =>
 
 function invalidateAfterTrashChange(qc: QueryClient, item: TrashItem) {
   qc.invalidateQueries({ queryKey: qk.trash() });
-  qc.invalidateQueries({ queryKey: qk.allFiles });
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
   qc.invalidateQueries({ queryKey: qk.usage });
@@ -1072,10 +1062,27 @@ export function useUpdateChapter(wsId: string) {
 }
 export function useReorderChapters(wsId: string) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (ids: string[]) =>
+  return useMutation<void, Error, string[], { prev?: Chapter[] }>({
+    mutationFn: (ids) =>
       api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
+    onError: (_error, _ids, context) => {
+      if (context?.prev) qc.setQueryData(qk.chapters(wsId), context.prev);
+    },
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: qk.chapters(wsId) });
+      const prev = qc.getQueryData<Chapter[]>(qk.chapters(wsId));
+      const positions = new Map(ids.map((id, order) => [id, order]));
+      qc.setQueryData<Chapter[]>(qk.chapters(wsId), (list) =>
+        list
+          ?.map((chapter) => {
+            const order = positions.get(chapter.id);
+            return order === undefined ? chapter : { ...chapter, order };
+          })
+          .sort((a, b) => a.order - b.order)
+      );
+      return { prev };
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
   });
 }
 
@@ -1433,7 +1440,8 @@ export const ownedMaterialsQuery = (params: MaterialListParams = {}) => ({
         {
           dir: params.dir,
           kind: params.kinds,
-          location: params.location,
+          location: params.locations,
+          scope: params.scope,
           sort: params.sort,
           workspaceId: params.workspaceIds,
         },
@@ -1446,6 +1454,15 @@ export const ownedMaterialsQuery = (params: MaterialListParams = {}) => ({
  * own workspaces; the Create page's list. */
 export const useOwnedMaterials = (params: MaterialListParams = {}) =>
   useInfiniteQuery(ownedMaterialsQuery(params));
+/** The dashboard recents: newest top-level materials of every kind across
+ * member workspaces, plus the caller's standalone ones. */
+export const recentMaterialsQuery = () =>
+  ownedMaterialsQuery({
+    kinds: ['note', 'quiz', 'flashcards', 'mindmap', 'diagram'],
+    locations: ['workspace', 'standalone'],
+    scope: 'member',
+    sort: 'created',
+  });
 
 function invalidateOwnedMaterials(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
@@ -1526,6 +1543,7 @@ export function useCreateNote(wsId: string) {
     onSuccess: (mt) => {
       track('note_created', { workspaceId: wsId });
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+      invalidateOwnedMaterials(qc);
       qc.setQueryData(qk.material(mt.id), mt);
     },
   });

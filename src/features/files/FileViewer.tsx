@@ -1,5 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
-import { lazy, type ReactNode, Suspense, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { fileLinksQuery, useFileLinks, useWorkspace } from '@/api/hooks';
 import type {
   Region,
@@ -10,6 +11,7 @@ import type {
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { m } from '@/i18n';
 import { FileEmpty, FileError, FileLoading } from './FileStates';
@@ -17,6 +19,7 @@ import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 import type { OfficeCitation } from './officeProtocol';
 import { SourceTextView } from './SourceTextView';
 import { officeRuntimeKey } from './useOfficeRuntime';
+import { pdfAnnotationsQuery } from './usePdfAnnotations';
 
 const PdfView = lazy(() => import('./PdfView'));
 const SheetView = lazy(() => import('./SheetView'));
@@ -96,7 +99,12 @@ function UnsupportedPreview({ file }: { file: ViewableFile }) {
             ? m.files_preview_unsupported_body({ ext: `.${ext}` })
             : m.files_preview_unsupported_body_noext()}
         </p>
-        <Button className="underline" onClick={download} variant="ghost">
+        <Button
+          iconLeft="download"
+          iconLeftClassName="me-1"
+          onClick={download}
+          variant="ghost-hover"
+        >
           {m.files_download_original({ name: file.name })}
         </Button>
       </div>
@@ -144,6 +152,40 @@ function FileViewerContent({
     isError: linksFailed,
     refetch: refetchLinks,
   } = useFileLinks(file?.hasBytes ? file.id : '', { errorBoundary: false });
+  // Private marks need only the file id. Reading them here runs alongside the
+  // link fetch instead of after the whole PDF downloads; the overlay draws them
+  // once the pages exist, so the document never waits on this.
+  const isPdf =
+    !!file?.hasBytes && (file.kind === 'pdf' || fileExt(file.name) === 'pdf');
+  const {
+    errorUpdatedAt: annotationsErrorUpdatedAt,
+    isError: annotationsFailed,
+    refetch: refetchAnnotations,
+  } = useQuery({
+    ...pdfAnnotationsQuery(file?.id ?? ''),
+    enabled: isPdf,
+  });
+  useEffect(() => {
+    if (!isPdf || !annotationsFailed || !annotationsErrorUpdatedAt) return;
+    const id = userToast({
+      button: {
+        label: m.error_action_retry(),
+        onClick: () => void refetchAnnotations(),
+      },
+      id: `pdf-annotations:${file?.id}`,
+      title: m.pdf_annotations_failed(),
+      variant: 'error',
+    });
+    return () => {
+      toast.dismiss(id);
+    };
+  }, [
+    annotationsErrorUpdatedAt,
+    annotationsFailed,
+    file?.id,
+    isPdf,
+    refetchAnnotations,
+  ]);
   if (!file) {
     // TODO: shouldnt this throw errors?
     return (
@@ -168,7 +210,7 @@ function FileViewerContent({
       imageZoom={imageZoom}
       onDirtyChange={onDirtyChange}
       onImageZoomChange={onImageZoomChange}
-      onRetryLinks={() => void refetchLinks()}
+      onRetryLinks={() => refetchLinks()}
       page={page}
       regions={regions}
       workspaceRole={workspace?.role}
@@ -189,9 +231,15 @@ function ResolvedFileView({
 }: Omit<FileViewerProps, 'file' | 'imageZoom'> & {
   file: ViewableFile;
   imageZoom: number;
-  onRetryLinks: () => void;
+  onRetryLinks: () => Promise<unknown>;
   workspaceRole?: WorkspaceRole;
 }) {
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const retryPreview = async () => {
+    await onRetryLinks();
+    // Restart even when the signer returns the same URL. Keep source editors mounted.
+    setPreviewAttempt((attempt) => attempt + 1);
+  };
   const canEdit = workspaceRole === 'owner' || workspaceRole === 'editor';
   const ext = fileExt(file.name);
   const officeRuntimeIdentity = officeRuntimeKey(file, file.revision);
@@ -213,6 +261,8 @@ function ResolvedFileView({
     return (
       <ImageViewer
         alt={file.name}
+        key={`${file.url}:${previewAttempt}`}
+        onRetry={retryPreview}
         onZoomChange={onImageZoomChange}
         url={file.url}
         zoom={imageZoom}
@@ -221,7 +271,13 @@ function ResolvedFileView({
   }
 
   if (file.kind === 'audio' || AUDIO_EXTS.has(ext)) {
-    return <AudioView file={file} key={file.url} onRetry={onRetryLinks} />;
+    return (
+      <AudioView
+        file={file}
+        key={`${file.url}:${previewAttempt}`}
+        onRetry={retryPreview}
+      />
+    );
   }
 
   if (file.kind === 'sheet' || SHEET_EXTS.has(ext)) {
@@ -232,7 +288,13 @@ function ResolvedFileView({
           file={file}
           key={file.id}
           onDirtyChange={onDirtyChange}
-          renderPreview={(url) => <CsvView url={url ?? file.url} />}
+          renderPreview={(url) => (
+            <CsvView
+              key={`${url ?? file.url}:${previewAttempt}`}
+              onRetry={retryPreview}
+              url={url ?? file.url}
+            />
+          )}
         />
       );
     if (ext !== 'xlsx') return <UnsupportedPreview file={file} />;
@@ -287,7 +349,12 @@ function ResolvedFileView({
         key={file.id}
         onDirtyChange={onDirtyChange}
         renderPreview={(url) => (
-          <TextView markdown={isMarkdown} url={url ?? file.url} />
+          <TextView
+            key={`${url ?? file.url}:${previewAttempt}`}
+            markdown={isMarkdown}
+            onRetry={retryPreview}
+            url={url ?? file.url}
+          />
         )}
       />
     );

@@ -1,6 +1,10 @@
-import { useQueries } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { materialsQuery, useAllFiles, useWorkspaces } from '@/api/hooks';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { Link, linkOptions } from '@tanstack/react-router';
+import {
+  recentFilesQuery,
+  recentMaterialsQuery,
+  useWorkspaces,
+} from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -11,7 +15,7 @@ import {
 } from '@/features/workspace/contentActionTarget';
 import { getLocale, m } from '@/i18n';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
-import { mergeRecentItems } from './recentItems';
+import { mergeRecentItems, type RecentItem } from './recentItems';
 
 function formatRecentDate(iso: string): string {
   const locale = getLocale() === 'zh' ? 'zh-CN' : 'en';
@@ -21,50 +25,54 @@ function formatRecentDate(iso: string): string {
   }).format(new Date(iso));
 }
 
+function recentLink(item: RecentItem) {
+  if (!item.workspaceId) {
+    return linkOptions({
+      params: { materialId: item.id },
+      to: '/materials/$materialId',
+    });
+  }
+  return linkOptions({
+    params: { workspaceId: item.workspaceId },
+    search:
+      item.kind === 'material'
+        ? { material: item.id, mode: 'view' as const }
+        : { file: item.id },
+    to: '/workspaces/$workspaceId',
+  });
+}
+
+/** Newest files and materials across the caller's member workspaces plus
+ * their standalone materials. Renders once all three lists have loaded. */
 export function RecentItemsCard() {
+  const meta = { errorBoundary: false as const };
   const {
     data: files,
     fetchStatus: filesFetchStatus,
     isLoading: filesLoading,
-  } = useAllFiles({ errorBoundary: false });
+  } = useInfiniteQuery({ ...recentFilesQuery(), meta });
+  const {
+    data: materials,
+    fetchStatus: materialsFetchStatus,
+    isLoading: materialsLoading,
+  } = useInfiniteQuery({ ...recentMaterialsQuery(), meta });
   const {
     data: workspaces,
     fetchStatus: workspacesFetchStatus,
     isLoading: workspacesLoading,
   } = useWorkspaces({ sort: 'accessed' }, { errorBoundary: false });
-  const materialQueries = useQueries({
-    queries: (workspaces ?? []).map((ws) => ({
-      ...materialsQuery(ws.id),
-      meta: { errorBoundary: false as const },
-    })),
-  });
 
-  const materials = materialQueries.flatMap((query, index) => {
-    const { data } = query;
-    const workspace = workspaces?.[index];
-    if (!data || !workspace) return [];
-    return data.map((ref) => ({
-      ref,
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-    }));
-  });
-  const items = mergeRecentItems(files ?? [], materials, workspaces ?? []);
-  const paused =
-    filesFetchStatus === 'paused' ||
-    workspacesFetchStatus === 'paused' ||
-    materialQueries.some((query) => {
-      const { fetchStatus } = query;
-      return fetchStatus === 'paused';
-    });
-  const materialsLoading = materialQueries.some((query) => {
-    const { isLoading: queryLoading } = query;
-    return queryLoading;
-  });
-  const isLoading =
-    (filesLoading && !files) ||
-    (workspacesLoading && !workspaces) ||
-    materialsLoading;
+  const items = mergeRecentItems(
+    files?.pages[0]?.items ?? [],
+    materials?.pages[0]?.items ?? [],
+    workspaces ?? []
+  );
+  const paused = [
+    filesFetchStatus,
+    materialsFetchStatus,
+    workspacesFetchStatus,
+  ].includes('paused');
+  const isLoading = filesLoading || materialsLoading || workspacesLoading;
 
   return (
     <div className="flex flex-col gap-3">
@@ -86,14 +94,8 @@ export function RecentItemsCard() {
             >
               <Link
                 className="flex items-start gap-3 rounded-button px-1 py-2 hover:bg-surface-hover-bg"
-                params={{ workspaceId: item.workspaceId }}
                 preload="intent"
-                search={
-                  item.kind === 'material'
-                    ? { material: item.id, mode: 'view' }
-                    : { file: item.id }
-                }
-                to="/workspaces/$workspaceId"
+                {...recentLink(item)}
               >
                 <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-button">
                   <FileIcon
@@ -126,10 +128,11 @@ export function RecentItemsCard() {
                 content={
                   item.kind === 'file'
                     ? toFileActionTarget(item.file)
-                    : toMaterialActionTarget(item.ref)
+                    : toMaterialActionTarget(item.material)
                 }
                 display="hover"
                 hoverClassName="absolute top-1.5 right-1"
+                readOnly={!item.canEdit}
                 showMove={false}
                 workspaceId={item.workspaceId}
               />

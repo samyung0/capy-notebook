@@ -294,6 +294,15 @@ durable and private. Failed or partly completed batches clear unreliable history
 and refetch the saved marks. Pen geometry is bounded to 4096 points and text to
 2000 characters by the store and generated contract.
 
+The marks load beside the document rather than after it: `FileViewer` starts the
+annotation read as soon as it knows the file is a PDF, alongside the presigned
+link, while the overlay itself still mounts only once pages exist. The document
+never waits on its marks. pdf.js loads with its defaults, which stream the whole
+file into its worker; reading only the needed byte ranges is not on, because
+read links live five minutes and a range read after expiry would fail. The
+source-file limit (10 MiB Free, 30 MiB Pro) bounds the bytes held, and pages
+mount only near the viewport, so rendered canvases stay bounded too.
+
 ## Verification
 
 Focused tests cover source protocol/checkpoint receipts, raw-text selection and

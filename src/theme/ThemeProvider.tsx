@@ -1,58 +1,12 @@
 import {
-  createContext,
   type ReactNode,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useState,
 } from 'react';
 
-export type Style = 'classroom' | 'notion';
-export type Theme = 'latte' | 'mocha' | 'macchiato';
-
-export const STYLES: {
-  value: Style;
-  label: string;
-  supportedThemes: Theme[];
-}[] = [
-  {
-    label: 'Classroom',
-    supportedThemes: ['latte', 'mocha', 'macchiato'],
-    value: 'classroom',
-  },
-  {
-    label: 'Notion',
-    supportedThemes: ['latte', 'mocha', 'macchiato'],
-    value: 'notion',
-  },
-];
-
-export const THEMES: {
-  value: Theme;
-  label: string;
-  displayColor: string;
-  isDark: boolean;
-}[] = [
-  { displayColor: '#fafafa', isDark: false, label: 'Latte', value: 'latte' },
-  { displayColor: '#222222', isDark: true, label: 'Mocha', value: 'mocha' },
-  {
-    displayColor: '#24273a',
-    isDark: true,
-    label: 'Macchiato',
-    value: 'macchiato',
-  },
-];
-
-interface ThemeState {
-  isDark: boolean;
-  setStyle: (m: Style) => void;
-  setTheme: (t: Theme) => void;
-  style: Style;
-  theme: Theme;
-}
-
-const ThemeContext = createContext<ThemeState | null>(null);
+import { STYLES, type Style, THEMES, type Theme, ThemeContext } from './theme';
 
 const STYLE_KEY = 'capy.style';
 const THEME_KEY = 'capy.theme';
@@ -123,10 +77,4 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
-}
-
-export function useTheme(): ThemeState {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error('useTheme must be used within ThemeProvider');
-  return ctx;
 }

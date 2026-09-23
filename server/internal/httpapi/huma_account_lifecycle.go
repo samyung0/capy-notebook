@@ -27,20 +27,10 @@ type requestDeletionInput struct {
 
 func (a *api) registerAccountLifecycle(api huma.API) {
 	const tag = "Account"
-	reg(api, http.MethodGet, "/api/account/status", "getAccountStatus", tag,
-		"Resolved account lifecycle state", http.StatusOK, a.getAccountStatus)
 	reg(api, http.MethodGet, "/api/account/deletion", "getDeletionPreflight", tag,
 		"What account deletion would destroy, and what blocks it", http.StatusOK, a.deletionPreflight)
 	reg(api, http.MethodPost, "/api/account/deletion", "requestAccountDeletion", tag,
 		"Schedule account deletion", http.StatusOK, a.requestAccountDeletion)
-}
-
-func (a *api) getAccountStatus(ctx context.Context, _ *struct{}) (*accountStatusOutput, error) {
-	status, err := a.s.AccountAccess(ctx, userID(ctx))
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &accountStatusOutput{Body: status}, nil
 }
 
 // liveSubscriptionBlocker asks Stripe, not the database column. The column is a

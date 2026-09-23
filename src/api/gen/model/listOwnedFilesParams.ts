@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ListOwnedFilesDir } from './listOwnedFilesDir.ts';
+import type { ListOwnedFilesScope } from './listOwnedFilesScope.ts';
 import type { ListOwnedFilesSort } from './listOwnedFilesSort.ts';
 
 export type ListOwnedFilesParams = {
@@ -13,9 +14,13 @@ export type ListOwnedFilesParams = {
  */
 kind?: string;
 /**
- * Comma-separated workspace ids the caller owns
+ * Comma-separated workspace ids
  */
 workspaceId?: string;
+/**
+ * owned: the caller's workspaces; member: also every workspace they are a member of
+ */
+scope?: ListOwnedFilesScope;
 sort?: ListOwnedFilesSort;
 dir?: ListOwnedFilesDir;
 /**

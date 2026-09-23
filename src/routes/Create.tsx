@@ -124,7 +124,7 @@ export default function Create() {
       dir: ascending ? 'asc' : 'desc',
       sort,
       ...(kinds.length ? { kinds: kinds as MaterialListKind[] } : {}),
-      ...(location ? { location } : {}),
+      ...(location ? { locations: [location] } : {}),
       ...(workspaceIds.length ? { workspaceIds } : {}),
     }),
     [ascending, kinds, location, sort, workspaceIds]

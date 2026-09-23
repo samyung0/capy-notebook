@@ -229,9 +229,12 @@ def test_subject_list_rides_on_browse_knowledge_only(monkeypatch):
     }
 
     assert (
-        "- statistics: Statistics (also: stats) — 12 excerpts"
+        '- browse_knowledge({"subject": "statistics"}) (12 excerpts)'
         in described["browse_knowledge"]
     )
+    assert "Statistics" not in described["browse_knowledge"]
+    assert "also: stats" not in described["browse_knowledge"]
+    assert "Subject IDs are only for `subject`" in described["browse_knowledge"]
     assert "statistics" not in described["search_knowledge"], (
         "the list is long; it is listed once"
     )
@@ -330,7 +333,8 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
 
     refused = await tools._search_knowledge({"query": "x", "topics": ["algebra"]}, ctx)
     assert refused.refused and "algebra" in refused.text()
-    assert "browsing a subject" in refused.text()
+    assert "subject browse call" in refused.text()
+    assert "returned topic_id values" in refused.text()
     assert looked_up == [["algebra"]], "an unbrowsed id is checked once"
 
 
@@ -423,10 +427,13 @@ async def test_browse_of_a_subject_lists_its_topics_and_remembers_them(monkeypat
     result = await tools._browse_knowledge({"subject": "statistics"}, ctx)
     text = result.text()
 
-    assert text.startswith("statistics: Statistics — 2 topics\n")
-    assert "- linear-regression: Linear regression — Fitting lines (3 excerpts)" in text
-    assert "- sampling: Sampling (0 excerpts)" in text
-    assert "Browse a topic id next" in text
+    assert text.startswith("Subject 'statistics': 2 topics\n")
+    assert (
+        '- topic_id="linear-regression": Linear regression — Fitting lines (3 excerpts)'
+        in text
+    )
+    assert '- topic_id="sampling": Sampling (0 excerpts)' in text
+    assert "Use these topic_id values in search_knowledge.topics" in text
     assert ctx.subject_topics == {"statistics": topics}
 
     both = await tools._browse_knowledge({"subject": "statistics", "topic": "x"}, ctx)

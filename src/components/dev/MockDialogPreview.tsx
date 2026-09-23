@@ -1,9 +1,7 @@
+import { useMemo } from 'react';
 import { useUpdateTask } from '@/api/hooks';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { SimpleDialog } from '@/components/ui/Dialog';
 import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
-import { FileNotIndexedBanner } from '@/features/files/FileStates';
-import { FileViewer } from '@/features/files/FileViewer';
 import { TaskEditDialog } from '@/features/tasks/TaskEditDialog';
 import {
   AddSourceDialog,
@@ -13,7 +11,7 @@ import {
 import { WorkspaceTransferDialog } from '@/features/workspace/WorkspaceMemberManager';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { tasks, workspaces } from '@/mocks/db';
-import { dialogSourceFile } from '@/mocks/dialogFiles';
+import { scenarioWorkspace } from '@/mocks/scenarioFixtures';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import type { MockDialogId } from './mockDialogOptions';
 
@@ -27,7 +25,7 @@ const source: PendingSource = {
   kind: 'txt',
   name: 'Study notes.txt',
   origin: 'remote',
-  parseMode: 'fast',
+  parseMode: 'none',
   provider: 'google',
   sizeBytes: 2048,
   sizeEstimate: false,
@@ -40,36 +38,53 @@ export default function MockDialogPreview({
   dialog: MockDialogId;
   onClose: () => void;
 }) {
-  // The first seeded workspace is explicit fixture data, independent of the route.
-  const workspaceId = workspaces[0].id;
+  const initialSources = useMemo<PendingSource[]>(
+    () => [
+      dialog === 'source-upload'
+        ? {
+            ...source,
+            file: new File(['Scenario upload'], 'Scenario upload.txt', {
+              type: 'text/plain',
+            }),
+            name: 'Scenario upload.txt',
+            origin: 'local',
+            parseMode: 'none',
+            sizeBytes: 15,
+          }
+        : source,
+    ],
+    [dialog]
+  );
+  // Product dialogs use the same dedicated workspace as page journeys.
+  const workspaceId = scenarioWorkspace;
+  const workspace = workspaces.find((item) => item.id === workspaceId)!;
   const { mutateAsync: updateTask } = useUpdateTask();
-  if (dialog.startsWith('mock-preview-')) {
-    const file = dialogSourceFile(dialog);
-    return (
-      <SimpleDialog onClose={onClose} open title={file.name} width={800}>
-        <FileNotIndexedBanner file={file} />
-        <div className="h-[60dvh]">
-          <FileViewer file={file} />
-        </div>
-      </SimpleDialog>
-    );
-  }
-  if (dialog === 'workspace-stats')
+  if (
+    dialog === 'workspace-stats' ||
+    dialog === 'workspace-settings' ||
+    dialog === 'workspace-sharing'
+  )
     return (
       <WorkspaceSettingsDialog
-        initialTab="statistics"
+        initialTab={
+          dialog === 'workspace-stats'
+            ? 'statistics'
+            : dialog === 'workspace-sharing'
+              ? 'sharing'
+              : 'general'
+        }
         onClose={onClose}
         open
-        workspace={workspaces[0]}
+        workspace={workspace}
       />
     );
   if (dialog === 'task-edit')
     return (
       <TaskEditDialog
         onClose={onClose}
-        onSave={(patch) => updateTask({ ...patch, id: tasks[0].id })}
+        onSave={(patch) => updateTask({ ...patch, id: 'mock-scenario-task' })}
         open
-        task={tasks[0]}
+        task={tasks.find((task) => task.id === 'mock-scenario-task')!}
       />
     );
   if (dialog === 'ownership-transfer')
@@ -94,16 +109,7 @@ export default function MockDialogPreview({
         <AddSourceDialog onClose={onClose} open workspaceId={workspaceId} />
       ) : (
         <SourceDetailsDialog
-          initialSources={[
-            dialog === 'source-analysis-error'
-              ? {
-                  ...source,
-                  analysisStatus: 'error',
-                  kind: 'doc',
-                  name: 'Unreadable document.docx',
-                }
-              : source,
-          ]}
+          initialSources={initialSources}
           onClose={onClose}
           onEmpty={onClose}
           open

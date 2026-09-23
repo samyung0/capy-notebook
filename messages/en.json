@@ -764,7 +764,6 @@
   "files_office_presentation_frame_title": "Presentation viewer for {name}",
   "files_office_document_frame_title": "Document viewer for {name}",
   "files_office_runtime_loading_file": "Loading file…",
-  "files_office_runtime_open_failed": "This file could not be opened.",
   "files_office_runtime_loading": "Loading…",
   "files_office_runtime_loading_editor": "Loading editor…",
   "files_office_no_slides": "No slides",

@@ -281,56 +281,6 @@ export const requestAccountDeletion = async (requestAccountDeletionReq: NonReado
 
 
 
-export type getAccountStatusResponse200 = {
-  data: AccountStatus
-  status: 200
-}
-
-export type getAccountStatusResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type getAccountStatusResponseSuccess = (getAccountStatusResponse200) & {
-  headers: Headers;
-};
-export type getAccountStatusResponseError = (getAccountStatusResponseDefault) & {
-  headers: Headers;
-};
-
-export type getAccountStatusResponse = (getAccountStatusResponseSuccess | getAccountStatusResponseError)
-
-export const getGetAccountStatusUrl = () => {
-
-
-
-
-  return `/api/account/status`
-}
-
-/**
- * @summary Resolved account lifecycle state
- */
-export const getAccountStatus = async ( options?: RequestInit): Promise<getAccountStatusResponse> => {
-
-  const res = await fetch(getGetAccountStatusUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getAccountStatusResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getAccountStatusResponse
-}
-
-
-
 export type listAttemptsResponse200 = {
   data: Attempt[]
   status: 200
@@ -1472,7 +1422,7 @@ export const getListOwnedFilesUrl = (params?: ListOwnedFilesParams,) => {
 }
 
 /**
- * @summary List the caller's files across owned workspaces
+ * @summary List files across the caller's owned or member workspaces
  */
 export const listOwnedFiles = async (params?: ListOwnedFilesParams, options?: RequestInit): Promise<listOwnedFilesResponse> => {
 
@@ -2960,7 +2910,7 @@ export const getListOwnedMaterialsUrl = (params?: ListOwnedMaterialsParams,) => 
 }
 
 /**
- * @summary List the caller's notes, quizzes and flashcard sets
+ * @summary List notes, quizzes and flashcard sets across the caller's owned or member workspaces
  */
 export const listOwnedMaterials = async (params?: ListOwnedMaterialsParams, options?: RequestInit): Promise<listOwnedMaterialsResponse> => {
 

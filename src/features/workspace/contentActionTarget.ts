@@ -1,4 +1,9 @@
-import type { Material, MaterialRef, SourceFile } from '@/api/types';
+import type {
+  Material,
+  MaterialListItem,
+  MaterialRef,
+  SourceFile,
+} from '@/api/types';
 
 export interface ContentActionTarget {
   chapterId: string | null;
@@ -27,16 +32,17 @@ export function toFileActionTarget(file: SourceFile): ContentActionTarget {
 }
 
 export function toMaterialActionTarget(
-  material: Material | MaterialRef
+  material: Material | MaterialRef | MaterialListItem
 ): ContentActionTarget {
   return {
     chapterId: material.chapterId,
     createdAt: material.createdAt,
     id: material.id,
     kind: 'type' in material ? material.type : material.kind,
-    maxDepth: material.maxDepth,
+    ...('maxDepth' in material
+      ? { maxDepth: material.maxDepth, nodeCount: material.nodeCount }
+      : {}),
     name: material.title,
-    nodeCount: material.nodeCount,
     type: 'material',
   };
 }

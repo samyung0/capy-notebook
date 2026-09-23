@@ -1,10 +1,19 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
-import { useFile, useFlashcardSet, useMaterial, useQuiz } from '@/api/hooks';
+import {
+  useFile,
+  useFlashcardSet,
+  useMaterial,
+  useMaterials,
+  useQuiz,
+  useWorkspace,
+} from '@/api/hooks';
 import type {
+  AccessCapabilities,
   Chapter,
   Material,
   MaterialKind,
+  MaterialRef,
   SourceFile,
   UserColor,
 } from '@/api/types';
@@ -43,11 +52,16 @@ import { MATERIALMODE_ICON, MATERIALMODE_LABEL } from './materialIconMappings';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 
-function useHeader(item: OpenItem): {
+function useHeader(
+  item: OpenItem,
+  workspaceId: string,
+  standalone: boolean
+): {
   file?: SourceFile;
   icon: FileIconName;
   title?: string;
-  material?: Material;
+  material?: Material | MaterialRef;
+  materialCapabilities?: AccessCapabilities;
   materialKind?: MaterialKind;
   showImageZoom: boolean;
   modeOptions?: { value: MaterialMode; label: string }[];
@@ -56,10 +70,28 @@ function useHeader(item: OpenItem): {
   const { data: fileData } = useFile(item.kind === 'file' ? item.id : null, {
     errorBoundary: false,
   });
-  const { data: materialData } = useMaterial(
-    item.kind === 'material' ? item.id : null,
+  // Inside a workspace the list entry and the workspace's capabilities cover
+  // everything the header shows. Reading the material itself here would pull
+  // the whole document past the heavy-document gate, so the body is fetched
+  // only when the list cannot answer: the standalone page, or a material the
+  // list does not carry, which the gate cannot weigh either.
+  const inWorkspace =
+    item.kind === 'material' && !standalone && workspaceId !== '';
+  const { data: list, isPending: listPending } = useMaterials(
+    inWorkspace ? workspaceId : '',
     { errorBoundary: false }
   );
+  const { data: workspace } = useWorkspace(inWorkspace ? workspaceId : '', {
+    errorBoundary: false,
+  });
+  const listed = inWorkspace
+    ? list?.find((entry) => entry.id === item.id)
+    : undefined;
+  const readBody =
+    item.kind === 'material' && (!inWorkspace || (!listPending && !listed));
+  const { data: materialData } = useMaterial(readBody ? item.id : null, {
+    errorBoundary: false,
+  });
   if (item.kind === 'file') {
     return {
       file: fileData,
@@ -68,19 +100,25 @@ function useHeader(item: OpenItem): {
       title: fileData?.name,
     };
   }
-  const mt = materialData;
-  if (!mt) return { icon: '_file', showImageZoom: false, title: undefined };
+  const mt = listed ?? materialData;
+  const capabilities = listed
+    ? workspace?.capabilities
+    : materialData?.capabilities;
+  if (!mt || !capabilities) {
+    return { icon: '_file', showImageZoom: false, title: mt?.title };
+  }
+  const kind = 'type' in mt ? mt.type : mt.kind;
+  const policy = materialModePolicy(kind, capabilities);
   return {
-    defaultMode: materialModePolicy(mt.kind, mt.capabilities).defaultMode,
-    icon: materialIconName(mt.kind),
+    defaultMode: policy.defaultMode,
+    icon: materialIconName(kind),
     material: mt,
-    materialKind: mt.kind,
-    modeOptions: materialModePolicy(mt.kind, mt.capabilities).modes.map(
-      (value) => ({
-        label: MATERIALMODE_LABEL[value],
-        value,
-      })
-    ),
+    materialCapabilities: capabilities,
+    materialKind: kind,
+    modeOptions: policy.modes.map((value) => ({
+      label: MATERIALMODE_LABEL[value],
+      value,
+    })),
     showImageZoom: false,
     title: mt.title,
   };
@@ -218,12 +256,13 @@ export function Header({
     file,
     icon,
     material,
+    materialCapabilities,
     title,
     materialKind,
     showImageZoom,
     modeOptions,
     defaultMode,
-  } = useHeader(item);
+  } = useHeader(item, workspaceId, standalone);
   const activeMode =
     materialMode && modeOptions?.some((option) => option.value === materialMode)
       ? materialMode
@@ -232,7 +271,10 @@ export function Header({
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   return (
-    <div className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-3 pl-4 lg:pr-5">
+    <div
+      className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-3 pl-4 lg:pr-5"
+      data-testid="content-header"
+    >
       {leading}
       <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
         <FileIcon className="size-5 shrink-0 -translate-y-px" name={icon} />
@@ -361,7 +403,8 @@ export function Header({
           )}
           onDeleted={onDeleted}
           readOnly={
-            readOnly || (material ? !material.capabilities.canEdit : false)
+            readOnly ||
+            (materialCapabilities ? !materialCapabilities.canEdit : false)
           }
           renameFieldLabel={m.files_file_name()}
           showMove={!standalone}

@@ -25,7 +25,7 @@ export function ConnectionBanner() {
       data-connection-status={online ? 'reconnecting' : 'offline'}
       role="status"
     >
-      <Icon className="size-4 shrink-0" name="warning" />
+      <Icon className="size-4 shrink-0" name="error" />
       <p>{message}</p>
     </div>
   );

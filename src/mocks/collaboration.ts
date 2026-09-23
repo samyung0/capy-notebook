@@ -38,10 +38,13 @@ interface Participant {
 }
 
 export interface Room {
+  checkpointFailed?: boolean;
   dirty: boolean;
   document: Y.Doc;
+  format?: 'text' | 'docx' | 'xlsx' | 'pptx';
   name: string;
   participants: Set<Participant>;
+  retired?: boolean;
   target: { kind: 'material'; id: string } | { kind: 'source'; id: string };
   version: number;
 }
@@ -53,7 +56,22 @@ const REMOTE = 'mock-room';
 
 function createRoom(name: string, target: Room['target']): Room {
   const document = new Y.Doc({ gc: true, guid: name });
-  const checkpoint = checkpoints.get(name);
+  let checkpoint = checkpoints.get(name);
+  if (
+    !checkpoint &&
+    target.id.startsWith('mock-scenario-') &&
+    typeof sessionStorage !== 'undefined'
+  ) {
+    const saved = sessionStorage.getItem(`capy.scenario.room.${name}`);
+    if (saved) {
+      const parsed = JSON.parse(saved) as { state: number[]; version: number };
+      checkpoint = {
+        state: new Uint8Array(parsed.state),
+        version: parsed.version,
+      };
+      checkpoints.set(name, checkpoint);
+    }
+  }
   if (checkpoint) Y.applyUpdate(document, checkpoint.state);
   const room: Room = {
     dirty: false,
@@ -94,13 +112,24 @@ export function sourceRoomName(fileId: string, epoch: number) {
   return `source:${fileId}:epoch:${epoch}`;
 }
 
-export function sourceRoom(fileId: string, epoch: number, text: string): Room {
+export function sourceRoom(
+  fileId: string,
+  epoch: number,
+  text: string,
+  state?: Uint8Array,
+  format: Room['format'] = 'text'
+): Room {
   const name = sourceRoomName(fileId, epoch);
   const existing = rooms.get(name);
   if (existing) return existing;
   const room = createRoom(name, { id: fileId, kind: 'source' });
-  if (!checkpoints.has(name)) room.document.getText('source').insert(0, text);
+  room.format = format;
+  if (!checkpoints.has(name)) {
+    if (state) Y.applyUpdate(room.document, state);
+    else room.document.getText('source').insert(0, text);
+  }
   room.dirty = false;
+  if (fileId.startsWith('mock-scenario-')) rememberCheckpoint(room);
   return room;
 }
 
@@ -133,9 +162,10 @@ function persistMaterial(room: Room) {
 /** Every writer uses the same mock persistence path, including headless peers
  * and the last participant leaving before its editor's debounce fires. */
 export function checkpointRoom(room: Room) {
+  if (room.retired) return;
   const metrics =
     room.target.kind === 'material' ? persistMaterial(room) : undefined;
-  if (room.target.kind === 'source' && room.dirty) {
+  if (room.target.kind === 'source' && room.dirty && room.format === 'text') {
     db.fileLinks[room.target.id] = {
       ...db.fileLinks[room.target.id],
       url: db.textUrl(room.document.getText('source').toString()),
@@ -152,6 +182,18 @@ function rememberCheckpoint(room: Room) {
     state: Y.encodeStateAsUpdate(room.document),
     version: room.version,
   });
+  if (
+    room.target.id.startsWith('mock-scenario-') &&
+    typeof sessionStorage !== 'undefined'
+  ) {
+    sessionStorage.setItem(
+      `capy.scenario.room.${room.name}`,
+      JSON.stringify({
+        state: [...Y.encodeStateAsUpdate(room.document)],
+        version: room.version,
+      })
+    );
+  }
 }
 
 export function sourceRoomState(room: Room): string {
@@ -243,8 +285,14 @@ export function join(room: Room, participant: Participant) {
     }
     if (room.participants.size === 0) {
       const changed = room.dirty;
-      if (changed) checkpointRoom(room);
-      else rememberCheckpoint(room);
+      if (
+        !room.retired &&
+        !room.checkpointFailed &&
+        !failedSourceSaves.has(room.target.id)
+      ) {
+        if (changed) checkpointRoom(room);
+        else rememberCheckpoint(room);
+      }
       rooms.delete(room.name);
       room.document.destroy();
       if (changed && room.target.kind === 'material') {
@@ -383,6 +431,7 @@ class MockSourceProvider implements SourceProvider {
     this.config = config;
     this.room = room;
     this.leave = join(room, { document: config.document, origin: this });
+    sourceProviders.add(this);
     queueMicrotask(() => config.onSynced?.({ state: true }));
   }
 
@@ -396,6 +445,20 @@ class MockSourceProvider implements SourceProvider {
     if (event.type !== 'checkpoint-request' || typeof event.id !== 'string')
       return;
     const fileId = this.room.target.id;
+    if (failedSourceSaves.delete(fileId)) {
+      this.room.checkpointFailed = true;
+      const receipt = JSON.stringify({
+        checkpointIds: [event.id],
+        epoch: Number(this.config.name.split(':')[3]),
+        fileId,
+        message: 'Changes could not be saved. Your edits are still here.',
+        recoverable: true,
+        type: 'source-checkpoint-failed',
+      });
+      queueMicrotask(() => this.config.onStateless?.({ payload: receipt }));
+      return;
+    }
+    this.room.checkpointFailed = false;
     checkpointRoom(this.room);
     const epoch = Number(this.config.name.split(':')[3]);
     const receipt = JSON.stringify({
@@ -410,6 +473,7 @@ class MockSourceProvider implements SourceProvider {
   }
 
   disconnect() {
+    sourceProviders.delete(this);
     this.isAuthenticated = false;
     this.leave();
     this.config.onDisconnect?.();
@@ -418,6 +482,43 @@ class MockSourceProvider implements SourceProvider {
   destroy() {
     if (this.isAuthenticated) this.disconnect();
   }
+
+  announceEpoch(fileId: string, newEpoch: number) {
+    if (this.room.target.id !== fileId) return;
+    this.room.retired = true;
+    this.config.onStateless?.({
+      payload: JSON.stringify({
+        fileId,
+        newEpoch,
+        type: 'source-epoch-changed',
+      }),
+    });
+  }
+}
+
+const sourceProviders = new Set<MockSourceProvider>();
+const failedSourceSaves = new Set<string>();
+export function failNextSourceSave(fileId: string) {
+  failedSourceSaves.add(fileId);
+}
+export function announceSourceEpoch(fileId: string, epoch: number) {
+  for (const provider of [...sourceProviders])
+    provider.announceEpoch(fileId, epoch);
+}
+export function resetScenarioRooms() {
+  failedSourceSaves.clear();
+  for (const [name, room] of rooms) {
+    if (!room.target.id.startsWith('mock-scenario-')) continue;
+    if (room.participants.size)
+      throw new Error('Close the scenario editor before resetting its room');
+    room.document.destroy();
+    rooms.delete(name);
+  }
+  for (const name of checkpoints.keys()) {
+    if (name.includes(':mock-scenario-')) checkpoints.delete(name);
+  }
+  for (const key of Object.keys(sessionStorage))
+    if (key.startsWith('capy.scenario.room.')) sessionStorage.removeItem(key);
 }
 
 export function registerMockCollaborationProvider() {

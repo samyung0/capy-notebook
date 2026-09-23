@@ -12,9 +12,18 @@ import (
 // ErrInvalidCursor is a malformed or foreign page cursor: a client error.
 var ErrInvalidCursor = errors.New("invalid cursor")
 
-// Owner-scoped, filtered, sorted, keyset-paginated listings behind the Create
-// and Files pages. Both list only what the caller owns: materials and files in
-// their own workspaces plus their standalone materials.
+// Filtered, sorted, keyset-paginated listings behind the Create and Files
+// pages. Both list what the caller owns: materials and files in their own
+// workspaces plus their standalone materials. Member widens that to every
+// workspace the caller belongs to, as the dashboard recents do.
+
+// memberWorkspace is the Member predicate on a workspace id column: the
+// caller ($1) is a member and the owner's account is live, the same rule as
+// ListWorkspaces. The query must JOIN users AS owner on the workspace owner.
+func memberWorkspace(column string) string {
+	return `EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=` + column + ` AND wm.user_id=$1)
+		AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL`
+}
 
 const listPageMax = 100
 
@@ -102,12 +111,22 @@ var materialListSorts = map[string]listSort{
 	"kind":    {column: "m.kind", kind: "text"},
 }
 
+// materialLocations are the Locations values. An embedded material has a
+// parent note; workspace and standalone mean top-level rows in or outside a
+// workspace.
+var materialLocations = map[string]string{
+	"workspace":  `(m.workspace_id IS NOT NULL AND m.parent_material_id IS NULL)`,
+	"embedded":   `m.parent_material_id IS NOT NULL`,
+	"standalone": `(m.workspace_id IS NULL AND m.parent_material_id IS NULL)`,
+}
+
 // MaterialListFilter narrows the owner's materials. Empty slices mean no
-// filter; Location is "", "workspace", "embedded" or "standalone".
+// filter; Locations holds materialLocations keys.
 type MaterialListFilter struct {
 	Kinds        []string
 	WorkspaceIDs []string
-	Location     string
+	Locations    []string
+	Member       bool
 	Sort         string
 	Ascending    bool
 	Limit        int
@@ -143,7 +162,8 @@ type MaterialPage struct {
 }
 
 // ListOwnedMaterials pages through the caller's notes, quizzes and flashcard
-// sets: rows they own in their own workspaces plus their standalone rows.
+// sets: rows they own in their own workspaces plus their standalone rows, and
+// with Member the rows of every workspace they belong to.
 func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f MaterialListFilter) (MaterialPage, error) {
 	sort, ok := materialListSorts[f.Sort]
 	if !ok {
@@ -158,17 +178,24 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	}
 	args := []any{ownerID, kinds}
 	where := ` WHERE m.owner_user_id=$1 AND m.trashed_at IS NULL AND m.kind = ANY($2)`
+	if f.Member {
+		where = ` WHERE (m.owner_user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))
+			AND m.trashed_at IS NULL AND m.kind = ANY($2)`
+	}
 	if len(f.WorkspaceIDs) > 0 {
 		args = append(args, f.WorkspaceIDs)
 		where += fmt.Sprintf(` AND m.workspace_id = ANY($%d)`, len(args))
 	}
-	switch f.Location {
-	case "workspace":
-		where += ` AND m.workspace_id IS NOT NULL AND m.parent_material_id IS NULL`
-	case "embedded":
-		where += ` AND m.parent_material_id IS NOT NULL`
-	case "standalone":
-		where += ` AND m.workspace_id IS NULL AND m.parent_material_id IS NULL`
+	if len(f.Locations) > 0 {
+		preds := make([]string, 0, len(f.Locations))
+		for _, location := range f.Locations {
+			pred, ok := materialLocations[location]
+			if !ok {
+				return MaterialPage{}, fmt.Errorf("unknown material location %q", location)
+			}
+			preds = append(preds, pred)
+		}
+		where += ` AND (` + strings.Join(preds, " OR ") + `)`
 	}
 	clause, cursorArgs, err := cursorClause(sort, "m.id", f.Ascending, f.Cursor, len(args)+1)
 	if err != nil {
@@ -190,6 +217,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM card_stats cs
 				WHERE cs.material_id=m.id AND (cs.srs->>'due')::timestamptz <= now()) END
 		FROM materials m
+		JOIN users owner ON owner.id=m.owner_user_id
 		LEFT JOIN chapters c ON c.id=m.chapter_id
 		LEFT JOIN materials p ON p.id=m.parent_material_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
@@ -239,6 +267,7 @@ var fileListSorts = map[string]listSort{
 type FileListFilter struct {
 	Kinds        []string
 	WorkspaceIDs []string
+	Member       bool
 	Sort         string
 	Ascending    bool
 	Limit        int
@@ -250,7 +279,8 @@ type FilePage struct {
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
-// ListOwnedFiles pages through the files of every workspace the caller owns.
+// ListOwnedFiles pages through the files of every workspace the caller owns,
+// or with Member every workspace they belong to.
 func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFilter) (FilePage, error) {
 	sort, ok := fileListSorts[f.Sort]
 	if !ok {
@@ -261,6 +291,9 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	}
 	args := []any{ownerID}
 	where := ` WHERE w.user_id=$1 AND f.trashed_at IS NULL`
+	if f.Member {
+		where = ` WHERE (w.user_id=$1 OR (` + memberWorkspace("w.id") + `)) AND f.trashed_at IS NULL`
+	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
 		where += fmt.Sprintf(` AND f.kind = ANY($%d)`, len(args))
@@ -276,7 +309,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+` FROM files f JOIN workspaces w ON w.id=f.workspace_id`+
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return FilePage{}, err

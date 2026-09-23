@@ -473,10 +473,14 @@ export type {
 export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
 export type MaterialListLocation = 'workspace' | 'embedded' | 'standalone';
 export type MaterialListSort = 'updated' | 'created' | 'title' | 'kind';
+/** owned: the caller's workspaces (and standalone materials); member: also
+ * every workspace they are a member of. */
+export type ListScope = 'owned' | 'member';
 export interface MaterialListParams {
   dir?: 'asc' | 'desc';
-  kinds?: MaterialListKind[];
-  location?: MaterialListLocation | '';
+  kinds?: MaterialKind[];
+  locations?: MaterialListLocation[];
+  scope?: ListScope;
   sort?: MaterialListSort;
   workspaceIds?: string[];
 }
@@ -484,6 +488,7 @@ export type FileListSort = 'added' | 'name' | 'size' | 'kind';
 export interface FileListParams {
   dir?: 'asc' | 'desc';
   kinds?: FileKind[];
+  scope?: ListScope;
   sort?: FileListSort;
   workspaceIds?: string[];
 }

@@ -30,7 +30,7 @@ const buttonVariants = cva(BASE_BUTTON_STYLE, {
       'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
       'ghost-link': 'border-none text-link hover:text-link-hover',
       'ghost-muted': 'border-none text-fg-muted hover:text-fg/80',
-      gray: 'border border-transparent bg-surface-dark/50 text-fg hover:bg-surface-dark/90',
+      gray: 'border border-transparent bg-surface-dark/50 text-fg hover:bg-surface-dark/85',
       outline:
         'border border-line bg-surface text-fg hover:bg-surface-hover-bg/80',
       surface:
@@ -50,6 +50,14 @@ export interface ButtonProps
   iconLeftClassName?: string;
   iconRight?: IconName;
   iconRightClassName?: string;
+}
+
+/** Shared recovery action; navigation and draft actions supply their own icon. */
+export function ErrorAction({
+  iconLeft = 'refresh',
+  ...props
+}: Omit<ButtonProps, 'variant'>) {
+  return <Button {...props} iconLeft={iconLeft} variant="ghost-hover" />;
 }
 
 const InlineIcon = ({

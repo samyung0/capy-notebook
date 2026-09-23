@@ -4,7 +4,7 @@ import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -64,9 +64,15 @@ export default function AttemptResult() {
       <PanelWithInvertedRadius>
         <ErrorState
           action={
-            <Link preload="intent" to="/learning">
-              <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
-            </Link>
+            <ErrorAction
+              asChild
+              iconLeft="chevronLeft"
+              iconLeftClassName="me-1"
+            >
+              <Link preload="intent" to="/learning">
+                {m.quiz_back()}
+              </Link>
+            </ErrorAction>
           }
           title={m.quiz_attempt_unavailable()}
           variant="page"
