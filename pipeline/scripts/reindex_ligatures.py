@@ -1,8 +1,9 @@
 """Recompute the keyword vector of chunks whose indexed text holds a typographic
-ligature (U+FB00-U+FB06, decision 2026-09-24).
+ligature (U+FB00-U+FB06) or a printed sub- or superscript (decisions 2026-09-24).
 
-``tokenize_for_search`` maps those characters to their letters; rows indexed
-before that carry lexemes like 'ﬁnd' that no typed query reaches. Only
+``tokenize_for_search`` maps those characters to plain letters and digits
+(``SEARCH_FOLD``); rows indexed before that carry lexemes like 'ﬁnd', or 'h'
+for 'H₀', that no typed query reaches. Only
 ``search`` changes: text, indexed text, lang and embeddings stay as they are.
 Each row is rebuilt the way the writers build it, ``to_tsvector`` of its own
 ``lang`` configuration over ``tokenize_for_search(indexed_text)``; a reference
@@ -28,19 +29,19 @@ import json
 import psycopg
 
 from pipeline.config import cfg
-from pipeline.retrieval.chunking import tokenize_for_search
+from pipeline.retrieval.chunking import SEARCH_FOLD, tokenize_for_search
 from pipeline.retrieval.lang import TS_CONFIG
 
 TABLES = {"app": "rag_chunks", "library": "library_chunks", "pilot": "pilot_chunks"}
 
 
 def reindex(conn: psycopg.Connection, table: str, *, dry_run: bool) -> dict:
-    """Candidates are non-reference rows holding a ligature; stale are those
-    whose stored vector differs from the rebuilt one (rewritten unless dry)."""
+    """Candidates are non-reference rows holding a folded character; stale are
+    those whose stored vector differs from the rebuilt one (rewritten unless dry)."""
     rows = conn.execute(
         f"SELECT id, lang, indexed_text FROM {table} "
         "WHERE indexed_text ~ %s AND search <> ''::tsvector",
-        ("[ﬀ-ﬆ]",),
+        ("[" + "".join(map(chr, SEARCH_FOLD)) + "]",),
     ).fetchall()
     params = (
         [row[0] for row in rows],

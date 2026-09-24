@@ -1048,9 +1048,10 @@ async def test_cjk_is_retrievable_through_the_bigram_tokenizer(workspace):
 
 async def test_ligature_vectors_written_before_the_mapping_are_rebuilt(workspace):
     """PDFs print 'ﬀ' and 'ﬂ' as one character each and Postgres indexed them
-    as written, so 'effect flow' never reached the passage. The one-off
-    recompute rebuilds only those rows, keeps a reference list's empty vector
-    and the printed text, and a rerun finds nothing stale."""
+    as written, and it drops the '₀' of 'H₀', so 'effect flow H0' never reached
+    the passage. The one-off recompute rebuilds only those rows, keeps a
+    reference list's empty vector and the printed text, and a rerun finds
+    nothing stale."""
     import importlib.util
     from pathlib import Path
 
@@ -1062,7 +1063,7 @@ async def test_ligature_vectors_written_before_the_mapping_are_rebuilt(workspace
     spec.loader.exec_module(reindex_ligatures)
 
     file_id = workspace.add_file("fluid.txt")
-    printed = "The eﬀect of ﬂow on pressure"
+    printed = "The eﬀect of ﬂow on pressure under H₀"
     await _write(workspace, file_id, ["Unrelated text", printed, "Ref ﬁnal list"])
     with psycopg.connect(workspace.dsn) as conn:
         # What the writers stored before the mapping, and a reference list.
@@ -1079,7 +1080,7 @@ async def test_ligature_vectors_written_before_the_mapping_are_rebuilt(workspace
         rows = await store.hybrid_search(
             workspace_id=workspace.id,
             vector=_unit_vector(999),
-            terms=search_query_terms("effect flow"),
+            terms=search_query_terms("effect flow H0"),
             file_ids=None,
             candidates=10,
         )

@@ -1010,6 +1010,15 @@ bump, which would re-parse every donor and every library book. It rebuilds
 each row with its own `lang` configuration and keeps a reference list's empty
 vector.
 
+Printed sub- and superscripts fold the same way (decision 2026-09-24): every
+BMP character whose Unicode decomposition is `<sub>` or `<super>` maps to its
+plain character, so `H₀`, `s²` and `Hₐ` index as `H0`, `s2` and `Ha`.
+Postgres drops `₀` and `²` from a word, so a printed `H₀` had indexed as `h`
+and `s²` as the stopword `s`. Two cases stay as printed: `™` and `℠`, which
+would fold to several letters (`Java™` becoming `javatm`), and the Kanbun marks
+`㆒`–`㆟`, which would fold to ideographs. The same reindex script covers these
+rows; on 2026-09-24 it rewrote 3,239 library chunks and 2,270 pilot chunks.
+
 ### Donor reuse
 
 Before parsing, the worker hashes the uploaded bytes (`files.source_sha256`) by

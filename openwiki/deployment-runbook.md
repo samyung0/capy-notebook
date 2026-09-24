@@ -1442,13 +1442,17 @@ stays retained behind it. Nothing is pinned per environment.
    belongs to a broader role. Viewer mutation requests must fail before the
    application opens the admin pool.
 
-5. **Ligature keyword vectors (one-off, decision 2026-09-24).** After the
-   pipeline release that maps `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ` in `tokenize_for_search` is
-   live, rebuild the lexical vector of chunks indexed before it with
+5. **Ligature and sub/superscript keyword vectors (one-off, decisions
+   2026-09-24).** After the pipeline release whose `tokenize_for_search` maps
+   `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ` and printed sub- and superscripts (`H₀`, `s²`) is live,
+   rebuild the lexical vector of chunks indexed before it with
    `pipeline/scripts/reindex_ligatures.py`. It rewrites only `search` on rows
    whose `indexed_text` holds one of those characters and whose vector is
    stale, prints `{"candidates", "stale"}` as JSON, and is safe to rerun: a
-   second run reports `"stale": 0`. Run `--dry-run` first each time.
+   second run reports `"stale": 0`. Run `--dry-run` first each time. An
+   environment already run for ligatures alone needs one more run after the
+   sub/superscript release. The shared library and the pilot database were
+   done on 2026-09-24.
    - UAT and production: on the Coolify host, in that resource's retrieval
      container, which already holds `DATABASE_URL`:
      `docker exec retrieval-<resource-uuid> python pipeline/scripts/reindex_ligatures.py app --dry-run`,

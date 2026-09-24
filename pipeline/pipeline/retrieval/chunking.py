@@ -232,21 +232,38 @@ def clip_to_tokens(text: str, budget: int) -> str:
     return "".join(out)
 
 
-# PDFs print ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ (U+FB00-U+FB06) as one character each, which Postgres
-# indexes as written, so 'ﬁnd' never met a typed 'find'. The lexical index maps
-# them to their letters; stored chunk text keeps the printed form for quotes.
-_LIGATURES = {c: unicodedata.normalize("NFKC", chr(c)) for c in range(0xFB00, 0xFB07)}
+def _search_fold() -> dict[int, str]:
+    """PDFs print ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ (U+FB00-U+FB06) as one character each, which
+    Postgres indexes as written, so 'ﬁnd' never met a typed 'find'. Printed sub-
+    and superscripts fare worse: Postgres drops them from the word, so 'H₀'
+    indexes as 'h' and 's²' as the stopword 's'. The lexical index maps both to
+    plain letters and digits (decisions 2026-09-24); stored chunk text keeps the
+    printed form for quotes. A <sub>/<super> character folds only to a single
+    non-CJK character: '™' would turn 'Java™' into 'javatm', and the Kanbun
+    marks '㆒㆓' into ideographs."""
+    fold = {c: unicodedata.normalize("NFKC", chr(c)) for c in range(0xFB00, 0xFB07)}
+    for c in range(0x10000):
+        if not unicodedata.decomposition(chr(c)).startswith(("<sub>", "<super>")):
+            continue
+        plain = unicodedata.normalize("NFKC", chr(c))
+        if len(plain) == 1 and not is_cjk(plain):
+            fold[c] = plain
+    return fold
+
+
+SEARCH_FOLD = _search_fold()
 
 
 def tokenize_for_search(text: str) -> str:
     """Rewrite text so `to_tsvector` indexes CJK usefully.
 
-    Latin runs pass through untouched apart from typographic ligatures; each
-    CJK run becomes its overlapping character bigrams (plus the single
-    character, when the run is one long). Queries must be tokenized with the
-    same function — see :func:`search_query_terms`.
+    Latin runs pass through untouched apart from typographic ligatures and sub-
+    and superscripts (:data:`SEARCH_FOLD`); each CJK run becomes its overlapping
+    character bigrams (plus the single character, when the run is one long).
+    Queries must be tokenized with the same function — see
+    :func:`search_query_terms`.
     """
-    text = text.translate(_LIGATURES)
+    text = text.translate(SEARCH_FOLD)
     out: list[str] = []
     cjk: list[str] = []
     other: list[str] = []

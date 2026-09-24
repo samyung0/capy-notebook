@@ -485,6 +485,17 @@ def test_printed_ligatures_meet_typed_letters():
     assert tokenize_for_search("ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ") == "ff fi fl ffi ffl st st"
 
 
+def test_printed_sub_and_superscripts_meet_typed_characters():
+    """Postgres drops '₀' and '²' from a word, so a printed 'H₀' indexed as 'h'
+    and 's²' as the stopword 's'. They fold like ligatures; '™' (several
+    letters) and the Kanbun marks (ideographs) stay as printed."""
+    indexed = tokenize_for_search("reject H₀ when s² exceeds σ₁² under Hₐ").split()
+    query = search_query_terms("H0 s2 Ha")
+
+    assert set(query.all_of.split()) <= set(indexed)
+    assert tokenize_for_search("x⁻¹ φᵢ Java™ ㆒") == "x−1 φi Java™ ㆒"
+
+
 def test_query_terms_are_or_joined_for_websearch_tsquery():
     terms = search_query_terms("光合作用")
 
