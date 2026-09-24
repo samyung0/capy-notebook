@@ -326,6 +326,7 @@ _APPENDIX = re.compile(
     r"^appendix(?:\s+(?:\d{1,2}|[a-z]|[ivxlc]{1,5}))?\b", re.IGNORECASE
 )
 _NUMBERED = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){0,4})\.?\s+(?=[^\s\d])")
+_MERGED_CHAPTER = re.compile(r"^(?:\S+\s+){1,4}?(?=chapter\s+\d{1,3}\b)", re.IGNORECASE)
 # Front and back matter that ranks with chapters wherever it appears.
 _MATTER = re.compile(
     r"^(?:preface|foreword|prologue|ack\w*ledge?ments?|about the (?:authors?|editors?)|"
@@ -386,6 +387,11 @@ def _kind(text: str) -> tuple[str, int, tuple[int, ...]] | None:
         return ("chapter", 1, (n,) if n else ())
     if _APPENDIX.match(text):
         return ("appendix", 1, ())
+    # A part tab ODL merged in front of the chapter label ("Habitat-Focused
+    # Techniques Chapter 8 - Restoration").
+    m = _MERGED_CHAPTER.match(text)
+    if m and (inner := _kind(text[m.end() :])) and inner[0] == "chapter":
+        return inner
     return None
 
 

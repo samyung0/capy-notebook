@@ -241,3 +241,26 @@ def test_outline_headings_inserted_by_v8_keep_backbone_away():
     with _doc(50, toc) as document:
         assert backbone_levels(blocks, document) == blocks
         assert demote_fragments(blocks, document) == blocks
+
+
+def test_chapters_with_a_merged_part_tab_stay_chapters():
+    # Conservation Techniques: ODL merged the part tab into some chapter titles.
+    blocks = [_block("Conservation Techniques", 0, 1)]
+    titles = [
+        "Chapter 1 - Science and Practice",
+        "Chapter 2 - Rewilding",
+        "Habitat-Focused Techniques Chapter 3 - Restoration",
+        "Chapter 4 - Ecosystem-Based Management",
+        "Holistic Techniques Chapter 5 - Adaptive Management",
+    ]
+    for number, title in enumerate(titles):
+        page = 2 + 10 * number
+        blocks.append(_block(title, page, 2))
+        blocks.append(_block("SECTION IN CAPITALS", page, 3, y=200))
+        blocks.append(_block("Body text of the section.", page, y=250))
+    with _doc(60) as document:
+        result = backbone_levels(blocks, document)
+    assert [b["text_level"] for b in result if b["text"] in titles] == [1] * 5
+    # Each section nests under its own chapter, none under the chapter before.
+    sections = [b["text_level"] for b in result if b["text"] == "SECTION IN CAPITALS"]
+    assert sections == [5] * 5

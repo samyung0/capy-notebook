@@ -9,7 +9,9 @@
   label above its title becomes the title's `_chapter_label`;
 - `demote_contents_lines`: headings on printed contents pages become body text;
 - `backbone_levels`: a book without a usable outline is re-levelled from its chapter
-  chain and section numbering.
+  chain and section numbering. A chapter label that follows up to four words of a part
+  tab merged into the same heading counts (option B, decided after the first gate; see
+  Conservation Techniques below).
 
 They run in `refine.parse_pdf` after `mark_page_numbers` and the v8 heading rules, and
 before furniture is frozen. The investigator's `outline` rule and `v8sim.py` are not
@@ -20,9 +22,10 @@ Every outline anchor, root and scope witness is kept; the two gold witnesses tha
 move to what their gold expects; the only lost outline-confirmed ancestry is Technology
 Tools' "Contents", and the only missing body text is Animals' 7 promoted chapter titles
 plus three exercise-number lines in OpenStax Precalculus (below). Wrong-path chunks fall
-from 1,575 to 772. **One regression outside the gate:** Conservation Techniques, which
-waits for a re-parse, gets 5 of its 13 chapters nested under the chapter before them
-(234 of 548 chunks). The live swap is held for that question.
+from 1,575 to 772. The first gate found one regression outside it: Conservation
+Techniques got 5 of its 13 chapters nested under the chapter before them. The developer
+chose option B; with it all 13 chapters are at level 1, and the final gate's 66
+content lists are byte-identical to the first gate's.
 
 ## Port fidelity
 
@@ -36,7 +39,8 @@ outline entry on its page also has an empty key ("!").
 
 ## Setup
 
-- **Candidate.** A snapshot of the working tree's `parser/` (`snapshots/parser-a`)
+- **Candidate.** The final gate ran a snapshot with option B (`snapshots/parser-b`, the
+  committed v9); the first gate ran `snapshots/parser-a`. Each snapshot of `parser/` was
   mounted read-only over `/app/parser` in a throwaway container of
   `capy-kb-parser:pilot-v8`, with the builder container's env and limits (7 GiB, 4 CPUs,
   1,800 s deadline), the source cap raised to 512 MiB, its own token, port 18097 and
@@ -59,7 +63,7 @@ outline entry on its page also has an empty key ("!").
 | v8 units missing from v9's chunks | | 10 (7 Animals titles now headings, 3 Precalculus number lines) |
 | wrong-path chunks (23 intake books) | 1,575 | 772 |
 | documents with more wrong-path chunks | | 0 |
-| server parse time, all documents | 2,577 s | 3,020 s (see Timing) |
+| server parse time, all documents | 2,577 s | 2,354 s (first gate 3,020 s; see Timing) |
 
 **The expected changes.**
 
@@ -78,13 +82,14 @@ its gold case expects ("price in a coloured offer card, not a section heading").
 
 **Every other gate change, with its cause.**
 
-- *Precalculus: three exercise-number lines* ("13. 14. 15.", "39. 40.", "67.") leave
-  the chunks. Fragments demotes number-only headings ("12. 13.", "67.") elsewhere in the
-  book; as body text they now count toward the furniture key, which is frozen after the
-  rules, and the copies at a page edge are dropped as repeated furniture. Across the gate
-  this drops 18 number-only blocks (15 of them demoted headings; also a deck's "4.0"
-  licence fragment on three slides) and restores 87 edge copies of demoted callouts
-  ("EXAMPLE 3") whose keys now sit mostly inside pages. No block with a word is lost.
+- *18 number-only edge lines dropped as furniture*, among them the three Precalculus
+  exercise-number units that leave its chunks ("13. 14. 15.", "39. 40.", "67.").
+  Fragments demotes number-only headings ("12. 13.", "67.") across the book; as body
+  text they now count toward the furniture key, which is frozen after the rules, so the
+  copies at a page edge repeat on enough pages to be dropped as furniture. 15 of the 18
+  are demoted headings; the others are a deck's "4.0" licence fragment on three slides.
+  The same freeze restores 87 edge copies of demoted callouts ("EXAMPLE 3") whose keys
+  now sit mostly inside pages. No block with a word is lost.
 - *New roots.* Music (1) and bookdown (6): backbone puts chapters that the outline lists
   at level 1 at level 1.
 - *Other ancestry changes* (41,479 body blocks) are the re-levelling itself: stale ODL
@@ -130,6 +135,12 @@ starts fixed.
   four books. The investigator's recommended arm scores the same books the same way.
 - The gold set grew since the report (46 → 48 books), so the report's 77 Java
   regressions are 151 here in both arms.
+- **Rerun with option B** (`measure-b.json`, `gold-b.json`, `flips-b.json`): wrong-path
+  chunks 2,744 again, Conservation Techniques 0 → 0 with all 13 chapters at level 1 in
+  the replay's v9p blocks. Against the agents' paths v9p matches 12,412 of 31,816 chunks
+  and flips 1,779 fixed / 413 worse; the only books that differ from the first run are
+  Java, Java, Java (151 → 235 worse) and Physics (0 worse), whose gold grew between the
+  runs (Physics 915 → 1,349 chunks).
 
 ## Composition with v8's outline headings
 
@@ -143,48 +154,56 @@ their outlines usable. A test covers the case.
 
 | Book | Wrong-path v8 → v9 | What changed |
 | --- | ---: | --- |
-| Conservation Techniques | 0 → 0 | chapters at level 1, book-title root gone; **5 chapters nested under the one before** |
+| Conservation Techniques | 0 → 0 | all 13 chapters at level 1, book-title root gone (first gate: 5 chapters nested under the one before) |
 | College Research | 67 → 67 | nothing (usable outline) |
 | Formal Logic | 304 → 303 | fragments |
 | GNU Octave tutorial | 55 → 54 | fragments (usable outline) |
 
 Conservation Techniques has no outline, so backbone runs. ODL merged the part tab with
 the chapter title for chapters 8, 9, 11, 12 and 13 ("Habitat-Focused Techniques Chapter 8
-- Restoration"). A chapter label must open the heading, so those five are not in the
-chain; the book has no numbered sections, so no chapter style is set, and they nest under
-chapters 7 and 10 as unnumbered headings. 234 of its 548 chunks get the wrong chapter.
-`measure.py` shows 0 → 0 because it has no reference structure for this book, and the
-agents have not reviewed it.
+- Restoration"). In the first gate a chapter label had to open the heading, so those five
+were not in the chain; the book has no numbered sections, so no chapter style was set,
+and they nested under chapters 7 and 10 as unnumbered headings: 234 of its 548 chunks got
+the wrong chapter. `measure.py` shows 0 → 0 because it has no reference structure for
+this book, and the agents have not reviewed it.
 
 Two changes were measured on the fresh v8 outputs of the 64 PDF gate documents and the
-four extra books, neither built:
+four extra books:
 
-- **B.** Accept a chapter label that follows up to four words of a merged title in the
-  same heading. It fixes all five chapters and changes no other block in the 68
-  documents.
+- **B (built).** Accept a chapter label that follows up to four words of a merged title
+  in the same heading. It fixes all five chapters and changes no other block in the 68
+  documents; the final gate confirms it (66 content lists identical, and only
+  Conservation differs among the extras).
 - **C.** Treat a heading in the chapter chain's ODL style as a chapter sibling even
   without numbered sections. It also fixes them, but moves the five part tabs to chapter
   rank and changes 59 blocks in Animals.
 
-The question, with the recommendation of B, is in the local `questions.md`.
-
 ## Timing
 
-v9 took 3,020 s of server parse time against v8's 2,577 s (+17%). The machine was busier
-than in the v8 gate: a sample every minute read host CPU at 81% on average (40-100%, 16
-logical CPUs) with a median of 10 Python processes (up to 34), because the three replays
-above ran during the first 40 minutes beside the backfill workers. The three rules take
-0.04 to 0.7 s per document on the largest gate documents (MIT Strang, OpenStax Biology),
-so the difference is load. Per document it ranges from −50 s (OpenStax Chemistry) to
-+114 s (the OCR-heavy Business Plan Guide).
+The final gate took 2,354 s of server parse time against v8's 2,577 s (−9%). A sample
+every minute read host CPU at 59% on average (14-94%, 16 logical CPUs) with a median of 2
+Python processes (up to 12) beside the backfill workers; the v8 gate ran at 67% with a
+median of 7. The first v9 gate took 3,020 s (+17%) at 81% CPU and a median of 10 Python
+processes (up to 34), because the three replays ran beside it. The three rules take 0.04
+to 0.7 s per document on the largest gate documents (MIT Strang, OpenStax Biology), so
+the differences are load.
+
+## Deployment
+
+After this commit `capy-kb-parser:pilot-v9` is rebuilt with its SHA and swapped in when
+the live parser is idle: the v8 container is kept stopped as `capy-kb-parser-v8-backup`,
+and the new container reuses its name, env, port, limits and spool bind. `/healthz` then
+reports `odl-2.5.7-refined-rapidocr-v9` plus the release SHA.
 
 ## Reproduction
 
 Raw outputs, scripts and logs are in the ignored `reports/local/2026-09-24-parser-v9-gate/`:
-`v8c/` and `v9/`, `snapshots/parser-a/`, `compare-v8c-v9.json`, `summary-v9.txt`,
-`missing-v8c-v9.json`, `load-v9.log`; `fidelity.json` (`fidelity.py`); `measure.json`,
-`gold.json` and `flips.json` (`replay_v9.py`); `extras/` with `x8c/`, `x9/` and
-`compare-x8c-x9.json`; `options.py` for B and C; `questions.md`.
+`v8c/`, `v9/` (first gate) and `v9b/` (final), `snapshots/parser-a/` and `parser-b/`,
+`compare-v8c-v9.json`, `compare-v8c-v9b.json`, `summary-v9.txt`, `summary-v9b.txt`,
+`missing-v8c-v9.json`, `load-v9.log`, `load-v9b.log`; `fidelity.json` (`fidelity.py`);
+`measure.json`, `gold.json`, `flips.json` and their `-b` reruns (`replay_v9.py`);
+`extras/` with `x8c/`, `x9/`, `x9b/` and `compare-x8c-x9.json`; `options.py` for B and C;
+`questions.md`.
 
 ```sh
 GATE=bench/parsers/reports/local/2026-09-24-parser-v9-gate
@@ -192,12 +211,12 @@ S=$GATE/scripts
 docker run -d --name capy-kb-parser-v9-gate -p 127.0.0.1:18097:8090 \
   --memory 7g --memory-swap 14g --cpus 4 -e PARSER_TOKEN \
   -e CAPY_MAX_SOURCE_BYTES=536870912 [the builder container's other CAPY_* env] \
-  --mount type=bind,source=$GATE/snapshots/parser-a,target=/app/parser,readonly \
+  --mount type=bind,source=$GATE/snapshots/parser-b,target=/app/parser,readonly \
   capy-kb-parser:pilot-v8
 PARSER_TOKEN_V9=... uv run --project pipeline python bench/parsers/scripts/gate_parser_fresh.py \
-  parse --manifest $GATE/gate.json --arm v9=http://127.0.0.1:18097 --output $GATE
+  parse --manifest $GATE/gate.json --arm v9b=http://127.0.0.1:18097 --output $GATE
 uv run --project pipeline python bench/parsers/scripts/gate_parser_fresh.py compare \
-  --manifest $GATE/gate.json --output $GATE --arms v8c v9 \
+  --manifest $GATE/gate.json --output $GATE --arms v8c v9b \
   --gold bench/parsers/fixtures/heading-release-gold-2026-09-20.json \
          bench/parsers/fixtures/heading-scope-release-gold-2026-09-20.json \
   --measure-dir data/knowledge-base/opus-intake-2026-09-23/section-paths

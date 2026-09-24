@@ -406,7 +406,9 @@ heading the PDF outline lists on its page is never demoted:
   headings count). The longest run of chapter labels, else bare depth-1
   numbers, rising by 1 to 3 from chapter 1 or 2 over at least 20% of the pages
   becomes level 1 (level 2 under rising parts set at least as big); numbered
-  sections that continue their chapter take chapter level + depth − 1. Front
+  sections that continue their chapter take chapter level + depth − 1. A
+  chapter label after up to four words of a part tab ODL merged into the same
+  heading ("Habitat-Focused Techniques Chapter 8 - Restoration") counts. Front
   matter never parents chapter 1; preface, index, glossary and similar rank
   with chapters; other headings take the level of numbered headings they are
   styled like, else nest under the section in force. A chapter label ODL left
