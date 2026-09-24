@@ -340,7 +340,6 @@ def test_repeated_title_pages_and_a_subtitle_between_them_are_marked():
         _block("with Open Texts", 0, 2, y=200),
         _block("Intermediate Financial Accounting", 4, 1),
         _block("Volume 1", 4, 3, y=200),
-        _body(4, y=400, chars=100),  # a short subtitle line is not body
         _block("Intermediate Financial Accounting", 6, 1),
         _block("1 Introduction", 6, 2, y=300),  # a numbered chapter stays
         _block("Preface", 8, 1),
@@ -348,21 +347,29 @@ def test_repeated_title_pages_and_a_subtitle_between_them_are_marked():
     ]
     with _doc(20, title="Intermediate Financial Accounting") as document:
         roles = [b.get("_source_role") for b in ol.mark_book_titles(blocks, document)]
-    assert roles[:4] == ["book-title"] * 4 and roles[5] == "book-title"
-    assert roles[6] is None and roles[7] is None
+    assert roles[:5] == ["book-title"] * 5
+    assert roles[5:] == [None] * 3
 
 
-def test_title_pages_end_at_the_first_page_with_body_text():
-    # ReStorying: an "INTRODUCTION" on the page after the title, with its text.
+def test_title_pages_run_past_pages_with_body_text():
+    # ReStorying: the title is printed again on its introduction page, after the
+    # licence page; "INTRODUCTION" there goes with it (accepted).
     blocks = [
-        _block("ReStorying Education", 0, 1),
-        _block("INTRODUCTION", 2, 2),
-        _body(2, chars=400),
-        _block("ReStorying Education", 2, 3, y=900),
+        _block("ReStorying Education", 0, 4),
+        _block("YOU ARE FREE TO:", 3, 5),
+        _body(3, chars=600),
+        _block("Contents", 4, 1),  # the outline lists it under another title
+        _body(4),
+        _block("ReStorying Education in the United States", 6, 1),
+        _block("INTRODUCTION", 6, 5, y=200),
+        _body(6, chars=1900),
+        _block("REFERENCES", 8, 5),
     ]
-    with _doc(10, title="ReStorying Education") as document:
+    toc = [[1, "Contents", 5], [1, "Chapter 1", 10]]
+    with _doc(12, toc, title="ReStorying Education") as document:
         roles = [b.get("_source_role") for b in ol.mark_book_titles(blocks, document)]
-    assert roles == ["book-title", None, None, None]
+    title = "book-title"
+    assert roles == [title, title, None, None, None, title, title, None, None]
 
 
 def test_a_title_page_heading_that_roots_the_book_is_the_title():

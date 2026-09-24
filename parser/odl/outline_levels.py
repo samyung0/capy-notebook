@@ -499,7 +499,6 @@ _JUNK_META = re.compile(
 )
 _TITLE_PAGE_WINDOW = 5  # where the title page's most prominent heading is sought
 _TITLE_FRONT = 10  # pages where a title page can sit
-_BODY_CHARS = 150  # title pages end at the first page with more body text
 
 
 def _same_title(text: str, title: str) -> bool:
@@ -563,34 +562,21 @@ def _title_page_root(blocks: list[dict]) -> str:
 def mark_book_titles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Mark the title pages' unnumbered headings ``book-title``: the title, and
     subtitles, author, series and publisher lines beside it. The title pages run
-    from the first page to the last of the first ten that carries the book title,
-    ending before the first page with over 150 characters of body text. Headings
-    the outline lists under another title stay."""
+    from the first page to the last of the first ten that carries the book title.
+    Headings the outline lists under another title stay."""
     titles = [t for t in (_meta_title(document), _outline_root(document)) if t]
     titles += [t for t in [_title_page_root(blocks)] if t]
     if not titles:
         return blocks
-    body: Counter = Counter()
-    for b in blocks:
-        if (
-            b.get("type") == "text"
-            and not b.get("text_level")
-            and isinstance(b.get("page_idx"), int)
-        ):
-            body[b["page_idx"]] += len(_text(b))
-    stop = min(
-        (page for page, chars in body.items() if chars > _BODY_CHARS), default=_INF
-    )
 
     def numbered(text: str) -> bool:
         return bool(_SECTION_NUMBER.match(text) or levels._CHAPTER.match(text))
 
-    front = min(_TITLE_FRONT, stop)
     hits = [
         b["page_idx"]
         for b in blocks
         if _heading(b)
-        and b["page_idx"] < front
+        and b["page_idx"] < _TITLE_FRONT
         and not numbered(_text(b))
         and any(_same_title(_text(b), t) for t in titles)
     ]

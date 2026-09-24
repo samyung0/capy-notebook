@@ -456,13 +456,15 @@ Parser v10 (decision 2026-09-24; evidence in
   90% of the pages, or the most prominent heading of the first page with
   headings (within 5 pages) when it is at the bottom of the heading stack for
   half the body. The title pages run from the first page to the last of the
-  first 10 that carries a heading with that title, and end before the first
-  page with more than 150 characters of body text. Their unnumbered headings
-  that the outline does not list under another title (title, subtitle, author,
-  series and publisher lines) get `_source_role: book-title` and keep their
-  level. Chunker v12 closes the heading stack at that level without pushing
-  them, so they never enter a path, and keeps their text in the chunk; the
-  gate leaves them out of anchors and roots.
+  first 10 that carries a heading with that title, past pages with body text
+  (ReStorying Education prints its title again on its introduction page). Their
+  unnumbered headings that the outline does not list under another title
+  (title, subtitle, author, series and publisher lines, and an unnumbered
+  heading such as "INTRODUCTION" beside a repeated title) get
+  `_source_role: book-title` and keep their level. Chunker v12 closes the
+  heading stack at that level without pushing them, so they never enter a
+  path, and keeps their text in the chunk; the gate leaves them out of anchors
+  and roots.
 
 The formula-picture rule, formula placeholders, stencil-mask rewriting and
 ODL's `--content-safety-off tiny` are not in v7 to v10; the tiny-text
