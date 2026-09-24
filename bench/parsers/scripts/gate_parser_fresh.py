@@ -19,7 +19,9 @@ reports:
 - ancestry: for every body block both arms emit, the heading components one
   arm has and the other lacks. A lost component that is still a heading counts
   as lost ancestry; outline-confirmed when an outline entry with its title
-  spans the body block's page.
+  spans the body block's page. A book-title heading (parser v10) closes the
+  stack without entering it, counts as its own lost class, and stays out of
+  anchors and roots.
 
 ``deck`` writes a numbered-title variant of a PPTX: every slide title after
 the cover gains a section number that advances when the title changes, and
@@ -147,6 +149,11 @@ def heading(block: dict) -> bool:
     return block.get("type") == "text" and type(level) is int and level > 0
 
 
+def book_title(block: dict) -> bool:
+    """A title-page heading the parser marked (v10): never a path component."""
+    return heading(block) and block.get("_source_role") == "book-title"
+
+
 def chunks_for(blocks: list[dict], folder: Path, source: Path):
     from pipeline.retrieval.headings import retain_headings
     from pipeline.retrieval.packing import pack_blocks
@@ -171,11 +178,16 @@ def stacks(blocks: list[dict], furniture: frozenset) -> dict[int, list[int]]:
         if _is_furniture(block, furniture):
             continue
         boundary = _heading_boundary_level(block)
+        if boundary is None and book_title(block):
+            boundary = block["text_level"]
         if boundary is not None:
             while stack and stack[-1][1] >= boundary:
                 stack.pop()
-            continue
-        if heading(block) and str(block.get("text") or "").strip():
+            if not book_title(block):
+                continue
+        if book_title(block):
+            paths[index] = [i for i, _ in stack]  # its text stays in the chunk
+        elif heading(block) and str(block.get("text") or "").strip():
             while stack and stack[-1][1] >= block["text_level"]:
                 stack.pop()
             stack.append((index, block["text_level"]))
@@ -224,6 +236,9 @@ def ancestry(old: list[dict], new: list[dict], furniture: tuple, spans) -> dict:
         page = old[index]["page_idx"]
         for lost in before - after:
             target = new[new_index[lost]] if lost in new_index else None
+            if target is not None and book_title(target):
+                counts["lost_book_title"] += 1
+                continue
             if target is None or not heading(target):
                 counts["lost_removed_artefact"] += 1
                 continue
@@ -278,10 +293,10 @@ def anchors_and_roots(old: list[dict], new: list[dict], document) -> dict:
         level = titles.get(
             (block.get("page_idx"), _outline_title(str(block.get("text") or "")))
         )
-        if level is None or not heading(block):
+        after = new_by_key.get(key(block))
+        if level is None or not heading(block) or (after and book_title(after)):
             continue
         result["anchors"] += 1
-        after = new_by_key.get(key(block))
         if after is not None and heading(after):
             result["anchors_retained"] += 1
         else:
@@ -293,6 +308,7 @@ def anchors_and_roots(old: list[dict], new: list[dict], document) -> dict:
             )
     result["roots_v6"] = sum(
         heading(b)
+        and not book_title(b)
         and b["text_level"] == 1
         and titles.get((b.get("page_idx"), _outline_title(b["text"]))) == 1
         for b in new
@@ -386,6 +402,19 @@ def measure_book(
     }
     (arm / "parsed").mkdir(exist_ok=True)
     (arm / "parsed/refinement.json").write_bytes((arm / "refinement.json").read_bytes())
+    # measure.py pushes every text_level block; a book title closes the stack
+    # as a banner boundary does, which is how it reads the chunker's rule.
+    blocks = [
+        {
+            **{k: v for k, v in b.items() if k != "text_level"},
+            "type": "discarded",
+            "_source_role": "running-banner",
+            "_heading_boundary_level": b["text_level"],
+        }
+        if book_title(b)
+        else b
+        for b in blocks
+    ]
     measure.load = lambda _: (corpus, blocks)
     return measure.measure({**book, "dir": arm})["wrong_chunks"]
 

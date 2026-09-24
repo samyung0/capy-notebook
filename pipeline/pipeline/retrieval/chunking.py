@@ -52,7 +52,9 @@ log = logging.getLogger("capy.retrieval.chunking")
 #     extraction confidence in canonical content identity.
 # v10: repeated keys preserve interior occurrences; source roles correct heading ancestry.
 # v11: newly discarded source-backed banners retain a neutral heading boundary.
-CHUNKER_VERSION = "v11"
+# v12: a heading the parser marks as the book title closes the heading stack at
+#      its level without entering the path, and its text stays in the chunk.
+CHUNKER_VERSION = "v12"
 
 # Picture blocks arrive under two labels: ``image`` for photos and diagrams,
 # ``chart`` for plots the layout model recognises as data graphics. Same shape,
@@ -529,6 +531,20 @@ def _build(blocks: list[_Block], section_path: str) -> Chunk:
 # ------------------------------------------------------------------ entrypoints
 
 
+def _book_title_level(block: dict) -> int | None:
+    """The level of a heading the parser marked as the book title (parser v10):
+    it ends the headings above it but is never a path component."""
+    level = block.get("text_level")
+    if (
+        block.get("type") == "text"
+        and block.get("_source_role") == "book-title"
+        and type(level) is int
+        and level > 0
+    ):
+        return level
+    return None
+
+
 def _heading_boundary_level(block: dict) -> int | None:
     level = block.get("_heading_boundary_level")
     if (
@@ -592,6 +608,13 @@ def chunk_content_list(
             if not text:
                 continue
             level = item.get("text_level")
+            if _book_title_level(item) is not None:
+                if stack and stack[-1][0] >= level:
+                    flush_section()
+                    while stack and stack[-1][0] >= level:
+                        stack.pop()
+                pending.append(_Block(text, None, page_no, bbox))
+                continue
             if isinstance(level, int) and level > 0:
                 flush_section()
                 _push_heading(stack, level, text)

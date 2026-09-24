@@ -308,7 +308,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v9` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v10` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -403,27 +403,76 @@ heading the PDF outline lists on its page is never demoted:
   text, except the contents title and titles such as "List of Figures".
 - **Backbone** (`backbone_levels`). Only in a book whose outline is not usable
   (under 5 entries, or under 30% found as headings on their page; v8's outline
-  headings count). The longest run of chapter labels, else bare depth-1
-  numbers, rising by 1 to 3 from chapter 1 or 2 over at least 20% of the pages
-  becomes level 1 (level 2 under rising parts set at least as big); numbered
-  sections that continue their chapter take chapter level + depth − 1. A
-  chapter label after up to four words of a part tab ODL merged into the same
-  heading ("Habitat-Focused Techniques Chapter 8 - Restoration") counts. Front
+  headings count) or, from v10, broken (below). The longest run of chapter
+  labels, else bare depth-1 numbers, rising by 1 to 3 from chapter 1 or 2 over
+  at least 20% of the pages becomes level 1 (level 2 under rising parts set at
+  least as big); numbered sections that continue their chapter take chapter
+  level + depth − 1. A chapter label after up to four words of a part tab ODL
+  merged into the same heading ("Habitat-Focused Techniques Chapter 8 -
+  Restoration") counts. Front
   matter never parents chapter 1; preface, index, glossary and similar rank
   with chapters; other headings take the level of numbered headings they are
   styled like, else nest under the section in force. A chapter label ODL left
   as body text at the top of its page is promoted (`chapter-opener`), and
   removed banners' `_heading_boundary_level` is rescaled the same way.
 
+Parser v10 (decision 2026-09-24; evidence in
+`bench/parsers/reports/2026-09-24-outline-levels-and-running-heads.md`, gate in
+`bench/parsers/reports/2026-09-24-parser-v10-gate.md`) adds:
+
+- **Outline levels** (`outline_levels.relevel`, where v9's backbone ran). One
+  test picks the rule for each book: a usable outline (as above) that is not
+  broken takes outline levels, and every other book takes `backbone_levels`.
+  An outline is broken when an entry that is not Part-like spans over half the
+  book while most of its matched children are typed larger (a change log
+  holding every chapter), or a front-matter entry does so with children typed
+  as large. Entries drop exporters' wrappers with children ("Main Body"),
+  machine bookmarks, the deeper copy of a title bookmarked twice on one page,
+  and author tags (a title repeated verbatim 3 or more times, mostly on the
+  page of the sibling before it). Entries match headings in reading order on
+  the destination page or a neighbour; a running head never matches an entry
+  that lacks its page number, an entry listed out of order still matches on
+  its own page, and two same-level entries whose headings follow each other
+  with no body between read as one title. Walking the headings as the chunker
+  does, a level changes only where the stack contradicts the outline. A listed
+  heading closes the listed headings whose span has ended and sits directly
+  under its outline parent; a top-level one closes unlisted front matter, but
+  an unlisted Part heading stays above it. An unlisted heading or a banner
+  boundary cannot close a listed heading that is an outline ancestor of the
+  next listed heading, unless it is numbered as that heading's peer ("4.
+  Images" after "3. Organizing Content"). A same-level heading the outline
+  leaves out closes the listed section before it and becomes its sibling. A
+  changed heading carries its subtree by the same step. Only `text_level` and
+  banner `_heading_boundary_level` change.
+- **Running-head band.** The banner family scan and v8's margin paragraphs
+  use the top and bottom fifth of the page (`y1 < 200`, `y0 > 800`). A banner
+  found only through the wider band stays when its group (folio kind, page
+  offset, top or bottom, height in hundredths) covers 5 or more pages and a
+  tenth of the book's pages: Java, Java, Java's heads at y = 0.107, Compressible
+  Flow's at 0.123. Capitals headings keep the narrow band.
+- **Book-title headings** (`outline_levels.mark_book_titles`, after the
+  levels). The book title is the PDF metadata title (file names, "Microsoft
+  Word - …" and "Untitled" skipped), a single top-level outline entry spanning
+  90% of the pages, or the most prominent heading of the first page with
+  headings (within 5 pages) when it is at the bottom of the heading stack for
+  half the body. The title pages run from the first page to the last of the
+  first 10 that carries a heading with that title, and end before the first
+  page with more than 150 characters of body text. Their unnumbered headings
+  that the outline does not list under another title (title, subtitle, author,
+  series and publisher lines) get `_source_role: book-title` and keep their
+  level. Chunker v12 closes the heading stack at that level without pushing
+  them, so they never enter a path, and keeps their text in the chunk; the
+  gate leaves them out of anchors and roots.
+
 The formula-picture rule, formula placeholders, stencil-mask rewriting and
-ODL's `--content-safety-off tiny` are not in v7, v8 or v9; the tiny-text
+ODL's `--content-safety-off tiny` are not in v7 to v10; the tiny-text
 filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
 lies in the box and whose vertical overlap covers half the smaller height.
-Before table recovery, margin headings (top `y1 < 100`, bottom `y0 > 900`)
-that carry a leading or trailing decimal or Roman folio are grouped by folio
+Before table recovery, margin headings (top `y1 < 100`, bottom `y0 > 900`;
+v10 widens the band, above) that carry a leading or trailing decimal or Roman folio are grouped by folio
 kind, folio minus page index, top or bottom, band, font and size, whatever
 their title. A group on three or more pages becomes discarded running banners
 when some title, with digits and Roman numerals stripped, repeats on two

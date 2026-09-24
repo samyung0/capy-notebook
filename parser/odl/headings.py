@@ -61,18 +61,20 @@ def _source_spans(
     blocks: list[dict],
     document: pymupdf.Document,
     pages: dict[int, list[dict]] | None = None,
+    band=None,
 ) -> dict[int, list[dict]]:
     """Literal native spans for unrotated, source-matched heading boxes and
-    margin-band paragraphs (running heads ODL typed as body text). ``pages``
-    collects each visited page's spans for the caller."""
+    paragraphs in the margin ``band`` (running heads ODL typed as body text).
+    ``pages`` collects each visited page's spans for the caller."""
     pages = {} if pages is None else pages
+    band = band or _folio_band
     evidence: dict[int, list[dict]] = {}
     for index, block in enumerate(blocks):
         box, page_index = block.get("bbox", []), block.get("page_idx")
         if (
             block.get("type") != "text"
             or len(box) != 4
-            or not (block.get("text_level") or _folio_band(box))
+            or not (block.get("text_level") or band(box))
             or type(page_index) is not int
             or not 0 <= page_index < len(document)
         ):
@@ -297,26 +299,25 @@ def _folio_band(box: list[float]) -> bool:
     return 0 <= box[1] < box[3] < 100 or 900 < box[1] < box[3] <= 1000
 
 
-def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
-    """Correct source-backed heading roles before any section context is built."""
-    outline = {
-        (page - 1, _outline_title(text))
-        for _, text, page in document.get_toc()
-        if page > 0
-    }
-    page_spans: dict[int, list[dict]] = {}
-    # Margin-band paragraphs join the banner rules only; every other rule and
-    # the outline roots see headings alone.
-    evidence = _source_spans(blocks, document, page_spans)
+def _wide_band(box: list[float]) -> bool:
+    """The top and bottom fifth of the page, for running heads set just below
+    the margin band (Java, Java, Java's at y = 0.107)."""
+    return 0 <= box[1] < box[3] < 200 or 800 < box[1] < box[3] <= 1000
+
+
+def _family_banners(
+    blocks: list[dict], evidence: dict[int, list[dict]], outline: set, band
+) -> set[int]:
+    """Running banners of folio families: blocks in ``band`` with a leading or
+    trailing folio, grouped by folio kind, folio minus page index, top or
+    bottom, band, font and size, whatever their title."""
     families: dict[tuple, list[tuple[int, int, str]]] = defaultdict(list)
-    roles: dict[int, str] = {}
-    body_styles: dict[int, tuple] = {}
     for index, spans in evidence.items():
         block = blocks[index]
         text, box, page_index = block["text"], block["bbox"], block["page_idx"]
         if (page_index, _outline_title(text)) in outline:
             continue
-        found = _folio_title(text) if _folio_band(box) else None
+        found = _folio_title(text) if band(box) else None
         if found:
             (kind, folio), title = found
             style = max(spans, key=lambda s: len(s["text"]))
@@ -329,7 +330,106 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
                 round(style["size"]),
             )
             families[key].append((index, page_index, title))
-        if not block.get("text_level"):
+    # Page offsets the margins show, by folio kind, so front matter numbered
+    # apart from the body (Roman or Arabic) proves its own banners.
+    shown: dict[tuple[str, int], list[tuple[int, str]]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        box, page_index = block.get("bbox") or [], block.get("page_idx")
+        if len(box) == 4 and type(page_index) is int and band(box):
+            found = _folio_title(str(block.get("text") or ""))
+            if found:
+                (kind, folio), title = found
+                shown[kind, folio - page_index].append((index, title))
+
+    def running(group: list[tuple[int, int, str]], kind, offset, top) -> bool:
+        # A folio that tracks the page proves the band whatever the title,
+        # but only a repeated title separates it from numbered slide titles.
+        titles: dict[str, set[int]] = defaultdict(set)
+        for _, page, title in group:
+            titles[title].add(page)
+        members = {index for index, _, _ in group}
+        boxes = [blocks[index]["bbox"] for index in members]
+        # A page-top Exercise N or Question N also rises with the page. It is
+        # a folio only when the book shows that offset elsewhere: on a bare page
+        # number or a banner with another title (a sibling of the same series,
+        # typed as a paragraph or split off by band or size, proves nothing),
+        # or on this family's banners of the facing (left and right) pages.
+        # Bottom-margin families need no such proof: centred and full-width
+        # footers are often a book's only page numbering.
+        proven = (
+            not top
+            or any(
+                index not in members and (not title or title not in titles)
+                for index, title in shown[kind, offset]
+            )
+            or (
+                any(box[2] < 500 for box in boxes)
+                and any(box[0] > 500 for box in boxes)
+            )
+        )
+        return (
+            proven
+            and len({page for _, page, _ in group}) >= 3
+            and any(len(pages) >= 2 for pages in titles.values())
+        )
+
+    banners: set[int] = set()
+    for (kind, offset, top, *_), group in families.items():
+        # Headings are judged as before, where a margin paragraph outside
+        # their group can show the offset (the facing pages' running heads);
+        # paragraphs then join an accepted family. Judged together, no member
+        # proves its own family.
+        headed = [member for member in group if blocks[member[0]].get("text_level")]
+        if (headed and running(headed, kind, offset, top)) or running(
+            group, kind, offset, top
+        ):
+            banners.update(index for index, _, _ in group)
+    return banners
+
+
+def _wide_only(blocks: list[dict], found: list[int]) -> set[int]:
+    """Banners found only through the wide band stay when their group (folio
+    kind, page offset, top or bottom, height in hundredths) covers five pages
+    and a tenth of the book."""
+    pages = len(
+        {b.get("page_idx") for b in blocks if isinstance(b.get("page_idx"), int)}
+    )
+    groups: dict[tuple, set[int]] = defaultdict(set)
+    keys: dict[int, tuple] = {}
+    for index in found:
+        folio = _folio_title(str(blocks[index].get("text") or ""))
+        if not folio:
+            continue
+        (kind, number), _ = folio
+        box, page = blocks[index]["bbox"], blocks[index]["page_idx"]
+        keys[index] = (kind, number - page, box[1] < 500, round(box[1] / 10))
+        groups[keys[index]].add(page)
+    return {i for i, key in keys.items() if len(groups[key]) >= max(5, 0.1 * pages)}
+
+
+def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+    """Correct source-backed heading roles before any section context is built."""
+    outline = {
+        (page - 1, _outline_title(text))
+        for _, text, page in document.get_toc()
+        if page > 0
+    }
+    page_spans: dict[int, list[dict]] = {}
+    # Margin paragraphs join the banner rules only; every other rule and the
+    # outline roots see headings alone. The wide band's evidence holds the
+    # narrow margin band's.
+    wide = _source_spans(blocks, document, page_spans, _wide_band)
+    evidence = {
+        i: s
+        for i, s in wide.items()
+        if blocks[i].get("text_level") or _folio_band(blocks[i]["bbox"])
+    }
+    roles: dict[int, str] = {}
+    body_styles: dict[int, tuple] = {}
+    for index, spans in evidence.items():
+        block = blocks[index]
+        text, box, page_index = block["text"], block["bbox"], block["page_idx"]
+        if not block.get("text_level") or (page_index, _outline_title(text)) in outline:
             continue
         if 0 <= box[1] < box[3] <= 65 or 935 <= box[1] < box[3] <= 1000:
             continue
@@ -368,61 +468,17 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         ordered = sorted(spans, key=lambda s: s["bbox"][0])
         if any(b["bbox"][0] - a["bbox"][2] >= 4 * size for a, b in pairwise(ordered)):
             roles[index] = "diagram-label"
-    # Page offsets the margins show, by folio kind, so front matter numbered
-    # apart from the body (Roman or Arabic) proves its own banners.
-    shown: dict[tuple[str, int], list[tuple[int, str]]] = defaultdict(list)
-    for index, block in enumerate(blocks):
-        box, page_index = block.get("bbox") or [], block.get("page_idx")
-        if len(box) == 4 and type(page_index) is int and _folio_band(box):
-            found = _folio_title(str(block.get("text") or ""))
-            if found:
-                (kind, folio), title = found
-                shown[kind, folio - page_index].append((index, title))
-
-    def running(group: list[tuple[int, int, str]], kind, offset, top) -> bool:
-        # A folio that tracks the page proves the band whatever the title,
-        # but only a repeated title separates it from numbered slide titles.
-        titles: dict[str, set[int]] = defaultdict(set)
-        for _, page, title in group:
-            titles[title].add(page)
-        members = {index for index, _, _ in group}
-        boxes = [blocks[index]["bbox"] for index in members]
-        # A page-top Exercise N or Question N also rises with the page. It is
-        # a folio only when the book shows that offset elsewhere: on a bare page
-        # number or a banner with another title (a sibling of the same series,
-        # typed as a paragraph or split off by band or size, proves nothing),
-        # or on this family's banners of the facing (left and right) pages.
-        # Bottom-margin families need no such proof: centred and full-width
-        # footers are often a book's only page numbering.
-        proven = (
-            not top
-            or any(
-                index not in members and (not title or title not in titles)
-                for index, title in shown[kind, offset]
-            )
-            or (
-                any(box[2] < 500 for box in boxes)
-                and any(box[0] > 500 for box in boxes)
-            )
-        )
-        return (
-            proven
-            and len({page for _, page, _ in group}) >= 3
-            and any(len(pages) >= 2 for pages in titles.values())
-        )
-
-    for (kind, offset, top, *_), group in families.items():
-        # Headings are judged as before, where a margin paragraph outside
-        # their group can show the offset (the facing pages' running heads);
-        # paragraphs then join an accepted family. Judged together, no member
-        # proves its own family.
-        headed = [member for member in group if blocks[member[0]].get("text_level")]
-        if (headed and running(headed, kind, offset, top)) or running(
-            group, kind, offset, top
-        ):
-            roles.update((index, "running-banner") for index, _, _ in group)
+    heading_roles = dict(roles)
+    family = _family_banners(blocks, evidence, outline, _folio_band)
+    roles.update((index, "running-banner") for index in family)
     additional = _additional_banners(blocks, evidence, outline) - roles.keys()
     roles.update((index, "running-banner") for index in additional)
+    # The same rules in the top and bottom fifth; what they add there must also
+    # span five pages and a tenth of the book.
+    family = _family_banners(blocks, wide, outline, _wide_band)
+    found = family | (_additional_banners(blocks, wide, outline) - heading_roles.keys())
+    extra = [i for i in sorted(found) if roles.get(i) != "running-banner"]
+    roles.update((index, "running-banner") for index in _wide_only(blocks, extra))
     result = list(blocks)
     for index, role in roles.items():
         result[index] = {**blocks[index], "_source_role": role}

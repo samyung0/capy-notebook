@@ -17,6 +17,7 @@ from pipeline.retrieval.chunking import (
     search_query_terms,
     tokenize_for_search,
 )
+from pipeline.retrieval.packing import pack_blocks
 
 
 def test_short_unique_tails_survive_section_and_oversized_block_boundaries(monkeypatch):
@@ -526,3 +527,34 @@ def test_estimate_tokens_counts_cjk_per_character():
         "合成"
     )
     assert clip_to_tokens("光合作用ATP", 4) == "光合作用"
+
+
+def test_a_book_title_closes_the_path_without_entering_it() -> None:
+    # ReStorying: the title ends the "Contents" scope and its text stays readable.
+    def block(text, page, level=None, role=None):
+        item = {
+            "type": "text",
+            "text": text,
+            "page_idx": page,
+            "bbox": [100, 100, 900, 120],
+        }
+        if level:
+            item["text_level"] = level
+        if role:
+            item["_source_role"] = role
+        return item
+
+    blocks = [
+        block("Contents", 0, 1),
+        block("Chapter listing.", 0),
+        block("ReStorying Education", 1, 1, "book-title"),
+        block("Edited by the authors.", 1),
+        block("Chapter 1", 2, 2),
+        block("First chapter text.", 2),
+    ]
+    for chunks in (chunk_content_list(blocks), pack_blocks(blocks, frozenset())):
+        assert [(c.section_path, c.text) for c in chunks] == [
+            ("Contents", "Chapter listing."),
+            ("", "ReStorying Education\n\nEdited by the authors."),
+            ("Chapter 1", "First chapter text."),
+        ]

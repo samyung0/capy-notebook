@@ -765,6 +765,47 @@ def test_facing_paragraph_heads_still_prove_the_heading_heads():
 
 
 @pytest.mark.parametrize(
+    ("y", "titles", "level", "removed"),
+    [
+        # Java, Java, Java: facing running heads at y = 0.107.
+        (0.107, ["{} CHAPTER 4 Input/Output", "SECTION 4.4 Output {}"] * 3, 2, True),
+        # Compressible Flow: "250 CHAPTER 9. NORMAL SHOCK" at y = 0.123.
+        (0.123, ["{} CHAPTER 9. NORMAL SHOCK"] * 6, 2, True),
+        # A body paragraph at y = 0.15 on three pages: under five pages.
+        (0.15, ["{} Motion is change of place."] * 3, None, False),
+    ],
+)
+def test_running_heads_below_the_margin_band_are_banners_on_five_pages(
+    y, titles, level, removed
+):
+    with pymupdf.open() as document:
+        blocks = []
+        for number, title in enumerate(titles):
+            page = document.new_page()
+            head = _printed_heading(
+                page,
+                title.format(number + 12),
+                y * page.rect.height + 10,
+                level or 2,
+                fontsize=10,
+                x=_side(number),
+            )
+            if level is None:
+                head.pop("text_level")
+            blocks.append(head)
+        # Outside the margin band, inside the top fifth.
+        assert all(100 < b["bbox"][3] < 200 for b in blocks)
+        result = correct_roles(blocks, document)
+        if removed:
+            assert all(b["_source_role"] == "running-banner" for b in result)
+            assert [b["_heading_boundary_level"] for b in result] == [level] * len(
+                blocks
+            )
+        else:
+            assert result == blocks
+
+
+@pytest.mark.parametrize(
     ("text", "size", "outline", "demoted"),
     [
         ("It carried over from the page before.", 11, False, True),

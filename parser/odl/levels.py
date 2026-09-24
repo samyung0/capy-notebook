@@ -12,8 +12,9 @@ outline lists on its page is never demoted.
   series, page footers and bare numbers become body text; a bare number or
   chapter label set above its title becomes that title's label.
 - ``demote_contents_lines``: headings on printed contents pages become body text.
-- ``backbone_levels``: a book without a usable outline is re-levelled from its
-  chapter-number chain and section numbering.
+- ``backbone_levels``: a book without a usable, unbroken outline is re-levelled
+  from its chapter-number chain and section numbering (``outline_levels.relevel``
+  chooses between it and the outline, parser v10).
 """
 
 from __future__ import annotations
@@ -448,13 +449,12 @@ def _outline_usable(blocks: list[dict], document: pymupdf.Document) -> bool:
 
 
 def backbone_levels(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
-    """Re-level a book without a usable outline from what it prints: the chapter
-    chain (parts above it), numbered sections that continue their chapter, front
-    and back matter at chapter rank, other headings by style under the section in
-    force. Removed banners' scope boundaries are rescaled the same way."""
+    """Re-level a book from what it prints: the chapter chain (parts above it),
+    numbered sections that continue their chapter, front and back matter at
+    chapter rank, other headings by style under the section in force. Removed
+    banners' scope boundaries are rescaled the same way. ``outline_levels.relevel``
+    runs it on books without a usable, unbroken outline."""
     out = [dict(b) for b in blocks]
-    if _outline_usable(out, document):
-        return out
     skip = _contents_pages(out)
     # Chapter openers ODL left as body text: a chapter or part label on top.
     promoted = {

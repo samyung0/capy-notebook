@@ -220,29 +220,6 @@ def test_chapters_that_do_not_open_pages_are_found_by_style():
     assert [b["text_level"] for b in result if b["text"] == "2.1 Basics"] == [2]
 
 
-def test_a_usable_outline_keeps_the_book_as_it_is():
-    toc = [[1, "Preface", 1], [1, "Chapter 1 Motion", 3], [2, "1.1 Basics", 3]]
-    toc += [[1, "Chapter 2 Forces", 21], [1, "Chapter 3 Energy", 41]]
-    blocks = _book()
-    with _doc(60, toc) as document:
-        assert backbone_levels(blocks, document) == blocks
-
-
-def test_outline_headings_inserted_by_v8_keep_backbone_away():
-    # College Research: chapters only in the outline and running heads, so v8
-    # inserted them; the outline is then usable and the levels stay.
-    blocks = [_block("Algorithms", 1, 1)]
-    toc = [[1, "Algorithms", 2]]
-    for number, page in enumerate([3, 10, 20, 30, 40], start=1):
-        title = f"Chapter {number} Topic {number}"
-        toc.append([2, title, page + 1])
-        blocks.append(_block(title, page, 2, _source_role="outline-heading"))
-        blocks.append(_block(f"{number}.1 Detail", page, 4, y=200))
-    with _doc(50, toc) as document:
-        assert backbone_levels(blocks, document) == blocks
-        assert demote_fragments(blocks, document) == blocks
-
-
 def test_chapters_with_a_merged_part_tab_stay_chapters():
     # Conservation Techniques: ODL merged the part tab into some chapter titles.
     blocks = [_block("Conservation Techniques", 0, 1)]

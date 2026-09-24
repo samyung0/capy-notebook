@@ -31,6 +31,7 @@ from .chunking import (
     Chunk,
     _as_list,
     _Block,
+    _book_title_level,
     _build,
     _heading_boundary_level,
     _is_furniture,
@@ -434,7 +435,11 @@ def pack_blocks(blocks: list[dict], furniture: frozenset[str]) -> list[Chunk]:
                     for level, text in stack
                 ]
             continue
-        if block.get("type") == "text" and block.get("text_level", 0) > 0:
+        title = _book_title_level(block)
+        if title is not None:
+            while stack and stack[-1][0] >= title:
+                stack.pop()
+        elif block.get("type") == "text" and block.get("text_level", 0) > 0:
             _push_heading(stack, block["text_level"], block["text"])
         if not block.get("_native_table_supported"):
             pending.append(block)

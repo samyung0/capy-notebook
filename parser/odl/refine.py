@@ -31,6 +31,7 @@ from . import (
     lists,
     ocr,
     order,
+    outline_levels,
     pictures,
     source_text,
     styles,
@@ -172,7 +173,8 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         # Heading levels once roles, folios and heading text are settled.
         blocks = levels.demote_fragments(blocks, document)
         blocks = levels.demote_contents_lines(blocks, document)
-        blocks = levels.backbone_levels(blocks, document)
+        blocks = outline_levels.relevel(blocks, document)
+        blocks = outline_levels.mark_book_titles(blocks, document)
         furniture_texts = furniture.repeated_across_pages(blocks)
         blocks, _ = tables.recover_tables(blocks, document)
         blocks = fonts.compose_negations(blocks)
