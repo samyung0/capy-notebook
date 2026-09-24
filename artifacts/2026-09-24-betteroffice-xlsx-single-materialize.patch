@@ -1,0 +1,85 @@
+diff --git a/crates/betteroffice-xlsx/src/authority.rs b/crates/betteroffice-xlsx/src/authority.rs
+index 11e3192c..e251aa85 100644
+--- a/crates/betteroffice-xlsx/src/authority.rs
++++ b/crates/betteroffice-xlsx/src/authority.rs
+@@ -308,6 +308,7 @@ pub(crate) struct StagedUpdate {
+ }
+ 
+ pub(crate) struct StagedLocalUpdate {
++    pub(crate) model: WorkbookModel,
+     pub(crate) state_bytes: usize,
+     pub(crate) state_vector_entries: usize,
+     pub(crate) structure: WorkbookStructure,
+@@ -865,8 +866,11 @@ impl WorkbookAuthority {
+         let update = staged.doc.transact().encode_diff_v1(&state_vector);
+         let state = staged.encode_state_as_update_v1();
+         let state_vector_entries = staged.doc.transact().state_vector().len();
+-        let structure = staged.structure()?;
++        let (model, structure) = staged
++            .materialize_internal(false)
++            .map_err(AuthorityError::InvalidState)?;
+         Ok(StagedLocalUpdate {
++            model,
+             state_bytes: state.len(),
+             state_vector_entries,
+             structure,
+diff --git a/crates/betteroffice-xlsx/src/authority/stable.rs b/crates/betteroffice-xlsx/src/authority/stable.rs
+index 70ca7ca7..a11524f8 100644
+--- a/crates/betteroffice-xlsx/src/authority/stable.rs
++++ b/crates/betteroffice-xlsx/src/authority/stable.rs
+@@ -1125,8 +1125,8 @@ pub(super) fn apply(
+     ops: &[Op],
+     origin: SyncOrigin,
+ ) -> Result<(), String> {
++    let mut before = materialize(&doc.transact(), base)?.0;
+     for op in ops {
+-        let before = materialize(&doc.transact(), base)?.0;
+         if let Op::SetChartAnchor {
+             sheet, frame, to, ..
+         } = op
+@@ -1365,6 +1365,8 @@ pub(super) fn apply(
+                 }
+             }
+         }
++        drop(txn);
++        before = after;
+     }
+     Ok(())
+ }
+diff --git a/crates/betteroffice-xlsx/src/workbook.rs b/crates/betteroffice-xlsx/src/workbook.rs
+index c328a542..7d2b0f18 100644
+--- a/crates/betteroffice-xlsx/src/workbook.rs
++++ b/crates/betteroffice-xlsx/src/workbook.rs
+@@ -1899,9 +1899,9 @@ impl Workbook {
+             self.authority
+                 .apply_local_update_v1(&staged.update, SyncOrigin::User)
+                 .map_err(authority_error)?;
+-            let mut model = self.authority.materialize().map_err(authority_error)?;
++            let mut model = staged.model;
+             retain_formula_caches(&self.model, &mut model);
+-            self.install_model(model)?;
++            self.install_model_with(model, Some(staged.structure))?;
+             self.emit_update(UpdateEvent {
+                 update: staged.update,
+                 origin: UpdateOrigin::Local,
+@@ -2370,8 +2370,19 @@ impl Workbook {
+     /// from the shared document is projected on the way out, so what is left to
+     /// check here is what a local batch can still get wrong.
+     fn install_model(&mut self, model: WorkbookModel) -> Result<()> {
++        self.install_model_with(model, None)
++    }
++
++    fn install_model_with(
++        &mut self,
++        model: WorkbookModel,
++        known: Option<crate::authority::WorkbookStructure>,
++    ) -> Result<()> {
+         if self.is_collaborative() && self.authority.supports_structure() {
+-            let structure = self.authority.structure().map_err(authority_error)?;
++            let structure = match known {
++                Some(structure) => structure,
++                None => self.authority.structure().map_err(authority_error)?,
++            };
+             self.preserved.origins = structure
+                 .sheet_keys
+                 .iter()
