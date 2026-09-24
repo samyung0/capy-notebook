@@ -143,7 +143,7 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
     <PopoverContent
       align="center"
       avoidCollisions={false}
-      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg border border-line bg-surface p-1 shadow-pop"
+      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg p-1"
       contentEditable={false}
       onOpenAutoFocus={(event) => event.preventDefault()}
       side="bottom"

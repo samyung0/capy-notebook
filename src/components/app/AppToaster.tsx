@@ -1,5 +1,7 @@
+import { isValidElement } from 'react';
 import { createPortal } from 'react-dom';
-import { Toaster } from 'sonner';
+import { Toaster, useSonner } from 'sonner';
+import type { ToastProps } from '../ui/Sonner';
 
 /** Sonner renders inline instead of portalling, so mounting it anywhere inside
  * `#root` (which is `isolation: isolate`) traps toasts in a stacking context
@@ -8,5 +10,17 @@ import { Toaster } from 'sonner';
  * its z-index wins. */
 // this fixes the issue where toaster is getting painted behind the dialogs and drawers
 export function AppToaster() {
-  return createPortal(<Toaster />, document.body);
+  const { toasts } = useSonner();
+  const hasError = toasts.some(
+    ({ jsx }) =>
+      isValidElement<ToastProps>(jsx) && jsx.props.variant === 'error'
+  );
+  return createPortal(
+    <Toaster
+      expand={hasError}
+      position="bottom-right"
+      visibleToasts={hasError ? Number.POSITIVE_INFINITY : 3}
+    />,
+    document.body
+  );
 }

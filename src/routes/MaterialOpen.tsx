@@ -67,10 +67,17 @@ export default function MaterialOpen() {
             }
             onDeleted={back}
             onFileViewerDirtyChange={setDirty}
+            onModeChange={(mode) => {
+              void navigate({
+                // The viewer has already completed its save/export checks.
+                ignoreBlocker: true,
+                replace: true,
+                search: (previous) => ({ ...previous, mode }),
+                to: '.',
+              });
+            }}
             readOnly={fileId ? workspace?.capabilities.canEdit !== true : false}
-            requestedMode={
-              'mode' in search && search.mode === 'edit' ? 'edit' : 'view'
-            }
+            requestedMode={'mode' in search ? search.mode : null}
             standalone
             workspaceId={workspaceId}
           />

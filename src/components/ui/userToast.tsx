@@ -5,8 +5,11 @@ export function userToast({
   id: toastId,
   ...toast
 }: Omit<ToastProps, 'id'> & { id?: string | number }) {
-  return sonnerToast.custom(
-    (id) => <Toast {...toast} id={id} />,
-    toastId === undefined ? undefined : { id: toastId }
-  );
+  return sonnerToast.custom((id) => <Toast {...toast} id={id} />, {
+    duration:
+      toast.variant === 'error' || toast.variant === 'warning'
+        ? 7000
+        : undefined,
+    id: toastId,
+  });
 }

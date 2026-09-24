@@ -125,10 +125,6 @@ import {
   buildCollaborationPlugins,
   collaborationTrailingBlockPlugin,
 } from './collaborationPlugins';
-import {
-  canCreateExternalEditorAssets,
-  type NoteEditorMode,
-} from './editorMode';
 import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
@@ -453,10 +449,7 @@ const MediaKit = [
   }),
 ];
 
-function buildBlockInteractionKit(
-  mode: NoteEditorMode,
-  allowExternalAssets: boolean
-) {
+function buildBlockInteractionKit(allowExternalAssets: boolean) {
   return [
     BlockSelectionPlugin.configure(({ editor }) => ({
       options: {
@@ -490,7 +483,7 @@ function buildBlockInteractionKit(
       options: {
         enableScroller: true,
         onDropFiles: ({ dragItem, editor, target }) => {
-          if (!canCreateExternalEditorAssets(mode, allowExternalAssets)) return;
+          if (!allowExternalAssets) return;
           return editor
             .getTransforms(PlaceholderPlugin)
             .insert.media(dragItem.files, {
@@ -614,7 +607,6 @@ export const MaterialKit: AnyPlugin[] = [
 
 export interface BuildPluginsOptions extends EditorCollaborationOptions {
   allowExternalAssets: boolean;
-  mode: NoteEditorMode;
   onSave: () => void;
   workspaceId: string;
 }
@@ -622,7 +614,7 @@ export interface BuildPluginsOptions extends EditorCollaborationOptions {
  * parser or renderer plugin is ever unloaded. */
 export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
   return [
-    ...(options.mode === 'edit' && editorAiEnabled(options.allowExternalAssets)
+    ...(editorAiEnabled(options.allowExternalAssets)
       ? buildAiPlugins(options.workspaceId)
       : // The AI plugin set registers its own CursorOverlay variant; non-AI
         // editors still need the overlay for selection feedback in dialogs.
@@ -635,31 +627,24 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
     remoteCursorDecorationPlugin,
     ...MaterialKit,
     ...buildCollaborationPlugins(options),
-    ...(options.mode === 'edit'
-      ? [
-          ...SlashKit,
-          AutoformatPlugin,
-          createSaveShortcutPlugin(options.onSave),
-          ...buildBlockInteractionKit(
-            options.mode,
-            options.allowExternalAssets
-          ),
-          ExitBreakPlugin.configure({
-            shortcuts: {
-              insert: { keys: 'mod+enter' },
-              insertBefore: { keys: 'mod+shift+enter' },
-            },
-          }),
-          collaborationTrailingBlockPlugin,
-          BlockPlaceholderPlugin.configure({
-            options: {
-              className:
-                'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
-              placeholders: { [KEYS.p]: m.editor_placeholder() },
-              query: ({ path }) => path.length === 1,
-            },
-          }),
-        ]
-      : []),
+    ...SlashKit,
+    AutoformatPlugin,
+    createSaveShortcutPlugin(options.onSave),
+    ...buildBlockInteractionKit(options.allowExternalAssets),
+    ExitBreakPlugin.configure({
+      shortcuts: {
+        insert: { keys: 'mod+enter' },
+        insertBefore: { keys: 'mod+shift+enter' },
+      },
+    }),
+    collaborationTrailingBlockPlugin,
+    BlockPlaceholderPlugin.configure({
+      options: {
+        className:
+          'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
+        placeholders: { [KEYS.p]: m.editor_placeholder() },
+        query: ({ path }) => path.length === 1,
+      },
+    }),
   ];
 }

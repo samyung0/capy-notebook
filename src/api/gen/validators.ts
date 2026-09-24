@@ -1852,7 +1852,7 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
 
 export const CreateMaterialCollaborationTokenResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "access": zod.enum(['write', 'comment', 'shrink']),
+  "access": zod.enum(['write', 'read', 'shrink']),
   "expiresAt": zod.int(),
   "room": zod.string(),
   "token": zod.string(),

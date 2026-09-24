@@ -95,9 +95,7 @@ export class SourceHandoff {
     if (waiting) clearTimeout(waiting.watchdog);
     const doc = this.host.documents.get(room);
     for (const connection of doc?.getConnections() ?? []) {
-      connection.readOnly =
-        connection.context?.access === 'comment' ||
-        connection.context?.access === 'read';
+      connection.readOnly = connection.context?.access === 'read';
     }
     this.local.delete(room);
   }

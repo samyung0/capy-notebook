@@ -5,11 +5,13 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import type { Region } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
-import { IconButton } from '@/components/ui/IconButton';
+import { Icon } from '@/components/ui/Icon';
+import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
-import { FileModeControl } from './FileModeControl';
+import { FileModeControl, useFileMode } from './FileModeControl';
 import { FileError } from './FileStates';
 import { PdfAnnotations } from './PdfAnnotations';
 
@@ -131,7 +133,8 @@ export default function PdfView({
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
-  const [editing, setEditing] = useState(false);
+  const [mode, setMode] = useFileMode(!!annotationFile, 'view');
+  const editing = mode === 'edit';
   const [annotationBusy, setAnnotationBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -291,10 +294,10 @@ export default function PdfView({
       <FileModeControl
         canEdit={!!annotationFile}
         disabled={annotationBusy}
-        mode={editing ? 'edit' : 'view'}
-        onChange={(mode) => setEditing(mode === 'edit')}
+        mode={mode}
+        onChange={setMode}
       />
-      <div className="grid shrink-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-3 border-divider border-b px-3 py-1.5 lg:grid-cols-[minmax(max-content,1fr)_minmax(0,max-content)_minmax(max-content,1fr)]">
+      <Toolbar className="grid grid-cols-[max-content_minmax(0,1fr)] lg:grid-cols-[minmax(max-content,1fr)_minmax(0,max-content)_minmax(max-content,1fr)]">
         <span className="t-meta whitespace-nowrap text-fg-muted">
           {numPages
             ? m.pdf_page_count({ count: numPages, page: currentPage })
@@ -302,31 +305,27 @@ export default function PdfView({
         </span>
         <div
           aria-label={m.pdf_private_annotations()}
-          className="scroll-fade-x flex min-w-0 max-w-full items-center justify-self-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="scroll-fade-x flex h-full min-w-0 max-w-full items-center justify-self-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           ref={setToolbar}
           role="toolbar"
         />
-        <div className="hidden items-center justify-self-end lg:flex">
-          <IconButton
+        <ToolbarGroup className="hidden justify-self-end lg:flex">
+          <ToolbarButton
             disabled={zoom <= 0.5}
-            icon="zoomOut"
             label={m.material_zoom_out()}
             onClick={() => setZoom((value) => Math.max(0.5, value - 0.25))}
-            size="sm"
-            tooltip
-            variant="ghost-hover"
-          />
-          <IconButton
+          >
+            <Icon name="zoomOut" />
+          </ToolbarButton>
+          <ToolbarButton
             disabled={zoom >= 3}
-            icon="zoomIn"
             label={m.material_zoom_in()}
             onClick={() => setZoom((value) => Math.min(3, value + 0.25))}
-            size="sm"
-            tooltip
-            variant="ghost-hover"
-          />
-        </div>
-      </div>
+          >
+            <Icon name="zoomIn" />
+          </ToolbarButton>
+        </ToolbarGroup>
+      </Toolbar>
       <div className="min-h-0 flex-1 overflow-auto" ref={scrollRef}>
         <div
           className="relative flex min-h-full w-max min-w-full flex-col items-center [&_.react-pdf__Page__textContent_span]:cursor-inherit"

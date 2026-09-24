@@ -10,8 +10,10 @@ The CSS recipes share timing while keeping component semantics separate:
 
 - Popover contains arbitrary controls; Select chooses a value; DropdownMenu
   contains commands, checkboxes and submenus. `Menu` is the data-driven action
-  list over DropdownMenu. Editor command lists use `ToolbarMenuContent` and
-  `MenuRow` to preserve editor/command focus when the menu closes.
+  list over DropdownMenu. Paragraph styles use `ToolbarMenuContent` and `MenuRow`. Other Plate toolbar
+  command lists use `ToolbarPopoverContent` and `ToolbarPopoverRow`, with ordinary
+  button keyboard behavior and preserved editor/command focus on close. PDF Draw
+  and Shape also use Popover; these converted toolbar triggers have no chevron.
   Shared command-menu content becomes inert during its retained exit, including
   submenus, so keyboard activation cannot execute a closing item again.
   Dropdown triggers retain their button semantics and press animation inside a
@@ -54,6 +56,12 @@ The CSS recipes share timing while keeping component semantics separate:
   existing messages, pagination and ordinary refetches do not stagger the list.
 - `useLoadingReveal` runs once after an initial skeleton resolves and applies
   blur/opacity only to visible rows/cards, never the full scroll container.
+
+Shared `PopoverContent` supplies `border border-line bg-surface shadow-pop`.
+Editor and PDF popovers inherit these styles. Filter and notification popovers
+keep their inner Card styling with `border-0 bg-transparent shadow-none!` on the
+outer content; tag autocomplete keeps its `shadow-lg!` override, explicit because tailwind-merge does not classify the custom shadow-pop token. The floating Add
+menu uses DropdownMenu with its separate morph styling.
 
 The workspace tag picker uses the shared Popover anchored to its input container.
 Focus stays in the combobox input while its listbox handles pointer selection;

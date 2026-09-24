@@ -448,6 +448,26 @@ test('All blocks toggles closed with a second click and keyboard activation', as
   page,
 }) => {
   await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  await page.setViewportSize({ height: 1000, width: 2560 });
+  const toolbar = page.getByRole('toolbar', { name: 'Document formatting' });
+  for (const name of [
+    'All blocks',
+    'Upload media',
+    'Import document',
+    'Export document',
+    'Table controls',
+  ]) {
+    const control = toolbar.getByRole('button', { exact: true, name });
+    await expect(control).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(control.locator('svg')).toHaveCount(1);
+    await control.click();
+    await expect(control).toHaveAttribute('data-state', 'open');
+    await page.keyboard.press('Escape');
+    await expect(control).toHaveAttribute('data-state', 'closed');
+  }
+  const paragraph = toolbar.getByRole('button', { name: 'Block type' });
+  await expect(paragraph).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(paragraph.locator('svg')).toHaveCount(1);
   const trigger = page.getByRole('button', { exact: true, name: 'All blocks' });
   await trigger.click();
   await expect(trigger).toHaveAttribute('data-state', 'open');
@@ -588,6 +608,72 @@ test('workspace settings tabs fit vertically and dialogs settle on whole pixels'
     fallback.viewportHeight / 2,
     1
   );
+});
+
+test('icon chooser tracks browsing and confirms only the current draft', async ({
+  page,
+}) => {
+  await page.goto('/workspaces');
+  await page
+    .getByRole('button', { exact: true, name: 'New workspace' })
+    .click();
+  const workspace = page.getByRole('dialog', { name: 'Create workspace' });
+  const preview = workspace.locator('img').first();
+  const initialIcon = await preview.getAttribute('src');
+  const choose = workspace.getByRole('button', {
+    exact: true,
+    name: 'Choose icon',
+  });
+  const picker = page.getByRole('dialog', { exact: true, name: 'Choose icon' });
+  const styles = picker.getByRole('navigation', { name: 'Icon style' });
+  const gallery = picker.getByRole('region', {
+    exact: true,
+    name: 'Icon style',
+  });
+  await choose.click();
+  await expect(styles.getByRole('button', { name: /^Waves/ })).toHaveAttribute(
+    'aria-current',
+    'location'
+  );
+  await styles.getByRole('button', { name: /^Avataaars/ }).click();
+  await expect(
+    styles.getByRole('button', { name: /^Avataaars/ })
+  ).toHaveAttribute('aria-current', 'location');
+  await expect(
+    picker.getByRole('heading', { name: 'Avataaars' })
+  ).toBeInViewport();
+  await gallery.press('End');
+  await expect(styles.getByRole('button', { name: /^Waves/ })).toHaveAttribute(
+    'aria-current',
+    'location'
+  );
+  await gallery.press('Home');
+  await expect(
+    styles.getByRole('button', { name: /^Sprouts/ })
+  ).toHaveAttribute('aria-current', 'location');
+  await picker.getByRole('button', { exact: true, name: 'sprouts-04' }).click();
+  await picker.getByRole('button', { exact: true, name: 'Cancel' }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(preview).toHaveAttribute('src', initialIcon!);
+
+  await page.setViewportSize({ height: 640, width: 320 });
+  await choose.click();
+  await expect(picker.getByRole('button', { pressed: true })).toHaveAttribute(
+    'aria-label',
+    initialIcon!.split('/').pop()!.replace('.svg', '')
+  );
+  await gallery.press('Home');
+  await picker.getByRole('button', { exact: true, name: 'sprouts-04' }).click();
+  await picker.getByRole('button', { exact: true, name: 'Use icon' }).click();
+  await expect(picker).toHaveCount(0);
+  await expect(preview).toHaveAttribute('src', '/icons/sprouts-04.svg');
+  await choose.click();
+  await expect(
+    picker.getByRole('button', { exact: true, name: 'sprouts-04' })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(picker).toHaveCount(0);
+  await expect(choose).toBeFocused();
 });
 
 test('workspace creation resets cancelled drafts and saves the previewed default icon', async ({

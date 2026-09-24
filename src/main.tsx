@@ -2,11 +2,10 @@ import './lib/openuiDevtools';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterContextProvider, RouterProvider } from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';
-import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
-import { Toaster } from 'sonner';
 import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
+import { AppToaster } from './components/app/AppToaster';
 import { AppAuthProvider } from './components/app/AuthProvider';
 import { initErrorReporting, reportReactError } from './lib/observability';
 import { router } from './router';
@@ -62,7 +61,7 @@ enableMocks().finally(() => {
             {/* {import.meta.env.DEV && <ReactQueryDevtools />} */}
             {/* Outside the router so public /share routes and router error
                 boundaries can surface toasts too. */}
-            {createPortal(<Toaster visibleToasts={3} />, document.body)}
+            <AppToaster />
           </QueryClientProvider>
         </AppAuthProvider>
       </ThemeProvider>

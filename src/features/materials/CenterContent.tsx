@@ -5,7 +5,10 @@ import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { FileHeaderTarget } from '@/features/files/FileModeControl';
+import {
+  FileHeaderTarget,
+  FileModeContext,
+} from '@/features/files/FileModeControl';
 import {
   FileError,
   FileLoading,
@@ -22,12 +25,11 @@ import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { MaterialAttributionFooter } from './MaterialAttributionFooter';
 import {
-  isInteractiveMaterialMode,
   type MaterialMode,
   materialModePolicy,
   resolveMaterialMode,
 } from './modePolicy';
-import type { OpenItem } from './openItem';
+import { type OpenItem, readDocumentMode, saveDocumentMode } from './openItem';
 
 /* Interactive Plate is the heaviest chunk in this route. View mode
  * deliberately never loads it. */
@@ -54,6 +56,7 @@ export function CenterContent({
   color,
   onDeleted,
   onFileViewerDirtyChange,
+  onModeChange,
   requestedMode = null,
   workspaceId,
   leading,
@@ -70,13 +73,13 @@ export function CenterContent({
   onDeleted: () => void;
   onFileViewerDirtyChange?: (dirty: boolean) => void;
   requestedMode?: MaterialMode | null;
+  onModeChange: (mode: MaterialMode) => void;
   workspaceId: string;
 }) {
   const [fileHeader, setFileHeader] = useState<HTMLSpanElement | null>(null);
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
-  const [materialMode, setMaterialMode] = useState<MaterialMode | null>(
-    requestedMode
-  );
+  const materialMode =
+    requestedMode ?? (item ? readDocumentMode(item) : 'view');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(
     null
@@ -84,81 +87,90 @@ export function CenterContent({
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);
-    setMaterialMode(requestedMode);
     setEditorStatus(null);
     setIsFullscreen(false);
+  }, [item?.kind, item?.id]);
+
+  useEffect(() => {
+    if (item && requestedMode) saveDocumentMode(item, requestedMode);
   }, [item?.kind, item?.id, requestedMode]);
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
-    setMaterialMode(nextMode);
+    if (item) saveDocumentMode(item, nextMode);
+    onModeChange(nextMode);
   };
 
   if (!item) {
     return <EmptyCenter leading={leading} />;
   }
   return (
-    <FileHeaderTarget.Provider value={fileHeader}>
-      <div
-        className={cn(
-          'flex min-h-0 flex-1 flex-col bg-surface',
-          isFullscreen && 'fixed inset-0 z-40'
-        )}
-      >
-        <Header
-          beforeFileDelete={beforeFileDelete}
-          chapters={chapters}
-          color={color}
-          editorStatus={editorStatus}
-          fileControls={
-            <span className="flex items-center" ref={setFileHeader} />
-          }
-          imageZoom={imageZoom}
-          isFullscreen={isFullscreen}
-          item={item}
-          leading={leading}
-          materialMode={materialMode}
-          onDeleted={onDeleted}
-          onImageZoomChange={setImageZoom}
-          onMaterialModeChange={changeMaterialMode}
-          onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-          readOnly={readOnly}
-          standalone={standalone}
-          workspaceId={workspaceId}
-        />
+    <FileModeContext.Provider
+      value={{ mode: materialMode, onChange: changeMaterialMode }}
+    >
+      <FileHeaderTarget.Provider value={fileHeader}>
         <div
           className={cn(
-            'relative min-h-0 flex-1',
-            item.kind === 'file'
-              ? 'flex flex-col overflow-hidden'
-              : 'overflow-auto'
+            'flex min-h-0 flex-1 flex-col bg-surface',
+            isFullscreen && 'fixed inset-0 z-40'
           )}
         >
-          {item.kind === 'material' && (
-            <MaterialBody
-              allowExternalAssets={!readOnly}
-              key={item.id}
-              materialId={item.id}
-              mode={materialMode}
-              onEditorStatusChange={setEditorStatus}
-              workspaceId={workspaceId}
-            />
-          )}
-          {item.kind === 'file' && (
-            <FileBody
-              citation={item.citation}
-              color={color}
-              fileId={item.id}
-              imageZoom={imageZoom}
-              onImageZoomChange={setImageZoom}
-              onViewerDirtyChange={onFileViewerDirtyChange}
-              page={item.page}
-              regions={item.regions}
-            />
-          )}
+          <Header
+            beforeFileDelete={beforeFileDelete}
+            chapters={chapters}
+            color={color}
+            editorStatus={editorStatus}
+            fileControls={
+              <span className="flex items-center" ref={setFileHeader} />
+            }
+            imageZoom={imageZoom}
+            isFullscreen={isFullscreen}
+            item={item}
+            leading={leading}
+            materialMode={materialMode}
+            onDeleted={onDeleted}
+            onImageZoomChange={setImageZoom}
+            onMaterialModeChange={changeMaterialMode}
+            onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+            readOnly={readOnly}
+            standalone={standalone}
+            workspaceId={workspaceId}
+          />
+          <div
+            className={cn(
+              'relative min-h-0 flex-1',
+              item.kind === 'file'
+                ? 'flex flex-col overflow-hidden'
+                : 'overflow-auto'
+            )}
+          >
+            {item.kind === 'material' && (
+              <MaterialBody
+                allowExternalAssets={!readOnly}
+                key={item.id}
+                materialId={item.id}
+                mode={materialMode}
+                onEditorStatusChange={setEditorStatus}
+                workspaceId={workspaceId}
+              />
+            )}
+            {item.kind === 'file' && (
+              <FileBody
+                citation={item.citation}
+                color={color}
+                fileId={item.id}
+                imageZoom={imageZoom}
+                key={item.id}
+                onImageZoomChange={setImageZoom}
+                onViewerDirtyChange={onFileViewerDirtyChange}
+                page={item.page}
+                regions={item.regions}
+              />
+            )}
+          </div>
         </div>
-      </div>
-    </FileHeaderTarget.Provider>
+      </FileHeaderTarget.Provider>
+    </FileModeContext.Provider>
   );
 }
 
@@ -244,7 +256,7 @@ export function MaterialContent({
       <FileError />
     );
   }
-  const policy = materialModePolicy(material.kind, material.capabilities);
+  const policy = materialModePolicy(material.capabilities);
   const activeMode = forceReadOnly ? 'view' : resolveMaterialMode(mode, policy);
 
   return (
@@ -262,14 +274,13 @@ export function MaterialContent({
             </Suspense>
           </div>
         )}
-        {isInteractiveMaterialMode(activeMode) && (
+        {activeMode === 'edit' && (
           <AppErrorBoundary resetKeys={[materialId, activeMode]}>
             <Suspense fallback={<FileLoading />}>
               <NoteEditor
                 allowExternalAssets={allowExternalAssets}
                 key={`${materialId}:${activeMode}`}
                 materialId={materialId}
-                mode={activeMode}
                 onEditorStatusChange={onEditorStatusChange}
               />
             </Suspense>

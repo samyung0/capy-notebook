@@ -109,9 +109,9 @@ export async function openEditor(
 ): Promise<FrameLocator> {
   await openFile(run, actor, workspaceId, fileId);
   await actor.page
-    .getByRole('combobox', { exact: true, name: 'Material mode' })
+    .getByRole('button', { exact: true, name: 'Material mode' })
     .click();
-  await actor.page.getByRole('option', { exact: true, name: 'Edit' }).click();
+
   // This normal action waits for the replica-ready Save control before typing.
   await actor.page.getByRole('button', { exact: true, name: 'Save' }).click();
   return actor.page.frameLocator('iframe[src*="office-runtime"]');

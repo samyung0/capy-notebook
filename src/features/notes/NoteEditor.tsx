@@ -17,7 +17,7 @@ import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,
 } from './EditorRuntime';
-import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
+import type { NoteEditorStatus } from './editorMode';
 import { NoteEditorCore } from './NoteEditorCore';
 
 /** Shared so a pending discussions query does not hand the editor a new array
@@ -28,12 +28,10 @@ const NO_DISCUSSIONS: NonNullable<
 
 export function NoteEditor({
   materialId,
-  mode,
   allowExternalAssets = false,
   onEditorStatusChange,
 }: {
   materialId: string;
-  mode: NoteEditorMode;
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
@@ -82,9 +80,8 @@ export function NoteEditor({
   return (
     <CollaborativeNoteEditor
       allowExternalAssets={allowExternalAssets}
-      key={`${material.id}:${mode}`}
+      key={material.id}
       material={material}
-      mode={mode}
       onEditorStatusChange={onEditorStatusChange}
     />
   );
@@ -92,12 +89,10 @@ export function NoteEditor({
 
 function CollaborativeNoteEditor({
   material,
-  mode,
   allowExternalAssets,
   onEditorStatusChange,
 }: {
   material: Material;
-  mode: NoteEditorMode;
   allowExternalAssets: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
@@ -150,7 +145,6 @@ function CollaborativeNoteEditor({
       canEdit,
       currentUserId,
       materialId: material.id,
-      mode,
       role,
       workspaceId: material.workspaceId,
     }),
@@ -160,7 +154,6 @@ function CollaborativeNoteEditor({
       currentUserId,
       material.id,
       material.workspaceId,
-      mode,
       role,
     ]
   );
@@ -197,7 +190,6 @@ function CollaborativeNoteEditor({
             discussions={discussionsData ?? NO_DISCUSSIONS}
             key={`${collaborationTokenData.room}:${editorGeneration}`}
             material={material}
-            mode={mode}
             onDocumentRejected={onDocumentRejected}
             onEditorStatusChange={onEditorStatusChange}
           />

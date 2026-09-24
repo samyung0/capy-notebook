@@ -73,7 +73,6 @@
   --color-solid-accent-2: var(--solid-accent-2);
 
   /* User colors (used for assigned colors to workspaces/quiz/event/custom cards) */
-  /* TODO: in future include dynamic color palette so user have more options */
   /* add user color solid if needed */
   --usercolor-tint-purple: var(--tint-purple);
   --usercolor-tint-purple-fg: var(--tint-purple-fg);
@@ -329,6 +328,11 @@
    Base layer
    ============================================================ */
 @layer base {
+  button:focus-visible,
+  [role="button"]:focus-visible {
+    @apply outline-none ring-2 ring-action;
+  }
+
   html {
     font-size: 16px;
   }

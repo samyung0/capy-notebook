@@ -65,7 +65,6 @@ export function showErrorToast(error: unknown) {
   const button =
     description.action === 'subscription'
       ? {
-          iconLeft: 'externalLink' as const,
           label: m.account_banner_subscription(),
           onClick: () => {
             window.location.href = '/settings?tab=subscription';
@@ -73,7 +72,6 @@ export function showErrorToast(error: unknown) {
         }
       : description.action === 'signIn'
         ? {
-            iconLeft: 'arrowRight' as const,
             label: m.action_sign_in(),
             onClick: () => {
               const returnTo = `${window.location.pathname}${window.location.search}`;

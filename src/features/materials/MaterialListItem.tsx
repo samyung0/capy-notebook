@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router';
+import type { MouseEventHandler } from 'react';
 import type { Chapter, MaterialRef, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Spinner } from '@/components/ui/feedback';
@@ -21,7 +23,7 @@ export function MaterialListItem({
 }: {
   data: MaterialRef;
   active: boolean;
-  onOpen: () => void;
+  onOpen?: MouseEventHandler<HTMLAnchorElement>;
   onDeleted?: () => void;
   /** All workspace chapters, for the "Move to…" menu. */
   chapters: Chapter[];
@@ -39,21 +41,25 @@ export function MaterialListItem({
         active && 'bg-surface-hover-bg'
       )}
     >
-      <button
+      <Link
         className={cn(
           'flex w-full items-center gap-2 rounded-button py-1.5 text-left',
           active && 'font-bold'
         )}
         disabled={generating}
+        draggable={false}
         onClick={onOpen}
-        type="button"
+        params={{ workspaceId }}
+        replace
+        search={{ material: matRef.id }}
+        to="/workspaces/$workspaceId"
       >
         <FileIcon className="size-3.75" name={materialIconName(matRef.type)} />
         <span className="line-clamp-2 flex-1 translate-y-px">
           {matRef.title}
         </span>
         {generating && <Spinner className="size-4 shrink-0" />}
-      </button>
+      </Link>
       {!readOnly && !generating && (
         <ContentActions
           chapters={chapters}

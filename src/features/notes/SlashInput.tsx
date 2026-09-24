@@ -38,7 +38,7 @@ export function SlashInputElement(
   // trees that do not see NoteBlockDialogsProvider React context.
   const dialogs = useOptionalNoteBlockDialogs();
   const enabled = useNoteEditorPrefs((state) => state.enabled);
-  const { canEdit, mode } = useEditorRuntime();
+  const { canEdit, allowExternalAssets } = useEditorRuntime();
   const collaboration = useCollaborationActions();
   const inputRef = useRef<HTMLInputElement>(null);
   const cursorState = useHTMLInputCursorState(inputRef);
@@ -121,10 +121,10 @@ export function SlashInputElement(
     return availableCommands.filter(
       (command) =>
         enabled[command.group] &&
-        isEditorCommandAllowed(mode, command) &&
+        isEditorCommandAllowed(command, allowExternalAssets) &&
         commandMatches(command, query)
     );
-  }, [canEdit, collaboration, enabled, mode, query]);
+  }, [allowExternalAssets, canEdit, collaboration, enabled, query]);
 
   useEffect(() => {
     setActiveIndex(0);

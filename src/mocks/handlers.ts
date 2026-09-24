@@ -1774,9 +1774,11 @@ export const handlers = [
   http.post('/api/materials/:id/collaboration-token', async ({ params }) => {
     const material = db.materials.find((item) => item.id === params.id);
     if (!material) return new HttpResponse(null, { status: 404 });
+    if (!material.capabilities.canEdit)
+      return new HttpResponse(null, { status: 403 });
     return HttpResponse.json(
       {
-        access: material.capabilities.canEdit ? 'write' : 'comment',
+        access: 'write',
         expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
         room: `material:${material.id}:schema:1`,
         token: 'mock-collaboration-token',

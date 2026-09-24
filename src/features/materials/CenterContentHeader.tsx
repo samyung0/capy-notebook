@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import { Toggle } from 'radix-ui';
 import type { ReactNode } from 'react';
 import {
   useFile,
@@ -19,15 +20,8 @@ import type {
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
-import { IconButton } from '@/components/ui/IconButton';
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
+import { Icon } from '@/components/ui/Icon';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
   clampImageZoom,
   IMAGE_MAX_ZOOM,
@@ -48,7 +42,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { MATERIALMODE_ICON, MATERIALMODE_LABEL } from './materialIconMappings';
+import { MATERIALMODE_ICON } from './materialIconMappings';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 
@@ -64,7 +58,7 @@ function useHeader(
   materialCapabilities?: AccessCapabilities;
   materialKind?: MaterialKind;
   showImageZoom: boolean;
-  modeOptions?: { value: MaterialMode; label: string }[];
+  modes?: readonly MaterialMode[];
   defaultMode?: MaterialMode;
 } {
   const { data: fileData } = useFile(item.kind === 'file' ? item.id : null, {
@@ -108,17 +102,14 @@ function useHeader(
     return { icon: '_file', showImageZoom: false, title: mt?.title };
   }
   const kind = 'type' in mt ? mt.type : mt.kind;
-  const policy = materialModePolicy(kind, capabilities);
+  const policy = materialModePolicy(capabilities);
   return {
     defaultMode: policy.defaultMode,
     icon: materialIconName(kind),
     material: mt,
     materialCapabilities: capabilities,
     materialKind: kind,
-    modeOptions: policy.modes.map((value) => ({
-      label: MATERIALMODE_LABEL[value],
-      value,
-    })),
+    modes: policy.modes,
     showImageZoom: false,
     title: mt.title,
   };
@@ -260,19 +251,17 @@ export function Header({
     title,
     materialKind,
     showImageZoom,
-    modeOptions,
+    modes,
     defaultMode,
   } = useHeader(item, workspaceId, standalone);
   const activeMode =
-    materialMode && modeOptions?.some((option) => option.value === materialMode)
-      ? materialMode
-      : defaultMode;
+    materialMode && modes?.includes(materialMode) ? materialMode : defaultMode;
   const statusLabel = noteEditorStatusLabel(editorStatus);
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   return (
     <div
-      className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-3 pl-4 lg:pr-5"
+      className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-2 pl-4"
       data-testid="content-header"
     >
       {leading}
@@ -290,9 +279,7 @@ export function Header({
           <span
             className={cn(
               't-meta px-1 text-fg-muted leading-(--subtitle-line-height)',
-              editorStatus?.mode === 'edit' &&
-                editorStatus.saveState === 'error' &&
-                'text-solid-error'
+              editorStatus?.saveState === 'error' && 'text-solid-error'
             )}
             data-testid="editor-save-state"
             role="status"
@@ -301,74 +288,51 @@ export function Header({
           </span>
         )}
       </div>
-      <div className="ml-auto flex items-center">
+      <div className="ml-auto flex items-center gap-0">
         {item.kind === 'file' && fileControls}
         {item.kind === 'material' && activeMode === 'view' && materialKind && (
           <MaterialViewActions kind={materialKind} materialId={item.id} />
         )}
-        {modeOptions && modeOptions.length > 1 && activeMode && (
-          <Select
-            onValueChange={(value) =>
-              onMaterialModeChange(value as MaterialMode)
+        {modes && modes.length > 1 && activeMode && (
+          <Toggle.Root
+            asChild
+            onPressedChange={(pressed) =>
+              onMaterialModeChange(pressed ? 'edit' : 'view')
             }
-            value={activeMode}
+            pressed={activeMode === 'edit'}
           >
-            <SelectTrigger
+            <ToolbarButton
               aria-label={m.material_mode()}
-              /* The base trigger stretches and pushes its chevron out with
-               * justify-between, which reads as a third, wider gap next to the
-               * icon/label pair. Held to content width here so icon, label,
-               * chevron and the action menu all sit 8px apart; the trailing 8px
-               * comes from the action button's own left padding. */
-              className="w-auto justify-start py-2 pr-0 pl-1.5 max-md:[&_div>span]:hidden"
-              variant="ghost-hover"
+              label={
+                activeMode === 'edit'
+                  ? m.material_mode_edit()
+                  : m.material_mode_view()
+              }
             >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                {modeOptions.map((o) => (
-                  <SelectItem
-                    className="text-sm"
-                    iconAndValue={{
-                      icon: MATERIALMODE_ICON[o.value],
-                      label: o.label,
-                    }}
-                    key={o.value}
-                    size="sm"
-                    value={o.value}
-                  />
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+              <Icon name={MATERIALMODE_ICON[activeMode]} />
+            </ToolbarButton>
+          </Toggle.Root>
         )}
         {showImageZoom && (
           <>
-            <IconButton
-              // className="p-1.5"
+            <ToolbarButton
               disabled={imageZoom <= IMAGE_MIN_ZOOM}
-              icon="zoomOut"
               label={m.material_zoom_out()}
               onClick={() =>
                 onImageZoomChange(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))
               }
-              size="sm"
-              strokeWidth={1.5}
-              variant="ghost-hover"
-            />
-            <IconButton
-              // className="p-1.5"
+            >
+              <Icon name="zoomOut" />
+            </ToolbarButton>
+            <ToolbarButton
               disabled={imageZoom >= IMAGE_MAX_ZOOM}
-              icon="zoomIn"
               label={m.material_zoom_in()}
               onClick={() =>
                 onImageZoomChange(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))
               }
-              size="sm"
-              strokeWidth={1.5}
-              variant="ghost-hover"
-            />
+            >
+              <Icon name="zoomIn" />
+            </ToolbarButton>
           </>
         )}
         <ContentActions
@@ -397,10 +361,11 @@ export function Header({
                 ]
               : []
           }
-          menuIconContainerClassName={cn(
-            'shrink-0',
-            leading && 'px-2 py-2.5 [&>svg]:size-4.25 [&>svg]:-translate-y-px'
-          )}
+          menuTrigger={
+            <ToolbarButton label={m.a11y_open_menu()}>
+              <Icon name="moreVertical" />
+            </ToolbarButton>
+          }
           onDeleted={onDeleted}
           readOnly={
             readOnly ||

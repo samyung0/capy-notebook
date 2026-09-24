@@ -1,4 +1,4 @@
-import { type ReactNode, useRef, useState } from 'react';
+import { type MouseEvent, type ReactNode, useRef, useState } from 'react';
 import {
   useChapters,
   useDeleteChapter,
@@ -69,6 +69,7 @@ export function FilesPanel({
   readOnly,
   openItem,
   onOpenItem,
+  onNavigate,
   generating,
   beforeReplace,
   onRenameChapter,
@@ -81,6 +82,7 @@ export function FilesPanel({
   readOnly: boolean;
   openItem: OpenItem | null;
   onOpenItem: (item: OpenItem | null) => void;
+  onNavigate: () => void;
   generating: GenerateMode | null;
   /** Office edit guard: returning false keeps the current viewer. */
   beforeReplace: () => boolean;
@@ -313,6 +315,18 @@ export function FilesPanel({
   }
   const isFileActive = (id: string) =>
     openItem?.kind === 'file' && openItem.id === id;
+  function openLink(event: MouseEvent<HTMLAnchorElement>) {
+    if (
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    )
+      return;
+    if (beforeReplace()) onNavigate();
+    else event.preventDefault();
+  }
   function onFileDeleted(id: string) {
     if (isFileActive(id)) onOpenItem(null);
   }
@@ -330,7 +344,7 @@ export function FilesPanel({
           }
         }}
         onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
-        onOpen={() => onOpenItem({ id: mt.id, kind: 'material' })}
+        onOpen={openLink}
         readOnly={readOnly}
         workspaceId={workspaceId}
       />
@@ -379,7 +393,7 @@ export function FilesPanel({
             color="purple"
             file={item.data}
             onDeleted={onFileDeleted}
-            onOpen={(id) => onOpenItem({ id, kind: 'file' })}
+            onOpen={openLink}
             readOnly={readOnly}
             workspaceId={workspaceId}
           />
@@ -577,7 +591,6 @@ export function FilesPanel({
                         type: GENERATING_MATERIAL[generating].type,
                       }}
                       generating
-                      onOpen={() => {}}
                       readOnly
                       workspaceId={workspaceId}
                     />

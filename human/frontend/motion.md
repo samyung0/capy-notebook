@@ -14,3 +14,6 @@
 - Developer approved (2026-09-18) migrating TagSelect to the shared Popover with input-focused autocomplete behavior and combobox accessibility; retain PopupMotion for editor overlays. src/components/ui/TagSelect.tsx
 - Developer requested (2026-09-21) chat send/stop uses the transitions.dev icon-swap fade, blur and scale transition in Tailwind, with a slightly smaller solid stop glyph. src/features/workspace/ChatPanel.tsx
 - Developer requested (2026-09-21) preserve the chat send icon's original stroke weight during its send/stop animation; use the shared Icon default instead of strokeWidth 4. src/features/workspace/ChatPanel.tsx
+
+- Developer Epo requested (2026-09-24) shared PopoverContent owns border border-line bg-surface shadow-pop; remove duplicate editor/PDF styles and preserve filters, notifications, tag autocomplete and floating Add menu appearance with caller overrides where needed. src/components/ui/Popover.tsx src/components/app/ListToolbar.tsx src/features/notification/NotificationBell.tsx src/components/ui/TagSelect.tsx
+- Developer Epo requested (2026-09-24) danger user toasts use motion-error-shake on appearance through the existing error variant. src/components/ui/Sonner.tsx

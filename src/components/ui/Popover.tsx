@@ -35,7 +35,7 @@ function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         className={cn(
-          'motion-anchored-popup z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden',
+          'motion-anchored-popup z-50 flex w-72 flex-col gap-2.5 rounded-lg border border-line bg-surface p-2.5 shadow-pop outline-hidden',
           alignWidthToTrigger && 'w-(--radix-popover-trigger-width)!',
           className
         )}
@@ -46,6 +46,8 @@ function PopoverContent({
     </PopoverPrimitive.Portal>
   );
 }
+
+const PopoverClose = PopoverPrimitive.Close;
 
 function PopoverAnchor({
   ...props
@@ -59,4 +61,11 @@ function PopoverTitle({ className, ...props }: React.ComponentProps<'h2'>) {
   );
 }
 
-export { Popover, PopoverAnchor, PopoverContent, PopoverTitle, PopoverTrigger };
+export {
+  Popover,
+  PopoverAnchor,
+  PopoverClose,
+  PopoverContent,
+  PopoverTitle,
+  PopoverTrigger,
+};

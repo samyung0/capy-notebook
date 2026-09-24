@@ -37,15 +37,15 @@ test.describe('shared material modes', () => {
     );
     await expect(otherPage.getByText(seed.publicNote.body)).toBeVisible();
     await expect(
-      otherPage.getByRole('combobox', { name: 'Material mode' })
+      otherPage.getByRole('button', { name: 'Material mode' })
     ).toHaveCount(0);
     await expect(
-      otherPage.getByRole('toolbar', { name: 'Comment tools' })
+      otherPage.getByRole('button', { exact: true, name: 'Comment' })
     ).toHaveCount(0);
     await expect(otherPage.locator('[contenteditable="true"]')).toHaveCount(0);
   });
 
-  test('share editors get live read-only Plate in comment mode and can add comments', async ({
+  test('share editors can edit and add comments', async ({
     materialFactory,
     otherPage,
     seed,
@@ -63,22 +63,17 @@ test.describe('shared material modes', () => {
       material.id,
       true
     );
-    const modes = otherPage.getByRole('combobox', { name: 'Material mode' });
-    await modes.click();
-    await otherPage.getByRole('option', { name: 'Comment' }).click();
-    await expect(modes).toContainText('Comment');
     await expectEditorLive(otherPage);
     await expect(
       otherPage.getByRole('toolbar', { name: 'Document formatting' })
-    ).toHaveCount(0);
-    await expect(otherPage.locator('[contenteditable="true"]')).toHaveCount(0);
-
-    const editor = otherPage.locator('[data-slate-editor="true"]').first();
+    ).toBeVisible();
+    const editor = otherPage
+      .locator('[data-slate-editor="true"][contenteditable="true"]')
+      .first();
+    await expect(editor).toHaveAttribute('contenteditable', 'true');
     await editor.getByText(body, { exact: true }).dblclick();
-    // Comment mode mounts the sticky "Comment tools" bar, not the edit-only
-    // floating selection toolbar.
     await otherPage
-      .getByRole('toolbar', { name: 'Comment tools' })
+      .getByRole('toolbar', { name: 'Document formatting' })
       .getByRole('button', { exact: true, name: 'Comment' })
       .click();
     const dialog = otherPage.getByRole('dialog', { name: 'Add comment' });
@@ -101,7 +96,7 @@ test.describe('shared material modes', () => {
     ).toBeVisible();
   });
 
-  test('editors can choose edit, comment, and view', async ({
+  test('editors toggle View and Edit, with comments only in Edit', async ({
     otherPage,
     seed,
   }) => {
@@ -111,14 +106,19 @@ test.describe('shared material modes', () => {
       seed.editableNote.id,
       true
     );
-    const modes = otherPage.getByRole('combobox', { name: 'Material mode' });
-    await expect(modes).toContainText('Edit');
-    await modes.click();
-    await expect(otherPage.getByRole('option', { name: 'Edit' })).toBeVisible();
+    const mode = otherPage.getByRole('button', { name: 'Material mode' });
+    await expect(mode).toHaveAttribute('aria-pressed', 'true');
+    await mode.click();
+    await expect(mode).toHaveAttribute('aria-pressed', 'false');
     await expect(
-      otherPage.getByRole('option', { name: 'Comment' })
-    ).toBeVisible();
-    await expect(otherPage.getByRole('option', { name: 'View' })).toBeVisible();
+      otherPage.locator('[data-slate-editor="true"][contenteditable="true"]')
+    ).toHaveCount(0);
+    await expect(
+      otherPage.getByRole('button', { exact: true, name: 'Comment' })
+    ).toHaveCount(0);
+    await mode.click();
+    await expect(mode).toHaveAttribute('aria-pressed', 'true');
+    await expectEditorLive(otherPage);
   });
 
   test('mod+k opens the editor command palette', async ({

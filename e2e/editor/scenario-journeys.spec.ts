@@ -39,6 +39,14 @@ test('one click fails a real source save and retry preserves the mounted editor'
   );
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const mounted = await input.elementHandle();
+  const currentURL = page.url();
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
+    .click();
+  await expect(page).toHaveURL(currentURL);
+  await expect(input).toHaveValue(new RegExp(marker));
   await page.getByRole('button', { exact: true, name: 'Save' }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(input).toHaveValue(new RegExp(marker));
@@ -63,9 +71,12 @@ for (const id of ['source-replaced', 'source-draft-recovery']) {
       .click();
     const download = await downloadReady;
     expect(await readFile((await download.path())!, 'utf8')).toContain(marker);
+    await expect(page).toHaveURL(/mode=edit/);
     await page.reload();
-    await page.getByRole('combobox', { name: 'Material mode' }).click();
-    await page.getByRole('option', { exact: true, name: 'Edit' }).click();
+    await expect(
+      page.getByRole('button', { name: 'Material mode' })
+    ).toHaveAttribute('aria-pressed', 'true');
+
     await expect(draft).toHaveValue(new RegExp(marker), { timeout: 30_000 });
     await expect(page.getByTestId('mock-scenario-panel')).toHaveAttribute(
       'data-scenario-status',
@@ -106,6 +117,22 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await page.getByRole('button', { exact: true, name: 'Save' }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
+    const mode = page.getByRole('button', { name: 'Material mode' });
+    await expect(page).toHaveURL(/mode=edit/);
+    await mode.click();
+    await expect(mode).toHaveAttribute('aria-pressed', 'false');
+    await expect(page).toHaveURL(/mode=view/);
+    await mode.click();
+    await expect(mode).toHaveAttribute('aria-pressed', 'true');
+    await expect(page).toHaveURL(/mode=edit/);
+    await page.reload();
+    await expect(mode).toHaveAttribute('aria-pressed', 'true', {
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole('button', { exact: true, name: 'Save' })
+    ).toBeEnabled({ timeout: 30_000 });
+
     const panel = page.getByTestId('mock-scenario-panel');
     await panel.evaluate((node: HTMLDetailsElement) => {
       node.open = true;
@@ -253,4 +280,20 @@ test('pending import keeps polling until Reset closes the real dialog', async ({
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'idle');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('failed Office export keeps the editor and URL in Edit', async ({
+  page,
+}) => {
+  await launch(page, 'office-runtime-error');
+  await expect(page).toHaveURL(/mode=edit/);
+  await expect(
+    page.getByRole('button', { name: 'Material mode' })
+  ).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('iframe[src*="office-runtime"]')).toBeVisible();
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem('capy.document.mode.file.mock-scenario-xlsx')
+    )
+  ).toBe('edit');
 });

@@ -6,9 +6,11 @@ export async function openWorkspaceMaterial(
   materialId: string,
   _shared = false
 ) {
-  // Shared roles still open authenticated app content.
+  // Editor tests request Edit explicitly; shared roles still enforce permissions.
   const base = `/workspaces/${workspaceId}`;
-  await page.goto(`${base}?material=${encodeURIComponent(materialId)}`);
+  await page.goto(
+    `${base}?material=${encodeURIComponent(materialId)}&mode=edit`
+  );
 }
 
 /** Sharing controls moved into the workspace settings dialog's Sharing tab. */

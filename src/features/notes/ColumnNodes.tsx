@@ -72,36 +72,39 @@ function ColumnFloatingToolbarContent() {
     <PopoverContent
       align="center"
       avoidCollisions={false}
-      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg border border-line bg-surface p-1 shadow-pop"
+      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg p-1"
       contentEditable={false}
       onOpenAutoFocus={(event) => event.preventDefault()}
       side="bottom"
       sideOffset={8}
     >
-      {COLUMN_LAYOUTS.map((layout) => {
-        return (
-          <FloatingActionButton
-            key={layout.value}
-            label={layout.label}
-            // className="flex size-7 items-center justify-center rounded-button text-fg-muted hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
-            onClick={() => changeLayout(layout.widths)}
-            type="button"
-          >
-            <EditorIcon
-              className="size-4"
-              name={
-                layout.value === 'equal-3'
-                  ? 'columns3'
-                  : layout.value === 'left-wide'
-                    ? 'panelRight'
-                    : layout.value === 'right-wide'
-                      ? 'panelLeft'
-                      : 'columns2'
-              }
-            />
-          </FloatingActionButton>
-        );
-      })}
+      {COLUMN_LAYOUTS.map((layout) => (
+        <FloatingActionButton
+          active={
+            element.children.length === layout.widths.length &&
+            element.children.every(
+              (column, index) => column.width === layout.widths[index]
+            )
+          }
+          key={layout.value}
+          label={layout.label}
+          onClick={() => changeLayout(layout.widths)}
+          type="button"
+        >
+          <EditorIcon
+            className="size-4"
+            name={
+              layout.value === 'equal-3'
+                ? 'columns3'
+                : layout.value === 'left-wide'
+                  ? 'panelRight'
+                  : layout.value === 'right-wide'
+                    ? 'panelLeft'
+                    : 'columns2'
+            }
+          />
+        </FloatingActionButton>
+      ))}
       <div className="mx-0.5 h-4 w-px bg-divider" />
       <FloatingActionButton label={m.editor_delete_table()} onClick={remove}>
         <EditorIcon name="trash" />

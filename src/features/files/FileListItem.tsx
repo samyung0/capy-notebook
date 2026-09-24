@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router';
+import type { MouseEventHandler } from 'react';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -25,7 +27,7 @@ export function FileListItem({
   beforeDelete?: () => boolean;
   file: SourceFile;
   active: boolean;
-  onOpen: (id: string) => void;
+  onOpen: MouseEventHandler<HTMLAnchorElement>;
   workspaceId: string;
   /** Workspace chapters, for the "Move to chapter…" picker. */
   chapters?: Chapter[];
@@ -45,15 +47,19 @@ export function FileListItem({
           active && 'bg-surface-hover-bg'
         )}
       >
-        <button
+        <Link
           className={cn(
             'flex w-full items-center gap-1.5 rounded-button py-1.5 text-left',
             active && 'font-bold',
             ingesting && 'cursor-default'
           )}
           disabled={ingesting}
-          onClick={() => !ingesting && onOpen(file.id)}
-          type="button"
+          draggable={false}
+          onClick={ingesting ? undefined : onOpen}
+          params={{ workspaceId }}
+          replace
+          search={{ file: file.id }}
+          to="/workspaces/$workspaceId"
         >
           <FileIcon className="size-3.75" name={fileIconName(file)} />
           <span
@@ -64,7 +70,7 @@ export function FileListItem({
           >
             {file.name}
           </span>
-        </button>
+        </Link>
         {!readOnly && (
           <ContentActions
             beforeDelete={beforeDelete}

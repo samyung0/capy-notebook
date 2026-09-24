@@ -21,7 +21,7 @@ export function EditorCommandPalette() {
   const dialogs = useOptionalNoteBlockDialogs();
   const collaboration = useCollaborationActions();
   const enabled = useNoteEditorPrefs((state) => state.enabled);
-  const { canEdit, mode } = useEditorRuntime();
+  const { canEdit, allowExternalAssets } = useEditorRuntime();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -56,16 +56,14 @@ export function EditorCommandPalette() {
             shortcut: 'Ctrl/Cmd+Shift+M',
           }
         : null;
-    return [
-      ...(mode === 'edit' ? EDITOR_COMMANDS : []),
-      ...(comment ? [comment] : []),
-    ].filter(
+    return [...EDITOR_COMMANDS, ...(comment ? [comment] : [])].filter(
       (command) =>
         enabled[command.group] &&
-        (command.id === 'comment' || isEditorCommandAllowed(mode, command)) &&
+        (command.id === 'comment' ||
+          isEditorCommandAllowed(command, allowExternalAssets)) &&
         commandMatches(command, query)
     );
-  }, [canEdit, collaboration, enabled, mode, query]);
+  }, [allowExternalAssets, canEdit, collaboration, enabled, query]);
 
   return (
     <Dialog

@@ -120,8 +120,7 @@ export default function MockScenarioPanel() {
             to: `/workspaces/ws_bio?${kind}=${encodeURIComponent(fixture)}`,
           });
           if (fixture === 'mock-preview-text') {
-            await ui.click(m.material_mode(), '[role="combobox"]');
-            await ui.click(m.material_mode_edit(), '[role="option"]');
+            await ui.click(m.material_mode(), 'button');
           }
           return;
         }

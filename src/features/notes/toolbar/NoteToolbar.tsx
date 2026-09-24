@@ -1,8 +1,13 @@
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
-import { ListStyleType, toggleList } from '@platejs/list';
+import {
+  ListStyleType,
+  someList,
+  someTodoList,
+  toggleList,
+} from '@platejs/list';
 import { KEYS } from 'platejs';
 import { useEditorRef, useEditorSelector } from 'platejs/react';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,
@@ -11,6 +16,7 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { openAiMenu } from '@/features/notes/ai/aiMenuState';
 import { useCollaborationActions } from '@/features/notes/Collaboration';
 import {
@@ -21,10 +27,7 @@ import {
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { useEditorRuntime } from '@/features/notes/EditorRuntime';
 import { EDITOR_COMMANDS } from '@/features/notes/editorCommands';
-import {
-  canCreateExternalEditorAssets,
-  isEditorCommandAllowed,
-} from '@/features/notes/editorMode';
+import { isEditorCommandAllowed } from '@/features/notes/editorMode';
 import { toggleEditorBlock } from '@/features/notes/editorTransforms';
 import {
   cloneLinkSelection,
@@ -32,12 +35,12 @@ import {
   upsertLinkAtSelection,
 } from '@/features/notes/linkEditor';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
-import { getHiddenToolbarGroupIndexes } from '@/features/notes/responsiveToolbar';
 import { AlignMenu } from '@/features/notes/toolbar/ToolbarAlignMenu';
 import { ToolbarAllBlocksMenu } from '@/features/notes/toolbar/ToolbarAllBlocksMenu';
 import { BlockTypeMenu } from '@/features/notes/toolbar/ToolbarBlockTypeMenu';
 import {
   EDITOR_SHORTCUTS,
+  MarkToolbarButton,
   ToolbarButton,
 } from '@/features/notes/toolbar/ToolbarButton';
 import { ExportMenu } from '@/features/notes/toolbar/ToolbarExportMenu';
@@ -59,58 +62,32 @@ import { editorAiEnabled } from '@/lib/features';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyEditor = any;
 
-function ToolbarGroup({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex h-full shrink-0 items-center gap-0 after:mx-1.5 after:h-7 after:w-px after:bg-divider last:after:hidden',
-        className
-      )}
-      data-toolbar-group
-    >
-      {children}
-    </div>
-  );
-}
-
-function updateResponsiveToolbar(container: HTMLDivElement) {
-  const elements = Array.from(
-    container.querySelectorAll<HTMLElement>(':scope > [data-toolbar-group]')
-  );
-  elements.forEach((element) => {
-    element.hidden = false;
-  });
-  const groups = elements.map((element) => ({
-    width: element.getBoundingClientRect().width,
-  }));
-  const hiddenIndexes = getHiddenToolbarGroupIndexes(
-    groups,
-    Math.max(0, container.clientWidth - 2)
-  );
-
-  elements.forEach((element, index) => {
-    element.hidden = hiddenIndexes.has(index);
-  });
-}
-
 export function NoteToolbar({ className }: { className?: string }) {
   const editor = useEditorRef() as AnyEditor;
-  const toolbarGroupsRef = useRef<HTMLDivElement>(null);
-  const { mode, allowExternalAssets, canEdit } = useEditorRuntime();
-  const canCreateAssets = canCreateExternalEditorAssets(
-    mode,
-    allowExternalAssets
-  );
+  const { allowExternalAssets, canEdit } = useEditorRuntime();
+  const canCreateAssets = allowExternalAssets;
   const enabled = useNoteEditorPrefs((state) => state.enabled);
   const collaboration = useCollaborationActions();
   const canUndo = useEditorSelector((ed) => ed.history.undos.length > 0, []);
   const canRedo = useEditorSelector((ed) => ed.history.redos.length > 0, []);
+  const inLink = useEditorSelector(
+    (ed) => ed.api.some({ match: { type: KEYS.link } }),
+    []
+  );
+  const numberedList = useEditorSelector(
+    (ed) => someList(ed, ListStyleType.Decimal),
+    []
+  );
+  const bulletedList = useEditorSelector(
+    (ed) => someList(ed, ListStyleType.Disc),
+    []
+  );
+  const taskList = useEditorSelector((ed) => someTodoList(ed), []);
+  const columnCount = useEditorSelector(
+    (ed) =>
+      ed.api.above({ match: { type: KEYS.columnGroup } })?.[0].children.length,
+    []
+  );
 
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
@@ -123,9 +100,9 @@ export function NoteToolbar({ className }: { className?: string }) {
       EDITOR_COMMANDS.filter(
         (command) =>
           enabled[command.group] &&
-          isEditorCommandAllowed(mode, command, allowExternalAssets)
+          isEditorCommandAllowed(command, allowExternalAssets)
       ),
-    [allowExternalAssets, enabled, mode]
+    [allowExternalAssets, enabled]
   );
   const twoColumnCommand = allBlockCommands.find(
     (command) => command.id === 'columns'
@@ -140,28 +117,6 @@ export function NoteToolbar({ className }: { className?: string }) {
     (command) => command.id === 'mention'
   );
 
-  useLayoutEffect(() => {
-    const container = toolbarGroupsRef.current;
-    if (!container) return;
-
-    const update = () => updateResponsiveToolbar(container);
-    const resizeObserver = new ResizeObserver(update);
-    const mutationObserver = new MutationObserver(update);
-
-    update();
-    resizeObserver.observe(container);
-    mutationObserver.observe(container, { childList: true, subtree: true });
-
-    return () => {
-      resizeObserver.disconnect();
-      mutationObserver.disconnect();
-    };
-  }, []);
-
-  const mark = (key: string) => {
-    editor.tf.focus();
-    editor.tf.toggleMark(key);
-  };
   const block = (type: string) => {
     editor.tf.focus();
     toggleEditorBlock(editor, type);
@@ -202,69 +157,34 @@ export function NoteToolbar({ className }: { className?: string }) {
     linkSelectionRef.current = null;
   }
 
-  if (mode === 'comment') {
-    return (
-      <div
-        aria-label={m.editor_comment_tools()}
-        className={cn(
-          'sticky top-0 z-20 flex h-10 items-center border-divider border-b bg-surface/95 px-2 backdrop-blur-sm',
-          className
-        )}
-        role="toolbar"
-      >
-        {canEdit && collaboration && (
-          <ToolbarGroup>
-            <ToolbarButton
-              disabled={collaboration.mutationPending}
-              label={m.editor_comment()}
-              onClick={collaboration.openComment}
-            >
-              <EditorIcon name="commentAdd" />
-            </ToolbarButton>
-          </ToolbarGroup>
-        )}
-      </div>
-    );
-  }
-
   return (
     <>
-      <div
+      <Toolbar
         aria-label={m.editor_doc_formatting()}
-        className={cn(
-          'sticky top-0 z-20 flex h-10 items-center border-divider border-b bg-surface/95 px-2 backdrop-blur-sm',
-          className
-        )}
+        className={cn('sticky top-0 z-20', className)}
         role="toolbar"
       >
-        {/* Outside the responsive container on purpose. The all-blocks menu is
-         * the only way to reach a command whose own group has been dropped, so
-         * it cannot live in a box that hides and clips its children — it sits
-         * ahead of that box and takes its width off the top. */}
-        {enabled.general && (
-          <ToolbarGroup className="gap-1">
-            {canEdit && collaboration && (
-              <ToolbarButton
-                disabled={collaboration.mutationPending}
-                label={m.editor_comment()}
-                onClick={collaboration.openComment}
-              >
-                <EditorIcon name="commentAdd" />
-              </ToolbarButton>
-            )}
-            <ToolbarAllBlocksMenu
-              allBlockCommands={allBlockCommands}
-              canEdit={canEdit}
-              collaboration={collaboration}
-              editor={editor}
-            />
-            <BlockTypeMenu onBlock={block} />
-          </ToolbarGroup>
-        )}
-        <div
-          className="flex h-full min-w-0 flex-1 items-center overflow-hidden"
-          ref={toolbarGroupsRef}
-        >
+        <div className="scroll-fade-x flex h-full min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {enabled.general && (
+            <ToolbarGroup className="gap-1">
+              {canEdit && collaboration && (
+                <ToolbarButton
+                  disabled={collaboration.mutationPending}
+                  label={m.editor_comment()}
+                  onClick={collaboration.openComment}
+                >
+                  <EditorIcon name="commentAdd" />
+                </ToolbarButton>
+              )}
+              <ToolbarAllBlocksMenu
+                allBlockCommands={allBlockCommands}
+                canEdit={canEdit}
+                collaboration={collaboration}
+                editor={editor}
+              />
+              <BlockTypeMenu onBlock={block} />
+            </ToolbarGroup>
+          )}
           {enabled.history && (
             <ToolbarGroup>
               <ToolbarButton
@@ -311,41 +231,41 @@ export function NoteToolbar({ className }: { className?: string }) {
           )}
           {enabled.textDecorations && (
             <ToolbarGroup>
-              <ToolbarButton
+              <MarkToolbarButton
                 label={m.editor_bold()}
-                onClick={() => mark(KEYS.bold)}
+                markKey={KEYS.bold}
                 shortcut={EDITOR_SHORTCUTS.bold}
               >
                 <EditorIcon name="bold" />
-              </ToolbarButton>
-              <ToolbarButton
+              </MarkToolbarButton>
+              <MarkToolbarButton
                 label={m.editor_italic()}
-                onClick={() => mark(KEYS.italic)}
+                markKey={KEYS.italic}
                 shortcut={EDITOR_SHORTCUTS.italic}
               >
                 <EditorIcon name="italic" />
-              </ToolbarButton>
-              <ToolbarButton
+              </MarkToolbarButton>
+              <MarkToolbarButton
                 label={m.editor_underline()}
-                onClick={() => mark(KEYS.underline)}
+                markKey={KEYS.underline}
                 shortcut={EDITOR_SHORTCUTS.underline}
               >
                 <EditorIcon name="underline" />
-              </ToolbarButton>
-              <ToolbarButton
+              </MarkToolbarButton>
+              <MarkToolbarButton
                 label={m.editor_strikethrough()}
-                onClick={() => mark(KEYS.strikethrough)}
+                markKey={KEYS.strikethrough}
                 shortcut={EDITOR_SHORTCUTS.strikethrough}
               >
                 <EditorIcon name="strikethrough" />
-              </ToolbarButton>
-              <ToolbarButton
+              </MarkToolbarButton>
+              <MarkToolbarButton
                 label={m.editor_highlight()}
-                onClick={() => mark(KEYS.highlight)}
+                markKey={KEYS.highlight}
                 shortcut={EDITOR_SHORTCUTS.highlight}
               >
                 <EditorIcon name="highlighter" />
-              </ToolbarButton>
+              </MarkToolbarButton>
             </ToolbarGroup>
           )}
           {enabled.inlineElements && (
@@ -358,14 +278,15 @@ export function NoteToolbar({ className }: { className?: string }) {
                   <EditorIcon name="sigma" />
                 </ToolbarButton>
               )}
-              <ToolbarButton
+              <MarkToolbarButton
                 label={m.editor_inline_code()}
-                onClick={() => mark(KEYS.code)}
+                markKey={KEYS.code}
                 shortcut={EDITOR_SHORTCUTS.code}
               >
                 <EditorIcon name="code" />
-              </ToolbarButton>
+              </MarkToolbarButton>
               <ToolbarButton
+                active={inLink}
                 label={m.editor_link()}
                 onClick={() => {
                   const selection = cloneLinkSelection(editor.selection);
@@ -403,6 +324,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             <ToolbarGroup>
               <AlignMenu editor={editor} />
               <ToolbarButton
+                active={numberedList}
                 label={m.editor_numbered_list()}
                 onClick={() =>
                   toggleList(editor, { listStyleType: ListStyleType.Decimal })
@@ -411,6 +333,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 <EditorIcon name="listOrdered" />
               </ToolbarButton>
               <ToolbarButton
+                active={bulletedList}
                 label={m.editor_bulleted_list()}
                 onClick={() =>
                   toggleList(editor, { listStyleType: ListStyleType.Disc })
@@ -419,6 +342,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 <EditorIcon name="list" />
               </ToolbarButton>
               <ToolbarButton
+                active={taskList}
                 label={m.editor_task_list()}
                 onClick={() =>
                   toggleList(editor, { listStyleType: KEYS.listTodo })
@@ -433,6 +357,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               <TableMenu />
               {twoColumnCommand && (
                 <ToolbarButton
+                  active={columnCount === 2}
                   label={twoColumnCommand.label}
                   onClick={() => twoColumnCommand.run(editor)}
                 >
@@ -441,6 +366,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               )}
               {threeColumnCommand && (
                 <ToolbarButton
+                  active={columnCount === 3}
                   label={threeColumnCommand.label}
                   onClick={() => threeColumnCommand.run(editor)}
                 >
@@ -478,7 +404,7 @@ export function NoteToolbar({ className }: { className?: string }) {
           )}
           <WidgetSettingsDialog />
         </div>
-      </div>
+      </Toolbar>
       <Dialog
         onOpenChange={(open) => {
           setLinkOpen(open);

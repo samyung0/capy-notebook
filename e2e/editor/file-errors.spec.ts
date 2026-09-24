@@ -11,7 +11,7 @@ async function openWorkspace(page: Page) {
 
 async function openFile(page: Page, name: string) {
   await page.getByRole('button', { exact: true, name: 'Files' }).click();
-  await page.getByRole('button', { exact: true, name }).click();
+  await page.getByRole('link', { exact: true, name }).click();
 }
 
 for (const kind of ['text', 'csv', 'image'] as const) {
@@ -309,8 +309,8 @@ test('PDF annotation load toast retries failures and recovers without reloading 
       hasText: 'Private annotations could not be loaded.',
     })
   ).toHaveCount(0);
-  await page.getByRole('combobox', { name: 'Material mode' }).click();
-  await page.getByRole('option', { exact: true, name: 'Edit' }).click();
+  await page.getByRole('button', { name: 'Material mode' }).click();
+
   await expect(
     page.getByRole('button', { exact: true, name: 'Draw' })
   ).toBeDisabled();

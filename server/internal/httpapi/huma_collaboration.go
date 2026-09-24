@@ -56,7 +56,7 @@ type collaborationTokenResponse struct {
 	URL   string `json:"url"`
 	// shrink is write access restricted to edits that reduce the document, which
 	// is how an over-quota account stays able to delete its way back under limit.
-	Access    string `json:"access" enum:"write,comment,shrink"`
+	Access    string `json:"access" enum:"write,read,shrink"`
 	ExpiresAt int64  `json:"expiresAt"`
 }
 
@@ -138,7 +138,7 @@ func (a *api) createMaterialCollaborationToken(
 	// The role above decided that this user may write; the material's storage
 	// owner decides which direction the document may move, because the bytes
 	// are charged to the owner and never to the actor. A locked owner leaves
-	// editors with comment-only rooms. The actor's own lifecycle does not enter
+	// editors with read-only rooms. The actor's own lifecycle does not enter
 	// into it: suspended, deletion-pending and deleted users are refused a
 	// session by the auth middleware, and their storage state is irrelevant
 	// inside a workspace they do not pay for.
@@ -150,7 +150,7 @@ func (a *api) createMaterialCollaborationToken(
 	case owner.ShrinkOnly():
 		access = "shrink"
 	case !owner.CanEdit():
-		access = "comment"
+		access = "read"
 	}
 	me, _ := a.s.Me(ctx, uid)
 	room, err := a.s.MaterialRoom(ctx, in.ID)

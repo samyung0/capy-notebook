@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import {
   updateFileBodyNameMax,
   updateMaterialBodyTitleMax,
@@ -32,7 +32,7 @@ export function ContentActions({
   display,
   hoverClassName,
   leadingItems = [],
-  menuIconContainerClassName,
+  menuTrigger,
   hoverIconContainerClassName,
   onDeleted,
   onMove,
@@ -51,7 +51,7 @@ export function ContentActions({
   display: 'hover' | 'menu';
   hoverClassName?: string;
   leadingItems?: MenuItem[];
-  menuIconContainerClassName?: string;
+  menuTrigger?: ReactNode;
   hoverIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (chapterId: string | null) => void;
@@ -152,12 +152,7 @@ export function ContentActions({
           items={items}
         />
       )}
-      {display === 'menu' && (
-        <Menu
-          iconContainerClassName={menuIconContainerClassName}
-          items={items}
-        />
-      )}
+      {display === 'menu' && <Menu items={items} trigger={menuTrigger} />}
 
       {content && (
         <>

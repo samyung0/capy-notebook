@@ -34,7 +34,7 @@ test('per-update authorization needs only a current access verdict', async () =>
   );
 });
 
-test('source tokens bind their epoch and cannot make Plate read tokens', () => {
+test('source tokens bind their epoch and cannot join a material room', () => {
   const now = Math.floor(Date.now() / 1000);
   const claims = {
     access: 'read' as const,
@@ -52,13 +52,8 @@ test('source tokens bind their epoch and cannot make Plate read tokens', () => {
   expect(() =>
     verifyCollaborationToken(token, 'secret', 'source:f_1:epoch:1')
   ).toThrow();
-  const plate = { ...claims, room: 'material:m_1:schema:2' };
   expect(() =>
-    verifyCollaborationToken(
-      signCollaborationToken('secret', plate),
-      'secret',
-      plate.room
-    )
+    verifyCollaborationToken(token, 'secret', 'material:m_1:schema:2')
   ).toThrow();
 });
 

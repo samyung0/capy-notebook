@@ -56,5 +56,5 @@ export async function chooseAllBlocksEntry(
   name: string
 ): Promise<void> {
   const menu = await openAllBlocks(page);
-  await menu.getByRole('menuitem', { exact: true, name }).click();
+  await menu.getByRole('button', { exact: true, name }).click();
 }

@@ -192,7 +192,7 @@ export function TagSelect({
         alignWidthToTrigger
         aria-hidden={!showList || undefined}
         aria-label={m.common_tags()}
-        className="max-h-(--tag-dropdown-height) overflow-auto border border-line bg-surface p-1 shadow-lg"
+        className="max-h-(--tag-dropdown-height) overflow-auto p-1 shadow-lg!"
         id={listId}
         inert={!showList}
         onCloseAutoFocus={(event) => event.preventDefault()}

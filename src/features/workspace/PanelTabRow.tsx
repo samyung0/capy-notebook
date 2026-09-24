@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-import type { IconName } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { AddSourceMode } from './AddSourceDialog';
@@ -55,10 +55,10 @@ export function PanelTabRow({
   return (
     <div
       className={cn(
-        'relative flex shrink-0 items-center gap-1 pt-2.5 pr-3 pl-4.5',
+        'relative flex shrink-0 items-center gap-1 pt-2.5 pr-2 pl-4.5',
         title
           ? 'h-12'
-          : 'before:pointer-events-none before:absolute before:right-3 before:bottom-0 before:left-4.5 before:h-px before:bg-divider'
+          : 'before:pointer-events-none before:absolute before:right-2 before:bottom-0 before:left-4.5 before:h-px before:bg-divider'
       )}
     >
       {title ? (
@@ -71,30 +71,22 @@ export function PanelTabRow({
       >
         {!compact &&
           actions.map((action) => (
-            <IconButton
-              className={'p-1.25 text-fg-muted hover:text-fg'}
+            <ToolbarButton
               disabled={action.disabled}
-              icon={action.icon}
               key={action.label}
               label={action.label}
               onClick={action.onClick}
-              size="sm"
-              tooltip
-              variant="ghost-hover"
-            />
+            >
+              <Icon name={action.icon} />
+            </ToolbarButton>
           ))}
         {addItems.length > 0 && (
           <Menu
             items={addItems}
             trigger={
-              <IconButton
-                className={'p-1.25 text-fg-muted hover:text-fg'}
-                icon="plusCircle"
-                label={m.action_add_file()}
-                size="sm"
-                tooltip
-                variant="ghost-hover"
-              />
+              <ToolbarButton label={m.action_add_file()}>
+                <Icon name="plusCircle" />
+              </ToolbarButton>
             }
           />
         )}
@@ -103,26 +95,19 @@ export function PanelTabRow({
               <Menu
                 items={folded}
                 trigger={
-                  <IconButton
-                    className={'p-1.25 text-fg-muted hover:text-fg'}
-                    icon="moreVertical"
-                    label={m.a11y_more_actions()}
-                    size="sm"
-                    variant="ghost-hover"
-                  />
+                  <ToolbarButton label={m.a11y_more_actions()}>
+                    <Icon name="moreVertical" />
+                  </ToolbarButton>
                 }
               />
             )
           : onOpenSettings && (
-              <IconButton
-                className={'p-1.25 text-fg-muted hover:text-fg'}
-                icon="settings"
+              <ToolbarButton
                 label={m.workspace_settings()}
                 onClick={onOpenSettings}
-                size="sm"
-                tooltip
-                variant="ghost-hover"
-              />
+              >
+                <Icon name="settings" />
+              </ToolbarButton>
             )}
       </div>
     </div>

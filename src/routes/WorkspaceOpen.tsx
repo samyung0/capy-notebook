@@ -19,8 +19,7 @@ import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
-import type { IconName } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import {
   ResizableHandle,
@@ -28,6 +27,7 @@ import {
   ResizablePanelGroup,
 } from '@/components/ui/Resizable';
 import { Tabs } from '@/components/ui/Tabs';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { userToast } from '@/components/ui/userToast';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
@@ -158,11 +158,14 @@ export default function WorkspaceOpen() {
     setToolsOpen(false);
     navigate({
       replace: true,
-      search: searchFromOpenItem({
-        id: citation.fileId,
-        kind: 'file',
-        page: regionPage ?? citation.pageStart ?? undefined,
-      }),
+      search: {
+        ...searchFromOpenItem({
+          id: citation.fileId,
+          kind: 'file',
+          page: regionPage ?? citation.pageStart ?? undefined,
+        }),
+        mode: 'view',
+      },
       to: '.',
     });
   }
@@ -253,6 +256,10 @@ export default function WorkspaceOpen() {
       beforeReplace={confirmViewerReplacement}
       contentClassName={layout === 'three' ? undefined : 'pt-2'}
       generating={generating}
+      onNavigate={() => {
+        setCitationTarget(null);
+        setToolsOpen(false);
+      }}
       onOpenItem={setOpenItem}
       onRenameChapter={(ch) =>
         setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
@@ -323,32 +330,24 @@ export default function WorkspaceOpen() {
           leading={
             <>
               <div className="mr-2 flex items-center gap-0 lg:mr-4">
-                <IconButton
-                  className="p-1.25 text-fg-muted hover:text-fg"
-                  icon="navigationBack"
-                  iconClassName="-translate-y-px"
+                <ToolbarButton
                   label={m.workspace_back_to()}
                   onClick={() => navigate({ to: '/workspaces' })}
-                  size="sm"
-                  tooltip
-                  variant="ghost-hover"
-                />
+                >
+                  <Icon name="navigationBack" />
+                </ToolbarButton>
                 {xl && (
-                  <IconButton
+                  <ToolbarButton
                     aria-pressed={pinned}
-                    className="p-1.25 text-fg-muted hover:text-fg"
-                    icon="panelLeft"
-                    iconClassName="-translate-y-px"
                     label={
                       pinned
                         ? m.workspace_unpin_files()
                         : m.workspace_pin_files()
                     }
                     onClick={togglePinned}
-                    size="sm"
-                    tooltip
-                    variant="ghost-hover"
-                  />
+                  >
+                    <Icon name="panelLeft" />
+                  </ToolbarButton>
                 )}
               </div>
               {lg && (
@@ -381,6 +380,15 @@ export default function WorkspaceOpen() {
           }
           onDeleted={() => setOpenItem(null)}
           onFileViewerDirtyChange={setOfficeEditDirty}
+          onModeChange={(mode) => {
+            void navigate({
+              // The viewer has already completed its save/export checks.
+              ignoreBlocker: true,
+              replace: true,
+              search: (previous) => ({ ...previous, mode }),
+              to: '.',
+            });
+          }}
           readOnly={readOnly}
           requestedMode={search.mode ?? null}
           workspaceId={workspaceId}

@@ -47,12 +47,8 @@ export function BlockTypeMenu({
   return (
     <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
-        <ToolbarButton className="w-23" label={m.editor_block_type()}>
+        <ToolbarButton className="w-23" dropdown label={m.editor_block_type()}>
           <span className="translate-y-px">{blockTypeLabel}</span>
-          <EditorIcon
-            className="size-3! text-fg-secondary"
-            name="chevronDown"
-          />
         </ToolbarButton>
       </DropdownMenuTrigger>
       <ToolbarMenuContent

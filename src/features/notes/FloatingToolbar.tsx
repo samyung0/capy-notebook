@@ -9,6 +9,7 @@ import { KEYS } from 'platejs';
 import {
   useEditorId,
   useEditorRef,
+  useEditorSelector,
   useEventEditorValue,
   usePluginOption,
 } from 'platejs/react';
@@ -20,7 +21,11 @@ import { openAiMenu } from './ai/aiMenuState';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
 import { insertInlineEquation } from './editorCommands';
-import { EDITOR_SHORTCUTS, ToolbarButton } from './toolbar/ToolbarButton';
+import {
+  EDITOR_SHORTCUTS,
+  MarkToolbarButton,
+  ToolbarButton,
+} from './toolbar/ToolbarButton';
 
 export function FloatingToolbar() {
   return features.editorAi ? (
@@ -43,6 +48,10 @@ function FloatingToolbarChrome({
   showAi: boolean;
 }) {
   const editor = useEditorRef();
+  const inLink = useEditorSelector(
+    (ed) => ed.api.some({ match: { type: KEYS.link } }),
+    []
+  );
   const editorId = useEditorId();
   const focusedEditorId = useEventEditorValue('focus');
   const { canEdit } = useEditorRuntime();
@@ -68,11 +77,6 @@ function FloatingToolbarChrome({
     hideToolbar: hideForAi,
   });
   const { clickOutsideRef, hidden, props, ref } = useFloatingToolbar(state);
-
-  const mark = (key: string) => {
-    editor.tf.focus();
-    editor.tf.toggleMark(key);
-  };
 
   return (
     <div ref={clickOutsideRef}>
@@ -100,46 +104,46 @@ function FloatingToolbarChrome({
             <Separator />
           </>
         )}
-        <ToolbarButton
+        <MarkToolbarButton
           label={m.editor_bold()}
-          onClick={() => mark(KEYS.bold)}
+          markKey={KEYS.bold}
           shortcut={EDITOR_SHORTCUTS.bold}
           tooltipSide="top"
         >
           <EditorIcon name="bold" />
-        </ToolbarButton>
-        <ToolbarButton
+        </MarkToolbarButton>
+        <MarkToolbarButton
           label={m.editor_italic()}
-          onClick={() => mark(KEYS.italic)}
+          markKey={KEYS.italic}
           shortcut={EDITOR_SHORTCUTS.italic}
           tooltipSide="top"
         >
           <EditorIcon name="italic" />
-        </ToolbarButton>
-        <ToolbarButton
+        </MarkToolbarButton>
+        <MarkToolbarButton
           label={m.editor_underline()}
-          onClick={() => mark(KEYS.underline)}
+          markKey={KEYS.underline}
           shortcut={EDITOR_SHORTCUTS.underline}
           tooltipSide="top"
         >
           <EditorIcon name="underline" />
-        </ToolbarButton>
-        <ToolbarButton
+        </MarkToolbarButton>
+        <MarkToolbarButton
           label={m.editor_strikethrough()}
-          onClick={() => mark(KEYS.strikethrough)}
+          markKey={KEYS.strikethrough}
           shortcut={EDITOR_SHORTCUTS.strikethrough}
           tooltipSide="top"
         >
           <EditorIcon name="strikethrough" />
-        </ToolbarButton>
-        <ToolbarButton
+        </MarkToolbarButton>
+        <MarkToolbarButton
           label={m.editor_inline_code()}
-          onClick={() => mark(KEYS.code)}
+          markKey={KEYS.code}
           shortcut={EDITOR_SHORTCUTS.code}
           tooltipSide="top"
         >
           <EditorIcon name="code" />
-        </ToolbarButton>
+        </MarkToolbarButton>
         <ToolbarButton
           label={m.editor_inline_equation()}
           onClick={() => insertInlineEquation(editor)}
@@ -148,6 +152,7 @@ function FloatingToolbarChrome({
           <EditorIcon name="sigma" />
         </ToolbarButton>
         <ToolbarButton
+          active={inLink}
           label={m.editor_link()}
           onClick={() =>
             (

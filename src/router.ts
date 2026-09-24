@@ -49,7 +49,10 @@ import {
   SharedFlashcardsRoute,
   SharedQuizRoute,
 } from '@/components/app/RouteComponents';
-import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
+import {
+  parseDocumentModeSearch,
+  parseWorkspaceOpenSearch,
+} from '@/features/materials/openItem';
 import { parseSettingsSearch } from '@/features/settings/settingsSearch';
 import { features } from '@/lib/features';
 
@@ -212,10 +215,14 @@ const appRoutes = [
       void queryClient.prefetchQuery(materialQuery(params.materialId));
     },
     path: '/materials/$materialId',
-    validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } =>
-      search.mode === 'edit' ? { mode: 'edit' } : {},
+    validateSearch: parseDocumentModeSearch,
   }),
-  page('/files/$fileId', () => import('@/routes/MaterialOpen')),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/MaterialOpen')),
+    getParentRoute: () => authShellRoute,
+    path: '/files/$fileId',
+    validateSearch: parseDocumentModeSearch,
+  }),
   createRoute({
     beforeLoad: () => {
       throw redirect({ replace: true, to: '/create' });

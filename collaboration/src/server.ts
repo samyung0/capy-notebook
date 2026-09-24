@@ -529,9 +529,9 @@ const server = new Server<CollaborationContext>({
     }
     const yjsUpdate = inboundYjsUpdate(update);
     if (!yjsUpdate) return;
-    if (context.access === 'comment' || context.access === 'read') {
+    if (context.access === 'read') {
       if (yjsUpdateContainsChanges(document, yjsUpdate)) {
-        throw new Error('comment-only connection sent a document update');
+        throw new Error('read-only connection sent a document update');
       }
       return;
     }
@@ -604,8 +604,7 @@ const server = new Server<CollaborationContext>({
         ? sources
         : store
       ).assertConnectionAccess(documentName, claims.sub, claims.access);
-      connectionConfig.readOnly =
-        claims.access === 'comment' || claims.access === 'read';
+      connectionConfig.readOnly = claims.access === 'read';
       // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
       // the shrinking-direction rule for over-quota accounts.
       return claimsContext(claims);
@@ -775,8 +774,7 @@ const server = new Server<CollaborationContext>({
       : store
     ).assertConnectionAccess(documentName, claims.sub, claims.access);
     connection.context = claimsContext(claims);
-    connection.readOnly =
-      claims.access === 'comment' || claims.access === 'read';
+    connection.readOnly = claims.access === 'read';
   },
   quiet: true,
   stopOnSignals: false,

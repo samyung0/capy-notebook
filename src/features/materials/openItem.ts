@@ -9,7 +9,7 @@ import type { MaterialMode } from './modePolicy';
  * clicked. It lives in the URL rather than in component state so a cited page
  * survives a reload and can be linked to. `regions` is deliberately transient:
  * regular file navigation and reloads clear the citation highlight. `mode` is
- * an optional initial material mode (dashboard links force view). */
+ * an optional document mode, overriding the locally saved mode. */
 export type OpenItem =
   | {
       kind: 'file';
@@ -28,12 +28,37 @@ export type WorkspaceOpenSearch = {
   mode?: MaterialMode;
 };
 
-const MATERIAL_MODES = new Set<MaterialMode>(['view', 'edit', 'comment']);
+function documentModeKey(item: OpenItem): string {
+  return `capy.document.mode.${item.kind}.${item.id}`;
+}
 
-function parseMaterialMode(value: unknown): MaterialMode | undefined {
-  return typeof value === 'string' && MATERIAL_MODES.has(value as MaterialMode)
-    ? (value as MaterialMode)
-    : undefined;
+export function readDocumentMode(item: OpenItem): MaterialMode {
+  try {
+    return localStorage.getItem(documentModeKey(item)) === 'edit'
+      ? 'edit'
+      : 'view';
+  } catch {
+    return 'view';
+  }
+}
+
+export function saveDocumentMode(item: OpenItem, mode: MaterialMode): void {
+  try {
+    localStorage.setItem(documentModeKey(item), mode);
+  } catch {
+    // Browsers can disable local storage; the URL still retains the mode.
+  }
+}
+
+function parseDocumentMode(value: unknown): MaterialMode | undefined {
+  return value === 'view' || value === 'edit' ? value : undefined;
+}
+
+export function parseDocumentModeSearch(search: Record<string, unknown>): {
+  mode?: MaterialMode;
+} {
+  const mode = parseDocumentMode(search.mode);
+  return mode ? { mode } : {};
 }
 
 export function parseWorkspaceOpenSearch(
@@ -45,10 +70,14 @@ export function parseWorkspaceOpenSearch(
   if (file) {
     const raw = Number(search.page);
     const page = Number.isInteger(raw) && raw > 0 ? raw : undefined;
-    return page ? { file, page } : { file };
+    return {
+      file,
+      ...(page ? { page } : {}),
+      ...parseDocumentModeSearch(search),
+    };
   }
   if (material) {
-    const mode = parseMaterialMode(search.mode);
+    const mode = parseDocumentMode(search.mode);
     return mode ? { material, mode } : { material };
   }
   return {};

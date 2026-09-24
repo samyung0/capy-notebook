@@ -320,8 +320,7 @@ export class SourceDocumentStore {
     actorId: string,
     fetched?: SourceSession
   ): Promise<SourceSession> {
-    let session =
-      fetched ?? (await this.sessionForRoom(room, actorId, 'comment'));
+    let session = fetched ?? (await this.sessionForRoom(room, actorId, 'read'));
     if (!session.state) {
       const bytes = await this.base(
         session.sourceURL,
@@ -369,7 +368,7 @@ export class SourceDocumentStore {
       } catch (error) {
         if (!(error instanceof SourceRequestError) || error.status !== 409)
           throw error;
-        session = await this.sessionForRoom(room, actorId, 'comment');
+        session = await this.sessionForRoom(room, actorId, 'read');
         if (!session.state) throw error;
       }
     }

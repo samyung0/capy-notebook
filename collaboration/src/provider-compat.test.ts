@@ -23,12 +23,12 @@ afterEach(async () => {
 });
 
 describe('v3 provider and v4 server compatibility', () => {
-  it('converges writes and rejects comment-access document updates', async () => {
+  it('converges writes and rejects read-access document updates', async () => {
     const server = new Server({
       address: '127.0.0.1',
       async onAuthenticate({ connectionConfig, token }) {
-        if (token !== 'write' && token !== 'comment') throw new Error('denied');
-        connectionConfig.readOnly = token === 'comment';
+        if (token !== 'write' && token !== 'read') throw new Error('denied');
+        connectionConfig.readOnly = token === 'read';
       },
       port: 0,
       quiet: true,
@@ -46,21 +46,21 @@ describe('v3 provider and v4 server compatibility', () => {
     await synced(writer);
     writerDocument.getText('probe').insert(0, 'writer');
 
-    const commentDocument = new Y.Doc();
-    const commentOnly = new HocuspocusProvider({
-      document: commentDocument,
+    const readerDocument = new Y.Doc();
+    const reader = new HocuspocusProvider({
+      document: readerDocument,
       name: 'material:test:schema:1',
-      token: 'comment',
+      token: 'read',
       url: server.webSocketURL,
     });
-    await synced(commentOnly);
-    expect(commentDocument.getText('probe').toString()).toBe('writer');
+    await synced(reader);
+    expect(readerDocument.getText('probe').toString()).toBe('writer');
 
-    commentDocument.getText('probe').insert(6, '-comment');
+    readerDocument.getText('probe').insert(6, '-reader');
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(writerDocument.getText('probe').toString()).toBe('writer');
 
-    commentOnly.destroy();
+    reader.destroy();
     writer.destroy();
   });
 });

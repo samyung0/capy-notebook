@@ -35,9 +35,7 @@ function recentLink(item: RecentItem) {
   return linkOptions({
     params: { workspaceId: item.workspaceId },
     search:
-      item.kind === 'material'
-        ? { material: item.id, mode: 'view' as const }
-        : { file: item.id },
+      item.kind === 'material' ? { material: item.id } : { file: item.id },
     to: '/workspaces/$workspaceId',
   });
 }

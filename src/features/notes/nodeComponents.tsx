@@ -11,7 +11,6 @@ import {
   useEditorRef,
   useReadOnly,
 } from 'platejs/react';
-import { Slot } from 'radix-ui';
 import {
   type FocusEvent,
   type KeyboardEvent,
@@ -28,7 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
-import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { Katex } from '@/features/materials/Katex';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { EditorIcon } from '@/features/notes/EditorIcon';
@@ -75,40 +73,14 @@ import {
   TableElement,
   TableRowElement,
 } from './TableNodes';
+import { ToolbarButton } from './toolbar/ToolbarButton';
 
 /* ------------------------------------------------------------- block elements */
 
-export function FloatingActionButton({
-  children,
-  label,
-  onClick,
-  className,
-  asChild = false,
-  ...rest
-}: React.ComponentProps<'button'> & {
-  label: string;
-  asChild?: boolean;
-}) {
-  const Component = asChild ? Slot.Root : 'button';
-
-  return (
-    <ButtonTooltip label={label}>
-      <Component
-        aria-label={label}
-        className={cn(
-          'z-10 flex size-8 shrink-0 items-center justify-center rounded-button text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing [&_svg]:size-4',
-          className
-        )}
-        data-plate-prevent-deselect
-        onClick={onClick}
-        onMouseDown={(event) => event.preventDefault()}
-        type={asChild ? undefined : 'button'}
-        {...rest}
-      >
-        {children}
-      </Component>
-    </ButtonTooltip>
-  );
+export function FloatingActionButton(
+  props: React.ComponentProps<typeof ToolbarButton>
+) {
+  return <ToolbarButton tooltipSide="top" {...props} />;
 }
 
 function heading(tag: keyof HTMLElementTagNameMap, key: string) {

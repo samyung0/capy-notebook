@@ -57,7 +57,7 @@ export function ErrorAction({
   iconLeft = 'refresh',
   ...props
 }: Omit<ButtonProps, 'variant'>) {
-  return <Button {...props} iconLeft={iconLeft} variant="ghost-hover" />;
+  return <Button iconLeft={iconLeft} variant="ghost-hover" {...props} />;
 }
 
 const InlineIcon = ({

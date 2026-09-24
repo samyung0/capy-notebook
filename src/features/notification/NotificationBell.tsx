@@ -85,7 +85,7 @@ export function NotificationsBell() {
           variant="surface"
         />
       </PopoverTrigger>
-      <PopoverContent>
+      <PopoverContent className="border-0 bg-transparent shadow-none!">
         <Card
           border="solid"
           className="block min-w-[320px] max-w-120 p-1"

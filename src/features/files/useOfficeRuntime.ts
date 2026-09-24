@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
 import { m } from '@/i18n';
+import { useFileMode } from './FileModeControl';
 import {
   isOfficeRuntimeMessage,
   OFFICE_PROTOCOL_VERSION,
@@ -55,8 +56,8 @@ export function useOfficeRuntime({
   citationRef.current = citation;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const config = useRef(getOfficeRuntimeConfig()).current;
-  const [mode, setMode] = useState<OfficeMode>(canEdit ? initialMode : 'view');
-  const [joined, setJoined] = useState(canEdit && initialMode === 'edit');
+  const [mode, setMode] = useFileMode(canEdit, initialMode);
+  const [joined, setJoined] = useState(mode === 'edit');
   const [frameGeneration, setFrameGeneration] = useState(0);
   const [frameLoaded, setFrameLoaded] = useState(false);
   const [frameBoot, setFrameBoot] = useState(0);
@@ -407,7 +408,8 @@ export function useOfficeRuntime({
 
   const setRuntimeMode = useCallback(
     async (next: OfficeMode) => {
-      if (next === mode || (next === 'edit' && !canEdit)) return;
+      if (next === mode) return true;
+      if (next === 'edit' && !canEdit) return false;
       if (next === 'view') {
         setLeaving(true);
         try {
@@ -417,7 +419,7 @@ export function useOfficeRuntime({
         } catch (value) {
           setError(toError(value).message);
           setLeaving(false);
-          return;
+          return false;
         }
         setLeaving(false);
       } else setJoined(true);
@@ -425,8 +427,9 @@ export function useOfficeRuntime({
       setFrameLoaded(false);
       setFrameGeneration((value) => value + 1);
       setMode(next);
+      return true;
     },
-    [canEdit, mode, checkpoint, request]
+    [canEdit, mode, checkpoint, request, setMode]
   );
 
   useEffect(

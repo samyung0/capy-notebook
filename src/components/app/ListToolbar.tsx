@@ -144,7 +144,10 @@ export function ListToolbar<V extends string>({
                   {filterLabel}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="max-h-96 w-72 gap-0 p-0">
+              <PopoverContent
+                align="start"
+                className="max-h-96 w-72 gap-0 border-0 bg-transparent p-0 shadow-none!"
+              >
                 <Card
                   border="solid"
                   className="max-h-96 gap-3 overflow-y-auto p-3.5"

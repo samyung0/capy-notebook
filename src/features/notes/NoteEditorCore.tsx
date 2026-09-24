@@ -47,7 +47,7 @@ import {
   shouldShowDocumentStats,
 } from './documentStats';
 import { EditorCommandPalette } from './EditorCommandPalette';
-import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
+import type { NoteEditorStatus } from './editorMode';
 import { FloatingToolbar } from './FloatingToolbar';
 import { noteComponents } from './nodeComponents';
 import { buildPlugins } from './plugins';
@@ -156,27 +156,21 @@ function DocumentStatsFooter({
  */
 const NoteEditorContent = memo(function NoteEditorContent({
   discussions,
-  readOnly,
   shouldShowStats,
 }: {
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
-  readOnly: boolean;
   shouldShowStats: boolean;
 }) {
   const editor = useEditorRef();
-  const showEditorPlaceholder = useEditorSelector(
-    (current) => {
-      const firstNode = current.children[0];
-      return (
-        !readOnly &&
-        current.children.length === 1 &&
-        !!firstNode &&
-        current.api.isEmpty(firstNode) &&
-        current.api.isElementStateEmpty(firstNode)
-      );
-    },
-    [readOnly]
-  );
+  const showEditorPlaceholder = useEditorSelector((current) => {
+    const firstNode = current.children[0];
+    return (
+      current.children.length === 1 &&
+      !!firstNode &&
+      current.api.isEmpty(firstNode) &&
+      current.api.isElementStateEmpty(firstNode)
+    );
+  }, []);
   const remoteCursors = useRemoteCursorDecorations(editor);
   // Read through refs so `decorate` keeps one identity: Plate treats a new
   // decorate function as new editable props and re-renders the whole document.
@@ -239,7 +233,6 @@ const NoteEditorContent = memo(function NoteEditorContent({
         decorate={decorate}
         onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
-        readOnly={readOnly}
       />
     </PlateContainer>
   );
@@ -247,7 +240,6 @@ const NoteEditorContent = memo(function NoteEditorContent({
 
 export function NoteEditorCore({
   material,
-  mode,
   allowExternalAssets,
   discussions,
   currentUserId,
@@ -257,7 +249,6 @@ export function NoteEditorCore({
   onDocumentRejected,
 }: {
   material: Material;
-  mode: NoteEditorMode;
   allowExternalAssets: boolean;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   currentUserId: string;
@@ -308,12 +299,11 @@ export function NoteEditorCore({
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
       setSaveState(next);
-      const reported = `${mode}:${next}`;
-      if (reportedStatus.current === reported) return;
-      reportedStatus.current = reported;
-      onEditorStatusChange?.({ mode, saveState: next });
+      if (reportedStatus.current === next) return;
+      reportedStatus.current = next;
+      onEditorStatusChange?.({ saveState: next });
     },
-    [mode, onEditorStatusChange]
+    [onEditorStatusChange]
   );
 
   // Plugin options are captured before the editor exists, so the handlers they
@@ -471,10 +461,9 @@ export function NoteEditorCore({
         },
       }),
       ...buildPlugins({
-        allowExternalAssets: mode === 'edit' && allowExternalAssets,
+        allowExternalAssets,
         currentUserId,
         discussions,
-        mode,
         onSave: () => saveNow.current(),
         workspaceId: material.workspaceId,
       }),
@@ -488,7 +477,6 @@ export function NoteEditorCore({
       handleStatelessEvent,
       material.id,
       material.workspaceId,
-      mode,
       name,
       qc,
       setStatus,
@@ -550,7 +538,7 @@ export function NoteEditorCore({
   }, [setStatus]);
 
   const requestCheckpoint = useCallback(() => {
-    if (mode !== 'edit' || rejected.current) return;
+    if (rejected.current) return;
     // A receipt is only meaningful for work the service has not answered for
     // yet; asking about an already durable document would never be answered,
     // because nothing is left to store.
@@ -564,17 +552,16 @@ export function NoteEditorCore({
     // acknowledgement overwritten by this line.
     setStatus('synced');
     sendCheckpointRequest(editor, id);
-  }, [editor, mode, setStatus]);
+  }, [editor, setStatus]);
 
   const scheduleCheckpoint = useCallback(() => {
-    if (mode !== 'edit') return;
     unsavedChanges.current = true;
     if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
     checkpointTimer.current = setTimeout(
       requestCheckpoint,
       CHECKPOINT_DEBOUNCE_MS
     );
-  }, [mode, requestCheckpoint]);
+  }, [requestCheckpoint]);
 
   // `mod+s` stays registered so the browser's own save dialog never opens, and
   // it flushes the debounce rather than running a second checkpoint path.
@@ -618,7 +605,6 @@ export function NoteEditorCore({
                   <>
                     <NoteEditorContent
                       discussions={discussions}
-                      readOnly={mode === 'comment'}
                       shouldShowStats={shouldShowDocumentStats(documentStats)}
                     />
                     <DocumentStatsFooter
@@ -631,12 +617,10 @@ export function NoteEditorCore({
               {/* Inside the scroller on purpose: floating-ui only listens to
                * scroll on the toolbar's own overflow ancestors, so a sibling
                * of this box would stay pinned while the block scrolls away. */}
-              {mode === 'edit' && <FloatingToolbar />}
+              <FloatingToolbar />
             </div>
             <EditorCommandPalette />
-            {mode === 'edit' && editorAiEnabled(allowExternalAssets) && (
-              <AiMenu />
-            )}
+            {editorAiEnabled(allowExternalAssets) && <AiMenu />}
           </CollaborationProvider>
         </Plate>
       </div>

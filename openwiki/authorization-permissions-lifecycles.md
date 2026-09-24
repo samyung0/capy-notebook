@@ -28,7 +28,10 @@ Membership roles are `owner`, `editor`, `viewer`. A link/public workspace also
 carries a `shareRole` of `editor` or `viewer` that applies to every signed-in
 nonmember. A caller's **effective role** is the more permissive of their
 membership and the share role. Content authority follows the effective role;
-workspace settings and membership follow persisted membership only.
+workspace settings and membership follow persisted membership only. Migration
+`0029_workspace_editor_viewer_roles.sql` applies these role constraints and ACL
+triggers to existing databases; unsupported persisted roles fail migration
+validation instead of being remapped.
 
 | Capability                                                                                  | Owner | Editor member | Link/public editor | Viewer member | Link/public viewer | Anonymous    |
 | ------------------------------------------------------------------------------------------- | ----- | ------------- | ------------------ | ------------- | ------------------ | ------------ |
@@ -243,8 +246,8 @@ and [material editor checks](../server/internal/store/share.go#L209).
 ### Comments and live collaboration
 
 - Owner and effective editors can list discussions, create a discussion,
-  reply, and resolve or reopen a discussion. Commenting is an editor mode, not
-  a separate grant.
+  reply, and resolve or reopen a discussion in Edit mode. View mode has no
+  comment controls. There is no commenter role or separate Comment mode.
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
@@ -255,7 +258,7 @@ and [material editor checks](../server/internal/store/share.go#L209).
   contributor who has since left the workspace stays attributed and a reader
   without a roster still sees who wrote what.
 - Collaboration tokens encode `write` or quota-recovery `shrink` access; a
-  `comment` token exists only as the downgrade an editor receives when the
+  `read` token exists only as the downgrade an editor receives when the
   storage owner's account is locked. A token's document growth rule follows the material's storage owner,
   not the connecting editor. The collaboration server rechecks actor lifecycle,
   current membership/share role, owner lifecycle, and current quota state when

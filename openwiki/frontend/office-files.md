@@ -19,13 +19,12 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 | DOCX | yes | yes | BetterOffice DOCX viewer/editor WASM |
 | PDF | yes | private annotations | React PDF over PDF.js |
 
-Create cards open `/materials/:id` and Files cards open `/files/:id` in View.
+Create cards open `/materials/:id` and Files cards open `/files/:id` through SPA router Links, as do dashboard recent rows and workspace file/material rows. Each item remembers its own View/Edit mode in localStorage (`capy.document.mode.<kind>.<id>`); an explicit URL mode wins, followed by the saved mode, then View.
 Both routes use the workspace's `CenterContent` header and renderers, with
 the app sidebar and a back icon. They omit workspace navigation and Move to
 chapter. `FileModeControl` portals file View/Edit and Save controls into that
 shared header while each runtime retains its save and collaboration lifecycle.
-New standalone notes request Edit explicitly; workspace material defaults and
-the dedicated quiz/study actions retain their existing behavior.
+New standalone notes request Edit explicitly; dedicated quiz/study actions retain their existing behavior.
 
 ## Repository boundary
 
@@ -91,6 +90,8 @@ collaboration service's headless export), terminates it, and opens the viewer
 on the exported bytes. With no unpublished edits the base opens directly and
 no editor engine loads. The view is not live: it reflects the state at open,
 and a reopen or revision change reads again.
+
+Workspace and standalone file pages read `?mode=view|edit` on entry and update it after accepted toggles. Leaving Edit updates the URL only after checkpoint/export succeeds; failed saves keep Edit, its URL and the saved mode. PDFs and text/CSV sources use the same URL contract.
 
 View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable

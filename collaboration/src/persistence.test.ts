@@ -161,7 +161,7 @@ describe('live collaboration authorization', () => {
       documentStore(liveRow({ member_role: '' })).assertConnectionAccess(
         'material:mat_1:schema:1',
         'u_editor',
-        'comment'
+        'read'
       )
     ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
   });
@@ -177,6 +177,26 @@ describe('live collaboration authorization', () => {
         liveRow({ owner_deletion_requested_at: new Date() })
       ).assertConnectionAccess('material:mat_1:schema:1', 'u_editor', 'write')
     ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
+  });
+
+  it('limits editors to read access when the storage owner is suspended', async () => {
+    const store = documentStore(liveRow({ owner_suspended_at: new Date() }));
+    await expect(
+      store.assertConnectionAccess(
+        'material:mat_1:schema:1',
+        'u_editor',
+        'read'
+      )
+    ).resolves.toBeUndefined();
+    for (const access of ['write', 'shrink'] as const) {
+      await expect(
+        store.assertConnectionAccess(
+          'material:mat_1:schema:1',
+          'u_editor',
+          access
+        )
+      ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
+    }
   });
 
   it('downgrades an over-quota editor from write to shrink', async () => {

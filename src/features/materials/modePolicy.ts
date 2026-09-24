@@ -1,6 +1,4 @@
-import type { MaterialKind } from '@/api/types';
-
-export type MaterialMode = 'view' | 'edit' | 'comment';
+export type MaterialMode = 'view' | 'edit';
 
 export interface MaterialModeCapabilities {
   canEdit: boolean;
@@ -12,22 +10,15 @@ export interface MaterialModePolicy {
 }
 
 export function materialModePolicy(
-  kind: MaterialKind,
   capabilities: MaterialModeCapabilities
 ): MaterialModePolicy {
   const modes: MaterialMode[] = [];
 
-  // Editors may edit, comment, or view; everyone else views statically.
-  if (capabilities.canEdit) modes.push('edit', 'comment');
+  if (capabilities.canEdit) modes.push('edit');
   modes.push('view');
 
   return {
-    defaultMode:
-      kind === 'quiz' || kind === 'flashcards'
-        ? 'view'
-        : capabilities.canEdit
-          ? 'edit'
-          : 'view',
+    defaultMode: 'view',
     modes,
   };
 }
@@ -39,10 +30,4 @@ export function resolveMaterialMode(
   return requested && policy.modes.includes(requested)
     ? requested
     : policy.defaultMode;
-}
-
-export function isInteractiveMaterialMode(
-  mode: MaterialMode
-): mode is Extract<MaterialMode, 'edit' | 'comment'> {
-  return mode === 'edit' || mode === 'comment';
 }

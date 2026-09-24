@@ -36,7 +36,7 @@ interface RangeMs {
 }
 
 interface ChaosOptions {
-  access: 'comment' | 'write';
+  access: 'read' | 'write';
   cursorMs: RangeMs;
   edits: boolean;
   idleMs: RangeMs;
@@ -77,7 +77,7 @@ Options:
   --origin <origin>       Must match COLLABORATION_ALLOWED_ORIGINS (default: http://localhost:5173)
   --secret <secret>       COLLABORATION_SECRET (default: env or dev-collaboration-secret)
   --peers <n>             Concurrent synthetic peers (default: 3)
-  --access write|comment  Token access (default: write)
+  --access write|read  Token access (default: write)
   --edit-ms <a-b>         Delay between document edits (default: 700-2800)
   --cursor-ms <a-b>       Delay between cursor moves (default: 400-1400)
   --session-ms <a-b>      How long a peer stays connected (default: 6s-20s)
@@ -168,8 +168,8 @@ function parseOptions(argv: string[]): ChaosOptions {
   }
 
   const accessRaw = flagValue(args, '--access') ?? 'write';
-  if (accessRaw !== 'write' && accessRaw !== 'comment') {
-    throw new Error('--access must be write or comment');
+  if (accessRaw !== 'write' && accessRaw !== 'read') {
+    throw new Error('--access must be write or read');
   }
 
   const peers = Number(flagValue(args, '--peers') ?? '3');
@@ -180,7 +180,7 @@ function parseOptions(argv: string[]): ChaosOptions {
   return {
     access: accessRaw,
     cursorMs: parseRange(flagValue(args, '--cursor-ms') ?? '400-1400'),
-    edits: !(hasFlag(args, '--no-edits') || accessRaw === 'comment'),
+    edits: !(hasFlag(args, '--no-edits') || accessRaw === 'read'),
     idleMs: parseRange(flagValue(args, '--idle-ms') ?? '2000-8000'),
     origin:
       flagValue(args, '--origin') ??

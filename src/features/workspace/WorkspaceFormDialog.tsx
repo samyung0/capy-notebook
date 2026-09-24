@@ -80,7 +80,7 @@ export function WorkspaceFormDialog({
         render={({ field, fieldState }) => (
           <div className="flex flex-col gap-1.5">
             <InputTitle>{m.icon_label()}</InputTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-5">
               {field.value && (
                 <img
                   alt=""

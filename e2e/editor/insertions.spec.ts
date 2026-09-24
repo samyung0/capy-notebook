@@ -78,8 +78,7 @@ test.describe('inline and block insertions', () => {
   });
 
   test('toolbar table menu inserts a table', async ({ page }) => {
-    // The toolbar drops whole groups from the right until it fits, and the
-    // default viewport leaves the editor pane too narrow to keep this one.
+    // Keep the table controls in view without scrolling for this insertion test.
     await page.setViewportSize({ height: 1000, width: 2560 });
     const editor = await openEditorNote(
       page,
@@ -90,14 +89,19 @@ test.describe('inline and block insertions', () => {
     await editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }).click();
     await page.keyboard.press('End');
 
-    // The menu body lives under the dropdown content so that Radix leaves it
-    // unmounted while closed — its selection subscriptions re-rendered the
-    // toolbar on every keystroke otherwise. This walks the whole path to prove
-    // the split did not break the menu.
-    await page.getByRole('button', { name: 'Table controls' }).click();
-    await page.getByRole('menuitem', { exact: true, name: 'Table' }).hover();
-    await page.getByRole('gridcell', { name: 'Insert 3 by 3 table' }).click();
-
+    const trigger = page.getByRole('button', { name: 'Table controls' });
+    await trigger.focus();
+    await page.keyboard.press('Enter');
+    const table = page.getByRole('button', { exact: true, name: 'Table' });
+    await expect(table).toBeFocused();
+    await page.keyboard.press('Enter');
+    const grid = page.getByRole('grid');
+    await expect(grid).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Enter');
+    await expect(trigger).toHaveAttribute('data-state', 'closed');
+    await expect(editor).toBeFocused();
+    await expect(editor.locator('table tr')).toHaveCount(3);
     await expect(editor.locator('table')).toBeVisible();
   });
 

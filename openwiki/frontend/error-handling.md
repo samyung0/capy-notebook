@@ -70,7 +70,11 @@ tail. Do not map it onto credits or the file-cap copy.
 Abort errors and account-blocking errors are also excluded from the global
 mutation toast. Toast IDs are derived from the normalized error kind, so repeated
 failures of the same kind update/deduplicate instead of stacking. The global
-Toaster displays at most three toasts.
+Toaster stays at the bottom right and normally displays at most three toasts.
+While an error is present, the shared list expands with no count cap so other
+toasts cannot cover the error.
+Warnings and errors last seven seconds; default and success toasts retain
+Sonner's four-second duration.
 
 ## Boundary tiers
 
@@ -269,11 +273,17 @@ write errors use `WarningBanner`, with recovery actions supplied through its
 optional action slot. Statistics and
 indexing tabs share an `ErrorState` panel with normalized copy and manual retry.
 
-Error actions use `ErrorAction` from `Button.tsx`: ghost-hover with the left
-Hugeicons refresh icon by default. Back, download, discard and toast navigation
-actions select their own semantic icon. File errors no longer override button
+Non-toast error actions use `ErrorAction` from `Button.tsx`: ghost-hover with the
+left Hugeicons refresh icon by default. Back, download and discard actions select
+their own semantic icon. File errors no longer override button
 radius or weight. User scenarios reaches these controls through application failures; the panel
 does not mount standalone error-container previews.
+
+`userToast` uses a compact inline layout with text-only actions aligned to the
+first title line, an inset close button and 8px gaps (6px on narrow screens).
+Descriptions render only when present. Default, success, warning and error
+backgrounds use 70% opacity; text and status icons remain opaque. Error entrance
+motion, toast IDs, action callbacks and dismiss behavior are unchanged.
 
 User scenarios → Workspace files and materials opens real Biology 101 file or
 material URLs. Fixtures appear in the normal file tree and survive reloads;

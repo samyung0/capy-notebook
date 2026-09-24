@@ -1,7 +1,4 @@
-import type { MaterialMode } from '@/features/materials/modePolicy';
 import { m } from '@/i18n';
-
-export type NoteEditorMode = Extract<MaterialMode, 'edit' | 'comment'>;
 
 export type NoteEditorSaveState =
   | 'connecting'
@@ -12,7 +9,6 @@ export type NoteEditorSaveState =
 
 /** Transient chrome status for the note editor (header, not toolbar). */
 export type NoteEditorStatus = {
-  mode: NoteEditorMode;
   saveState: NoteEditorSaveState;
 };
 
@@ -34,21 +30,9 @@ export function noteEditorStatusLabel(
   }
 }
 
-export function canCreateExternalEditorAssets(
-  mode: NoteEditorMode,
-  structurallyAllowed = true
-): boolean {
-  return structurallyAllowed && mode === 'edit';
-}
-
 export function isEditorCommandAllowed(
-  mode: NoteEditorMode,
   command: { widget?: string },
-  structurallyAllowed = true
+  allowExternalAssets: boolean
 ): boolean {
-  if (mode !== 'edit') return false;
-  return (
-    canCreateExternalEditorAssets(mode, structurallyAllowed) ||
-    command.widget !== 'media'
-  );
+  return allowExternalAssets || command.widget !== 'media';
 }

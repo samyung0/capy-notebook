@@ -1,4 +1,10 @@
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import {
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
 import { WarningBanner } from '@/components/banners/WarningBanner';
@@ -394,10 +400,15 @@ export function PdfAnnotations({
       container.style.touchAction = '';
     };
   }, [containerRef, editing, tool]);
-  const pages = containerRef.current
-    ? [...containerRef.current.querySelectorAll<HTMLElement>('[data-page]')]
-    : [];
-  void renderVersion;
+  const [pages, setPages] = useState<HTMLElement[]>([]);
+  useLayoutEffect(() => {
+    // Portals need the page wrappers from this commit, including cached PDF opens.
+    setPages(
+      containerRef.current
+        ? [...containerRef.current.querySelectorAll<HTMLElement>('[data-page]')]
+        : []
+    );
+  }, [containerRef, renderVersion]);
   return (
     <>
       {toolbar &&

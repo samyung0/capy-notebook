@@ -14,7 +14,7 @@ durable authority for material content after a room is initialized.
 - Go/PostgreSQL own metadata, permissions, comments, and content projections.
 - `materials.content` is an eventually consistent Plate JSON read projection.
 - Viewers and study routes render that projection without joining Yjs.
-- Editors join with write access; their comment mode is read-only live content.
+- Editors edit and comment in Edit mode; View is a static preview without comments.
 - Viewers never join a room.
 
 ## Package boundary
@@ -38,14 +38,12 @@ PostgreSQL advisory/row lock in the sidecar.
 
 ## Material surfaces and permissions
 
-`materialModePolicy` exposes three modes:
+`materialModePolicy` exposes two modes:
 
 - `view`: static `MaterialPreview`; no token, WebSocket, awareness, or editor;
-- `comment`: live Plate in read-only mode, an editor's mode for reviewing;
 - `edit`: live editable Plate with a `write` room token.
 
-Quiz and flashcard materials still default to their study/view surface.
-Editors default to edit mode; viewers only get `view`.
+Files and materials remember their last View/Edit mode separately in localStorage, keyed by item kind and ID. Explicit URL modes take precedence; otherwise the saved mode is used, with View as the default for an uncached item. Viewers only get `view`. The header toggles View/Edit with the current mode icon and identical styling in both states, for materials and uploaded files at every viewport size. Workspace and standalone document URLs accept `mode=view|edit`; a successful toggle replaces that query parameter, so reload and shared links retain the mode. File transitions retain their save/export gates, and a failed transition keeps the editor and URL in their previous mode.
 
 The permission boundary is layered:
 
@@ -53,13 +51,11 @@ The permission boundary is layered:
 2. Viewers receive no collaboration token.
 3. Hocuspocus verifies signature, issuer, audience, expiry, exact room, schema,
    access, and browser origin.
-4. Hocuspocus marks `comment` connections (the downgrade an editor receives
+4. Hocuspocus marks `read` connections (the downgrade an editor receives
    while the storage owner's account is locked) read-only, so a modified
    browser cannot send Yjs document updates.
-5. `PlateContent` is read-only before the comment connection starts.
-6. Mutating plugins, slash commands, uploads, AI commands, and document toolbar
-   actions are not mounted for comment mode.
-7. Comment REST endpoints independently enforce the editor ACL.
+5. View mounts only the static preview, without editor plugins or comment controls.
+6. Comment REST endpoints independently enforce the editor ACL.
 
 `MaterialEffectiveRole` is the union of the caller's membership and the
 workspace share role, so a viewer member of a link-shared-for-editing workspace
@@ -106,7 +102,7 @@ mention autocomplete rather than the document.
 ## Editor lifecycle
 
 Materials opened from Create use the same `CenterContent` frame as workspace
-materials, defaulting to View. The `/materials/:id` route retains the app
+materials, using the same per-item mode preference. The `/materials/:id` route retains the app
 sidebar, uses only the navigation back icon before the title, and hides
 workspace actions. A newly created standalone note requests `?mode=edit`.
 
@@ -133,7 +129,7 @@ stayed pinned while the selected block scrolled away. Its buttons are the same
 `ToolbarButton` the top row uses, so both rows share one icon colour, size and
 hover treatment; the Ask AI button only overrides the square width.
 
-`NoteEditor` requests the room token only for edit/comment mode.
+`NoteEditor` requests the room token only for Edit mode.
 `NoteEditorCore` owns one garbage-collected `Y.Doc`, configures remote cursor
 identity, and calls Yjs `init` with the canonical room and `value: null`.
 Cleanup destroys providers and disconnects the Yjs editor.
@@ -412,12 +408,51 @@ Comment mutations publish `capy:collaboration:comments` through Redis.
 Hocuspocus sends a stateless `comments-invalidated` room event and clients
 invalidate the discussion query.
 
+## Toolbar icons
+
+Plate and PDF toolbar icons use `size-4` (16px) and the shared `Icon` default
+stroke width of 1.8, including dropdown chevrons and floating toolbar actions.
+`EditorIcon` re-exports `Icon` without a separate stroke override.
+
+`components/ui/Toolbar` shares the fixed toolbar row and groups: 40px height,
+8px horizontal padding, zero default button gap, and 28px dividers with 6px
+margins. Plate keeps its sticky placement and scrolls enabled groups horizontally with
+the shared tabs scroll fade, while settings stay pinned and group preferences
+still control visibility. PDF keeps its centered annotation tools, page count,
+zoom controls and horizontal scrolling on narrow screens.
+
+`components/ui/ToolbarButton` reuses `BASE_BUTTON_STYLE` for shared button behavior
+and supplies both editors' 32px buttons, focus/disabled
+styles, purple active tint, and dropdown triggers (content width, 4px gap and
+16px chevron). Plate's wrapper preserves the editor selection on mouse-down;
+PDF supplies its current tool directly. Link, table and column floating actions
+reuse the Plate wrapper. Workspace center-header icon actions and Files/Chat/Create
+panel actions also use the shared 32px button and 16px icon, including mode and
+action-menu triggers. Their action rows use zero inter-button gap and 8px
+right-edge padding, matching the toolbar. Workspace dropdown chevrons retain
+their existing styling.
+
+Plate's All blocks, media upload, import/export and table controls use Popover
+with icon-only triggers. PDF Draw and Shape also use Popover. Paragraph/block
+styles retain DropdownMenu and its chevron. Table groups open nested popovers
+on click or keyboard activation. Popover actions are buttons navigated with Tab;
+the table size grid retains arrow-key selection. Command popovers become inert
+on close and preserve focus handed to the editor or a command's dialog.
+
+Plate marks subscribe in `MarkToolbarButton`, shared by the fixed and selection
+toolbars. Primitive selection results drive list, link, table and column states;
+the table trigger follows the selected table, independently of menu visibility.
+The top column controls indicate two/three columns, while the column popup
+matches the exact width preset. Alignment choices highlight the selected block's
+alignment and the trigger shows its icon. Insertion commands retain their behavior.
+The table menu's cell/merge subscriptions remain inside the unmounted-when-closed
+menu body, keeping those reads off the typing path.
+
 ## Commands
 
 `editorCommands.ts` is the shared command catalog. Editors can open commands by
-typing `/`, through toolbar menus, or with `mod+k`. Comment mode's command
-palette exposes only Comment. Typed slash commands and all document mutations
-remain editor-only.
+typing `/`, through toolbar menus, or with `mod+k`. Commands, document mutations
+and commenting are available only in Edit mode.
 
 `mod+shift+m` opens the comment workflow for an active selection.
 

@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-width="standard">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Capy Notebook · A · Inline toast refinement</title>
+    <style>
+      @font-face {
+        font-family: "Fustat";
+        font-style: normal;
+        font-weight: 300 800;
+        font-display: swap;
+        src: url(data:font/woff2;base64,d09GMgABAAAAAGAIABQAAAAAzHAAAF+RAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGoMqG8EQHIcqP0hWQVKGID9NVkFSRgZgP1NUQVSBAicmAIUOL2oRCAr5EOEnC4QYADCBpBwBNgIkA4gsBCAFhyQHiTIbEL0l4m0/itsB7C9PH/Vk3GLrzRLa9N0PfyZS2DiAgPzPrvn/7wlqjCGP7gBTy5YRSFZlCYyr0pgrim1jVMGOcOaQfQ8Ly/kwSTthXNt5lhdIhWxsvmjane7/WgYKNiYWOEuO1a4jZX/dFovbO27g0RIeb4fR8nr8DFp0/RRF6fN4RHjHcME9Fd5HY+qKlM9PDU2Hzl/7KsCdX4yJlvUkqmyRWT17ew+EQrCILIUsQrTFlmRKFgGHD0h7PL+5u/cLPtE6cLIMFaNYFKsMOwp7RvXsHp7m9B8FShCPECAkFzG9i94lIY54Syl43bdRWVc1qn9UbNKWVAwqprOKsf521uFzs/8/gRgh8ZM4CTESAkGHMmLPRFf+bVWG+b7YvsXym61MnmjfNasoFVoaSinw8zrt+wOXBVeSZU54gaHadptqm2I02v+57KholiDzkkcYoHEs24IL4Vjstu2dvPCoPF0wpGIOH03V0MTo8f/8H/Hb576/Agoo04QmHEahqETLRuAEI+r9//tNPFUilZSoREojEzndpJledNtl87c/v6jfiSH6f7n1/YV2mnba5Il/99U/f7n6y+nJjO+2ItrKg0AgISYVqaSilQQL57wBgpAk/FRlhSH8LOE/dfU+yZJxz3vwKUBcZVJUaQufL1R1aepUQHjs3bXAAtz/pqgEdpJKYF8y5/j/C4PHxq1fT2uaW4vPmXMfC8/zeu/9VsFXAPt6krReR28CgyZ+31r5q7uHF2YJ4NRoW3OEKuQSC4gqL8JGRTKEqLPCySG5VVJg2ibe/gdOJ1KBcQnsntP5f9n0K52n8awlLY694L+RVH9VZ+1ytClRdAAYRDPdT2719B/hgsAqy/KB9dH6hOoZjWiJyVoAjK4uJIiQgowoSLYuSP7FMVZ+QZoQPP/Nfdr/5maaM03pFYgj3IItOfnxbPNfpukCpkAOUZi/rrLSEcjVK2tchXb9P1O1dj5Imgs6gXAa4tLg4ufFla9onLoLscpFE8vhAiR3F6Q4AGEZAE3fEk4LKA0hyreKj4AV4oUceCnNriRrRKc9yYH2hVi5upBDf7moCoNEN4G3B6PaJv1ZkWUylnIXnrZz/WKNmAKy7fb++0u616NnLylBQggiLmQiUqTI6O+9fr+f9t4R0yelESSAiCyHreVvv3jFh3B1D7GBTc3QMpoMWxOSe9HK35j6gqNj2TW8lHIpAQQ0qE+gwuevxQVFaf1bdxPwBqKVGEJIRCWGBlUMG3wxPGjE6M4KBQmGQkVC0dKhTEVQmXKoUh3UoAFq0gcaYwy030HIzAydcAKl2SmUc86jXHIN5Yb7ECLAGsAUiHeCS26NHH3ZFVdda2ciRQQ6efCiwmNz5vCBl/+05rX7470zeeNB8befLXNbnN6b8+8svfN0F5/d3bu79+v9kXl4MHe5eXRwdHh0NFq6fnr87KTr/e60dT9333o4GB9elPKC0FXrqfV0N2utO9n+9NdXdlZtFjerm7XNg9nGtVaQ3VqXBhNDRP3WorPYXm4tO6ueR/kSc3JONIubpYJ1aeSFt95l8w5S1vRN/IACAifptwIxQMB/EOQZzAA78gUBJvE2DLXr7p4P+2ciCKF+FSiCvTjAcMQQQRF9sMiJRwuC+5fl+CsJwfp11WxXBwhKBSBQTx7RC/bordOAx5KLwUO4/OeXic/+eiAFv/C806BT9UlP5gM3X+2xEcXadYqXzwA8QnwZaMytermygA1i+Zxx+OW3AUITi956xi3XU1dErz1Ny+H7hlZnn8l+y58oDwTqJ9sgIrGmBYUe/y7ekLFQdIQF35neIHXunsjoA79JEjU0awT5AoDdiH/aJCdm6JhPg2WSZyrrZxe5hltiScprxEbM26xgbINRcnpanL1Iedhgcec2Mw8r5Xmgvap0we0xDZBsxYIy2m5ZFR3+SCqZ9JZrJwVVMxaZ/q8Q8uASQ6CRyhibZ403GWfa0sVmWEZihXUs/WAHOz/bzUGXQ5wcC+ru4bc9PNbC078lQBd92Ouj8EwxGiZLInQTypugQhMVTVLOVOVMV86MpRAzzUObbxlipdWINdZhbA+KdqjALhXYrWif0varyAEVOKjokAlyhsyzHkKlHqnSE2U9yYs99Qzr+efkftWC9dmNfLjwHEgQ1sUhhza6LCiECOZZk2msmcI2YVgQ1DxaAZOWBRqNcMaVAgUPhwgONKYIFEMZGGTa7pDxt75AHgjZigOmyLvYGcGnP0kMbzHEBhpksCFGmmeNtdYBloIYmq8RFok/DOBCLjGFPitiBoc4+rHXLYO3QXDb71zXfRtITMT6JhNoX1s8uQhZxygbtlk3qd0lPdJfjExRC+he2XNvYJFN3LEOx9/x3nPYOiMLf60RO96RsAePau752qKj7hZFi2zG+mZ1gWwcdaBrD4waeX81eJDLL1IZWGqDdeQ9Jr8cJC0yHgESI1/6wpBWcAL3WYYWbNne2dFM1HL/mPjw7PmKk8XbvnaCtfQIDFkKOuj4tbHhoS5yZGEBKBG9rwTbg5vGLEKR6DZPsuuoePZBs2yRsJxLSzXDpBAIsZE8pZmw0N2yFvslV6GIBJ6k9vbZzbjm5mHBwJfyTWItMFbyaRzC8U8aRLVRI0mwDO90BopCRJ4wPOKjHtg62XJ5ZKNiQXEUqD2XfeFwrP33SsW/Ck2R4LhXs5kYK7FZjsr1eyDw2pOO1N7YjODXvbVobBEdgtbC222NiaFcCYSi4nZ0RfaBmedh9YD6zB4rDl2RBe5SvCOLvPgaQedkNAjqouvQEg6HU4vybLNYPkAiuvbyA+VAOXBkwju4d13XRt0UCRk0vW810+eOzx2ZtD+5ox/twfSyMrOy/5NVHNMjL8nmsRU/3GsEh0w5rgnbEHmkL0rDZw9GyeryqNoUO0/6Ybv/d5sRoyOK1Ac+XB7WPPGRPmdUxcABGHVUiZIOP0ZYaty9pUP/MQZbBhglO9N6dfzxWqTzDEdqhfV2mHcW52AtCpmwHJNICanxpHHjYg+Txk+GEvHK9JZz6KaaGm0wWhrrZXrPKGRyvdus6QTzbckR+P5SRMDMWAQqxhSEj1lejmXgi+eh8dppBmmeSEYlWRfNpFEKbb6Ajl4WQx7PyEYocDE7by6ioFp+FYv5MitWElqyFDpl0j3NkGXZM+mimEorUVapojKllatKq7Iq329tkDqc+qnn/Sa98cbgiFSkTaqdmWprlkqM1za+VQtzlZikMlNVZrrKzDBqPoEECnsok05dIGjQQJBghQaCZp7ykGaDZu2LOOwLBRh6U/BiNh69rZJKiqNGno4gTxxLTdT2T/MVoMpAQxfHDk8CN0IUImgCTyWS9NPdzOSSCB4GTAhCetMKBTAhuQVYSOpUJ0EfhX05lZVyaSBYlyDeibauoHQttvGraHwNeuDI7rgMdcYaPQqjZkrPK8w3lWCyZAoHEQxlYHAdykDNW/jp1Z2dYQGFBAcscMSiO1P6d25ieIsDFrmAozXPHbFfO1GaZMeQ7k+ARRksjsDxV2KHiYWNg4tHRM1nvAkmmdfatQqOu8CkEAyhEAbhEAGRkA05kAt5kA8FUAhFUErak8t+dRwO6MLhNe9SFWlQibvE8dZ+DOxbejU8quy9vbGX93Stzer7MJ/kkwyXa48sW0f/G61Br7mjSaNBo+pRZOQOT0Y/4o9yR3H0F/FH3+7Tbe6dwbT59d2q397juwlda1fZeTtrp+VT53Y5HY76wb/VzTpSW9v6tqy1tzGtMb+S0oY2bRM3ZsttSeQX/ZEP82KeyP21bfNU5tecmlCtVVuhspa2xMXMcwRzKwl/4R9xuxU3Z8IcO7MtqzInEzIstQm1xg6fqbXDYbeIU5A0pOGXQ5Rd29MPwSOUf4qIOuMUqx3HNv3Es0k1F2XvbsDXRgTNmhiCXTh73qJ95SjH4s3r7BtrhJc9FWUSdPlXEtvJZNvfJU89zZdrHvpu+F7+N7uN/fTmpC8xiOwfV6RONZFBGEb/nOS9tKmo093c8EAnc77tu8HO/rFAPSHOdTJyuZgdNekVyGbrSLBbFrueWe2VyS7svejrLP41hgeiuj3QD3TybNK+G9g3ox+cOGQsHdBLSPTKe/9Z1NE6MfF03Sb8sirUVFh7yxCpk24NQy4GUAZaGxaVuUTMV6zTsw/hvhu51bfGitaU/CllrBPqpWXdgfpETqwAs9JPHZzHRLj0oZuMoa8tOxyh0wbtThvMdf7BdGycNnRxrv1kFRLibw4LNmLA836rOktZPqU97mjxkJa0e66iwrYjrDv5xrxFfYP2SCfxQS6drxUtr50wtCNYV9o6dX7b0qaNk6VmCZWGgWPVQtA2jUfxfGBr4llveGAc+1PaVpUoTGkgQamONmkPAioLdN5rW5iLfCf922Dd6oed9DLK9Z/YHWhDqIt09f03oCibX1BHxzHlaNtocaeF0mp94KxGHsbYATYEVPMYLnxCU1YTnoQdMCe0QYxlD9aYyLpjlUTgk/Ym2KxVbW7YwkTvoQ0hLWUoawwISXsiTOtdl9lqIJxLLp3bYAV4r9+wRIK329Ak0Ld+OE6nGkNzjeFmoblJFIK0szjXRTmkCqhKYk2Vda4BChwMGPEhkFjSySSfAkooXf4KN9xTiQceAG4FbgSuAs4CjgL2AnYFtgJssDtYlLzZmH12ZC0f1NVWAkjXwumueiUMJ8zSAx0p4gphnuhgZHOXDKsR3PXCN3j6ogomKSKeSFBNqmlltQIxu+zkP/PzD0cFDiV4K5F9NDuzYKsI3n73giOPbP7Ie0msQca/+rgK4l6xqEbY1wqBb3Qj4P0uFdDtEwiDXMhBlalCACgxNnqmiJgkyBOYW2/FDlV1+QqHH3CfLj8qgWjDD1FepVxgVsdeDBAChL10AwwyxDAjvPTKa2+89c57H4ydQ8j0N9BgQw33wEOPPPbEU88890KLnke214SIiyPv+xHeUf2SsrD+wZOw9GlI6bOb4oUlQ4rqf+ur5OjhdA3X12+/xp9SDc/R9froD7QkuwhvL3m1JOq0dDEmVK2SLA943VHWHEKv/FYFgVsOlEhNL1iwLUsFe21gsUeFoqJEpMgzOWnUDvafLART241ap3ZboJ67VXbvziPhqRkF6AEmyRIPV6KE6YEpFpilsyEaLzoonXJCoKKNdyTCY0VHyUCKIGRnsg8CNbc730KLLT2lWm/ic+3mhYNiNpewR6T2EOjP32mqQFGM4UruvHqoqN330AcK23UPJuVkCqIlVFiorx3RKawS5vaaMB3Rx0bEo2XcJZlRHA3t7pHBRPG7tqDhp6Ddbgqh1pLmxLGn6PPdPD8evJ0CpTiuarBEHFmGMoIaPjVLW3lwjE01BH4ZoMui0mKRkuW9LeEEvxRGjp64+kuWhDBxU85fJiu54unkHGBT1fG71QpprHHY5PGmRmWhIwPrzgGC0ceuNHeKUlBf/4d8z6QfN358XjzoaPganN9OUj06HtE3JVHr8ga+0djMboWg/eb9N1pvbb/xeOvuzv2d/1yog9NDz168XD88Pbw76owej35zXG0OT1ZvT0/unZ2M/8+7x7OLo0lncja5O/nfopVS90+bzfpVc7sxuzd7cF04aKVtvzlbzPSbSxhqVhyuJRIANEDxJfYdIV/HCjzHP0UsCxnlXUmdUl8puvjN9mrlJ+mckRkvQvGd+KwDYBGasK8ze9Dfffzfj0ePs7N1gjjoBAnL/zRpZYCcd1ymsKIdgN2XCBNl0rP80/wtAV31mYcBNauyABcFV5+HGRJaQ5eBY218gs/I5k/9H8ysn2TF/vbPgm6PwgF4H5BfKQqs8GcQCfQ5Ep7rEn3OPTZXrXgA0+iwqVlF9cqw9NCMGzEhB2hTC8lk8L8sOjYFvyxbTSMp7TNYW85qtIrgbKg89OTq5W5nSLp9hdzvLfzvtsRuRcvUjs24FFd9fzbyvOimdCZZNldUt3w1/Jcndki4uvN23i2kaEpgPYeWSyug0Wlsmp5mf25zV0Hz3Ru8WV++ACtI6a2zwiobbbfTXg0tpAPVZs6m5dDy91iXudsaXCyw1qvlIBcC/n9c43+w+BtfxDsfLgJ8eNWH/WTw4fNvFu1lHyja8tZKyBc4yFPgSx8Av7oCyCWuwjkjo9AvCV7pRUaZaZwDttlhlokmGWu9wWYYaPwQ8I20xWZbjbYd4olIyKgREJHkoyhAA2EQEBGTkJJR09DSMVhogumOWuMmI7sgwUJFiRYjVrJUaTJkylasdLw1sl6lXjTeislTsOoR/S2Xf82H7HLDbn3Nt8c9+xy20xj39bOwRBQgDyuwCJoAgyMkppIhU5Y8OchypbHFwcTCw7aDMxU5BSU9oVa+vJhZ+UAEMIkUJlyEJPESJAqRJV+OXIXybFKgTrUatXop0ZurenPNs9Zsc6zb/cIz9IGFBHzL+NFMmoBW9aIyQhaAjB6jACAbjU5EnjUjk1HMf0X0VJQC1H6bTUd5oJ4YnZkspbvNbDFw+MIDmR8gUPN+gRsA0xcDc/4AGD0F2gMAHWpYiXlUgZMmBV1gCIwgtwpBhU0Q4wN1cRoiIosgC+Wd+AJko1AGvK3ntqGGlHi/GNDtDvmxaBuMOXImnAgo5JGFYIxJNqiBC13ayR3TQ5qpYtokdfAgQd1lFhLIY/k75ydtWBpZEnPl8BFzd0Re5RT5wwSHARyRGcM6gTW5mhCdNsTVYBYTp7hszbiSHKHqnNBLElHdLDZpaJPUwp6x8GxMy228PNPb1oxBfxpY4Xxx2x49LVfvTCR0ujL9yL0eOlQgydXrsBqG0IOeZSIyEHtNif7hng+G2axaHZpJEuVkKLcRZRI/Uh9OIF14+2KxL6tIsAxpk75hpkSjm65mMT8saZwG1bCzSYqjLuPNyuBTJhHPz4v+/Uemkb8FB5sMjXS+JyC1QvesiKupW4bGVFBJThBmu37owcjtP0Y/om1quyjqa8UvtOpXk/HyF/kPOefKpfj3pZ3+f805rbpWZYo/n2AMmH+Qk25aaF+kwYZ2NRJQNx6UaDRfCrsHy6f/ijjHQbeLRcjnfJ6eEylfDGFp5JC7jBMxiTZbrb4awZChkea79U01GDrj9ipSUIgbgoNE/hDpj5DqdN1Dy23jzIhBB4eRX1moGkF0xnnShf7oNzdI2t9Ug6LYThbWLxOeLxlsJgZKl91oXM1DjF5TjbzKANX1gKC50Hou0eKJuOJ3mOYkeEhhwQBY5PNj9UjnOdeDehUYsqk8fslk3T93DikMtBeYYDO2/XSGVo/mWYzNPg660OjrgnbqbkRAPdqhdeVDEKNibzLm3RJYhCN2PT597/+S0NlBd/KB81iMlxrHK859nH+mGIwNCS0DTdvlSVE5Gh7E9NaVk9LF6j8ABFvDVkLr6HShrKZsD/uxPqfK/zoO2Befq9c4aKAtXUpj6vD89ojhe36UWikWDaT0SvBNRZc8T3FyNsQMndM5PKkJuuS0MmvOIb2kKS2Vcmq8PsCom6ZXZEgoIQ/Dzy2KGbmflLWR93YyKXSBzlt0mZxRGh259w1exCI7al9Ys5zFNlsKuy2qFSY58Rik1cOrHsZS9zdlTNm0s4H/XDXt/ctxFHnYoMsTva6IXttckwU5J79cTDKIE2YFQNGxSNxv5By4VZrsQQORvRPql30xQ8ufwNKeliEmxghv7a4twp75O7SKKddttk+HKmyKFtY0a7qGTLGCWWFasxMFc5f+aIfVBET/yjbPCVKwGclpEU0zwG8FTfJTh/tFqedq4Lj2WqBkoTBolEmGgxrCl8WwrqGqBKaAZf5LsZIEtrPKa2bcnVYeVODchuz6BGlq35h7OR2XylDF7WK/eams8WjVDJ1mbQZK8iH66/pXdgPjp65dXVx89pSsxSX6331586zOT93r3dlE+hrsW69unQNwr9BM0sawUsLScNEDFoou9ljgFjhbxjQUK/BfPPzBv5bod5bo/3UTw7vPJ8h8+H1Bbn0/b4AKRUp8Y6O8L2cJP1plkcfMZLu6iOgj3pZFLge0R92anIlvX3bm3iHUl4vPJJIrg+7IHSrmSvmrKGNuXY/iTmN5n61KUPnuNAFhnTvirzzyQAlP08yTh2kFXQgMqwIcynm14/QtIEbaUS9/iClWz2DEnX0r943zHo4gAcrphelTz2Qmnkzw7JE463CR8GO/pX/6bgIyrBUJg3wsHCm/OFYZNgOOlcYP7wgIUFhpg6xFxtyAM1SwkJrCQ3Px2bVTI37Y/WG/bnqfoBK8eu/u27sXUcBCshg7ZEUwDS8rBeiCIps/LFepb6oVN4YblGkqUCyVUZdCs0qVihshQ5NmNjnDs7kUvwYOoZ79YOL5L+VWYQqSQ9k3NBeNK4pBuwY5o2ek0S8yvRzGC16NGirDeK5TTv6wuIY5NaD6nVrKL1fPaNZYs06RFeVPoUcbM5DldeQOnEnv+40nPYxuSzeBMW9xcPefDonupVecteGYDXzdFqRdXMaW6+hGmxB+csLyrmduJms/jb/WTN7HdVtx7ma6NAS5ey4phjUQFl2aQB6SMBLFDw2s4thszT6ekWZxWzK5EMS3pqq8zVzv10RhYbsijxVHoKqRIX84ot6IH0eG33FkZjepaoCuKuKI6YXXenne9YK09HzPDa/t5VsuKUCr+FK/VlXEZutH2ufFRJxu+bqud6e9w9tOiB+DVi/eZb8KfdOFOF9U5TXVxpBzlGS93iBXZEOV8pwgs0kDFWIVI43bCrBcIItGQRgU2XrJ2fIkxbubUtevfXENWi9g5L0MLueB7WcL25ZY3KRYBzaacXjiCMUy2GSqBMcPH12t5xUKC8ossWu/bpuBVu5B1E0OY4VV361QfJsPvfaPNY7uX2npVc9QhMIJxvBud/Eq2Ibtm6N3Nmyl2aqrrLR0WUjzUvxPJR55un5PbnJEdaQLDoacWKGZGfnRJrBYMMqjk3eFMavlnLgdP6nWGZJ7364UsTlmLWb8Aj44GyWM1fCF5EZ7MDLtJqSdSLvIV4ku2KX1oEBbaxzxIuFiaDlJqZdHW6DSQfNImm1SwLKEkTbd9UCL7vdAd4usMinqwxVzyR16dJ7G+xvtnSVUIoL3DxOb2FXt/2pGRkKZGSNaMW3jfGfh9rTe6qkYXO+g9qRLDbgFv/vBcfKpHl1kj5l1pepjHKkAaU+eLQuCljHkkA3e1XwpBCQTznOuRb32zbLpnl3VQlb+KdNz8E+FmpyPYmMg2hv92TDBPmHS5AOrC3TaU9FbkBwdVCD7n811nsS9uBochKdu72fso6BNyy0FSbhpezzK4Zv5+/hoAZa/L+qJMrEF2HwTNgmbqLRfXDDefctmc5qNLpvlFtbNqjhCk54zdLu7a5rqA/S0VnLOZoeS5xVVDx1SHzuvBMOSq+aVhda3DQp1mHhVA1c3s2vhrI4CbKjH7RrssEwtK1MO2eUe6i1AO1q8zUdUYATW4222a8dHitRrtnl7DuQB35Z4VjU1gZvSgBc97zmQWq41JkOLNWNNOqwdAxOS+y0uj2xobQ13yG1SW7+8gV56paPAOsiBeUY4kSklpci0ES431mLVt5j4e1Ix0qsWZ2deeSDYxAWZUU80pccLrVhP318s8Cn5fqlUVqyTwhsFGhus1dpsxi+eaJKWl8nB8H2tQ5ZU4d7tHZ07MKV5gGAJLkXrpkhzEtBmF0GdGUfSe/pmAgrBeVdVQN6Z5HjoEOFMgQKMT65ZXB5Z39oauJmu6bdIIYsCKDrMhUwtKaUY5oQ01GmdWlqCuENd4MxLs8tpOe0+XTtycM3Zl1FPlEr5sS2uZA5WjxxSO3C2qkTV2eZ+Ao98nR7K1uPCsccC0Xqvlr6+INJX3Ve/Br0vt0ls1AMuHDAmO4YqPJXn7Rkd32usPo5I5qb+jyUf8U87K0AM94c12tBAiRVplNpLOh1pHecrMNjqMyl5I33tLA8+XO00GcsHycGfDx17GNYHA7Zk/1CLcUzRgSO/uqKupETt6qY4UORxXwG4dTGbg7i0vZ63wAV3MepAx/9dhZc2z3Apo5v9uFN7YyBwflSUrhnHduHXCji6zXGKVZGK+2UkF+1S9qhLjKghjANvMp+tx0XOTuOemRbC7UIyAcO5MXRyO/bk54f1+j4MPE1WBDgihxipDATjD6c6d6QsnMli7pBIvHwhKgoaUa9ZYhPeSUZIJGuLwzOwZcxgMjZ/wc+HgnTwNbvaENNIn884shVxORthw6hA4qsObEaqTGC3Mfhij1AQVKeq+SGPWCZziDTJL7oGOV8NGSkW2gNs1V3sgrGZLdKFfNEjYF4LNMRbiU18abGXsIA9WVHENWGPTjw2oduAwtZkM4/0epWbOMbkSy4cZ9mDQ13bjVJMwototeBoSGWFEmHFySkBWjI2BOkXPh85dZi2jAu7P1izkvGFRpWqw+Z3pjT8IknF6txzPLkh462eMjbItuPNw3DjWuMj9PGJRybsUgkq9wbnnJZL3FE5vqruGbsOPVjqwnEug9xkV5vZNNjtMLU1wQilirs+XrhTXR7ytZif5yNltNmV1cNkX3lKkSlDHA5U5uYL/CqZyOsTysWokOeVqZyAh1+4Px+RtutzA7l39xlWw5hHx2ljfRWCwUa732/WmN0sgU2oWdeJ5WHg957+zX47n4sMbSz7msS1yvUOo4PHpRwVzua8QOg055qvN1Vlk5uhb9zFqMHZFqjMH6AvFcoCSpXML1RvKBEKlVI4ZL1NazfKZDquxVEcvJnF/guBEjIQp3tBKkMMPPfObTho2OmDAUisDovEZTaVh6krmMnkoRyhW5UGnL2eXjCzx+wmaF/pUjxZvooKF2isH6DgleE6X/hvdjl1X1zMHTEumHN55mZi80OnD/ohvrXaneqkdxngYqZCGeh/6yaI6WSJ3Zq0S8Iuq9M8t/GmXEpJRgc9RbiZRrE2hbQpULlXLIjo9IIwXDlYWK8TRD5xwaw1V+uar17mdt1Hy5P5Y9MVxboOPZi+NW6y7d6FZS+EbeVtfVL/knR3eaY/ONSFffzpyZ2/DW9nEvvZTEoM5v1Kd0jSwPPkwiZ3hs2e0bHFIZRIrHwGpbaxAu9Ih50y/sMAU+lt8GTYHWkdy6wCnuArChlur8Tb02GHWqpwlLIAcr7K1FYrVSnKBOqA1l8ZxvoSjCVCSUBrUJUPlGMmzCS10QR8cwBxmjA5q0vJYmS2QPQHbAy+Cf41/6jsv3meCm0Cs9usSEQ52fvhnk5uD54SEkmQlrqcwXcZHmXwjXfrFh/uzAvsLXC+necFu/ZlneerDQS/M88/d4Md978XaRQ4O+08j1+9GRu8uJ4KqKtenCK9dT/gTmbfXvN448O7i2+GcGDaU1zg8JIfoj4ctDe+JyR0fvWRnSWzPw7EFjpKv/21EQNrldpplEoQ/fFvknTjE606ErGyoCDvIkXPzuRQD4/FDXnnkynRQMTXbaxvPBfQgpthhV8sDGs0wpBPrFT6KgiRsGSUG206LZFcZrJpdZuAkQlkQCbHiJcEQKBeo3mS9jk5L92nICTFZ2ba442/AsRbn+7gL5x5DXrn/pDuxN5yeQ76hV7/exzpNuRh0fRDB1kqt1nPhOlrdB2OtGZLWa1cb6qRaCIa4elf6b+dE3dcetuktbWfN5feMPbt8sd1YdG+UVtcVLNmUxnbtmZAYuLaAUY4ohrYVJoIhOe7fHHd4Gk0G31xWknC388CNYRwRZB1cL46uIgFHP9VSbcUzakL4aDSr9Wb+g3prqu5V6kq7HfjtyaEA9z/VrNLvpbhQiMiLXGQ0d0nK3EKZ7n3hQTqmz72I2v+ShHFWsdUY5z8BPo6FgG5bV3Szayj2IQr862P2D4PG7lz1bLW0RPyORjwT53rmQsMN9PJ1tvrqFkRilXU4dmevOpL3EHG8jGuWUixRYC/Z+5OrO6fOgxc7jn/v3snEH5G+6Og8GLmi/LMF2D3A8Of+vxMnz0+t29WZiQ+F8olM3KJfyTlEI7cA0dizdvTfRoozzUGIakvoyiZS08mklXpIEjwxunznHy+mvVxXt+afEQketmr29OvKMFv7EDLtqL6LfW7i8xrBuJXx7WsAu1d/Kutn32Nrw8PCNnxfUNZELdtnPhT+YG3M8KHA0OEzsTecuHxx9UKsfDJuIHSbdGz3q/VxidpOVzWX254tz1PFXan4tAC6J/RFHRKHsgyHXoE7YrG4QsZ7PlvxAj6CHHkVNKBzAQf3hcIt4dvlQrcQi018M4EO3BQPPypwSs1DHb/G5ylb2zUzw4GlRtjtt6drfnqmxW0sGptGpH45fcHrgxw5LH5VnobV+t32ePXpbrmJa2/nJ9/ncXcq2e6RQckjMhOnJWkqTTCRdWNNeXcM7lMttdulQyNFA2VINYhkkixOFaIcDG+x2Da1lGTUyJgEB3kJjub5cZK2IDWo7Q6YWMtnWcTCAbwciEsrmEertI/agcU4smEbh9PqSzkCdwyjTV0v06q1cNSzgqUKq4Z+13G1I6TaQ2hBZM8IJFSO3JIdc3IwbX33Qsj7OczPDP8+scDLisb1l2myi5QpjKKiL4q7dffCpS1veeXujCrtMIh5we6GXCT2ENzr3q1NlwnASvZO11d2189vbBQueHVnrwalcduahT4/IImi0W4cNmTqVY5vIZKpbI/YlX2o9agrbdXzQvgZ/E4xxlWsUgDJzi8WfjAvKqGAmQUGGs02hqjCVwcY5XV1JiMmsAekYvHR8USchZE1CcRf/H9ekWVXF6EW3e+DIILKAjE949kpySnpOJS2CCuSjZeiCR9G95UjVRvoZrTzFxqtsuPRBLyrSgbKEqw9SS3lwVzeTW93EulhsfFP8G9E6H7dMY9CLrHoN8H75tWeFa4td95vsu/8wl2g8SmOZ45cXtj/uBFT1r/8+XPcM5X2JFsdOsGbCEehV79JP4aEGE58gBHSETOE11Sg7a8VmHWVEutJSscaR0Hw5ic+1DH5eIRMoxHJRy63+u8i93EbrCw/hjQ4bAj2OEN63NNqvteE/p6zzJ0WVwtegQ9nIxrBFWE/A1uG5F0wust+aKfvExeMyoTGGlo51BL4H2T9yw2vOXUA5/tj9eZJFI8YwxqQj/dzUyiIv743IauiRSRvpD2CrDb3XXtuDpAMca8Oqc9VZrmDWClyFkSY4AdC3kIk2UVuGLnUWnzYl2CijvHDhb2haqe0aCnVRC98ClEe1aYm/OWRHqbc/qdAPoJ1JOH0zNNJFittAnWX0WA0ojJMVB0LuWnz1+QT+MzaClptPT0pT+LrC64eCA8L57xhVHpDyqqr0KMoqeAosO0GDAnB0eWwh2DB8PrR5YEg6NKLOtFbekYVRpA9SGHaGpZmXIzrdeFieP7FmzY7OmYhiv+ZjAaBWZ7bMzM25n59NSPEr6TJSg0dMBpbktjk8aM1Gm01UZuDqxxvLl/7+E0DLCTna0aY50dTutQcjAXWyZ10Cr49iqXW4mprRGTFso6yxNZmSyruANOM+ur6lWIpUaiCij8A8KBT363VxJJscGgKW+QgyETh/I3rTiP/eMMPwhHATPZ0ayAq9rg1I6JQsROF6ndPI5bJud6PDyFvJA/JpSqGzUBK/kozcOnVrnIIrhZb2nGUFNrqwHokoPDw6YVTcNsnWOrg4Zqmal0FpzW8cDvNqjDTll7TG1COu78pykMSeB6g6HeZjc3tRqsqATlcl1iCdcJV1Izp0TMdX35wHgcdX79cuyYI3UUICVjLXJ9ucEgKS6RGAnevjVhv0IV6C9BrP1y486EF3yQD9voU1PmsohXo1SJGKOuFltqnatCHzBp5ZgJgd0muTbXALcn5ZOXNz8SY9nyh8OlJ5zcYB1Nc1dJ+rFB38Xo1W9wwf2j0GgfbD8GdpDVW19aqmUrIqlhJ5UBa7QWKs2i1ZRT+s+CHehpxTy6sjiHGsj+c83ZWPuSorI7VcyOPDaSAtO7c4ldpAxWaNJgsJd0LkSWd2xfWXuuyKGTaxwIAqcEvC8J+C3Z2TPwFDif/CuR+DuJ+rkgYE/1YnZwMsaDCl3C++jmh/aNbqe7biDYRma3W8PoG4Ay/7iNcyx13SBftKd8iWzy1xMJeyn5jxHYlrLeYQB7iP1dApPZ7WPiJ76DBlHw+8Ktn6626mQ2X3O4yN1sdZHOkvZ/AVTEeCayHS9cHZNoYAcZXCYx9Ozn5uY8oU0tl9nVwrxx5fue0cSoSeck/04k/kpO9p2c1fiN2dlb8Dl8YmN1Caz9wFpLMFf3DHrO+z98a+2Px/eUXyHriAHGToWHg+qlZ4zYclq/vevqid9VnPnQOKePmw2jI2ctMaU+p9FI8r4LYQAk9U7v+serMj2JzKOYHpcin+7dafLpVEVSALompGzIJ6RVhmbDbULKBqRg38m4/n8VobRZGxl3EF6RkRxHPMOP5rJnVKfrx72LW8sm687Zf4V6lKxcgYqySDBexlgv8zHM9TKmRt2dwN1opCYj4F7v9EGTbrC9loB+4BiHm80XynwvPWvoynP7lI4HMHMoYjE4nGDuUI8lVu74BHOXlCHDwHxl7ak1m52+7+46eg5z5a1uCPfYitIGKMsfvMwKqWr0/QM51qTIiaTGHeVrEvuBU9w3NxvWDrT5EBlsCK0jDgrL0WSQO9wPSmziidQBg+Mo77hS7XokdGPPJvZOArmmLfVBdvY5LGIePtgNnrWO1/pHYLpjd00DWo16qWFss9zqlRaozNuwzkIW+46mORtqDKvA/1/brlP/ffNtsaep/ieKbXtcfb4pJrN16/M52OXZLubkA5C9OJWAvsDY5y7mTvMywdSBg0ugktasndLO+c6P+AO6UpvVU+pp9ax6Tj2vXgg++CT4aErw8bLgk0XBp5OCz/4JPt8i+GLO3JZ/IDfOwhTti/ZV+6Z9135oP7Vf2m/fn09x0nunqO7613a7GAa/N7n/o+arLPyzZofPZ9860ah9YjSuP+Lj1/Y7tr1qvyAG/Adf+Jfw700AI1BHtUXUbRq0Jb1mMlxFra5TQAifV1ExfOKgA3UMJX+69FADzIRZfNrADoYecLM9BBLHRMj1VjecpPahGujQdNQjqlPUKUxgdaDkNJrLg1oe8NxyP69Tl2O0cTHLn8H5KgpHAKbwuAEHSh7ThDsDbgn5Az/5ldIZQ+GUbxsBCa4rVq7eUQmPyuZ1G1PxbzobCPAOdZcTNdbD2qYCsJM/fzpR8gQt4Adt3sHA8sb7yd/0D5wjkHrDGZxq7yAZMv2nGqaSPsT4doZsl34pPr2h8xFXx/FAzDtqytMb1ze5ht2dXZLhKsMdbYfKKphQlJm9J4Vy5+niE2zuny2VnES/4ljrBPqDzwMT0p9YOFePcBrmtZkX4yTQhniU53COEm2YojA1SRQTDqS2zoaaEqg9K1yFvSR0CPHrFN7pWgye6IAQPMMbVFRXDgEMnNOAcJgKxng+GR7cJizm6qGwkF87xF3SkZO7ElSKbSAm7gKuFnDiGkIPwfJQsRGECq9bT2kNUXDll/DvPQSCgNooyQDUZoB1uKUq1mSE6Zba7HX8MzerciOeJkWUBZW0LFVW++t6PssvHEspG9RK25g2p61o0XavXnWHztIVdhVdUze6m9Et6M4tLJMyWtrHsRZ9YV/Zt/Tj+pn9xv7c6f1IubZjZLxxvGd8ZC7MvXk9P822iUnCzInNE0+tXSctmLRu0vZJ0Uln1u/RrslvLn+tmsKk5KXwUrQpzpRIytiU9Sk/p5xM5aU2pI5M3ZN6JPVC6v3UF2nKNGtaIG1belJ6Q/rC9E8ZAzLmZ1zKeJDxMuPvzMRMUWZT5qLMA5mnMm9m/pVVlrUka33W+qyjWfezmdmN2aOyZ2QvyF6XvT37Bt6Ax/DT8Z34/fjT+D8IiYQmwljCXcJbYjyRSGQQFcS9xKOkBJKPVEFqJB0k3c9Jy2HmFOW05CzK+USOIxPIbLKSbCWHyc3k8eSl5O/Je8gXyS/IH3L35PHzivM+54/Jf0hJo2gpKwtyCkYUXC/4l0qmllNHURdSd1G7qDepL2kxtFyanTaMtpW2n/YFEiEKxIQEu7+s9RAKRaB+UCs0FvoKmg+tgR5An+hO+kH6A4aJ8QPjEjPA7GFeYX5g/sdKZOFZVBafpWIZWS7WaNZ3rItsCdvLXsZ+x0nijOBcrF76A84vnNecj0cAPC4hrAtAgy4A6ILEEWCESMjag6Kyk/0GZh2YnuLjdXPzBEAZPUEHJxt0NpN2nYSa6xdMexN8sykIBuW9h5gSCGW0e/tJWq1vT3qtrTWw0YL4N40A9cHeHUZc4d8AmQ+80evpBwAdjuT2obnNBALCoI6q62I6W9hJbO3lbxAEcx8BiSLfpHjQ2RPqXrvXAJkgq5KZ/ubJ3h1R8QK+0vGit743vd/uvR6uvbM7O8sOBHO6Csl5pO2l6Aybbhk/LN945Ve6WzcbsBoQkr870Degb4BU+MxMO5nGr5vf72jFXxd82vjofq9dYw+sjgvbh9vneh9Y1/D9fuFDig8AgcTM0SiJSc5v8yI9iIoQOSy2BEhw7oNWBlTCPQPmK45+K2okdEoOGSFu0UBPHNwpGbpOjVbhg+5eItdtkdKh53Dlu5i3VuQmQhMqmWtKWcyS51IgwNHnoAbV2qTDij057x78RbVKuXaDwJ36L3bh7fA233VBOjQSltbG2dMh0frSSDrJp1Wpa0duAU+UiAYYFg4CyniriiwKsis2SgnmBKKu0D4p1JEag7/7kQ1wdNyS7xbpnl2IbhgDU8RNmY4zmJpvNtnfF0YDHzbauwtzSLOpwqjYNAGXp2fQJLobCQJmUPwVi6pqjG93FSXNNdUot0IlS8LeAA1d2GpNdU8UYWBmfpB7qsqFa1FVZ+qlkisGGyoCt05e7gD+lN0H1SRwvP09Z4HLCpj+w9DSHBROp4EHaa0kiDXG0jTlXk1vJ+YaJZPr30AVMm2C0ZiOxn9aAPSTb1dGu3v7sOk4rjKVFtAfS+4dWJl4G3FvAxzhzteK7YJqLqbrSjEMOGFsXpjPLHzS+DT86i8lLtEa5qZUD7o2ufEVc/ERCesDFllR2STqAYdXJLSu6k1plU4aOcTxPGYdegj/kbXFTyP7pbNSD+oxrNTQusdDqZTSxrb6j774Tk4qA5ICBl5d+AzF+7/GKcaPv+N6P/sQUQ1kYkbB6DH86wJxOO19vIvlS/yVKO5uNlCbsh6FkQNgnl1RXBcPz8tMrWqB/PtNJFbro7CAMeWdI0IorCwAAphxXUzZ00zGjocdZX2aCObHbx+3d/eGwB2VmIE2mD8W5hYeT3SJewla0PKVmB/BwC4tm3ENlioCIiFUUF9kpXYOq0HFIK8rJOpkK9tE8DK1qUYmJ0qdB5DQTZmwQqXUfveKxvJcLusgP9A3NgSBQdDd0WRxlHfwd2wbCBRsvkrC+cthTTv5wxpl+WDlu2kK4J7x04Ops84fUgCKUJNSyN8W941qTytsoAbHKnGAPnsCnOA5bg8yw7AFjArkthNKRN8IpEo9ypJzNmb2KffK56D6CDGM3H8h9+8J7qzz0eeWuna/MPNWgTv8g1LIqYhTZ3RYUBWDqXAxH74km7yMSRfKGAPuv61BegLq9F/DY4g3e1sZGYkI8qyeO3OZ5y9wkTPO0CacubnpOPJkNCLuEOUQyxARi7eivcMq85IFWC/6VAVpD9I6ZCVMTq4vFgjER1SPrkuBTAISkQRLJ7zSDVk4PxgEqRDS+XZ02DDJ9bslgMCOND3EcCecjl4eh8P1q9OMY5oeYpiw66S9PI54uLEMfRgkFq+d8TN9Fk9T4L/UF0C39nW9M1En0BpMfxU2ZCHi0zXjuRIgIJWi5vPlbMq72hoFZdq67DP/MLNSUzLJcZwk06IxTpWFNeNZjl1Q/imU6d1u13+dpEb7uTHh64RNiNlrmQ3uYyhZyJ4o6lULT6uH3+EyG2e8lVZI/FZl98r8QMzfMQzNqR8oI1MFID4MNp7LmjjO6tSAznOI/wtn5WBz2PzqCAFDuoJMl4cDfRKo4a6/L11sedTJ6bt4nN8POXRshXoClaOoiwG1frl49YkXmokrrngyqz2q30wSUJ5NjQ4jCHXkktMbSC+J9/dvPPB1+LquHSLt/eu8YBa0iLpmFmmSXMM5xX2mn65VFXw9URZTyahj4BkRIZXc5pccq8iJT5uJaWisUzCH1FNq7Ly0JI0KW8tGxCcs6km2hLEnoqTMqY3cNzNQxf7TmNjEQptXx7yfNodiItksFpiRQFajgFNO03HQUlcg+VKVR2MTaxDCUmCTXlyHiVHq/ERirBxwpZZRJ87mXvAvUgrQq0fzPWk8Mv9Cw2goX04nGQzZo0V/0iMkijNgoUxSikpH79l6QCr5xlQdYsCvgSL3tJbI7tjmTq1+tMaVTFenAN3QDeDOoOQ0H1gP4q4zsdYN244oEzaB9Vjy70Jn4q3EvRtQQVgSQzI+Y7mmlH8ZcDCGMZvCzAiOXPdxyGjuk2oMIGdkEIEZSzWXXjzv5al/ddxrS/k3xWwnaxuZILGJGV9iPSomU3+hJ2XnNcl/Bp0MoYe31rK4Vq0BmUsUwQJLJ9RQ7q+q2nLmrmvAwVgNHntqdAD0x1ciLOSV0BGqn0grS/cXDeA0V5tj+KjAK5iGLAdn4ti5v5sz0015MnHHQp7TeXgM4rfBkbBn6sJ6bHH0VrcpCP5EUqdhMOr9CEqJkuf9qd9oSy89AY44cmM3TQcyHXW7LwUxGc8ptyIquoug8522wI9XV/0K/jj2lBJ8Fj7r1z2kXZqbeBXfLvwb2Kcqg5JoXInjlkzQjqIlrKZ9lQM01IjgIZscx92B0rK4YIVEN2LdEYJ03CYi2uNKrWprRN3nuMC2ThIzTbMWgzey0p/yyLJGildXC0WceHOSdpBRG0bKVCW+GNl2Vo2rIE/E9FoyFGIs3c/RqErlJyLeMTNI2gLT/ilknTq7zZ6jdlPN4BmY0hkH6x1Ju/WeF9px9/a5nndjZ/l/+Av4C/+RX7g0yFGfi22oH8z1vmuQPbmQgmdl2C9c4l7EqGfmDphtXE+pi2UqF6jRhWOd0bebGc1whUcEhVAoaaUtc0EUdzST3nSFFawr2d/sHMmyKIgedDSQzV1vLnYTav9jge+K+J72FL4GyShyhQ67cctv+6KXpH4eDiKhjT4ecgui6+m5zJAbd3FeF69FXuBtXQg6Y8NRbKwGqrzFx0K5GKWGm2eEVlNcGbKwtzA7m1lWBtmKgvUlSwmZhFzvmhrEbhv1mpbWlhF8Aj6pK1IbK2vV4jHz81yzrCYPsqy53E/rvoC1YnDR2FG4RLiy9JLiEcc0IUQQVcLTvrOB3RVxqGeuShopRh3TvV+VNMvSJNV2KzGTFRcuylqSFGiFQATbwm/ofBH4uKHE2KxJGSsQaYaFMyRK+Q30r/Csy+XRrcEzx8hJ5tYgG7zXeC+mgr/SIY/uMi8vrUNTZTae3BO+l1VjY6V+4GRxFTRP5RXhyoMQ3DRltCP/9ara1PUQtKjrawNzdGD82LLLk8ggv0z7CqQmp4Mly0/vpqwBi6pK5NTiU3wlGFmUJIfJM4SmJBHgCgAGRO0JLkz89AvYg0/AJ2pJVGmvTivjx1AQoMxJfxCWbY+Gua485PomWQu4qkWEZ0EYyUK3yugYUkLsarCdHub2SZdST9kgYhlntNartxDAJQjyKrfZNzXdWd494OfqwKelSI91FLNQKX3ToE7q64PfBL8BCG0P4ZvwzYHOX10WFVETXHIoQM0yKH5pikImMZCMEKfCovEqJahmVwbYjIkYh4KCBcfinrnlas+b5xtZDZZEzlg1yf60jtrnglLZs5mzOZy6Lx2PRRMJxNrwWV8QVac2okAmusvLj9E3v5HF/ZBKsXVoByeMp3ynrVUsRW4V7q13Q8NWN2RdFZiYu5+nXnHnDX7UIQZe0Z2krzTtu0qDj8JHp2IX+POHfNnZDnUQmp2XFHQb/M8HTyOpW/iQpVMcYUXTovRUD6K6JdXtmzS2HoRcrrlhWDFanJEcl1a9H36Ltieju9Q85hmgTNPMft5WwPhtPhSxjTXyr8S6pz0weQQayl2Y63a+jE2ULzP0BEweC3sHZ2kHTHY5IYXICJUQIzFti1NNdxVOtNxYBRpMWPbErqdE2wUI/7LHhg4FCC3TrVrvWlp/unqr358/Cdatl+HWq56PFs+BNvyd8XfwHpkzDpaR/DBh3vRp6tDKjQ12rKBxJzE7ns9FhOLFZkbBxuzaYA5eUM5U5Mkaqi1nXoXFC7au63nnIzsQ4jcDMUb26RMS+xjQMBQeTbvq06mmGPpcY7vYDt0+jQT2qbRSRySi9H09Rsmezszgk97e+ppU2CD3a6/lNTXkPmbvfKKfPgkgI255lzBiPlkLmWmSUY6IfnZIBdKJ2FxmQkGsRLY7mS3jEKhexhbrNOeDjilUUKz8ZkbKOsh1xUWAAYj2OFQag03cNdn4cYjiKV11a2Otc8NZGTlnrflcXadakzPTdl6/iHyTJ/etcc944DbcLpiWf27AxXzlmNNeneN1KFQl5PjOnO411MqYF+0Hk3RTb6VjqE9zlt1zgsB/imrT5AKlLnNbnSIIJ1cS+gi330lYjXc84YR6rYhcvmRmaRnM+xGI2zo9JiT/fMs9ChtE9psYkBVxt9KzasfdIeQ7G36GOAXzxwJP4PHYXdIucvvYBZvYc4GdKDIbux7FNHfW2PptkDUgZuZUfTlUTHmSD7jMtKsgbjsNruexxqSaFnjgrcMHxWJTrpT7+fdVFSyUv5/ZG2hO26ZS9rL7QvP1X7W+Tj6FXw51gfMNO/graYxB6PMvd2kCC2wBxzWg0Jg80T9bAzG77+W3YaW+9ecnffYj8Dn4XLy0CA8sLMSkaRLv+cH5kO1ehZRFN3v2CLKIVIc3lqEEBY6ZDFrXSb22HWbGiF7C1lWNIgPT00mzVysHTiCoNWK3XKmbnF3mm2ShY5lVVqqHeHCsNp+uejCsKTVTF3Wtf6qNL7LDyxcrnMjooA99BZbBSUM6/w6wc5VZWRYbOn8XsEOaAQ5mW74GD6A8/IFCfIoiLeipM9KLSNlxS3xz7K4UzyepFzsiszgLy7UK/siCJ4005jnmFTGKwJkUjL75JUUfNExmtX5Ns8SbKUsbS/5M+coUBHPtKGFrIAZLvQCWU2dfBAvnsbS1aIHl2ylew9GskBSOWAhwAIB3WYB5B44vrdhdnp5zfWmHcPV/znlxtwzUzmeXNZFPq0ckcAWV05k5JoU+YU9fHFBBcctDaMHHun8cSPuy1sEQcDvf49Zpw9VftWed3NOJVm6nSmtbBW83cLWZkXTaYEzlzQGg7XqI3L/9HrmI9tpv4OPw8e5VAE28hqfqutlCGpl3WkBf+yp+Vfab7Lx7B13bz49xt82fg9HmDdwBLM3PWal8NsPdefzb2W+Q5rsjMlEIISwI1mcjwSZFSZbtUYeYiaCoTeCxiz37acTWVCtRUpfC9BhDyomgY4ScT8tOYFng8/B5ZerRxL8uSB5dzWACqpNcTVObX+t7uoZtg3/F8mAmS4M9bOkRgUFEp6winLxIc56NFdlqfioVvC6OD/GVrulWYCMW9eAmM9CXOk1bxO6L+ZLwKTR2I831ssRWfk98m8m0CI1vAB+6KYdWn8wrYkohcJ/FAdsYWTPUW/mqQl/lMhQl2gCYha/CV0W7CCKBFLsIBUzBZWado7FcSJaxiWq3ZdIv/abBuq0tQ7IwE72LaNFwiaTaBtTiMz5PfQcbo7iakSMUZlO48SBbYH47UQyVZpCge+9wmdLQ7DmO58XwConWKV6rhDzQdM3YSvqAmH60arIC1Cey6EuTy9ap56k3WGpQTyJZRvzSnPSupru8oSDQV8UKiaOjVj8hLTHa5ZU+5zR31LoQz60zepV+132ePQaAWEm2Jm+kHvSrfMybBAJ8ko4zdqPXkLcGXoyacwh3KONaW+cLWlqfhj4lOyl0WlgJZuCKxHWjnwqZGfvMzBupf61DQcrG7AvNOS0J8kgbXvVIl/MeDgEf/5OQtYtm4DUYAY1ZVhtJXrsFHdL5SFfA7GWyEMKwxOxR5CDM8AaYPRZ+DB8f80l7ztoCe94Vqf8ZMtf4mxHABcRvMzhDq/09K97AURyTbwoiC5ZwhtbxCwQ96On0iJT/NEcLq+qH3iiNfaTwY3pVfXHxI9zC9C75+lz+ivboq+pJhkDxLlvcpvFLxVvix31IwB4fDgsL7eCd5yhpzP+P/+s+R14N7xkCCBYXyjn/QhTnZPj7J6Fa/bO/fhLiKq2jcbgK/NNzEaGQX4b+7dvP3qmS3d8fgDcPpUhjmtYx2OU4TxcccASnqrmb++ttTzJPwzSBZVMehISnqTlY/PlOb1pmHj0Ctzp276F2+acheO5lyOCW4jLLRXjuzuoVfA0sKGkw5w50ylV0hI9BUbc2Fj7uDLpjr6s3p+ii0bt05XYRwO+Hi8hzbtG8Cb/ofbqFDp/08IBkcJsMFY6kbGACiZRyG12q6pwaCn4p3aJpaYJb2l3kVIgid1FGbh0UxgLzMjJFkZJkKGe2Nolq7iQqkJlOmrF1qvI2ooh0IaBp14mlbkTs66LSEtiqmuoMrI19DIUrkqWQTBE1puERg5GPjKmSiFYDA+QaLJgReWByizmVQYbSBjqWsU6W094i2zi9cavqxCN6jibT5FAfkbEKRwjAWqsnVY33DmzGvWZAZCEQoZTB9/WG30eAJTAPGVsdsfMdQE86avMklmAW7B80Quh2mAIwBbkOrQuzrjKBh7Os13O/o7W+zg3M1ott/X+84KYdT52Z5vxa2zIV6kbT0nZpUhrnNPNDroLH5LEEdsZrSp+4Ykm0hWfURlf60RjeFFbkHyZkn1tx5mCZ+8prPGXIgSSEBcqdYfwIiCb3YN3klopfwdF1QQtR8IMwLIlZchg3bepE+mXASeQXCqtx2FA6Feq1G0BjD9UigVWSGZM+98BCEZoxI3EbTG+IS2jNzIOKHf5jFQcWQQhiAUIa39MaU5vZbjbto0t+ggkoGQPi7en5kTeDKFU3M3TqMzuPEDAgYWitdlMxeHeuArgyUog1s5Kl3Gsyzl+IdXst2pCgZSby1oTQw69LZvI2QFUBylRGYYhcbZbcsFqLWlpZTxqN1woeDwmO2ehFClFlFuWJIawkSFhXRbuAO5L4EvBVJiEKwRFgYs2IcPPTE6B5mpfikgsmhFXykdYncf/hvXuUn1hucufNIWWz2VNMg6SLIH24SAre7PdayL4WY5a/N2tln3pqtOAjgdnnVpcVpzyUeTIF8hoG+BWY64KEHjjhE1qwptVD4s5dy99QNrh3pFl5M/1WbIobb45uIETK8il61ZHhkd85cTryyOsMMzfZMizioYxEY4dtl0uRGYfFdqUAZdQrfmrY4DIFs/98Z77x0/KKz/SOIXDBmSU0eudh+xx5tiVAtqRyaO800eERehBmSesuRh2I5HpLbh8Y27yV3SNrl7HigYH8xSVcsmf64AF40CmRZ9CLlnsBg/tzNuVT4IAJxrpqESqqvN1WtlVlnj/dCDwuORTycQzE9ZBbh08mnfPk5ST2/4xGQpk8aLWrXukPuGFZP+cGfdywSMiJPPQ6nPn8mL7UnuPn/D+ZH+AzopZJcqQvI1G6pcsOrbJsXLm3h9q1B9tCwo/vmtFUDyzNTp73mOdGGr/dvoic5Qv+tjU11d3AuUH65E9XXQ9+acDwhPCdYKxiHAZxWQbj3PlFTwZhsyjwMUcdyKXlrpcfm7/AHhRWnjSIwhiFJ1o7AwPX0MH7/zRRCj7tfpbDxvvaVIVcRihKuY03xrJuyCyVUQ6Fqt7LmH8QFY9QMa4j8VI7lk9pMCeNzNYs69zYqBt7dbXiTWUe7KqmSv2Vj04GL89hsIuBIjntXNq/3cm/R32CtnS7X0b7DPjYI5i6Av6Io180Zp7eYX0JB0anuGpAqMqEI4T5dCAGkqC4azGNqRX7YM49o7S2O0fKPaMfX/muA/IUWxsbPx+Y8/Quo//jNrP9+2SCHJNzZW5yCM2WKvzuEdhyIYdZqMBpl/p9YuTeNMG+86EISPh9+AP/3ploeelDc6wlZiNmvTiWDrHc96dOXb7Rd+0Ve3rv0fVT2Rv3n79+H+v6DrgyVftfHoXJ5UlMOrmYTqGJClQW9/saUckktHTwsZhhWBGERPcnffrIltjITEZIBO9f4vfxoKjIbe63iASMLze7y5jbrOJA8ThyJ3BM1XFU4Lcnvcvvv3r/xduvv/yhJ/rFx3euvO+vvfh8LUcZd0glZWAf/Oae6IG3wSN4vO+2dF5/uCTH43kvvqGAJ8/o8sfMeHGHXfrSKfNTHttsF29UsWhk0OXfljYj37PYkV6qNmrQslJEtRsbVu3+u6cX58BXomqmG8yERIsYrXI7qNnS6iL8w88/9seyjjemZk6CZ7p5w8LDJHPfvXt1i48cM9jA7NjV/cZxMbwf3i+FPy2XqcY85dbJRnkebvKeHm7gKsPcgk69h/mXHrOLJVTqBjmLjWrsYkaEibERJ5yPCEfen3iVpFTx3Nch308lzD+/rAKp7Uu3Iry3hzEFcEHybsudsQ8SSFxI3PXX5F06uluf89/sz0shhAQSX/rNwFmGq9//FKEfWxhYnNVcGk/NrmeAaph9SGPMFgsLXpxdxZne4OkYFqNhsfAgFcH4XWynU+9ZBA44sGDR2S3GBk6csW+cAtSCEzsNyPkwXKnuSYxiV4nJCBFDPr1fbwx8jb85Wrsud3PZcK5Sy82ogEb322PYhRDM5HSUJYOTowdDuMzZBANj5Pvs1I9wnkxV5sGKfuTUO+1lEcs0E6EysqLxObzHDMXSLy2unKZNcp5VHTljWZQ3I5ESgkfRXzbmALLcFGZEzhQLLJR869FjxLrMenhFWS8Krb/VqVdcvVBH85Isd398t4ZiW0atMfSaRjVcHBkbHXVZtMJjss0tsBueFIZdklHpQLAEVEF/IITAYBkPaPOrc/v/2iWMPe4i2zkyIL+PUHQfGdjWO5VDGvAC4XsioCYo+yjohXf+ZgVFN8AYkpozlIc7yiEYG//jWc3aYHr3DyG6t512jBjM0fgfQ7diDsc8gjB3Gm4AGoqEEfFo4pIj+oYxVofsb2y7trAP1z7HfTj3OQAxXqUPY6/PncwZKeC08y5KSakAe9i6nOVQwvTLxtB1ECCBBASeAEJ50wUJdM0Qf7WJv9q2mJfJY8tWP6t5wfgSPi1EwGDreEvact1dS6Sg4XV8eBsf3gkfHmRRe9F8uVIDaveRc+Eq5+LxsRYYJrYkAICB+An84IzAXy/wP6UBj+JtZFJAVfOhZqqiUGBUnvpLpGRp5Q+rLXZh52pyEFFgC7p/vjAu3TI1PKkAZ1cC1kIURVMvD5flE2eVgZh4Js558nkeDQXjjN2ja7md/lxI8HN5WPddWUbxA5+alcqCnKmZ+onJ1wowveP7LZwwmbzipQjYCpPNyqVj09ZYkAqivs+xZdpKEtaZqnLLarYkUkPuInel1bgmyOQ2orKE9iZg49JStyJ1mXFaIqxuZhWSza0F7FQAseiTBVpUXiwKtbZkcavxwROp1J3r5mDnQhIJK+UgP16E7xgPJyUH4TD/mrelQNGquExkrsBz/sFH1gO+B9/1b8eixMOc0f6UCvm1bgr0hB65JWWQUOAhFXS+NifMrpo8iDkraQRz4kQw3PzyeRvEdlrV5irVJlumUJoY0khQLslERcO76N+oCD/VVeyOPi9srIoVyjy4lJaFa3LKuv4LVjGQV5WZE7E4qlQ6sdyiuJMVZV2gZR0PZaFCnYjR2pF7GtmxqnBc9L7tRIlIDNFScMgreorLSo01AmmGKnMG/GSkKgbiaEHIfgZrOc5n6DUeMGpjnuLnotGAfx6ydTjl2xttg0lM/hW5730QAU/we+IaFQP9BMFe+BH5kQSPYp9p9WGhRE/kaIl1Gjv6fDM1qJ3uek1GS9TaxSNN39UM2i7aYkZRWB+aRJcqzy+/FiATwt8EJUA83x+ZGM+skqlAhiNy6zYkHqMMlVg6IpioSc9ZL11B+bqUFcjFWn4m1Dg7mKqi2SiKpPb6W0MSS9GYWmtCnSl2EE7IUvnTu2KdMn0QqnU8mIg97Lk8sRqLqUm7wepUf6rZ6xW/7shIfKSbZLBg4l2faGS4loUhrycOxfGKswuORcqQSwpaBIXK4GO2dpHBdJODirYkIFfKm2aG7MTxIt+gZNgCgE/N+XYZ+Xwd8bYkGQGB8LZEGlv0lMVejX+OMI4zjBQ0jUg/mVpLbRJQPYiR6jNJKFwbvFEchLfPJS5NTIKpclMVYgIkvrAXj0LlSmTcDNZOoqg0kYdDO9WAVfWhHDJKZBR0X1Kk2IqhlyyOr1KlQ0xR/DkUGhNTuS7cP1JRTj1PxXea/D7Ih25qRIJCOmTb8DSkKfX0T6Hb5XF/kqax52GBKuUr2YNSivuQQEWxuOSDCMuvPyLifcI4I4lnEtJEGuXiKrUFYvC0zAU8TgWFWCICdsTC+XOzCuRCJlLUlaFNoFyPCIGMgpGRkT6pYiJ/UD48RZhLfibrxCYr539wubtA2LAp1ZNt2Ujcu2kIDnG5i/lConRbRdtFUZgDeyxvygBhaZpfaNMpVZzJz+2rzoevF94F9PyD6X78VfjwmbiE93S4mtiBWHMTYcmvgcZiuWwGm3p8AF7WcaKJl+FEow+81chVKoDgO6Cn8Uxjj8HFaVR2nHtiH3OrCVcW35vPXzqkRCAgJoqjrbEVQjrZFAkLGor7zibL+yDdt1KmHFi4CUmGdzR3fmJh+y+7mWw4u8/wowFuQtLhnYk7jYVJ1KySD+F34HesO78sScpmZwTceVnuGXDM+L7MgNkb58aBgZudIVBhGQSpgkfFVaYAfFz5mDWYBdW4e6jEr2vny2g4Z0QTP+zbArZ1NF2Lk9Pc9r3LlMBqWIhp/3azN/2Op0VTTdzA5r1UG2Duvvnm1qnKvZp8C++d24WosmA4xx514Ahvfzbn8k8a3i7xVmcF5GioX+o0FZBdDlQa8ksaN1u9WPcCiseHFRvj6J24Sfvjr4PCwnRxsBYl/G0Tdh6dnWH/rvbanHr/zYXBEOT6t9Yeh6oKAVP3xPt9bbEHD8A7/S761lq7UTH5vErn2/Ub07cpTuaVhgUy37duIy/a8QvZQwDOHv84nr9pEefcgoDnxfXvca9uGpsduHmfi/DPVSCAvlF+LB9Yb24ZYHnIku3R3MTD3jwAUGARxyj6G3iGu3D38zaj1mptxFA/W/MkUmtrTZyL27pXQUbmTvtw1JNpTrrZMHfIORNio+hStbOE1b5VS/mJekUjnZjww2VtOV1YI1mADLJcTG7KfwVoQfwNCDAeThwChvNqJO6igRm9Aehj8vxIsB40gJyY25p2tC0fwdGkuGMjtXJd5ODOH15J8PvU94x98PIk/Q//Kr3y9cukxOIn/hRg26n/k6fZ1ybTt78lL3NzC7hv455/on8PUMA+MpAZOxSR9c6mj8PP4CO8vjZzvGJb5CoL/e5mkx2V0rREvN+IlmZxraeaqZD/+XmOf91SuOrijdS9mpM3uVP0nCN2Rety8eGz71Ylyrpey/lvu/cwiAlxI+36nds/hpfM1/ImFvgQ0y9/qcw3ohzB8r9OIDA8pc5dB25Qz7ESSgY5UPIGEyaNpq7kZ7FDtsLa1HYB0B901NZB0iEhl9YWbRvP9IcOyzzV5cYWPsELmVE0S4gKVVdpLfW8gm2WlQiKqCw+mB9NvnSh+vSFRGKkyPF6xh3kd8WBYRT76iAMBVctYjQtwdu8rZCMAwQFrMhDm6+MeAx3Cn9uzmw3dfnVsbo2kpSSIRWfYn7teHE84lIgGAEJtfTHuv+ZMQpEfbdu3753/5tp7wYDGmrcuvj53N0u0e9nfoaR73J3HbGveCngJ5X+K+DeFDgqzFiXmUq/E4iilOsmfnQLpnCKBkigWeaJRa/1NiCuC63BftFoY0UvMzXatbAop1JxYaj4YeTSctC8kkI0+Gi+tx0drPnCJdgHlyXQQKvyF7D1zEgd/bDqaRVM69+us4XxkjHinw8BElBA4CmQGq9HXfBuyjiw8jlWr6WFpy+HQ0lG/vWeMiLhs4AB5g/wj/52R9Lt7OjCyd94YgLu2KaCBuQ+AISXQUFMK/HyXr55nhh1xW2ov4f701Gwx9+aDbdivfjLjYW5gnwPdhkGmQXIrkd1PR1L7kMNlg6KTEAszlg5hvhglXEIGiYXLBNiiGITXT6ZTNZl1P8fPf/vttzRSgeLqfV/yz1ccPCwBgiSj38+1Sm7nw87qFmRnzCM7VdsTJ7OOSD9MQL6+OI37zzcI4J3wDtkLxkfK9AA0UO5k0XTmld9bXd2KwrdF6zn+eM2Ln5XiaVwy2iybgqSRPY+pgDSUc6l5UaZXqrafBJ7z9HIrci8ZsoSHQrlEj92Rm8HAvJWFF9mh5hvrOGF173mHYcIv4qsTJ5ynPByweA78B3dmkei2F2MeJuCGjuFmWHND0uTRWi4eftf5Pm2V121/MgteUSKeYcq0LBlToTi7bTkygvCC6O0SkryaV161TIZ3FSl2ySUM8cwTdqQnygv9zR1yUtGFZUHRxcYdssUdSksYuRlWUnj+CLz2djAZrP+4EHXj1NQcCAwDyXYfFqJO91iicE2IllmW1PqX5sGOmZOR1KmNp5pjceJIygFJhgHZKQceEuWWy57/k+leEbSBf8q77fHrwRf4Y+4U12ncBXN8TP6+on38zRLnvmjU13kgE78myKvZdhO7IolEbRz1UNtz2jcWlj6qI2Q0ssHLEgSYUUzdYOFV11NU60HalkTBuE0Dc4SuXMT04/jKhV1l2qn4PZ4v6oyO13QMZhVWzaaWL+nMV+7z2S8pBYY0iCSDDhm5w6aXRSJ2CN3pe6Jznn4x9+DfWGmhZohzUiUQJu66+uLwrgASxjo/M9E35aplm74AcdNVIsbu/HC50Img5uVL9YomObA8ErsynE0rFro2KnVUs9IMDeY710+96Xqo0msdkacsUrRzJr3JDW1wk5hq+ozBZ1cTEDK/uWmi6pqVvk5JEmKSlLXxAEs2uvu16hrZ+VhWncIuC4lHOVFJcAUEpF/XvQP/Xrgd1QEx6uVuTxFd+jzT0flCoEC8q2hjCkA5a7RLST4AqbpAKlhv8ILtHWO/Lmb9OPvz/FjSwZ/AL/n3/No7I0swQpliJbBhltU5aFadix0OTlEChmUOaE4pweUCEpcGcDARl7uQbrM+cp4wWEUGN4cXxj5jHXrqtDcFInBZQeNu6iCZOswvE6FMrrqfvVlP0MRwTJg0Gce3E9ViimCo3UkRBCfNKkMzrapCbtdOn64EcpM1GDlQSfNFciDeUqj+WEaUwi/7ZbZwRZp2nV/1B08Dh9fG2/mnZnU1qxUF45+iTmam3BHwxD29r1y2VQE12ak1KImtwX7N3Gzhh2ZBssiqraslEBCbh2p13vORmHVePqOfi3a/KPChbbahKeqJbwxbxB2Y6blfnW4zIWArCQFG7EPri5i++jf3s3N9bVPlEm+dslH5D/ZM4r53Gp8UR5FZpkdyC72ckIUx6dd+iMhd+ePQUIM9c8QUqZcQArR1egiPD8bAFVvA2q7rajRU1X2Rz09tBfNNh9ZUR+PokuGNrovBbaUxrapOHW638O2PPTlL778cqGmfv8pZUC6lm3vw/Kcp0Cdcwa5c76E/DnnAUtgpxAgXwCAkI5ZMHBFEntjhjZfLuS4ywPRWtyPgv2Qp8VQBmBxvlGpCC+2I0AJGbGaeWbj0H+zYCKTO9INDaKQDia63l4Ap8cQJLdisuUE1OGWvP51u2d/1af3GCcfXYQ+hqF7uAN3AkZsnXxUmsVRIbONordkOcX+1ANbcqH20z/293U2VZNj3Wa8GfemYSQ2Aybr59V+jlVhhoXtXE8Zpi/VYPFnA4filFgTEDhkaG21XS8xHmTCAHwaPuklbsGhF7IVKiOoyL+vy34jORAmN2Uw9UFcuiP/iOKKVXWXiC4vmCCnsRPCKk2LkBp8fkXuUHJjcSoJIRJJ3cXCiiYj1voMV7/LwFfB51twBswwe4qbR4iTpCnimEp1IThkCG5KQrtSa7ZlkRtDU+qKOC8VSewdnAvLsSnQiU7fh/MdZv+F43WdeRvUpv1vRZKeClmtXqD5XCW0+/UfhfLKgT6OrayZ+LEZid69p8W+PmZRuo/+mggtgXUAFbDwZgKFmJ4mg8i+ZvtQcTVxKi3VqRR1CUFeF0ut7ZI40FVrEVLEUajUFTy/yr/V5nYhbO5lc4fZEEFdRBNgsrovnA5b5PBR+OBA5INlHOfjdshz1jRaOs6EeFAWKvFhRDHKIyoMW2SMPYveh93ocZBOxwI7hVeBvDLExTjVRnL+YcjES7JU8QJYra0UBNemQ/wvAQSFgQocikwaWzkF3R9d1MyzOgfGTcNCs3MSezv9HNIp4d9FIUCU+2Uo+ONw6COBkuSphgKCRKJfowEPYhvcJHH4irduL9Ki85WX0VyNGlqoPEUZzk9oCP6U8mByTkPwRwdkakJF5VKmEGeZa0tFPyXmKk3OOSurjW81kUVm6KTPsIWIoiYxglbVHGtKmE+7wHWJ4XA8D6SqTCABQjOVxeq65EEQEZYBDKketNVeYgU9D+eESYgGahe/mvUJKw4+6q83EUsW11qM4iDSco0uyyuJRoF6EbJWKA/ODuyg8l4fa+O1eidlDhs6kSE/FNKJ7lHE9U43nlOtP/ltydff3ce4of66RcyojYZl8LwCCzM0Amubv3XR+244OC9yGVtZg9hPN8ZI4TrxmQ/7suCTMbEmDQCBWlrVvv8KTrst5MXFpy9O23yeKDWKzxdITZo27flRxoXxNxNLtQB8vFZZAfh0Z9PxS/F/f6nO1XtAjwAElLDB32iD+pgtbH+IM5lMF7MmzKGmTRoWFR4snsQAvVPM+4baRgA4/G/M3ybGawSGGszyvbFNZFJRXjaM0+/E/fRofYKO8TCwOJ/0+KyEft4DeUyJvHYmOvRK2nMR/SBJ5VI9qQwYKyA3zrIHWpnwCXChDJBzER4xlHY40A8W7obOAUzEPzlIwECJCuobvMcjo+z7OfOYZni0jLjGOV9chHm0OFfPVEY/zzxI42hngOB6+wBU/QIuBzH5DVQVbEbbdHbtQqh7oPYDvmU05+mTsR1SXOW9nUY66TuItpRzm4t5C9XBTNrUNlzXB3mI/XbRgR7s4lERoyvMNIPhBL+ixvLohxEk3T0LcTiqym6emIXYHSYtKvs10AVjEpjbNIPlRwQ69Y0hPFYrpDh5tFEQ4/4PcaX0D6z1xEmeZFtN64mRC0CIqDuot8Y6PFEBy4wiJ3jnskDDgQtTlEF+l2s2SdfMMqkhn6N6WuPBz0K0Abr2GfRJcavxldIRosEbEsETuoIBwsEYNlTNBgrBHVzBFlzACXrY7vDuOMz2a2jp6d1n/B1+NjEgk6EYZzIxtEXNY80vVyzshADu6p4SQeJcjBDSHIlQDM2L0CwbEWHoKudsQzNvI9Ul3BLIgNgfRFhQ+y3Cga3uiAB4+yNCsLCxjU8ii6IISBExiM2OSEBnUkQKcoMiMtALRORwQiIKRPKIUhYaV+VewO4a1WuQq1UPDr3J68p181etQoFO9mH6Bsw7DStUqZRp3N2hEAp445CkODD3+vliJWSTxvJgLu7asWSFK3IwUFujXg+ShQ+uqoWqFGVeJbxiVOTreP2He8qp1SmOzEPgxV6+Qu4STlKoTpSGyFuTzb23lIx0D6zr3bjhc/17JDDpGUlWZVcRkMdYH3V5Vq3JSZXLLY94UOiQDg+M56uVtUQ+FxGNd4+ozubUrXHvqmKDUpdqozyec/lqlT54Vi1UxENEnztT9+DkjSVfoM7tbBd7wkUf2/c3aDD4HGYygDVOh8BJeTbIt9FkDtjqOPmds4GanXaGCz4BoXPOOe9C2TPZYqfPvZ7BJZcUu2KKTTbr6JVOVCXR9L7mmhLXdadnyJMveLGTFhKol6kqLhaUy6LBXglRc8eUaoWWIHP3NzRo0kujyOLKqMkWP/1G7C1OH/3019cSA2wR750EiZKMkSzFQIMNMUiqNOkyvLFXpgUWosKCogSQRQBtSwR9SbAOzdZxEiwli2RiWbLl8AaTi8cXCg07/1WsKRnWlgIHS4VDpcEyS42y1Tb+jjlO6r0P/oU1KgiOnUSjjTTOWOMNMxwXGYww0zS5/MpIZrKSHXwIIYaUnJCTm7zkh5KCUEMLFLq5Akxw0z233HafqigdLPLmyztPfowwwwo7nHDDCz+CCCOKOJJII4s8iiijijqaaKOLPoYYY4o5lsD2++LSFy0UEorEJF0vZmqgqXh9FJq4ei+GI1wxqtLRONkaNjH8X8mg0GtG86cyaQoqrTP9H0iPN9NkxCtI4WDJTSsdCQvS+NY4zjeyJVIdrO6/hJgbBGKdsPo/kkgZ7TTJ0leqxTE1if8Dvc5kPO6MoWKkFcegyW11fQ3ISBV1vOpTbiTXlBTalPDkv3yXnM+wBSMw0P4Y7GnI+tXDlkJ1BqOo8VNpn1Fy9iqrznBkMq5yBgXLK32FcdiycBZmz/kkt8rds6mgGQWkULNn+Ns5DGbM8oxYGc4RFnIXcrawiCn6DHQOQJADcgDARYgDCMgAAAA=)
+          format("woff2");
+      }
+      :root {
+        color-scheme: light;
+        --page: #f7f7f7;
+        --card: #fff;
+        --stage: #f0f2f1;
+        --ink: #222;
+        --secondary: #4b4b4b;
+        --muted: #666b67;
+        --line: #d6d6d6;
+        --hover: #e9ecea;
+        --accent: #5b4aa8;
+        --accent-bg: #ece6f6;
+        --success-bg: #e7f6ee;
+        --success-fg: #2f7d56;
+        --warning-bg: #f7f0e5;
+        --warning-fg: #a9772a;
+        --error-bg: #fdeaec;
+        --error-fg: #b8475a;
+        --toast-width: 384px;
+        --shadow: 0 1px 2px #00000006, 0 4px 12px #0000000a;
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --page: #121513;
+        --card: #1c201e;
+        --stage: #151916;
+        --ink: #f1f3f0;
+        --secondary: #b4b8b3;
+        --muted: #a1a7a1;
+        --line: #353b36;
+        --hover: #303732;
+        --accent: #cfc4f2;
+        --accent-bg: #322a5c;
+        --success-bg: #16301f;
+        --success-fg: #8fe3b9;
+        --warning-bg: #2f2611;
+        --warning-fg: #f4c878;
+        --error-bg: #321a1f;
+        --error-fg: #f49aa8;
+        --shadow: 0 1px 2px #0003, 0 4px 12px #0002;
+      }
+      :root[data-width="narrow"] {
+        --toast-width: 320px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+        scroll-padding-top: 24px;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--ink);
+        font:
+          15px/1.5 Fustat,
+          system-ui,
+          sans-serif;
+      }
+      button,
+      a,
+      summary {
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+      button:focus-visible,
+      a:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+      a {
+        color: var(--accent);
+        text-underline-offset: 3px;
+      }
+      button,
+      summary,
+      a {
+        touch-action: manipulation;
+      }
+      button:disabled {
+        cursor: default;
+      }
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+      main {
+        max-width: 1064px;
+        padding: 32px 24px 48px;
+        margin: auto;
+      }
+      .eyebrow {
+        font:
+          600 12px/1.5 Fustat,
+          system-ui,
+          sans-serif;
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-size: 28px;
+        letter-spacing: -0.6px;
+        line-height: 1.25;
+        margin: 6px 0 8px;
+        font-weight: 800;
+      }
+      .intro {
+        max-width: 800px;
+        color: var(--secondary);
+      }
+      code {
+        font:
+          0.88em ui-monospace,
+          SFMono-Regular,
+          monospace;
+      }
+      .toolbar {
+        display: flex;
+        gap: 16px 24px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin: 22px 0 20px;
+      }
+      .control-group {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .control-label {
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .segmented {
+        display: flex;
+        padding: 3px;
+        background: var(--stage);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        gap: 2px;
+      }
+      .control {
+        background: transparent;
+        border: 0;
+        border-radius: 7px;
+        font-weight: 650;
+        padding: 6px 12px;
+        min-height: 32px;
+        font-size: 13px;
+      }
+      .control[aria-pressed="true"] {
+        background: var(--card);
+        box-shadow: 0 1px 3px #00000012;
+        color: var(--accent);
+      }
+      .control:hover {
+        background: var(--hover);
+      }
+      .control[aria-pressed="true"]:hover {
+        background: var(--card);
+      }
+      .measure-note {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .overview {
+        display: block;
+      }
+      .concept {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        overflow: hidden;
+        min-width: 0;
+        padding: 20px;
+      }
+      .concept-heading {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .letter {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--card);
+        width: 28px;
+        height: 28px;
+        font-weight: 750;
+        font-size: 13px;
+        flex-shrink: 0;
+      }
+      .concept h2 {
+        font-size: 17px;
+        line-height: 1.3;
+        font-weight: 750;
+      }
+      .recommendation {
+        font-size: 11px;
+        font-weight: 700;
+        color: var(--accent);
+        background: var(--accent-bg);
+        padding: 3px 7px;
+        border-radius: 6px;
+      }
+      .concept-description {
+        color: var(--secondary);
+        font-size: 14px;
+        line-height: 1.5;
+        margin: 10px 0 16px;
+      }
+      .concept-samples {
+        background: var(--stage);
+        border-radius: 11px;
+        padding: 18px 14px;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+      }
+      .specimen {
+        min-width: 0;
+        width: 100%;
+      }
+      .specimen-label {
+        display: block;
+        max-width: var(--toast-width);
+        margin: 0 auto 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+      .metrics {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 16px;
+      }
+      .concept-note {
+        font-size: 13px;
+        margin: 6px 0 10px;
+        color: var(--secondary);
+      }
+      .detail-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 650;
+        text-decoration: none;
+      }
+      .detail-link svg {
+        width: 15px;
+        height: 15px;
+      }
+      .section-heading {
+        font-size: 20px;
+        font-weight: 750;
+        letter-spacing: -0.25px;
+        margin: 32px 0 6px;
+      }
+      .section-intro {
+        color: var(--secondary);
+        font-size: 14px;
+        margin-bottom: 16px;
+      }
+      .anatomy {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 18px 20px;
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: 24px;
+      }
+      .anatomy h2 {
+        font-size: 15px;
+        margin-bottom: 6px;
+      }
+      .anatomy p {
+        font-size: 13px;
+        color: var(--secondary);
+      }
+      .scale {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .scale-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .scale-item > div {
+        height: 32px;
+        display: grid;
+        place-items: center;
+        color: var(--ink);
+      }
+      .scale-item svg {
+        width: 16px;
+        height: 16px;
+      }
+      .scale-item .status-example svg {
+        width: 20px;
+        height: 20px;
+      }
+      .scale-item .old-icon svg {
+        width: 12px;
+        height: 12px;
+      }
+      .scale-item .close-example svg {
+        width: 14px;
+        height: 14px;
+      }
+      details {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--card);
+        margin: 12px 0;
+        overflow: hidden;
+      }
+      summary {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        list-style: none;
+        cursor: pointer;
+        padding: 16px 20px;
+        font-weight: 700;
+        font-size: 16px;
+      }
+      summary::-webkit-details-marker {
+        display: none;
+      }
+      summary::after {
+        content: "+";
+        font: 400 22px/1 system-ui;
+        margin-left: auto;
+        color: var(--muted);
+      }
+      details[open] > summary::after {
+        content: "−";
+      }
+      .summary-count {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted);
+        margin-left: auto;
+      }
+      .matrix {
+        border-top: 1px solid var(--line);
+        padding: 20px;
+        background: var(--stage);
+      }
+      .matrix-header {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        font-size: 12px;
+        color: var(--muted);
+        font-weight: 650;
+      }
+      .matrix-header span {
+        width: 100%;
+        max-width: var(--toast-width);
+        margin: auto;
+      }
+      .state-pair {
+        margin-top: 20px;
+      }
+      .state-pair h3 {
+        font-size: 13px;
+        font-weight: 700;
+        color: var(--secondary);
+        margin-bottom: 12px;
+      }
+      .pair-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 24px;
+        align-items: start;
+      }
+      .matrix .specimen-label {
+        font-size: 10px;
+        font-weight: 500;
+        margin-bottom: 6px;
+      }
+      .matrix .state-pair + .state-pair {
+        border-top: 1px solid var(--line);
+        padding-top: 20px;
+      }
+      footer {
+        font-size: 12px;
+        color: var(--muted);
+        border-top: 1px solid var(--line);
+        padding-top: 18px;
+        margin-top: 24px;
+      }
+      .preview-feedback {
+        margin-top: 12px;
+        min-height: 20px;
+        color: var(--accent);
+        font-size: 13px;
+      }
+      /* The specimen styles are isolated from document controls. */
+      .toast {
+        --tint: var(--card);
+        --signal: var(--ink);
+        position: relative;
+        max-width: var(--toast-width);
+        width: 100%;
+        margin: 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        background: var(--tint);
+        font-size: 14px;
+        line-height: 1.4;
+        color: var(--ink);
+        text-align: left;
+      }
+      .state-success {
+        --tint: var(--success-bg);
+        --signal: var(--success-fg);
+      }
+      .state-warning {
+        --tint: var(--warning-bg);
+        --signal: var(--warning-fg);
+      }
+      .state-error {
+        --tint: var(--error-bg);
+        --signal: var(--error-fg);
+      }
+      .toast-title {
+        font-weight: 750;
+        font-size: 14px;
+        line-height: 20px;
+        overflow-wrap: anywhere;
+      }
+      .toast-description {
+        font-weight: 500;
+        font-size: 13px;
+        line-height: 18px;
+        color: var(--secondary);
+        margin-top: 3px;
+        overflow-wrap: anywhere;
+      }
+      .copy {
+        min-width: 0;
+      }
+      .signal {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        color: var(--signal);
+        flex-shrink: 0;
+      }
+      .signal svg {
+        width: 20px;
+        height: 20px;
+      }
+      .signal svg path {
+        stroke-width: 2;
+      }
+      .toast-action {
+        display: inline-flex;
+        justify-content: center;
+        align-items: center;
+        gap: 6px;
+        min-height: 30px;
+        padding: 6px 10px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 18px;
+        max-width: 100%;
+        text-align: left;
+      }
+      .toast-action svg {
+        height: 16px;
+        width: 16px;
+        flex-shrink: 0;
+      }
+      .toast-action span {
+        overflow-wrap: anywhere;
+        min-width: 0;
+      }
+      .toast-action:hover {
+        background: color-mix(in srgb, var(--signal) 10%, transparent);
+      }
+      .dismiss {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--secondary);
+      }
+      .dismiss svg {
+        width: 14px;
+        height: 14px;
+      }
+      .dismiss:hover {
+        background: color-mix(in srgb, var(--ink) 8%, transparent);
+      }
+      .layout-a {
+        display: grid;
+        grid-template-columns: 20px minmax(0, 1fr) auto 24px;
+        column-gap: 8px;
+        padding: 14px;
+        align-items: start;
+      }
+      .layout-a .signal {
+        margin-top: 0;
+      }
+      .layout-a .copy {
+        align-self: start;
+      }
+      .layout-a .toast-action {
+        align-self: start;
+        margin-top: -5px;
+        max-width: 130px;
+        padding-inline: 8px;
+      }
+      .layout-a:not(.has-action) {
+        grid-template-columns: 20px minmax(0, 1fr) 24px;
+      }
+      .layout-a.no-icon {
+        grid-template-columns: minmax(0, 1fr) auto 24px;
+      }
+      .layout-a.no-icon:not(.has-action) {
+        grid-template-columns: minmax(0, 1fr) 24px;
+      }
+      .layout-a.no-close:not(.has-action) {
+        grid-template-columns: 20px minmax(0, 1fr);
+      }
+      .layout-a .dismiss {
+        margin-top: -2px;
+      }
+      .layout-a.state-default {
+        border-color: var(--line);
+      }
+      .layout-a:not(.state-default) {
+        border-color: color-mix(in srgb, var(--signal) 15%, var(--tint));
+      }
+      @media (max-width: 820px) {
+        main {
+          padding: 24px 16px 36px;
+        }
+        .overview {
+          grid-template-columns: 1fr;
+        }
+        .concept-samples {
+          grid-template-columns: 1fr;
+        }
+        .concept-description {
+          min-height: 0;
+        }
+        .concept-heading {
+          flex-wrap: wrap;
+        }
+        .pair-grid {
+          grid-template-columns: 1fr;
+          gap: 20px;
+        }
+        .matrix-header {
+          display: none;
+        }
+        .anatomy {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        .summary-count {
+          display: none;
+        }
+        .matrix {
+          padding: 16px;
+        }
+        .state-pair:first-of-type {
+          margin-top: 0;
+        }
+      }
+      @media (max-width: 420px) {
+        main {
+          padding-inline: 12px;
+        }
+        .concept {
+          padding: 14px;
+        }
+        .concept-samples {
+          padding: 16px 8px;
+        }
+        .concept h2 {
+          font-size: 16px;
+        }
+        .recommendation {
+          margin-left: 38px;
+        }
+        .toolbar {
+          gap: 12px;
+        }
+        .control-group {
+          flex-wrap: wrap;
+        }
+        summary {
+          padding: 14px;
+        }
+        .matrix {
+          padding: 12px 8px;
+        }
+        .toast {
+          border-radius: 14px;
+        }
+        .layout-a {
+          column-gap: 6px;
+          padding: 12px;
+        }
+        .layout-a .toast-action {
+          max-width: 94px;
+          padding-inline: 6px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="eyebrow">Capy Notebook / Component study</p>
+        <h1>A · Inline toast refinement</h1>
+        <p class="intro">
+          Direction A with text-only actions, a tighter gap and title-aligned
+          buttons. Compare every toast variant at desktop and narrow widths.
+        </p>
+      </header>
+      <div class="toolbar">
+        <div class="control-group">
+          <span class="control-label">Theme</span>
+          <div class="segmented" role="group" aria-label="Preview theme">
+            <button
+              type="button"
+              class="control"
+              data-theme-choice="light"
+              aria-pressed="true"
+            >
+              Light</button
+            ><button
+              type="button"
+              class="control"
+              data-theme-choice="dark"
+              aria-pressed="false"
+            >
+              Dark
+            </button>
+          </div>
+        </div>
+        <div class="control-group">
+          <span class="control-label">Toast width</span>
+          <div class="segmented" role="group" aria-label="Toast width">
+            <button
+              type="button"
+              class="control"
+              data-width-choice="standard"
+              aria-pressed="true"
+            >
+              384 px</button
+            ><button
+              type="button"
+              class="control"
+              data-width-choice="narrow"
+              aria-pressed="false"
+            >
+              320 px
+            </button>
+          </div>
+        </div>
+        <span class="measure-note">Actual size, capped to fit your screen</span>
+      </div>
+      <div class="overview">
+        <article class="concept" id="option-a">
+          <div class="concept-heading">
+            <span class="letter">A</span>
+            <h2>Inline action, refined</h2>
+          </div>
+          <p class="concept-description">
+            Text-only actions sit closer to the message and align with the first
+            line of the title.
+          </p>
+          <div class="concept-samples">
+            <div class="specimen">
+              <span class="specimen-label">Error · text-only action</span>
+              <div class="toast layout-a state-error has-action">
+                <span class="signal"
+                  ><svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    />
+                    <path
+                      d="M12 9V13"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    />
+                    <path
+                      d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    /></svg
+                ></span>
+                <div class="copy">
+                  <p class="toast-title">Couldn't save changes</p>
+                  <p class="toast-description">
+                    Your edits are still here. Try again.
+                  </p>
+                </div>
+                <button type="button" class="toast-action">
+                  <span>Retry</span></button
+                ><button
+                  type="button"
+                  class="dismiss"
+                  aria-label="Dismiss Couldn't save changes"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="specimen">
+              <span class="specimen-label">Error · no action</span>
+              <div class="toast layout-a state-error">
+                <span class="signal"
+                  ><svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    />
+                    <path
+                      d="M12 9V13"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    />
+                    <path
+                      d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    /></svg
+                ></span>
+                <div class="copy">
+                  <p class="toast-title">Couldn't save changes</p>
+                  <p class="toast-description">
+                    Your edits are still here. Try again.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="dismiss"
+                  aria-label="Dismiss Couldn't save changes"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                      stroke="currentColor"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <p class="metrics">14 px padding · 8 px column gap · 30 px action</p>
+          <p class="concept-note">
+            The action keeps its title alignment when the description wraps.
+          </p>
+          <a class="detail-link" href="#details-a"
+            >See all A states
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M18.5 12L4.99997 12"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+              />
+              <path
+                d="M13 18C13 18 19 13.5811 19 12C19 10.4188 13 6 13 6"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+              /></svg
+          ></a>
+        </article>
+      </div>
+      <aside class="anatomy">
+        <div>
+          <h2>Spacing and alignment</h2>
+          <p>
+            The column gap is reduced from 10 px to 8 px. Action labels align
+            with the first title line, including when the title or description
+            wraps. Buttons retain their 30 px height.
+          </p>
+        </div>
+        <div>
+          <h2>Icons</h2>
+          <p>
+            Action buttons are text-only. Status icons remain 20 px, and close
+            stays 14 px inside a 24 px target.
+          </p>
+        </div>
+      </aside>
+      <h2 class="section-heading">Every variant, with and without an action</h2>
+      <p class="section-intro">
+        Default, success, warning and error, plus title-only and long-copy
+        cases. All action buttons are text-only. Default stays icon-free; the
+        other variants keep their status icon.
+      </p>
+      <details id="details-a" open>
+        <summary>
+          <span class="letter">A</span><span>Inline action, refined</span
+          ><span class="summary-count">4 variants + edge cases</span>
+        </summary>
+        <div class="matrix">
+          <div class="matrix-header">
+            <span>Without action</span><span>With action</span>
+          </div>
+          <section class="state-pair">
+            <h3>Default</h3>
+            <div class="pair-grid">
+              <div class="specimen">
+                <span class="specimen-label">No action</span>
+                <div class="toast layout-a state-default no-icon">
+                  <div class="copy">
+                    <p class="toast-title">Notebook moved</p>
+                    <p class="toast-description">
+                      You can find it in Biology 101.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Notebook moved"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="specimen">
+                <span class="specimen-label">Text-only action</span>
+                <div class="toast layout-a state-default no-icon has-action">
+                  <div class="copy">
+                    <p class="toast-title">Notebook moved</p>
+                    <p class="toast-description">
+                      You can find it in Biology 101.
+                    </p>
+                  </div>
+                  <button type="button" class="toast-action">
+                    <span>Undo</span></button
+                  ><button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Notebook moved"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="state-pair">
+            <h3>Success</h3>
+            <div class="pair-grid">
+              <div class="specimen">
+                <span class="specimen-label">No action</span>
+                <div class="toast layout-a state-success">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M5 13.2592L7.58583 15.9568C8.2525 16.6523 8.58583 17 9.00004 17C9.41425 17 9.74759 16.6523 10.4143 15.9568L19 7"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Files added</p>
+                    <p class="toast-description">
+                      3 files are ready in Biology 101.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Files added"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="specimen">
+                <span class="specimen-label">Text-only action</span>
+                <div class="toast layout-a state-success has-action">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M5 13.2592L7.58583 15.9568C8.2525 16.6523 8.58583 17 9.00004 17C9.41425 17 9.74759 16.6523 10.4143 15.9568L19 7"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Files added</p>
+                    <p class="toast-description">
+                      3 files are ready in Biology 101.
+                    </p>
+                  </div>
+                  <button type="button" class="toast-action">
+                    <span>Open</span></button
+                  ><button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Files added"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="state-pair">
+            <h3>Warning</h3>
+            <div class="pair-grid">
+              <div class="specimen">
+                <span class="specimen-label">No action</span>
+                <div class="toast layout-a state-warning">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Some files were skipped</p>
+                    <p class="toast-description">
+                      2 files are already in this notebook.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Some files were skipped"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="specimen">
+                <span class="specimen-label">Text-only action</span>
+                <div class="toast layout-a state-warning has-action">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Some files were skipped</p>
+                    <p class="toast-description">
+                      2 files are already in this notebook.
+                    </p>
+                  </div>
+                  <button type="button" class="toast-action">
+                    <span>Review</span></button
+                  ><button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Some files were skipped"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="state-pair">
+            <h3>Error</h3>
+            <div class="pair-grid">
+              <div class="specimen">
+                <span class="specimen-label">No action</span>
+                <div class="toast layout-a state-error">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Couldn't save changes</p>
+                    <p class="toast-description">
+                      Your edits are still here. Try again.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Couldn't save changes"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="specimen">
+                <span class="specimen-label">Text-only action</span>
+                <div class="toast layout-a state-error has-action">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Couldn't save changes</p>
+                    <p class="toast-description">
+                      Your edits are still here. Try again.
+                    </p>
+                  </div>
+                  <button type="button" class="toast-action">
+                    <span>Retry</span></button
+                  ><button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Couldn't save changes"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="state-pair">
+            <h3>Title only</h3>
+            <div class="pair-grid">
+              <div class="specimen">
+                <span class="specimen-label">No description · no close</span>
+                <div class="toast layout-a state-success no-close">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M5 13.2592L7.58583 15.9568C8.2525 16.6523 8.58583 17 9.00004 17C9.41425 17 9.74759 16.6523 10.4143 15.9568L19 7"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy"><p class="toast-title">Link copied</p></div>
+                </div>
+              </div>
+              <div class="specimen">
+                <span class="specimen-label"
+                  >No description · action + close</span
+                >
+                <div class="toast layout-a state-error has-action">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">Couldn't load annotations</p>
+                  </div>
+                  <button type="button" class="toast-action">
+                    <span>Retry</span></button
+                  ><button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Couldn't load annotations"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="state-pair">
+            <h3>Long copy and labels</h3>
+            <div class="pair-grid">
+              <div class="specimen">
+                <span class="specimen-label">Long title + filename</span>
+                <div class="toast layout-a state-warning">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">
+                      Some files could not be added to this notebook
+                    </p>
+                    <p class="toast-description">
+                      Introduction to cellular respiration and energy
+                      transfer.pdf is already in Biology 101.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss Some files could not be added to this notebook"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="specimen">
+                <span class="specimen-label">Long action label</span>
+                <div class="toast layout-a state-error has-action">
+                  <span class="signal"
+                    ><svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12 9V13"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                      <path
+                        d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      /></svg
+                  ></span>
+                  <div class="copy">
+                    <p class="toast-title">You have used your AI credits</p>
+                    <p class="toast-description">
+                      Your credits renew on October 1. You can change your plan
+                      to keep studying.
+                    </p>
+                  </div>
+                  <button type="button" class="toast-action">
+                    <span>Manage subscription</span></button
+                  ><button
+                    type="button"
+                    class="dismiss"
+                    aria-label="Dismiss You have used your AI credits"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      aria-hidden="true"
+                      focusable="false"
+                    >
+                      <path
+                        d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085"
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="1.5"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </details>
+      <p class="preview-feedback" role="status" aria-live="polite">
+        Static design specimens. Buttons show hover and keyboard-focus styling.
+      </p>
+      <noscript
+        ><p>
+          All toast specimens are available without JavaScript. Theme and width
+          controls require JavaScript.
+        </p></noscript
+      >
+      <footer>
+        Layout proposals only. Copy is illustrative. Existing dismiss,
+        deduplication and error-entrance behavior are outside this study. Dark
+        colors use the current Classroom tokens. Measurements describe the
+        standard desktop specimens; narrow screens reduce padding where needed.
+      </footer>
+    </main>
+    <script>
+      for (const button of document.querySelectorAll("[data-theme-choice]")) {
+        button.addEventListener("click", () => {
+          document.documentElement.dataset.theme = button.dataset.themeChoice;
+          for (const choice of document.querySelectorAll("[data-theme-choice]"))
+            choice.setAttribute("aria-pressed", String(choice === button));
+        });
+      }
+      for (const button of document.querySelectorAll("[data-width-choice]")) {
+        button.addEventListener("click", () => {
+          document.documentElement.dataset.width = button.dataset.widthChoice;
+          for (const choice of document.querySelectorAll("[data-width-choice]"))
+            choice.setAttribute("aria-pressed", String(choice === button));
+        });
+      }
+      for (const link of document.querySelectorAll(".detail-link")) {
+        link.addEventListener("click", () => {
+          document.querySelector(link.getAttribute("href")).open = true;
+        });
+      }
+      for (const button of document.querySelectorAll(".toast button")) {
+        button.addEventListener("click", () => {
+          document.querySelector(".preview-feedback").textContent =
+            button.classList.contains("dismiss")
+              ? "Dismiss control preview. The specimen stays visible for comparison."
+              : button.textContent.trim() +
+                " action preview. No application action runs here.";
+        });
+      }
+    </script>
+  </body>
+</html>

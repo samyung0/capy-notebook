@@ -37,14 +37,12 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { canReplyAtDepth } from './canReplyAtDepth';
 import { useEditorRuntime } from './EditorRuntime';
-import type { NoteEditorMode } from './editorMode';
 
 const COMMENT_DECORATION_KEY = 'capy_comment_highlight';
 
 export interface EditorCollaborationOptions {
   currentUserId: string | null;
   discussions: MaterialDiscussion[];
-  mode: NoteEditorMode;
 }
 
 export interface CollaborationActions {
@@ -208,7 +206,7 @@ function BlockDiscussionThreads({
         <div className="min-w-0 flex-1">{children}</div>
         <PopoverContent
           align="start"
-          className="max-h-[min(60dvh,var(--radix-popper-available-height))] w-95 max-w-[calc(100vw-24px)] gap-0 overflow-y-auto border border-line bg-surface p-0 shadow-pop"
+          className="max-h-[min(60dvh,var(--radix-popper-available-height))] w-95 max-w-[calc(100vw-24px)] gap-0 overflow-y-auto p-0"
           contentEditable={false}
           onCloseAutoFocus={(event) => event.preventDefault()}
           onOpenAutoFocus={(event) => event.preventDefault()}

@@ -484,7 +484,7 @@ components:
         access:
           enum:
             - write
-            - comment
+            - read
             - shrink
           type: string
         expiresAt:

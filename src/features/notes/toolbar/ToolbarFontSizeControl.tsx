@@ -88,7 +88,7 @@ export function FontSizeControl() {
           </PopoverTrigger>
           <PopoverContent
             align="center"
-            className="max-h-64 w-14 gap-0 overflow-y-auto border border-line bg-surface p-1 shadow-pop"
+            className="max-h-64 w-14 gap-0 overflow-y-auto p-1"
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               editor.tf.focus();

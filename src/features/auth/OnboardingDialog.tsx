@@ -170,7 +170,7 @@ export function OnboardingDialog() {
         </p>
       )}
       <div>
-        <div className="mb-5 flex items-center gap-7">
+        <div className="mb-5 flex items-center gap-5">
           <Avatar
             className="size-20"
             name={me.name}

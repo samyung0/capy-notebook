@@ -57,7 +57,7 @@ export function FontColorControl({
       </PopoverTrigger>
       <PopoverContent
         align="center"
-        className="w-64 border border-line bg-surface p-2.5 shadow-pop"
+        className="w-64 p-2.5"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           editor.tf.focus();

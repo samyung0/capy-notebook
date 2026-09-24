@@ -1,10 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { SlatePlugin } from 'platejs';
 import { useState } from 'react';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-} from '@/components/ui/DropdownMenu';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import {
   downloadEditorFile,
   downloadEditorText,
@@ -16,48 +13,45 @@ import { MaterialKit } from '@/features/notes/plugins';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import {
-  MenuRow,
-  ToolbarMenuContent,
-} from '@/features/notes/toolbar/ToolbarMenuRow';
+  ToolbarPopoverContent,
+  ToolbarPopoverRow,
+} from '@/features/notes/toolbar/ToolbarPopover';
 import { m } from '@/i18n';
 
 export function ExportMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   return (
-    <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
-      <DropdownMenuTrigger asChild>
-        <ToolbarButton className="w-fit" label={m.editor_export()}>
+    <Popover modal={false} onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <ToolbarButton label={m.editor_export()}>
           <EditorIcon name="download" />
-          <EditorIcon
-            className="size-3! text-fg-secondary"
-            name="chevronDown"
-          />
         </ToolbarButton>
-      </DropdownMenuTrigger>
-      <ToolbarMenuContent
+      </PopoverTrigger>
+      <ToolbarPopoverContent
         align="start"
-        className="w-52 gap-0.5 border border-line bg-surface p-1 shadow-pop"
+        className="w-52 gap-0.5 p-1"
+        open={open}
       >
-        <MenuRow
+        <ToolbarPopoverRow
           label={m.editor_export_md()}
-          onSelect={() =>
+          onClick={() =>
             void exportMarkdownDocument(editor, queryClient).then((markdown) =>
               downloadEditorText(markdown, 'document.md', 'text/markdown')
             )
           }
         />
-        <MenuRow
+        <ToolbarPopoverRow
           label={m.editor_export_docx()}
-          onSelect={() =>
+          onClick={() =>
             void exportDocxDocument(editor, MaterialKit as SlatePlugin[]).then(
               (blob) => downloadEditorFile(blob, 'document.docx')
             )
           }
         />
-        <MenuRow
+        <ToolbarPopoverRow
           label={m.editor_export_json()}
-          onSelect={() =>
+          onClick={() =>
             downloadEditorText(
               JSON.stringify(
                 { schemaVersion: 1, value: editor.children },
@@ -69,7 +63,7 @@ export function ExportMenu({ editor }: { editor: AnyEditor }) {
             )
           }
         />
-      </ToolbarMenuContent>
-    </DropdownMenu>
+      </ToolbarPopoverContent>
+    </Popover>
   );
 }

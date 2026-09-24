@@ -104,9 +104,9 @@ stored, so a newer failed edit remains queued for the next pass.
 
 ## Access
 
-Go signs five-minute HS256 tokens with exact room, schema, user, and `write` or
-`comment` access. The sidecar verifies token claims and browser origin.
-Comment connections are read-only at the server protocol layer.
+Go signs five-minute HS256 tokens with exact room, schema, user, and `write`, `shrink`, or
+`read` access. The sidecar verifies token claims and browser origin.
+Read connections are read-only at the server protocol layer.
 
 Go publishes:
 
@@ -138,7 +138,7 @@ pnpm --filter @capy-notebook/collaboration chaos -- \
 
 Useful flags: `--room material:<id>:schema:<n>` (required after compaction
 bumps the schema epoch), `--origin http://localhost:5173`, `--no-edits`
-(presence only), `--access comment`, `--edit-ms 700-2800`,
+(presence only), `--access read`, `--edit-ms 700-2800`,
 `--session-ms 6000-20000`. Tokens are minted locally with
 `COLLABORATION_SECRET` (default `dev-collaboration-secret`).
 

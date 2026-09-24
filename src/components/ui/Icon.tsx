@@ -113,6 +113,7 @@ import {
   TableIcon,
   Task01Icon,
   TextAlignCenterIcon,
+  TextAlignJustifyIcon,
   TextAlignLeftIcon,
   TextAlignRightIcon,
   TextBoldIcon,
@@ -136,6 +137,7 @@ import type { CSSProperties } from 'react';
 const HugeIcons = {
   alert: Alert02Icon,
   alignCenter: TextAlignCenterIcon,
+  alignJustify: TextAlignJustifyIcon,
   alignLeft: TextAlignLeftIcon,
   alignRight: TextAlignRightIcon,
   archive: Archive01Icon,

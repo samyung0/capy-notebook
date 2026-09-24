@@ -53,7 +53,7 @@ test('floating add menu stays fixed while scrolling and shares the header action
     element.scrollTop = 0;
   });
   const fileBox = await tree
-    .getByRole('button', { exact: true, name: 'Cell structure.pdf' })
+    .getByRole('link', { exact: true, name: 'Cell structure.pdf' })
     .boundingBox();
   if (!fileBox) throw new Error('File row must be visible');
   const openItemUrl = page.url();

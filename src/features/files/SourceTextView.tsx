@@ -3,7 +3,7 @@ import type { ViewableFile } from '@/api/types';
 import { WarningBanner } from '@/components/banners/WarningBanner';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
-import { FileModeControl } from './FileModeControl';
+import { FileModeControl, useFileMode } from './FileModeControl';
 import { SourceTextEditor } from './SourceTextEditor';
 import { useSourceSession } from './useSourceSession';
 
@@ -18,8 +18,9 @@ export function SourceTextView({
   onDirtyChange?: (dirty: boolean) => void;
   renderPreview: (url: string | undefined) => ReactNode;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [joined, setJoined] = useState(false);
+  const [mode, setMode] = useFileMode(canEdit, 'view');
+  const editing = mode === 'edit';
+  const [joined, setJoined] = useState(editing);
   const [previewURL, setPreviewURL] = useState<string>();
   const [leaving, setLeaving] = useState(false);
   const source = useSourceSession(file.id, joined);
@@ -62,7 +63,10 @@ export function SourceTextView({
     setLeaving(true);
     try {
       await source.save();
-      setEditing(false);
+      setMode('view');
+      return true;
+    } catch {
+      return false;
     } finally {
       setLeaving(false);
     }
@@ -72,12 +76,12 @@ export function SourceTextView({
       <FileModeControl
         canEdit={canEdit}
         disabled={leaving || source.handoff}
-        mode={editing ? 'edit' : 'view'}
+        mode={mode}
         onChange={(mode) => {
           if (mode === 'edit') {
             setJoined(true);
-            setEditing(true);
-          } else void done().catch(() => {});
+            setMode('edit');
+          } else return done();
         }}
         onSave={() => {
           void source.save().catch(() => {});

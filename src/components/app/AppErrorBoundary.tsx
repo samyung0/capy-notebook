@@ -179,7 +179,7 @@ export function RouteNotFoundComponent() {
           action={
             <ErrorAction
               asChild
-              iconLeft="chevronLeft"
+              iconLeft="navigationBack"
               iconLeftClassName="me-1"
             >
               <Link to="/">{m.error_action_go_back()}</Link>

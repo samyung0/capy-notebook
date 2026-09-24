@@ -24,7 +24,6 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useEditorRuntime } from './EditorRuntime';
-import { canCreateExternalEditorAssets } from './editorMode';
 import {
   acceptsPurpose,
   editorAssetPurpose,
@@ -57,11 +56,8 @@ export const MediaPlaceholderElement = withHOC(
     props: PlateElementProps<TPlaceholderElement>
   ) {
     const { editor, element } = props;
-    const { workspaceId, mode, allowExternalAssets } = useEditorRuntime();
-    const canCreateAssets = canCreateExternalEditorAssets(
-      mode,
-      allowExternalAssets
-    );
+    const { workspaceId, allowExternalAssets } = useEditorRuntime();
+    const canCreateAssets = allowExternalAssets;
     const { api } = useEditorPlugin(PlaceholderPlugin);
     const [progress, setProgress] = useState(0);
     const [uploading, setUploading] = useState<File | null>(null);

@@ -318,7 +318,7 @@ async function liveCollaborationAccess(
     denyCollaboration('material access was revoked');
   }
   const liveAccess: CollaborationAccess = row.owner_suspended_at
-    ? 'comment'
+    ? 'read'
     : row.owner_over_quota
       ? 'shrink'
       : 'write';
@@ -337,8 +337,8 @@ async function assertLiveCollaborationAccess(
     actorUserId
   );
   const allowed =
-    requested === 'comment' ||
-    (requested === 'shrink' && liveAccess !== 'comment') ||
+    requested === 'read' ||
+    (requested === 'shrink' && liveAccess !== 'read') ||
     (requested === 'write' && liveAccess === 'write');
   if (!allowed) denyCollaboration('collaboration access changed');
 }
@@ -560,7 +560,7 @@ export class YjsDocumentStore {
       materialIdFromRoom(room),
       actorUserId
     );
-    if (access === 'comment' || access === 'read') {
+    if (access === 'read') {
       denyCollaboration('material access was revoked');
     }
     return access;

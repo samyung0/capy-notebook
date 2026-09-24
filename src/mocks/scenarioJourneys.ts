@@ -133,8 +133,8 @@ export async function runJourney(
     await ui.wait(() => queryClient.isFetching() === 0, 'dialog data loaded');
   };
   const editMode = async () => {
-    await ui.click(m.material_mode(), '[role="combobox"]');
-    await ui.click(m.material_mode_edit(), '[role="option"]');
+    const toggle = await ui.button(m.material_mode(), 'button');
+    if (toggle.getAttribute('aria-pressed') !== 'true') ui.activate(toggle);
   };
   const sourceOpen = async (fileId = scenarioText) => {
     await go(`${scenarioPath}?file=${fileId}`);
@@ -296,8 +296,7 @@ export async function runJourney(
       frame.contentWindow!.dispatchEvent(
         new CustomEvent('capy-scenario-export-failure')
       );
-      await ui.click(m.material_mode(), '[role="combobox"]');
-      await ui.click(m.material_mode_view(), '[role="option"]');
+      await ui.click(m.material_mode(), 'button');
     } else await ui.click(m.action_save());
     await ui.element('[role="alert"]');
     return;

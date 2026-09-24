@@ -63,9 +63,7 @@ export default function DocxView({
               : !runtime.ready || runtime.saving || runtime.handoff
           }
           mode={runtime.mode}
-          onChange={(mode) => {
-            void runtime.setRuntimeMode(mode);
-          }}
+          onChange={runtime.setRuntimeMode}
           onSave={() => {
             void runtime.save().catch(() => {});
           }}
