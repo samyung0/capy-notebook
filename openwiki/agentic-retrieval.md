@@ -308,7 +308,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v8` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v9` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -381,9 +381,41 @@ Parser v8 (decision 2026-09-24; gate in
   occurrences sit in the page interior (`furniture.repeated_across_pages`), so
   a citation or credit repeated mostly inside pages keeps its edge copies.
 
+Parser v9 (decision 2026-09-24; evidence in
+`bench/parsers/reports/2026-09-24-heading-levels-and-fragments.md`, gate in
+`bench/parsers/reports/2026-09-24-parser-v9-gate.md`) re-levels headings in
+`parser/odl/levels.py`, after `mark_page_numbers` and the v8 heading rules and
+before furniture is frozen. No block is added, removed or reordered, and a
+heading the PDF outline lists on its page is never demoted:
+
+- **Fragments** (`demote_fragments`). A heading becomes body text when it is a
+  formula fragment (no run of three ordinary letters, and a maths symbol or
+  letter, a private-use glyph, no ordinary letter, or only one- and
+  two-character tokens; a single letter and a dotted section number stay), a
+  run-in label ("Example 9.1.2: Let", "Proof."), one label numbered three or
+  more times with dotted, restarting or page-tracking numbers (structural words
+  such as chapter or appendix excepted), a page footer or a bare number. A bare
+  number or chapter label set above its title is discarded and becomes the
+  title's `_chapter_label`. `_source_role` names the case.
+- **Contents lines** (`demote_contents_lines`). Headings on printed contents
+  pages (a run from a contents title in the first fifth of the book, each page
+  with 4 or more lines, half ending in a page number or a leader) become body
+  text, except the contents title and titles such as "List of Figures".
+- **Backbone** (`backbone_levels`). Only in a book whose outline is not usable
+  (under 5 entries, or under 30% found as headings on their page; v8's outline
+  headings count). The longest run of chapter labels, else bare depth-1
+  numbers, rising by 1 to 3 from chapter 1 or 2 over at least 20% of the pages
+  becomes level 1 (level 2 under rising parts set at least as big); numbered
+  sections that continue their chapter take chapter level + depth − 1. Front
+  matter never parents chapter 1; preface, index, glossary and similar rank
+  with chapters; other headings take the level of numbered headings they are
+  styled like, else nest under the section in force. A chapter label ODL left
+  as body text at the top of its page is promoted (`chapter-opener`), and
+  removed banners' `_heading_boundary_level` is rescaled the same way.
+
 The formula-picture rule, formula placeholders, stencil-mask rewriting and
-ODL's `--content-safety-off tiny` are not in v7 or v8; the tiny-text filter
-stays on.
+ODL's `--content-safety-off tiny` are not in v7, v8 or v9; the tiny-text
+filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre

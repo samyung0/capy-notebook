@@ -4,8 +4,8 @@ The stage order is the lab's ``refined`` variant and must not be reshuffled:
 font repair, Java, cell styles, adaptation, picture triage, column order,
 hidden-OCR order, heading context, then table context, footer ancestry, list
 geometry, glyph repairs, exponents, column continuations, split ligatures,
-source tables, negation composition, and finally RapidOCR lines for pages
-without a text layer.
+page numbers, heading levels, source tables, negation composition, and finally
+RapidOCR lines for pages without a text layer.
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ from . import (
     headings,
     hidden,
     java,
+    levels,
     lists,
     ocr,
     order,
@@ -168,6 +169,10 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         # Before furniture is frozen, so a repeated line keeps one text key.
         blocks, _ = source_text.join_split_ligatures(blocks, pdf)
         blocks = furniture.mark_page_numbers(blocks, document)
+        # Heading levels once roles, folios and heading text are settled.
+        blocks = levels.demote_fragments(blocks, document)
+        blocks = levels.demote_contents_lines(blocks, document)
+        blocks = levels.backbone_levels(blocks, document)
         furniture_texts = furniture.repeated_across_pages(blocks)
         blocks, _ = tables.recover_tables(blocks, document)
         blocks = fonts.compose_negations(blocks)
