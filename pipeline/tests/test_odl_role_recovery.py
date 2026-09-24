@@ -8,7 +8,7 @@ import pymupdf
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "parser"))
-from odl.headings import correct_roles
+from odl.headings import correct_roles, insert_outline_headings, promote_capitals
 
 from pipeline.retrieval.chunking import chunk_content_list
 from pipeline.retrieval.headings import retain_headings
@@ -712,3 +712,218 @@ def test_source_roles_abstain_on_outline_mismatch_and_preserve_body(tmp_path):
     )
     document.close()
     assert blocks == before
+
+
+def test_running_heads_typed_as_paragraphs_join_the_banner_rules():
+    # College Research: ODL typed half its running heads as paragraphs.
+    with pymupdf.open() as document:
+        blocks = []
+        for number, title in enumerate(["{} Motion", "Forces {}", "{} Motion"]):
+            page = document.new_page()
+            head = _printed_heading(
+                page, title.format(number + 12), 35, 2, fontsize=10, x=_side(number)
+            )
+            if number:
+                head.pop("text_level")
+            body = _printed_heading(page, "Motion is change of place.", 300, 2)
+            body.pop("text_level")
+            blocks += [head, body]
+        result = correct_roles(blocks, document)
+        assert [b["type"] for b in result[::2]] == ["discarded"] * 3
+        assert all(b["_source_role"] == "running-banner" for b in result[::2])
+        # Only the former heading keeps a scope boundary.
+        assert [b.get("_heading_boundary_level") for b in result[::2]] == [
+            2,
+            None,
+            None,
+        ]
+        assert result[1::2] == blocks[1::2]
+        assert correct_roles(result, document) == result
+
+
+def test_facing_paragraph_heads_still_prove_the_heading_heads():
+    # Open Research: even pages' running heads are headings, odd pages' are
+    # paragraphs, and both span the page, so only the other side's heads show
+    # the page offset. Joining the family must not take that proof away.
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(6):
+            page = document.new_page()
+            text = (
+                f"{number + 1} Open research in practice / An introduction to the whole field"
+                if number % 2 == 0
+                else f"An introduction to the whole field / Open research in practice {number + 1}"
+            )
+            head = _printed_heading(page, text, 35, 7, fontsize=10)
+            if number % 2:
+                head.pop("text_level")
+            blocks.append(head)
+        assert all(b["bbox"][0] < 500 < b["bbox"][2] for b in blocks)
+        result = correct_roles(blocks, document)
+        assert all(b["type"] == "discarded" for b in result)
+        assert [b.get("_heading_boundary_level") for b in result] == [7, None] * 3
+
+
+@pytest.mark.parametrize(
+    ("text", "size", "outline", "demoted"),
+    [
+        ("It carried over from the page before.", 11, False, True),
+        ("Why This Book?", 16, False, False),
+        ("A title that ends with a stop.", 11, True, False),
+        ("An unfinished line in body type", 11, False, False),
+    ],
+)
+def test_sentence_headings_set_in_the_body_style_are_demoted(
+    text, size, outline, demoted
+):
+    with pymupdf.open() as document:
+        page = document.new_page()
+        heading = _printed_heading(page, text, 100, 11, fontsize=size)
+        for y in (150, 170, 190):
+            page.insert_text((60, y), "Ordinary prose fills the page in body type.")
+        if outline:
+            document.set_toc([[1, text, 1]])
+        result = correct_roles([heading], document)
+        if demoted:
+            assert "text_level" not in result[0]
+            assert result[0]["_source_role"] == "body-style-heading"
+            assert result[0]["type"] == "text" and result[0]["text"] == text
+        else:
+            assert result[0]["text_level"] in (1, 11)
+
+
+def _line(text, page, y, level=None, height=20):
+    block = {
+        "type": "text",
+        "text": text,
+        "page_idx": page,
+        "bbox": [100, y, 900, y + height],
+    }
+    if level:
+        block["text_level"] = level
+    return block
+
+
+def test_capitals_lines_between_blank_space_become_sibling_headings():
+    body = "The habitat model follows from field surveys."
+    blocks = [
+        # A half-title, then the title page with its author line.
+        _line("Conservation Techniques", 0, 100, level=1),
+        _line("Conservation Techniques", 1, 100, level=1),
+        _line("LEE A. SWANSON AND OTHERS", 1, 300),
+        _line(body, 1, 350),
+        _line("Chapter one", 2, 100, level=2),
+        _line(body, 2, 130),
+        _line("LIMITATIONS OF HABITAT MAPPING", 2, 180),
+        _line(body, 2, 230),
+        _line("FIELD SURVEY METHODS", 2, 280),
+        _line(body, 2, 330),
+        _line("PV = (PMT, I/Y, N, FV) VALUES", 2, 380),  # a formula
+        _line(body, 2, 430),
+        _line("CHAPTER ONE", 2, 480),  # an existing heading in capitals
+        _line(body, 2, 530),
+        _line("TOO CLOSE TO ITS BODY", 2, 580),
+        _line(body, 2, 605),
+        _line("A LONG TWO-LINE CAPITALS PARAGRAPH", 2, 650, height=45),
+        _line(body, 2, 720),
+        _line("NOTHING BUT CAPITALS", 2, 770),
+        _line("UPPER CASE ALL THE WAY", 2, 820),
+    ]
+    blocks += [_line("LINK TO LEARNING", p, 200) for p in (3, 4, 5)]
+    blocks += [_line(body, p, 250) for p in (3, 4, 5)]
+    # A running head with a Roman folio carries a folio too.
+    blocks += [_line("TITLE PAGE | XI", 6, 40, height=15), _line(body, 6, 100)]
+    with pymupdf.open() as document:
+        for _ in range(7):
+            document.new_page()
+        result = promote_capitals(blocks, document)
+    promoted = {i: b["text_level"] for i, b in enumerate(result) if b != blocks[i]}
+    assert promoted == {6: 3, 8: 3}
+    assert all(result[i]["_source_role"] == "capitals-heading" for i in promoted)
+
+
+def test_chapter_titles_printed_only_in_running_heads_come_from_the_outline():
+    # College Research: the chapter title is in the outline and in running heads
+    # that ODL typed as paragraphs, which the banner rules discard.
+    with pymupdf.open() as document:
+        page = document.new_page()
+        blocks = [_printed_heading(page, "Algorithms", 120, 1, fontsize=18)]
+        for number in range(3):
+            page = document.new_page()
+            folio = number + 11
+            head = _printed_heading(
+                page,
+                f"WHAT ARE ALGORITHMS? | {folio}"
+                if number % 2 == 0
+                else f"{folio} | WHAT ARE ALGORITHMS?",
+                35,
+                2,
+                fontsize=9,
+                x=380 if number % 2 == 0 else 60,
+            )
+            head.pop("text_level")
+            blocks.append(head)
+            if number == 0:
+                blocks.append(_printed_heading(page, "Why It Matters", 200, 4))
+            body = _printed_heading(page, f"Prose on page {folio}.", 300, 4)
+            body.pop("text_level")
+            blocks.append(body)
+        document.set_toc([[1, "Algorithms", 1], [2, "What are Algorithms?", 2]])
+        result = correct_roles(blocks, document)
+        assert correct_roles(result, document) == result
+    inserted = result[1]
+    assert inserted == {
+        "type": "text",
+        "text": "What are Algorithms?",
+        "text_level": 2,
+        "page_idx": 1,
+        "bbox": blocks[1]["bbox"],
+        "_source_role": "outline-heading",
+    }
+    assert result[2]["type"] == "discarded"
+    chunk = next(c for c in pack_blocks(result, frozenset()) if "page 11" in c.text)
+    assert chunk.section_path == "Algorithms › What are Algorithms? › Why It Matters"
+
+
+@pytest.mark.parametrize(
+    ("toc", "level"),
+    [
+        # The level of matched siblings under the same parent wins.
+        ([[1, "Part", 1], [2, "Matched", 1], [2, "Missing", 2]], 5),
+        # Else one below the parent entry's heading.
+        ([[1, "Part", 1], [2, "Missing", 2]], 3),
+        # Else level 1.
+        ([[1, "Missing", 2]], 1),
+        # A heading on the page already carries the title.
+        ([[1, "Part", 1], [2, "Present", 2]], None),
+    ],
+)
+def test_outline_heading_levels_follow_siblings_then_parent(toc, level):
+    def block(text, page, **extra):
+        return {
+            "type": "text",
+            "text": text,
+            "page_idx": page,
+            "bbox": [100, 40, 900, 60],
+            **extra,
+        }
+
+    banner = {"type": "discarded", "_source_role": "running-banner"}
+    blocks = [
+        block("Part", 0, text_level=2),
+        block("Matched", 0, text_level=5),
+        block("MISSING | 7", 1, **banner),
+        block("PRESENT | 7", 1, **banner),
+        block("Present", 1, text_level=5),
+        block("Missing is repeated in the body.", 1),
+    ]
+    with pymupdf.open() as document:
+        for _ in range(2):
+            document.new_page()
+        document.set_toc(toc)
+        result = insert_outline_headings(blocks, document)
+    if level is None:
+        assert result == blocks
+    else:
+        assert result[:2] == blocks[:2] and result[3:] == blocks[2:]
+        assert result[2]["text"] == "Missing" and result[2]["text_level"] == level

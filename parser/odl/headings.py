@@ -1,11 +1,15 @@
 """Source-backed heading metadata: footers, chapter tabs, running headers and
-clipped inline labels lose or gain ``text_level`` only with source evidence."""
+clipped inline labels lose or gain ``text_level`` only with source evidence.
+Capitals headings (``promote_capitals``) are promoted from block geometry, and
+outline headings (``insert_outline_headings``) are added from the PDF outline
+where only a discarded running head prints the title."""
 
 from __future__ import annotations
 
 import copy
 import json
 import re
+import statistics
 import unicodedata
 from collections import Counter, defaultdict
 from itertools import pairwise
@@ -17,6 +21,15 @@ from .furniture import _folio
 from .order import normal, repair_page
 
 BULLET = re.compile(r"^\s*[•●▪◦‣⁃∙·■□☐➢✓✔]")
+SENTENCE_END = re.compile(r"[.!?][\"'”’)\]]*$")
+
+
+def _main_style(spans: list[dict]) -> tuple[str, int] | None:
+    """The font and rounded size carrying the most characters."""
+    weight: Counter = Counter()
+    for span in spans:
+        weight[span["font"], round(span["size"])] += len(span["text"])
+    return weight.most_common(1)[0][0] if weight else None
 
 
 def _literal(text: str) -> str:
@@ -45,17 +58,21 @@ def _thin(span: tuple[float, float, float, float], rect: pymupdf.Rect) -> bool:
 
 
 def _source_spans(
-    blocks: list[dict], document: pymupdf.Document
+    blocks: list[dict],
+    document: pymupdf.Document,
+    pages: dict[int, list[dict]] | None = None,
 ) -> dict[int, list[dict]]:
-    """Literal native spans for unrotated, source-matched heading boxes."""
-    pages: dict[int, list[dict]] = {}
+    """Literal native spans for unrotated, source-matched heading boxes and
+    margin-band paragraphs (running heads ODL typed as body text). ``pages``
+    collects each visited page's spans for the caller."""
+    pages = {} if pages is None else pages
     evidence: dict[int, list[dict]] = {}
     for index, block in enumerate(blocks):
         box, page_index = block.get("bbox", []), block.get("page_idx")
         if (
             block.get("type") != "text"
-            or not block.get("text_level")
             or len(box) != 4
+            or not (block.get("text_level") or _folio_band(box))
             or type(page_index) is not int
             or not 0 <= page_index < len(document)
         ):
@@ -287,9 +304,13 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         for _, text, page in document.get_toc()
         if page > 0
     }
-    evidence = _source_spans(blocks, document)
+    page_spans: dict[int, list[dict]] = {}
+    # Margin-band paragraphs join the banner rules only; every other rule and
+    # the outline roots see headings alone.
+    evidence = _source_spans(blocks, document, page_spans)
     families: dict[tuple, list[tuple[int, int, str]]] = defaultdict(list)
     roles: dict[int, str] = {}
+    body_styles: dict[int, tuple] = {}
     for index, spans in evidence.items():
         block = blocks[index]
         text, box, page_index = block["text"], block["bbox"], block["page_idx"]
@@ -308,6 +329,8 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
                 round(style["size"]),
             )
             families[key].append((index, page_index, title))
+        if not block.get("text_level"):
+            continue
         if 0 <= box[1] < box[3] <= 65 or 935 <= box[1] < box[3] <= 1000:
             continue
         if BULLET.match(text):
@@ -318,6 +341,14 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         ):
             roles[index] = "numbered-caption"
             continue
+        # A sentence set in the page's body font and size is a paragraph ODL
+        # ranked as a heading (College Research's carried-over lines).
+        if SENTENCE_END.search(text.strip()):
+            if page_index not in body_styles:
+                body_styles[page_index] = _main_style(page_spans[page_index])
+            if _main_style(spans) == body_styles[page_index]:
+                roles[index] = "body-style-heading"
+                continue
         if (
             len(spans) < 2
             or re.match(
@@ -347,7 +378,8 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             if found:
                 (kind, folio), title = found
                 shown[kind, folio - page_index].append((index, title))
-    for (kind, offset, top, *_), group in families.items():
+
+    def running(group: list[tuple[int, int, str]], kind, offset, top) -> bool:
         # A folio that tracks the page proves the band whatever the title,
         # but only a repeated title separates it from numbered slide titles.
         titles: dict[str, set[int]] = defaultdict(set)
@@ -373,12 +405,22 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
                 and any(box[0] > 500 for box in boxes)
             )
         )
-        if (
+        return (
             proven
             and len({page for _, page, _ in group}) >= 3
             and any(len(pages) >= 2 for pages in titles.values())
+        )
+
+    for (kind, offset, top, *_), group in families.items():
+        # Headings are judged as before, where a margin paragraph outside
+        # their group can show the offset (the facing pages' running heads);
+        # paragraphs then join an accepted family. Judged together, no member
+        # proves its own family.
+        headed = [member for member in group if blocks[member[0]].get("text_level")]
+        if (headed and running(headed, kind, offset, top)) or running(
+            group, kind, offset, top
         ):
-            roles.update((index, "running-banner") for index in members)
+            roles.update((index, "running-banner") for index, _, _ in group)
     additional = _additional_banners(blocks, evidence, outline) - roles.keys()
     roles.update((index, "running-banner") for index in additional)
     result = list(blocks)
@@ -387,9 +429,225 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         result[index].pop("text_level", None)
         if role == "running-banner":
             result[index]["type"] = "discarded"
-            # Keep its former scope reset without making its text an ancestor.
-            result[index]["_heading_boundary_level"] = blocks[index]["text_level"]
-    return correct_outline_roots(result, document, evidence)
+            # Keep a former heading's scope reset without making its text an
+            # ancestor; a paragraph banner never opened a scope.
+            if blocks[index].get("text_level"):
+                result[index]["_heading_boundary_level"] = blocks[index]["text_level"]
+    headed = {i: s for i, s in evidence.items() if blocks[i].get("text_level")}
+    result = correct_outline_roots(result, document, headed)
+    return promote_capitals(insert_outline_headings(result, document), document)
+
+
+def _is_heading(block: dict) -> bool:
+    level = block.get("text_level")
+    return block.get("type") == "text" and type(level) is int and level > 0
+
+
+def _running_title(text: str) -> str:
+    """A running head's title key without its leading or trailing folio."""
+    words = " ".join(text.split()).strip(" |•·–—-").split()
+    if words and _folio(words[0]):
+        words = words[1:]
+    if words and _folio(words[-1]):
+        words = words[:-1]
+    return _outline_title(" ".join(words).strip(" |•·–—-"))
+
+
+def insert_outline_headings(
+    blocks: list[dict], document: pymupdf.Document
+) -> list[dict]:
+    """Insert a heading for an outline entry that no heading on its page
+    matches when the page's running head, discarded as a banner, carries the
+    same title (College Research prints its chapter titles only there).
+
+    The heading takes the level of the entry's matched sibling headings
+    (their most common), else one below its parent entry's heading, else 1.
+    It goes before the page's first block with the running head's box.
+    """
+    toc = document.get_toc()
+    pages: dict[int, list[int]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        if type(block.get("page_idx")) is int:
+            pages[block["page_idx"]].append(index)
+
+    def matched(position: int) -> int | None:
+        _, title, page = toc[position]
+        headings = [i for i in pages.get(page - 1, []) if _is_heading(blocks[i])]
+        for i in headings:
+            texts = [blocks[i]["text"]]
+            if i + 1 in headings:  # a title split over two heading blocks
+                texts.append(blocks[i]["text"] + " " + blocks[i + 1]["text"])
+            if any(_outline_title(t) == _outline_title(title) for t in texts):
+                return blocks[i]["text_level"]
+        return None
+
+    parents = [
+        next((p for p in range(position - 1, -1, -1) if toc[p][0] < depth), None)
+        for position, (depth, _, _) in enumerate(toc)
+    ]
+    levels = {p: level for p in range(len(toc)) if (level := matched(p)) is not None}
+    inserted: dict[int, int] = {}  # outline position -> level given here
+    before: dict[int, list[dict]] = defaultdict(list)
+    for position, (depth, title, page) in enumerate(toc):
+        slots = pages.get(page - 1, [])
+        key = _outline_title(title)
+        if position in levels or not key or not slots:
+            continue
+        heads = [
+            i
+            for i in slots
+            if blocks[i].get("_source_role") == "running-banner"
+            and _running_title(str(blocks[i].get("text") or "")) == key
+        ]
+        if not heads:
+            continue
+        up = parents[position]
+        siblings = Counter(
+            level
+            for p, level in levels.items()
+            if toc[p][0] == depth and parents[p] == up
+        )
+        up_level = levels.get(up, inserted.get(up)) if up is not None else None
+        level = (
+            siblings.most_common(1)[0][0]
+            if siblings
+            else (up_level + 1 if up_level is not None else 1)
+        )
+        inserted[position] = level
+        before[slots[0]].append(
+            {
+                "type": "text",
+                "text": " ".join(title.split()),
+                "text_level": level,
+                "page_idx": page - 1,
+                "bbox": blocks[heads[0]]["bbox"],
+                "_source_role": "outline-heading",
+            }
+        )
+    if not before:
+        return blocks
+    return [new for i, block in enumerate(blocks) for new in [*before[i], block]]
+
+
+def _capitals(text: str) -> bool:
+    letters = [c for c in text if c.isalpha()]
+    return (
+        len(text.split()) >= 2
+        and len(letters) >= 10
+        and all(c.isupper() for c in letters)
+        and not text.endswith(".")
+        and "=" not in text
+    )
+
+
+def promote_capitals(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+    """Promote one-line all-capitals paragraphs set off by blank space and
+    followed by body text (Conservation Techniques' body-font section titles).
+
+    Title pages (up to the first native heading and its leading repeats),
+    lines with a folio or '=', labels repeated on 3 or more pages and the
+    capitals form of a heading or outline title stay text. A promoted heading
+    sits one below the lowest heading in force; consecutive ones are siblings.
+    """
+
+    def letters(text: str) -> str:
+        return "".join(c for c in text.casefold() if c.isalpha())
+
+    def text_of(block: dict) -> str:
+        return " ".join(str(block.get("text") or "").split())
+
+    known = {letters(title) for _, title, _ in document.get_toc()}
+    known |= {letters(text_of(b)) for b in blocks if _is_heading(b)}
+    labels: dict[str, set] = defaultdict(set)
+    for block in blocks:
+        label = re.sub(r"\d+", "", text_of(block)).strip()
+        if label:
+            labels[label].add(block.get("page_idx"))
+    # Title pages run to the last of the leading headings that repeat the
+    # first heading's text (a half-title, then the title page with its author
+    # line, as in the Business Plan Development Guide).
+    title_page, title = 0, None
+    for block in blocks:
+        if _is_heading(block):
+            if title is None:
+                title = letters(text_of(block))
+            elif letters(text_of(block)) != title:
+                break
+            title_page = block["page_idx"]
+    pages: dict[int, list[int]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        if len(block.get("bbox") or []) == 4 and type(block.get("page_idx")) is int:
+            pages[block["page_idx"]].append(index)
+    promote: set[int] = set()
+    for page, slots in pages.items():
+        if page <= title_page:
+            continue
+        heights = [
+            blocks[i]["bbox"][3] - blocks[i]["bbox"][1]
+            for i in slots
+            if blocks[i].get("type") == "text" and len(text_of(blocks[i])) < 90
+        ]
+        if not heights:
+            continue
+        line = statistics.median(heights)
+        for position, index in enumerate(slots):
+            block, text = blocks[index], text_of(blocks[index])
+            if (
+                block.get("type") != "text"
+                or block.get("text_level")
+                or block.get("_source_role")
+                or not _capitals(text)
+                or letters(text) in known
+                or re.search(r"\d+$", text)
+                or re.match(r"\d+\s", text)
+                # A Roman folio only counts in the margins ("TITLE PAGE | XI").
+                or (_folio_band(block["bbox"]) and _folio_title(text))
+                or len(labels[re.sub(r"\d+", "", text).strip()]) >= 3
+                or position + 1 == len(slots)
+            ):
+                continue
+            height = block["bbox"][3] - block["bbox"][1]
+            below = blocks[slots[position + 1]]
+            # The page top counts as a blank line above.
+            above = (
+                block["bbox"][1] - blocks[slots[position - 1]]["bbox"][3]
+                if position
+                else height
+            )
+            following = " ".join(
+                [text_of(below)] + [str(item) for item in below.get("list_items") or []]
+            )
+            if (
+                height <= 1.6 * line
+                and above >= 0.8 * height
+                and below["bbox"][1] - block["bbox"][3] >= 0.8 * height
+                and re.search(r"[a-z]", following[:40])
+            ):
+                promote.add(index)
+    if not promote:
+        return blocks
+    result = list(blocks)
+    stack: list[tuple[int, bool]] = []  # (level, promoted here)
+    for index, block in enumerate(blocks):
+        boundary = block.get("_heading_boundary_level")
+        if block.get("_source_role") == "running-banner" and type(boundary) is int:
+            while stack and stack[-1][0] >= boundary:
+                stack.pop()
+        elif _is_heading(block):
+            while stack and stack[-1][0] >= block["text_level"]:
+                stack.pop()
+            stack.append((block["text_level"], False))
+        elif index in promote:
+            while stack and stack[-1][1]:
+                stack.pop()  # an earlier capitals heading is a sibling
+            level = (stack[-1][0] if stack else 0) + 1
+            result[index] = {
+                **block,
+                "text_level": level,
+                "_source_role": "capitals-heading",
+            }
+            stack.append((level, True))
+    return result
 
 
 def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:

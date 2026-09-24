@@ -8,16 +8,18 @@ header that sat inside one recovered region would fall below the threshold on
 the remaining pages (and vice versa); the frozen texts travel to the ingest
 worker in the bundle's ``refinement.json``.
 
-The rule and the text key are those of ``pipeline.retrieval.chunking``
-(``_repeated_across_pages``, ``clean_inline``, ``_normalized``). The parser
-cannot import the pipeline, so they are copied here and
-``pipeline/tests/test_packing.py`` pins the two copies equal.
+The recurrence rule and the text key are those of
+``pipeline.retrieval.chunking`` (``_repeated_across_pages``, ``clean_inline``,
+``_normalized``). The parser cannot import the pipeline, so they are copied
+here and ``pipeline/tests/test_packing.py`` pins the two copies equal. The
+parser alone also drops a key when more than half its occurrences sit in the
+page interior, where the chunker would keep them anyway.
 """
 
 from __future__ import annotations
 
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import pymupdf
 
@@ -54,10 +56,25 @@ def normalized(text: str) -> str:
     return " ".join(text.split())
 
 
+def _interior(box) -> bool:
+    """The chunker's page body (``chunking._is_furniture``)."""
+    return (
+        isinstance(box, (list, tuple))
+        and len(box) == 4
+        and all(type(n) in (int, float) for n in box)
+        and 50 <= box[0] < box[2] <= 950
+        and 100 <= box[1] < box[3] <= 900
+    )
+
+
 def repeated_across_pages(blocks: list[dict]) -> list[str]:
     """Sorted furniture keys: ``normalized(clean_inline(text))`` of the
-    non-heading prose blocks that recur on ``REPEATED_ON_PAGES`` pages."""
+    non-heading prose blocks that recur on ``REPEATED_ON_PAGES`` pages, with
+    at most half their occurrences in the page interior. A text repeated
+    mostly inside the page (a citation, a credit) keeps its edge copies."""
     pages: dict[str, set[int]] = {}
+    occurrences: Counter = Counter()
+    inside: Counter = Counter()
     for block in blocks:
         if block.get("type") not in REPEATABLE_TYPES:
             continue
@@ -68,8 +85,12 @@ def repeated_across_pages(blocks: list[dict]) -> list[str]:
         text = normalized(clean_inline(str(block.get("text") or "")))
         if text and isinstance(page, int):
             pages.setdefault(text, set()).add(page)
+            occurrences[text] += 1
+            inside[text] += _interior(block.get("bbox"))
     return sorted(
-        text for text, seen in pages.items() if len(seen) >= REPEATED_ON_PAGES
+        text
+        for text, seen in pages.items()
+        if len(seen) >= REPEATED_ON_PAGES and 2 * inside[text] <= occurrences[text]
     )
 
 

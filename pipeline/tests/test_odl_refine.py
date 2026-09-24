@@ -547,6 +547,85 @@ def test_tex_negation_slash_maps_to_u0338_and_composes() -> None:
     ]
 
 
+def _builtin_type1_pdf(base_font: str) -> bytes:
+    """A Type1 font with no ToUnicode and no /Encoding, only its program's array."""
+    program = (
+        b"%!PS-AdobeFont-1.0: CMSY10\n/Encoding 256 array\n"
+        b"0 1 255 {1 index exch /.notdef put} for\n"
+        b"dup 0 /minus put\ndup 54 /negationslash put\ndup 96 /turnstileleft put\n"
+        b"dup 97 /a10 put\ndup 120 /x put\nreadonly def\ncurrentfile eexec\n"
+    )
+    with pymupdf.open() as document:
+        page = document.new_page()
+        page.insert_text((50, 50), "x", fontname="helv")
+        font = page.get_fonts()[0][0]
+        file = document.get_new_xref()
+        document.update_object(file, f"<</Length1 {len(program)}/Length2 0/Length3 0>>")
+        document.update_stream(file, program)
+        descriptor = document.get_new_xref()
+        document.update_object(
+            descriptor,
+            f"<</Type/FontDescriptor/FontName/{base_font}/FontFile {file} 0 R>>",
+        )
+        document.xref_set_key(font, "BaseFont", f"/{base_font}")
+        document.xref_set_key(font, "Encoding", "null")
+        document.xref_set_key(font, "FontDescriptor", f"{descriptor} 0 R")
+        return document.tobytes()
+
+
+def test_tex_fonts_without_to_unicode_map_their_builtin_encoding() -> None:
+    repaired, count = fonts.repair_fonts(_builtin_type1_pdf("ABCDEF+CMSY10"))
+    # The checked TeX list wins over pypdf's (⊣); a picture-font name stays out.
+    assert count == 1
+    assert _to_unicode(repaired) == {0: "−", 54: "̸", 96: "⊢", 120: "x"}
+    # Only TeX's own font families: a LaTeX picture font is left as written.
+    other = _builtin_type1_pdf("ABCDEF+LINE10")
+    assert fonts.repair_fonts(other) == (other, 0)
+
+
+def test_furniture_keys_skip_texts_repeated_mostly_inside_the_page() -> None:
+    def block(text: str, page: int, box: list[float]) -> dict:
+        return {"type": "text", "text": text, "page_idx": page, "bbox": box}
+
+    edge, inside = [100, 30, 900, 60], [100, 400, 900, 440]
+    blocks = [block("Running title", page, edge) for page in range(3)]
+    # A citation printed in four chapter source lists, once at a page top.
+    blocks += [block("Head, Fister and MacMillan", p, inside) for p in range(3)]
+    blocks.append(block("Head, Fister and MacMillan", 3, edge))
+    # Half inside is still furniture.
+    blocks += [block("Half", p, inside if p < 2 else edge) for p in range(4)]
+    assert furniture.repeated_across_pages(blocks) == ["Half", "Running title"]
+
+
+def test_split_ligature_spaces_drawn_inside_the_glyph_are_dropped(
+    tmp_path: Path,
+) -> None:
+    with pymupdf.open() as document:
+        page = document.new_page()
+        writer = pymupdf.TextWriter(page.rect)
+        font = pymupdf.Font("helv")
+        writer.append((100, 100), "beneﬁ", font=font, fontsize=12)
+        end = writer.last_point.x
+        writer.append((end - 4, 100), " ", font=font, fontsize=12)  # inside the ﬁ
+        writer.append((end, 100), "ts and staﬀ", font=font, fontsize=12)
+        writer.append((writer.last_point.x + 4, 100), "is", font=font, fontsize=12)
+        writer.write_text(page)
+        pdf = tmp_path / "source.pdf"
+        document.save(pdf)
+    box = [0, 0, 1000, 1000]
+    blocks = [
+        {"type": "text", "text": "beneﬁ ts and staﬀ is", "page_idx": 0, "bbox": box},
+        {"type": "list", "list_items": ["beneﬁ ts", "x"], "page_idx": 0, "bbox": box},
+        # More splits than the glyphs prove: left as ODL wrote it.
+        {"type": "text", "text": "beneﬁ ts, beneﬁ ts", "page_idx": 0, "bbox": box},
+    ]
+    revised, dropped = source_text.join_split_ligatures(blocks, pdf)
+    assert dropped == 2
+    assert revised[0]["text"] == "beneﬁts and staﬀ is"
+    assert revised[1]["list_items"] == ["beneﬁts", "x"]
+    assert revised[2] is blocks[2]
+
+
 def test_wide_to_unicode_ranges_split_at_byte_blocks() -> None:
     with pymupdf.open() as document:
         page = document.new_page()

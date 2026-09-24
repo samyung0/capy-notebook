@@ -1,4 +1,5 @@
-"""Source text beneath a block: overprint deletion and paragraph-role proof.
+"""Source text beneath a block: overprint deletion, paragraph-role proof and
+spaces drawn inside a ligature.
 
 Every repair here requires the page's own glyphs to prove it; nothing is
 inferred from the parser output alone.
@@ -227,3 +228,75 @@ def repair_text(
                     del block["text_level"]
                     repairs += 1
     return revised, repairs
+
+
+LIGATURES = "ﬀﬁﬂﬃﬄﬅﬆ"
+SPLIT_LIGATURE = re.compile(rf"[{LIGATURES}] \S")
+TEXT_KEYS = ("text", "table_body")
+
+
+def join_split_ligatures(blocks: list[dict], pdf: Path) -> tuple[list[dict], int]:
+    """Drop a space the PDF draws inside the ligature glyph before it (The
+    Science of Sleep puts one in every ligature: "beneﬁ ts").
+
+    Each ligature, space and next character must be proven by glyphs inside
+    the block's box, and a block is changed only where its text holds no more
+    such sequences than its glyphs prove. Returns rewritten copies and the
+    spaces dropped.
+    """
+    revised = list(blocks)
+    dropped = 0
+    cache: dict[int, list[dict]] = {}
+    with pymupdf.open(pdf) as document:
+        for index, block in enumerate(blocks):
+            items = block.get("list_items")
+            items = [str(i) for i in items] if isinstance(items, list) else []
+            fields = [str(block[k]) for k in TEXT_KEYS if block.get(k)] + items
+            found = Counter(m[0] for f in fields for m in SPLIT_LIGATURE.finditer(f))
+            page_index = block.get("page_idx")
+            if (
+                not found
+                or len(block.get("bbox") or []) != 4
+                or type(page_index) is not int
+            ):
+                continue
+            page = document[page_index]
+            if page.rotation:
+                continue
+            if page_index not in cache:
+                cache[page_index] = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
+            area = rect_for(block, page)
+            proven: Counter = Counter()
+            for group in cache[page_index]:
+                for line in group.get("lines", []):
+                    chars = [
+                        c
+                        for span in line["spans"]
+                        for c in span["chars"]
+                        if center_inside(c["bbox"], area)
+                    ]
+                    for glyph, space, following in zip(chars, chars[1:], chars[2:]):
+                        if (
+                            glyph["c"] in LIGATURES
+                            and space["c"] == " "
+                            and glyph["bbox"][0] <= space["bbox"][0]
+                            and space["bbox"][2] <= glyph["bbox"][2]
+                        ):
+                            proven[glyph["c"] + " " + following["c"]] += 1
+            joins = [key for key, count in found.items() if count <= proven[key]]
+            if not joins:
+                continue
+            revised[index] = {
+                **block,
+                **{k: _join(str(block[k]), joins) for k in TEXT_KEYS if block.get(k)},
+            }
+            if items:
+                revised[index]["list_items"] = [_join(i, joins) for i in items]
+            dropped += sum(found[key] for key in joins)
+    return revised, dropped
+
+
+def _join(text: str, splits: list[str]) -> str:
+    for split in splits:
+        text = text.replace(split, split[0] + split[2])
+    return text

@@ -7,7 +7,9 @@
   TeX's /negationslash maps to U+0338 and ``compose_negations`` later joins it
   with the relation it negates;
 - two-byte bfranges crossing a last-byte block (mPDF's <0000> <FFFF>) are split
-  into the per-block ranges the spec allows, since veraPDF reads them strictly.
+  into the per-block ranges the spec allows, since veraPDF reads them strictly;
+- TeX Type1 fonts with no ToUnicode (pdfTeX or dvips without glyphtounicode)
+  get one from their built-in encoding array and a checked TeX glyph list.
 
 The input PDF bytes are never changed in place."""
 
@@ -124,7 +126,12 @@ def repair_fonts(data: bytes) -> tuple[bytes, int]:
             doc.update_object(xref, "<<>>")
             doc.update_stream(xref, font["unicode_cmap"])
             doc.xref_set_key(font["xref"], "ToUnicode", f"{xref} 0 R")
-        repaired = len(selected) + repair_named_glyphs(doc) + split_wide_ranges(doc)
+        repaired = (
+            len(selected)
+            + repair_named_glyphs(doc)
+            + split_wide_ranges(doc)
+            + map_tex_fonts(doc)
+        )
         if not repaired:
             return data, 0
         return doc.tobytes(), repaired
@@ -272,6 +279,66 @@ def _glyph(name: str) -> str | None:
     return value
 
 
+# Computer Modern and AMS glyph names whose pypdf value is not the glyph TeX
+# draws, checked against renders of the embedded fonts (turnstileleft is ⊢,
+# circlecopyrt the big circle, CMMI's phi the stroked ϕ).
+_TEX_NAMES = {
+    "Delta": "Δ",
+    "Omega": "Ω",
+    "phi": "ϕ",
+    "phi1": "φ",
+    "lscript": "ℓ",
+    "dotlessj": "ȷ",
+    "triangle": "△",
+    "triangleright": "▷",
+    "turnstileleft": "⊢",
+    "turnstileright": "⊣",
+    "circlecopyrt": "◯",
+    "diamond": "♢",
+    "heart": "♡",
+    "anticlockwise": "↺",
+    "clockwise": "↻",
+    # CMMI's old-style figures; pypdf maps them to private use.
+    **{
+        f"{name}oldstyle": str(digit)
+        for digit, name in enumerate(
+            ["zero", "one", "two", "three", "four"]
+            + ["five", "six", "seven", "eight", "nine"]
+        )
+    },
+}
+# pdfTeX and dvips subset names: CMR10, CMMI10, CMSY10, CMEX10, MSAM10, ...
+_TEX_FONT = re.compile(r"(?:[A-Z]{6}\+)?(?:CM[A-Z]{1,5}|MSAM|MSBM)\d+")
+
+
+def map_tex_fonts(doc: pymupdf.Document) -> int:
+    """Give embedded TeX Type1 fonts that have no ToUnicode and no /Encoding a
+    map from their built-in encoding array (pdfTeX or dvips without
+    glyphtounicode), which veraPDF would otherwise blank for TeX glyph names.
+    Names without a checked Unicode value stay unmapped. Returns the fonts."""
+    mapped = 0
+    for xref in _font_xrefs(doc):
+        if (
+            doc.xref_get_key(xref, "Subtype")[1] != "/Type1"
+            or doc.xref_get_key(xref, "ToUnicode")[0] != "null"
+            or doc.xref_get_key(xref, "Encoding")[0] != "null"
+            or not _TEX_FONT.fullmatch(doc.xref_get_key(xref, "BaseFont")[1][1:])
+        ):
+            continue
+        _, extension, kind, program = doc.extract_font(xref)
+        if kind != "Type1" or extension != "pfa":
+            continue
+        mapping = {}
+        for code, glyph in explicit_encoding(program).items():
+            value = _TEX_NAMES.get(glyph) or _glyph(glyph)
+            if value and ord(value) >= 0x20:
+                mapping[code] = value
+        if mapping:
+            _set_to_unicode(doc, xref, mapping, "TeXBuiltin")
+            mapped += 1
+    return mapped
+
+
 def _contradicts(have: str, want: str) -> bool:
     if len(have) != 1 or unicodedata.normalize("NFKC", have) == (
         unicodedata.normalize("NFKC", want)
@@ -333,30 +400,41 @@ def repair_named_glyphs(doc: pymupdf.Document) -> int:
         if len(bad) < 2 and not control:
             continue
         mapping = {**cmap, **{code: want for code, (_, want) in bad.items()}}
-        pairs = [
-            f"<{code:02X}> <{value.encode('utf-16-be').hex().upper()}>"
-            for code, value in sorted(mapping.items())
-            if value and code <= 0xFF
-        ]
-        stream = (
-            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n"
-            "/CIDSystemInfo << /Registry (Capy) /Ordering (GlyphNames) /Supplement 0 >> def\n"
-            "/CMapName /CapyGlyphNames def /CMapType 2 def\n"
-            "1 begincodespacerange <00> <FF> endcodespacerange\n"
-            + "".join(
-                f"{len(pairs[i : i + 100])} beginbfchar\n"
-                + "\n".join(pairs[i : i + 100])
-                + "\nendbfchar\n"
-                for i in range(0, len(pairs), 100)
-            )
-            + "endcmap CMapName currentdict /CMap defineresource pop end end\n"
-        ).encode()
-        new = doc.get_new_xref()
-        doc.update_object(new, "<<>>")
-        doc.update_stream(new, stream)
-        doc.xref_set_key(xref, "ToUnicode", f"{new} 0 R")
+        _set_to_unicode(
+            doc,
+            xref,
+            {code: value for code, value in mapping.items() if value and code <= 0xFF},
+            "GlyphNames",
+        )
         repaired += 1
     return repaired
+
+
+def _set_to_unicode(
+    doc: pymupdf.Document, font: int, mapping: dict[int, str], name: str
+) -> None:
+    """Point a simple font at a new one-byte ToUnicode CMap."""
+    pairs = [
+        f"<{code:02X}> <{value.encode('utf-16-be').hex().upper()}>"
+        for code, value in sorted(mapping.items())
+    ]
+    stream = (
+        "/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n"
+        f"/CIDSystemInfo << /Registry (Capy) /Ordering ({name}) /Supplement 0 >> def\n"
+        f"/CMapName /Capy{name} def /CMapType 2 def\n"
+        "1 begincodespacerange <00> <FF> endcodespacerange\n"
+        + "".join(
+            f"{len(pairs[i : i + 100])} beginbfchar\n"
+            + "\n".join(pairs[i : i + 100])
+            + "\nendbfchar\n"
+            for i in range(0, len(pairs), 100)
+        )
+        + "endcmap CMapName currentdict /CMap defineresource pop end end\n"
+    ).encode()
+    new = doc.get_new_xref()
+    doc.update_object(new, "<<>>")
+    doc.update_stream(new, stream)
+    doc.xref_set_key(font, "ToUnicode", f"{new} 0 R")
 
 
 # TeX sets the \not slash before the relation it negates.

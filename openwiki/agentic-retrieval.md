@@ -308,7 +308,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v7` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v8` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -337,8 +337,53 @@ Parser v7 (decision 2026-09-24; evidence in
   on 5 or more pages becomes `discarded` furniture, and its image file stays in
   the bundle. Other pictures, formula pictures included, stay images.
 
+Parser v8 (decision 2026-09-24; gate in
+`bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
+
+- **TeX maps** (`fonts.map_tex_fonts`, before Java). An embedded Type1 font
+  named after a Computer Modern or AMS family (`CM*`, `MSAM`, `MSBM`) with no
+  `ToUnicode` and no `/Encoding` gets a map from the literal encoding array in
+  its program. Names come from a checked TeX list where pypdf's value is not
+  the glyph TeX draws (`turnstileleft` ⊢, `circlecopyrt` ◯, `triangleright` ▷,
+  CMMI `phi` ϕ, `lscript` ℓ, Greek Δ and Ω), else from pypdf's list; unknown
+  names stay unmapped, and picture or Cyrillic fonts are left alone.
+- **Margin-paragraph banners.** The banner rules in `headings.correct_roles`
+  also see text blocks ODL typed as paragraphs in the margin band (top
+  `y1 < 100`, bottom `y0 > 900`), so a running head is removed however ODL
+  typed it. A paragraph banner gets no scope boundary, since it never opened a
+  scope; the other role rules and the outline roots still see headings only.
+- **Body-style demotion.** A native heading that ends with sentence
+  punctuation and whose main font and rounded size equal the page's (weighted
+  by characters) becomes body text (`body-style-heading`), outline titles
+  excepted.
+- **Capitals headings** (`headings.promote_capitals`, at the end of
+  `correct_roles`). A one-line text block in capitals (2 words and 10 letters,
+  no final full stop), with a gap of 0.8 of its height above and below and a
+  lower-case letter in the next block's first 40 characters, becomes a
+  heading one level below the heading in force; consecutive ones are
+  siblings. Title pages (up to the first native heading's page), lines with
+  '=', a folio (a Roman one only in the margins), a label repeated on 3 or
+  more pages, and the capitals form of a heading or outline title stay text.
+- **Outline headings** (`headings.insert_outline_headings`, after the outline
+  roots and before capitals headings). A PDF outline entry that no heading on
+  its destination page matches becomes a heading when a running head on that
+  page, discarded as a banner, carries the same title with its folio removed
+  (College Research prints its chapter titles only there). The heading takes
+  the most common level of the entry's matched sibling headings (same parent
+  entry), else one below the parent entry's heading, else level 1. It is
+  inserted before the page's first block with the running head's box and
+  `_source_role: outline-heading`; a body paragraph repeating the title stays.
+- **Split ligatures** (`source_text.join_split_ligatures`, before furniture is
+  frozen). A space the PDF draws inside the ligature glyph before it (The
+  Science of Sleep's "beneﬁ ts") is dropped when the block's glyphs prove it,
+  and only where the text holds no more such sequences than the glyphs prove.
+- **Furniture.** A repeated text is furniture only when at most half its
+  occurrences sit in the page interior (`furniture.repeated_across_pages`), so
+  a citation or credit repeated mostly inside pages keeps its edge copies.
+
 The formula-picture rule, formula placeholders, stencil-mask rewriting and
-ODL's `--content-safety-off tiny` are not in v7; the tiny-text filter stays on.
+ODL's `--content-safety-off tiny` are not in v7 or v8; the tiny-text filter
+stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
@@ -854,7 +899,9 @@ is retained separately as historical evidence):
   guard to those candidates and never infers recurrence again on the replaced list. Otherwise a header that sat
   inside one recovered region falls below the three-page threshold on the
   remaining pages and is indexed as body text. The parser's copy of the rule
-  (`parser/odl/furniture.py`) is pinned equal to the chunker's by test.
+  (`parser/odl/furniture.py`) is pinned equal to the chunker's by test; since
+  parser v8 it also leaves out a text with more than half its occurrences in
+  the page interior, so its edge copies stay in the chunks too.
 - **Native tables.** A table with explicit native column headers
   (`_native_table_supported`) becomes its own chunk(s): the title and header
   row repeat per row group under the token budget, merged source cells are
