@@ -8,6 +8,14 @@ import html
 def node_text(node: dict) -> str:
     content = node.get("content")
     parts = [content] if isinstance(content, str) else []
+    if node.get("type") == "table":
+        # A table nested in a list item or cell: one line per row, cells split by |.
+        parts.append(
+            "\n".join(
+                " | ".join(node_text(cell).strip() for cell in row.get("cells", []))
+                for row in node.get("rows", [])
+            )
+        )
     parts.extend(
         node_text(child)
         for child in node.get("kids", [])

@@ -1,10 +1,10 @@
 """One PDF through OpenDataLoader, the reviewed native repairs and selective OCR.
 
 The stage order is the lab's ``refined`` variant and must not be reshuffled:
-font repair, Java, cell styles, adaptation, column order, hidden-OCR order,
-heading context, then table context, footer ancestry, list geometry, glyph
-repairs, exponents, column continuations, source tables, and finally RapidOCR
-lines for pages without a text layer.
+font repair, Java, cell styles, adaptation, picture triage, column order,
+hidden-OCR order, heading context, then table context, footer ancestry, list
+geometry, glyph repairs, exponents, column continuations, source tables,
+negation composition, and finally RapidOCR lines for pages without a text layer.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from . import (
     lists,
     ocr,
     order,
+    pictures,
     source_text,
     styles,
     tables,
@@ -142,6 +143,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
             native,
             [{"width": p.rect.width, "height": p.rect.height} for p in document],
         )
+        blocks = pictures.classify(blocks, document, native_dir)
         images, image_paths = _check_images(blocks, native_dir)
         blocks, reordered = order.repair(blocks)
         blocks = order.move_rotated_labels(blocks, reordered, pdf)
@@ -165,6 +167,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         blocks = furniture.mark_page_numbers(blocks, document)
         furniture_texts = furniture.repeated_across_pages(blocks)
         blocks, _ = tables.recover_tables(blocks, document)
+        blocks = fonts.compose_negations(blocks)
         phases["repairs"] = time.perf_counter() - started
 
         started = time.perf_counter()

@@ -31,6 +31,7 @@ from odl import (
     lists,
     ocr,
     order,
+    pictures,
     refine,
     source_text,
     tables,
@@ -178,6 +179,28 @@ def test_adapter_maps_bottom_left_points_to_page_1000_top_left() -> None:
         "type": "list",
         "list_items": ["x", "y"],
     }
+
+
+def test_adapter_keeps_tables_nested_in_list_items_and_cells() -> None:
+    nested = {
+        "type": "table",
+        "rows": [
+            {"cells": [{"content": "(1,-1)"}, {"content": "(0,0)"}]},
+            {"cells": [{"content": "(2,-2)"}, {"kids": [{"content": "(3,-3)"}]}]},
+        ],
+    }
+    native = {
+        "kids": [
+            {"type": "list", "list items": [{"content": "Payoffs", "kids": [nested]}]},
+            {"type": "table", "rows": [{"cells": [{"kids": [nested]}]}]},
+        ]
+    }
+    rows = "(1,-1) | (0,0)\n(2,-2) | (3,-3)"
+    blocks = odl_content_list(native, [])
+    assert blocks[0]["list_items"] == [f"Payoffs {rows}"]
+    assert blocks[1]["table_body"] == (
+        f'<table><tr><td rowspan="1" colspan="1">{rows}</td></tr></table>'
+    )
 
 
 def test_table_html_round_trips_explicit_spans() -> None:
@@ -460,6 +483,122 @@ def test_font_repair_only_rebuilds_a_contradictory_type1_map() -> None:
         document.new_page().insert_text((50, 50), "plain")
         data = document.tobytes()
     assert fonts.repair_fonts(data) == (data, 0)
+
+
+def _simple_font_pdf(text: str, differences: str, bfchar: str) -> bytes:
+    """Helvetica with a /Differences encoding and the given ToUnicode entries."""
+    with pymupdf.open() as document:
+        page = document.new_page()
+        page.insert_text((50, 50), text, fontname="helv")
+        font = page.get_fonts()[0][0]
+        document.xref_set_key(font, "Encoding", f"<</Differences[{differences}]>>")
+        cmap = document.get_new_xref()
+        document.update_object(cmap, "<<>>")
+        document.update_stream(
+            cmap,
+            b"1 begincodespacerange <00> <FF> endcodespacerange\n"
+            + f"{bfchar.count('<') // 2} beginbfchar {bfchar} endbfchar".encode(),
+        )
+        document.xref_set_key(font, "ToUnicode", f"{cmap} 0 R")
+        return document.tobytes()
+
+
+def _to_unicode(data: bytes) -> dict[int, str]:
+    with pymupdf.open(stream=data, filetype="pdf") as document:
+        font = document[0].get_fonts()[0][0]
+        cmap = int(document.xref_get_key(font, "ToUnicode")[1].split()[0])
+        return fonts._read_cmap(document.xref_stream(cmap).decode("latin-1"))
+
+
+def test_font_repair_follows_glyph_names_over_a_contradicting_map() -> None:
+    # A Quartz re-save of TeX output: /minus to NUL, Greek to ASCII letters.
+    data = _simple_font_pdf(
+        "d-a'",
+        "39/quoteright 45/minus 97/alpha 100/delta",
+        "<27> <0027> <2D> <0000> <61> <0061> <64> <0064>",
+    )
+    repaired, count = fonts.repair_fonts(data)
+    assert count == 1
+    # The quote mapped to ASCII stays; the maths follows its glyph names.
+    assert _to_unicode(repaired) == {0x27: "'", 0x2D: "\u2212", 0x61: "α", 0x64: "δ"}
+    with pymupdf.open(stream=repaired, filetype="pdf") as document:
+        assert document[0].get_text().strip() == "δ\u2212α'"
+    # One contradicted letter alone is not evidence enough.
+    lone = _simple_font_pdf("d", "100/delta", "<64> <0064>")
+    assert fonts.repair_fonts(lone) == (lone, 0)
+
+
+def test_tex_negation_slash_maps_to_u0338_and_composes() -> None:
+    # Ghostscript leaves /negationslash out of the map; veraPDF would blank it.
+    data = _simple_font_pdf(
+        "x6=y", "54/negationslash", "<78> <0078> <3D> <003D> <79> <0079>"
+    )
+    repaired, count = fonts.repair_fonts(data)
+    assert count == 1 and _to_unicode(repaired)[0x36] == "\u0338"
+    blocks = [
+        {"type": "text", "text": "x\u0338 =y and z\u0338~"},
+        {"type": "list", "list_items": ["a \u0338∈ B", "plain"]},
+        {"type": "table", "table_body": "<td>\u0338≡</td>"},
+    ]
+    assert fonts.compose_negations(blocks) == [
+        {"type": "text", "text": "x≠y and z\u0338~"},
+        {"type": "list", "list_items": ["a ∉ B", "plain"]},
+        {"type": "table", "table_body": "<td>≢</td>"},
+    ]
+
+
+def test_wide_to_unicode_ranges_split_at_byte_blocks() -> None:
+    with pymupdf.open() as document:
+        page = document.new_page()
+        page.insert_text((50, 50), "x", fontname="helv")
+        cmap = document.get_new_xref()
+        document.update_object(cmap, "<<>>")
+        document.update_stream(
+            cmap,
+            b"2 beginbfrange\n<0000> <FFFF> <0000>\n"
+            b"<0100> <0101> [<65E5> <5927>]\nendbfrange\n",
+        )
+        document.xref_set_key(page.get_fonts()[0][0], "ToUnicode", f"{cmap} 0 R")
+        assert fonts.split_wide_ranges(document) == 1
+        text = document.xref_stream(cmap).decode("latin-1")
+        assert fonts.split_wide_ranges(document) == 0
+    ranges = re.findall(r"<([0-9A-F]{4})> <([0-9A-F]{4})> <([0-9A-F]{4})>", text)
+    assert len(ranges) == 256 and ranges[0] == ("0000", "00FF", "0000")
+    assert ranges[-1] == ("FF00", "FFFF", "FF00")
+    # An array entry is kept whole, never read as ranges of its elements.
+    assert "<0100> <0101> [<65E5> <5927>]" in text
+    assert text.count("beginbfrange") == 3
+
+
+def test_picture_triage_drops_slivers_and_discards_repeats(tmp_path: Path) -> None:
+    document = pymupdf.open()
+    for _ in range(6):
+        document.new_page(width=600, height=800)
+
+    def image(name: str, data: bytes, page: int, bbox: list[float]) -> dict:
+        (tmp_path / name).write_bytes(data)
+        return {"type": "image", "img_path": name, "page_idx": page, "bbox": bbox}
+
+    box = [100.0, 100.0, 300.0, 200.0]
+    badges = [image(f"badge{p}.png", b"badge", p, box) for p in range(5)]
+    icons = [image(f"icon{p}.png", b"icon", p, box) for p in range(4)]
+    figure = image("figure.png", b"figure", 5, box)
+    text = {"type": "text", "text": "prose", "page_idx": 0, "bbox": box}
+    blocks = [
+        text,
+        image("rule.png", b"rule", 0, [100.0, 300.0, 500.0, 301.0]),  # 0.8 pt tall
+        image("bar.png", b"bar", 0, [0.0, 400.0, 1000.0, 405.0]),  # 4 x 600 pt
+        *badges,
+        *icons,
+        figure,
+    ]
+    result = pictures.classify(blocks, document, tmp_path)
+    assert result == [
+        text,
+        *({**badge, "type": "discarded"} for badge in badges),
+        *icons,
+        figure,
+    ]
 
 
 def test_ocr_lines_become_page_blocks_after_the_page(tmp_path: Path) -> None:

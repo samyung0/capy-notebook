@@ -287,9 +287,10 @@ format-specific text exception.
 The parser is OpenDataLoader 2.5.7 (a Java jar, `--table-method cluster
 --include-header-footer`, one thread) followed by the refined native repairs
 ported from the `bench/parsers` lab into `parser/odl/`: font `ToUnicode`
-repair, table-cell styles, column reading order, hidden-OCR-layer order, heading
+repairs, picture triage, table-cell styles, column reading order, hidden-OCR-layer order, heading
 and table context, footer ancestry, list geometry and text-overprint repair,
-exponents, column continuations and source-geometry table recovery. Pages whose
+exponents, column continuations, source-geometry table recovery and negation
+composition. Pages whose
 text layer has fewer than 40 characters are routed to RapidOCR (PP-OCRv6 small,
 2560 px long edge, score 0.5, models baked into the image). Fresh OCR uses
 PP-DocLayoutV3 through rapid-layout 1.2.1 to order regions only when every line
@@ -307,7 +308,37 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v6` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v7` plus the release SHA.
+Parser v7 (decision 2026-09-24; evidence in
+`bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
+`bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
+
+- **Glyph-name repair** (`fonts.repair_named_glyphs`, before Java). A simple
+  font's `ToUnicode` entries that contradict its own `/Differences` glyph names
+  are rebuilt from the names. An entry contradicts when it is a control
+  character, private use or U+FFFD, or when a maths or Greek glyph maps to
+  plain ASCII; quotes and dashes mapped to ASCII stay. A font needs two such
+  entries, or one mapped to a control character or left out. This fixes Quartz re-saves of
+  TeX output, whose NULs and ASCII letters stood for −, ≥ and Greek.
+- **TeX negation.** `negationslash` maps to U+0338, with the entry added where
+  the map leaves it out. After table recovery `fonts.compose_negations` joins
+  each slash with the relation after it into ≠, ∉, ∌, ≢ and the other
+  precomposed negations; without it the relation read un-negated.
+- **Wide ranges** (`fonts.split_wide_ranges`, before Java). Two-byte `bfrange`
+  entries that cross a last-byte block, such as mPDF's `<0000> <FFFF>`, are
+  split into per-block ranges, since veraPDF maps nothing past the first block.
+  A block with any entry the split cannot read stays as written.
+- **Nested tables.** `adapter.node_text` walks table rows, so a table that ODL
+  nests in a list item or a table cell keeps its cells: one line per row, cells
+  split by `|`.
+- **Picture triage** (`pictures.classify`, right after adaptation). An image
+  block with a side under 1 pt, or a short side under 1% of its long side, is
+  dropped: rules and spacer pixels drawn as images. The same rendered picture
+  on 5 or more pages becomes `discarded` furniture, and its image file stays in
+  the bundle. Other pictures, formula pictures included, stay images.
+
+The formula-picture rule, formula placeholders, stencil-mask rewriting and
+ODL's `--content-safety-off tiny` are not in v7; the tiny-text filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
@@ -689,7 +720,9 @@ figures stage) both run. There are three kinds:
 
 - `parser_image`: the parser's image and chart blocks. Blocks 2 units or
   thinner on the 0-1000 grid are left out; they are formula bars and rules
-  drawn as images (decision 2026-09-23).
+  drawn as images (decision 2026-09-23). Parser v7 already drops images under
+  1 pt and types pictures repeated on 5 or more pages `discarded`, which this
+  stage does not read; the 2-unit rule stays for older parses.
 - `caption_page_reference`: `Figure N:` caption lines with no image block and
   no vector drawing they label, boxed as the whole page.
 - `vector_drawing`: drawings in the source PDF that the parser does not report
@@ -1106,7 +1139,7 @@ The library-owned tables carry books, subjects, topics, excerpts with tag
 outcomes, figures and model-run receipts.
 
 The taxonomy has three levels (decision 2026-09-19). Areas and subjects are
-one committed fixture, `lab/knowledge/subjects.json` (12 areas, 116 subjects
+one committed fixture, `lab/knowledge/subjects.json` (12 areas, 121 subjects
 with learner aliases, assembled from the Open Textbook Library, OpenStax and
 LibreTexts subject menus); areas only group subjects on the builder dashboard
 and are a column on `library_subjects`, never a filter. Topics are derived per
