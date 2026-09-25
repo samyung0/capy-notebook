@@ -63,6 +63,7 @@ function setup() {
     onClose: vi.fn(),
     readOnly: false,
     socketId: 'socket',
+    webSocket: { close: vi.fn() },
   };
   const document = {
     broadcastStateless: vi.fn(),
@@ -144,6 +145,76 @@ test('handoff requires a clean receipt for the matching epoch, checkpoint and so
     'ready'
   );
   await f.handoff.handle(JSON.stringify({ ...f.event, type: 'cancel' }));
+});
+
+// One mocked Redis serves the coordinator and this instance, so a
+// publication runs from prepare to the completed epoch.
+function publishThroughRoom(f: ReturnType<typeof setup>) {
+  const acknowledgments: Record<string, string> = {};
+  let lockId = '';
+  Object.assign(f.redis, {
+    del: vi.fn(),
+    eval: vi.fn(),
+    get: vi.fn(async () => lockId),
+    hgetall: vi.fn(async () => acknowledgments),
+    hset: vi.fn(async (_key: string, instance: string, value: string) => {
+      acknowledgments[instance] = value;
+      return 1;
+    }),
+    publish: vi.fn(async (_channel: string, raw: string) => {
+      void f.handoff.handle(raw);
+      return 1;
+    }),
+    set: vi.fn(async (_key: string, id: string) => {
+      lockId = id;
+      return 'OK';
+    }),
+  });
+  vi.spyOn(f.sources, 'rebasePublication').mockResolvedValue({
+    indexedBaseline: 'baseline',
+    netTokens: 0,
+    pendingEffects: [],
+    rebasedState: 'state',
+  });
+  vi.spyOn(f.sources, 'request').mockResolvedValue({ epoch: 2 });
+  return f.handoff.publish({
+    attemptId: 1,
+    checkpoint: 7,
+    epoch: 1,
+    fileId: 'f',
+    jobId: 'job',
+    leaseToken: 'lease',
+  });
+}
+
+test('a silent editor is disconnected after the window and the publication completes', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  const published = publishThroughRoom(f);
+  await vi.advanceTimersByTimeAsync(10_100);
+  await expect(published).resolves.toEqual({ epoch: 2 });
+  // Like a disconnect: the client reconnects into the new epoch, and unsaved
+  // changes land in recovery.
+  expect(f.connection.webSocket.close).toHaveBeenCalledWith(
+    4408,
+    'Source handoff timed out'
+  );
+  expect(f.persist).toHaveBeenCalledOnce();
+  expect(f.document.broadcastStateless).toHaveBeenLastCalledWith(
+    expect.stringContaining('"type":"source-epoch-changed"')
+  );
+});
+
+test('an editor that disconnects during the handoff no longer fails the publication', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  const published = publishThroughRoom(f);
+  await vi.waitFor(() => expect(f.connection.onClose).toHaveBeenCalled());
+  for (const [closed] of f.connection.onClose.mock.calls) closed();
+  await vi.advanceTimersByTimeAsync(100);
+  await expect(published).resolves.toEqual({ epoch: 2 });
+  expect(f.connection.webSocket.close).not.toHaveBeenCalled();
+  expect(f.persist).toHaveBeenCalledOnce();
 });
 
 test('a lost coordinator completes an already-published epoch through the watchdog', async () => {

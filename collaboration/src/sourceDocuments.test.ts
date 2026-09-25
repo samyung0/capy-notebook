@@ -303,9 +303,6 @@ test('a source edit retries from freshly loaded state after a checkpoint CAS con
 
 test('inspecting a never-opened source keeps the bootstrap access after seeding', async () => {
   const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
-  const seeded = new Y.Doc();
-  seeded.getText('source').insert(0, 'seed');
-  const state = Buffer.from(Y.encodeStateAsUpdate(seeded)).toString('base64');
   vi.spyOn(store, 'session').mockResolvedValue({
     access: 'write',
     baseSourceSHA256: '',
@@ -319,14 +316,8 @@ test('inspecting a never-opened source keeps the bootstrap access after seeding'
     store as unknown as { base: () => Promise<Buffer> },
     'base'
   ).mockResolvedValue(Buffer.from('seed'));
-  vi.spyOn(store, 'request').mockResolvedValue({
-    access: 'read',
-    checkpoint: 0,
-    epoch: 1,
-    fileId: 'f_1',
-    format: 'text',
-    state,
-  } as unknown as SourceSession);
+  // The checkpoint answers with its receipt only; the seeded state is local.
+  vi.spyOn(store, 'request').mockResolvedValue({ checkpoint: 0 });
   const inspection = await store.inspect('f_1', 'u1');
   expect(inspection.access).toBe('write');
   expect(inspection.text).toBe('seed');

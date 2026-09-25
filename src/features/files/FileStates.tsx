@@ -1,5 +1,6 @@
 import type { SourceFile } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
+import { WarningBanner } from '@/components/banners/WarningBanner';
 import { ErrorAction } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
@@ -63,6 +64,28 @@ export function FileEmpty({
       icon="fileError"
       title={title}
       variant="panel"
+    />
+  );
+}
+
+/**
+ * A newer version was published while this saved editor stayed open. The view
+ * stays as it is, read-only; reloading the page opens the new version.
+ */
+export function SourceReplacedBanner() {
+  return (
+    <WarningBanner
+      action={
+        <ErrorAction
+          iconLeftClassName="me-1"
+          onClick={() => window.location.reload()}
+          size="sm"
+        >
+          {m.error_action_reload()}
+        </ErrorAction>
+      }
+      icon="info"
+      message={m.source_edit_replaced()}
     />
   );
 }

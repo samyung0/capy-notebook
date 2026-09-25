@@ -5,7 +5,7 @@ import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileModeControl } from './FileModeControl';
-import { FileError } from './FileStates';
+import { FileError, SourceReplacedBanner } from './FileStates';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 
@@ -60,7 +60,10 @@ export default function DocxView({
           disabled={
             runtime.mode === 'view'
               ? !runtime.analysis
-              : !runtime.ready || runtime.saving || runtime.handoff
+              : !runtime.ready ||
+                runtime.saving ||
+                runtime.handoff ||
+                runtime.replaced
           }
           mode={runtime.mode}
           onChange={(mode) => {
@@ -69,7 +72,7 @@ export default function DocxView({
           onSave={() => {
             void runtime.save().catch(() => {});
           }}
-          saveDisabled={!runtime.ready || runtime.handoff}
+          saveDisabled={!runtime.ready || runtime.handoff || runtime.replaced}
           status={
             runtime.saving
               ? m.files_office_saving()
@@ -129,6 +132,7 @@ export default function DocxView({
           message={runtime.error}
         />
       )}
+      {runtime.replaced && <SourceReplacedBanner />}
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />

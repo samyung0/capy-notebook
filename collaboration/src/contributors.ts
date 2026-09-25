@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import * as Y from 'yjs';
 import type { CollaborationAccess, CollaborationContext } from './auth.js';
 
@@ -86,44 +86,90 @@ export function documentContributors(document: Y.Doc): DocumentContributor[] {
 /**
  * Contributor markers are server-owned authorization metadata. A client may
  * observe them through Yjs sync, but its update must not add, replace, or
- * remove them.
+ * remove them. The check reads the decoded update against the room instead of
+ * applying it to a copy: structs the room already holds are skipped, a new
+ * struct may not sit in the marker map (named root, or an origin in it), and
+ * the delete set may not cover a live marker.
  */
 export function assertUpdatePreservesContributors(
   document: Y.Doc,
   update: Uint8Array
 ) {
-  const before = JSON.stringify(markerSnapshot(document));
-  const candidate = new Y.Doc({ gc: true });
-  try {
-    Y.applyUpdate(candidate, Y.encodeStateAsUpdate(document));
-    Y.applyUpdate(candidate, update);
-    if (JSON.stringify(markerSnapshot(candidate)) !== before) {
+  const markers = document.getMap<unknown>(CONTRIBUTORS_ROOT);
+  const held = (client: number) => Y.getState(document.store, client);
+  const inMarkers = (id: Y.ID | null) =>
+    !!id &&
+    id.clock < held(id.client) &&
+    (Y.getItem(document.store, id) as Y.Item).parent === markers;
+  const { structs, ds } = Y.decodeUpdate(update);
+  for (const struct of structs) {
+    if (
+      !(struct instanceof Y.Item) ||
+      struct.id.clock + struct.length <= held(struct.id.client)
+    )
+      continue;
+    // Decoded items name a root parent by string; others resolve via origins.
+    if (
+      (struct.parent as unknown) === CONTRIBUTORS_ROOT ||
+      inMarkers(struct.origin) ||
+      inMarkers(struct.rightOrigin)
+    )
       throw new Error('client update changed collaboration metadata');
-    }
-  } finally {
-    candidate.destroy();
   }
+  for (const item of markers._map.values()) {
+    if (!item.deleted && Y.isDeleted(ds, item.id))
+      throw new Error('client update changed collaboration metadata');
+  }
+}
+
+function freshClientId(document: Y.Doc) {
+  let id: number;
+  do id = randomInt(2 ** 32);
+  while (id === document.clientID || document.store.clients.has(id));
+  return id;
 }
 
 /**
  * Yjs invokes this listener inside the same transaction that applies the
  * editor update. The marker therefore travels with that update across Redis;
  * a peer can never receive the content without its actor provenance.
+ *
+ * Markers are written under a dedicated client id and the room's own id is
+ * restored at once, so a remote transaction never advances the room's id
+ * (which makes Yjs pick a new one and leave a fresh client per update). An
+ * update that writes under the marker id moves the markers to a new one.
  */
 export function attachDocumentContributorTracker(
   document: Y.Doc,
   instanceId: string,
   nonce: () => string = randomUUID
 ) {
+  let markerClient = freshClientId(document);
+  const written = new WeakMap<Y.Transaction, number>();
   document.on('beforeTransaction', (transaction: Y.Transaction) => {
     const context = writableContext(transaction.origin);
     if (!context) return;
     const key = `${instanceId}:${context.access}:${Buffer.from(context.userId).toString('base64url')}`;
-    document.getMap<unknown>(CONTRIBUTORS_ROOT).set(key, {
-      access: context.access,
-      nonce: nonce(),
-      userId: context.userId,
-    });
+    const roomClient = document.clientID;
+    document.clientID = markerClient;
+    try {
+      document.getMap<unknown>(CONTRIBUTORS_ROOT).set(key, {
+        access: context.access,
+        nonce: nonce(),
+        userId: context.userId,
+      });
+    } finally {
+      document.clientID = roomClient;
+    }
+    written.set(transaction, Y.getState(document.store, markerClient));
+  });
+  document.on('afterTransactionCleanup', (transaction: Y.Transaction) => {
+    const clock = written.get(transaction);
+    if (
+      clock !== undefined &&
+      transaction.afterState.get(markerClient) !== clock
+    )
+      markerClient = freshClientId(document);
   });
 }
 

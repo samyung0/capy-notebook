@@ -57,6 +57,11 @@ export interface SourceSession {
   state: string;
   workspaceId: string;
 }
+/** The checkpoint endpoint's answer: the new checkpoint and an edit's receipt. */
+export interface SourceCheckpointReceipt {
+  checkpoint: number;
+  operation?: Receipt;
+}
 export type SourceBaseline =
   | { version: 1; format: 'text'; text: string }
   | {
@@ -347,25 +352,28 @@ export class SourceDocumentStore {
         state = (await runOffice('seedOffice', session.format, bytes)).state;
       }
       try {
-        // The checkpoint receipt carries no actor access; keep the bootstrap's.
-        const seeded = await this.request<SourceSession>(
+        const seeded = {
+          baseSourceSHA256: sha,
+          indexedBaseline: encodeBaseline(
+            await this.baseline(session, state, bytes)
+          ),
+          netTokens: 0,
+          pendingEffects: [],
+          state: Buffer.from(state).toString('base64'),
+        };
+        // The receipt carries only the checkpoint; the rest is what was sent.
+        const saved = await this.request<SourceCheckpointReceipt>(
           session.fileId,
           'checkpoint',
           {
+            ...seeded,
             actorIds: [actorId],
-            baseSourceSHA256: sha,
             epoch: session.epoch,
             expectedCheckpoint: 0,
-            indexedBaseline: encodeBaseline(
-              await this.baseline(session, state, bytes)
-            ),
             initialize: true,
-            netTokens: 0,
-            pendingEffects: [],
-            state: Buffer.from(state).toString('base64'),
           }
         );
-        session = { ...seeded, access: session.access };
+        session = { ...session, ...seeded, checkpoint: saved.checkpoint };
       } catch (error) {
         if (!(error instanceof SourceRequestError) || error.status !== 409)
           throw error;
@@ -542,7 +550,7 @@ export class SourceDocumentStore {
           throw new Error('Source checkpoint exceeds byte limit');
         const effects = await this.effects(session, state);
         try {
-          const saved = await this.request<SourceSession>(
+          const saved = await this.request<SourceCheckpointReceipt>(
             fileId,
             'checkpoint',
             {
@@ -704,23 +712,25 @@ export class SourceDocumentStore {
           throw new Error('Source checkpoint exceeds byte limit');
         const effects = await this.effects(current, state);
         try {
-          const saved = await this.request<
-            SourceSession & { operation?: Receipt }
-          >(input.fileId, 'checkpoint', {
-            actorIds: [input.actorUserId],
-            epoch: current.epoch,
-            expectedCheckpoint: current.checkpoint,
-            netTokens: effectTokens(effects),
-            operation: input.undo
-              ? { receipt: receiptWire(input), undoOf: input.undo.undoOf }
-              : {
-                  guards,
-                  inverse: { commands: inverse },
-                  receipt: receiptWire(input),
-                },
-            pendingEffects: effects,
-            state: Buffer.from(state).toString('base64'),
-          });
+          const saved = await this.request<SourceCheckpointReceipt>(
+            input.fileId,
+            'checkpoint',
+            {
+              actorIds: [input.actorUserId],
+              epoch: current.epoch,
+              expectedCheckpoint: current.checkpoint,
+              netTokens: effectTokens(effects),
+              operation: input.undo
+                ? { receipt: receiptWire(input), undoOf: input.undo.undoOf }
+                : {
+                    guards,
+                    inverse: { commands: inverse },
+                    receipt: receiptWire(input),
+                  },
+              pendingEffects: effects,
+              state: Buffer.from(state).toString('base64'),
+            }
+          );
           if (!saved.operation)
             throw new Error('checkpoint did not return a receipt');
           return { receipt: saved.operation, room, state: update };

@@ -6,6 +6,7 @@ import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { m } from '@/i18n';
 import {
   clearSourceDrafts,
+  readSourceBase,
   readSourceDrafts,
   type SourceDraft,
   sourceRecoveryDrafts,
@@ -22,6 +23,8 @@ export type SourceSaveState =
   | 'recovery';
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
 const RESTORE_ORIGIN = Symbol('restore');
+// Drafts are encoded and written at most this often, latest state only.
+const DRAFT_WRITE_MS = 250;
 
 export function decodeSourceState(state: string): Uint8Array {
   return Uint8Array.from(atob(state), (character) => character.charCodeAt(0));
@@ -79,6 +82,8 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     setBufferDirty(pending);
   }, []);
   const [handoff, setHandoff] = useState(false);
+  // A newer version was published while this saved view stayed open.
+  const [replaced, setReplaced] = useState(false);
   const flushHandler = useRef<((pause?: boolean) => Promise<void>) | null>(
     null
   );
@@ -120,6 +125,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let flushDraft = () => {};
     let draftWrites = Promise.resolve();
     const queueDraftWrite = (write: () => Promise<void>) => {
       const previous = draftWrites;
@@ -154,6 +160,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     setStatus('connecting');
     setDirty(false);
     setHandoff(false);
+    setReplaced(false);
     setSynced(false);
     setError(null);
     setLoaded(null);
@@ -184,12 +191,14 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       const draft = recoveryDrafts[0];
       if (draft) {
         shared.destroy();
+        const base = await readSourceBase(draft);
+        if (cancelled) return;
         const recovered = new Y.Doc();
         doc = recovered;
         for (const snapshot of recoveryDrafts)
           Y.applyUpdate(recovered, snapshot.state, RESTORE_ORIGIN);
         setLoaded({
-          bytes: draft.base,
+          bytes: base,
           doc: recovered,
           session: {
             ...session,
@@ -212,10 +221,46 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       const active = {
         acknowledged: -1,
         checkpoint: () => {},
+        // Sequence at which this client answered handoff ready: the server
+        // held every update then, so the publication includes them.
+        handedOff: -1,
         pending,
         provider: null as unknown as SourceProvider,
         recovery: false,
         sequence: restoredDrafts.length ? 1 : 0,
+      };
+      const unsyncedWaiters: (() => void)[] = [];
+      const markSaved = () => {
+        setStatus('saved');
+        setDirty(false);
+        setError(null);
+        const acknowledgedDrafts = [
+          ...restoredDrafts,
+          ...(latestDraft ? [latestDraft] : []),
+        ];
+        restoredDrafts = [];
+        queueDraftWrite(() => clearSourceDrafts(acknowledgedDrafts));
+      };
+      // A newer version was published. A saved client keeps its view
+      // read-only under the reload banner; unsaved changes go to recovery.
+      const replace = () => {
+        if (
+          Math.max(active.acknowledged, active.handedOff) >= active.sequence &&
+          !bufferDirtyRef.current
+        ) {
+          cancelled = true;
+          active.acknowledged = active.sequence;
+          markSaved();
+          setHandoff(false);
+          setReplaced(true);
+        } else {
+          active.recovery = true;
+          setLoaded({ bytes, doc: shared, session });
+          setStatus('recovery');
+          setError(m.source_edit_recovery());
+          setSynced(false);
+        }
+        provider?.disconnect();
       };
       const checkpoint = () => {
         if (!provider?.isAuthenticated || active.recovery) return;
@@ -259,6 +304,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           }
           if (event.fileId !== fileId || cancelled) return;
           if (event.type === 'source-handoff-cancel') {
+            active.handedOff = -1;
             setHandoff(false);
             return;
           }
@@ -269,17 +315,18 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           ) {
             setHandoff(true);
             const handoffEvent = event;
+            // Ready once the server holds every update: pending input is in
+            // the document and the provider has nothing unsent. No save wait.
             const prepare = async () => {
               try {
                 await flushHandler.current?.(true);
-                await save();
-                if (
-                  cancelled ||
-                  active.recovery ||
-                  active.acknowledged < active.sequence ||
-                  bufferDirtyRef.current
-                )
+                if (provider?.hasUnsyncedChanges)
+                  await new Promise<void>((resolve) =>
+                    unsyncedWaiters.push(resolve)
+                  );
+                if (cancelled || active.recovery || bufferDirtyRef.current)
                   return;
+                active.handedOff = active.sequence;
                 provider?.sendStateless(
                   JSON.stringify({
                     checkpoint: handoffEvent.checkpoint,
@@ -297,17 +344,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             return;
           }
           if (event.type === 'source-epoch-changed') {
-            provider?.disconnect();
-            if (
-              active.acknowledged >= active.sequence &&
-              !bufferDirtyRef.current
-            ) {
-              setGeneration((value) => value + 1);
-            } else {
-              active.recovery = true;
-              setStatus('recovery');
-              setError(m.source_edit_recovery());
-            }
+            replace();
             return;
           }
           if (
@@ -334,17 +371,8 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             !Array.isArray(event.checkpointIds)
           )
             return;
-          if (acknowledgeSourceCheckpoint(active, event.checkpointIds)) {
-            setStatus('saved');
-            setDirty(false);
-            setError(null);
-            const acknowledgedDrafts = [
-              ...restoredDrafts,
-              ...(latestDraft ? [latestDraft] : []),
-            ];
-            restoredDrafts = [];
-            queueDraftWrite(() => clearSourceDrafts(acknowledgedDrafts));
-          }
+          if (acknowledgeSourceCheckpoint(active, event.checkpointIds))
+            markSaved();
           flushWaiters.current = flushWaiters.current.filter((waiter) => {
             if (waiter.sequence <= active.acknowledged) {
               waiter.resolve();
@@ -360,6 +388,10 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             checkpoint();
           }
         },
+        onUnsyncedChanges: ({ number }) => {
+          if (!number)
+            for (const resolve of unsyncedWaiters.splice(0)) resolve();
+        },
         token: async () => {
           const token =
             initialToken ??
@@ -370,21 +402,8 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           if (cancelled) throw new Error(m.source_edit_session_changed());
           initialToken = null;
           if (token.epoch !== session.epoch || token.room !== session.room) {
-            if (
-              active.acknowledged >= active.sequence &&
-              !bufferDirtyRef.current
-            ) {
-              cancelled = true;
-              provider?.disconnect();
-              setGeneration((value) => value + 1);
-              throw new Error(m.source_edit_session_changed());
-            }
-            active.recovery = true;
-            setLoaded({ bytes, doc: shared, session });
-            setStatus('recovery');
-            setError(m.source_edit_recovery());
-            setSynced(false);
-            throw new Error(m.source_edit_recovery());
+            replace();
+            throw new Error(m.source_edit_session_changed());
           }
           return token.token;
         },
@@ -392,13 +411,13 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       });
       active.provider = provider;
       runtime.current = active;
-      shared.on('update', (_update: Uint8Array, origin: unknown) => {
-        if (origin === provider || origin === RESTORE_ORIGIN) return;
-        active.sequence++;
-        setDirty(true);
-        setStatus(active.recovery ? 'recovery' : 'saving');
-        const snapshot = {
-          base: bytes,
+      let draftDue = false;
+      // A draft a receipt already covers is never written, so a saved draft
+      // cannot come back as a recovery prompt.
+      const takeDraft = () => {
+        draftDue = false;
+        if (active.acknowledged >= active.sequence) return;
+        latestDraft = {
           baseSourceSHA256: session.baseSourceSHA256,
           epoch: session.epoch,
           fileId: draftKey,
@@ -406,8 +425,25 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           state: Y.encodeStateAsUpdate(shared),
           version: crypto.randomUUID(),
         };
-        latestDraft = snapshot;
-        queueDraftWrite(() => writeSourceDraft(snapshot));
+        return latestDraft;
+      };
+      flushDraft = () => {
+        const next = draftDue ? takeDraft() : undefined;
+        if (next) queueDraftWrite(() => writeSourceDraft(next, bytes));
+      };
+      shared.on('update', (_update: Uint8Array, origin: unknown) => {
+        if (origin === provider || origin === RESTORE_ORIGIN) return;
+        active.sequence++;
+        setDirty(true);
+        setStatus(active.recovery ? 'recovery' : 'saving');
+        if (!draftDue) {
+          draftDue = true;
+          queueDraftWrite(async () => {
+            await new Promise((resolve) => setTimeout(resolve, DRAFT_WRITE_MS));
+            const next = draftDue ? takeDraft() : undefined;
+            if (next) await writeSourceDraft(next, bytes);
+          });
+        }
         clearTimeout(timer);
         timer = setTimeout(checkpoint, 1000);
       });
@@ -415,6 +451,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      flushDraft();
       runtime.current = null;
       discardHandler.current = null;
       provider?.destroy();
@@ -422,7 +459,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       for (const waiter of flushWaiters.current.splice(0))
         waiter.reject(new Error(m.source_edit_save_failed()));
     };
-  }, [fileId, actorId, enabled, generation, save, pendingInput]);
+  }, [fileId, actorId, enabled, generation, pendingInput]);
 
   useEffect(() => {
     if (!dirty && !bufferDirty) return;
@@ -443,6 +480,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     flushHandler,
     handoff,
     pendingInput,
+    replaced,
     save,
     status: status === 'saved' && bufferDirty ? ('saving' as const) : status,
     synced,

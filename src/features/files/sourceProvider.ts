@@ -7,6 +7,8 @@ import { USE_MSW } from '@/api/auth';
 export interface SourceProvider {
   destroy(): void;
   disconnect(): void;
+  /** Updates sent that the server has not yet acknowledged as applied. */
+  hasUnsyncedChanges: boolean;
   isAuthenticated: boolean;
   sendStateless(payload: string): void;
 }
@@ -18,6 +20,7 @@ export interface SourceProviderConfig {
   onDisconnect?: () => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
+  onUnsyncedChanges?: (event: { number: number }) => void;
   token: () => Promise<string>;
   url: string;
 }

@@ -101,6 +101,7 @@ import type {
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
+  SourceCheckpointSaved,
   SourceCollaborationToken,
   SourceFailureInputBody,
   SourceImportStatus,
@@ -7337,7 +7338,7 @@ export const bootstrapSourceDocument = async (id: string,
 
 
 export type checkpointSourceDocumentResponse200 = {
-  data: SourceSession
+  data: SourceCheckpointSaved
   status: 200
 }
 

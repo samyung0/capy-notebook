@@ -1217,6 +1217,7 @@
   "source_edit_offline": "离线，更改已保存在此设备上。",
   "source_edit_done": "完成编辑",
   "source_edit_handoff": "正在更新文件…",
+  "source_edit_replaced": "此文件有更新的版本。您的更改已保存。",
   "error_source_changed_title": "来源已更改",
   "error_source_changed_body": "来源在此请求运行期间发生了更改。请重试。",
   "source_edit_discard_draft": "丢弃此草稿",

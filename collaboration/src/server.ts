@@ -46,7 +46,7 @@ import {
   log,
   reportHttpError,
 } from './observability.js';
-import { closeOfficeRuntime } from './officeRuntime.js';
+import { closeOfficeRuntime, OfficeEngineError } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
   materialIdFromRoom,
@@ -96,7 +96,13 @@ const subscriber = new IORedis(config.redisUrl, {
 });
 const store = new YjsDocumentStore(pool);
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
-const sourceStores = new Map<string, Promise<void>>();
+const sourceStores = new Map<
+  string,
+  { queued?: Promise<void>; tail: Promise<void> }
+>();
+// Source room size estimate from applied update bytes. It over-counts content
+// that GC later removed, so crossing the cap triggers one exact measurement.
+const sourceSizes = new WeakMap<Y.Doc, number>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
 const failedStores = new Map<string, FailedStoreSnapshot>();
@@ -543,14 +549,32 @@ const server = new Server<CollaborationContext>({
           context.userId,
           context.access
         );
+        if (
+          (sourceSizes.get(document) ?? 0) + yjsUpdate.byteLength <=
+          MAX_SOURCE_STATE_BYTES
+        )
+          return;
+        const state = Y.encodeStateAsUpdate(document);
+        sourceSizes.set(document, state.byteLength);
         const candidate = new Y.Doc();
         try {
-          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(document));
+          Y.applyUpdate(candidate, state);
           Y.applyUpdate(candidate, yjsUpdate);
           if (
             Y.encodeStateAsUpdate(candidate).byteLength > MAX_SOURCE_STATE_BYTES
-          )
+          ) {
+            // Stateless and unrecoverable, so the client stops resending it.
+            connection.sendStateless(
+              JSON.stringify({
+                type: 'source-checkpoint-failed',
+                ...sourceRoom(document.name),
+                checkpointIds: [],
+                message: 'Source checkpoint exceeds byte limit',
+                recoverable: false,
+              })
+            );
             throw new Error('Source checkpoint exceeds byte limit');
+          }
         } finally {
           candidate.destroy();
         }
@@ -625,9 +649,15 @@ const server = new Server<CollaborationContext>({
       throw new Error('collaboration room is being compacted');
     }
     attachDocumentContributorTracker(document, INSTANCE_ID);
-    if (SOURCE_ROOM_PATTERN.test(documentName))
+    if (SOURCE_ROOM_PATTERN.test(documentName)) {
+      document.on('update', (update: Uint8Array) =>
+        sourceSizes.set(
+          document,
+          (sourceSizes.get(document) ?? 0) + update.byteLength
+        )
+      );
       await sources.load(documentName, document, context.userId);
-    else await store.load(documentName, document);
+    } else await store.load(documentName, document);
   },
   async onStateless({ connection, document, payload }) {
     const context = connection.context as CollaborationContext | undefined;
@@ -808,72 +838,82 @@ function sourceReceipt(
   if (!pending?.size) pendingCheckpoints.delete(document.name);
 }
 
-async function persistSource(document: Document) {
+// One running and at most one queued save per room. A save snapshots the room
+// when it starts, so every caller arriving while one is queued shares it and
+// still receives its failure.
+function persistSource(document: Document) {
   const room = document.name;
-  const previous = sourceStores.get(room) ?? Promise.resolve();
-  const next = previous
+  const saves = sourceStores.get(room);
+  if (saves?.queued) return saves.queued;
+  const queued: Promise<void> = (saves?.tail ?? Promise.resolve())
     .catch(() => undefined)
-    .then(async () => {
-      const finish = beginStore(room);
-      const snapshot = new Y.Doc();
-      const rawState = Y.encodeStateAsUpdate(document);
-      Y.applyUpdate(snapshot, rawState);
-      const claimed = [...(pendingCheckpoints.get(room) ?? [])];
-      try {
-        assertRoomAvailable(room, true);
-        const saved = await sources.store(
-          room,
-          snapshot,
-          failedStores.get(room)?.eventId
-        );
-        failedStores.delete(room);
-        clearDocumentContributors(document, saved.contributors);
-        sourceReceipt(document, claimed, saved.checkpoint);
-      } catch (error) {
-        storeFailures++;
-        storeFailureGenerations.set(
-          room,
-          (storeFailureGenerations.get(room) ?? 0) + 1
-        );
-        const recoverable =
-          !(error instanceof SourceRequestError) ||
-          ![401, 403, 404, 409, 413, 422].includes(error.status);
-        document.broadcastStateless(
-          JSON.stringify({
-            type: 'source-checkpoint-failed',
-            ...sourceRoom(room),
-            checkpointIds: claimed,
-            message:
-              error instanceof Error ? error.message : 'Source save failed',
-            recoverable,
-          })
-        );
-        if (recoverable && !roomEvictions.isDiscarding(room)) {
-          const eventId = reportFailedStore(
-            failedStores.get(room),
-            error,
-            room
-          );
-          failedStores.set(room, {
-            checkpointIds: claimed,
-            eventId,
-            state: rawState,
-          });
-        } else {
-          failedStores.delete(room);
-          rejectAuthorizationRoom(room);
-        }
-        throw error;
-      } finally {
-        snapshot.destroy();
-        finish();
-      }
+    .then(() => {
+      const current = sourceStores.get(room);
+      if (current?.queued === queued) current.queued = undefined;
+      return storeSource(document);
     });
-  sourceStores.set(room, next);
+  sourceStores.set(room, { queued, tail: queued });
+  void queued
+    .catch(() => undefined)
+    .then(() => {
+      if (sourceStores.get(room)?.tail === queued) sourceStores.delete(room);
+    });
+  return queued;
+}
+
+async function storeSource(document: Document) {
+  const room = document.name;
+  const finish = beginStore(room);
+  const snapshot = new Y.Doc();
+  const rawState = Y.encodeStateAsUpdate(document);
+  Y.applyUpdate(snapshot, rawState);
+  const claimed = [...(pendingCheckpoints.get(room) ?? [])];
   try {
-    await next;
+    assertRoomAvailable(room, true);
+    const saved = await sources.store(
+      room,
+      snapshot,
+      failedStores.get(room)?.eventId
+    );
+    failedStores.delete(room);
+    clearDocumentContributors(document, saved.contributors);
+    sourceReceipt(document, claimed, saved.checkpoint);
+  } catch (error) {
+    storeFailures++;
+    storeFailureGenerations.set(
+      room,
+      (storeFailureGenerations.get(room) ?? 0) + 1
+    );
+    const recoverable =
+      !(error instanceof SourceRequestError) ||
+      ![401, 403, 404, 409, 413, 422].includes(error.status);
+    document.broadcastStateless(
+      JSON.stringify({
+        type: 'source-checkpoint-failed',
+        ...sourceRoom(room),
+        checkpointIds: claimed,
+        message: error instanceof Error ? error.message : 'Source save failed',
+        recoverable,
+      })
+    );
+    if (error instanceof OfficeEngineError) {
+      // Retrying a state the engine failed on cannot help; clients keep drafts.
+      reportFailedStore(undefined, error, room);
+    } else if (recoverable && !roomEvictions.isDiscarding(room)) {
+      const eventId = reportFailedStore(failedStores.get(room), error, room);
+      failedStores.set(room, {
+        checkpointIds: claimed,
+        eventId,
+        state: rawState,
+      });
+    } else {
+      failedStores.delete(room);
+      rejectAuthorizationRoom(room);
+    }
+    throw error;
   } finally {
-    if (sourceStores.get(room) === next) sourceStores.delete(room);
+    snapshot.destroy();
+    finish();
   }
 }
 
@@ -1290,6 +1330,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
           rejectAuthorizationRoom(room);
         } else {
           reportFailedStore(failed, error, room);
+          if (error instanceof OfficeEngineError) clearIfCurrent();
         }
         return;
       }

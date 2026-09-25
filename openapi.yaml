@@ -3143,6 +3143,23 @@ components:
         - requestHash
         - actorUserId
       type: object
+    SourceCheckpointSaved:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCheckpointSaved.json
+          format: uri
+          readOnly: true
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        operation:
+          $ref: "#/components/schemas/AgentOperation"
+      required:
+        - checkpoint
+      type: object
     SourceCollaborationToken:
       additionalProperties: false
       properties:
@@ -8449,7 +8466,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SourceSession"
+                $ref: "#/components/schemas/SourceCheckpointSaved"
           description: OK
         default:
           content:

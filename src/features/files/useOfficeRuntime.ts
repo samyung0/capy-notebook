@@ -277,6 +277,7 @@ export function useOfficeRuntime({
         canEdit:
           canEdit &&
           !source.handoff &&
+          !source.replaced &&
           source.status !== 'recovery' &&
           (mode !== 'edit' ||
             (!!source.doc &&
@@ -292,6 +293,7 @@ export function useOfficeRuntime({
     source.doc,
     source.discarding,
     source.handoff,
+    source.replaced,
     source.status,
     post,
   ]);
@@ -452,6 +454,7 @@ export function useOfficeRuntime({
     iframeUrl: config.url,
     mode,
     ready: mode === 'view' ? !!analysis : replicaReady,
+    replaced: source.replaced,
     retryView,
     save: checkpoint,
     saving: leaving || source.status === 'saving',

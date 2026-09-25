@@ -11,6 +11,15 @@ import (
 )
 
 type sourceSessionOutput struct{ Body store.SourceSession }
+
+// SourceCheckpointSaved is the checkpoint receipt: the collaboration service
+// already holds the state it sent, so only the new checkpoint and an edit's
+// operation receipt come back.
+type SourceCheckpointSaved struct {
+	Checkpoint int64                 `json:"checkpoint"`
+	Operation  *store.AgentOperation `json:"operation,omitempty"`
+}
+type sourceCheckpointOutput struct{ Body SourceCheckpointSaved }
 type SourceCollaborationToken struct {
 	Token     string `json:"token"`
 	Room      string `json:"room"`
@@ -123,6 +132,8 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// The browser opens the state; the baseline and effects stay server-side.
+	session.IndexedBaseline, session.PendingEffects = nil, nil
 	return a.sourceSessionResponse(ctx, session)
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {
@@ -144,7 +155,7 @@ func (a *api) checkSourceAccess(ctx context.Context, in *sourceAccessInput) (*st
 	}
 	return nil, nil
 }
-func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpointInput) (*sourceSessionOutput, error) {
+func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpointInput) (*sourceCheckpointOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
@@ -152,7 +163,7 @@ func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpoint
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.sourceSessionResponse(ctx, session)
+	return &sourceCheckpointOutput{Body: SourceCheckpointSaved{Checkpoint: session.Checkpoint, Operation: session.Operation}}, nil
 }
 func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborationTokenInput) (*sourceTokenOutput, error) {
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)

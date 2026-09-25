@@ -418,6 +418,8 @@ class MockCollaborationProvider implements UnifiedProvider {
  * connecting is a merge plus a `synced` on the next microtask. A checkpoint
  * writes the text back to the file's mock link so View shows the edit. */
 class MockSourceProvider implements SourceProvider {
+  // The in-page room applies updates synchronously.
+  readonly hasUnsyncedChanges = false;
   isAuthenticated = true;
   private readonly config: SourceProviderConfig;
   private readonly leave: () => void;

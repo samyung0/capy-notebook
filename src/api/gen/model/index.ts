@@ -176,6 +176,7 @@ export * from './sourceCandidateResponseUploadHeaders.ts';
 export * from './sourceCheckpoint.ts';
 export * from './sourceCheckpointOperation.ts';
 export * from './sourceCheckpointReceipt.ts';
+export * from './sourceCheckpointSaved.ts';
 export * from './sourceCollaborationToken.ts';
 export * from './sourceCollaborationTokenAccess.ts';
 export * from './sourceFailureInputBody.ts';

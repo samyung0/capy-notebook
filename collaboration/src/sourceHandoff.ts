@@ -164,6 +164,9 @@ export class SourceHandoff {
       if (document) {
         let timer: NodeJS.Timeout | undefined;
         try {
+          // The handoff always completes: an editor that leaves stops being
+          // waited for, and one silent after the window is disconnected so it
+          // reconnects into the new epoch (recovery for unsaved changes).
           await new Promise<void>((resolve, reject) => {
             const waiting: LocalHandoff = {
               checkpoint: event.checkpoint,
@@ -183,24 +186,23 @@ export class SourceHandoff {
               resolve();
               return;
             }
-            timer = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    'Editors did not finish saving before source handoff'
-                  )
-                ),
-              10_000
-            );
+            timer = setTimeout(() => {
+              for (const connection of connections) {
+                if (waiting.ready.has(connection.socketId)) continue;
+                connection.readOnly = true;
+                connection.webSocket.close(4408, 'Source handoff timed out');
+              }
+              resolve();
+            }, 10_000);
             for (const connection of connections) {
               connection.onClose(() => {
                 if (
-                  this.local.get(event.room) === waiting &&
-                  !waiting.ready.has(connection.socketId)
+                  this.local.get(event.room) !== waiting ||
+                  waiting.ready.has(connection.socketId)
                 )
-                  reject(
-                    new Error('Editor disconnected before source handoff')
-                  );
+                  return;
+                waiting.sockets.delete(connection.socketId);
+                if (waiting.ready.size === waiting.sockets.size) resolve();
               });
             }
             document.broadcastStateless(
@@ -210,8 +212,8 @@ export class SourceHandoff {
         } finally {
           if (timer) clearTimeout(timer);
         }
+        await this.persist(document);
       }
-      if (document) await this.persist(document);
     } catch {
       ok = false;
     }

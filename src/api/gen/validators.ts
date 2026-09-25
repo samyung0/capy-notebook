@@ -4340,16 +4340,7 @@ export const CheckpointSourceDocumentBody = zod.object({
 
 export const CheckpointSourceDocumentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "access": zod.enum(['write', 'read']),
-  "baseRevision": zod.int(),
-  "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
-  "epoch": zod.int(),
-  "fileId": zod.string(),
-  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string(),
-  "indexedCheckpoint": zod.int(),
-  "netTokens": zod.int(),
   "operation": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
@@ -4381,13 +4372,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "outcome": zod.string(),
   "toolVersion": zod.int(),
   "workspaceId": zod.string().optional()
-}).optional(),
-  "pendingEffects": zod.unknown(),
-  "room": zod.string(),
-  "sourceIdentity": zod.string(),
-  "sourceURL": zod.string(),
-  "state": zod.string(),
-  "workspaceId": zod.string()
+}).optional()
 })
 
 
