@@ -217,6 +217,27 @@ def test_page_tracking_folios_make_running_banners_whatever_their_title(
             assert result == blocks
 
 
+@pytest.mark.parametrize(
+    "titles",
+    [
+        # OpenStax end matter: the page is the larger number at either end.
+        ["4 • Chapter Review {}", "{} 4 • Chapter Review"] * 2,
+        # A book title ending in a number keeps the leading folio.
+        ["{} • MEDIA STUDIES 101"] * 4,
+    ],
+)
+def test_running_heads_with_a_number_at_both_ends_take_either_folio(titles):
+    with pymupdf.open() as document:
+        blocks = []
+        for number, title in enumerate(titles):
+            page = document.new_page()
+            x = 330 if number % 2 == 0 else 60  # facing pages
+            text = title.format(number + 12)
+            blocks.append(_printed_heading(page, text, 35, 2, html=True, x=x))
+        result = correct_roles(blocks, document)
+    assert all(b["_source_role"] == "running-banner" for b in result)
+
+
 def test_removed_folio_banners_end_an_earlier_chart_label_scope():
     # The BOJ regression: dropping banners must not carry a label onward.
     with pymupdf.open() as document:
@@ -806,6 +827,46 @@ def test_running_heads_below_the_margin_band_are_banners_on_five_pages(
 
 
 @pytest.mark.parametrize(
+    ("text", "pages", "every", "removed"),
+    [
+        # Papuan Malay: a folio-less head at y = 0.07-0.09 repeats a chapter
+        # title printed larger earlier.
+        ("1 Introduction", 4, 1, True),
+        # A label at the top of three pages stays a heading.
+        ("Example", 4, 1, False),
+        # Accounting Principles: a licence line on a quarter of the pages.
+        ("This book is licensed under a Creative Commons licence", 20, 4, True),
+    ],
+)
+def test_running_heads_just_below_the_margin_band_need_a_title_or_a_quarter(
+    text, pages, every, removed
+):
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(pages):
+            page = document.new_page()
+            if number == 0:
+                blocks.append(
+                    _printed_heading(page, "1 Introduction", 200, 1, fontsize=18)
+                )
+            elif (number - 1) % every == 0:
+                blocks.append(_printed_heading(page, text, 70, 5, fontsize=10))
+            blocks.append(_line("Body text.", number, 500))
+        heads = [
+            i for i, b in enumerate(blocks) if b["text"] == text and b["bbox"][1] < 100
+        ]
+        assert all(
+            65 < blocks[i]["bbox"][1] < blocks[i]["bbox"][3] < 100 for i in heads
+        )
+        result = correct_roles(blocks, document)
+    if removed:
+        assert all(result[i]["_source_role"] == "running-banner" for i in heads)
+        assert result[0] == blocks[0]
+    else:
+        assert result == blocks
+
+
+@pytest.mark.parametrize(
     ("text", "size", "outline", "demoted"),
     [
         ("It carried over from the page before.", 11, False, True),
@@ -912,7 +973,9 @@ def test_chapter_titles_printed_only_in_running_heads_come_from_the_outline():
         document.set_toc([[1, "Algorithms", 1], [2, "What are Algorithms?", 2]])
         result = correct_roles(blocks, document)
         assert correct_roles(result, document) == result
-    inserted = result[1]
+    # Inserted at the outline destination, after the page's running head.
+    assert result[1]["type"] == "discarded"
+    inserted = result[2]
     assert inserted == {
         "type": "text",
         "text": "What are Algorithms?",
@@ -921,7 +984,6 @@ def test_chapter_titles_printed_only_in_running_heads_come_from_the_outline():
         "bbox": blocks[1]["bbox"],
         "_source_role": "outline-heading",
     }
-    assert result[2]["type"] == "discarded"
     chunk = next(c for c in pack_blocks(result, frozenset()) if "page 11" in c.text)
     assert chunk.section_path == "Algorithms › What are Algorithms? › Why It Matters"
 
@@ -963,8 +1025,132 @@ def test_outline_heading_levels_follow_siblings_then_parent(toc, level):
             document.new_page()
         document.set_toc(toc)
         result = insert_outline_headings(blocks, document)
+    new = [b for b in result if b.get("_source_role") == "outline-heading"]
+    assert [b for b in result if b not in new] == blocks
     if level is None:
-        assert result == blocks
+        assert new == []
     else:
-        assert result[:2] == blocks[:2] and result[3:] == blocks[2:]
-        assert result[2]["text"] == "Missing" and result[2]["text_level"] == level
+        assert [(b["text"], b["text_level"]) for b in new] == [("Missing", level)]
+
+
+def _toc(document, rows, y):
+    """set_toc with every destination at height ``y`` (0-1000); None makes them
+    named destinations, which carry no usable height."""
+    document.set_toc(
+        [
+            [
+                level,
+                title,
+                page,
+                {"kind": pymupdf.LINK_GOTO, "page": page - 1, "to": top},
+            ]
+            for level, title, page in rows
+            for top in [
+                pymupdf.Point(0, (y or 0) / 1000 * document[page - 1].rect.height)
+            ]
+        ]
+    )
+    if y is None:
+        names = " ".join(
+            f"(d{n}) [{document[page - 1].xref} 0 R /Fit]"
+            for n, (_, _, page) in enumerate(rows)
+        )
+        document.xref_set_key(
+            document.pdf_catalog(), "Names", f"<</Dests <</Names [{names}]>>>>"
+        )
+        for n, row in enumerate(document.get_toc(simple=False)):
+            document.xref_set_key(row[3]["xref"], "A", f"<</S /GoTo /D (d{n})>>")
+
+
+@pytest.mark.parametrize("case", ["line", "height", "no-height"])
+def test_outline_headings_go_to_the_outline_destination(case):
+    # OpenStax Chemistry: the Key Terms glossary runs into the top of the page
+    # where the outline points "Key Equations" (y = 0.223).
+    def block(text, page, y, **extra):
+        box = [100, y, 900, y + 15]
+        return {"type": "text", "text": text, "page_idx": page, "bbox": box, **extra}
+
+    banner = {"type": "discarded", "_source_role": "running-banner"}
+    blocks = [
+        block("Key Terms", 0, 100, text_level=2),
+        block("4 • Key Equations 61", 1, 30, **banner),
+        block("molarity: moles of solute per litre of solution", 1, 60),
+        block("M = n / V" if case == "height" else "Key Equations", 1, 223),
+    ]
+    heading = {
+        "type": "text",
+        "text": "Key Equations",
+        "text_level": 2,
+        "page_idx": 1,
+        "bbox": blocks[1]["bbox"],
+        "_source_role": "outline-heading",
+    }
+    with pymupdf.open() as document:
+        for _ in range(2):
+            document.new_page()
+        rows = [[1, "Key Terms", 1], [1, "Key Equations", 2]]
+        _toc(document, rows, None if case == "no-height" else 223)
+        result = insert_outline_headings(blocks, document)
+    if case == "line":  # the printed line at the destination becomes the heading
+        promoted = {"text_level": 2, "_source_role": "outline-heading"}
+        assert result == [*blocks[:3], {**blocks[3], **promoted}]
+    elif case == "height":
+        assert result == [*blocks[:3], heading, blocks[3]]
+    else:  # today's place: before the page's first block
+        assert result == [blocks[0], heading, *blocks[1:]]
+
+
+@pytest.mark.parametrize(
+    ("rows", "line", "promoted"),
+    [
+        # ReStorying Education: a chapter that opens under the book-title
+        # running head prints its title as body text where the outline points.
+        (
+            [[1, "1 Why ReStory", 1], [1, "2 Stories of Schooling", 2]],
+            "Stories of Schooling",
+            True,
+        ),
+        # Media Studies: an author tag after every chapter is not a title.
+        (
+            [
+                row
+                for n in (1, 2, 3)
+                for row in ([1, f"Chapter {n}", n], [1, "mediatexthack", n])
+            ],
+            "mediatexthack",
+            False,
+        ),
+        # A byline listed under its parent entry on the same page.
+        ([[1, "About", 2], [2, "media texthack", 2]], "media texthack", False),
+    ],
+)
+def test_a_body_line_at_the_destination_alone_makes_an_outline_heading(
+    rows, line, promoted
+):
+    blocks = [
+        {
+            "type": "discarded",
+            "_source_role": "running-banner",
+            "text": "26 RESTORYING EDUCATION",
+            "page_idx": 1,
+            "bbox": [100, 30, 900, 45],
+        },
+        {"type": "text", "text": "2", "page_idx": 1, "bbox": [480, 151, 520, 180]},
+        {"type": "text", "text": line, "page_idx": 1, "bbox": [100, 260, 900, 280]},
+        {
+            "type": "text",
+            "text": "Schools tell stories about who belongs.",
+            "page_idx": 1,
+            "bbox": [100, 300, 900, 320],
+        },
+    ]
+    with pymupdf.open() as document:
+        for _ in range(3):
+            document.new_page()
+        _toc(document, rows, 260)
+        result = insert_outline_headings(blocks, document)
+    if promoted:
+        heading = {"text_level": 1, "_source_role": "outline-heading"}
+        assert result == [*blocks[:2], {**blocks[2], **heading}, blocks[3]]
+    else:
+        assert result == blocks

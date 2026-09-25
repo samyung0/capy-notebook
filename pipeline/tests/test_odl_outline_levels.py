@@ -351,15 +351,19 @@ def test_repeated_title_pages_and_a_subtitle_between_them_are_marked():
     assert roles[5:] == [None] * 3
 
 
-def test_title_pages_run_past_pages_with_body_text():
-    # ReStorying: the title is printed again on its introduction page, after the
-    # licence page; "INTRODUCTION" there goes with it (accepted).
+def test_a_title_reprinted_on_a_later_body_page_keeps_only_its_title_mark():
+    # ReStorying and Census Income 2024 print the title again on the
+    # introduction page, past the first page with body text (the licence page).
+    # The title pages run to it, but the body pages past the first one keep
+    # only the title: "Suggested Citation" and "INTRODUCTION" stay headings.
     blocks = [
         _block("ReStorying Education", 0, 4),
         _block("YOU ARE FREE TO:", 3, 5),
         _body(3, chars=600),
         _block("Contents", 4, 1),  # the outline lists it under another title
         _body(4),
+        _block("Suggested Citation", 5, 2),
+        _body(5, chars=300),
         _block("ReStorying Education in the United States", 6, 1),
         _block("INTRODUCTION", 6, 5, y=200),
         _body(6, chars=1900),
@@ -369,7 +373,41 @@ def test_title_pages_run_past_pages_with_body_text():
     with _doc(12, toc, title="ReStorying Education") as document:
         roles = [b.get("_source_role") for b in ol.mark_book_titles(blocks, document)]
     title = "book-title"
-    assert roles == [title, title, None, None, None, title, title, None, None]
+    assert roles == [title, title] + [None] * 5 + [title] + [None] * 3
+
+
+def test_a_title_page_repeated_after_a_series_page_keeps_its_author():
+    # Papuan Malay: title page, a series page with body text, the title page
+    # again; its author line stays out of the paths.
+    blocks = [
+        _block("A grammar of Papuan Malay", 0, 1),
+        _block("Angela Kluge", 0, 2, y=300),
+        _block("Studies in Diversity Linguistics", 1, 2),
+        _body(1, chars=400),
+        _block("A grammar of Papuan Malay", 2, 1),
+        _block("Angela Kluge", 2, 2, y=300),
+        _block("Chapter 1 Introduction", 4, 1),
+        _body(4, chars=400),
+    ]
+    with _doc(10, title="A grammar of Papuan Malay") as document:
+        roles = [b.get("_source_role") for b in ol.mark_book_titles(blocks, document)]
+    assert roles == ["book-title"] * 3 + [None] + ["book-title"] * 2 + [None] * 2
+
+
+def test_a_title_page_with_its_own_body_text_keeps_its_marks():
+    # NIST FIPS 203: the title page itself carries over 150 characters of text.
+    title = "Module-Lattice-Based Key-Encapsulation Mechanism Standard"
+    blocks = [
+        _block("FIPS 203", 0, 1),
+        _block(title, 0, 1, y=200),
+        _block("Category: Computer Security", 0, 3, y=300),
+        _body(0, y=400, chars=500),
+        _block("Abstract", 2, 1),
+        _body(2, chars=400),
+    ]
+    with _doc(10, title=title) as document:
+        roles = [b.get("_source_role") for b in ol.mark_book_titles(blocks, document)]
+    assert roles == ["book-title"] * 3 + [None] * 3
 
 
 def test_a_title_page_heading_that_roots_the_book_is_the_title():

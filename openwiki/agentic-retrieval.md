@@ -308,7 +308,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v10` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v11` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -373,6 +373,7 @@ Parser v8 (decision 2026-09-24; gate in
   entry), else one below the parent entry's heading, else level 1. It is
   inserted before the page's first block with the running head's box and
   `_source_role: outline-heading`; a body paragraph repeating the title stays.
+  v11 places it at the outline destination (below).
 - **Split ligatures** (`source_text.join_split_ligatures`, before furniture is
   frozen). A space the PDF draws inside the ligature glyph before it (The
   Science of Sleep's "beneﬁ ts") is dropped when the block's glyphs prove it,
@@ -459,15 +460,53 @@ Parser v10 (decision 2026-09-24; evidence in
   first 10 that carries a heading with that title, past pages with body text
   (ReStorying Education prints its title again on its introduction page). Their
   unnumbered headings that the outline does not list under another title
-  (title, subtitle, author, series and publisher lines, and an unnumbered
-  heading such as "INTRODUCTION" beside a repeated title) get
-  `_source_role: book-title` and keep their level. Chunker v12 closes the
+  (title, subtitle, author, series and publisher lines) get
+  `_source_role: book-title` and keep their level; v11 narrows this on later
+  body pages (below). Chunker v12 closes the
   heading stack at that level without pushing them, so they never enter a
   path, and keeps their text in the chunk; the gate leaves them out of anchors
   and roots.
 
+Parser v11 (decision 2026-09-25; evidence in
+`bench/parsers/reports/2026-09-25-heading-rules-after-v10.md`, gate in
+`bench/parsers/reports/2026-09-25-parser-v11-gate.md`) changes four heading
+rules; the chunker stays at v12:
+
+- **Book titles on later body pages** (`mark_book_titles`). A page with more
+  than 150 characters of body text (text blocks that are not headings) is a
+  body page. Past the first body page, a body page keeps the book-title mark
+  only on headings that match a title source, so Census Income 2024's
+  "INTRODUCTION" and ReStorying's, printed under a repeated title, stay
+  headings. A title page repeated after a series page (the Language Science
+  Press grammars) and a title page with its own body text (NIST FIPS 203) keep
+  their marks.
+- **Outline headings at the destination** (`insert_outline_headings`). The
+  heading goes where the outline points: the page's first block that is not
+  discarded and whose top is at or below the destination minus 5 is promoted
+  (`_source_role: outline-heading`, printed text kept) when it is a body line
+  whose title key equals the entry's; otherwise the heading is inserted before
+  that block, or after the page's last block when none is that low. A
+  destination without a height (a named destination) keeps the place before
+  the page's first block. Such a body line also makes the heading when no
+  running head carries the title, if `outline_levels._entries` keeps the entry
+  and its parent entry points to another page: ReStorying's chapters that open
+  under the book-title running head get headings, while Media Studies' author
+  tags and a byline listed under its parent on the same page do not.
+- **Either folio reading** (`_family_banners`, `_wide_only`). A margin line
+  with a decimal at both ends is also read with the last number as its folio
+  when it is larger ("4 • Chapter Review 521" is page 521), and the banners of
+  both readings are kept, so OpenStax's end-matter heads form families while
+  "12 • MEDIA STUDIES 101" keeps its own.
+- **Folio-less running heads below the margin band**
+  (`_additional_banners`). Top candidates and seeds reach `y0 < 100`,
+  `y1 <= 100` (was 65). A seed set below the old 0.065 edge counts only when
+  every line repeats a body title printed earlier in larger type, or its text
+  recurs on max(5, a quarter of the) pages: Papuan Malay's "1 Introduction" at
+  y = 0.069-0.086 and Accounting Principles' licence line are banners, a label
+  such as "Example" at the top of a few pages stays a heading.
+
 The formula-picture rule, formula placeholders, stencil-mask rewriting and
-ODL's `--content-safety-off tiny` are not in v7 to v10; the tiny-text
+ODL's `--content-safety-off tiny` are not in v7 to v11; the tiny-text
 filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test

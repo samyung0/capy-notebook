@@ -499,6 +499,7 @@ _JUNK_META = re.compile(
 )
 _TITLE_PAGE_WINDOW = 5  # where the title page's most prominent heading is sought
 _TITLE_FRONT = 10  # pages where a title page can sit
+_BODY_CHARS = 150  # a page with more characters of body text is a body page
 
 
 def _same_title(text: str, title: str) -> bool:
@@ -563,7 +564,9 @@ def mark_book_titles(blocks: list[dict], document: pymupdf.Document) -> list[dic
     """Mark the title pages' unnumbered headings ``book-title``: the title, and
     subtitles, author, series and publisher lines beside it. The title pages run
     from the first page to the last of the first ten that carries the book title.
-    Headings the outline lists under another title stay."""
+    Headings the outline lists under another title stay, and so do the section
+    headings of a body page past the first one where the title is printed again
+    (Census Income 2024's introduction page)."""
     titles = [t for t in (_meta_title(document), _outline_root(document)) if t]
     titles += [t for t in [_title_page_root(blocks)] if t]
     if not titles:
@@ -588,12 +591,29 @@ def mark_book_titles(blocks: list[dict], document: pymupdf.Document) -> list[dic
         for e in _entries(document)
         if not any(_same_title(e["title"], t) for t in titles)
     }
+    body: Counter = Counter()
+    for b in blocks:
+        if (
+            b.get("type") == "text"
+            and not b.get("text_level")
+            and type(b.get("page_idx")) is int
+        ):
+            body[b["page_idx"]] += len(_text(b))
+    busy = {page for page, chars in body.items() if chars > _BODY_CHARS}
+    first = min(busy, default=_INF)
+
+    def title_page(b: dict) -> bool:
+        return not (b["page_idx"] > first and b["page_idx"] in busy) or any(
+            _same_title(_text(b), t) for t in titles
+        )
+
     return [
         {**b, "_source_role": "book-title"}
         if _heading(b)
         and b["page_idx"] <= last
         and not numbered(_text(b))
         and (b["page_idx"], _key(_text(b))) not in listed
+        and title_page(b)
         else b
         for b in blocks
     ]

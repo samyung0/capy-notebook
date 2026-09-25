@@ -44,7 +44,7 @@ from odl.java import JavaTimeout
 from starlette.background import BackgroundTask
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v4"
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v10"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v11"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA

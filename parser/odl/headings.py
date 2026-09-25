@@ -2,7 +2,8 @@
 clipped inline labels lose or gain ``text_level`` only with source evidence.
 Capitals headings (``promote_capitals``) are promoted from block geometry, and
 outline headings (``insert_outline_headings``) are added from the PDF outline
-where only a discarded running head prints the title."""
+where only a discarded running head or a body line at the destination prints
+the title."""
 
 from __future__ import annotations
 
@@ -229,9 +230,15 @@ def _span_lines(spans: list[dict]) -> list[list[dict]]:
 def _additional_banners(
     blocks: list[dict], evidence: dict[int, list[dict]], outline: set[tuple[int, str]]
 ) -> set[int]:
-    """Prove a recurring narrow band before accepting its alternating titles."""
+    """Prove a recurring narrow band before accepting its alternating titles.
+
+    A seed set lower than the 0.065 edge (Papuan Malay's folio-less "1
+    Introduction" at 0.069-0.086) counts only when every line repeats a larger
+    body title printed earlier, or its text recurs on max(5, a quarter of the)
+    pages (a book-title or licence head no body heading repeats)."""
     bands: dict[tuple, list[int]] = defaultdict(list)
     seeds: dict[tuple, list[int]] = defaultdict(list)
+    low_seeds: set[tuple] = set()
     body_titles: dict[str, list[tuple[int, float]]] = defaultdict(list)
     for index, spans in evidence.items():
         block = blocks[index]
@@ -243,39 +250,47 @@ def _additional_banners(
             c.isalpha() for c in text
         ):
             continue
-        top = 0 <= box[1] < 65
+        top = 0 <= box[1] < 100
         bottom = 935 <= box[1] < box[3] <= 1000
         if not (bottom or top and box[3] <= 100 and len(_span_lines(spans)) <= 2):
             continue
         style = max(spans, key=lambda s: len(s["text"]))
         band = (top, round(box[1] / 10), style["font"], round(style["size"], 1))
         bands[band].append(index)
-        # A taller or changing title cannot establish its own running band.
-        if bottom or box[3] <= 65:
-            seeds[band, _literal(text)].append(index)
+        # A text repeated on three pages seeds its band.
+        seeds[band, _literal(text)].append(index)
+        if not bottom and not (box[1] < 65 and box[3] <= 65):
+            low_seeds.add((band, _literal(text)))
+
+    def titled(index: int) -> bool:
+        """Every line was printed earlier, larger, as a body title."""
+        size = max(s["size"] for s in evidence[index])
+        lines = [
+            _literal(" ".join(s["text"] for s in line))
+            for line in _span_lines(evidence[index])
+        ]
+        return all(
+            any(
+                page <= blocks[index]["page_idx"] and body_size > size + 0.5
+                for page, body_size in body_titles.get(line, [])
+            )
+            for line in lines
+        )
+
+    pages = len(
+        {b.get("page_idx") for b in blocks if isinstance(b.get("page_idx"), int)}
+    )
     confirmed: set[tuple] = set()
     banners: set[int] = set()
-    for (band, _), group in seeds.items():
+    for (band, key), group in seeds.items():
+        seen = {blocks[index]["page_idx"] for index in group}
+        if (band, key) in low_seeds and len(seen) < max(5, 0.25 * pages):
+            group = [index for index in group if titled(index)]
         if len({blocks[index]["page_idx"] for index in group}) >= 3:
             confirmed.add(band)
             banners.update(group)
     for band in confirmed:
-        for index in bands[band]:
-            if index in banners:
-                continue
-            size = max(s["size"] for s in evidence[index])
-            lines = [
-                _literal(" ".join(s["text"] for s in line))
-                for line in _span_lines(evidence[index])
-            ]
-            if all(
-                any(
-                    page <= blocks[index]["page_idx"] and body_size > size + 0.5
-                    for page, body_size in body_titles.get(line, [])
-                )
-                for line in lines
-            ):
-                banners.add(index)
+        banners.update(i for i in bands[band] if titled(i))
     return banners
 
 
@@ -295,6 +310,20 @@ def _folio_title(text: str) -> tuple[tuple[str, int], str] | None:
     return None
 
 
+def _folio_title_larger(text: str) -> tuple[tuple[str, int], str] | None:
+    """``_folio_title``, except that a line with a decimal at both ends takes the
+    last as its folio when it is larger ("4 • Chapter Review 521" is page 521)."""
+    value = " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+    words = value.strip(" |•·–—-").split()
+    first, last = (
+        (_folio(words[0]), _folio(words[-1])) if len(words) >= 3 else (None, None)
+    )
+    if first and last and first[0] == last[0] == "decimal" and last[1] > first[1]:
+        title = " ".join(w for w in words[:-1] if not _folio(w))
+        return last, _literal(re.sub(r"\d+", "", title))
+    return _folio_title(text)
+
+
 def _folio_band(box: list[float]) -> bool:
     return 0 <= box[1] < box[3] < 100 or 900 < box[1] < box[3] <= 1000
 
@@ -310,14 +339,25 @@ def _family_banners(
 ) -> set[int]:
     """Running banners of folio families: blocks in ``band`` with a leading or
     trailing folio, grouped by folio kind, folio minus page index, top or
-    bottom, band, font and size, whatever their title."""
+    bottom, band, font and size, whatever their title. Folios are read both
+    ways (``_folio_title_larger``) and both readings' banners kept, so OpenStax's
+    "4 • Chapter Review 521" joins "522 4 • Chapter Review" while "12 • MEDIA
+    STUDIES 101" keeps its family."""
+    return _folio_families(
+        blocks, evidence, outline, band, _folio_title
+    ) | _folio_families(blocks, evidence, outline, band, _folio_title_larger)
+
+
+def _folio_families(
+    blocks: list[dict], evidence: dict[int, list[dict]], outline: set, band, reading
+) -> set[int]:
     families: dict[tuple, list[tuple[int, int, str]]] = defaultdict(list)
     for index, spans in evidence.items():
         block = blocks[index]
         text, box, page_index = block["text"], block["bbox"], block["page_idx"]
         if (page_index, _outline_title(text)) in outline:
             continue
-        found = _folio_title(text) if band(box) else None
+        found = reading(text) if band(box) else None
         if found:
             (kind, folio), title = found
             style = max(spans, key=lambda s: len(s["text"]))
@@ -336,7 +376,7 @@ def _family_banners(
     for index, block in enumerate(blocks):
         box, page_index = block.get("bbox") or [], block.get("page_idx")
         if len(box) == 4 and type(page_index) is int and band(box):
-            found = _folio_title(str(block.get("text") or ""))
+            found = reading(str(block.get("text") or ""))
             if found:
                 (kind, folio), title = found
                 shown[kind, folio - page_index].append((index, title))
@@ -390,21 +430,26 @@ def _family_banners(
 def _wide_only(blocks: list[dict], found: list[int]) -> set[int]:
     """Banners found only through the wide band stay when their group (folio
     kind, page offset, top or bottom, height in hundredths) covers five pages
-    and a tenth of the book."""
+    and a tenth of the book, under either folio reading (``_family_banners``)."""
     pages = len(
         {b.get("page_idx") for b in blocks if isinstance(b.get("page_idx"), int)}
     )
-    groups: dict[tuple, set[int]] = defaultdict(set)
-    keys: dict[int, tuple] = {}
-    for index in found:
-        folio = _folio_title(str(blocks[index].get("text") or ""))
-        if not folio:
-            continue
-        (kind, number), _ = folio
-        box, page = blocks[index]["bbox"], blocks[index]["page_idx"]
-        keys[index] = (kind, number - page, box[1] < 500, round(box[1] / 10))
-        groups[keys[index]].add(page)
-    return {i for i, key in keys.items() if len(groups[key]) >= max(5, 0.1 * pages)}
+    kept: set[int] = set()
+    for reading in (_folio_title, _folio_title_larger):
+        groups: dict[tuple, set[int]] = defaultdict(set)
+        keys: dict[int, tuple] = {}
+        for index in found:
+            folio = reading(str(blocks[index].get("text") or ""))
+            if not folio:
+                continue
+            (kind, number), _ = folio
+            box, page = blocks[index]["bbox"], blocks[index]["page_idx"]
+            keys[index] = (kind, number - page, box[1] < 500, round(box[1] / 10))
+            groups[keys[index]].add(page)
+        kept |= {
+            i for i, key in keys.items() if len(groups[key]) >= max(5, 0.1 * pages)
+        }
+    return kept
 
 
 def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
@@ -512,22 +557,32 @@ def _running_title(text: str) -> str:
 def insert_outline_headings(
     blocks: list[dict], document: pymupdf.Document
 ) -> list[dict]:
-    """Insert a heading for an outline entry that no heading on its page
-    matches when the page's running head, discarded as a banner, carries the
-    same title (College Research prints its chapter titles only there).
+    """Make a heading for an outline entry that no heading on its page matches
+    when the page's running head, discarded as a banner, carries the same title
+    (College Research prints its chapter titles only there), or when the body
+    line at the outline destination does, for an entry ``outline_levels._entries``
+    keeps whose parent entry points to another page (ReStorying Education's
+    chapters that open under the book-title running head).
 
     The heading takes the level of the entry's matched sibling headings
     (their most common), else one below its parent entry's heading, else 1.
-    It goes before the page's first block with the running head's box.
+    The destination's first block (not discarded, top at or below the
+    destination minus 5) is promoted when it is that body line; otherwise the
+    heading, with the running head's box, is inserted before that block (after
+    the page's last block when none is that low), or before the page's first
+    block when the destination has no height.
     """
-    toc = document.get_toc()
+    from .outline_levels import _entries  # outline_levels imports this module
+
+    toc = document.get_toc(simple=False)
+    kept = {(e["page"], _outline_title(e["title"])) for e in _entries(document)}
     pages: dict[int, list[int]] = defaultdict(list)
     for index, block in enumerate(blocks):
         if type(block.get("page_idx")) is int:
             pages[block["page_idx"]].append(index)
 
     def matched(position: int) -> int | None:
-        _, title, page = toc[position]
+        _, title, page, _ = toc[position]
         headings = [i for i in pages.get(page - 1, []) if _is_heading(blocks[i])]
         for i in headings:
             texts = [blocks[i]["text"]]
@@ -539,12 +594,14 @@ def insert_outline_headings(
 
     parents = [
         next((p for p in range(position - 1, -1, -1) if toc[p][0] < depth), None)
-        for position, (depth, _, _) in enumerate(toc)
+        for position, (depth, _, _, _) in enumerate(toc)
     ]
     levels = {p: level for p in range(len(toc)) if (level := matched(p)) is not None}
     inserted: dict[int, int] = {}  # outline position -> level given here
     before: dict[int, list[dict]] = defaultdict(list)
-    for position, (depth, title, page) in enumerate(toc):
+    after: dict[int, list[dict]] = defaultdict(list)
+    promote: dict[int, int] = {}  # block index -> level
+    for position, (depth, title, page, dest) in enumerate(toc):
         slots = pages.get(page - 1, [])
         key = _outline_title(title)
         if position in levels or not key or not slots:
@@ -555,9 +612,34 @@ def insert_outline_headings(
             if blocks[i].get("_source_role") == "running-banner"
             and _running_title(str(blocks[i].get("text") or "")) == key
         ]
-        if not heads:
-            continue
+        y = None
+        if (
+            isinstance(dest, dict)
+            and dest.get("to") is not None
+            and "nameddest" not in dest
+        ):
+            y = dest["to"].y / document[page - 1].rect.height * 1000
+        below = [
+            i
+            for i in slots
+            if y is not None
+            and blocks[i].get("type") not in ("discarded", "page_number")
+            and len(blocks[i].get("bbox") or []) == 4
+            and blocks[i]["bbox"][1] >= y - 5
+        ]
+        line = blocks[below[0]] if below else {}
+        title_line = (
+            line.get("type") == "text"
+            and not line.get("text_level")
+            and not line.get("_source_role")
+            and _outline_title(str(line.get("text") or "")) == key
+        )
         up = parents[position]
+        alone = (
+            title_line and (page, key) in kept and (up is None or toc[up][2] != page)
+        )
+        if not heads and not alone:
+            continue
         siblings = Counter(
             level
             for p, level in levels.items()
@@ -570,19 +652,36 @@ def insert_outline_headings(
             else (up_level + 1 if up_level is not None else 1)
         )
         inserted[position] = level
-        before[slots[0]].append(
-            {
-                "type": "text",
-                "text": " ".join(title.split()),
-                "text_level": level,
-                "page_idx": page - 1,
-                "bbox": blocks[heads[0]]["bbox"],
+        if title_line:
+            promote[below[0]] = level
+            continue
+        heading = {
+            "type": "text",
+            "text": " ".join(title.split()),
+            "text_level": level,
+            "page_idx": page - 1,
+            "bbox": blocks[heads[0]]["bbox"],
+            "_source_role": "outline-heading",
+        }
+        if y is None:
+            before[slots[0]].append(heading)
+        elif below:
+            before[below[0]].append(heading)
+        else:
+            after[slots[-1]].append(heading)
+    if not (before or after or promote):
+        return blocks
+    out = []
+    for i, block in enumerate(blocks):
+        out += before[i]
+        if i in promote:
+            block = {
+                **block,
+                "text_level": promote[i],
                 "_source_role": "outline-heading",
             }
-        )
-    if not before:
-        return blocks
-    return [new for i, block in enumerate(blocks) for new in [*before[i], block]]
+        out += [block, *after[i]]
+    return out
 
 
 def _capitals(text: str) -> bool:
