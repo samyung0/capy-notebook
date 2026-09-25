@@ -1329,7 +1329,8 @@ topics its book uses under the book's subject, then drops every topic no
 tagged excerpt on a current or retained book version references, so a
 rollback never lands on excerpts whose topics are gone; `retire` runs the same
 drop after deleting the version's rows, which is when a retained version's
-topics may go. The pilot's 32 topics all sit under `statistics`.
+topics may go, and `remove` runs it after deleting a whole book. The pilot's 32
+topics all sit under `statistics`.
 
 Topic ids are unique library-wide (decision 2026-09-23). A book may tag its
 excerpts with another subject's topic without redefining it: its owner's
@@ -1359,7 +1360,13 @@ read here follows `rag_file_contents` to the current
 content, exactly as workspace search does, so a retained version is invisible
 to retrieval while staying exportable in ops. UAT and production read the same
 live library; nothing is pinned. A rollback points a book back at a retained
-version, and `retire` drops a retained version's content rows.
+version, and `retire` drops a retained version's content rows. `remove` takes a
+book out of the library (decision 2026-09-25, first used for Modern Philosophy,
+whose own text is CC BY-NC-SA): in one transaction it deletes every version's
+content rows and model runs, the version rows, the book's `rag_file_contents`,
+`files` and `rag_contents` rows and its `library_books` row, then drops the
+topics only it kept. The source PDF stays in the knowledge-base bucket
+(`books/<sha256>.pdf`), so a republish from the book's saved run restores it.
 
 - `search(query, topics, roles)`: hybrid search restricted in SQL to chunks
   whose excerpt carries a verified tag (evidence quote found in the body,

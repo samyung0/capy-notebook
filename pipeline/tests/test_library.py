@@ -554,6 +554,73 @@ async def test_loader_drops_a_topic_only_when_no_kept_version_carries_it(
     assert left == ["linear-regression"]
 
 
+def test_loader_remove_deletes_every_row_of_the_book(loader, library_db):
+    """Both versions and their receipts go with the book; a topic only it
+    carried is dropped and one another book carries stays."""
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO library_model_runs VALUES('ahss',%s,'tagging','normal','m',1,'{}','{}',NULL,NULL,NULL,'p')",
+            (RETAINED,),
+        )
+        conn.execute(
+            "UPDATE library_excerpts SET topic_ids='{factoring}' WHERE content_id=%s",
+            (RETAINED,),
+        )
+        conn.execute("INSERT INTO files(id,name) VALUES('os','OpenIntro Statistics')")
+        conn.execute("INSERT INTO rag_contents VALUES('os_v1','ready')")
+        conn.execute(
+            "INSERT INTO rag_file_contents VALUES('os',%s,'os_v1')",
+            (library.WORKSPACE,),
+        )
+        conn.execute(
+            "INSERT INTO library_books VALUES('os','OpenIntro Statistics','[]','4e','https://x','https://x','CC BY-SA','https://x','attr','sha2',1024,10,1,'os_v1',1,'[]','[]')"
+        )
+        conn.execute(
+            "INSERT INTO library_book_versions"
+            "(book_id,version,content_id,status,source_run,corpus_identity,parser_release,parser_fingerprint,chunker_version,descriptor,summary,object_key)"
+            " VALUES('os',1,'os_v1','current','run','id','sha','fp','v10','desc','summary','books/sha2.pdf')"
+        )
+        conn.execute(
+            "INSERT INTO library_excerpts VALUES('os_v1','e_os','os','Ch 1','{}','{1}','[]','{}','text','tagged','{introduction}','{linear-regression}',0.9,'quote',true,'synopsis',NULL,'{}')"
+        )
+
+    with pytest.raises(loader.PilotError):
+        loader.remove("missing")
+
+    out = loader.remove("ahss")
+
+    assert [(b["id"], b["excerpts"]) for b in out["books"]] == [("os", 1)]
+    assert out["deleted"]["library_book_versions"] == 2
+    assert out["deleted"]["rag_chunk_vectors_2560"] == 5
+    assert out["topics_dropped"] == 1
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        left = {
+            table: conn.execute(
+                f"SELECT count(*) FROM {table} WHERE {column}='ahss'"
+            ).fetchone()[0]
+            for table, column in (
+                ("library_books", "id"),
+                ("library_book_versions", "book_id"),
+                ("files", "id"),
+                ("rag_file_contents", "file_id"),
+                ("library_chunks", "book_id"),
+                ("library_excerpts", "book_id"),
+                ("library_figures", "book_id"),
+                ("library_model_runs", "book_id"),
+            )
+        }
+        left["rag_contents"] = conn.execute(
+            "SELECT count(*) FROM rag_contents WHERE id = ANY(%s)",
+            ([CURRENT, RETAINED],),
+        ).fetchone()[0]
+        left["rag_chunk_vectors_2560"] = conn.execute(
+            "SELECT count(*) FROM rag_chunk_vectors_2560"
+        ).fetchone()[0]
+        topics = [r[0] for r in conn.execute("SELECT id FROM library_topics")]
+    assert set(left.values()) == {0}, left
+    assert topics == ["linear-regression"]
+
+
 def test_loader_refuses_to_drop_a_subject_that_still_holds_topics(loader, library_db):
     fixture = {
         "statistics": {
