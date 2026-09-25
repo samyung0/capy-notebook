@@ -1,0 +1,551 @@
+diff --git a/crates/betteroffice-xlsx/src/authority.rs b/crates/betteroffice-xlsx/src/authority.rs
+index 11e3192c..652b9f85 100644
+--- a/crates/betteroffice-xlsx/src/authority.rs
++++ b/crates/betteroffice-xlsx/src/authority.rs
+@@ -107,6 +107,10 @@ struct WorkbookBase {
+     hidden_dimensions: Vec<HiddenDimensions>,
+     shared_strings: Vec<String>,
+     styles: Stylesheet,
++    /// LAZY PROTOTYPE: the parsed source sheets unedited cells project from.
++    sheets: Arc<Vec<Sheet>>,
++    /// LAZY PROTOTYPE: base formulas bound once against the bootstrap topology.
++    bindings: Arc<std::sync::OnceLock<Result<stable::BaseBindings, String>>>,
+ }
+ 
+ impl WorkbookBase {
+@@ -175,6 +179,8 @@ impl WorkbookBase {
+             hidden_dimensions: hidden_dimensions(model, legacy_dimensions),
+             shared_strings: model.shared_strings.clone(),
+             styles: model.styles.clone(),
++            sheets: Arc::new(model.sheets.clone()),
++            bindings: Arc::new(std::sync::OnceLock::new()),
+         })
+     }
+ 
+@@ -516,6 +522,14 @@ impl WorkbookAuthority {
+         }
+     }
+ 
++    /// LAZY PROTOTYPE: net effects read from the overrides.
++    pub(crate) fn override_effects(
++        &self,
++        model: &WorkbookModel,
++    ) -> Result<Vec<serde_json::Value>, AuthorityError> {
++        stable::override_effects(&self.doc, &self.base, model).map_err(AuthorityError::InvalidState)
++    }
++
+     pub(crate) fn client_id(&self) -> u64 {
+         self.doc.client_id().get()
+     }
+diff --git a/crates/betteroffice-xlsx/src/authority/stable.rs b/crates/betteroffice-xlsx/src/authority/stable.rs
+index 70ca7ca7..0ce4e3a8 100644
+--- a/crates/betteroffice-xlsx/src/authority/stable.rs
++++ b/crates/betteroffice-xlsx/src/authority/stable.rs
+@@ -454,13 +454,45 @@ fn context<T: ReadTxn>(txn: &T) -> Result<Context, String> {
+             Ok((key.clone(), name))
+         })
+         .collect::<Result<BTreeMap<_, _>, String>>()?;
++    let resolved = resolve_names(&originals);
++    let mut names = Vec::new();
++    let mut axes = BTreeMap::new();
++    for key in &keys {
++        let sheet = nested_map(&sheets, txn, key)?;
++        names.push(resolved[key].clone());
++        axes.insert(
++            key.clone(),
++            (
++                axis(txn, &sheet, key, ROWS, MAX_ROWS)?,
++                axis(txn, &sheet, key, COLS, MAX_COLS)?,
++            ),
++        );
++    }
++    for (key, _) in sheets.iter(txn) {
++        if !axes.contains_key(key) {
++            let sheet = nested_map(&sheets, txn, key)?;
++            axes.insert(
++                key.to_owned(),
++                (
++                    axis(txn, &sheet, key, ROWS, MAX_ROWS)?,
++                    axis(txn, &sheet, key, COLS, MAX_COLS)?,
++                ),
++            );
++        }
++    }
++    Ok(Context { keys, names, axes })
++}
++
++/// Duplicate sheet names receive stable digest suffixes (shared by the live
++/// context and the bootstrap context unedited formulas bind against).
++fn resolve_names(originals: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+     let mut reserved = originals
+         .values()
+         .map(|name| name.to_lowercase())
+         .collect::<BTreeSet<_>>();
+     let mut assigned = BTreeSet::new();
+     let mut resolved = BTreeMap::new();
+-    for (key, original) in &originals {
++    for (key, original) in originals {
+         let mut name = original.clone();
+         if !assigned.insert(original.to_lowercase()) {
+             let digest = format!("{:x}", Sha256::digest(key.as_bytes()));
+@@ -487,33 +519,101 @@ fn context<T: ReadTxn>(txn: &T) -> Result<Context, String> {
+         }
+         resolved.insert(key.clone(), name);
+     }
+-    let mut names = Vec::new();
++    resolved
++}
++
++/// LAZY PROTOTYPE. Base formulas bound against the topology every replica
++/// bootstraps (source keys, source names, untouched axes). Binding is pure, so
++/// it is recomputed per replica instead of being stored in Yjs.
++pub(super) struct BaseBindings {
++    formulas: Vec<HashMap<(u32, u32), Formula>>,
++}
++
++fn initial_context(base: &WorkbookBase) -> Result<Context, String> {
++    let keys = (0..base.sheets.len())
++        .map(|index| format!("sheet:{index}"))
++        .collect::<Vec<_>>();
++    let originals = keys
++        .iter()
++        .cloned()
++        .zip(base.sheets.iter().map(|sheet| sheet.name.clone()))
++        .collect::<BTreeMap<_, _>>();
++    let resolved = resolve_names(&originals);
++    let names = keys.iter().map(|key| resolved[key].clone()).collect();
++    let (changes, active) = (BTreeMap::new(), BTreeSet::new());
+     let mut axes = BTreeMap::new();
+     for key in &keys {
+-        let sheet = nested_map(&sheets, txn, key)?;
+-        names.push(resolved[key].clone());
+         axes.insert(
+             key.clone(),
+             (
+-                axis(txn, &sheet, key, ROWS, MAX_ROWS)?,
+-                axis(txn, &sheet, key, COLS, MAX_COLS)?,
++                Axis::project(MAX_ROWS, &changes, &active)?,
++                Axis::project(MAX_COLS, &changes, &active)?,
+             ),
+         );
+     }
+-    for (key, _) in sheets.iter(txn) {
+-        if !axes.contains_key(key) {
+-            let sheet = nested_map(&sheets, txn, key)?;
+-            axes.insert(
+-                key.to_owned(),
+-                (
+-                    axis(txn, &sheet, key, ROWS, MAX_ROWS)?,
+-                    axis(txn, &sheet, key, COLS, MAX_COLS)?,
+-                ),
+-            );
+-        }
+-    }
+     Ok(Context { keys, names, axes })
+ }
++
++fn base_bindings(base: &WorkbookBase) -> Result<&BaseBindings, String> {
++    base.bindings
++        .get_or_init(|| {
++            let context = initial_context(base)?;
++            let formulas = base
++                .sheets
++                .iter()
++                .enumerate()
++                .map(|(index, sheet)| {
++                    let key = format!("sheet:{index}");
++                    sheet
++                        .iter_cells()
++                        .filter_map(|(at, cell)| cell.formula.as_ref().map(|formula| (at, formula)))
++                        .map(|(at, formula)| {
++                            Ok(((at.row, at.col), Formula::bind(formula, Some(&key), &context)?))
++                        })
++                        .collect::<Result<HashMap<_, _>, String>>()
++                })
++                .collect::<Result<Vec<_>, String>>()?;
++            Ok(BaseBindings { formulas })
++        })
++        .as_ref()
++        .map_err(Clone::clone)
++}
++
++/// LAZY PROTOTYPE. The parsed source cell an identity names, if both of its
++/// points lie on the source runs of a source sheet.
++fn base_cell<'a>(
++    base: &'a WorkbookBase,
++    context: &Context,
++    key: &str,
++    at: CellRef,
++) -> Result<Option<&'a Cell>, String> {
++    let Some(index) = base_sheet_index(key) else {
++        return Ok(None);
++    };
++    let (rows, cols) = context.axes(key)?;
++    let (row, col) = (rows.at(at.row)?, cols.at(at.col)?);
++    if row.run != "base"
++        || col.run != "base"
++        || row.offset >= u64::from(MAX_ROWS)
++        || col.offset >= u64::from(MAX_COLS)
++    {
++        return Ok(None);
++    }
++    Ok(base
++        .sheets
++        .get(index)
++        .and_then(|sheet| sheet.cell(CellRef::new(row.offset as u32, col.offset as u32))))
++}
++
++fn base_point(key: &str) -> Result<Option<(u32, u32)>, String> {
++    let (row, col): (Point, Point) =
++        serde_json::from_str(key).map_err(|error| format!("invalid stable cell key: {error}"))?;
++    Ok((row.run == "base"
++        && col.run == "base"
++        && row.offset < u64::from(MAX_ROWS)
++        && col.offset < u64::from(MAX_COLS))
++    .then_some((row.offset as u32, col.offset as u32)))
++}
+ fn blank_sheet(txn: &mut TransactionMut<'_>, key: &str, name: &str) -> Result<MapRef, String> {
+     let sheets = txn.get_or_insert_map(SHEETS);
+     let sheet = sheets.insert(txn, key, MapPrelim::default());
+@@ -575,11 +675,24 @@ fn write_cell(
+     styles: &Stylesheet,
+     content: bool,
+     format: bool,
++    base: Option<&Cell>,
++    base_styles: &Stylesheet,
+ ) -> Result<(), String> {
++    // LAZY PROTOTYPE: an entry is an override of the source cell. Removing it
++    // reverts to the source; an explicit empty value or "" style clears it.
+     let cell_key = context.key(key, at)?;
+     if content {
+         let contents = nested_map(sheet, txn, CONTENTS)?;
+-        if cell.formula.is_none() && matches!(cell.value, CellValue::Empty) {
++        let empty = cell.formula.is_none() && matches!(cell.value, CellValue::Empty);
++        let reverts = match base.filter(|base| {
++            base.formula.is_some() || !matches!(base.value, CellValue::Empty)
++        }) {
++            None => empty,
++            Some(base) => {
++                base.formula.is_none() && cell.formula.is_none() && base.value == cell.value
++            }
++        };
++        if reverts {
+             contents.remove(txn, &cell_key);
+         } else {
+             set_json(
+@@ -599,13 +712,15 @@ fn write_cell(
+     }
+     if format {
+         let formats = nested_map(sheet, txn, STYLES)?;
+-        match cell.style {
+-            Some(style) => {
+-                formats.try_update(txn, cell_key, style_key(styles, style)?);
+-            }
+-            None => {
+-                formats.remove(txn, &cell_key);
+-            }
++        let desired = cell.style.map(|style| style_key(styles, style)).transpose()?;
++        let source = base
++            .and_then(|base| base.style)
++            .map(|style| style_key(base_styles, style))
++            .transpose()?;
++        if desired == source {
++            formats.remove(txn, &cell_key);
++        } else {
++            formats.try_update(txn, cell_key, desired.unwrap_or_default());
+         }
+     }
+     Ok(())
+@@ -657,19 +772,7 @@ pub(super) fn seed(
+     let context = context(&txn)?;
+     for (key, value) in keys.iter().zip(&model.sheets) {
+         let sheet = sheet_map(&txn, key)?;
+-        for (at, cell) in value.iter_cells() {
+-            write_cell(
+-                &mut txn,
+-                &sheet,
+-                key,
+-                at,
+-                cell,
+-                &context,
+-                &model.styles,
+-                true,
+-                true,
+-            )?;
+-        }
++        // LAZY PROTOTYPE: cells are not seeded; they project from the source.
+         let (rows, cols) = context.axes(key)?;
+         let heights = nested_map(&sheet, &txn, ROW_HEIGHTS)?;
+         for (row, value) in &value.row_heights {
+@@ -909,6 +1012,20 @@ pub(super) fn materialize<T: ReadTxn>(
+                 formula.resolve(&context)?;
+             }
+         }
++        // LAZY PROTOTYPE: a hidden source sheet's formulas must still resolve,
++        // as their seeded copies had to. Active sheets resolve while projecting.
++        if let Some(index) = source_index.filter(|_| context.index(key).is_none()) {
++            let contents = nested_map(&sheet, txn, CONTENTS)?;
++            for (at, formula) in &base_bindings(base)?.formulas[index] {
++                let identity = json(&(
++                    Point { run: "base".into(), offset: u64::from(at.0) },
++                    Point { run: "base".into(), offset: u64::from(at.1) },
++                ))?;
++                if contents.get(txn, &identity).is_none() {
++                    formula.resolve(&context)?;
++                }
++            }
++        }
+         for (_, value) in nested_map(&sheet, txn, MERGES)?.iter(txn) {
+             decode::<BoundRange>(value)?.validate(&context, key)?;
+         }
+@@ -928,7 +1045,62 @@ pub(super) fn materialize<T: ReadTxn>(
+     for (index, key) in context.keys.iter().enumerate() {
+         let source = sheet_map(txn, key)?;
+         let mut sheet = Sheet::new(context.names[index].clone());
+-        for (cell_key, value) in nested_map(&source, txn, CONTENTS)?.iter(txn) {
++        let contents = nested_map(&source, txn, CONTENTS)?;
++        let formats = nested_map(&source, txn, STYLES)?;
++        // LAZY PROTOTYPE: project every source cell through the live axes,
++        // skipping the halves an override replaces.
++        if let Some(base_index) = base_sheet_index(key) {
++            let base_sheet = base
++                .sheets
++                .get(base_index)
++                .ok_or("source sheet identity does not match the exact package")?;
++            let bindings = base_bindings(base)?;
++            let overridden = |map: &MapRef| {
++                map.keys(txn)
++                    .map(base_point)
++                    .filter_map(Result::transpose)
++                    .collect::<Result<HashSet<_>, String>>()
++            };
++            let (content_overrides, format_overrides) = (overridden(&contents)?, overridden(&formats)?);
++            let mut base_styles = HashMap::new();
++            let (rows, cols) = context.axes(key)?;
++            for (at, cell) in base_sheet.iter_cells() {
++                let (Some(row), Some(col)) = (
++                    rows.index_in("base", u64::from(at.row)),
++                    cols.index_in("base", u64::from(at.col)),
++                ) else {
++                    continue;
++                };
++                let mut out = Cell::default();
++                if !content_overrides.contains(&(at.row, at.col)) {
++                    out.value = cell.value.clone();
++                    if cell.formula.is_some() {
++                        out.formula = Some(
++                            bindings.formulas[base_index]
++                                .get(&(at.row, at.col))
++                                .ok_or("missing source formula binding")?
++                                .resolve(&context)?,
++                        );
++                    }
++                }
++                if !format_overrides.contains(&(at.row, at.col)) {
++                    if let Some(style) = cell.style {
++                        out.style = match base_styles.get(&style) {
++                            Some(mapped) => *mapped,
++                            None => {
++                                let mapped = *style_indices
++                                    .get(&style_key(&base.styles, style)?)
++                                    .ok_or("unknown source cell style")?;
++                                base_styles.insert(style, mapped);
++                                mapped
++                            }
++                        };
++                    }
++                }
++                sheet.set_cell(CellRef::new(row, col), out);
++            }
++        }
++        for (cell_key, value) in contents.iter(txn) {
+             let content: Content = decode(value)?;
+             let Some(at) = context.at(key, cell_key)? else {
+                 continue;
+@@ -937,20 +1109,20 @@ pub(super) fn materialize<T: ReadTxn>(
+                 .formula
+                 .map(|formula| formula.resolve(&context))
+                 .transpose()?;
+-            sheet.set_cell(
+-                at,
+-                Cell {
+-                    value: content.value,
+-                    formula,
+-                    style: None,
+-                },
+-            );
++            let mut cell = sheet.cell(at).cloned().unwrap_or_default();
++            cell.value = content.value;
++            cell.formula = formula;
++            sheet.set_cell(at, cell);
+         }
+-        for (cell_key, value) in nested_map(&source, txn, STYLES)?.iter(txn) {
++        for (cell_key, value) in formats.iter(txn) {
+             let style = value
+                 .cast::<String>()
+                 .map_err(|_| "invalid cell style key")?;
+-            let style = *style_indices.get(&style).ok_or("unknown cell style")?;
++            let style = if style.is_empty() {
++                None
++            } else {
++                *style_indices.get(&style).ok_or("unknown cell style")?
++            };
+             let Some(at) = context.at(key, cell_key)? else {
+                 continue;
+             };
+@@ -1246,6 +1418,8 @@ pub(super) fn apply(
+                             &after.styles,
+                             content,
+                             format,
++                            base_cell(base, &context, key, *at)?,
++                            &base.styles,
+                         )?;
+                     }
+                     Op::PatchRangeStyle { range, .. }
+@@ -1265,6 +1439,8 @@ pub(super) fn apply(
+                                     &after.styles,
+                                     false,
+                                     true,
++                                    base_cell(base, &context, key, at)?,
++                                    &base.styles,
+                                 )?;
+                             }
+                         }
+@@ -1418,6 +1594,89 @@ pub(super) fn cell_identity(doc: &Doc, sheet: SheetId, at: CellRef) -> Result<St
+     Ok(format!("{key}:{}", context.key(key, at)?))
+ }
+ 
++/// LAZY PROTOTYPE. Net effects against the source package read from the
++/// overrides alone: one entry per overridden cell whose text or format differs
++/// from the source, one per active row or column change. No full projection.
++pub(super) fn override_effects(
++    doc: &Doc,
++    base: &WorkbookBase,
++    model: &WorkbookModel,
++) -> Result<Vec<serde_json::Value>, String> {
++    let txn = doc.transact();
++    let context = context(&txn)?;
++    let text = |cell: Option<&Cell>| -> Option<String> {
++        let cell = cell?;
++        match &cell.formula {
++            Some(formula) => Some(format!("={formula}")),
++            None if matches!(cell.value, CellValue::Empty) => None,
++            None => serde_json::to_string(&cell.value).ok(),
++        }
++    };
++    let mut effects = Vec::new();
++    for (index, key) in context.keys.iter().enumerate() {
++        let sheet = sheet_map(&txn, key)?;
++        let current = &model.sheets[index];
++        let name = &context.names[index];
++        let source = base_sheet_index(key).and_then(|index| base.sheets.get(index));
++        let source_cell = |cell_key: &str| -> Result<Option<&Cell>, String> {
++            Ok(match (source, base_point(cell_key)?) {
++                (Some(sheet), Some((row, col))) => sheet.cell(CellRef::new(row, col)),
++                _ => None,
++            })
++        };
++        for (cell_key, _) in nested_map(&sheet, &txn, CONTENTS)?.iter(&txn) {
++            let Some(at) = context.at(key, cell_key)? else {
++                continue;
++            };
++            let (before, after) = (text(source_cell(cell_key)?), text(current.cell(at)));
++            if before == after {
++                continue;
++            }
++            let operation = match (&before, &after) {
++                (None, _) => "add",
++                (_, None) => "remove",
++                _ => "replace",
++            };
++            let mut effect = serde_json::json!({
++                "id": format!("{key}:{cell_key}"), "kind": "text", "operation": operation,
++                "label": format!("{name}!{}", at.to_a1()),
++            });
++            if let Some(before) = before {
++                effect["before"] = before.into();
++            }
++            if let Some(after) = after {
++                effect["after"] = after.into();
++            }
++            effects.push(effect);
++        }
++        for (cell_key, _) in nested_map(&sheet, &txn, STYLES)?.iter(&txn) {
++            let Some(at) = context.at(key, cell_key)? else {
++                continue;
++            };
++            effects.push(serde_json::json!({
++                "id": format!("{key}:{cell_key}:format"), "kind": "visual", "operation": "replace",
++                "label": format!("{name}!{} formatting", at.to_a1()),
++            }));
++        }
++        for axis_name in [ROWS, COLS] {
++            let active = nested_map(&sheet, &txn, axis_name)?;
++            let catalog = nested_map(&nested_map(&map(&txn, CATALOG)?, &txn, key)?, &txn, axis_name)?;
++            for (id, _) in active.iter(&txn) {
++                let change: Change = decode(catalog.get(&txn, id).ok_or("missing axis change")?)?;
++                let (operation, count) = match change {
++                    Change::Insert { count, .. } => ("add", u64::from(count)),
++                    Change::Delete { spans } => ("remove", spans.iter().map(|span| span.len).sum()),
++                };
++                effects.push(serde_json::json!({
++                    "id": format!("{key}:{axis_name}:{id}"), "kind": "text", "operation": operation,
++                    "label": format!("{name}: {count} {axis_name} {}", if operation == "add" { "inserted" } else { "deleted" }),
++                }));
++            }
++        }
++    }
++    Ok(effects)
++}
++
+ pub(super) fn cell_identities(
+     doc: &Doc,
+     cells: impl IntoIterator<Item = (SheetId, CellRef)>,
+diff --git a/crates/betteroffice-xlsx/src/authority/topology.rs b/crates/betteroffice-xlsx/src/authority/topology.rs
+index 7a150cd0..83e0c332 100644
+--- a/crates/betteroffice-xlsx/src/authority/topology.rs
++++ b/crates/betteroffice-xlsx/src/authority/topology.rs
+@@ -8,6 +8,11 @@ pub(super) struct Point {
+     pub offset: u64,
+ }
+ 
++struct PointRef<'a> {
++    run: &'a str,
++    offset: u64,
++}
++
+ #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+ pub(super) struct Span {
+     pub run: String,
+@@ -300,6 +305,11 @@ impl Axis {
+     }
+ 
+     pub fn index(&self, point: &Point) -> Option<u32> {
++        self.index_in(&point.run, point.offset)
++    }
++
++    pub fn index_in(&self, run: &str, offset: u64) -> Option<u32> {
++        let point = PointRef { run, offset };
+         let mut index = 0;
+         for span in &self.spans {
+             if span.run == point.run
+diff --git a/crates/betteroffice-xlsx/src/workbook.rs b/crates/betteroffice-xlsx/src/workbook.rs
+index c328a542..8694a2f6 100644
+--- a/crates/betteroffice-xlsx/src/workbook.rs
++++ b/crates/betteroffice-xlsx/src/workbook.rs
+@@ -754,6 +754,15 @@ impl Workbook {
+         &self.model
+     }
+ 
++    /// LAZY PROTOTYPE: net effects against the source package, from overrides.
++    pub fn override_effects_json(&self) -> Result<String> {
++        let effects = self
++            .authority
++            .override_effects(&self.model)
++            .map_err(authority_error)?;
++        serde_json::to_string(&effects).map_err(|error| Error::CollaborativeState(error.to_string()))
++    }
++
+     pub fn into_model(self) -> WorkbookModel {
+         self.model
+     }

@@ -1,0 +1,10 @@
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { inflateRawSync } from 'node:zlib';
+const runtime = await import('file:///C:/WEB/capy-notebook/vendor/betteroffice/shared/office-checkpoint.mjs');
+const input = process.argv[2];
+const bytes = new Uint8Array(await readFile(input));
+const seed = await runtime.seedOffice('docx', bytes);
+const out = await runtime.exportOffice(bytes, seed, { now: '2000-01-01T00:00:00.000Z', seed: createHash('sha256').update('x').digest('hex') });
+await writeFile(input.replace('.docx', '-export.docx'), out);
+console.log('exported', out.byteLength);

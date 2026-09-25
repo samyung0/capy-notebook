@@ -1,0 +1,20 @@
+//! Scratch probe (not for commit): upstream's stored seed, seeded with a
+//! 45-bit client id like the headless runtime, written to a file.
+//! cargo run -p betteroffice-docx-edit --example seed_size -- in.docx state.bin
+use docx_edit::EngineSession;
+
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let path = args.next().expect("docx path");
+    let out = args.next().expect("state path");
+    let bytes = std::fs::read(&path).expect("read docx");
+    let engine = EngineSession::new(0x1234_5678_9abc_u64);
+    docx_edit::seed_from_docx(engine.doc(), &bytes).expect("seed");
+    let state = engine.doc().encode_state_as_update_v1();
+    std::fs::write(&out, &state).expect("write state");
+    println!(
+        "{{\"file\":{:?},\"state\":{}}}",
+        path.rsplit(['/', '\\']).next().unwrap_or(&path),
+        state.len()
+    );
+}

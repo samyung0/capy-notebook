@@ -1,0 +1,56 @@
+--- /c/WEB/capy-notebook/vendor/betteroffice/shared/office-checkpoint.mjs	2026-09-18 00:07:10.645314300 +0900
++++ bundle/office-checkpoint.mjs	2026-09-25 15:57:25.758275100 +0900
+@@ -5853,6 +5853,10 @@
+           throw new Error(`DOCX rebase cannot carry opaque content at ${story}:${offset}`);
+         if (segment.embedKind === "image") {
+           const src = segment.payload.src;
++          if (typeof src === "string" && src.startsWith("media:")) {
++            offset += 1;
++            continue;
++          }
+           if (typeof src !== "string" || !/^data:[^,]*;base64,/.test(src))
+             throw new Error(`DOCX rebase requires image bytes at ${story}:${offset}`);
+           const id = images.get(src.slice(src.indexOf(",") + 1));
+@@ -7988,6 +7992,15 @@
+     return item;
+   });
+ }
++function imageAsset(src, media) {
++  if (typeof src === "string" && src.startsWith("media:")) {
++    const file = media?.get(src.slice("media:".length));
++    if (!file)
++      throw new Error("Image part is absent from the source package");
++    return assetFromDataUrl(file.dataUrl);
++  }
++  return assetFromDataUrl(src);
++}
+ function assetFromDataUrl(src) {
+   if (typeof src !== "string")
+     return;
+@@ -8048,7 +8061,7 @@
+       return "";
+   }
+ }
+-function docxEntries(session, stories, embeds) {
++function docxEntries(session, stories, embeds, media) {
+   const entries = [];
+   for (const storyId of stories) {
+     const objects = session.storyObjectIds(storyId);
+@@ -8089,7 +8102,7 @@
+         paragraphIndex++;
+       } else if (segment.embedKind === "image" && !segment.attributes.del) {
+         const id = `${storyId}:image:${stableId}`;
+-        const asset = assetFromDataUrl(segment.payload.src);
++        const asset = imageAsset(segment.payload.src, media);
+         const assetRef = {
+           format: "docx",
+           kind: "image",
+@@ -8444,7 +8457,7 @@
+         state: () => session.encodeState(),
+         entries: () => {
+           project();
+-          return docxEntries(session, stories, embeds);
++          return docxEntries(session, stories, embeds, base.package.media);
+         },
+         editable: () => {
+           project();
