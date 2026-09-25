@@ -1,5 +1,8 @@
 import { expect, it } from 'vitest';
-import { acknowledgeSourceCheckpoint } from './useSourceSession';
+import {
+  acknowledgeSourceCheckpoint,
+  sourceChangesCovered,
+} from './useSourceSession';
 
 it('keeps later authored changes dirty when an earlier or unrelated checkpoint is acknowledged', () => {
   const state = {
@@ -18,4 +21,18 @@ it('keeps later authored changes dirty when an earlier or unrelated checkpoint i
   expect(acknowledgeSourceCheckpoint(state, ['second'])).toBe(false);
   state.sequence++;
   expect(acknowledgeSourceCheckpoint(state, ['second'])).toBe(false);
+});
+
+it('keeps a replaced view under the banner only when the server holds its changes, and skips drafts only for receipts', () => {
+  const state = { acknowledged: 2, sequence: 3 };
+  // A silent editor never answered ready: its unsaved change goes to recovery.
+  expect(sourceChangesCovered(state)).toBe(false);
+  // Ready at sequence 3: the publication holds the change, so the banner
+  // shows, but the draft is still written until a receipt covers it.
+  expect(sourceChangesCovered(state, 3)).toBe(true);
+  state.acknowledged = 3;
+  expect(sourceChangesCovered(state)).toBe(true);
+  // An edit after ready (or after the receipt) is unsaved again.
+  state.sequence++;
+  expect(sourceChangesCovered(state, 3)).toBe(false);
 });

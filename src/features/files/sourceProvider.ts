@@ -34,12 +34,40 @@ export function registerMockSourceProvider(
   mockFactory = factory;
 }
 
+/** The collaboration service's refusal while the room is locked for a
+ * publication (collaboration/src/sourceHandoff.ts). */
+export const SOURCE_PUBLISHING_REASON = 'source-publishing';
+const PUBLISHING_RETRY_MS = 3000;
+
 /** Under MSW the mock is the only allowed provider: a real socket would
  * point at `mock://collaboration` and fail for an unrelated reason. */
 export function createSourceProvider(
   config: SourceProviderConfig
 ): SourceProvider {
-  if (!USE_MSW) return new HocuspocusProvider(config);
-  if (!mockFactory) throw new Error('Mock source provider is not registered');
-  return mockFactory(config);
+  if (USE_MSW) {
+    if (!mockFactory) throw new Error('Mock source provider is not registered');
+    return mockFactory(config);
+  }
+  // A publication locks the room until the new epoch exists. The first
+  // refusal reconnects after a short delay without reaching the session;
+  // a refusal before authenticating again does.
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  let retried = false;
+  const provider: HocuspocusProvider = new HocuspocusProvider({
+    ...config,
+    onAuthenticated: () => {
+      retried = false;
+    },
+    onAuthenticationFailed: (event) => {
+      if (event.reason !== SOURCE_PUBLISHING_REASON || retried) {
+        config.onAuthenticationFailed?.(event);
+        return;
+      }
+      retried = true;
+      provider.disconnect();
+      retry = setTimeout(() => void provider.connect(), PUBLISHING_RETRY_MS);
+    },
+    onDestroy: () => clearTimeout(retry),
+  });
+  return provider;
 }

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Document, Hocuspocus } from '@hocuspocus/server';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
+import { CALL_TIMEOUT_MS } from './officeRuntime.js';
 import {
   effectTokens,
   encodeBaseline,
@@ -11,6 +12,27 @@ import {
 } from './sourceDocuments.js';
 
 export const SOURCE_HANDOFF_CHANNEL = 'capy:collaboration:source-handoff';
+// Editors answer ready within READY_WINDOW_MS or are closed; each instance then
+// persists the room, possibly behind a running save, and acknowledges. The
+// coordinator waits ACK_WAIT_MS for that, then rebases and publishes within
+// about one Office engine call (CALL_TIMEOUT_MS). The room lock covers both (a
+// publication that outlives it fails at the lease check), and each instance's
+// watchdog outlasts the lock so it never restores editing while the
+// coordinator can still publish.
+const READY_WINDOW_MS = 10_000;
+const ACK_WAIT_MS = 60_000;
+const LOCK_MS = ACK_WAIT_MS + CALL_TIMEOUT_MS;
+const WATCHDOG_MS = LOCK_MS + 5000;
+
+/** Authentication refusal reason while the room is locked for a publication. */
+export const SOURCE_PUBLISHING_REASON = 'source-publishing';
+/** Hocuspocus sends `reason` to the refused provider, which retries shortly. */
+export class SourcePublishingError extends Error {
+  readonly reason = SOURCE_PUBLISHING_REASON;
+  constructor() {
+    super('Source room is locked for a publication');
+  }
+}
 interface Prepare {
   checkpoint: number;
   epoch: number;
@@ -178,7 +200,7 @@ export class SourceHandoff {
               sockets: new Set(connections.map((c) => c.socketId)),
               watchdog: setTimeout(() => {
                 void this.recover(event);
-              }, 125_000),
+              }, WATCHDOG_MS),
             };
             this.local.set(event.room, waiting);
             waiting.watchdog.unref();
@@ -193,7 +215,7 @@ export class SourceHandoff {
                 connection.webSocket.close(4408, 'Source handoff timed out');
               }
               resolve();
-            }, 10_000);
+            }, READY_WINDOW_MS);
             for (const connection of connections) {
               connection.onClose(() => {
                 if (
@@ -303,7 +325,7 @@ export class SourceHandoff {
     const id = randomUUID();
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;
-    if ((await this.redis.set(lock, id, 'PX', 120_000, 'NX')) !== 'OK')
+    if ((await this.redis.set(lock, id, 'PX', LOCK_MS, 'NX')) !== 'OK')
       throw new SourceRequestError(503, 'Source handoff already running');
     let completed = false;
     try {
@@ -319,7 +341,7 @@ export class SourceHandoff {
           type: 'prepare',
         } satisfies Prepare)
       );
-      const deadline = Date.now() + 15_000;
+      const deadline = Date.now() + ACK_WAIT_MS;
       while (true) {
         const acknowledgments = await this.redis.hgetall(
           `capy:source-handoff:${id}`

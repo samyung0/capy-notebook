@@ -282,10 +282,14 @@ lifecycle, membership/share role, owner lifecycle, and quota state from
 PostgreSQL. The sidecar adds server-owned actor metadata inside the same Yjs
 transaction as every writable update; Redis peers therefore receive the edit
 and its provenance atomically. It writes under a dedicated marker client id
-(moved to a fresh id when an update writes under it), so remote updates never
-advance and rotate the room's own client id. Client updates that alter that
+(moved to a fresh id when a peer's update writes under it), so remote updates
+never advance and rotate the room's own client id. Client updates that alter that
 metadata are rejected; the check reads the decoded update against the room
-rather than applying it to a copy. A debounced store snapshots the document and rechecks every distinct
+rather than applying it to a copy. Because the marker for an update is written
+at the marker client's next clock inside the same transaction, the check also
+rejects an update that writes under that client, names it as an origin, or
+deletes past its held clock; otherwise one crafted update could erase or forge
+every later marker. A debounced store snapshots the document and rechecks every distinct
 contributor represented by that snapshot, not only the last editor. It removes
 the claimed metadata from the committed state and clears only the matching
 in-memory generations after commit, so an update arriving during the store

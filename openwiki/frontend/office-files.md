@@ -226,7 +226,8 @@ checkpoint and an agent edit's receipt only, and the browser's editing session
 read carries the state without the baseline or pending effects. Saved means the
 server has acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same
 path. Each room runs one save at a time with at most one queued behind it;
-callers arriving while one is queued share it and receive its outcome.
+callers arriving while one is queued for the same document share it and
+receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
 
 Each incoming source update is checked without copying the room: contributor
@@ -267,13 +268,23 @@ input into the document, waits until its provider has nothing unsent, and
 reports ready; it does not wait for its own checkpoint receipt. After 10
 seconds the service disconnects writers that have not answered (they reconnect
 into the new epoch, where unsaved changes go to recovery); a writer that
-disconnects is no longer waited for. The service then persists the room once
-and publishes the source, index, rebased current state and matching indexed
-baseline atomically. The current checkpoint can remain ahead of the indexed
-checkpoint, with later edits retained as pending effects. A concurrent save
+disconnects is no longer waited for. The service then persists the room once.
+The publishing coordinator waits up to 60 seconds for every instance's
+acknowledgement, since that persist can queue behind a running save, and then
+publishes the source, index, rebased current state and matching indexed
+baseline atomically. The room lock covers that wait plus one Office engine
+call (3 minutes), and each instance's recovery watchdog outlasts the lock.
+While the room is locked, a reconnecting editor's authentication is refused
+with the distinct reason `source-publishing`; the editor reconnects once after
+3 seconds without showing an error, and only a second refusal before it
+authenticates shows one. Other authentication failures show at once. The
+current checkpoint can remain ahead of the indexed checkpoint, with later edits
+retained as pending effects. A concurrent save
 retries only the local rebase against the same parsed candidate. A connected
 editor that answered ready counts as saved and keeps its view under the
-newer-version banner; the new epoch starts with empty Undo/Redo.
+newer-version banner; a disconnect clears that, so an editor that loses its
+connection before the completion goes to recovery. The new epoch starts with
+empty Undo/Redo.
 
 Export finalization compares the B2 object's size and unquoted ETag with the
 gateway's HEAD result. Rejected exports send a complete failure receipt so the
@@ -299,7 +310,10 @@ collaboration process by SHA within a bounded 128 MiB cache. Headless export,
 comparison and asset extraction run in one worker thread. Calls queue on the
 main thread with one in flight and time out about 2 minutes after sending; a
 WebAssembly trap or a timeout fails that call and replaces the worker, while
-engine refusals such as `stale_target` are ordinary results. A save that fails
+engine refusals such as `stale_target` are ordinary results. wasm-bindgen's
+broken-object errors (for example "attempted to take ownership of Rust value
+while it was borrowed") count as traps, because the engine's cleanup throws
+them in place of the trap. A save that fails
 inside the engine reports the failure to its clients, who keep their drafts,
 and is not queued for the failed-store retry.
 

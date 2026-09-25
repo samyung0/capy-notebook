@@ -83,13 +83,20 @@ export function documentContributors(document: Y.Doc): DocumentContributor[] {
   return markerSnapshot(document);
 }
 
+// The current marker client of each tracked room (see the tracker below).
+const markerClients = new WeakMap<Y.Doc, () => number>();
+
 /**
  * Contributor markers are server-owned authorization metadata. A client may
  * observe them through Yjs sync, but its update must not add, replace, or
  * remove them. The check reads the decoded update against the room instead of
  * applying it to a copy: structs the room already holds are skipped, a new
  * struct may not sit in the marker map (named root, or an origin in it), and
- * the delete set may not cover a live marker.
+ * the delete set may not cover a live marker. The room writes the marker for
+ * this very update under its marker client at the next clock, inside the same
+ * transaction, so an update may not write under that client, name it as an
+ * origin, or delete past its held clock (Yjs keeps such a range pending and
+ * deletes every later marker with it).
  */
 export function assertUpdatePreservesContributors(
   document: Y.Doc,
@@ -97,27 +104,32 @@ export function assertUpdatePreservesContributors(
 ) {
   const markers = document.getMap<unknown>(CONTRIBUTORS_ROOT);
   const held = (client: number) => Y.getState(document.store, client);
+  const markerClient = markerClients.get(document)?.();
   const inMarkers = (id: Y.ID | null) =>
     !!id &&
-    id.clock < held(id.client) &&
-    (Y.getItem(document.store, id) as Y.Item).parent === markers;
+    (id.client === markerClient ||
+      (id.clock < held(id.client) &&
+        (Y.getItem(document.store, id) as Y.Item).parent === markers));
   const { structs, ds } = Y.decodeUpdate(update);
   for (const struct of structs) {
-    if (
-      !(struct instanceof Y.Item) ||
-      struct.id.clock + struct.length <= held(struct.id.client)
-    )
-      continue;
+    if (struct.id.clock + struct.length <= held(struct.id.client)) continue;
     // Decoded items name a root parent by string; others resolve via origins.
     if (
-      (struct.parent as unknown) === CONTRIBUTORS_ROOT ||
-      inMarkers(struct.origin) ||
-      inMarkers(struct.rightOrigin)
+      struct.id.client === markerClient ||
+      (struct instanceof Y.Item &&
+        ((struct.parent as unknown) === CONTRIBUTORS_ROOT ||
+          inMarkers(struct.origin) ||
+          inMarkers(struct.rightOrigin)))
     )
       throw new Error('client update changed collaboration metadata');
   }
   for (const item of markers._map.values()) {
     if (!item.deleted && Y.isDeleted(ds, item.id))
+      throw new Error('client update changed collaboration metadata');
+  }
+  if (markerClient === undefined) return;
+  for (const { clock, len } of ds.clients.get(markerClient) ?? []) {
+    if (clock + len > held(markerClient))
       throw new Error('client update changed collaboration metadata');
   }
 }
@@ -136,8 +148,9 @@ function freshClientId(document: Y.Doc) {
  *
  * Markers are written under a dedicated client id and the room's own id is
  * restored at once, so a remote transaction never advances the room's id
- * (which makes Yjs pick a new one and leave a fresh client per update). An
- * update that writes under the marker id moves the markers to a new one.
+ * (which makes Yjs pick a new one and leave a fresh client per update). Client
+ * updates under the marker id are rejected; any other write under it (a peer
+ * over Redis) moves the markers to a new one.
  */
 export function attachDocumentContributorTracker(
   document: Y.Doc,
@@ -145,6 +158,7 @@ export function attachDocumentContributorTracker(
   nonce: () => string = randomUUID
 ) {
   let markerClient = freshClientId(document);
+  markerClients.set(document, () => markerClient);
   const written = new WeakMap<Y.Transaction, number>();
   document.on('beforeTransaction', (transaction: Y.Transaction) => {
     const context = writableContext(transaction.origin);

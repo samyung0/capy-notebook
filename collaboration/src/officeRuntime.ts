@@ -114,7 +114,12 @@ interface Runtime {
 /** A call the Office engine refused, trapped on or did not finish in time. */
 export class OfficeEngineError extends Error {}
 
-const CALL_TIMEOUT_MS = 120_000;
+export const CALL_TIMEOUT_MS = 120_000;
+// A trap leaves wasm-bindgen objects poisoned, and the engine's dispose() or
+// free() in `finally` then throws one of these plain errors in place of the
+// WebAssembly.RuntimeError, so they count as traps too.
+const BROKEN_OBJECT =
+  /attempted to take ownership of Rust value while it was borrowed|recursive use of an object detected|null pointer passed to rust/;
 
 interface Call {
   args: unknown[];
@@ -157,7 +162,7 @@ function startWorker() {
       if (message.error === undefined) call?.resolve(message.value);
       else {
         call?.reject(new OfficeEngineError(message.error));
-        if (message.trap) restart();
+        if (message.trap || BROKEN_OBJECT.test(message.error)) restart();
       }
       next();
     }

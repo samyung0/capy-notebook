@@ -12,7 +12,11 @@ import {
   sourceRecoveryDrafts,
   writeSourceDraft,
 } from './sourceDraft';
-import { createSourceProvider, type SourceProvider } from './sourceProvider';
+import {
+  createSourceProvider,
+  SOURCE_PUBLISHING_REASON,
+  type SourceProvider,
+} from './sourceProvider';
 
 export type SourceSaveState =
   | 'connecting'
@@ -48,6 +52,18 @@ export function acknowledgeSourceCheckpoint(
     }
   }
   return matched && state.acknowledged >= state.sequence;
+}
+
+/**
+ * Whether a checkpoint receipt covers every local change. A replaced session
+ * also counts the changes the server held when this client answered handoff
+ * ready (`handedOff`); a draft is skipped only for a receipt, which is durable.
+ */
+export function sourceChangesCovered(
+  state: { acknowledged: number; sequence: number },
+  handedOff = -1
+): boolean {
+  return Math.max(state.acknowledged, handedOff) >= state.sequence;
 }
 
 export function useSourceSession(fileId: string, enabled: boolean) {
@@ -221,8 +237,10 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       const active = {
         acknowledged: -1,
         checkpoint: () => {},
+        disconnects: 0,
         // Sequence at which this client answered handoff ready: the server
-        // held every update then, so the publication includes them.
+        // held every update then, so the publication includes them. Only the
+        // connection the server waits on counts, so a disconnect clears it.
         handedOff: -1,
         pending,
         provider: null as unknown as SourceProvider,
@@ -245,7 +263,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       // read-only under the reload banner; unsaved changes go to recovery.
       const replace = () => {
         if (
-          Math.max(active.acknowledged, active.handedOff) >= active.sequence &&
+          sourceChangesCovered(active, active.handedOff) &&
           !bufferDirtyRef.current
         ) {
           cancelled = true;
@@ -275,10 +293,20 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       provider = createSourceProvider({
         document: shared,
         name: session.room,
+        // A publication's first refusal never gets here (sourceProvider.ts).
         onAuthenticationFailed: ({ reason }) => {
-          if (!active.recovery) fail(new Error(reason));
+          if (!active.recovery)
+            fail(
+              new Error(
+                reason === SOURCE_PUBLISHING_REASON
+                  ? m.source_edit_publishing()
+                  : reason
+              )
+            );
         },
         onDisconnect: () => {
+          active.disconnects++;
+          active.handedOff = -1;
           if (!cancelled) setHandoff(false);
           if (!cancelled && !active.recovery) {
             setStatus('offline');
@@ -318,13 +346,19 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             // Ready once the server holds every update: pending input is in
             // the document and the provider has nothing unsent. No save wait.
             const prepare = async () => {
+              const disconnects = active.disconnects;
               try {
                 await flushHandler.current?.(true);
                 if (provider?.hasUnsyncedChanges)
                   await new Promise<void>((resolve) =>
                     unsyncedWaiters.push(resolve)
                   );
-                if (cancelled || active.recovery || bufferDirtyRef.current)
+                if (
+                  cancelled ||
+                  active.recovery ||
+                  bufferDirtyRef.current ||
+                  disconnects !== active.disconnects
+                )
                   return;
                 active.handedOff = active.sequence;
                 provider?.sendStateless(
@@ -416,7 +450,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       // cannot come back as a recovery prompt.
       const takeDraft = () => {
         draftDue = false;
-        if (active.acknowledged >= active.sequence) return;
+        if (sourceChangesCovered(active)) return;
         latestDraft = {
           baseSourceSHA256: session.baseSourceSHA256,
           epoch: session.epoch,

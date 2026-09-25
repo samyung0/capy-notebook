@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: The publication contract helper runs only inside these tests. */
 import { readFileSync } from 'node:fs';
-import type { Document, Hocuspocus } from '@hocuspocus/server';
+import { HocuspocusProvider } from '@hocuspocus/provider';
+import { type Document, type Hocuspocus, Server } from '@hocuspocus/server';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import { afterEach, expect, test, vi } from 'vitest';
@@ -13,7 +14,11 @@ import {
   SourceRequestError,
   type SourceSession,
 } from './sourceDocuments.js';
-import { SourceHandoff } from './sourceHandoff.js';
+import {
+  SOURCE_PUBLISHING_REASON,
+  SourceHandoff,
+  SourcePublishingError,
+} from './sourceHandoff.js';
 
 const publicationSchema = parse(
   readFileSync(new URL('../../openapi.yaml', import.meta.url), 'utf8')
@@ -205,6 +210,39 @@ test('a silent editor is disconnected after the window and the publication compl
   );
 });
 
+test('with a ready and a silent editor, only the silent one is closed', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  const answered = {
+    ...f.connection,
+    onClose: vi.fn(),
+    socketId: 'answered',
+    webSocket: { close: vi.fn() },
+  };
+  Object.assign(f.document, {
+    getConnections: () => [f.connection, answered],
+  });
+  const published = publishThroughRoom(f);
+  const broadcast = vi.mocked(f.document.broadcastStateless);
+  await vi.waitFor(() => expect(broadcast).toHaveBeenCalled());
+  const { id } = JSON.parse(broadcast.mock.calls[0][0]) as { id: string };
+  expect(
+    f.handoff.ready(f.session.room, 'answered', {
+      checkpoint: 7,
+      clean: true,
+      epoch: 1,
+      id,
+    })
+  ).toBe(true);
+  await vi.advanceTimersByTimeAsync(10_100);
+  await expect(published).resolves.toEqual({ epoch: 2 });
+  expect(f.connection.webSocket.close).toHaveBeenCalledWith(
+    4408,
+    'Source handoff timed out'
+  );
+  expect(answered.webSocket.close).not.toHaveBeenCalled();
+});
+
 test('an editor that disconnects during the handoff no longer fails the publication', async () => {
   vi.useFakeTimers();
   const f = setup();
@@ -215,6 +253,47 @@ test('an editor that disconnects during the handoff no longer fails the publicat
   await expect(published).resolves.toEqual({ epoch: 2 });
   expect(f.connection.webSocket.close).not.toHaveBeenCalled();
   expect(f.persist).toHaveBeenCalledOnce();
+});
+
+test('the coordinator waits for an acknowledgement delayed by a slow persist', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  // Like a persist queued behind a running save of a large workbook.
+  f.persist.mockImplementation(
+    () => new Promise((resolve) => setTimeout(resolve, 40_000))
+  );
+  const published = publishThroughRoom(f);
+  await vi.advanceTimersByTimeAsync(50_100);
+  await expect(published).resolves.toEqual({ epoch: 2 });
+});
+
+test('an editor refused during a publication receives the publishing reason', async () => {
+  const server = new Server({
+    address: '127.0.0.1',
+    async onAuthenticate() {
+      throw new SourcePublishingError();
+    },
+    port: 0,
+    quiet: true,
+  });
+  await server.listen();
+  const provider = new HocuspocusProvider({
+    document: new Y.Doc(),
+    name: 'source:f:epoch:1',
+    token: 'token',
+    url: server.webSocketURL,
+  });
+  try {
+    const reason = await new Promise<string>((resolve) =>
+      provider.on('authenticationFailed', (event: { reason: string }) =>
+        resolve(event.reason)
+      )
+    );
+    expect(reason).toBe(SOURCE_PUBLISHING_REASON);
+  } finally {
+    provider.destroy();
+    await server.destroy();
+  }
 });
 
 test('a lost coordinator completes an already-published epoch through the watchdog', async () => {
@@ -230,7 +309,7 @@ test('a lost coordinator completes an already-published epoch through the watchd
   f.connection.readOnly = true;
   await preparing;
   vi.mocked(f.sources.session).mockResolvedValue({ ...f.session, epoch: 2 });
-  await vi.advanceTimersByTimeAsync(125_000);
+  await vi.advanceTimersByTimeAsync(185_000);
   expect(f.host.closeConnections).toHaveBeenCalledWith(f.session.room);
   expect(f.document.broadcastStateless).toHaveBeenLastCalledWith(
     expect.stringContaining('"type":"source-epoch-changed"')
@@ -250,7 +329,7 @@ test('a lost coordinator cancels an unpublished handoff and restores editing', a
   });
   f.connection.readOnly = true;
   await preparing;
-  await vi.advanceTimersByTimeAsync(125_000);
+  await vi.advanceTimersByTimeAsync(185_000);
   expect(f.connection.readOnly).toBe(false);
   expect(f.document.broadcastStateless).toHaveBeenLastCalledWith(
     expect.stringContaining('"type":"source-handoff-cancel"')

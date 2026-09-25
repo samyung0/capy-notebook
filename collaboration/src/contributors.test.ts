@@ -98,6 +98,76 @@ describe('durable collaboration contributors', () => {
     attacker.destroy();
   });
 
+  // The room writes each update's marker at the marker client's next clock,
+  // inside the transaction that applies the update, so these crafted updates
+  // name that marker before it exists.
+  function roomWithMarker() {
+    const document = new Y.Doc();
+    attachDocumentContributorTracker(document, 'instance-a');
+    document.transact(
+      () => document.getText('content').insert(0, 'a'),
+      origin('u_a')
+    );
+    const markers = document.getMap('__capy_pending_contributors');
+    const marker = [...markers._map.values()][0].id.client;
+    // Writes under the marker client at the clocks the room writes next.
+    const forger = new Y.Doc();
+    Y.applyUpdate(forger, Y.encodeStateAsUpdate(document));
+    forger.clientID = marker;
+    return { document, forger };
+  }
+
+  it('rejects a delete range over marker clocks the room has not written', () => {
+    const { document, forger } = roomWithMarker();
+    forger.getText('scratch').insert(0, 'xxxxx');
+    forger.getText('scratch').delete(0, 5);
+    const deletes = Y.encodeStateAsUpdate(forger, Y.encodeStateVector(forger));
+    const attacker = new Y.Doc();
+    Y.applyUpdate(attacker, Y.encodeStateAsUpdate(document));
+    const known = Y.encodeStateVector(attacker);
+    attacker.getText('content').insert(1, 'b');
+    const update = Y.mergeUpdates([
+      Y.encodeStateAsUpdate(attacker, known),
+      deletes,
+    ]);
+
+    // Applied, the range would erase this update's marker and every later one.
+    expect(() => assertUpdatePreservesContributors(document, update)).toThrow(
+      'client update changed collaboration metadata'
+    );
+    for (const doc of [document, forger, attacker]) doc.destroy();
+  });
+
+  it('rejects items at or after marker clocks the room has not written', () => {
+    const { document, forger } = roomWithMarker();
+    const known = Y.encodeStateVector(document);
+    forger.getMap('__capy_pending_contributors').set('next', {
+      access: 'write',
+      nonce: 'stand-in',
+      userId: 'u_attacker',
+    });
+    const attacker = new Y.Doc();
+    Y.applyUpdate(attacker, Y.encodeStateAsUpdate(forger));
+    const beforeForge = Y.encodeStateVector(attacker);
+    attacker.getMap('__capy_pending_contributors').set('next', {
+      access: 'write',
+      nonce: 'forged',
+      userId: 'u_victim',
+    });
+    // Its origin is the marker the room is about to write, so it would
+    // replace that marker's value.
+    const forged = Y.encodeStateAsUpdate(attacker, beforeForge);
+    expect(() => assertUpdatePreservesContributors(document, forged)).toThrow(
+      'client update changed collaboration metadata'
+    );
+    forger.getText('content').insert(1, 'zz');
+    const underMarkerClient = Y.encodeStateAsUpdate(forger, known);
+    expect(() =>
+      assertUpdatePreservesContributors(document, underMarkerClient)
+    ).toThrow('client update changed collaboration metadata');
+    for (const doc of [document, forger, attacker]) doc.destroy();
+  });
+
   it('accepts a resent state that already holds markers and their deletions', () => {
     const document = new Y.Doc();
     attachDocumentContributorTracker(document, 'instance-a', () => 'nonce-a');

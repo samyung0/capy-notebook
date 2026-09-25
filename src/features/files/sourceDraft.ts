@@ -1,4 +1,5 @@
 import { USE_MSW } from '@/api/auth';
+import { m } from '@/i18n';
 
 /**
  * One session's latest unacknowledged state. Its source base is stored once
@@ -105,7 +106,7 @@ export async function readSourceBase(
         request.onerror = () => reject(request.error);
       }
     );
-    if (!base) throw new Error('Source draft base is missing');
+    if (!base) throw new Error(m.source_edit_draft_base_missing());
     return base;
   } finally {
     database.close();

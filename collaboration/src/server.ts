@@ -50,6 +50,8 @@ import { closeOfficeRuntime, OfficeEngineError } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
   materialIdFromRoom,
+  roomSaveQueue,
+  updateFitsRoom,
   YjsDocumentStore,
 } from './persistence.js';
 import { ProjectionService } from './projection.js';
@@ -69,6 +71,7 @@ import {
   SOURCE_HANDOFF_CHANNEL,
   SourceHandoff,
   type SourcePublish,
+  SourcePublishingError,
 } from './sourceHandoff.js';
 import { handlePermanentStoreFailure } from './storeFailure.js';
 import {
@@ -96,12 +99,7 @@ const subscriber = new IORedis(config.redisUrl, {
 });
 const store = new YjsDocumentStore(pool);
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
-const sourceStores = new Map<
-  string,
-  { queued?: Promise<void>; tail: Promise<void> }
->();
-// Source room size estimate from applied update bytes. It over-counts content
-// that GC later removed, so crossing the cap triggers one exact measurement.
+// Source room size estimates from applied update bytes (updateFitsRoom).
 const sourceSizes = new WeakMap<Y.Doc, number>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
@@ -550,33 +548,24 @@ const server = new Server<CollaborationContext>({
           context.access
         );
         if (
-          (sourceSizes.get(document) ?? 0) + yjsUpdate.byteLength <=
-          MAX_SOURCE_STATE_BYTES
-        )
-          return;
-        const state = Y.encodeStateAsUpdate(document);
-        sourceSizes.set(document, state.byteLength);
-        const candidate = new Y.Doc();
-        try {
-          Y.applyUpdate(candidate, state);
-          Y.applyUpdate(candidate, yjsUpdate);
-          if (
-            Y.encodeStateAsUpdate(candidate).byteLength > MAX_SOURCE_STATE_BYTES
-          ) {
-            // Stateless and unrecoverable, so the client stops resending it.
-            connection.sendStateless(
-              JSON.stringify({
-                type: 'source-checkpoint-failed',
-                ...sourceRoom(document.name),
-                checkpointIds: [],
-                message: 'Source checkpoint exceeds byte limit',
-                recoverable: false,
-              })
-            );
-            throw new Error('Source checkpoint exceeds byte limit');
-          }
-        } finally {
-          candidate.destroy();
+          !updateFitsRoom(
+            sourceSizes,
+            document,
+            yjsUpdate,
+            MAX_SOURCE_STATE_BYTES
+          )
+        ) {
+          // Stateless and unrecoverable, so the client stops resending it.
+          connection.sendStateless(
+            JSON.stringify({
+              type: 'source-checkpoint-failed',
+              ...sourceRoom(document.name),
+              checkpointIds: [],
+              message: 'Source checkpoint exceeds byte limit',
+              recoverable: false,
+            })
+          );
+          throw new Error('Source checkpoint exceeds byte limit');
         }
         return;
       }
@@ -617,7 +606,10 @@ const server = new Server<CollaborationContext>({
       assertAllowedOrigin(request, config.allowedOrigins);
       assertRoomAvailable(documentName);
       if (await isRoomEvicting(documentName)) {
-        throw new Error('collaboration room is being compacted');
+        // Source rooms take this lock only to publish (sourceHandoff.ts).
+        throw SOURCE_ROOM_PATTERN.test(documentName)
+          ? new SourcePublishingError()
+          : new Error('collaboration room is being compacted');
       }
       const claims = verifyCollaborationToken(
         token,
@@ -838,28 +830,7 @@ function sourceReceipt(
   if (!pending?.size) pendingCheckpoints.delete(document.name);
 }
 
-// One running and at most one queued save per room. A save snapshots the room
-// when it starts, so every caller arriving while one is queued shares it and
-// still receives its failure.
-function persistSource(document: Document) {
-  const room = document.name;
-  const saves = sourceStores.get(room);
-  if (saves?.queued) return saves.queued;
-  const queued: Promise<void> = (saves?.tail ?? Promise.resolve())
-    .catch(() => undefined)
-    .then(() => {
-      const current = sourceStores.get(room);
-      if (current?.queued === queued) current.queued = undefined;
-      return storeSource(document);
-    });
-  sourceStores.set(room, { queued, tail: queued });
-  void queued
-    .catch(() => undefined)
-    .then(() => {
-      if (sourceStores.get(room)?.tail === queued) sourceStores.delete(room);
-    });
-  return queued;
-}
+const persistSource = roomSaveQueue(storeSource);
 
 async function storeSource(document: Document) {
   const room = document.name;

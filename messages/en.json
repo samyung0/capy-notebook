@@ -1218,6 +1218,8 @@
   "source_edit_done": "Done editing",
   "source_edit_handoff": "Updating the file…",
   "source_edit_replaced": "A newer version of this file is available. Your changes were saved.",
+  "source_edit_publishing": "A newer version of this file is being published. Reload the page in a moment.",
+  "source_edit_draft_base_missing": "This draft cannot be opened because its original file is no longer stored on this device.",
   "error_source_changed_title": "Sources changed",
   "error_source_changed_body": "Sources changed while this request was running. Please try again.",
   "source_edit_discard_draft": "Discard this draft",
