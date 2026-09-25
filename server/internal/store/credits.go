@@ -806,8 +806,8 @@ func (s *Store) IngestSlots(ctx context.Context, actorUserID string) (IngestSlot
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FROM provider_sessions
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-		   AND surface = $2`,
-		actorUserID, SurfaceIngest).Scan(&used)
+		   AND surface = $2 AND paid_by <> $3`,
+		actorUserID, SurfaceIngest, models.PaidBySystem).Scan(&used)
 	if err != nil {
 		return out, err
 	}
@@ -861,8 +861,8 @@ func (s *Store) beginIngestSpendTx(
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM provider_sessions
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-		   AND surface = $2`,
-		actorUserID, SurfaceIngest).Scan(&open); err != nil {
+		   AND surface = $2 AND paid_by <> $3`,
+		actorUserID, SurfaceIngest, models.PaidBySystem).Scan(&open); err != nil {
 		return "", err
 	}
 	if open >= ConcurrentIngestLeases {
@@ -884,6 +884,21 @@ func (s *Store) beginIngestSpendTx(
 		return "", err
 	}
 	return id, nil
+}
+
+// beginSystemIngestSessionTx opens the ingest session of a maintenance
+// republish (paid_by 'system'): no credit check and no lease on the actor's
+// ingest slots, and the pipeline settles its usage at zero credits.
+func beginSystemIngestSessionTx(ctx context.Context, tx pgx.Tx, actorUserID, workspaceID string) (string, error) {
+	id := uid("cr")
+	_, err := tx.Exec(ctx, `
+		INSERT INTO provider_sessions
+			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros, paid_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5, 0, $6, now() + ($7 * interval '1 millisecond'))`,
+		id, actorUserID, workspaceID, nullString(obs.TraceID(ctx)), SurfaceIngest,
+		models.PaidBySystem, ingestReservationHold.Milliseconds(),
+	)
+	return id, err
 }
 
 // SettleCredits closes a reservation after its provider calls or ingest work

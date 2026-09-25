@@ -110,7 +110,8 @@ Paths: `collaboration/src/sourceDocuments.ts` (effects, scheduler), `server/inte
    7 days, under the existing automatic guards (workspace auto-reparse, prior successful parse,
    active owner, credits). Change both places that encode it: the scheduler query
    (`sourceDocuments.ts` near 859) and Go admission (`source_documents.go` near 423). A refused
-   file gets `refresh_error` and is skipped until its next save, as today. Named constants.
+   file gets `refresh_error` and is skipped until its next save, as today, except the owner's
+   concurrent ingest-job limit, which retries on the next scheduler run. Named constants.
 3. **Descriptor-only summaries with a reuse gate** (agentic-retrieval, summaries). Drop the detailed
    tier: `summarize_file` writes the descriptor only, the summary column and
    `describe_documents` go (Python handler, Go contract in `agenttools.go`, the chat prompt line
@@ -172,6 +173,9 @@ Record 21. This must be deployed and tried on UAT before the window, on the curr
    ran out of memory, which waits until the file's bytes or the parser version change (the
    parser's quarantine key). The summary gate applies to all of these like any refresh; an
    export-only file has no published descriptor left, so its first reprocess regenerates it.
+   Outside the window, store-only Office files also publish export-only automatically under the
+   C2.2 trigger, regardless of workspace auto-reparse (record 2026-09-25); Process stays the
+   opt-in first parse.
 3. **Readiness check**. An operator command that prints every Office source still unpublished and
    every `source_refresh`, `parse` or `ingest` job in flight. The deploy waits for zero.
 4. **Reset migration template**. One statement per window that, for the formats whose golden seeds

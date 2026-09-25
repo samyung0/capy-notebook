@@ -34,6 +34,18 @@ This family adds the numbers that are too slow or too large for CI.
   active editors, including a slow or disconnecting one.
 - A rehearsal of the seed-changing upgrade window on UAT: pause editing,
   publish every file with pending edits, deploy, bump epochs and reseed.
+- Recheck the 3,000-token automatic refresh trigger (about 60-70 edited paragraphs)
+  on CJK documents, where the token estimate per character differs from English.
+
+## Before running a second collaboration instance
+
+The contributor-marker check (`collaboration/src/contributors.ts`) rejects updates that
+write under, point at or delete past the room's own marker client beyond the clocks it
+holds. It knows only this instance's marker client. With two instances, a crafted delete
+range aimed at the other instance's marker client (whose markers arrive over Redis) is
+not rejected. Treating every client that ever wrote to the marker map as a marker client
+closes it, but can reject an honest resent state after a room reload lost updates, so
+design that trade-off first. Deferred on 2026-09-25 while production runs one instance.
 
 ## Late merge of old-epoch edits
 

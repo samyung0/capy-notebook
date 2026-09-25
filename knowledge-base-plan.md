@@ -236,7 +236,7 @@ The following implementation details remain proposals. Assistant recommendations
 
 - Parser and ingest: OpenDataLoader parse with page and bbox per block, heading-aware 400-token chunks, hybrid search (pgvector halfvec 2560 plus Postgres lexical, RRF), per-file cap of 4.
 - `capture_page` renders a page or bbox from the source PDF at question time. Figures need no separate image store for the pilot.
-- Chat tools with one contract across Python, Go and the frontend: `search_workspace`, `list_sources`, `describe_documents`, `read_document`, `capture_page`, `create_material` (quiz, flashcards, mindmap, diagram, note), plus inspect, edit, trash and restore.
+- Chat tools with one contract across Python, Go and the frontend: `search_workspace`, `list_sources`, `read_document`, `capture_page`, `create_material` (quiz, flashcards, mindmap, diagram, note), plus inspect, edit, trash and restore. (`describe_documents` was removed on 2026-09-25 with the detailed summary tier.)
 - The fixed Generate workflow at `/generate`, outside the agent loop.
 - The ops app under `ops/` with operators, role tokens, audit events, and pages for overview, health, ingest host, registry, costs, users, reconciliation and audit.
 - Public workspaces readable by any signed-in user, with chat.

@@ -76,6 +76,11 @@ _REQUIRED_RESOURCE_RATES = {
 }
 # A job that found the parser or a provider full re-pends after this long.
 YIELD_BACKOFF_S = 2
+# A source publication may hold the collaboration room lock for 180 s (LOCK_MS
+# in collaboration/src/sourceHandoff.ts); the gateway waits 200 s for it
+# (sourcePublishTimeout in server/internal/store/source_proxy.go). Wait longer
+# than both so the gateway's answer arrives first.
+_SOURCE_PUBLISH_TIMEOUT_S = 210
 _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
     "ingest_resource_rates", default=None
 )
@@ -320,6 +325,7 @@ def _settle_published_source_refresh(job_id: str, payload: dict) -> None:
                 job_id=job_id,
                 attempt=int(payload.get("_attempt") or 1),
                 outcome="succeeded",
+                charged=_parse_fee(payload),
             )
             db.settle_credit_reservation(cur, _reservation_id(payload))
             db.set_job(cur, job_id, "done")
@@ -391,7 +397,7 @@ def _finish_source_refresh(
             cfg.gateway_url.rstrip("/") + "/api/internal/source-refresh/publish",
             json=body,
             headers={"X-Pipeline-Secret": cfg.pipeline_secret},
-            timeout=60,
+            timeout=_SOURCE_PUBLISH_TIMEOUT_S,
         )
     except (requests.Timeout, requests.ConnectionError) as exc:
         if not _source_refresh_published(job_id, payload):
@@ -505,6 +511,7 @@ def _finish_ok(
                     job_id=job_id,
                     attempt=int(attempt or 1),
                     outcome="succeeded",
+                    charged=True,
                 )
                 db.settle_credit_reservation(cur, reservation_id)
                 db.set_file_status(cur, file_id, "ready")
@@ -781,7 +788,10 @@ def _account_allows_ingest(file_id: str, payload: dict, check_credits: bool) -> 
         owner = db.file_owner_user_id(cur, file_id)
         if not owner or not db.account_allows_ingest(cur, owner):
             return False
-        return db.actor_has_credits(cur, actor) if check_credits else True
+        # A system-paid job (the maintenance republish) spends no credits.
+        if not check_credits or payload.get("paidBy") == "system":
+            return True
+        return db.actor_has_credits(cur, actor)
 
 
 def _first_claim(job: dict, payload: dict) -> bool:
@@ -1118,6 +1128,12 @@ def _pipeline_identity(
     )
 
 
+def _parse_fee(payload: dict) -> bool:
+    """Whether this job's parse pays the page fee. Go decides it for each
+    source refresh at admission; an upload's parse is its first and pays."""
+    return payload.get("sourceRefresh") is not True or payload["parseFee"] is True
+
+
 def _record_parse_usage_tx(
     cur,
     *,
@@ -1129,7 +1145,10 @@ def _record_parse_usage_tx(
     job_id: str,
     attempt: int,
     outcome: str,
+    charged: bool,
 ) -> None:
+    """Record one parse's pages. ``charged`` is False for a refresh of a parsed
+    file: the page fee applies to a file's first parse only."""
     if usage.is_empty():
         return
     db.record_job_parse_metrics(
@@ -1166,7 +1185,9 @@ def _record_parse_usage_tx(
             usage.ocr_pages,
             digital_rate=_rate(_RESOURCE_DIGITAL_PAGE)["creditMicrosPerUnit"],
             ocr_rate=_rate(_RESOURCE_OCR_PAGE)["creditMicrosPerUnit"],
-        ),
+        )
+        if charged
+        else 0,
         reservation_id=reservation_id,
         # Job-scoped: the fingerprint alone is a global content hash, and the
         # ledger key is globally unique, so two jobs that each really ran the
@@ -1182,6 +1203,7 @@ def _record_parse_usage_tx(
             "jobId": job_id,
             "attempt": attempt,
             "outcome": outcome,
+            "parseFee": charged,
             "sourceFormat": usage.source_format,
             "parseReceiptId": usage.receipt_id,
             "digitalPageRate": _rate(_RESOURCE_DIGITAL_PAGE),
@@ -1218,6 +1240,7 @@ def _record_parse_attempt(
                 job_id=job_id,
                 attempt=attempt,
                 outcome=outcome,
+                charged=_parse_fee(payload),
             )
             conn.commit()
     except Exception:
@@ -1269,6 +1292,7 @@ def _handoff_parsed_artifact(
                 job_id=job["id"],
                 attempt=attempt,
                 outcome="succeeded",
+                charged=_parse_fee(payload),
             )
             db.enqueue_job(cur, continuation_id, "ingest", continuation_payload)
             db.transfer_source_candidate(cur, payload, job["id"], continuation_id)

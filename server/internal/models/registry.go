@@ -40,6 +40,8 @@ const (
 	AuthPlatformOrUser = "platform_or_user"
 	PaidByPlatform     = "platform"
 	PaidByUser         = "user"
+	// PaidBySystem is a maintenance republish: platform keys at zero credits.
+	PaidBySystem = "system"
 )
 
 const modelConfigSelect = `

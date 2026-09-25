@@ -94,40 +94,6 @@
       "retention": "full"
     },
     {
-      "name": "describe_documents",
-      "version": 1,
-      "description": "Return the detailed summaries of up to eight source files or notes. Call after list_sources when the short descriptors are not enough to decide, or when the question is about what a document covers as a whole.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "file_ids": {
-            "description": "One to eight documents to describe.",
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 8,
-            "minItems": 1,
-            "type": "array"
-          }
-        },
-        "required": [
-          "file_ids"
-        ],
-        "type": "object"
-      },
-      "mutates": false,
-      "usesEmbedding": false,
-      "concurrency": "read",
-      "allowedSlots": [
-        "chat"
-      ],
-      "requiredOperations": [
-        "source.read"
-      ],
-      "retention": "full"
-    },
-    {
       "name": "read_document",
       "version": 1,
       "description": "Read a source file or note in order from a given chunk index. Use after search when a passage needs its surrounding argument, or to walk a short document end to end.",

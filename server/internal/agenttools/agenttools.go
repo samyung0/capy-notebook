@@ -403,19 +403,6 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
 		}),
 		chatTool(Definition{
-			Name:      "describe_documents",
-			Retention: RetainFull,
-			Description: "Return the detailed summaries of up to eight source files or notes. Call " +
-				"after list_sources when the short descriptors are not enough " +
-				"to decide, or when the question is about what a document covers " +
-				"as a whole.",
-			InputSchema: obj(map[string]any{
-				"file_ids": idList("One to eight documents to describe.", 1, 8),
-			}, "file_ids"),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead},
-		}),
-		chatTool(Definition{
 			Name:      "read_document",
 			Retention: RetainCitedPassages,
 			Description: "Read a source file or note in order from a given chunk index. Use after " +

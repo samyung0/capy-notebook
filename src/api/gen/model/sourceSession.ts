@@ -4,7 +4,6 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { AgentOperation } from './agentOperation.ts';
 import type { SourceSessionAccess } from './sourceSessionAccess.ts';
 import type { SourceSessionFormat } from './sourceSessionFormat.ts';
 
@@ -18,14 +17,15 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceSessionFormat;
-  indexedBaseline: string;
+  /** @nullable */
+  indexedBaseline: string | null;
   indexedCheckpoint: number;
   netTokens: number;
-  operation?: AgentOperation;
   pendingEffects: unknown;
   room: string;
   sourceIdentity: string;
   sourceURL: string;
-  state: string;
+  /** @nullable */
+  state: string | null;
   workspaceId: string;
 }

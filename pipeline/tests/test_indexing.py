@@ -1,10 +1,11 @@
-"""Integration tests for ``index_file``: the chunk → embed → summarize → write wiring.
+"""Integration tests for ``index_file``: the chunk → embed → describe → write wiring.
 
 Docker but no model. The embedder and the summarizer are deterministic fakes, so
 what is under test is how ``index_file`` connects the stages — that the
 breadcrumb form is what gets embedded, that every chunk keeps the vector
-produced for it, and that the summary is stored against the chunk fingerprint
-rather than the content hash the file was attached under. Each stage's own
+produced for it, that the descriptor is stored against the chunk fingerprint
+rather than the content hash the file was attached under, and that a refresh
+reuses the published descriptor below the change share. Each stage's own
 behaviour belongs to ``test_chunking.py``, ``test_store_sql.py`` and
 ``test_retrieval_helpers.py``; nothing there covers them in sequence.
 """
@@ -25,7 +26,7 @@ from pipeline.retrieval.chunking import chunk_markdown
 pytestmark = pytest.mark.integration
 
 # The hash the file is attached under. Deliberately not the chunk fingerprint:
-# the summary must carry the latter, and identical values would hide a swap.
+# the descriptor must carry the latter, and identical values would hide a swap.
 _SOURCE_HASH = "content-hash-of-the-source-bytes"
 
 _DOC = """# Photosynthesis
@@ -64,12 +65,7 @@ def fake_models(monkeypatch):
 
     async def complete_text(messages, **_kwargs):
         seen["summarized"].append(messages)
-        return json.dumps(
-            {
-                "descriptor": "Photosynthesis in two stages.",
-                "summary": "Light reactions, then the Calvin cycle.",
-            }
-        )
+        return json.dumps({"descriptor": "Photosynthesis in two stages."})
 
     monkeypatch.setattr(indexing.models, "embed", embed)
     monkeypatch.setattr(indexing.models, "complete_text", complete_text)
@@ -144,14 +140,14 @@ async def test_the_summary_lands_under_the_chunk_fingerprint_and_marks_content_r
 
     assert _rows(
         workspace,
-        "SELECT fingerprint, descriptor, summary, summary_version "
+        "SELECT fingerprint, descriptor, change_share, summary_version "
         "FROM rag_content_summaries WHERE content_id = %s",
         (content_id,),
     ) == [
         (
             indexing.content_hash(chunks),
             "Photosynthesis in two stages.",
-            "Light reactions, then the Calvin cycle.",
+            0.0,
             SUMMARY_VERSION,
         )
     ]
@@ -205,9 +201,7 @@ async def test_content_with_no_passages_spends_nothing_and_stays_unready(
     )
 
 
-async def test_reindex_reuses_only_exact_embedding_inputs_and_rebuilds_full_summary(
-    workspace, fake_models
-):
+async def test_reindex_reuses_only_exact_embedding_inputs(workspace, fake_models):
     from dataclasses import replace
 
     file_id = workspace.add_file("source.md")
@@ -220,7 +214,7 @@ async def test_reindex_reuses_only_exact_embedding_inputs_and_rebuilds_full_summ
         file_name="source.md",
         chunks=chunks,
     )
-    changed = [replace(chunks[0], section_path=["Changed heading"]), *chunks[1:]]
+    changed = [replace(chunks[0], section_path="Changed heading"), *chunks[1:]]
     assert indexing.content_hash(changed) != indexing.content_hash(chunks)
     await indexing.index_file(
         workspace_id=workspace.id,
@@ -230,8 +224,35 @@ async def test_reindex_reuses_only_exact_embedding_inputs_and_rebuilds_full_summ
         chunks=changed,
     )
     assert fake_models["embedded"][-1] == [changed[0].indexed_text()]
-    summary_input = fake_models["summarized"][-1][-1]["content"]
-    assert (
-        "Changed heading" in summary_input
-        and "Carbon fixation builds sugar" in summary_input
-    )
+
+
+async def test_a_refresh_reuses_the_descriptor_until_the_change_reaches_the_share(
+    workspace, fake_models
+):
+    file_id = workspace.add_file("topics.md")
+    content_id = await _attach(workspace, file_id)
+    lines = [f"Topic {i} covers its own idea in a few plain words." for i in range(100)]
+
+    async def index() -> float:
+        await indexing.index_file(
+            workspace_id=workspace.id,
+            content_id=content_id,
+            file_id=file_id,
+            file_name="topics.md",
+            chunks=chunk_markdown("\n\n".join(lines)),
+        )
+        return workspace.scalar(
+            "SELECT change_share FROM rag_content_summaries WHERE content_id = %s",
+            (content_id,),
+        )
+
+    assert await index() == 0  # first descriptor
+    lines[40] = lines[40].replace("plain", "simple")
+    share = await index()
+    assert 0 < share < indexing.SUMMARY_REUSE_SHARE
+    assert len(fake_models["summarized"]) == 1
+    # Four rewritten topics push the running share past 2%: regenerate in full.
+    lines[60:64] = [f"Rewritten passage {i} says something new." for i in range(4)]
+    assert await index() == 0
+    assert len(fake_models["summarized"]) == 2
+    assert "Rewritten passage 3" in fake_models["summarized"][-1][-1]["content"]

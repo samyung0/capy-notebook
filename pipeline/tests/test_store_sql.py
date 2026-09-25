@@ -498,6 +498,74 @@ def test_applied_ingest_provider_receipt_exact_replay_is_duplicate(workspace):
         conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
 
 
+def test_system_paid_ingest_usage_is_recorded_without_charging_the_actor(workspace):
+    import psycopg
+
+    call_id = f"pc_{secrets.token_hex(6)}"
+    file_id = workspace.add_file("provider-system.txt")
+    receipt = {
+        "call_id": call_id,
+        "kind": "llm",
+        "purpose": "ingest_summary",
+        "thinking": "instant",
+        "provider": "deepseek",
+        "model": "deepseek/flash",
+        "catalog_provider_slug": "deepseek",
+        "catalog_model_slug": "flash",
+        "model_version": 1,
+        "usage": NormalizedUsage(input_tokens=101, output_tokens=29),
+        "credit_micros": 123_456,
+    }
+    used = (
+        "SELECT COALESCE((SELECT used_micros FROM user_credits WHERE user_id = %s), 0)"
+    )
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
+        job_id, attempt_id, reservation_id = _install_running_pipeline_claim(
+            conn,
+            workspace_id=workspace.id,
+            file_id=file_id,
+            actor_user_id=workspace.user_id,
+        )
+        cur.execute(
+            "UPDATE provider_sessions SET paid_by = 'system' WHERE id = %s",
+            (reservation_id,),
+        )
+        used_before = cur.execute(used, (workspace.user_id,)).fetchone()[0]
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "instant",
+            job_attempt_id=attempt_id,
+        )
+        assert (
+            db.settle_ingest_provider_call(cur, session_id=reservation_id, **receipt)
+            == "applied"
+        )
+        # The same receipt replays as an exact duplicate of the zero charge.
+        assert (
+            db.settle_ingest_provider_call(cur, session_id=reservation_id, **receipt)
+            == "duplicate"
+        )
+        event = cur.execute(
+            """
+            SELECT credit_micros, input_tokens, metadata->>'paidBy'
+              FROM usage_events WHERE provider_call_id = %s
+            """,
+            (call_id,),
+        ).fetchone()
+        assert event == (0, 101, "system")
+        assert cur.execute(used, (workspace.user_id,)).fetchone()[0] == used_before
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute("DELETE FROM jobs WHERE id = %s", (job_id,))
+
+
 def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(workspace):
     import psycopg
 
@@ -1309,7 +1377,8 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
         content_id=content_id,
         fingerprint="fp",
         descriptor="A short descriptor.",
-        summary="A summary.",
+        change_share=0.0,
+        summary_version=2,
     )
 
     outline = await store.workspace_outline(workspace.id)
@@ -1318,7 +1387,6 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
     by_id = {f["id"]: f for f in outline["files"]}
     assert by_id[filed]["chapter_id"] == chapter and by_id[filed]["chunks"] == 1
     assert by_id[filed]["descriptor"] == "A short descriptor."
-    assert by_id[filed]["summary"] == "A summary."
     assert by_id[unfiled]["chapter_id"] is None and by_id[unfiled]["chunks"] == 0
 
 
@@ -1938,7 +2006,8 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         content_id=donor_id,
         fingerprint="fp",
         descriptor="Osmosis in brief.",
-        summary="Osmosis.",
+        change_share=0.0125,
+        summary_version=2,
     )
 
     other_id = f"ws_{secrets.token_hex(6)}"
@@ -1993,6 +2062,11 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         )
         == 1
     )
+    # The copy keeps the descriptor's running change share for the reuse gate.
+    assert other.scalar(
+        "SELECT change_share FROM rag_content_summaries WHERE content_id = %s",
+        (association["content_id"],),
+    ) == pytest.approx(0.0125)
     with psycopg.connect(workspace.dsn, autocommit=True) as conn:
         conn.execute("DELETE FROM workspaces WHERE id = %s", (other_id,))
 

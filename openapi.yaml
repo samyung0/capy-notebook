@@ -3448,14 +3448,13 @@ components:
         indexedBaseline:
           format: base64
           type: string
+          nullable: true
         indexedCheckpoint:
           format: int64
           type: integer
         netTokens:
           format: int64
           type: integer
-        operation:
-          $ref: "#/components/schemas/AgentOperation"
         pendingEffects: {}
         room:
           type: string
@@ -3466,6 +3465,7 @@ components:
         state:
           format: base64
           type: string
+          nullable: true
         workspaceId:
           type: string
       required:

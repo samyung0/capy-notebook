@@ -24,7 +24,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes a two-tier file summary. Each replica runs one job at a time |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
 | Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`), one document at a time behind a depth-4 FIFO; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
@@ -64,7 +64,7 @@ flowchart LR
   ImageCaption --> Chunk
   AudioTranscript --> Chunk
   DirectText --> Chunk
-  Chunk --> Index[Embed + file summary]
+  Chunk --> Index[Embed + file descriptor]
   Index --> Store[(rag_chunks / summaries)]
   Store --> Search[Hybrid search RRF]
   Search --> Agent[Chat agent loop]
@@ -92,7 +92,7 @@ network and no pin.
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `quiz.py` | `quiz` | Open-answer marking. Import-free: `bench/grading` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
-| `ingest.py` | `ingest` | File descriptor and summary, and `SUMMARY_VERSION` |
+| `ingest.py` | `ingest` | File descriptor, and `SUMMARY_VERSION` |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `curate.py` | `chat` | Curate-mode system prompt, its tool-description overrides, and the progress-ledger message |
@@ -119,7 +119,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | Two-tier prose (`descriptor` + `summary`) plus `summary_version`; shared by files with identical content |
+| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and `summary_version`; shared by files with identical content |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
 logical file removes its alias; a trigger removes canonical content only after
@@ -1126,7 +1126,7 @@ OpenDataLoader, so every MinerU-era artifact stopped being a donor and existing
 sources re-parse on their next refresh.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
-its vectors), plus its summary, into a new per-workspace
+its vectors), plus its descriptor, into a new per-workspace
 `rag_contents` row. Isolation stays `workspace_id` on the chunks; user B is
 not billed for user A's original ingest. If the pins differ, chunk text is
 copied and re-embedded into the target workspace's space.
@@ -1157,14 +1157,27 @@ its short TTL remains; after that it re-parses if there is no donor row.
   use heading breadcrumbs but not a mutable logical file name.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
-4. One cheap-model call → two-tier content summary (`descriptor` ~50 words plus
-  a size-tiered `summary` of ~150/300/500 words); upsert `rag_content_summaries`.
-  Documents larger than the pinned ingest model's catalog context window are
-  map-reduced in chunk groups rather than sampled. A provider failure here
-  retries the job rather than storing a blank: an empty summary would be marked ready, copied to future
+4. The file descriptor (~50 words, one cheap-model call); upsert
+  `rag_content_summaries`. A reindex of a file whose ready descriptor has the
+  current `summary_version` first measures the net text change between the
+  published chunks and the candidate (`text_change_tokens`: chunk overlap and
+  retained headings dropped, lines aligned, then words inside each changed
+  range; spans that differ only in spacing or glyph forms count nothing; a
+  range over 1,000 words on either side counts whole, because the word diff goes
+  quadratic on repetitive text such as a renumbered CSV or a sorted table and
+  grows with the larger side of a pasted or deleted block, and the upper bound
+  can only regenerate earlier). Its
+  share of the document's estimated tokens adds to the stored `change_share`,
+  and the published descriptor is kept while that sum stays under 2%
+  (`SUMMARY_REUSE_SHARE`). At 2% or more, on a `summary_version` change, or with
+  no previous descriptor, the descriptor is regenerated from the complete
+  content and the share resets to 0. Documents larger than the pinned ingest
+  model's catalog context window are map-reduced in chunk groups (about 500
+  words of section overviews in total) rather than sampled. A provider failure here
+  retries the job rather than storing a blank: an empty descriptor would be marked ready, copied to future
   donors, and never refilled. `summary_version` is **not** part of
-  `pipeline_identity` — a prompt change must not invalidate a parse; it exists
-  so a later backfill can find stale prose, including donor copies.
+  `pipeline_identity` — a prompt change must not invalidate a parse; a refresh
+  regenerates a descriptor whose version differs.
   A final receipt settlement rejection is not an ordinary provider failure: the
   summary helper propagates `SettlementError` unchanged so the ingest worker
   closes the attempt without retrying a provider response that was already
@@ -1201,14 +1214,15 @@ would let a live waiter mask a dead creator forever, and a dead waiter cascade a
 live creator's chunks away mid-write. A waiter returns from the wait only once the
 content is ready or it has taken the claim over itself.
 
-### File summaries (no tree)
+### File descriptors (no tree)
 
-Content summaries are shared by identical files. Moving a file between chapters
-does **not** re-summarize it. There is no chapter or workspace rollup: at a
+Descriptors are shared by identical files. Moving a file between chapters
+does **not** re-describe it. There is no chapter or workspace rollup: at a
 100-file workspace cap, `list_sources` can put every name and ~50-word
 descriptor into one tool result (~7k tokens), and the model has the question
-that an embedding index would not. `describe_documents` returns the detailed
-tier for up to eight files. Summaries are never embedded or cited — citations
+that an embedding index would not. There is no detailed tier; the model reads
+passages with `read_document` or `search_workspace` (`describe_documents` was
+removed on 2026-09-25). Descriptors are never embedded or cited — citations
 always point at document passages.
 
 ## Search workflow
@@ -2069,7 +2083,6 @@ A curate turn builds materials instead of answering:
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
 | `list_sources` | none | Scoped source files grouped by chapter, plus workspace study materials; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
-| `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `search_knowledge` | none | Curate mode only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
 | `browse_knowledge` | none | Curate mode only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
@@ -2321,7 +2334,7 @@ bullets, table rows their cells, code its fence; references, diagrams and
 media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
 so a note never shares a content row with a file of identical text, reuses
 vectors for unchanged chunk text from the note's previous content row (read
-before the alias moves), writes the content with no descriptor or summary,
+before the alias moves), writes the content with no descriptor,
 and clears `index_job_id`. A 404 from Go (trashed,
 standalone, deleted) ends the job without work.
 
@@ -2330,8 +2343,7 @@ Search runs one pool: the `scoped_files` CTE unions files and notes with a
 passage cites `{kind: "material", materialId, fileName: title}` with no page
 or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title, id
-and kind, `describe_documents` returns a note's heading outline or its first 250
-words, `read_document` pages a note's chunks like a file's, and the file
+and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
 index starts dirty.
@@ -2385,13 +2397,26 @@ holds its source, seed, parse artifacts, canonical index and consumed
 caption digests until publication. Existing parser/ingest workers process that
 candidate without changing the readable `files` row or `rag_file_contents` alias.
 
-The workspace owner funds automatic refresh. `auto_reparse` and `auto_reindex`
-default to true. Office requires a successful prior parse, 5,000 estimated net
-tokens and 60 seconds idle, with no forced deadline. Text batches every 15
-seconds without a minimum or indefinite typing delay. A file has one running
-candidate and one coalesced desired checkpoint. Turning a switch off prevents
-new automatic admission; current leased work can finish. Failed processing
-leaves authored state intact and exposes manual processing.
+The workspace owner funds automatic refresh: provider calls only, since the
+parser page fee applies to a file's first parse (the job payload's `parseFee`;
+see observability-metering). `auto_reparse` and `auto_reindex` default to true.
+Office effects keep only the changed span plus 40 characters on each side
+(`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
+tokens count those excerpts. Office requires a successful prior parse and 60
+seconds idle, and is due at 3,000 net tokens or once saved changes have had no
+edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
+(`officeRefresh*`) hold the same constants, and the Go store tests run the
+scheduler's SQL from `sourceDocuments.ts` against them. Text batches every 15
+seconds without a minimum or indefinite typing delay. The scheduler, like Go
+admission, skips changes worth no tokens, and takes files oldest first by the
+later of `last_edited_at` and `last_refresh_requested_at`. A refused automatic
+admission stores `refresh_error` and the scheduler skips the file until its
+next save, except a 429 (the owner at the concurrent ingest-job limit), which
+stamps `last_refresh_requested_at` instead so the file retries behind the other
+due files. A file has one running candidate and one
+coalesced desired checkpoint. Turning a switch off prevents new automatic
+admission; current leased work can finish. Failed processing leaves authored
+state intact and exposes manual processing.
 
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
@@ -2416,7 +2441,9 @@ valid candidate PUT URL. Clones use the last published snapshot.
 including sources with no index or search hit. Complete exact changes form a
 protected provider message outside tool-output clipping, live-history
 compaction and persisted conversation summaries. Replacements and removals
-supersede old indexed facts. Typed image placeholders can be resolved through
+supersede old indexed facts; the message tells the model that each before and
+after is an excerpt (the changed text with up to 40 characters of context) to
+match against passages. Typed image placeholders can be resolved through
 `resolve_source_change`; the gateway verifies source access/checkpoint and the
 headless runtime extracts the exact image before image-only caption reuse.
 The same read captures published identities for every scoped file, including
@@ -2437,9 +2464,9 @@ Process file changes. Generation uses the same evidence and returns
 Text refresh uses normal full-file normalization and chunking with parsing
 skipped. A small lookup reuses embeddings only for exact indexed input and the
 same immutable model pin. Canonical content hashes include heading context,
-reference classification and citation geometry. Short and detailed summaries
-regenerate from every current chunk, with full coverage in the large-document
-reduction path.
+reference classification and citation geometry. The descriptor follows the
+reuse gate above: kept below 2% net change, otherwise regenerated from every
+current chunk, with full coverage in the large-document reduction path.
 
 ## Configuration surface
 
@@ -2471,8 +2498,8 @@ test suite.
 - **No extracted relations.** Entities + co-mention replace a knowledge graph.
   Relation extraction was most of LightRAG's ingest cost and most of its
   accuracy failures.
-- **No summary tree.** File descriptors live in `list_sources`; detailed
-  summaries are fetched on demand. Cross-document reasoning is query-time, not
+- **No summary tree.** File descriptors live in `list_sources`; the model reads
+  passages for anything more. Cross-document reasoning is query-time, not
   a precomputed rollup that cannot see the question.
 - **Scope is SQL, not a prompt hint.** The agent cannot search outside the
   user's chapter/file selection.

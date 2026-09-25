@@ -77,7 +77,7 @@ func TestSourceCaptionAdmissionAndDerivedTokens(t *testing.T) {
 	}
 	doc := sourceTestSeed(t, s, owner, file.ID)
 	effects := json.RawMessage(`[{"id":"image-1","kind":"image","before":"abc","after":"汉😀"},{"id":"text-1","kind":"text","after":"かな"}]`)
-	doc, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("authored"), PendingEffects: effects, NetTokens: 5})
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("authored"), PendingEffects: effects, NetTokens: 5})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestSourceCaptionAdmissionAndDerivedTokens(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT last_edited_at FROM source_documents WHERE file_id=$1`, file.ID).Scan(&edited); err != nil {
 		t.Fatal(err)
 	}
-	input := SourceCaption{WorkspaceID: ws.ID, UserID: reader, FileID: file.ID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, ChangeID: "image-1", Caption: "描述", ImageSHA256: strings.Repeat("a", 64)}
+	input := SourceCaption{WorkspaceID: ws.ID, UserID: reader, FileID: file.ID, Epoch: doc.Epoch, Checkpoint: saved.Checkpoint, ChangeID: "image-1", Caption: "描述", ImageSHA256: strings.Repeat("a", 64)}
 	if err = s.SaveSourceCaption(ctx, input); err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestSourceCaptionAdmissionAndDerivedTokens(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT net_tokens,checkpoint,last_edited_at,pending_effects->0->>'caption' FROM source_documents WHERE file_id=$1`, file.ID).Scan(&tokens, &checkpoint, &afterEdit, &caption); err != nil {
 		t.Fatal(err)
 	}
-	if tokens != 8 || checkpoint != doc.Checkpoint || !edited.Equal(afterEdit) || caption != "描述" {
+	if tokens != 8 || checkpoint != saved.Checkpoint || !edited.Equal(afterEdit) || caption != "描述" {
 		t.Fatalf("caption authored a checkpoint or changed token formula: %d %d %v %s", tokens, checkpoint, afterEdit, caption)
 	}
 	input.ImageSHA256 = strings.Repeat("b", 64)

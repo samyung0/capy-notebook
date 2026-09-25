@@ -435,7 +435,6 @@ var customerContentColumns = []columnPrivilege{
 	{"rag_chunks", "indexed_text", "SELECT"},
 	{"rag_chunks", "regions", "SELECT"},
 	{"rag_content_summaries", "descriptor", "SELECT"},
-	{"rag_content_summaries", "summary", "SELECT"},
 	{"files", "name", "SELECT"},
 	{"files", "blob_path", "SELECT"},
 	{"jobs", "payload", "SELECT"},

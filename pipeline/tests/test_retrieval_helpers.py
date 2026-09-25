@@ -1275,7 +1275,7 @@ def _ingest_spec() -> ModelConfig:
 
 
 async def test_a_failed_file_summary_retries_instead_of_storing_a_blank(monkeypatch):
-    """A blank summary is permanent: nothing refills it and donors copy it."""
+    """A blank descriptor is permanent: nothing refills it and donors copy it."""
     import pytest
 
     from pipeline.jobs import RetryableError
@@ -1309,7 +1309,7 @@ async def test_summary_settlement_failure_is_not_rewritten_as_retryable(monkeypa
 
 
 async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
-    """Summaries are copied verbatim to every workspace with the same bytes."""
+    """Descriptors are copied verbatim to every workspace with the same bytes."""
     from pipeline.retrieval import indexing
     from pipeline.retrieval.chunking import Chunk
 
@@ -1317,19 +1317,113 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
 
     async def _capture(messages, **_k):
         seen.append(messages[-1]["content"])
-        return '{"descriptor": "Chlorophyll absorbs light.", "summary": "A summary"}'
+        return '{"descriptor": "Chlorophyll absorbs light."}'
 
     monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _capture)
 
-    descriptor, summary = await indexing.summarize_file(
+    descriptor = await indexing.summarize_file(
         "Divorce settlement draft.pdf", [Chunk(text="Chlorophyll absorbs")]
     )
 
     assert "Divorce settlement draft.pdf" not in seen[0]
     assert "Chlorophyll absorbs" in seen[0]
-    assert "Chlorophyll" in descriptor
-    assert summary
+    assert descriptor == "Chlorophyll absorbs light."
+
+
+async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_first(
+    monkeypatch,
+):
+    from pipeline.prompts.ingest import SUMMARY_VERSION
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    async def _regenerate(_name, _chunks):
+        return "Fresh descriptor."
+
+    monkeypatch.setattr(indexing, "summarize_file", _regenerate)
+    chunks = [Chunk(text="Chlorophyll absorbs red and blue light.")]
+    published = {
+        "descriptor": "Stored descriptor.",
+        "change_share": 0.0199,
+        "summary_version": SUMMARY_VERSION,
+        "chunks": chunks,
+    }
+    fresh = ("Fresh descriptor.", 0.0)
+
+    assert await indexing._descriptor("f", chunks, published) == (
+        "Stored descriptor.",
+        0.0199,
+    )
+    assert (
+        await indexing._descriptor("f", chunks, {**published, "change_share": 0.02})
+        == fresh
+    )
+    stale = {**published, "summary_version": SUMMARY_VERSION - 1}
+    assert await indexing._descriptor("f", chunks, stale) == fresh
+    assert await indexing._descriptor("f", chunks, None) == fresh
+
+
+def test_text_change_ignores_reflow_and_counts_only_edited_words():
+    from pipeline.retrieval.chunking import Chunk, estimate_tokens
+    from pipeline.retrieval.indexing import text_change_tokens
+
+    old = [
+        Chunk(text="Alpha beta gamma.\nDelta epsilon zeta.", section_path="Ch 1"),
+        Chunk(text="Delta epsilon zeta.\nEta theta iota.", section_path="Ch 1"),
+    ]
+    # Re-split without the overlap block, a retained heading line, other spacing.
+    reflowed = [
+        Chunk(text="Ch 1\nAlpha beta  gamma.", section_path="Ch 1"),
+        Chunk(text="Delta epsilon zeta.\nEta theta iota.", section_path="Ch 1"),
+    ]
+    edited = [reflowed[0], Chunk(text="Delta omega zeta.\nEta theta iota.")]
+
+    assert text_change_tokens(old, reflowed) == 0
+    assert text_change_tokens(old, edited) == estimate_tokens(
+        "epsilon"
+    ) + estimate_tokens("omega")
+
+
+def test_text_change_counts_a_renumbered_csv_whole_and_fast(tmp_path):
+    """A row inserted at the top renumbers every `Row N:` line, and so does a
+    block pasted above a small table. The uncapped word diff took minutes on
+    both; the capped one counts the range whole."""
+    import random
+    import time
+
+    from pipeline.ingest.source_text import tabular_text
+    from pipeline.retrieval.chunking import Chunk, estimate_tokens
+    from pipeline.retrieval.indexing import text_change_tokens
+
+    rng = random.Random(5)
+    header = "Student,Class,Term,Score,Passed"
+
+    def rows(n: int) -> list[str]:
+        return [
+            f"S{rng.randint(1, 400)},{rng.choice('ABC')},T{rng.randint(1, 2)},"
+            f"{rng.randint(40, 100)},{rng.choice(['Yes', 'No'])}"
+            for _ in range(n)
+        ]
+
+    def chunks(body: list[str]) -> list[Chunk]:
+        path = tmp_path / "grades.csv"
+        path.write_text("\n".join([header, *body]), encoding="utf-8")
+        lines = tabular_text(str(path), "grades.csv").splitlines()
+        return [
+            Chunk(text="\n".join(lines[i : i + 25]), section_path="grades.csv")
+            for i in range(0, len(lines), 25)
+        ]
+
+    body, small = rows(1000), rows(180)
+    for old, new in (
+        (chunks(body), chunks(["S999,A,T1,88,Yes", *body])),
+        (chunks(small), chunks([*rows(5000), *small])),
+    ):
+        started = time.perf_counter()
+        changed = text_change_tokens(old, new)
+        assert time.perf_counter() - started < 5
+        assert changed >= estimate_tokens("\n\n".join(c.indexed_text() for c in new))
 
 
 def test_chat_request_requires_enabled_thinking():

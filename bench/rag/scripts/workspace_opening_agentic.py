@@ -107,7 +107,6 @@ async def verify_lab(conn, snapshot):
     cur = await conn.execute(
         """SELECT f.id,f.name,f.chapter_id,f.status,f.indexed,f.source_sha256,fc.content_id,
         rc.status AS content_status,coalesce(cs.descriptor,'') AS descriptor,
-        coalesce(cs.summary,'') AS summary,
         (SELECT count(*) FROM rag_chunks cc JOIN rag_file_contents rfc ON rfc.content_id=cc.content_id WHERE rfc.file_id=f.id) AS chunks
         FROM files f LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
         LEFT JOIN rag_contents rc ON rc.id=fc.content_id
@@ -115,7 +114,9 @@ async def verify_lab(conn, snapshot):
         WHERE f.workspace_id=%s AND f.trashed_at IS NULL ORDER BY f.id""",
         (ws,),
     )
-    assert await cur.fetchall() == sorted(snapshot["files"], key=lambda f: f["id"])
+    # The detailed summary column was dropped on 2026-09-25; older snapshots still carry it.
+    expected = [{k: v for k, v in f.items() if k != "summary"} for f in snapshot["files"]]
+    assert await cur.fetchall() == sorted(expected, key=lambda f: f["id"])
     fields = [
         k for k in snapshot["chunks"][0] if k not in {"file_id", "file_name", "kind"}
     ]
@@ -392,7 +393,6 @@ async def run(preflight=False):
             config["tools"] = [
                 "search_workspace",
                 "list_sources",
-                "describe_documents",
                 "read_document",
                 "capture_page",
             ]

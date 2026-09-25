@@ -66,7 +66,7 @@ func TestSourceEditCheckpointReceiptAndUndo(t *testing.T) {
 		UndoOf:  edit.Receipt.ID,
 	}
 	undone, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
-		ActorIDs: []string{owner}, Epoch: saved.Epoch, ExpectedCheckpoint: saved.Checkpoint, State: []byte("undone--state"),
+		ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: saved.Checkpoint, State: []byte("undone--state"),
 		PendingEffects: json.RawMessage(`[]`), Operation: &undo,
 	})
 	if err != nil {
@@ -84,7 +84,7 @@ func TestSourceEditCheckpointReceiptAndUndo(t *testing.T) {
 	}
 	// A second Undo of the same edit is refused.
 	_, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
-		ActorIDs: []string{owner}, Epoch: undone.Epoch, ExpectedCheckpoint: undone.Checkpoint, State: []byte("undone--state"),
+		ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: undone.Checkpoint, State: []byte("undone--state"),
 		PendingEffects: json.RawMessage(`[]`),
 		Operation:      &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: "op_undo2_" + file.ID[:8], ToolVersion: 1, RequestHash: "h3", ActorUserID: owner}, UndoOf: edit.Receipt.ID},
 	})

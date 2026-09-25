@@ -10,9 +10,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
+// SourceSession: browser reads send null indexedBaseline and pendingEffects
+// (server-side only), and the viewer read sends null state unless a checkpoint
+// is ahead of the indexed one.
 type SourceSession struct {
 	FileID            string          `json:"fileId"`
 	WorkspaceID       string          `json:"workspaceId"`
@@ -25,14 +29,12 @@ type SourceSession struct {
 	SourceIdentity    string          `json:"sourceIdentity"`
 	BaseSourceSHA256  string          `json:"baseSourceSHA256"`
 	SourceURL         string          `json:"sourceURL"`
-	State             []byte          `json:"state"`
-	IndexedBaseline   []byte          `json:"indexedBaseline"`
+	State             []byte          `json:"state" nullable:"true"`
+	IndexedBaseline   []byte          `json:"indexedBaseline" nullable:"true"`
 	PendingEffects    json.RawMessage `json:"pendingEffects"`
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
 	Access            string          `json:"access" enum:"write,read"`
-	// Operation is the committed (or replayed) receipt of an edit checkpoint.
-	Operation *AgentOperation `json:"operation,omitempty"`
 }
 
 type SourceCheckpoint struct {
@@ -241,87 +243,94 @@ func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (Sourc
 	return out, err
 }
 
-func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceSession, error) {
+// SourceCheckpointSaved is the checkpoint receipt: the collaboration service
+// already holds the state it sent, so only the new checkpoint and an edit's
+// operation receipt come back.
+type SourceCheckpointSaved struct {
+	Checkpoint int64           `json:"checkpoint"`
+	Operation  *AgentOperation `json:"operation,omitempty"`
+}
+
+func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
+	var out SourceCheckpointSaved
 	var effects []json.RawMessage
 	if len(in.State) == 0 || len(in.State) > 100<<20 || in.NetTokens < 0 || json.Unmarshal(in.PendingEffects, &effects) != nil || effects == nil {
-		return SourceSession{}, ErrConflict
+		return out, ErrConflict
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return SourceSession{}, err
+		return out, err
 	}
 	defer tx.Rollback(ctx)
 	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, !in.Initialize)
 	if err != nil {
-		return SourceSession{}, err
+		return out, err
 	}
-	old, err := readSourceSession(ctx, tx, fileID, ws)
-	if err != nil {
-		return old, err
+	// Sizes only: the stored state alone may reach 100 MB.
+	var format, sha string
+	var epoch, baseRevision, stateBytes, oldEffectsBytes, baselineBytes int64
+	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,octet_length(state),octet_length(pending_effects::text),octet_length(indexed_baseline) FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &stateBytes, &oldEffectsBytes, &baselineBytes); err != nil {
+		return out, err
 	}
 	if in.Operation != nil {
 		existing, err := lockAgentOperationTx(ctx, tx, in.Operation.Receipt.ID, in.Operation.Receipt.RequestHash)
 		if err != nil {
-			return old, err
+			return out, err
 		}
 		if existing != nil {
 			// Same edit already committed (a retried request): answer with the
-			// recorded receipt and the current state, without saving again.
-			old.Operation = existing
-			return old, tx.Commit(ctx)
+			// recorded receipt and the current checkpoint, without saving again.
+			out.Operation = existing
+			return out, tx.Commit(ctx)
 		}
 	}
-	if old.Epoch != in.Epoch || old.Checkpoint != in.ExpectedCheckpoint {
-		return old, ErrConflict
+	if epoch != in.Epoch || out.Checkpoint != in.ExpectedCheckpoint {
+		return out, ErrConflict
 	}
 	var revision int64
 	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision); err != nil {
-		return old, err
+		return out, err
 	}
-	if revision != old.BaseRevision {
-		return old, ErrConflict
+	if revision != baseRevision {
+		return out, ErrConflict
 	}
-	if in.Initialize && (old.Checkpoint != 0 || len(old.State) != 0 || len(effects) != 0 || (len(in.BaseSourceSHA256) != 64 || (old.BaseSourceSHA256 != "" && old.BaseSourceSHA256 != in.BaseSourceSHA256))) {
-		return old, ErrConflict
+	if in.Initialize && (out.Checkpoint != 0 || stateBytes != 0 || len(effects) != 0 || (len(in.BaseSourceSHA256) != 64 || (sha != "" && sha != in.BaseSourceSHA256))) {
+		return out, ErrConflict
 	}
 	var effectsBytes int64
 	if err = tx.QueryRow(ctx, `SELECT octet_length($1::jsonb::text)`, in.PendingEffects).Scan(&effectsBytes); err != nil {
-		return old, err
+		return out, err
 	}
-	growth := int64(len(in.State)-len(old.State)-len(old.PendingEffects)) + effectsBytes
+	growth := int64(len(in.State)) - stateBytes - oldEffectsBytes + effectsBytes
 	if in.Operation != nil {
 		// The retained inverse is owner storage too: admit state and inverse
 		// growth together.
 		growth += int64(len(in.Operation.Inverse) + len(in.Operation.Guards))
 	}
 	if in.Initialize {
-		if !validSourceBaseline(in.IndexedBaseline, old.Format) {
-			return old, ErrConflict
+		if !validSourceBaseline(in.IndexedBaseline, format) {
+			return out, ErrConflict
 		}
-		growth += int64(len(in.IndexedBaseline) - len(old.IndexedBaseline))
+		growth += int64(len(in.IndexedBaseline)) - baselineBytes
 	}
 	if growth > 0 {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
-			return old, err
+			return out, err
 		}
 	}
 	if in.Initialize {
 		if _, err = tx.Exec(ctx, `UPDATE files SET source_sha256=$2 WHERE id=$1 AND source_sha256 IS NULL`, fileID, in.BaseSourceSHA256); err != nil {
-			return old, err
+			return out, err
 		}
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET state=$2,indexed_baseline=$4,base_source_sha256=$3,updated_at=now() WHERE file_id=$1`, fileID, in.State, in.BaseSourceSHA256, in.IndexedBaseline)
 	} else {
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET state=$2,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1`, fileID, in.State, in.PendingEffects, in.NetTokens)
+		err = tx.QueryRow(ctx, `UPDATE source_documents SET state=$2,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, in.State, in.PendingEffects, in.NetTokens).Scan(&out.Checkpoint)
 	}
-	if err != nil {
-		return old, err
-	}
-	out, err := readSourceSession(ctx, tx, fileID, ws)
 	if err != nil {
 		return out, err
 	}
 	if in.Operation != nil {
-		receipt, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, owner, out, *in.Operation)
+		receipt, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, owner, epoch, out.Checkpoint, *in.Operation)
 		if err != nil {
 			return out, err
 		}
@@ -332,7 +341,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 
 // commitSourceOperationTx records the edit (receipt + inverse) or the Undo
 // (receipt + consumed eligibility) in the checkpoint's transaction.
-func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws, owner string, saved SourceSession, op SourceCheckpointOperation) (AgentOperation, error) {
+func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, ws, owner string, epoch, checkpoint int64, op SourceCheckpointOperation) (AgentOperation, error) {
 	receipt := op.Receipt.operation()
 	receipt.WorkspaceID = ws
 	receipt.Outcome = agenttools.OutcomeSucceeded
@@ -363,7 +372,7 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 		if err := insertEditInverseTx(ctx, tx, EditInverse{
 			OperationID: receipt.ID, ResourceKind: agenttools.KindSourceFile, ResourceID: fileID,
 			ActorUserID: receipt.ActorUserID, OwnerUserID: owner, WorkspaceID: ws,
-			Incarnation: saved.Epoch, Revision: saved.Checkpoint, Inverse: op.Inverse, Guards: op.Guards,
+			Incarnation: epoch, Revision: checkpoint, Inverse: op.Inverse, Guards: op.Guards,
 			InverseBytes: int64(len(op.Inverse) + len(op.Guards)),
 		}); err != nil {
 			return AgentOperation{}, err
@@ -371,6 +380,15 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	}
 	return receipt, nil
 }
+
+// Automatic Office refresh: officeRefreshTokens trimmed net tokens after
+// officeRefreshIdle without edits, or any saved change left unedited for
+// officeRefreshStale. The collaboration scheduler query uses the same values.
+const (
+	officeRefreshTokens = 3000
+	officeRefreshIdle   = 60 * time.Second
+	officeRefreshStale  = 7 * 24 * time.Hour
+)
 
 type SourceProcessResult struct {
 	FileID     string `json:"fileId"`
@@ -382,6 +400,13 @@ type SourceProcessResult struct {
 // RequestSourceRefresh captures exactly one durable checkpoint. Credit admission
 // happens here, never while saving edits. Automatic work is funded by the owner.
 func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, automatic bool) (SourceProcessResult, error) {
+	return s.requestSourceRefresh(ctx, actor, fileID, automatic, models.PaidByPlatform)
+}
+
+// requestSourceRefresh with paidBy models.PaidBySystem is the maintenance
+// republish, the only caller that sets it: the owner's credits are neither
+// checked, reserved nor debited.
+func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, automatic bool, paidBy string) (SourceProcessResult, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return SourceProcessResult{}, err
@@ -420,7 +445,7 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 			if (!autoIndex && !manual) || time.Since(lastRequested) < 15*time.Second {
 				return result, ErrConflict
 			}
-		} else if ((!autoParse || !ever || doc.NetTokens < 5000) && !manual) || time.Since(edited) < 60*time.Second {
+		} else if due := doc.NetTokens >= officeRefreshTokens || time.Since(edited) >= officeRefreshStale; ((!autoParse || !ever || !due) && !manual) || time.Since(edited) < officeRefreshIdle {
 			return result, ErrConflict
 		}
 	}
@@ -436,7 +461,12 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if automatic {
 		payer = owner
 	}
-	reservation, err := s.beginIngestSpendTx(ctx, tx, payer, ws)
+	var reservation string
+	if paidBy == models.PaidBySystem {
+		reservation, err = beginSystemIngestSessionTx(ctx, tx, payer, ws)
+	} else {
+		reservation, err = s.beginIngestSpendTx(ctx, tx, payer, ws)
+	}
 	if err != nil {
 		return result, err
 	}
@@ -453,7 +483,9 @@ func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, 
 	}
 	jobID := uid("job")
 	lease := uid("srclease")
-	payload, err := s.ingestJobPayload(ctx, payer, map[string]any{"fileId": fileID, "workspaceId": ws, "sourceRefresh": true, "sourceEpoch": doc.Epoch, "sourceCheckpoint": doc.Checkpoint, "sourceLeaseToken": lease, "sourceRevision": doc.BaseRevision, "sourceETag": "", "blobPath": doc.BaseBlobPath, "kind": kind, "format": doc.Format, "parseMode": mode, "processingPlan": plan, "reservationId": reservation, "requestedBy": actor, "automatic": automatic})
+	// The per-page parse fee applies to a file's first parse only; a refresh of
+	// a parsed file pays its provider calls and records its pages uncharged.
+	payload, err := s.ingestJobPayload(ctx, payer, map[string]any{"fileId": fileID, "workspaceId": ws, "sourceRefresh": true, "sourceEpoch": doc.Epoch, "sourceCheckpoint": doc.Checkpoint, "sourceLeaseToken": lease, "sourceRevision": doc.BaseRevision, "sourceETag": "", "blobPath": doc.BaseBlobPath, "kind": kind, "format": doc.Format, "parseMode": mode, "processingPlan": plan, "reservationId": reservation, "requestedBy": actor, "automatic": automatic, "parseFee": !ever && paidBy != models.PaidBySystem, "paidBy": paidBy})
 	if err != nil {
 		return result, err
 	}

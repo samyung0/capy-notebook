@@ -5,12 +5,14 @@ import * as Y from 'yjs';
 import { signCollaborationToken, verifyCollaborationToken } from './auth.js';
 import * as officeRuntime from './officeRuntime.js';
 import {
+  effectTokens,
   encodeBaseline,
   SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
   textEffects,
   textState,
+  trimEffect,
 } from './sourceDocuments.js';
 
 const REFRESH_CANDIDATE_PATH = /\/refresh-candidate$/;
@@ -70,6 +72,61 @@ test('text effects retain Unicode, exact line endings, removals and undo cancell
     { after: '', before: 'a\r\n', operation: 'remove' },
   ]);
   expect(textEffects('same', 'same')).toEqual([]);
+});
+
+test('Office text effects keep the changed span with 40 characters of context', () => {
+  const [head, tail] = ['a'.repeat(50), 'z'.repeat(50)];
+  const effect = {
+    after: `${head}NEW${tail}`,
+    before: `${head}old${tail}`,
+    id: 'p',
+    kind: 'text',
+    label: 'Paragraph',
+    operation: 'replace',
+  } as const;
+  expect(trimEffect(effect)).toMatchObject({
+    after: `…${head.slice(10)}NEW${tail.slice(10)}…`,
+    before: `…${head.slice(10)}old${tail.slice(10)}…`,
+  });
+  // A cut never splits a surrogate pair; an addition is its own change.
+  const emoji = '😀'.repeat(30);
+  expect(
+    trimEffect({ ...effect, after: `${emoji}ay`, before: `${emoji}ax` }).before
+  ).toBe(`…${'😀'.repeat(20)}ax`);
+  expect(
+    trimEffect({ ...effect, after: `ya${emoji}`, before: `xa${emoji}` }).before
+  ).toBe(`xa${'😀'.repeat(20)}…`);
+  const added = { ...effect, before: undefined, operation: 'add' } as const;
+  expect(trimEffect(added)).toBe(added);
+});
+
+test('an owner at the ingest-job limit rotates the file back, other refusals park it', async () => {
+  const query = vi.fn(async (sql: string, _params?: unknown[]) => ({
+    rows: sql.includes('FROM source_documents d')
+      ? [
+          { checkpoint: '3', file_id: 'f_busy', user_id: 'u_1' },
+          { checkpoint: '5', file_id: 'f_broke', user_id: 'u_1' },
+        ]
+      : [],
+  }));
+  const sources = new SourceDocumentStore(
+    { query } as unknown as Pool,
+    'http://api',
+    'secret'
+  );
+  vi.spyOn(sources, 'request').mockImplementation((fileId: string) =>
+    Promise.reject(
+      new SourceRequestError(fileId === 'f_busy' ? 429 : 402, 'refused')
+    )
+  );
+  await sources.scheduleRefreshes();
+  const written = (column: string) =>
+    query.mock.calls
+      .filter(([sql]) => sql.includes(`SET ${column}=`))
+      .map(([, params]) => params);
+  expect(written('refresh_error')).toEqual([['f_broke', '5', 'refused']]);
+  // The refused file rotates behind other due files instead of parking.
+  expect(written('last_refresh_requested_at')).toEqual([['f_busy']]);
 });
 
 test('a delayed source store merges a newer durable replica before saving', async () => {
@@ -385,6 +442,7 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
         new Response(url === session.sourceURL ? oldSource : newSource)
     )
   );
+  const [head, tail] = ['a'.repeat(50), 'z'.repeat(50)];
   const runtime = vi.spyOn(officeRuntime, 'runOffice').mockResolvedValue({
     baseline: [],
     effects: [
@@ -394,6 +452,14 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
         kind: 'image',
         label: 'Picture',
         operation: 'add',
+      },
+      {
+        after: `${head}NEW${tail}`,
+        before: `${head}old${tail}`,
+        id: 'text-id',
+        kind: 'text',
+        label: 'Paragraph',
+        operation: 'replace',
       },
     ],
     state: Buffer.from('rebased11'),
@@ -416,9 +482,16 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     newSource
   );
   expect(result.rebasedState).toBe(Buffer.from('rebased11').toString('base64'));
+  // Rebased text effects are trimmed, and netTokens counts the trimmed text.
   expect(result.pendingEffects).toMatchObject([
     { caption: 'A saved caption', id: 'new-id' },
+    {
+      after: `…${head.slice(10)}NEW${tail.slice(10)}…`,
+      before: `…${head.slice(10)}old${tail.slice(10)}…`,
+      id: 'text-id',
+    },
   ]);
+  expect(result.netTokens).toBe(effectTokens(result.pendingEffects));
   runtime.mockClear();
   request.mockClear();
   const same = await sources.rebasePublication(

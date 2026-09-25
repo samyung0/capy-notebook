@@ -385,7 +385,6 @@ async def run(only: set[str] | None, repeat: int) -> None:
                 config["tools"] = [
                     "search_workspace",
                     "list_sources",
-                    "describe_documents",
                     "read_document",
                     "capture_page",
                 ]

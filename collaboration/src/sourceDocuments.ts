@@ -37,6 +37,28 @@ import {
 } from './persistence.js';
 
 export const MAX_SOURCE_STATE_BYTES = 100 * 1024 * 1024;
+// Automatic Office refresh: this many trimmed net tokens after the idle
+// window, or any saved change left unedited for the stale window. Go
+// admission (RequestSourceRefresh) applies the same values.
+const OFFICE_REFRESH_TOKENS = 3000;
+const OFFICE_REFRESH_IDLE = '60 seconds';
+const OFFICE_REFRESH_STALE = '7 days';
+// Refresh candidates, oldest first. `net_tokens>0` matches Go admission, which
+// refuses a change list worth no tokens. A file refused because its owner is at
+// the concurrent ingest-job limit (429) is stamped by REFRESH_DEFER_SQL and
+// orders behind the other due files. The Go store tests run both statements
+// (TestRefreshSchedulerQuery).
+const REFRESH_CANDIDATES_SQL = `
+  SELECT d.file_id,w.user_id,d.checkpoint FROM source_documents d
+  JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
+  WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL
+    AND f.trashed_at IS NULL AND d.refresh_error IS NULL AND d.net_tokens>0
+    AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
+      OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
+        OR (w.auto_reparse AND f.ever_parsed_successfully AND (d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval)))))
+  ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8`;
+const REFRESH_DEFER_SQL =
+  'UPDATE source_documents SET last_refresh_requested_at=now() WHERE file_id=$1';
 const LOW_SURROGATE = /[\uDC00-\uDFFF]/u;
 const CJK_CHARACTER =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -171,6 +193,37 @@ export function textEffects(before: string, after: string): NetEffect[] {
       operation: removed ? (inserted ? 'replace' : 'remove') : 'add',
     },
   ];
+}
+
+/** Context kept on each side of an Office text change; '…' marks a cut. */
+const EFFECT_CONTEXT_CHARS = 40;
+
+/** An Office text effect reduced to its changed span plus context. */
+export function trimEffect(effect: NetEffect): NetEffect {
+  const { before, after } = effect;
+  if (before === undefined || after === undefined) return effect;
+  let prefix = 0;
+  while (
+    prefix < before.length &&
+    prefix < after.length &&
+    before[prefix] === after[prefix]
+  )
+    prefix++;
+  let suffix = 0;
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before.at(-1 - suffix) === after.at(-1 - suffix)
+  )
+    suffix++;
+  const cut = (text: string) => {
+    let from = Math.max(0, prefix - EFFECT_CONTEXT_CHARS);
+    let to = text.length - Math.max(0, suffix - EFFECT_CONTEXT_CHARS);
+    if (from > 0 && LOW_SURROGATE.test(text[from])) from--;
+    if (to < text.length && LOW_SURROGATE.test(text[to])) to++;
+    return `${from > 0 ? '…' : ''}${text.slice(from, to)}${to < text.length ? '…' : ''}`;
+  };
+  return { ...effect, after: cut(after), before: cut(before) };
 }
 
 export function effectTokens(effects: NetEffect[]) {
@@ -435,7 +488,7 @@ export class SourceDocumentStore {
         effect.caption = cached.caption;
       }
     }
-    return effects;
+    return effects.map(trimEffect);
   }
 
   async rebasePublication(
@@ -506,14 +559,15 @@ export class SourceDocumentStore {
       );
       if (prior?.caption) effect.caption = prior.caption;
     }
+    const pendingEffects = rebased.effects.map(trimEffect);
     return {
       indexedBaseline: encodeBaseline({
         entries: rebased.baseline,
         format: session.format,
         version: 1,
       }),
-      netTokens: effectTokens(rebased.effects),
-      pendingEffects: rebased.effects,
+      netTokens: effectTokens(pendingEffects),
+      pendingEffects,
       rebasedState: Buffer.from(rebased.state).toString('base64'),
     };
   }
@@ -859,15 +913,11 @@ export class SourceDocumentStore {
       file_id: string;
       user_id: string;
       checkpoint: string;
-    }>(`
-      SELECT d.file_id,w.user_id,d.checkpoint FROM source_documents d
-      JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
-      WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL
-        AND f.trashed_at IS NULL
-        AND d.refresh_error IS NULL AND jsonb_array_length(d.pending_effects)>0
-        AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
-          OR(d.format<>'text' AND (d.desired_manual OR (w.auto_reparse AND f.ever_parsed_successfully AND d.net_tokens>=5000)) AND d.last_edited_at < now()-interval '60 seconds'))
-      ORDER BY d.last_edited_at LIMIT 8`);
+    }>(REFRESH_CANDIDATES_SQL, [
+      OFFICE_REFRESH_TOKENS,
+      OFFICE_REFRESH_IDLE,
+      OFFICE_REFRESH_STALE,
+    ]);
     for (const row of eligible.rows) {
       try {
         await this.request(row.file_id, 'refresh', {
@@ -877,6 +927,13 @@ export class SourceDocumentStore {
       } catch (error) {
         if (error instanceof SourceRequestError && error.status === 409)
           continue;
+        // 429 (too_many_ingest_leases, the only 429 this endpoint sends): the
+        // owner is at the concurrent ingest-job limit. A later run retries the
+        // file after the other due files.
+        if (error instanceof SourceRequestError && error.status === 429) {
+          await this.pool.query(REFRESH_DEFER_SQL, [row.file_id]);
+          continue;
+        }
         await this.pool.query(
           'UPDATE source_documents SET refresh_error=$3 WHERE file_id=$1 AND checkpoint=$2 AND running_job_id IS NULL',
           [

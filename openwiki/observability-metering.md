@@ -289,7 +289,7 @@ named provider directly. Two exact routing exceptions are allowed:
   (decision 2026-09-12, `human/agentic-retrieval.md`). Thinking cannot be
   disabled on this route; `low` is the floor and the catalog default.
 
-Neither exception opens a general router path. Other DeepInfra embedding slugs
+Neither exception opens a general router path. Other DeepInfra slugs
 and other ZAI slugs fail registry validation. A ZAI user key cannot
 authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
@@ -514,7 +514,8 @@ telemetry on the pre-call row means failed and retried attempts remain visible
 too.
 
 Ingest is a separate reservation (`surface='ingest'`), cap 20 per actor across
-every workspace (`ConcurrentIngestLeases`). Provider sessions do not count
+every workspace (`ConcurrentIngestLeases`; `paid_by='system'` sessions, below,
+do not count). Provider sessions do not count
 ingest rows. The ingest hold lasts until settle, fail, or release. It does not use the
 30-minute LLM TTL. A 24-hour backstop releases an ingest reservation that has
 no pending or running job pointing at `payload.reservationId`. A live pending
@@ -746,6 +747,28 @@ whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
 claim. Terminal success, retry, capacity wait, supersession, and failure close
+### Source refreshes and maintenance republishes
+
+The page fee applies to a file's first parse only; parsing runs on the
+fixed-cost ingest host. Go writes `parseFee` into every source-refresh job
+payload, true only for a file that has never parsed successfully (such as a
+store-only upload processed manually) and never for a system-paid job. A refresh
+parse without the fee still records its pages: `credit_micros` 0 and
+`metadata.parseFee=false` on the parse event. The owner then pays only the
+refresh's provider calls (embeddings of changed chunks, and a descriptor when
+the reuse gate regenerates it), and refresh admission keeps its credit check
+for those. Uploads always pay the fee.
+
+`provider_sessions.paid_by` names who pays: `platform` (platform keys, the
+actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
+credits) and `system`. A maintenance republish opens its ingest session with
+`paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
+unexported `requestSourceRefresh`) and its job payload carries
+`paidBy: "system"`. It gets no credit check at admission or claim and no lease
+on the actor's ingest slots, and `settle_ingest_provider_call` records every
+provider call at zero credits with `metadata.paidBy="system"`. The file owner
+stays the actor, because `usage_events` needs a real actor.
+
 that exact row. The lease reaper closes rows abandoned by a dead worker as
 `lease_expired`. An exhausted parse or ingest lease also closes its credit
 reservation and source-fenced file state in that transaction. Capacity waits

@@ -146,7 +146,7 @@ async def test_completed_tool_evidence_is_reused_in_the_next_turn(monkeypatch):
                 "",
                 [
                     _call("read_document", '{"file_id":"f_1"}'),
-                    _call("describe_documents", '{"file_ids":["f_1"]}', "describe"),
+                    _call("list_sources", "{}", "listing"),
                 ],
             ),
             _assembled(_answer(("First answer.", [1]))),
@@ -155,8 +155,8 @@ async def test_completed_tool_evidence_is_reused_in_the_next_turn(monkeypatch):
     )
 
     async def run(name, *_):
-        if name == "describe_documents":
-            return ToolResult(text_parts=["Full document description"])
+        if name == "list_sources":
+            return ToolResult(text_parts=["Full source listing"])
         return ToolResult(
             passages=[passage, _passage(chunk_id="unused", text="Uncited")],
             text_parts=["Continue at start=1"],
@@ -189,7 +189,7 @@ async def test_completed_tool_evidence_is_reused_in_the_next_turn(monkeypatch):
     ]
     assert len(seen) == 3 and not any(e["type"] == "tool_start" for e in second)
     replay = "\n".join(m["content"] for m in seen[-1]["messages"])
-    assert passage.text in replay and "Full document description" in replay
+    assert passage.text in replay and "Full source listing" in replay
     assert "Continue at start=1" not in replay and "Uncited" not in replay
     final = [e for e in second if e["type"] == "citations"][-1]
     assert final["citations"][0]["chunkId"] == passage.chunk_id
@@ -373,7 +373,7 @@ async def test_search_rejects_one_invalid_file_without_running_search(monkeypatc
     assert "invalid or unavailable" in result.text()
 
 
-async def test_describe_requires_ids_and_read_rejects_foreign_file(monkeypatch):
+async def test_read_rejects_a_file_outside_the_scope(monkeypatch):
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
     ctx._scope_outline = {
         "chapters": [],
@@ -382,11 +382,8 @@ async def test_describe_requires_ids_and_read_rejects_foreign_file(monkeypatch):
             {"id": "f_2", "name": "two.pdf", "chapter_id": None, "chunks": 1},
         ],
     }
-    described = await tools._describe_documents({}, ctx)
     read = await tools._read_document({"file_id": "f_2"}, ctx)
 
-    assert described.refused
-    assert "at least one file id" in described.text()
     assert read.refused
     assert read.text() == tools._INVALID_SCOPE
 
@@ -939,7 +936,7 @@ async def test_read_batch_runs_concurrently_in_call_order(monkeypatch):
                 "",
                 [
                     _call("list_sources", "{}", "c1"),
-                    _call("describe_documents", "{}", "c2"),
+                    _call("read_document", '{"file_id":"f_1"}', "c2"),
                 ],
             ),
             _assembled(_answer(("done", []))),

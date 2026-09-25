@@ -1,4 +1,4 @@
-"""Index one file: chunk, embed, summarize.
+"""Index one file: chunk, embed, describe.
 
 Called by the ingest worker once a document has been parsed. Everything below is
 idempotent per file — re-running replaces that file's rows and nothing else — so
@@ -7,11 +7,13 @@ a retried job converges instead of duplicating.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import logging
 import re
 import secrets
+import unicodedata
 from typing import Any
 
 from .. import elitellm, registry
@@ -90,7 +92,7 @@ async def index_file(
     claim_job_id: str | None = None,
     allow_empty: bool = False,
 ) -> dict[str, Any]:
-    """Write chunks and summary for canonical parsed content."""
+    """Write chunks and the descriptor for canonical parsed content."""
     if not chunks:
         await store.replace_content_chunks(
             workspace_id=workspace_id,
@@ -104,12 +106,16 @@ async def index_file(
                 content_id=content_id,
                 fingerprint=content_hash([]),
                 descriptor="",
-                summary="",
+                change_share=0.0,
                 summary_version=SUMMARY_VERSION,
             )
             await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0}
 
+    # Read before any write: reindexing the same content replaces these rows.
+    published = await store.published_summary(
+        workspace_id=workspace_id, file_id=file_id
+    )
     fingerprint = content_hash(chunks)
     indexed = [chunk.indexed_text() for chunk in chunks]
     # The workspace's embedding pin, installed on the job by the worker. Not the
@@ -163,13 +169,13 @@ async def index_file(
     if on_progress:
         on_progress(85)
 
-    descriptor, summary = await summarize_file(file_name, chunks)
+    descriptor, change_share = await _descriptor(file_name, chunks, published)
     await store.upsert_content_summary(
         workspace_id=workspace_id,
         content_id=content_id,
         fingerprint=fingerprint,
         descriptor=descriptor,
-        summary=summary,
+        change_share=change_share,
         summary_version=SUMMARY_VERSION,
     )
 
@@ -299,12 +305,116 @@ async def embed_copied_chunks(
 _PROMPT_RESERVE_TOKENS = 2000
 
 
-def _summary_word_target(char_count: int) -> int:
-    if char_count < 20_000:
-        return 150
-    if char_count < 100_000:
-        return 300
-    return 500
+# Words of section overviews a document too large for one call is reduced to,
+# split across its chunk groups, before the descriptor is written from them.
+_PARTIAL_WORDS = 500
+
+# A refresh reuses the published descriptor until the net text change since its
+# last regeneration reaches this share of the document.
+SUMMARY_REUSE_SHARE = 0.02
+
+
+async def _descriptor(
+    file_name: str, chunks: list[Chunk], published: dict[str, Any] | None
+) -> tuple[str, float]:
+    """The descriptor to store and the running change share kept next to it.
+
+    Regenerates from the complete content when no published descriptor exists,
+    when its ``summary_version`` is stale, or once the change reaches the share.
+    """
+    if published is not None and published["summary_version"] == SUMMARY_VERSION:
+        # The document size is the same estimate as the full summary input.
+        document = estimate_tokens("\n\n".join(c.indexed_text() for c in chunks))
+        changed = text_change_tokens(published["chunks"], chunks)
+        share = published["change_share"] + changed / max(1, document)
+        if share < SUMMARY_REUSE_SHARE:
+            return published["descriptor"], share
+    return await summarize_file(file_name, chunks), 0.0
+
+
+def _key(text: str) -> str:
+    """Comparison key: ligatures folded, whitespace ignored. The parser returns
+    figure labels and ligatures with other spacing or glyphs when the layout
+    moves, without any edit."""
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))
+
+
+def _lines(chunks: list[Chunk], headings: set[str]) -> list[str]:
+    """Lines in reading order without chunk overlap or retained headings: a
+    chunk repeats the trailing blocks of the chunk before it, and heading
+    retention repeats a heading depending on where a chunk starts."""
+    out: list[str] = []
+    previous: list[str] = []
+    for chunk in chunks:
+        lines = [line for line in chunk.text.split("\n") if line.strip()]
+        carry = next(
+            (
+                k
+                for k in range(min(len(previous), len(lines)), 0, -1)
+                if previous[-k:] == lines[:k]
+            ),
+            0,
+        )
+        out.extend(line for line in lines[carry:] if _key(line) not in headings)
+        previous = lines
+    return out
+
+
+def _edits(a: list[str], b: list[str], gap: int) -> list[list[int]]:
+    """Changed ranges ``[i1, i2, j1, j2]``, neighbours within ``gap`` merged."""
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    merged: list[list[int]] = []
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        if merged and i1 - merged[-1][1] <= gap and j1 - merged[-1][3] <= gap:
+            merged[-1][1], merged[-1][3] = i2, j2
+        else:
+            merged.append([i1, i2, j1, j2])
+    return merged
+
+
+# A changed line range longer than this on either side counts as wholly changed
+# instead of being diffed word by word: the word diff goes quadratic on
+# repetitive text such as a renumbered CSV or a sorted table (minutes for a
+# 500-row CSV) and grows with the larger side when a block is pasted or
+# deleted. The count is an upper bound, so the gate can only regenerate earlier.
+_WORD_DIFF_CAP = 1000
+
+
+def text_change_tokens(old: list[Chunk], new: list[Chunk]) -> int:
+    """Estimated tokens of the text removed plus the text added between two
+    indexed versions, ignoring reflow.
+
+    Page breaks and chunk packing re-split unchanged text, so the chunk lists
+    differ far more than the words do. Lines are aligned first, then words
+    inside each changed range; spans that differ only in spacing or glyph
+    forms count nothing. A range over ``_WORD_DIFF_CAP`` words on either side
+    counts whole.
+    """
+    headings = {
+        _key(part)
+        for version in (old, new)
+        for chunk in version
+        for part in chunk.section_path.split(" › ")
+        if part.strip()
+    }
+    a, b = _lines(old, headings), _lines(new, headings)
+    total = 0
+    for i1, i2, j1, j2 in _edits([_key(t) for t in a], [_key(t) for t in b], 1):
+        aw = " ".join(a[i1:i2]).split()
+        bw = " ".join(b[j1:j2]).split()
+        if max(len(aw), len(bw)) > _WORD_DIFF_CAP:
+            total += estimate_tokens(" ".join(aw)) + estimate_tokens(" ".join(bw))
+            continue
+        folded = [
+            [unicodedata.normalize("NFKC", w) for w in words] for words in (aw, bw)
+        ]
+        for x1, x2, y1, y2 in _edits(*folded, 12):
+            removed, added = " ".join(aw[x1:x2]), " ".join(bw[y1:y2])
+            if _key(removed) != _key(added):
+                total += estimate_tokens(removed) + estimate_tokens(added)
+    return total
 
 
 def _words(text: str) -> list[str]:
@@ -356,23 +466,19 @@ def _join_words(words: list[str]) -> str:
     return "".join(out).strip()
 
 
-def _parse_summary_payload(raw: str) -> tuple[str, str]:
+def _parse_descriptor(raw: str) -> str:
     parsed = extract_json(raw)
     if isinstance(parsed, dict):
         descriptor = str(parsed.get("descriptor") or "").strip()
-        summary = str(parsed.get("summary") or "").strip()
-        if summary:
-            return descriptor or summary, summary
         if descriptor:
-            return descriptor, descriptor
-    text = (raw or "").strip()
-    return text, text
+            return descriptor
+    return (raw or "").strip()
 
 
 def _input_budget() -> int:
     spec = ingest_spec()
     overhead = max(
-        compact.request_context(summary_messages("", 1000), spec).total_tokens,
+        compact.request_context(summary_messages(""), spec).total_tokens,
         compact.request_context(partial_messages("", 1000), spec).total_tokens,
     )
     available = (
@@ -401,21 +507,22 @@ def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
     return groups
 
 
-async def _summarize_once(body: str, word_target: int) -> tuple[str, str]:
+async def _summarize_once(body: str) -> str:
     raw = await models.complete_text(
-        summary_messages(body, word_target),
+        summary_messages(body),
         model=ingest_spec(),
         reasoning=False,
         call_purpose="file_summary",
     )
-    return _parse_summary_payload(raw)
+    return _parse_descriptor(raw)
 
 
-async def _summarize_mapped(chunks: list[Chunk], word_target: int) -> tuple[str, str]:
-    """Summarize chunk groups, then combine. Used when the document exceeds the budget."""
+async def _summarize_mapped(chunks: list[Chunk]) -> str:
+    """Summarize chunk groups, then describe the combination. Used when the
+    document exceeds the budget."""
     groups = _chunk_groups(chunks, _input_budget())
     partials: list[str] = []
-    per_group = max(80, word_target // max(len(groups), 1))
+    per_group = max(80, _PARTIAL_WORDS // max(len(groups), 1))
     for group in groups:
         body = "\n\n".join(chunk.indexed_text() for chunk in group)
         raw = await models.complete_text(
@@ -449,30 +556,29 @@ async def _summarize_mapped(chunks: list[Chunk], word_target: int) -> tuple[str,
             raise RetryableError(
                 "Source summaries exceed the ingest model input limit."
             )
-    return await _summarize_once(combined, word_target)
+    return await _summarize_once(combined)
 
 
-async def summarize_file(file_name: str, chunks: list[Chunk]) -> tuple[str, str]:
-    """Summarize canonical content. ``file_name`` is log context, not prompt input.
+async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
+    """Describe canonical content. ``file_name`` is log context, not prompt input.
 
-    The summary belongs to the content, not to the file: it is stored on
+    The descriptor belongs to the content, not to the file: it is stored on
     ``rag_content_summaries`` and copied verbatim to every later workspace that
     uploads the same bytes. A file name in the prompt would put one uploader's
-    naming into another's summary, and would make the same bytes summarize
+    naming into another's descriptor, and would make the same bytes describe
     differently depending on who happened to ingest them first.
 
-    A failure raises rather than returning a blank. An empty summary is written
-    as if it were real, marked ready, and then copied to future donors, and no
-    later pass ever refills it. Retrying the job (and failing it after the
-    budget) is recoverable; a permanent blank is not.
+    A failure raises rather than returning a blank. An empty descriptor is
+    written as if it were real, marked ready, and then copied to future donors,
+    and no later pass ever refills it. Retrying the job (and failing it after
+    the budget) is recoverable; a permanent blank is not.
     """
     body = "\n\n".join(chunk.indexed_text() for chunk in chunks)
-    word_target = _summary_word_target(len(body))
     try:
         if estimate_tokens(body) <= _input_budget():
-            descriptor, summary = await _summarize_once(body, word_target)
+            descriptor = await _summarize_once(body)
         else:
-            descriptor, summary = await _summarize_mapped(chunks, word_target)
+            descriptor = await _summarize_mapped(chunks)
     except (accounting.SettlementError, elitellm.ProviderBusy):
         # Settlement failures must not start another provider call; a busy
         # provider re-pends the job without spending its attempt.
@@ -480,7 +586,4 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> tuple[str, str]
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)
         raise RetryableError(f"file summary failed: {exc}") from exc
-    return (
-        _truncate_words(descriptor, DESCRIPTOR_WORDS),
-        _truncate_words(summary, word_target),
-    )
+    return _truncate_words(descriptor, DESCRIPTOR_WORDS)

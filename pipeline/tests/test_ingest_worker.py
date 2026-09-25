@@ -403,6 +403,39 @@ def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
     assert events[-1] == ("set", "job_parse", "done")
 
 
+def test_a_refresh_of_a_parsed_file_records_its_pages_without_the_page_fee(
+    monkeypatch,
+):
+    recorded: list[dict] = []
+    monkeypatch.setattr(worker.db, "record_job_parse_metrics", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker.db, "record_usage_event", lambda _cur, **event: recorded.append(event)
+    )
+    upload = _ingest_payload()
+    refresh = _ingest_payload(sourceRefresh=True, parseFee=False)
+    first_parse = _ingest_payload(sourceRefresh=True, parseFee=True)
+    token = worker._resource_rates.set(upload["resourceRates"])
+    try:
+        for payload in (upload, refresh, first_parse):
+            worker._record_parse_usage_tx(
+                None,
+                usage=worker.obs.ParseUsage(pages=3),
+                file_id="f_1",
+                workspace_id="ws_1",
+                actor_user_id="u_1",
+                reservation_id="cr_1",
+                job_id="job_parse",
+                attempt=1,
+                outcome="succeeded",
+                charged=worker._parse_fee(payload),
+            )
+    finally:
+        worker._resource_rates.reset(token)
+
+    assert [event["parse_pages"] for event in recorded] == [3, 3, 3]
+    assert [event["credit_micros"] for event in recorded] == [3_000_000, 0, 3_000_000]
+
+
 def test_invalid_artifact_returns_to_parse_only_once(monkeypatch):
     events: list[tuple] = []
     payload = _ingest_payload()

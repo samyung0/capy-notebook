@@ -185,6 +185,14 @@ def test_claim_gating_matrix(monkeypatch):
     assert worker._account_allows_ingest("f_1", payload, True) is False
     # An admitted job finishes even after its own parse exhausted the actor.
     assert worker._account_allows_ingest("f_1", payload, False) is True
+    # A maintenance republish spends no credits; an owner-paid refresh does.
+    system = {**payload, "paidBy": "system"}
+    assert worker._account_allows_ingest("f_1", system, True) is True
+    platform = {**payload, "paidBy": "platform"}
+    assert worker._account_allows_ingest("f_1", platform, True) is False
+    state["owner_ok"] = False
+    assert worker._account_allows_ingest("f_1", system, True) is False
+    state["owner_ok"] = True
 
     state["actor_ok"] = True
     assert worker._account_allows_ingest("f_1", payload, True) is True
@@ -413,6 +421,7 @@ def test_parser_receipt_uses_fingerprint_idempotency(monkeypatch):
             job_id="job_1",
             attempt=2,
             outcome="succeeded",
+            charged=True,
         )
     finally:
         worker._resource_rates.reset(token)
