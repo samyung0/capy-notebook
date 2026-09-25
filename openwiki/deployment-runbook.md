@@ -1350,6 +1350,63 @@ stays retained behind it. Nothing is pinned per environment.
    republishing every book. That costs one loader run and no model calls,
    because the builder's output is on the developer PC.
 
+### 7.4 Parser egress and LibreOffice conversion
+
+The parser converts untrusted Office uploads with LibreOffice (7.4.7 from
+Debian bookworm in `parser/Dockerfile`, out of upstream support, so security
+fixes come only from Debian). A document can link images or text from a URL or
+a local file, so the conversion is fenced twice:
+
+- **In the parser image.** `parser/odl/document.py` gives every conversion a
+  fresh LibreOffice profile in the job's temporary directory. Its
+  `registrymodifications.xcu` blocks links from documents outside trusted
+  locations (there are none), disables macros at the highest security level and
+  sets Writer and Calc link updates to never. A conversion that exceeds
+  `CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is killed with its whole process group,
+  so `soffice.bin` cannot outlive its launcher. Ingest, `/capture_page`, and
+  Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
+  convert through this one function. It ships with the parser image; nothing to
+  apply by hand.
+- **On the host.** `deploy/ansible/ingest-host/templates/nftables.conf.j2`
+  rejects every new outbound connection from uid 10001 (the `parser` user)
+  except TCP to 8090 (production) and 8091 (nonprod) over loopback. Both
+  parsers use host networking, so this one rule in the host output chain covers
+  both. Loopback is also the route to the host's own WireGuard address, so the
+  containers' healthchecks keep working. Replies to coordinator requests are
+  established traffic and pass. The rule rejects rather than drops, so a
+  blocked link fails at once instead of holding the conversion until its
+  timeout. Nothing else in the parser needs the network: the OCR models are
+  baked into the image, the Java and LibreOffice steps run locally, and the
+  parser sends no Sentry events. If `PARSER_PORT` ever moves off 8091, change
+  the template in the same release or the nonprod healthcheck fails.
+
+Apply the host rule with the provisioning playbook (see the
+[ingest-host README](../deploy/ansible/ingest-host/README.md) for the inventory):
+
+```bash
+cd deploy/ansible/ingest-host
+ansible-playbook --ask-pass playbook.yml --check --diff   # review the output-chain change
+ansible-playbook --ask-pass playbook.yml
+```
+
+The template task checks the file with `nft -c` before installing it, and the
+handler reloads nftables. The reload replaces the `capy_ingest_filter` table in
+one transaction. Existing connections keep their conntrack state.
+
+Verify on the host (nonprod shown; production uses project `capy-ingest` and
+port 8090):
+
+```bash
+nft list chain inet capy_ingest_filter output
+parser=$(docker ps -q --filter label=com.docker.compose.project=capy-ingest-nonprod \
+  --filter label=com.docker.compose.service=parser)
+docker exec "$parser" curl -sS --max-time 5 http://1.1.1.1         # fails at once: connection refused
+docker exec "$parser" curl -sS --max-time 5 https://example.com    # fails at once: could not resolve host
+docker exec "$parser" curl -fsS http://10.77.0.2:8091/healthz      # 200
+docker inspect --format '{{.State.Health.Status}}' "$parser"       # healthy
+curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the host keeps egress
+```
+
 ---
 
 ## 8. Database
