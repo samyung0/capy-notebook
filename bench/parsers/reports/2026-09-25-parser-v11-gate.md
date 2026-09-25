@@ -193,9 +193,11 @@ with a median of 2. The new rules run inside `correct_roles`; the difference is 
 
 ## Deployment
 
-Not done in this round: the commit, the rebuild of `capy-kb-parser:pilot-v10` as v11
-and the live swap wait for the developer. `CHUNKER_VERSION` stays `v12`. As with v10,
-the parser identity changes, so donor reuse starts again for PDFs; published books keep
+The developer approved the commit and the deploy. v11 is committed as `ab1a39fd` (not
+pushed). The builder parser was swapped: the new `capy-kb-parser-v4-pilot` container is
+created from `capy-kb-parser:pilot-v11` and left stopped, and v10 is kept as
+`capy-kb-parser-v10-e46eea6a-backup`. `CHUNKER_VERSION` stays `v12`. As with v10, the
+parser identity changes, so donor reuse starts again for PDFs; published books keep
 their chunks. ReStorying Education's re-parse stays held (decision 2026-09-25).
 
 ## Reproduction
