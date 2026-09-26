@@ -65,9 +65,11 @@ export default defineConfig(({ mode }) => {
     },
     envDir: ENV_DIR,
     optimizeDeps: {
+      // '@betteroffice/docx-react' stays scanned: it imports
+      // @radix-ui/react-select, which only the fork installs, and finding that
+      // on the first DOCX edit re-optimizes and reloads every open page.
       exclude: [
         '@betteroffice/docx',
-        '@betteroffice/docx-react',
         '@betteroffice/docx/viewer',
         '@betteroffice/pptx',
         '@betteroffice/pptx/editor',
