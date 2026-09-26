@@ -108,6 +108,9 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
+      # Playwright starts Vite directly, so no pre-script builds the Office
+      # stylesheet and WASM the editor suite's runtime iframe imports.
+      - run: pnpm office:prepare
       - run: pnpm run e2e:install
       - run: pnpm run e2e
       - run: pnpm run e2e:msw:editor

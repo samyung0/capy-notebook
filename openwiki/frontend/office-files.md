@@ -41,8 +41,9 @@ After cloning Capy Notebook, initialize the submodule:
 git submodule update --init vendor/betteroffice
 ```
 
-`predev`, `prebuild`, `pretypecheck`, and `pretest` run
-`scripts/prepare-betteroffice.mjs`. It installs the fork's locked Bun workspace
+`prebuild`, `pretypecheck`, and `pretest` run
+`scripts/prepare-betteroffice.mjs`; `pnpm dev` and Playwright's Vite servers do
+not, so run `pnpm office:prepare` first (browser E2E CI does). It installs the fork's locked Bun workspace
 and builds the scoped DOCX stylesheet plus DOCX/XLSX/PPTX viewer/editor WASM artifacts and the headless checkpoint bundle. The fork builder verifies source/output fingerprints before reusing WASM. A cold build
 requires Bun, Rust, `wasm-pack` 0.15.0, and `wasm-opt` from Binaryen. Existing,
 intact generated artifacts are reused.
