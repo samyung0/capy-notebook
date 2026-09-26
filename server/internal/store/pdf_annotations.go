@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
 type PDFRect struct {
@@ -68,7 +70,7 @@ func validatePDFAnnotation(in PDFAnnotationBody) error {
 		return ErrConflict
 	}
 	if in.Kind == "text" {
-		if strings.TrimSpace(in.Text) == "" || utf8.RuneCountInString(in.Text) > 2000 {
+		if strings.TrimSpace(in.Text) == "" || utf8.RuneCountInString(in.Text) > fieldlimits.PDFAnnotationText {
 			return ErrConflict
 		}
 	} else if in.Text != "" {

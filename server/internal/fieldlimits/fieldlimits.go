@@ -27,6 +27,7 @@ const (
 	TagValue             = 35
 	Email                = 254
 	UserName             = 60
+	PDFAnnotationText    = 2_000
 )
 
 // Columns lists every constrained column as "table.column" so the database
@@ -54,6 +55,7 @@ var Columns = map[string]int{
 	"upload_sessions.chapter_name":     ChapterName,
 	"upload_sessions.name":             FileName,
 	"reconcile_runs.requested_by_name": UserName,
+	"pdf_annotations.text":             PDFAnnotationText,
 }
 
 // Clamp trims s and cuts it to max runes. It is for values the user did not
