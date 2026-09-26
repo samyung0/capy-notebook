@@ -127,6 +127,11 @@ test.describe('inline and block insertions', () => {
     // block's identity is unchanged, so the case that has to keep working is
     // the one where a cached block really did change.
     await editor.locator('h1').click();
+    // Wait for Slate to take the click's selection; its late DOM sync would
+    // otherwise move the caret back from where End put it.
+    await expect(page.getByRole('button', { name: 'Block type' })).toHaveText(
+      'Heading 1'
+    );
     await page.keyboard.press('End');
     await page.keyboard.type(' updated');
 
