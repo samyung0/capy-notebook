@@ -811,7 +811,7 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 }
 
 func TestBindEliteLLMDraftAllowsOnlyPlatformRoutedGLM(t *testing.T) {
-	t.Setenv("TENCENT_API_KEY", "sk-test")
+	t.Setenv("RELACE_API_KEY", "sk-test")
 	glm := gridDraft{
 		ProviderSlug:    "zai",
 		ModelSlug:       "glm-5.3-flash",
@@ -951,7 +951,7 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 		}
 	}
 	var total int
-	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='tencent' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 200 {
+	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='relace' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 200 {
 		t.Fatalf("routed capacity: %d, %v", total, err)
 	}
 	request = registryRequestFromSnapshot(after)
@@ -967,7 +967,7 @@ func TestCapacitySaveIsLiveAndIndependentOfCatalogVersion(t *testing.T) {
 	if err != nil || result.InsertedRows != 0 {
 		t.Fatalf("live update: %+v, %v", result, err)
 	}
-	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='tencent' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 4 {
+	if err := tx.QueryRow(ctx, "SELECT concurrency_total FROM model_capacities WHERE provider='relace' AND model='glm-5.3-flash'").Scan(&total); err != nil || total != 4 {
 		t.Fatalf("updated capacity: %d, %v", total, err)
 	}
 	for _, invalid := range []struct{ total, reserve *int }{

@@ -43,6 +43,3 @@ Permission is given to upload every artifact created or updated with this skill.
 Re-upload the same absolute path to update the existing URL. Use `npx postplan upload <file path> --new` only when a new draft is wanted.
 
 If validation fails, fix the markup and retry. If a scripted upload needs authentication, ask the user to run `postplan auth login`, then retry without removing the requested interactivity.
-
-Never open a browser or claim the document is hosted before upload succeeds.
-Do not verify in a browser unless the user asks.

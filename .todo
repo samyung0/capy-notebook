@@ -19,7 +19,7 @@ Knowledge curate-loop and duplicate-result follow-up: todo-knowledge-curate-and-
 15. add suspend/unsuspend account controls to the Ops dashboard (separate feature; current suspension is database/operator-only)
 
 high PRIORITIES:
-openui
+k6 stress test
 adjust default chat message as steer if within a turn
 instruct llm to update curate browse_knnowledge tool prompt for updated topic counts everytime a publish occurs (new deploy needed?)
 offline idea -> duckdb-wasm with opfs (but what data can we store? cannot really edit because of collab server? or show warning that local data can fail to write if collab server state is newer, but still permit)

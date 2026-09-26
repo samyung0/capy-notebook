@@ -228,15 +228,15 @@ func ProviderModelID(providerSlug, modelSlug string) string {
 	return strings.TrimSpace(providerSlug) + "-" + strings.TrimSpace(modelSlug)
 }
 
-// ProviderTencent is the transport that serves the zai GLM pin: Tencent Cloud
-// TokenHub, an OpenAI-compatible route billed on TENCENT_API_KEY. It is not a
-// catalog provider; zai stays the identity users pin and Ops groups by.
-const ProviderTencent = "tencent"
+// ProviderRelace is the transport that serves the zai GLM pin: Relace, an
+// OpenAI-compatible route billed on RELACE_API_KEY. It is not a catalog
+// provider; zai stays the identity users pin and Ops groups by.
+const ProviderRelace = "relace"
 
 // TransportRef identifies the shared provider account/model capacity pool.
 func TransportRef(ref Ref) Ref {
 	if ref.ProviderSlug == "zai" && ref.ModelSlug == "glm-5.3-flash" {
-		return Ref{ProviderSlug: ProviderTencent, ModelSlug: "glm-5.3-flash"}
+		return Ref{ProviderSlug: ProviderRelace, ModelSlug: "glm-5.3-flash"}
 	}
 	return ref
 }

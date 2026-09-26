@@ -80,7 +80,7 @@ func TestEliteLLMProvidersPlatformEnv(t *testing.T) {
 	if !IsFirstPartyProvider("zai") {
 		t.Fatal("zai must be treated as a first-party provider")
 	}
-	if catalog.CredentialEnv("zai") != "TENCENT_API_KEY" {
+	if catalog.CredentialEnv("zai") != "RELACE_API_KEY" {
 		t.Fatal(catalog.CredentialEnv("zai"))
 	}
 }

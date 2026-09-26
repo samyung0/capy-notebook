@@ -108,6 +108,10 @@ including why local builder runs time out, are in the
 [September 25 report](rag/reports/2026-09-25-provider-latency.md). The same day's
 embedding ([`qwen37/`](rag/qwen37/)) and reranker ([`rerank/`](rag/rerank/))
 comparisons over the knowledge library have their own directories.
+[`glm_provider_latency.py`](rag/scripts/glm_provider_latency.py) does the same
+for GLM-5.3-Flash chat on Relace and Tencent TokenHub: streamed latency,
+multi-turn prompt caching and a concurrency ramp for rate limits
+([September 26 report](rag/reports/2026-09-26-glm-relace-tencent.md)).
 
 [`knowledge_scope_agent_eval.py`](rag/scripts/knowledge_scope_agent_eval.py)
 compares current knowledge-library search, cached continuation pages and

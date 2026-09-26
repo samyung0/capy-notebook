@@ -141,7 +141,7 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 		total, reserve  int
 	}{
 		{"deepseek", "deepseek-flash", 91, 13},
-		{"tencent", "glm-5.3-flash", 30, 24},
+		{"relace", "glm-5.3-flash", 100, 80},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
 		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
 	} {

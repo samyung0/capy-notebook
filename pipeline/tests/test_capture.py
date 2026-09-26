@@ -347,7 +347,7 @@ async def test_pdf_cache_is_keyed_by_the_stored_object(tmp_path, monkeypatch):
     assert after_reparse.read_bytes().endswith(b"previews/s/v2/fp2.pdf")
 
 
-def _capture_target(pages: list[int]):
+def _capture_target(pages: list[int], withheld: tuple[int, ...] = ()):
     from pipeline.retrieval import library
 
     return library.CaptureTarget(
@@ -357,7 +357,28 @@ def _capture_target(pages: list[int]):
         object_key="books/aaa.pdf",
         bytes=1024,
         pages=pages,
+        withheld_pages=list(withheld),
     )
+
+
+async def test_knowledge_capture_refuses_a_withheld_page_as_withheld(monkeypatch):
+    """Not the generic page refusal, so the agent does not try another excerpt."""
+
+    async def _target(excerpt_id):
+        return _capture_target([338], withheld=(339,))
+
+    async def _render(*args):
+        raise AssertionError("a withheld page is never rendered")
+
+    monkeypatch.setattr(tools.library, "capture_target", _target)
+    monkeypatch.setattr(capture, "render_knowledge", _render)
+    ctx = ToolContext(workspace_id="ws_1", curate=True)
+    refused = await tools._capture_knowledge_page(
+        {"excerpt_id": "e_1", "page": 339, "_tool_call_id": "a"}, ctx
+    )
+    assert refused.refused and "Page 339" in refused.text()
+    assert "withheld from the library" in refused.text()
+    assert "covers pages" not in refused.text() and not ctx.pending_images
 
 
 async def test_knowledge_capture_is_bounded_by_the_excerpt_pages(monkeypatch, pdf):

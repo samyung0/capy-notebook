@@ -474,6 +474,16 @@ async def test_capture_target_covers_the_excerpt_and_its_figure_pages(library_db
         await library.capture_target("e_missing")
 
 
+async def test_capture_target_drops_the_book_withheld_pages(library_db):
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_books SET withheld_pages = '{7}' WHERE id = 'ahss'"
+        )
+    target = await library.capture_target("e_intro")
+    assert target.pages == [1], "the figure's withheld page is dropped too"
+    assert target.withheld_pages == [7]
+
+
 # ------------------------------------------------------------------- loader
 #
 # The loader owns this schema, so the version moves it makes are checked

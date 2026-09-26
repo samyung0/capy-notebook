@@ -1061,7 +1061,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
     """Render a page of the book behind a library excerpt.
 
     The excerpt is the unit the model works in, so only its own pages and the
-    pages of its figures can be captured. Like ``capture_page`` it adds no
+    pages of its figures can be captured, never a page the book withholds (a
+    reprinted text the library does not reproduce). Like ``capture_page`` it adds no
     citation: a curate turn has none, and the attribution lives on the material.
     Curate mode has no per-turn capture cap.
     """
@@ -1070,6 +1071,11 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         target = await library.capture_target(excerpt_id)
     except ValueError as exc:
         return _refused(f"capture_knowledge_page: {exc}")
+    if page in target.withheld_pages:
+        return _refused(
+            f"Page {page} of {target.book_title} is withheld from the library; "
+            "it cannot be captured."
+        )
     if page not in target.pages:
         pages = ", ".join(str(p) for p in target.pages) or "none"
         return _refused(

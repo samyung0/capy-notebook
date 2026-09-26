@@ -17,7 +17,7 @@
 # - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
-# API keys (DeepSeek/DeepInfra/Tencent/Google/Whisper), and a parser service URL.
+# API keys (DeepSeek/DeepInfra/Relace/Google/Whisper), and a parser service URL.
 # Set them in deploy/.env (see .env.example) or the shell environment.
 #
 # Only `server` (:8080), `collaboration` (:1234), and the Access-protected
@@ -188,7 +188,7 @@ services:
       SENTRY_DSN: ${SENTRY_DSN_OPS:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      TENCENT_API_KEY: ${TENCENT_API_KEY:-}
+      RELACE_API_KEY: ${RELACE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     expose:
@@ -241,7 +241,7 @@ services:
       # model_configs.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      TENCENT_API_KEY: ${TENCENT_API_KEY:-}
+      RELACE_API_KEY: ${RELACE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
@@ -325,7 +325,7 @@ services:
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
-      TENCENT_API_KEY: ${TENCENT_API_KEY:-}
+      RELACE_API_KEY: ${RELACE_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}

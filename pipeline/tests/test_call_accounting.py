@@ -125,7 +125,7 @@ async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
     finally:
         accounting.reset(token)
 
-    assert sent["provider"] == "tencent"
+    assert sent["provider"] == "relace"
     assert sent["model"] == "glm-5.3-flash"
     assert sent["thinking"] == "max"
     assert "modelVersion" not in sent

@@ -11,8 +11,9 @@ from pipeline.config import cfg
 from pipeline.elitellm.client import (
     ANTHROPIC_URL,
     DEEPINFRA_EMBED_URL,
-    TENCENT_CHAT_URL,
-    TENCENT_PROVIDER,
+    RELACE_CHAT_URL,
+    RELACE_GLM_FLASH_MODEL,
+    RELACE_PROVIDER,
     _as_obj,
     _thinking_for_call,
     anthropic_endpoint,
@@ -129,7 +130,7 @@ def test_no_reasoning_uses_provider_off_or_lowest_setting():
     assert _thinking_for_call(zai_vision, None) == "max"
 
 
-def test_zai_request_keeps_the_pin_slug_and_low_reasoning():
+def test_zai_request_sends_relace_model_name_and_low_reasoning():
     spec = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",
@@ -161,7 +162,7 @@ def test_zai_request_keeps_the_pin_slug_and_low_reasoning():
         tool_choice=None,
     )
 
-    assert body["model"] == "glm-5.3-flash"
+    assert body["model"] == RELACE_GLM_FLASH_MODEL
     assert body["messages"] == messages
     assert "thinking" not in body
     assert body["reasoning_effort"] == "low"
@@ -170,7 +171,7 @@ def test_zai_request_keeps_the_pin_slug_and_low_reasoning():
 
 
 @pytest.mark.asyncio
-async def test_zai_complete_uses_tencent_tokenhub(
+async def test_zai_complete_uses_relace(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -190,7 +191,7 @@ async def test_zai_complete_uses_tencent_tokenhub(
         }
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("TENCENT_API_KEY", "sk-tencent")
+    monkeypatch.setenv("RELACE_API_KEY", "sk-relace")
     monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
 
     response = await elitellm_complete(
@@ -199,20 +200,20 @@ async def test_zai_complete_uses_tencent_tokenhub(
         reasoning=False,
     )
 
-    assert seen["url"] == TENCENT_CHAT_URL
+    assert seen["url"] == RELACE_CHAT_URL
     assert seen["headers"] == {
-        "authorization": "Bearer sk-tencent",
+        "authorization": "Bearer sk-relace",
         "content-type": "application/json",
     }
-    assert seen["body"]["model"] == "glm-5.3-flash"
+    assert seen["body"]["model"] == RELACE_GLM_FLASH_MODEL
     assert seen["body"]["reasoning_effort"] == "low"
-    assert transport_provider_slug(spec) == TENCENT_PROVIDER
+    assert transport_provider_slug(spec) == RELACE_PROVIDER
     assert transport_model_slug(spec) == "glm-5.3-flash"
     assert response.choices[0].message.content == "caption"
 
 
 @pytest.mark.asyncio
-async def test_zai_stream_uses_tencent_tokenhub_and_max_by_default(
+async def test_zai_stream_uses_relace_and_max_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ):
     spec = _spec(
@@ -230,7 +231,7 @@ async def test_zai_stream_uses_tencent_tokenhub_and_max_by_default(
         yield {"choices": [{"delta": {"content": "ok"}}]}
 
     bind_request_llm(paid_by="platform")
-    monkeypatch.setenv("TENCENT_API_KEY", "sk-tencent")
+    monkeypatch.setenv("RELACE_API_KEY", "sk-relace")
     monkeypatch.setattr("pipeline.elitellm.client._stream_sse", stream_sse)
 
     chunks = [
@@ -239,8 +240,8 @@ async def test_zai_stream_uses_tencent_tokenhub_and_max_by_default(
     ]
 
     assert len(chunks) == 1
-    assert seen["url"] == TENCENT_CHAT_URL
-    assert seen["body"]["model"] == "glm-5.3-flash"
+    assert seen["url"] == RELACE_CHAT_URL
+    assert seen["body"]["model"] == RELACE_GLM_FLASH_MODEL
     assert seen["body"]["reasoning_effort"] == "max"
     assert seen["body"]["stream"] is True
 
@@ -450,7 +451,7 @@ def test_anthropic_max_is_adaptive():
 def test_anthropic_platform_env_is_first_party():
     assert platform_env_name("anthropic") == "ANTHROPIC_API_KEY"
     assert platform_env_name("openai") == "OPENAI_API_KEY"
-    assert platform_env_name("zai") == "TENCENT_API_KEY"
+    assert platform_env_name("zai") == "RELACE_API_KEY"
 
 
 def test_platform_key_for_anthropic_reads_anthropic_env(monkeypatch):

@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from pipeline.config import env_name_for_provider
-from pipeline.elitellm.client import ZAI_GLM_FLASH_MODEL
+from pipeline.elitellm.client import RELACE_GLM_FLASH_MODEL, ZAI_GLM_FLASH_MODEL
 from pipeline.elitellm.providers import load_providers
 
 REPO = Path(__file__).resolve().parents[2]
@@ -25,7 +25,7 @@ MODEL_LIST_ENDPOINTS = {
     "anthropic": "https://api.anthropic.com/v1/models",
     "deepseek": "https://api.deepseek.com/models",
     "openai": "https://api.openai.com/v1/models",
-    "zai": "https://tokenhub.tencentcloudmaas.com/v1/models",
+    "zai": "https://models.relace.ai/v1/models",
 }
 
 
@@ -78,7 +78,7 @@ def require_chat_provider(provider_slug: str) -> str:
 
 def cassette_relpath(provider_slug: str, model_id: str) -> str:
     slug = model_id.rsplit("/", 1)[-1].replace(".", "_").replace("-", "_")
-    return str(CASSETTE_DIR / f"{provider_slug}__{slug}.yaml")
+    return (CASSETTE_DIR / f"{provider_slug}__{slug}.yaml").as_posix()
 
 
 def load_manifest(path: Path = MANIFEST) -> dict[str, Any]:
@@ -164,9 +164,9 @@ def fetch_available_model_slugs(
     if not model_ids:
         raise ModelListError(f"{provider_slug} returned no available model slugs")
     if provider_slug == "zai":
-        if ZAI_GLM_FLASH_MODEL not in model_ids:
+        if RELACE_GLM_FLASH_MODEL not in model_ids:
             raise ModelListError(
-                f"zai model {ZAI_GLM_FLASH_MODEL} is unavailable on Tencent TokenHub"
+                f"zai model {RELACE_GLM_FLASH_MODEL} is unavailable on Relace"
             )
         return [ZAI_GLM_FLASH_MODEL]
     return sorted(model_ids)

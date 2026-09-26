@@ -28,16 +28,19 @@ def test_openai_nested_cached_tokens_are_discounted():
 
 
 def test_routed_zai_cache_split_prices_against_the_glm_row():
-    # The catalog slug stays zai; DeepInfra serves and bills the call.
+    # The catalog slug stays zai; Relace serves and bills the call, and
+    # reports reasoning_tokens at the top level.
     usage = extract_usage(
         {
             "prompt_tokens": 172,
             "completion_tokens": 53,
             "prompt_tokens_details": {"cached_tokens": 128},
+            "reasoning_tokens": 21,
         },
         provider="zai",
     )
     assert usage.cached_read_tokens == 128
+    assert usage.reasoning_tokens == 21
     assert usage.anomaly == ""
 
 

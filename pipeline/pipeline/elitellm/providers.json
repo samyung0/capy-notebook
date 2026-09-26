@@ -22,7 +22,7 @@
     "zai": {
       "name": "Z.ai",
       "byok": false,
-      "platformEnv": "TENCENT_API_KEY",
+      "platformEnv": "RELACE_API_KEY",
       "allowedModelSlugs": ["glm-5.3-flash"],
       "thinking": ["low", "high", "max"]
     },

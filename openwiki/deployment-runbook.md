@@ -359,8 +359,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
    `0007_drop_caption_images.sql`, `0008_parse_page_rates.sql`,
    `0009_default_chat_model.sql` came with the OpenDataLoader release and
    apply on the next deploy of an existing database; `0009` also moves the
-   catalog's chat slot default to `zai/glm-5.3-flash`, so the TokenHub
-   capacity row and `TENCENT_API_KEY` must be in place before that deploy).
+   catalog's chat slot default to `zai/glm-5.3-flash`, so the Relace GLM
+   capacity row and `RELACE_API_KEY` must be in place before that deploy).
 6. **Domains** on the resource, after the first successful deploy (Coolify
    has to parse the compose file first). Enter **`http://`** — Cloudflare
    terminates TLS. Include the container port if the UI asks for one:
@@ -543,8 +543,8 @@ without limits and missing capacity fails explicitly. Production uses GLM
 development must use limits appropriate to their own provider accounts.
 `deploy/model-capacities.sql` is an opt-in bootstrap after migrations. It inserts
 only missing enabled platform-model capacities using the documented DeepSeek
-and DeepInfra concurrency limits, with a smaller application limit for Tencent
-GLM because Tencent enforces account/model TPM and RPM. Its source links and
+and DeepInfra concurrency limits, with a smaller application limit for Relace
+GLM because Relace enforces a per-key requests-per-minute budget. Its source links and
 allocation assumptions are in the SQL. Existing operator values are preserved.
 Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
@@ -1060,9 +1060,9 @@ those services start.
    to the import
    worker and `ELEVENLABS_API_KEY` for
    uploaded-audio transcription. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
-   embedding route and `TENCENT_API_KEY` for the ZAI GLM routing exception
-   (Tencent TokenHub) used by standalone-image captions; the app host's
-   `retrieval` and `ops` containers carry the same `TENCENT_API_KEY` for chat.
+   embedding route and `RELACE_API_KEY` for the ZAI GLM routing exception
+   (Relace) used by standalone-image captions; the app host's
+   `retrieval` and `ops` containers carry the same `RELACE_API_KEY` for chat.
    Those calls happen on this ingest host after it
    downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The

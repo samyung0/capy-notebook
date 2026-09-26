@@ -82,8 +82,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # --ledger sets it for every config that does not carry its own.
     "ledger": None,
     # transport: send this pin to another OpenAI-compatible endpoint instead of the
-    # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "TENCENT_API_KEY",
-    # "wire_model": "glm-5.3-flash", "body": "zai"}. body picks the request builder.
+    # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "RELACE_API_KEY",
+    # "wire_model": "z-ai/glm-5.3-flash", "body": "zai"}. body picks the request builder.
     "model": {
         "provider_slug": "deepseek",
         "model_slug": "deepseek-flash",

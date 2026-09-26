@@ -22,10 +22,11 @@ OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
 DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
-# Tencent Cloud TokenHub serves GLM-5.3-Flash on its own hardware through an
-# OpenAI-compatible chat route; it is the only route for the zai pin.
-TENCENT_CHAT_URL = "https://tokenhub.tencentcloudmaas.com/v1/chat/completions"
-TENCENT_PROVIDER = "tencent"
+# Relace serves GLM-5.3-Flash through an OpenAI-compatible chat route; it is
+# the only route for the zai pin. Relace names the model with an org prefix.
+RELACE_CHAT_URL = "https://models.relace.ai/v1/chat/completions"
+RELACE_PROVIDER = "relace"
+RELACE_GLM_FLASH_MODEL = "z-ai/glm-5.3-flash"
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
@@ -221,12 +222,13 @@ def zai_thinking_body(thinking: str) -> dict[str, Any]:
 
 def transport_provider_slug(spec: ModelConfig) -> str:
     if _is_routed_zai_glm(spec):
-        return TENCENT_PROVIDER
+        return RELACE_PROVIDER
     return spec.provider_slug
 
 
 def transport_model_slug(spec: ModelConfig) -> str:
-    # TokenHub names the model by its own slug, so the wire model is the pin.
+    # Capacity and usage rows key on the pin's slug; only zai_request sends
+    # Relace's prefixed wire name.
     return spec.model_slug
 
 
@@ -445,7 +447,7 @@ def zai_request(
     tool_choice: Any | None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
-        "model": transport_model_slug(spec),
+        "model": RELACE_GLM_FLASH_MODEL,
         "messages": messages,
     }
     body.update(zai_thinking_body(thinking))
@@ -751,7 +753,7 @@ async def complete(
             stream=False,
             tool_choice=tool_choice,
         )
-        return _as_obj(await _post_json(TENCENT_CHAT_URL, _bearer(key), body))
+        return _as_obj(await _post_json(RELACE_CHAT_URL, _bearer(key), body))
     raise RegistryError(f"elitellm has no chat route for {spec.provider_slug}")
 
 
@@ -844,7 +846,7 @@ async def stream(
             stream=True,
             tool_choice=tool_choice,
         )
-        async for event in _stream_sse(TENCENT_CHAT_URL, _bearer(key), body):
+        async for event in _stream_sse(RELACE_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
     raise RegistryError(f"elitellm has no stream route for {spec.provider_slug}")

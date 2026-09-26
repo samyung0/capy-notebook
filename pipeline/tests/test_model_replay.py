@@ -18,7 +18,8 @@ from pipeline.elitellm.client import (
     DEEPSEEK_CHAT_URL,
     OPENAI_CHAT_URL,
     OPENAI_RESPONSES_URL,
-    TENCENT_CHAT_URL,
+    RELACE_CHAT_URL,
+    RELACE_GLM_FLASH_MODEL,
     anthropic_request,
     deepseek_request,
     openai_responses_request,
@@ -162,13 +163,13 @@ async def _turn(
 
 
 # The hosts each provider's certification must have been recorded against. A
-# cassette recorded on a retired transport (the zai pin moved from DeepInfra to
-# Tencent TokenHub) is not a certification of the live route.
+# cassette recorded on a retired transport (the zai pin moved from Tencent
+# TokenHub to Relace) is not a certification of the live route.
 LIVE_ROUTE_HOSTS = {
     "anthropic": {ANTHROPIC_URL.split("/")[2]},
     "deepseek": {DEEPSEEK_CHAT_URL.split("/")[2]},
     "openai": {OPENAI_CHAT_URL.split("/")[2], OPENAI_RESPONSES_URL.split("/")[2]},
-    "zai": {TENCENT_CHAT_URL.split("/")[2]},
+    "zai": {RELACE_CHAT_URL.split("/")[2]},
 }
 
 
@@ -245,7 +246,7 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
             stream=True,
             tool_choice="auto",
         )
-        assert body["model"] == "glm-5.3-flash"
+        assert body["model"] == RELACE_GLM_FLASH_MODEL
         assert body["reasoning_effort"] == "max"
         assert "thinking" not in body
         assert body["stream"] is True

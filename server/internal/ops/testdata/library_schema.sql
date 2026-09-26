@@ -33,6 +33,8 @@ CREATE TABLE IF NOT EXISTS library_books (
   content_id text NOT NULL REFERENCES rag_contents, version int NOT NULL,
   rights_notes jsonb NOT NULL, figure_exclusions jsonb NOT NULL
 );
+-- Pages of reprinted texts the library withholds; page capture never renders them.
+ALTER TABLE library_books ADD COLUMN IF NOT EXISTS withheld_pages int[] NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS library_book_versions (
   book_id text NOT NULL REFERENCES library_books, version int NOT NULL,
   content_id text NOT NULL REFERENCES rag_contents, published_at timestamptz NOT NULL DEFAULT now(),

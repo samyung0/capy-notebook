@@ -110,7 +110,12 @@ def versioned(identifier: str, version: int) -> str:
     return f"{identifier}_v{version}"
 
 
-def corpus_identity(book_corpus: dict, pin: dict, tags: dict) -> str:
+def corpus_identity(
+    book_corpus: dict,
+    pin: dict,
+    tags: dict,
+    withheld_pages: tuple[int, ...] | list[int] = (),
+) -> str:
     """Everything that decides a book version's content, in one digest: the
     parse, the embedding pin and each excerpt's tag outcome (a retag or a
     topic rename changes the excerpt rows, so it is a new version).
@@ -118,7 +123,9 @@ def corpus_identity(book_corpus: dict, pin: dict, tags: dict) -> str:
     A book whose figures carry a book agent's notes (`apply_figure_notes` writes
     all four fields on every record; transcribe never writes `decorative`) also
     covers its figure notes and excluded flags, so a figure-only cleanup is a
-    new version. Every other book keeps exactly the identity it had before.
+    new version. So do a book's withheld pages (the manifest's `withheld_pages`):
+    withholding or restoring a text is a new version even when only its pages
+    move. Every other book keeps exactly the identity it had before.
     """
     from knowledge_base_pilot import FIGURE_NOTES
 
@@ -137,6 +144,8 @@ def corpus_identity(book_corpus: dict, pin: dict, tags: dict) -> str:
             f["id"]: {k: f.get(k) for k in (*FIGURE_NOTES, "excluded")}
             for f in book_corpus["figures"]
         }
+    if withheld_pages:
+        identity["withheld_pages"] = list(withheld_pages)
     return digest(identity)
 
 
@@ -457,8 +466,8 @@ def apply_schema() -> dict:
     """Create the library schema exactly as `LIBRARY_SCHEMA` writes it and load
     the subjects fixture.
 
-    The additive retrieval metadata and figure note columns preserve existing
-    book versions.
+    The additive retrieval metadata, figure note and withheld page columns
+    preserve existing book versions.
     """
     with connect() as conn:
         conn.execute(SCHEMA)
@@ -658,14 +667,14 @@ def publish_book(
                 ),
             )
         target.execute(
-            "INSERT INTO library_books VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "INSERT INTO library_books VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (id) DO UPDATE SET title=EXCLUDED.title, authors=EXCLUDED.authors, "
             "edition=EXCLUDED.edition, source_url=EXCLUDED.source_url, download_url=EXCLUDED.download_url, "
             "license=EXCLUDED.license, license_url=EXCLUDED.license_url, attribution=EXCLUDED.attribution, "
             "sha256=EXCLUDED.sha256, bytes=EXCLUDED.bytes, pages=EXCLUDED.pages, "
             "first_content_page=EXCLUDED.first_content_page, content_id=EXCLUDED.content_id, "
             "version=EXCLUDED.version, rights_notes=EXCLUDED.rights_notes, "
-            "figure_exclusions=EXCLUDED.figure_exclusions",
+            "figure_exclusions=EXCLUDED.figure_exclusions, withheld_pages=EXCLUDED.withheld_pages",
             (
                 book_id,
                 book["title"],
@@ -684,6 +693,7 @@ def publish_book(
                 version,
                 Jsonb(book.get("rights_notes", [])),
                 Jsonb(book.get("figure_exclusions", [])),
+                book.get("withheld_pages", []),
             ),
         )
         target.execute(
@@ -805,7 +815,9 @@ def publish(
                 tags=tags,
                 captures=captures,
                 model_runs=model_runs,
-                identity=corpus_identity(book_corpus, index["pin"], tags),
+                identity=corpus_identity(
+                    book_corpus, index["pin"], tags, book.get("withheld_pages", [])
+                ),
                 note=note,
             )
             save_json(
@@ -1226,6 +1238,10 @@ def check() -> None:
     assert corpus_identity(base, pin, tagged) != corpus_identity(base, pin, retagged), (
         "a retag or topic rename changes the excerpt rows, so it is a new version"
     )
+    assert corpus_identity(base, pin, tagged, []) == corpus_identity(base, pin, tagged)
+    assert corpus_identity(base, pin, tagged, [3]) != corpus_identity(
+        base, pin, tagged
+    ), "withholding or restoring pages is a new version"
 
     # A missing object refuses the publish rather than recording a key that
     # would fail at capture time; a present one becomes books/<sha256>.pdf.

@@ -1702,6 +1702,95 @@
       }
     },
     {
+      "id": "grammars-african-languages",
+      "area": "social-sciences",
+      "label": "Grammars of African languages",
+      "aliases": [
+        "African descriptive grammars",
+        "African reference grammars",
+        "African language documentation",
+        "Chadic grammars",
+        "Afroasiatic grammars",
+        "Niger-Congo grammars"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
+      "id": "grammars-asian-languages",
+      "area": "social-sciences",
+      "label": "Grammars of Asian languages",
+      "aliases": [
+        "Asian descriptive grammars",
+        "Asian reference grammars",
+        "Asian language documentation",
+        "Indo-Aryan grammars",
+        "Sino-Tibetan grammars",
+        "Dravidian grammars"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
+      "id": "grammars-european-languages",
+      "area": "social-sciences",
+      "label": "Grammars of European languages",
+      "aliases": [
+        "European descriptive grammars",
+        "European reference grammars",
+        "European language documentation",
+        "Uralic grammars",
+        "Indo-European grammars"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
+      "id": "grammars-languages-of-the-americas",
+      "area": "social-sciences",
+      "label": "Grammars of languages of the Americas",
+      "aliases": [
+        "American descriptive grammars",
+        "American reference grammars",
+        "Indigenous American language documentation",
+        "Quechuan grammars",
+        "languages of North America",
+        "languages of South America"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
+      "id": "grammars-languages-of-oceania",
+      "area": "social-sciences",
+      "label": "Grammars of languages of New Guinea and Oceania",
+      "aliases": [
+        "Oceanian descriptive grammars",
+        "Oceanian reference grammars",
+        "New Guinea language documentation",
+        "Papuan grammars",
+        "Austronesian grammars",
+        "languages of the Pacific"
+      ],
+      "level": "undergraduate",
+      "catalogs": {
+        "otl": [],
+        "libretexts": []
+      }
+    },
+    {
       "id": "social-work",
       "area": "social-sciences",
       "label": "Social work and counseling",

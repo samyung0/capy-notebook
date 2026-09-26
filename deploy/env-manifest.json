@@ -652,6 +652,10 @@
       "kind": "secret",
       "targets": ["local"]
     },
+    "RELACE_API_KEY": {
+      "kind": "secret",
+      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+    },
     "RELEASE_SHA": {
       "kind": "variable",
       "targets": ["local"]
@@ -735,10 +739,6 @@
     "STRIX_UAT_AUTH_INSTRUCTIONS": {
       "kind": "variable",
       "targets": ["local"]
-    },
-    "TENCENT_API_KEY": {
-      "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
     },
     "UAT_ACTOR_EMAIL_DOMAIN": {
       "kind": "variable",

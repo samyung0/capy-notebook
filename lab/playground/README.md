@@ -10,9 +10,9 @@ uv run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --targ
 ```
 
 Set `ALIBABA_API_KEY` in the shell first if a config uses `capture.mode = "ocr"`.
-`TENCENT_API_KEY` (Tencent TokenHub, used by the `curate` config) is loaded from
+`RELACE_API_KEY` (Relace, which serves the GLM-5.3-Flash pin) is loaded from
 the UAT worker or repository-root `.env.local` with the other provider keys,
-so it needs no export. `TOKENHUB` remains available for configs using that name.
+so it needs no export.
 The Claude desktop app's `.claude/launch.json`
 carries `rag-playground-uat`, which starts this server against UAT on port
 18765 with `uv` invoked by its full path. The server opens its own SSH tunnel
@@ -103,7 +103,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | Field | Meaning |
 | --- | --- |
 | `model` | A `model_configs` pin (`provider_slug`, `model_slug`, `version`, `thinking`). Add `adhoc: {…}` to pin a model the catalog lacks; the provider's platform key must exist |
-| `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). Used to serve GLM-5.3-flash from Tencent TokenHub (`https://tokenhub-intl.tencentcloudmaas.com/v1/chat/completions`) instead of the production DeepInfra route |
+| `model.transport` | Send this pin to another OpenAI-compatible endpoint: `{"url", "key_env", "wire_model", "body"}`. `body` picks the request builder (`zai`, `openai`, `deepseek`). `null` uses the production route |
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it. The addon is appended either way |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `browse_knowledge` still receives the live subject catalog |
@@ -150,7 +150,7 @@ database and matter only to chat. The agent gets the curate system prompt, the
 library tools and `create_ledger`, no planning ceiling, and the curate caps from `limits.knowledge_tools_per_response`,
 `limits.tools_per_turn` and `limits.stall_responses`. The consolidated `curate`
 preset uses the application prompt with four tools per response, 160 per turn
-and five responses without progress. It retains GLM high through Tencent.
+and five responses without progress. It retains GLM high on the production route.
 
 The initial `browse_knowledge` catalog shows explicit subject browse calls,
 such as `browse_knowledge({"subject": "general-biology"})`, with excerpt counts.

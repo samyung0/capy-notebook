@@ -1,15 +1,14 @@
 """Normalize provider usage into inclusive cache-read counters.
 
 Discount only proven inclusive shapes: DeepSeek prompt_cache_hit_tokens,
-and OpenAI and Tencent TokenHub cached_tokens nested under input/prompt token
-details. Missing or invalid detail is recorded and charged as ordinary
-input. It does not fail the request.
+and OpenAI and Relace cached_tokens nested under input/prompt token details.
+Missing or invalid detail is recorded and charged as ordinary input. It does
+not fail the request.
 
 GLM is proven under its `zai` catalog slug because the hop is a billing
-route, not a fan-out: Tencent TokenHub serves the model on its own hardware
-and charges us directly, so the split it reports (observed inclusive in the
-September 2026 playground runs) is the one the row's cached rate is priced
-against.
+route, not a fan-out: Relace serves the model and charges us directly, so the
+split it reports (observed inclusive in the 2026-09-26 bench run) is the one
+the row's cached rate is priced against.
 """
 
 from __future__ import annotations
@@ -100,13 +99,14 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
     writes = _int(_attr(details, "cache_write_tokens", "cacheWriteTokens")) or _int(
         _attr(block, "cache_creation_input_tokens", "cacheCreationInputTokens")
     )
+    # Relace reports reasoning_tokens at the top level.
     reasoning = _int(
         _attr(
             _attr(block, "completion_tokens_details", "output_tokens_details"),
             "reasoning_tokens",
             "reasoningTokens",
         )
-    )
+    ) or _int(_attr(block, "reasoning_tokens"))
     out.cache_write_tokens = writes
     out.reasoning_tokens = reasoning
 

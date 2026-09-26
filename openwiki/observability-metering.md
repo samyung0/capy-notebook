@@ -283,13 +283,12 @@ named provider directly. Two exact routing exceptions are allowed:
   (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
   `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
 - `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
-  Tencent Cloud TokenHub
-  (`https://tokenhub.tencentcloudmaas.com/v1/chat/completions`,
-  OpenAI-compatible, wire model `glm-5.3-flash`, transport provider `tencent`,
-  platform-only `TENCENT_API_KEY`). The identity stays with ZAI because ZAI is
-  the model's maker; the hop exists because ZAI's own API needs a monthly plan.
-  There is no fallback route: the DeepInfra path for this pin was removed
-  (decision 2026-09-12, `human/agentic-retrieval.md`). Thinking cannot be
+  Relace (`https://models.relace.ai/v1/chat/completions`, OpenAI-compatible,
+  wire model `z-ai/glm-5.3-flash`, transport provider `relace`, platform-only
+  `RELACE_API_KEY`). The identity stays with ZAI because ZAI is the model's
+  maker; the hop exists because ZAI's own API needs a monthly plan. There is
+  no fallback route: Relace replaced Tencent TokenHub on 2026-09-26, which had
+  replaced DeepInfra (`human/agentic-retrieval.md`). Thinking cannot be
   disabled on this route; `low` is the floor and the catalog default.
 
 Neither exception opens a general router path. Other DeepInfra slugs
@@ -406,11 +405,13 @@ unproven cache details charge all reported input at the input rate and do not
 fail the request. Cache writes are ordinary input under the three-rate design.
 DeepSeek, OpenAI, and routed GLM under its `zai` slug report a cache
 split proven inclusive of their own reported input; Anthropic's disjoint
-counters are folded into input separately. Routed GLM counts because TokenHub
+counters are folded into input separately. Routed GLM counts because Relace
 serves the model and bills us directly, so its split is the one the row's
-cached rate is priced against (the playground runs in `lab/playground`
-recorded `prompt_tokens_details.cached_tokens` ≤ `prompt_tokens` on every
-TokenHub call). A split larger than reported input is still refused as
+cached rate is priced against (the 2026-09-26 bench run in
+`bench/rag/reports/2026-09-26-glm-relace-tencent.md` recorded
+`prompt_tokens_details.cached_tokens` ≤ `prompt_tokens` on every Relace call;
+Relace reports `reasoning_tokens` at the top level of `usage`). A split larger
+than reported input is still refused as
 `cached_gt_input` and charged in full.
 Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
 (`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
@@ -944,10 +945,10 @@ concurrency is the separate cap of 20 above, not this one.
 transport provider/model, independently of versioned `model_configs`. Ops exposes
 both required fields in the model form, including for existing embedding models;
 capacity-only edits do not create a catalog version. Routed GLM shares
-`tencent:glm-5.3-flash` across all its versions (the pre-TokenHub
-`deepinfra:zai-org/GLM-5.3-Flash` row is history). Each environment's database
+`relace:glm-5.3-flash` across all its versions (earlier `tencent:` and
+`deepinfra:` rows are history and unused). Each environment's database
 holds its own limits; no capacity values are seeded across environments, so
-the TokenHub capacity row must be created in Ops before GLM traffic.
+the Relace capacity row must be created in Ops before GLM traffic.
 An enabled platform model missing capacity or a provider credential has a
 clickable warning icon in the registry. It opens a dialog listing the missing
 configuration for that model.
@@ -969,16 +970,17 @@ released when the call ends.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
 and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
-DeepSeek Flash 2500/1500, Tencent GLM 30/24, Qwen embedding 200/80
+DeepSeek Flash 2500/1500, Relace GLM 100/80, Qwen embedding 200/80
 (total/interactive reserve). Existing settings, including GLM 200/120, remain.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
-limits; the reserves are application policy. The user confirmed Tencent's quota
-as 1,000,000 TPM and 60 RPM per model on 2026-09-13 and selected 30 concurrent
-calls with 24 reserved for interactive use, leaving at most 6 ingest calls.
-At an assumed 30 seconds and 10k tokens per call, this implies about 60 RPM and
-600k TPM, reaching the RPM limit. Bursts or
-different request sizes/durations can exceed the quota; a concurrency gate does
-not enforce per-minute limits. See the script for assumptions and
+limits; the reserves are application policy. GLM's 100 concurrent calls with
+80 reserved for interactive use (at most 20 ingest calls) are deliberately set
+above Relace's per-key budget, measured at roughly 700-800 RPM on 2026-09-26:
+at the ~4 s median chat-agent turn a full gate is about 1,500 RPM, so the
+provider limit binds first. Its 429s appear under Health "Busy models", which
+is the signal to request a higher Relace limit. An interactive 429 fails at
+once with the busy message (Relace asks for 60 s, past the 3 s interactive
+retry budget); ingest captions wait and retry within their 120 s budget. See the script for assumptions and
 official sources; split capacities when environments share a provider account.
 Migration `0010` copies any configured Flash Vision capacity to its new identity.
 Health shows attempts abandoned on a provider 429, 503 or 529
@@ -1091,7 +1093,7 @@ year and longer custom ranges use monthly buckets. Each response carries one
 Provider/model grouping uses the catalog provider, model slug, and version as
 the primary billing identity; the transport-observed provider/model is shown as
 secondary diagnostic data. Routed GLM rows therefore group under
-`zai/glm-5.3-flash` while the observed pair is `tencent/glm-5.3-flash`.
+`zai/glm-5.3-flash` while the observed pair is `relace/glm-5.3-flash`.
 
 The header's refresh button refetches all active Ops GET queries. It never
 calls an LLM provider, the parser, or Stripe and it never starts reconciliation.

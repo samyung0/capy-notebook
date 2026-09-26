@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS library_books (
   content_id text NOT NULL REFERENCES rag_contents, version int NOT NULL,
   rights_notes jsonb NOT NULL, figure_exclusions jsonb NOT NULL
 );
+-- Pages of reprinted texts the library withholds; page capture never renders them.
+ALTER TABLE library_books ADD COLUMN IF NOT EXISTS withheld_pages int[] NOT NULL DEFAULT '{}';
 CREATE TABLE IF NOT EXISTS library_book_versions (
   book_id text NOT NULL REFERENCES library_books, version int NOT NULL,
   content_id text NOT NULL REFERENCES rag_contents, published_at timestamptz NOT NULL DEFAULT now(),
@@ -467,11 +469,11 @@ async def search(
                 await _available_roles(conn, topics) if roles and topics else None
             )
             return SearchResult([], topics, roles, available)
-        chunk_to_excerpt = await _chunk_excerpts(conn, [r["id"] for r in rows])
-        ordered: list[tuple[str, dict[str, Any]]] = []
     # No pooled connection is held while the reranker runs.
     rows, _ = await rerank(query, rows)
     async with db.connection() as conn:
+        chunk_to_excerpt = await _chunk_excerpts(conn, [r["id"] for r in rows])
+        ordered: list[tuple[str, dict[str, Any]]] = []
         seen: set[str] = set()
         passages: set[str] = set()
         for row in rows:
@@ -607,7 +609,8 @@ async def read_excerpt(
 @dataclass
 class CaptureTarget:
     """What ``capture_knowledge_page`` may render for one excerpt: the book's
-    stored object and the pages the excerpt itself (or one of its figures) covers."""
+    stored object and the pages the excerpt itself (or one of its figures) covers,
+    less the book's withheld pages."""
 
     excerpt_id: str
     book_id: str
@@ -615,6 +618,7 @@ class CaptureTarget:
     object_key: str
     bytes: int
     pages: list[int]
+    withheld_pages: list[int]
 
 
 async def capture_target(excerpt_id: str) -> CaptureTarget:
@@ -623,7 +627,7 @@ async def capture_target(excerpt_id: str) -> CaptureTarget:
         cur = await conn.execute(
             """
             SELECT e.book_id, e.content_id, e.pages, e.figure_ids, b.title,
-                   v.object_key, b.bytes
+                   v.object_key, b.bytes, b.withheld_pages
             FROM library_excerpts e
             JOIN rag_file_contents fc
               ON fc.content_id = e.content_id AND fc.workspace_id = %s
@@ -644,13 +648,15 @@ async def capture_target(excerpt_id: str) -> CaptureTarget:
                 (row["content_id"], list(row["figure_ids"])),
             )
             pages.update(int(figure["page"]) for figure in await cur.fetchall())
+    withheld = set(row["withheld_pages"])
     return CaptureTarget(
         excerpt_id=excerpt_id,
         book_id=row["book_id"],
         book_title=row["title"],
         object_key=row["object_key"] or "",
         bytes=int(row["bytes"] or 0),
-        pages=sorted(pages),
+        pages=sorted(pages - withheld),
+        withheld_pages=sorted(withheld),
     )
 
 

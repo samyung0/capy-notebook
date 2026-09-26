@@ -51,8 +51,7 @@ PROVIDER_KEYS = (
     "DEEPINFRA_API_KEY",
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
-    "TOKENHUB",
-    "TENCENT_API_KEY",
+    "RELACE_API_KEY",
 )
 B2_KEYS = ("B2_ENDPOINT", "B2_REGION", "B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY")
 # The knowledge library and its private bucket are developer-local secrets: the

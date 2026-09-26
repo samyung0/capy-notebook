@@ -73,3 +73,17 @@ Phase B, the window:
    `0033` and `0034` run while paused.
 10. `resume`; open one file per format in Edit, edit, publish, check quota and `source_documents`;
     then the `uat-quality` journeys with `critical_paths` (paid calls: estimate in `c6.md`).
+
+## Window result (2026-09-26/27)
+
+- `main` `5ba5d8ca` (C5, C6) plus CI fixes `1e41b922`, `cb5a4892`, `9297e374` and the pin bump
+  `8092eb62` (fork `capy-ci` `04560dd6`, DOCX save session check) passed CI.
+- UAT deployed at `8092eb62` while paused: `0033_office_storage_rule` and `0034_office_window_reset`
+  applied (UAT held no `source_documents` rows). The UAT ingest lane followed at the same SHA, then
+  `resume`: `0 unpublished, 0 in flight`.
+- Earlier the same day, the ingest host's WireGuard peer was set from the stale example inventory
+  and cut the UAT ingest workers off from the database (Sentry `CAPY-BACKEND-J`, PoolTimeout);
+  the developer re-ran the playbook with UAT's peer, and `inventory.example.yml` now holds
+  placeholders (`127bac10`).
+- The UAT journeys (`uat-quality`, `critical_paths`) ran against `8092eb62` afterwards.
+

@@ -64,7 +64,7 @@ for _k in (
     "ANTHROPIC_API_KEY",
     "OPENAI_API_KEY",
     "DEEPINFRA_API_KEY",
-    "TENCENT_API_KEY",
+    "RELACE_API_KEY",
 ):
     os.environ.setdefault(_k, "test-dummy-key")
 

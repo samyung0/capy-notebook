@@ -9,16 +9,16 @@
 -- https://api-docs.deepseek.com/quick_start/rate_limit/
 -- DeepInfra: 200 concurrent requests per account/model.
 -- https://docs.deepinfra.com/account/rate-limits
--- Tencent exposes account/model TPM and RPM, not a fixed concurrency limit.
--- https://cloud.tencent.com/document/api/1823/136110
--- User-confirmed quota (2026-09-13): 1,000,000 TPM / 60 RPM per model.
--- User-selected GLM capacity: 30 concurrent calls / 24 interactive reserve.
--- At an assumed 30 seconds and 10k tokens/call, 30 calls in flight imply
--- ~60 RPM and ~600k TPM, reaching the RPM limit under those assumptions.
--- RPM binds below ~16.7k tokens/request.
--- These are steady-state estimates. Bursts, shorter calls or larger prompts
--- can still receive 429s; concurrency does not enforce the per-minute quotas.
--- Interactive reserves: 80% Tencent GLM / 60% DeepSeek / 40% embedding.
+-- Relace limits requests per key over a rolling minute, not concurrency.
+-- https://docs.relace.ai/api-reference/introduction
+-- Measured on the subscribed key (2026-09-26): roughly 700-800 RPM
+-- (bench/rag/reports/2026-09-26-glm-relace-tencent.md).
+-- GLM capacity: 100 concurrent calls / 80 interactive reserve, deliberately
+-- above the key's budget. At the ~4 s median chat-agent turn in that report,
+-- a full gate is ~1,500 RPM, so Relace's RPM limit binds first and its 429s
+-- show under Ops Health "Busy models": that is the signal to ask Relace for a
+-- higher limit. The gate stays as a runaway bound.
+-- Interactive reserves: 80% Relace GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
 -- binds; it copies the embedding's 80.
@@ -26,7 +26,7 @@
 WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
   VALUES
     ('deepseek', 'deepseek-flash', 2500, 2200),
-    ('tencent', 'glm-5.3-flash', 30, 24),
+    ('relace', 'glm-5.3-flash', 100, 80),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
     ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)
 )
@@ -35,7 +35,7 @@ SELECT provider, model, concurrency_total, interactive_reserve FROM capacities c
 WHERE EXISTS (
   SELECT 1 FROM model_configs m WHERE m.enabled AND m.platform_enabled
     AND m.model_slug = c.model
-    AND m.provider_slug = CASE WHEN c.provider = 'tencent' THEN 'zai' ELSE c.provider END
+    AND m.provider_slug = CASE WHEN c.provider = 'relace' THEN 'zai' ELSE c.provider END
 )
 ON CONFLICT (provider, model) DO NOTHING;
 

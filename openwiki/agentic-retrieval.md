@@ -57,7 +57,7 @@ flowchart LR
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
-  Worker -->|image| ImageCaption[ZAI GLM via Tencent TokenHub]
+  Worker -->|image| ImageCaption[ZAI GLM via Relace]
   Worker -->|audio| AudioTranscript[Synchronous ElevenLabs Scribe v2]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
   Worker -->|parsed document| Chunk[Heading-aware chunker + heading retention + confidence]
@@ -276,7 +276,7 @@ silently taking a nearby route.
 | PDF / DOCX / XLSX / PPTX with `fast` | OpenDataLoader parser service on the ingest host, RapidOCR on text-less pages | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
-| supported image | Pinned ZAI GLM-5.3-Flash call through Tencent TokenHub | faithful searchable caption | No |
+| supported image | Pinned ZAI GLM-5.3-Flash call through Relace | faithful searchable caption | No |
 | supported audio | Presigned B2 source URL + synchronous ElevenLabs Scribe v2 | transcript | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
@@ -946,8 +946,8 @@ resources globally). The provider receives only image bytes and the caption
 prompt, never a source name or nearby text. Those calls bill their tokens only.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog
-identity is `zai/glm-5.3-flash`, served from Tencent TokenHub as wire model
-`glm-5.3-flash` (`TENCENT_API_KEY`). Captioning always sends
+identity is `zai/glm-5.3-flash`, served from Relace as wire model
+`z-ai/glm-5.3-flash` (`RELACE_API_KEY`). Captioning always sends
 `reasoning_effort: low`. The catalog default is `low` for chat, and users may
 raise it to `high` or `max`.
 
@@ -1457,7 +1457,8 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
 - `capture_target(excerpt_id)`: the book's stored object
   (`library_book_versions.object_key`, `books/<sha256>.pdf` in the
   knowledge-base bucket), its byte size and the pages the excerpt and its
-  figures cover — the guard and the source for `capture_knowledge_page`. The
+  figures cover less the book's `withheld_pages` — the guard and the source for
+  `capture_knowledge_page`. The
   loader records the key only after a `head_object` on that bucket succeeds,
   and refuses the publish otherwise (`knowledge_base_library.py publish`).
 - Measured motivation (`bench/rag/reports/2026-09-17-knowledge-base-retrieval.md`):
@@ -1847,9 +1848,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    editor authorization and storage quota checks still apply.
 8. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
    encrypted reasoning items inside the current tool loop. DeepSeek,
-   Anthropic, and ZAI GLM (served from Tencent TokenHub,
-   `tokenhub.tencentcloudmaas.com/v1/chat/completions`, wire model
-   `glm-5.3-flash`, `TENCENT_API_KEY`, no fallback route) use Chat
+   Anthropic, and ZAI GLM (served from Relace,
+   `models.relace.ai/v1/chat/completions`, wire model
+   `z-ai/glm-5.3-flash`, `RELACE_API_KEY`, no fallback route) use Chat
    Completions-compatible paths. The GLM
    adapter preserves `reasoning_content` on the assistant message immediately
    before the matching tool result in the next request. Raw chain-of-thought
@@ -1924,7 +1925,9 @@ A curate turn builds materials instead of answering:
   Full, revalidated excerpts retained in context can be reused without another
   search/read. Source gaps remain explicit; nearby concepts do not replace the
   requested scope. Capture pages when calculations, numbers or formulas appear
-  wrong or corrupted. Workspace read tools remain available. Finish with a plain
+  wrong or corrupted. A `[Diagram description: ...]` block is a reviewer's
+  description of a figure, never quoted as the book's text. Workspace read tools
+  remain available. Finish with a plain
   list of the materials, coverage, size and source books. The same module owns
   curate tool descriptions; the shared contract owns argument schemas.
 - **Progress ledger.** One `Ledger` on the `ToolContext`, rendered as a message
@@ -2160,7 +2163,11 @@ once per object key into the same LRU cache (`capture.cache_name(object_key)`)
 and rendered by the same `capture.render`; `blobstore.download_file` takes the
 bucket and client, so there is one download implementation. The excerpt replaces
 the cited page as the guard: only pages the excerpt covers, or the page of one
-of its figures, may be captured (`library.capture_target`). It shares
+of its figures, may be captured (`library.capture_target`). A page in the
+book's `library_books.withheld_pages` (reprinted texts the library withholds,
+written at publish from the run manifest like `figure_exclusions`) is never
+captured, also on a boundary page shared with open text or through a guessed
+excerpt id, and a request for one is refused as withheld. It shares
 `CAPY_CAPTURES_PER_TURN` with `capture_page` in ordinary chat and neither tool
 is capped in curate mode, where a capture is dropped when its exchange folds
 into the turn note anyway. It adds no citation, and its JPEG
@@ -2510,7 +2517,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE`, `CAPY_CAPTURES_PER_TURN` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, 8 captures per turn in ordinary chat, no cap in curate mode |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Tencent TokenHub. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
