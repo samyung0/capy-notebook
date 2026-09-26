@@ -24,8 +24,8 @@ def _model():
         provider_slug="openai",
         model_slug="test",
         context_window_tokens=20_000,
-        thinking_levels=("instant",),
-        default_thinking="instant",
+        thinking_levels=("high",),
+        default_thinking="high",
     )
 
 

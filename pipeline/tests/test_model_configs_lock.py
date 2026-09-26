@@ -25,7 +25,7 @@ _LLM_COLS = """
                 micros_per_input_token, micros_per_output_token,
                 micros_per_cached_input_token, enabled, is_default_for
 """
-_LLM_THINKING = "ARRAY['instant','low','mid','high','max']::text[], 'instant'"
+_LLM_THINKING = "ARRAY['low','mid','high','max']::text[], 'high'"
 
 
 def test_python_embedding_allowlist_matches_go():
@@ -272,7 +272,7 @@ def test_llm_rows_require_thinking(_test_infra):
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
                     1, 'Wrong', 'Default', 'deepseek', %s,
                     true, false, 100000,
-                    ARRAY['instant','low']::text[], 'high',
+                    ARRAY['low','mid']::text[], 'high',
                     '{{}}'::jsonb, ARRAY['chat'],
                     250, 1000, 250, true, ARRAY[]::text[])
                 """,
