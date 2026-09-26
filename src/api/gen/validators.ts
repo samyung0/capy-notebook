@@ -1099,46 +1099,14 @@ export const GetSourceSessionResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string(),
+  "indexedBaseline": zod.string().nullable(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
-  "operation": zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "callId": zod.string().optional(),
-  "effect": zod.object({
-  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
-  "operationId": zod.string().optional(),
-  "projectionPending": zod.boolean().optional(),
-  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
-  "resource": zod.object({
-  "id": zod.string(),
-  "kind": zod.enum(['source_file', 'material']),
-  "materialKind": zod.string().optional(),
-  "title": zod.string().optional(),
-  "workspaceId": zod.string().optional()
-}),
-  "trashEpisodeId": zod.string().optional(),
-  "undo": zod.object({
-  "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
-}).optional()
-}).optional(),
-  "error": zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-}).optional(),
-  "kind": zod.string(),
-  "operationId": zod.string(),
-  "outcome": zod.string(),
-  "toolVersion": zod.int(),
-  "workspaceId": zod.string().optional()
-}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
-  "state": zod.string(),
+  "state": zod.string().nullable(),
   "workspaceId": zod.string()
 })
 
@@ -2335,7 +2303,7 @@ export const GetMistakesResponse = zod.object({
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning']))
+  "slots": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning', 'rerank']))
 })
 
 
@@ -4249,46 +4217,14 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string(),
+  "indexedBaseline": zod.string().nullable(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
-  "operation": zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "callId": zod.string().optional(),
-  "effect": zod.object({
-  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
-  "operationId": zod.string().optional(),
-  "projectionPending": zod.boolean().optional(),
-  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
-  "resource": zod.object({
-  "id": zod.string(),
-  "kind": zod.enum(['source_file', 'material']),
-  "materialKind": zod.string().optional(),
-  "title": zod.string().optional(),
-  "workspaceId": zod.string().optional()
-}),
-  "trashEpisodeId": zod.string().optional(),
-  "undo": zod.object({
-  "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
-}).optional()
-}).optional(),
-  "error": zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-}).optional(),
-  "kind": zod.string(),
-  "operationId": zod.string(),
-  "outcome": zod.string(),
-  "toolVersion": zod.int(),
-  "workspaceId": zod.string().optional()
-}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
-  "state": zod.string(),
+  "state": zod.string().nullable(),
   "workspaceId": zod.string()
 })
 
@@ -4340,16 +4276,7 @@ export const CheckpointSourceDocumentBody = zod.object({
 
 export const CheckpointSourceDocumentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "access": zod.enum(['write', 'read']),
-  "baseRevision": zod.int(),
-  "baseSourceSHA256": zod.string(),
   "checkpoint": zod.int(),
-  "epoch": zod.int(),
-  "fileId": zod.string(),
-  "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string(),
-  "indexedCheckpoint": zod.int(),
-  "netTokens": zod.int(),
   "operation": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
@@ -4381,13 +4308,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "outcome": zod.string(),
   "toolVersion": zod.int(),
   "workspaceId": zod.string().optional()
-}).optional(),
-  "pendingEffects": zod.unknown(),
-  "room": zod.string(),
-  "sourceIdentity": zod.string(),
-  "sourceURL": zod.string(),
-  "state": zod.string(),
-  "workspaceId": zod.string()
+}).optional()
 })
 
 
@@ -4430,46 +4351,14 @@ export const PublishSourceRefreshResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string(),
+  "indexedBaseline": zod.string().nullable(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
-  "operation": zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "callId": zod.string().optional(),
-  "effect": zod.object({
-  "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
-  "operationId": zod.string().optional(),
-  "projectionPending": zod.boolean().optional(),
-  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
-  "resource": zod.object({
-  "id": zod.string(),
-  "kind": zod.enum(['source_file', 'material']),
-  "materialKind": zod.string().optional(),
-  "title": zod.string().optional(),
-  "workspaceId": zod.string().optional()
-}),
-  "trashEpisodeId": zod.string().optional(),
-  "undo": zod.object({
-  "operationId": zod.string(),
-  "reason": zod.string().optional(),
-  "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
-}).optional()
-}).optional(),
-  "error": zod.object({
-  "code": zod.string(),
-  "message": zod.string()
-}).optional(),
-  "kind": zod.string(),
-  "operationId": zod.string(),
-  "outcome": zod.string(),
-  "toolVersion": zod.int(),
-  "workspaceId": zod.string().optional()
-}).optional(),
   "pendingEffects": zod.unknown(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
-  "state": zod.string(),
+  "state": zod.string().nullable(),
   "workspaceId": zod.string()
 })
 

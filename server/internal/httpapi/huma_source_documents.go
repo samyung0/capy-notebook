@@ -11,6 +11,7 @@ import (
 )
 
 type sourceSessionOutput struct{ Body store.SourceSession }
+type sourceCheckpointOutput struct{ Body store.SourceCheckpointSaved }
 type SourceCollaborationToken struct {
 	Token     string `json:"token"`
 	Room      string `json:"room"`
@@ -123,6 +124,12 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// After authorization, so an actor without access still reads not found.
+	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	// The browser opens the state; the baseline and effects stay server-side.
+	session.IndexedBaseline, session.PendingEffects = nil, nil
 	return a.sourceSessionResponse(ctx, session)
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {
@@ -144,19 +151,22 @@ func (a *api) checkSourceAccess(ctx context.Context, in *sourceAccessInput) (*st
 	}
 	return nil, nil
 }
-func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpointInput) (*sourceSessionOutput, error) {
+func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpointInput) (*sourceCheckpointOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
-	session, err := a.s.SaveSourceCheckpoint(ctx, in.ID, in.Body)
+	saved, err := a.s.SaveSourceCheckpoint(ctx, in.ID, in.Body)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.sourceSessionResponse(ctx, session)
+	return &sourceCheckpointOutput{Body: saved}, nil
 }
 func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborationTokenInput) (*sourceTokenOutput, error) {
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
 	if err != nil {
+		return nil, hErr(err)
+	}
+	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	me, err := a.s.Me(ctx, userID(ctx))

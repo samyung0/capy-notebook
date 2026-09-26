@@ -111,6 +111,7 @@ const CODED_ERROR_MESSAGES = new Set([
   'stale_target',
   'unavailable_target',
   'undo_unavailable',
+  'office_editing_paused',
   ...ACCOUNT_FORBIDDEN_CODES,
 ]);
 

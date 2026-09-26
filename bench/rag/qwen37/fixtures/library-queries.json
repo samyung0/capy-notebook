@@ -1,0 +1,3975 @@
+{
+ "schema_version": 1,
+ "written": "2026-09-25 by Claude Opus 5.5 from chunk text only, before any retrieval run on the library by either arm",
+ "method": "Seeded candidates from sample_targets.py (seed capy-qwen37-20260925), walked in order; each accepted chunk got one natural learner question that avoids copying the chunk's wording; skips are listed with reasons. Cross-lingual languages follow the seeded order in candidates.json. en_to_es uses the Spanish-only passages instead of the sampler's first-6 rule (see skipped/notes).",
+ "cohorts": {
+  "mono_en": "English question, English chunk",
+  "cross": "zh-Hans/zh-Hant/ja/ko/es/fr/de question, English chunk",
+  "paraphrase": "English question that avoids the chunk's key terms",
+  "mono_es": "Spanish question, Spanish chunk",
+  "en_to_es": "English question about Spanish-only content"
+ },
+ "relevance": "relevant = target + chunks of the snapshot whose normalised text is a near-copy of the target (char 5-gram Jaccard >= 0.6 or containment >= 0.8, computed by freeze_queries.py) + listed translation equivalents. Excerpt-level relevance = excerpts holding any relevant chunk. Templated look-alikes that name a different procedure (other NumWorks intervals, other pilot landing tasks) were reviewed by hand and listed under exclude before any retrieval run.",
+ "queries": [
+  {
+   "id": "mono_en-001",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_371_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "group": "multilingual",
+   "candidate": 0,
+   "query": "Which ways of building new words are actually productive in Papuan Malay, and does the language have any inflection?",
+   "relevant": [
+    "chk_3fef1c40d2b33f_371_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_224_v2"
+   ]
+  },
+  {
+   "id": "mono_en-002",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_1214_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "group": "multilingual",
+   "candidate": 1,
+   "query": "In Papuan Malay, how is untuk used to mark who benefits from an action, and can it mark non-human beneficiaries?",
+   "relevant": [
+    "chk_3fef1c40d2b33f_1214_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_741_v2"
+   ]
+  },
+  {
+   "id": "mono_en-003",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_1478_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "group": "multilingual",
+   "candidate": 2,
+   "query": "Why do languages around the world tend to replace zero-coordination with overt conjunctions, according to Mithun?",
+   "relevant": [
+    "chk_3fef1c40d2b33f_1478_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_910_v2"
+   ]
+  },
+  {
+   "id": "mono_en-004",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_6e045b04241181_284_v4",
+   "book_id": "understanding-music-past-and-present",
+   "group": "multilingual",
+   "candidate": 3,
+   "query": "How does theme and variations form work in Classical-era music, and in which movements was it usually found?",
+   "relevant": [
+    "chk_6e045b04241181_284_v4"
+   ],
+   "relevant_excerpts": [
+    "understanding-music-past-and-present_v4/exc_6e045b04241181_121_v4"
+   ]
+  },
+  {
+   "id": "mono_en-005",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_730_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 4,
+   "query": "How do Yakkha verbs like 'break' and 'wake up' alternate between an intransitive use and a causative use?",
+   "relevant": [
+    "chk_f2b3906f1fb788_730_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_505_v2"
+   ]
+  },
+  {
+   "id": "mono_en-006",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_54fcd12a32565e_477_v2",
+   "book_id": "business-government-and-society",
+   "group": "multilingual",
+   "candidate": 5,
+   "query": "In the Burger Man CSR exercise, what should I discuss about the managers' stakes and their responsibilities?",
+   "relevant": [
+    "chk_54fcd12a32565e_477_v2",
+    "chk_8a13048a33c5a8_456_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_321_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_380_v2"
+   ]
+  },
+  {
+   "id": "mono_en-007",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_372_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 6,
+   "query": "What did Peter French suggest about a corporation possibly being just software, and about corporate moral personhood?",
+   "relevant": [
+    "chk_54fcd12a32565e_439_v2",
+    "chk_8a13048a33c5a8_372_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_257_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_349_v2"
+   ]
+  },
+  {
+   "id": "mono_en-008",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_955_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "group": "multilingual",
+   "candidate": 7,
+   "query": "How does a Papuan Malay storyteller suddenly address an absent person, like saying 'you Martin' in the middle of a narrative?",
+   "relevant": [
+    "chk_3fef1c40d2b33f_955_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_571_v2"
+   ]
+  },
+  {
+   "id": "mono_en-009",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_891_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 8,
+   "query": "In Komnzo, how does the characteristic case mark the cause of a state, as in being weak from putting out a fire?",
+   "relevant": [
+    "chk_e62e73f159792c_891_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_453_v2"
+   ]
+  },
+  {
+   "id": "mono_en-010",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_637_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 9,
+   "query": "Why would a verb meaning 'eat' turn into a reflexive or middle marker in Yakkha?",
+   "relevant": [
+    "chk_f2b3906f1fb788_637_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_439_v2"
+   ]
+  },
+  {
+   "id": "mono_en-011",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_979_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 10,
+   "query": "What links the Komnzo names of two red parrot species to the origin myth of the bullroarer?",
+   "relevant": [
+    "chk_e62e73f159792c_979_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_487_v2"
+   ]
+  },
+  {
+   "id": "mono_en-012",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_7434f7c1c6465d_527_v3",
+   "book_id": "a-grammar-of-yauyos-quechua",
+   "group": "multilingual",
+   "candidate": 11,
+   "query": "How are reciprocal verbs such as 'tell each other' formed in Yauyos Quechua?",
+   "relevant": [
+    "chk_7434f7c1c6465d_527_v3"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yauyos-quechua_v3/exc_7434f7c1c6465d_449_v3"
+   ]
+  },
+  {
+   "id": "mono_en-013",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_19e6e649663784_336_v2",
+   "book_id": "a-grammar-of-moloko",
+   "group": "multilingual",
+   "candidate": 12,
+   "query": "What do the Moloko adpositions aka, anga and afa mean and how are they used?",
+   "relevant": [
+    "chk_19e6e649663784_336_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_269_v2"
+   ]
+  },
+  {
+   "id": "mono_en-014",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_19e6e649663784_705_v2",
+   "book_id": "a-grammar-of-moloko",
+   "group": "multilingual",
+   "candidate": 13,
+   "query": "How does Moloko string clauses together without any conjunctions in a fast sequence of events, like in the snake story?",
+   "relevant": [
+    "chk_19e6e649663784_705_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_528_v2"
+   ]
+  },
+  {
+   "id": "mono_en-015",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_6e045b04241181_484_v4",
+   "book_id": "understanding-music-past-and-present",
+   "group": "multilingual",
+   "candidate": 14,
+   "query": "What are Wagner's leitmotifs and how did he weave them into his music dramas?",
+   "relevant": [
+    "chk_6e045b04241181_484_v4"
+   ],
+   "relevant_excerpts": [
+    "understanding-music-past-and-present_v4/exc_6e045b04241181_177_v4"
+   ]
+  },
+  {
+   "id": "mono_en-016",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_70d78be3f0d0ad_949_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 15,
+   "query": "How do you ask 'which one' or 'what kind of' in Palula?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_949_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_646_v2"
+   ]
+  },
+  {
+   "id": "mono_en-017",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_70d78be3f0d0ad_118_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 16,
+   "query": "What pronunciation differences exist between the Ashret and Biori dialects of Palula?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_118_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_69_v2"
+   ]
+  },
+  {
+   "id": "mono_en-018",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_09cb85bde3413c_360_v4",
+   "book_id": "a-grammar-of-pite-saami",
+   "group": "multilingual",
+   "candidate": 17,
+   "query": "What are the main non-finite verb forms in Pite Saami and which auxiliary verbs go with each of them?",
+   "relevant": [
+    "chk_09cb85bde3413c_360_v4"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-pite-saami_v4/exc_09cb85bde3413c_288_v4"
+   ]
+  },
+  {
+   "id": "mono_en-019",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_00c1ece828f204_250_v1",
+   "book_id": "the-unicode-cookbook-for-linguists-managing-writing-systems-",
+   "group": "multilingual",
+   "candidate": 18,
+   "query": "In an orthography profile, in what order are the context-sensitive regular expressions applied to a string?",
+   "relevant": [
+    "chk_00c1ece828f204_250_v1"
+   ],
+   "relevant_excerpts": [
+    "the-unicode-cookbook-for-linguists-managing-writing-systems-_v1/exc_00c1ece828f204_155_v1"
+   ]
+  },
+  {
+   "id": "mono_en-020",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_980_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 19,
+   "query": "Which other Komnzo bird names, such as the one for the Spangled Drongo, follow the red-colour naming pattern?",
+   "relevant": [
+    "chk_e62e73f159792c_980_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_488_v2"
+   ]
+  },
+  {
+   "id": "mono_en-021",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_54fcd12a32565e_495_v2",
+   "book_id": "business-government-and-society",
+   "group": "multilingual",
+   "candidate": 20,
+   "query": "Before Milgram's obedience study, what did psychologists predict, and what share of participants actually gave the maximum shock?",
+   "relevant": [
+    "chk_54fcd12a32565e_495_v2"
+   ],
+   "relevant_excerpts": [
+    "business-government-and-society_v2/exc_54fcd12a32565e_395_v2"
+   ]
+  },
+  {
+   "id": "mono_en-022",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_70d78be3f0d0ad_616_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 21,
+   "query": "Does Palula have compound verbs where a converb carries the meaning and a second, light verb is inflected?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_616_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_435_v2"
+   ]
+  },
+  {
+   "id": "mono_en-023",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_924_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 22,
+   "query": "What does the Yakkha clitic =nuŋ do when it links clauses, and how is it related to the comitative case?",
+   "relevant": [
+    "chk_f2b3906f1fb788_924_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_625_v2"
+   ]
+  },
+  {
+   "id": "mono_en-024",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_7434f7c1c6465d_113_v3",
+   "book_id": "a-grammar-of-yauyos-quechua",
+   "group": "multilingual",
+   "candidate": 23,
+   "query": "What are the personal pronouns of Yauyos Quechua, including the inclusive and exclusive forms of 'we'?",
+   "relevant": [
+    "chk_7434f7c1c6465d_113_v3"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yauyos-quechua_v3/exc_7434f7c1c6465d_74_v3"
+   ]
+  },
+  {
+   "id": "mono_en-025",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_750_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 24,
+   "query": "Which quick tests can I use to check whether a decision is ethical, such as imagining it printed in the newspaper?",
+   "relevant": [
+    "chk_8a13048a33c5a8_750_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_553_v2"
+   ]
+  },
+  {
+   "id": "mono_en-026",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_d5ac62b43cc9eb_55_v2",
+   "book_id": "keys-to-understanding-the-middle-east",
+   "group": "multilingual",
+   "candidate": 25,
+   "query": "Why is it wrong to treat 'Arab' and 'Muslim' as the same thing, and where does the association come from?",
+   "relevant": [
+    "chk_d5ac62b43cc9eb_55_v2"
+   ],
+   "relevant_excerpts": [
+    "keys-to-understanding-the-middle-east_v2/exc_d5ac62b43cc9eb_29_v2"
+   ]
+  },
+  {
+   "id": "mono_en-027",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_1f53d134b54aaf_486_v5",
+   "book_id": "operations-management",
+   "group": "multilingual",
+   "candidate": 26,
+   "query": "What does a manufacturer have to consider when designing packaging, and why is a package called a silent salesman?",
+   "relevant": [
+    "chk_1f53d134b54aaf_486_v5"
+   ],
+   "relevant_excerpts": [
+    "operations-management_v5/exc_1f53d134b54aaf_314_v5"
+   ]
+  },
+  {
+   "id": "mono_en-028",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_00c1ece828f204_129_v1",
+   "book_id": "the-unicode-cookbook-for-linguists-managing-writing-systems-",
+   "group": "multilingual",
+   "candidate": 27,
+   "query": "What were the three-digit IPA numbers assigned to phonetic symbols, and are they still used today?",
+   "relevant": [
+    "chk_00c1ece828f204_129_v1"
+   ],
+   "relevant_excerpts": [
+    "the-unicode-cookbook-for-linguists-managing-writing-systems-_v1/exc_00c1ece828f204_83_v1"
+   ]
+  },
+  {
+   "id": "mono_en-029",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_197_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 29,
+   "query": "In Komnzo, how does syllable weight affect vowel length, and which consonants can never appear in a coda?",
+   "relevant": [
+    "chk_e62e73f159792c_197_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_124_v2"
+   ]
+  },
+  {
+   "id": "mono_en-030",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_00c1ece828f204_142_v1",
+   "book_id": "the-unicode-cookbook-for-linguists-managing-writing-systems-",
+   "group": "multilingual",
+   "candidate": 30,
+   "query": "Why does it matter how IPA characters are encoded in Unicode if the transcription looks the same on screen?",
+   "relevant": [
+    "chk_00c1ece828f204_142_v1"
+   ],
+   "relevant_excerpts": [
+    "the-unicode-cookbook-for-linguists-managing-writing-systems-_v1/exc_00c1ece828f204_90_v1"
+   ]
+  },
+  {
+   "id": "mono_en-031",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_1258_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 56,
+   "query": "How do I find the probability that 15 randomly chosen songs last more than an hour in total?",
+   "relevant": [
+    "chk_0689cddaba206d_1258_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_743_v5"
+   ]
+  },
+  {
+   "id": "mono_en-032",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_470_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 57,
+   "query": "Why does R's mad() function need constant = 1 to return the raw median absolute deviation?",
+   "relevant": [
+    "chk_dd1e65de648fb2_470_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_303_v3"
+   ]
+  },
+  {
+   "id": "mono_en-033",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_473_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 58,
+   "query": "Is there a practice problem about how many of 120 randomly sampled American adults had chickenpox as children?",
+   "relevant": [
+    "chk_0689cddaba206d_473_v5",
+    "chk_f213361bf057b0_473_v4"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_294_v5",
+    "os4_v4/exc_f213361bf057b0_294_v4"
+   ]
+  },
+  {
+   "id": "mono_en-034",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_806_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 59,
+   "query": "How do I run a chi-square goodness of fit test in Desmos for a spinner with four colours?",
+   "relevant": [
+    "chk_0689cddaba206d_806_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_482_v5"
+   ]
+  },
+  {
+   "id": "mono_en-035",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_858bafa062c60b_205_v7",
+   "book_id": "introductory-business-statistics",
+   "group": "statistics",
+   "candidate": 60,
+   "query": "Do expert and consumer taste rankings of cheese flavourings agree? I'm looking for the Spearman rank correlation example.",
+   "relevant": [
+    "chk_858bafa062c60b_205_v7"
+   ],
+   "relevant_excerpts": [
+    "introductory-business-statistics_v7/exc_858bafa062c60b_91_v7"
+   ]
+  },
+  {
+   "id": "mono_en-036",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f97f47b7a1fd68_875_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 61,
+   "query": "After a significant main effect in a multi-factor ANOVA, how should it be followed up?",
+   "relevant": [
+    "chk_f97f47b7a1fd68_875_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_433_v3"
+   ]
+  },
+  {
+   "id": "mono_en-037",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_1049_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 62,
+   "query": "Does jamovi apply a Bonferroni correction to the t-tests it reports for regression coefficients?",
+   "relevant": [
+    "chk_45ecdb7da7734b_1049_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_421_v5"
+   ]
+  },
+  {
+   "id": "mono_en-038",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1385_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 63,
+   "query": "Why is 'residual' a better word than 'error' when the ANOVA null hypothesis is written as a statistical model?",
+   "relevant": [
+    "chk_45ecdb7da7734b_1058_v5",
+    "chk_dd1e65de648fb2_1385_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_938_v3",
+    "lsj_v5/exc_45ecdb7da7734b_422_v5"
+   ]
+  },
+  {
+   "id": "mono_en-039",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_774_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 64,
+   "query": "What are the steps for a two-proportion z-interval on a NumWorks calculator?",
+   "relevant": [
+    "chk_0689cddaba206d_774_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_465_v5"
+   ],
+   "exclude": [
+    "chk_0689cddaba206d_1008_v5",
+    "chk_0689cddaba206d_1079_v5",
+    "chk_0689cddaba206d_702_v5"
+   ]
+  },
+  {
+   "id": "mono_en-040",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1270_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 65,
+   "query": "What are the hypotheses for comparing Anastasia's and Bernadette's students with an independent samples t-test?",
+   "relevant": [
+    "chk_45ecdb7da7734b_548_v5",
+    "chk_dd1e65de648fb2_1270_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_859_v3",
+    "lsj_v5/exc_45ecdb7da7734b_239_v5"
+   ]
+  },
+  {
+   "id": "mono_en-041",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_189_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 66,
+   "query": "Which real news story about Australian house prices shows why the difference between mean and median matters?",
+   "relevant": [
+    "chk_45ecdb7da7734b_189_v5",
+    "chk_dd1e65de648fb2_434_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_280_v3",
+    "lsj_v5/exc_45ecdb7da7734b_96_v5"
+   ]
+  },
+  {
+   "id": "mono_en-042",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_1001_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 67,
+   "query": "What do we call a confounder that has been measured, and is 'response variable' the same as 'outcome'?",
+   "relevant": [
+    "chk_45ecdb7da7734b_1001_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_420_v5"
+   ]
+  },
+  {
+   "id": "mono_en-043",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_897_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 68,
+   "query": "In a multi-trait multi-method CFA of the attributional style questionnaire, should the latent factors be allowed to correlate?",
+   "relevant": [
+    "chk_45ecdb7da7734b_897_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_388_v5"
+   ]
+  },
+  {
+   "id": "mono_en-044",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_906_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 69,
+   "query": "How does the frequentist view define probability using a long run of coin flips?",
+   "relevant": [
+    "chk_dd1e65de648fb2_906_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_619_v3"
+   ]
+  },
+  {
+   "id": "mono_en-045",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_858bafa062c60b_181_v7",
+   "book_id": "introductory-business-statistics",
+   "group": "statistics",
+   "candidate": 70,
+   "query": "Which test replaces the t-test when samples are small and not normal, and how does it use ranks?",
+   "relevant": [
+    "chk_858bafa062c60b_181_v7",
+    "chk_858bafa062c60b_182_v7"
+   ],
+   "relevant_excerpts": [
+    "introductory-business-statistics_v7/exc_858bafa062c60b_83_v7"
+   ]
+  },
+  {
+   "id": "mono_en-046",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_1005_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 71,
+   "query": "In a loan interest rate regression, how do I interpret the bankruptcy coefficient and the missing reference level of income verification?",
+   "relevant": [
+    "chk_f213361bf057b0_1005_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_601_v4"
+   ]
+  },
+  {
+   "id": "mono_en-047",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f97f47b7a1fd68_504_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 72,
+   "query": "What is the difference between a point estimate and an interval estimate, using a poll about a new sports stadium?",
+   "relevant": [
+    "chk_f97f47b7a1fd68_504_v3",
+    "chk_f97f47b7a1fd68_505_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_244_v3",
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_245_v3"
+   ]
+  },
+  {
+   "id": "mono_en-048",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f97f47b7a1fd68_137_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 73,
+   "query": "How are outside and far-out values marked on a box plot, and what does the plus sign show?",
+   "relevant": [
+    "chk_f97f47b7a1fd68_137_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_46_v3"
+   ]
+  },
+  {
+   "id": "mono_en-049",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_1088_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 74,
+   "query": "What is the logit transformation used for in logistic regression, as in the resume callback example?",
+   "relevant": [
+    "chk_f213361bf057b0_1088_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_641_v4"
+   ]
+  },
+  {
+   "id": "mono_en-050",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_763_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 75,
+   "query": "Why does the t-distribution have fatter tails than the normal curve, and how do degrees of freedom change its shape?",
+   "relevant": [
+    "chk_f213361bf057b0_763_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_453_v4"
+   ]
+  },
+  {
+   "id": "mono_en-051",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_255_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 84,
+   "query": "What questions about customers and profits does marketing research need to answer, and why is sales forecasting central?",
+   "relevant": [
+    "chk_76816c1b24394c_255_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_145_v2"
+   ]
+  },
+  {
+   "id": "mono_en-052",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_502_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 85,
+   "query": "How does IPv4 find link-layer addresses on NBMA networks such as ATM, where ARP cannot be used?",
+   "relevant": [
+    "chk_0806a6368e307c_502_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_258_v3"
+   ]
+  },
+  {
+   "id": "mono_en-053",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2bcaee6f65ce3f_326_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 86,
+   "query": "What is surrogate warfare as a foreign policy tool that stops short of direct combat?",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_326_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_217_v5"
+   ]
+  },
+  {
+   "id": "mono_en-054",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2bcaee6f65ce3f_414_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 87,
+   "query": "How did Madison propose to handle factions in Federalist 10, and are political parties factions?",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_414_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_283_v5"
+   ]
+  },
+  {
+   "id": "mono_en-055",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_143_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 88,
+   "query": "What are some classroom examples of operant conditioning, like getting a gold star for returning a library book?",
+   "relevant": [
+    "chk_2dfae4cbb39513_143_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_61_v2"
+   ]
+  },
+  {
+   "id": "mono_en-056",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_154_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 89,
+   "query": "Where did HTML come from, and what was SGML designed for?",
+   "relevant": [
+    "chk_0806a6368e307c_154_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_67_v3"
+   ]
+  },
+  {
+   "id": "mono_en-057",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_cd6c8c95ecd77e_63_v3",
+   "book_id": "principles-of-finance",
+   "group": "english_spread",
+   "candidate": 90,
+   "query": "Why does a stock exchange acting as a clearinghouse remove the risk that the other side defaults?",
+   "relevant": [
+    "chk_cd6c8c95ecd77e_63_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_29_v3"
+   ]
+  },
+  {
+   "id": "mono_en-058",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_667e634370ad3e_126_v3",
+   "book_id": "intro-to-logic",
+   "group": "english_spread",
+   "candidate": 91,
+   "query": "What is Bertrand Russell's example about the prime minister's surname, and what does it show about truth tables versus real reasoning?",
+   "relevant": [
+    "chk_667e634370ad3e_126_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_85_v3"
+   ]
+  },
+  {
+   "id": "mono_en-059",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_1c619222c448be_592_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 93,
+   "query": "Can DNA isolated from the human body be owned through a patent, and what does the chapter on property cover?",
+   "relevant": [
+    "chk_1c619222c448be_592_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_240_v5"
+   ]
+  },
+  {
+   "id": "mono_en-060",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_bdf01fb920a2eb_211_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "group": "english_spread",
+   "candidate": 94,
+   "query": "In the class-wide cooperate-or-defect experiment, what makes the Prisoner's Dilemma special compared with other such games?",
+   "relevant": [
+    "chk_bdf01fb920a2eb_211_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_89_v2"
+   ]
+  },
+  {
+   "id": "mono_en-061",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_871_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 95,
+   "query": "What is vicarious reinforcement, and how can students pick up bad behaviour by watching classmates get rewarded for it?",
+   "relevant": [
+    "chk_2dfae4cbb39513_871_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_534_v2"
+   ]
+  },
+  {
+   "id": "mono_en-062",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_cd6c8c95ecd77e_57_v3",
+   "book_id": "principles-of-finance",
+   "group": "english_spread",
+   "candidate": 96,
+   "query": "Who participates in stock markets today, and how has the rise of institutional investors changed trading fees?",
+   "relevant": [
+    "chk_cd6c8c95ecd77e_57_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_25_v3"
+   ]
+  },
+  {
+   "id": "mono_en-063",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_436_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 97,
+   "query": "What are barriers to entry, and when do buyers or suppliers have power over a firm?",
+   "relevant": [
+    "chk_76816c1b24394c_436_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_274_v2"
+   ]
+  },
+  {
+   "id": "mono_en-064",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2bcaee6f65ce3f_424_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 98,
+   "query": "How has the internet flattened the news media, and what does journalistic objectivity really mean?",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_424_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_287_v5"
+   ]
+  },
+  {
+   "id": "mono_en-065",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_943_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 99,
+   "query": "What three conditions produce evolution by natural selection, and what is the Hardy-Weinberg equilibrium?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_943_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_599_v2"
+   ]
+  },
+  {
+   "id": "mono_en-066",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e4923419014d82_58_v3",
+   "book_id": "understanding-basic-music-theory",
+   "group": "english_spread",
+   "candidate": 100,
+   "query": "Why do D sharp and E flat sound identical on a piano but get written differently?",
+   "relevant": [
+    "chk_e4923419014d82_58_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_31_v3"
+   ]
+  },
+  {
+   "id": "mono_en-067",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_1641_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 101,
+   "query": "What does the uterus lining do during the menstrual cycle, and what is a tubal ligation?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1641_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_1084_v2"
+   ]
+  },
+  {
+   "id": "mono_en-068",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0ac720b5f94b3e_537_v4",
+   "book_id": "electromagnetics-volume-1",
+   "group": "english_spread",
+   "candidate": 103,
+   "query": "What distinguishes spherical, cylindrical and plane waves in terms of the shape of their phasefronts?",
+   "relevant": [
+    "chk_0ac720b5f94b3e_537_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_229_v4"
+   ]
+  },
+  {
+   "id": "mono_en-069",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_bdf01fb920a2eb_218_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "group": "english_spread",
+   "candidate": 104,
+   "query": "Practice activity: find R, P, T and S for the game of Chicken and check whether it meets the Prisoner's Dilemma conditions.",
+   "relevant": [
+    "chk_bdf01fb920a2eb_218_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_95_v2"
+   ]
+  },
+  {
+   "id": "mono_en-070",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0167eaa86e24e2_57_v3",
+   "book_id": "brief-calculus",
+   "group": "english_spread",
+   "candidate": 105,
+   "query": "How did Galileo's rolling-ball experiments lead Newton to treat velocity as the slope of a position graph?",
+   "relevant": [
+    "chk_0167eaa86e24e2_57_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_18_v3"
+   ]
+  },
+  {
+   "id": "mono_en-071",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_c2ea3e7080951b_408_v1",
+   "book_id": "philosophical-ethics",
+   "group": "english_spread",
+   "candidate": 106,
+   "query": "Could Kant's retributive justice support the death penalty, and why not as a deterrent?",
+   "relevant": [
+    "chk_c2ea3e7080951b_408_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_181_v1"
+   ]
+  },
+  {
+   "id": "mono_en-072",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_580_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 107,
+   "query": "How do business negotiation habits in Japan, Russia and South America differ from American ones?",
+   "relevant": [
+    "chk_76816c1b24394c_580_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_376_v2"
+   ]
+  },
+  {
+   "id": "mono_en-073",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_667e634370ad3e_332_v3",
+   "book_id": "intro-to-logic",
+   "group": "english_spread",
+   "candidate": 108,
+   "query": "What do results about oracles tell us about how hard it is to prove that P is not equal to NP?",
+   "relevant": [
+    "chk_667e634370ad3e_332_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_281_v3"
+   ]
+  },
+  {
+   "id": "mono_en-074",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_c2ea3e7080951b_283_v1",
+   "book_id": "philosophical-ethics",
+   "group": "english_spread",
+   "candidate": 109,
+   "query": "What argument leads from 'I cannot justify my own selfishness' to the principle of utility?",
+   "relevant": [
+    "chk_c2ea3e7080951b_283_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_136_v1"
+   ]
+  },
+  {
+   "id": "mono_en-075",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_629_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 110,
+   "query": "Why do BGP routers prefer routes with shorter AS paths, and what is hot potato routing?",
+   "relevant": [
+    "chk_0806a6368e307c_629_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_321_v3"
+   ]
+  },
+  {
+   "id": "mono_en-076",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_667e634370ad3e_405_v3",
+   "book_id": "intro-to-logic",
+   "group": "english_spread",
+   "candidate": 111,
+   "query": "Why is substitution in first-order inference rules not just a textual search-and-replace?",
+   "relevant": [
+    "chk_667e634370ad3e_405_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_348_v3"
+   ]
+  },
+  {
+   "id": "mono_en-077",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_1c619222c448be_940_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 112,
+   "query": "Under the ADA, when can an employer require a medical exam, and who counts as disabled?",
+   "relevant": [
+    "chk_1c619222c448be_940_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_411_v5"
+   ]
+  },
+  {
+   "id": "mono_en-078",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_04b51c13dbe5cb_254_v3",
+   "book_id": "principles-of-object-oriented-programming",
+   "group": "english_spread",
+   "candidate": 113,
+   "query": "What is the extensibility hook of the mutable linear recursive structure, and how do visitors add new behaviours to it?",
+   "relevant": [
+    "chk_04b51c13dbe5cb_254_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-object-oriented-programming_v3/exc_04b51c13dbe5cb_208_v3"
+   ]
+  },
+  {
+   "id": "mono_en-079",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_889_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 114,
+   "query": "What happened when McDonald's cut Big Mac prices, and how did investors react?",
+   "relevant": [
+    "chk_76816c1b24394c_889_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_595_v2"
+   ]
+  },
+  {
+   "id": "mono_en-080",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_b70e4c300d226a_280_v2",
+   "book_id": "transitions-to-professional-nursing-practice",
+   "group": "english_spread",
+   "candidate": 115,
+   "query": "What six lessons for successful collaborative practice in healthcare does Joy Doll share?",
+   "relevant": [
+    "chk_b70e4c300d226a_280_v2"
+   ],
+   "relevant_excerpts": [
+    "transitions-to-professional-nursing-practice_v2/exc_b70e4c300d226a_185_v2"
+   ]
+  },
+  {
+   "id": "mono_en-081",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_b70e4c300d226a_388_v2",
+   "book_id": "transitions-to-professional-nursing-practice",
+   "group": "english_spread",
+   "candidate": 116,
+   "query": "What does empowerment mean for nurses, and how is it connected to autonomous practice?",
+   "relevant": [
+    "chk_b70e4c300d226a_388_v2"
+   ],
+   "relevant_excerpts": [
+    "transitions-to-professional-nursing-practice_v2/exc_b70e4c300d226a_256_v2"
+   ]
+  },
+  {
+   "id": "mono_en-082",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_1155_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 117,
+   "query": "Why are mosses used to monitor air quality, and how do they cope with frozen tundra soil?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1155_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_746_v2"
+   ]
+  },
+  {
+   "id": "mono_en-083",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2bcaee6f65ce3f_19_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 118,
+   "query": "What example of bipartisan cooperation in a hyper-polarized Washington does the politics book give?",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_19_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_15_v5"
+   ]
+  },
+  {
+   "id": "mono_en-084",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_468_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 119,
+   "query": "How should teachers phrase praise and feedback on failure to shape students' attributions?",
+   "relevant": [
+    "chk_2dfae4cbb39513_468_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_272_v2"
+   ]
+  },
+  {
+   "id": "mono_en-085",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_a7788979d09a3c_38_v1",
+   "book_id": "applied-human-anatomy",
+   "group": "english_spread",
+   "candidate": 120,
+   "query": "Palpation exercise for the wrist: Lister's tubercle and the tendons at the proximal wrist crease.",
+   "relevant": [
+    "chk_a7788979d09a3c_38_v1"
+   ],
+   "relevant_excerpts": [
+    "applied-human-anatomy_v1/exc_a7788979d09a3c_12_v1"
+   ]
+  },
+  {
+   "id": "mono_en-086",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_610_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 121,
+   "query": "What is a karyotype and how do cytologists make a karyogram?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_610_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_375_v2"
+   ]
+  },
+  {
+   "id": "mono_en-087",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_78_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 122,
+   "query": "How does the peer-to-peer model differ from the client-server model of networked applications?",
+   "relevant": [
+    "chk_0806a6368e307c_78_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_34_v3"
+   ]
+  },
+  {
+   "id": "mono_en-088",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_c2ea3e7080951b_241_v1",
+   "book_id": "philosophical-ethics",
+   "group": "english_spread",
+   "candidate": 123,
+   "query": "What gap do relativism, divine command, natural law and egoism all share, according to the chapter on social contract theory?",
+   "relevant": [
+    "chk_c2ea3e7080951b_241_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_123_v1"
+   ]
+  },
+  {
+   "id": "mono_en-089",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_cd6c8c95ecd77e_172_v3",
+   "book_id": "principles-of-finance",
+   "group": "english_spread",
+   "candidate": 124,
+   "query": "What is the difference between a retail forex broker and a dealer or market maker?",
+   "relevant": [
+    "chk_cd6c8c95ecd77e_172_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_112_v3"
+   ]
+  },
+  {
+   "id": "mono_en-090",
+   "cohort": "mono_en",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_402_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 125,
+   "query": "Instead of harsher punishments for a student with a behavioural disorder, what should a teacher document, and why?",
+   "relevant": [
+    "chk_2dfae4cbb39513_402_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_226_v2"
+   ]
+  },
+  {
+   "id": "cross-001",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_70d78be3f0d0ad_419_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 0,
+   "query": "En palula, comment un adjectif comme « grand » peut-il s'employer seul comme nom, par exemple pour dire « les adultes » ?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_419_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_301_v2"
+   ]
+  },
+  {
+   "id": "cross-002",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_6e045b04241181_624_v4",
+   "book_id": "understanding-music-past-and-present",
+   "group": "multilingual",
+   "candidate": 1,
+   "query": "¿Qué características musicales tiene la canción de protesta «Blowin' in the Wind» de Bob Dylan?",
+   "relevant": [
+    "chk_6e045b04241181_624_v4"
+   ],
+   "relevant_excerpts": [
+    "understanding-music-past-and-present_v4/exc_6e045b04241181_251_v4"
+   ]
+  },
+  {
+   "id": "cross-003",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_3fef1c40d2b33f_166_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "group": "multilingual",
+   "candidate": 2,
+   "query": "巴布亚马来语大约有多少使用者？孩子们在家里是否把它当作第一语言来学？",
+   "relevant": [
+    "chk_3fef1c40d2b33f_166_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_86_v2"
+   ]
+  },
+  {
+   "id": "cross-004",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_70d78be3f0d0ad_763_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 3,
+   "query": "En palula, ¿cómo se puede decir de dos maneras «la niña llenó la olla de agua», cambiando cuál es el objeto directo?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_763_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_535_v2"
+   ]
+  },
+  {
+   "id": "cross-005",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_8a13048a33c5a8_380_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 4,
+   "query": "米尔格拉姆的服从实验是怎么设计的？参与者分别扮演什么角色？",
+   "relevant": [
+    "chk_54fcd12a32565e_492_v2",
+    "chk_8a13048a33c5a8_380_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_264_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_394_v2"
+   ]
+  },
+  {
+   "id": "cross-006",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_19e6e649663784_388_v2",
+   "book_id": "a-grammar-of-moloko",
+   "group": "multilingual",
+   "candidate": 5,
+   "query": "Aus welchen phonologischen Wörtern besteht der Verbkomplex im Moloko, wenn ein indirektes Objekt und Erweiterungen vorkommen?",
+   "relevant": [
+    "chk_19e6e649663784_388_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_307_v2"
+   ]
+  },
+  {
+   "id": "cross-007",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_e62e73f159792c_532_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 6,
+   "query": "콤조어 동사의 확장 어간과 제한 어간은 어떻게 다르며, 어간 쌍은 어떤 부류로 나뉘나요?",
+   "relevant": [
+    "chk_e62e73f159792c_532_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_272_v2"
+   ]
+  },
+  {
+   "id": "cross-008",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_8a13048a33c5a8_1067_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 7,
+   "query": "発展途上国の子どもにノートパソコンを配るプログラムには、どんな利点と批判がありますか？",
+   "relevant": [
+    "chk_54fcd12a32565e_399_v2",
+    "chk_8a13048a33c5a8_1067_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_804_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_313_v2"
+   ]
+  },
+  {
+   "id": "cross-009",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_7434f7c1c6465d_114_v3",
+   "book_id": "a-grammar-of-yauyos-quechua",
+   "group": "multilingual",
+   "candidate": 8,
+   "query": "ヤウヨス・ケチュア語の人称代名詞は、必ず -kuna を付けて複数形にしなければなりませんか？",
+   "relevant": [
+    "chk_7434f7c1c6465d_114_v3"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yauyos-quechua_v3/exc_7434f7c1c6465d_75_v3"
+   ]
+  },
+  {
+   "id": "cross-010",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_e62e73f159792c_150_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 9,
+   "query": "Qui a financé la documentation de la langue komnzo, et quel matériel le projet a-t-il apporté au village ?",
+   "relevant": [
+    "chk_e62e73f159792c_150_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_89_v2"
+   ]
+  },
+  {
+   "id": "cross-011",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_1f53d134b54aaf_550_v5",
+   "book_id": "operations-management",
+   "group": "multilingual",
+   "candidate": 10,
+   "query": "運營管理的定義是什麼？策略、戰術和作業三個決策層級和包裝有什麼關係？",
+   "relevant": [
+    "chk_1f53d134b54aaf_550_v5"
+   ],
+   "relevant_excerpts": [
+    "operations-management_v5/exc_1f53d134b54aaf_358_v5"
+   ]
+  },
+  {
+   "id": "cross-012",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_f2b3906f1fb788_944_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 11,
+   "query": "¿Qué indica el marcador =hoŋ del yakkha cuando une cláusulas en una narración?",
+   "relevant": [
+    "chk_f2b3906f1fb788_944_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_637_v2"
+   ]
+  },
+  {
+   "id": "cross-013",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_7434f7c1c6465d_193_v3",
+   "book_id": "a-grammar-of-yauyos-quechua",
+   "group": "multilingual",
+   "candidate": 12,
+   "query": "ヤウヨス・ケチュア語の接尾辞 -paq は、指示詞 chay に付くとどんな意味になりますか？",
+   "relevant": [
+    "chk_7434f7c1c6465d_193_v3"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yauyos-quechua_v3/exc_7434f7c1c6465d_148_v3"
+   ]
+  },
+  {
+   "id": "cross-014",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_f2b3906f1fb788_1103_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 13,
+   "query": "在雅卡语的故事《猫头鹰和我》里，讲述者后来为什么变得听话了？",
+   "relevant": [
+    "chk_f2b3906f1fb788_1103_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_742_v2"
+   ]
+  },
+  {
+   "id": "cross-015",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_e62e73f159792c_919_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 14,
+   "query": "En komnzo, ¿cómo se expresa la manera de hacer algo, por ejemplo con el caso recognicional o con cláusulas relativas con mon?",
+   "relevant": [
+    "chk_e62e73f159792c_919_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_463_v2"
+   ]
+  },
+  {
+   "id": "cross-016",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_d5ac62b43cc9eb_11_v2",
+   "book_id": "keys-to-understanding-the-middle-east",
+   "group": "multilingual",
+   "candidate": 15,
+   "query": "尼尼微曾是哪个帝国的首都？它的城墙有多长？",
+   "relevant": [
+    "chk_d5ac62b43cc9eb_11_v2"
+   ],
+   "relevant_excerpts": [
+    "keys-to-understanding-the-middle-east_v2/exc_d5ac62b43cc9eb_9_v2"
+   ]
+  },
+  {
+   "id": "cross-017",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_e62e73f159792c_738_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 16,
+   "query": "在 Komnzo 語中，完成體是否一定表示事件已經結束？",
+   "relevant": [
+    "chk_e62e73f159792c_738_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_379_v2"
+   ]
+  },
+  {
+   "id": "cross-018",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_70d78be3f0d0ad_679_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 17,
+   "query": "Welche Rolle spielen Determinative und Relativsätze in der Nominalphrase des Palula?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_679_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_475_v2"
+   ]
+  },
+  {
+   "id": "cross-019",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_f2b3906f1fb788_44_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 18,
+   "query": "¿Dónde se habla el yakkha y en qué dialecto se centra la primera gramática completa de esta lengua?",
+   "relevant": [
+    "chk_f2b3906f1fb788_44_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_31_v2"
+   ]
+  },
+  {
+   "id": "cross-020",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_3fef1c40d2b33f_1349_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "group": "multilingual",
+   "candidate": 19,
+   "query": "Wie werden im Papua-Malaiischen Existenzsätze mit ada und Vergleichssätze gebildet?",
+   "relevant": [
+    "chk_3fef1c40d2b33f_1349_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_821_v2"
+   ]
+  },
+  {
+   "id": "cross-021",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_6e045b04241181_237_v4",
+   "book_id": "understanding-music-past-and-present",
+   "group": "multilingual",
+   "candidate": 20,
+   "query": "바흐가 프리드리히 대왕의 궁정을 방문한 뒤 만든 '음악의 헌정'은 어떻게 탄생했나요?",
+   "relevant": [
+    "chk_6e045b04241181_237_v4"
+   ],
+   "relevant_excerpts": [
+    "understanding-music-past-and-present_v4/exc_6e045b04241181_104_v4"
+   ]
+  },
+  {
+   "id": "cross-022",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_d5ac62b43cc9eb_43_v2",
+   "book_id": "keys-to-understanding-the-middle-east",
+   "group": "multilingual",
+   "candidate": 21,
+   "query": "¿Qué palabras demuestran que el persa y el inglés tienen un antepasado común?",
+   "relevant": [
+    "chk_d5ac62b43cc9eb_43_v2"
+   ],
+   "relevant_excerpts": [
+    "keys-to-understanding-the-middle-east_v2/exc_d5ac62b43cc9eb_21_v2"
+   ]
+  },
+  {
+   "id": "cross-023",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_f2b3906f1fb788_793_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 22,
+   "query": "En yakkha, avec un verbe à trois arguments, le réfléchi peut-il renvoyer au thème ou seulement au destinataire ?",
+   "relevant": [
+    "chk_f2b3906f1fb788_793_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_543_v2"
+   ]
+  },
+  {
+   "id": "cross-024",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_70d78be3f0d0ad_789_v2",
+   "book_id": "a-grammar-of-palula",
+   "group": "multilingual",
+   "candidate": 23,
+   "query": "En palula, ¿cómo funcionan los verbos conjuntos como «rezar» o «emigrar», formados con un sustantivo y el verbo «hacer»?",
+   "relevant": [
+    "chk_70d78be3f0d0ad_789_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_551_v2"
+   ]
+  },
+  {
+   "id": "cross-025",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_8a13048a33c5a8_118_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 24,
+   "query": "道徳的模範となる人にはどんな共通の特徴がありますか？ハムレットと対比される文学上の人物は誰ですか？",
+   "relevant": [
+    "chk_54fcd12a32565e_91_v2",
+    "chk_8a13048a33c5a8_118_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_62_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_55_v2"
+   ]
+  },
+  {
+   "id": "cross-026",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_f213361bf057b0_1125_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 50,
+   "query": "每戶寵物數量的分佈為什麼是右偏的？應該用中位數還是平均數來描述它的中心？",
+   "relevant": [
+    "chk_f213361bf057b0_1125_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_652_v4"
+   ]
+  },
+  {
+   "id": "cross-027",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_dd1e65de648fb2_1662_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 51,
+   "query": "¿Por qué R muestra una advertencia sobre interacciones al calcular las medias de grupo estimadas con drug*therapy en un ANOVA factorial?",
+   "relevant": [
+    "chk_dd1e65de648fb2_1662_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_1118_v3"
+   ]
+  },
+  {
+   "id": "cross-028",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_f213361bf057b0_342_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 52,
+   "query": "Si una rifa vende 30 boletos y ofrece siete premios, ¿cómo cambia la probabilidad de ganar si se sortea con o sin reemplazo?",
+   "relevant": [
+    "chk_f213361bf057b0_342_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_193_v4"
+   ]
+  },
+  {
+   "id": "cross-029",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_dd1e65de648fb2_418_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 53,
+   "query": "書中描述統計那一章用的澳洲足球聯賽（AFL）資料包含哪些變數？",
+   "relevant": [
+    "chk_dd1e65de648fb2_418_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_268_v3"
+   ]
+  },
+  {
+   "id": "cross-030",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_45ecdb7da7734b_346_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 54,
+   "query": "実際の心理学の実験で、単純無作為抽出のサンプルを得るのはなぜほとんど不可能なのですか？",
+   "relevant": [
+    "chk_45ecdb7da7734b_346_v5",
+    "chk_dd1e65de648fb2_986_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_669_v3",
+    "lsj_v5/exc_45ecdb7da7734b_157_v5"
+   ]
+  },
+  {
+   "id": "cross-031",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_0689cddaba206d_454_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 55,
+   "query": "Pourquoi la condition d'indépendance de la loi binomiale n'est-elle probablement pas remplie pour un groupe d'amis fumeurs ?",
+   "relevant": [
+    "chk_0689cddaba206d_454_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_283_v5"
+   ]
+  },
+  {
+   "id": "cross-032",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_dd1e65de648fb2_1119_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 56,
+   "query": "統計的に有意な結果でも効果量が小さい場合、どう解釈すればよいですか？",
+   "relevant": [
+    "chk_dd1e65de648fb2_1119_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_757_v3"
+   ]
+  },
+  {
+   "id": "cross-033",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_0689cddaba206d_802_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 57,
+   "query": "有位統計學家收集了712顆M&M巧克力來檢驗顏色分佈，這個卡方適合度檢定的例子是怎麼設計的？",
+   "relevant": [
+    "chk_0689cddaba206d_802_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_481_v5"
+   ]
+  },
+  {
+   "id": "cross-034",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_45ecdb7da7734b_138_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 58,
+   "query": "研究者在没有故意造假的情况下，怎样通过有缺陷的研究设计得到自己想要的结果？",
+   "relevant": [
+    "chk_45ecdb7da7734b_138_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_66_v5"
+   ]
+  },
+  {
+   "id": "cross-035",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_45ecdb7da7734b_176_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 59,
+   "query": "Wie speichere ich in jamovi meine geänderten Daten und Analysen, bevor ich das Programm beende?",
+   "relevant": [
+    "chk_45ecdb7da7734b_176_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_87_v5"
+   ]
+  },
+  {
+   "id": "cross-036",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_0689cddaba206d_752_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 60,
+   "query": "レストランで恋人にいじめられる女性を見て客が介入するかを調べた社会実験の練習問題はどこにありますか？",
+   "relevant": [
+    "chk_0689cddaba206d_752_v5",
+    "chk_f213361bf057b0_679_v4"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_452_v5",
+    "os4_v4/exc_f213361bf057b0_416_v4"
+   ]
+  },
+  {
+   "id": "cross-037",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_dd1e65de648fb2_722_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 61,
+   "query": "在 R 裡對因子排序時，為什麼結果是照水準的順序而不是字母順序？",
+   "relevant": [
+    "chk_dd1e65de648fb2_722_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_488_v3"
+   ]
+  },
+  {
+   "id": "cross-038",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_f97f47b7a1fd68_210_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 62,
+   "query": "兩個不相關變數相加之後的變異數要怎麼計算？",
+   "relevant": [
+    "chk_f97f47b7a1fd68_210_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_94_v3"
+   ]
+  },
+  {
+   "id": "cross-039",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_f97f47b7a1fd68_588_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 63,
+   "query": "假設檢定的p值是不是代表虛無假設為假的機率？可以用詹姆士·龐德分辨搖勻或攪拌馬丁尼的例子說明嗎？",
+   "relevant": [
+    "chk_f97f47b7a1fd68_588_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_293_v3"
+   ]
+  },
+  {
+   "id": "cross-040",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_f97f47b7a1fd68_262_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 64,
+   "query": "동전 던지기와 주사위 굴리기처럼 독립인 두 사건이 함께 일어날 확률은 어떻게 계산하나요?",
+   "relevant": [
+    "chk_f97f47b7a1fd68_262_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_123_v3"
+   ]
+  },
+  {
+   "id": "cross-041",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_45ecdb7da7734b_125_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 65,
+   "query": "설문조사에서 무응답 편향이란 무엇이며, 일부 응답자가 특정 질문에 답하지 않으면 왜 문제가 될 수 있나요?",
+   "relevant": [
+    "chk_45ecdb7da7734b_125_v5",
+    "chk_dd1e65de648fb2_163_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_94_v3",
+    "lsj_v5/exc_45ecdb7da7734b_60_v5"
+   ]
+  },
+  {
+   "id": "cross-042",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_f97f47b7a1fd68_436_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 66,
+   "query": "正态Q-Q图怎样显示数据是偏斜的或者尾部很厚？",
+   "relevant": [
+    "chk_f97f47b7a1fd68_436_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_205_v3"
+   ]
+  },
+  {
+   "id": "cross-043",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_64ed84430ae3b2_334_v5",
+   "book_id": "principles-of-business-statistics",
+   "group": "statistics",
+   "candidate": 67,
+   "query": "回帰式で観測範囲の外の値を予測すると、なぜ期末試験の点数が261点のようなありえない値になるのですか？",
+   "relevant": [
+    "chk_64ed84430ae3b2_334_v5"
+   ],
+   "relevant_excerpts": [
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_297_v5"
+   ]
+  },
+  {
+   "id": "cross-044",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_64ed84430ae3b2_32_v5",
+   "book_id": "principles-of-business-statistics",
+   "group": "statistics",
+   "candidate": 68,
+   "query": "什麼是樣本和統計量？民意調查通常抽取多少人？",
+   "relevant": [
+    "chk_64ed84430ae3b2_32_v5"
+   ],
+   "relevant_excerpts": [
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_12_v5"
+   ]
+  },
+  {
+   "id": "cross-045",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_0689cddaba206d_1043_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 69,
+   "query": "构建两个均值之差的置信区间时，需要检查哪些条件？",
+   "relevant": [
+    "chk_0689cddaba206d_1029_v5",
+    "chk_0689cddaba206d_1043_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_614_v5",
+    "ahss4_v5/exc_0689cddaba206d_625_v5"
+   ]
+  },
+  {
+   "id": "cross-046",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_1c619222c448be_677_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 78,
+   "query": "¿Por qué las patentes farmacéuticas hacen que los medicamentos antirretrovirales contra el VIH sean tan caros?",
+   "relevant": [
+    "chk_1c619222c448be_677_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_282_v5"
+   ]
+  },
+  {
+   "id": "cross-047",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_0806a6368e307c_392_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 79,
+   "query": "Wireshark 的視窗分成哪三個部分？「追蹤 TCP 串流」功能有什麼用？",
+   "relevant": [
+    "chk_0806a6368e307c_392_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_198_v3"
+   ]
+  },
+  {
+   "id": "cross-048",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_1c619222c448be_942_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 80,
+   "query": "根據美國身心障礙者法案的修正案，哪些疾病幾乎一定會被認定為殘疾？感冒或骨折算嗎？",
+   "relevant": [
+    "chk_1c619222c448be_942_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_412_v5"
+   ]
+  },
+  {
+   "id": "cross-049",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_667e634370ad3e_49_v3",
+   "book_id": "intro-to-logic",
+   "group": "english_spread",
+   "candidate": 82,
+   "query": "Pourquoi la logique est-elle utile aux programmeurs comme langage de spécification sans ambiguïté pour les interfaces ?",
+   "relevant": [
+    "chk_667e634370ad3e_49_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_16_v3"
+   ]
+  },
+  {
+   "id": "cross-050",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_2dfae4cbb39513_1065_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 83,
+   "query": "¿Por qué es importante que los exámenes estatales estén alineados con los estándares de contenido, y cuántos estados lo cumplían según el estudio de 2006?",
+   "relevant": [
+    "chk_2dfae4cbb39513_1065_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_654_v2"
+   ]
+  },
+  {
+   "id": "cross-051",
+   "cohort": "cross",
+   "lang": "es",
+   "target": "chk_0806a6368e307c_736_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 84,
+   "query": "¿Por qué se crearon grupos de trabajo separados del IEEE para Token Bus y Token Ring?",
+   "relevant": [
+    "chk_0806a6368e307c_736_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_386_v3"
+   ]
+  },
+  {
+   "id": "cross-052",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_0806a6368e307c_654_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 86,
+   "query": "有一題練習：末端自治系統同時連到兩個供應商，改成宣告兩個 /24 前綴後，對可達性會有什麼影響？",
+   "relevant": [
+    "chk_0806a6368e307c_654_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_335_v3"
+   ]
+  },
+  {
+   "id": "cross-053",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_e2b7c2d4734a3e_1937_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 87,
+   "query": "両生類の世界的な減少の原因となったツボカビは、どのように世界中に広がったと考えられていますか？",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1937_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_1293_v2"
+   ]
+  },
+  {
+   "id": "cross-054",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_e2b7c2d4734a3e_1329_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 88,
+   "query": "Warum ist die Lunge von Vögeln beim Gasaustausch effizienter als die von Säugetieren?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1329_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_881_v2"
+   ]
+  },
+  {
+   "id": "cross-055",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_b70e4c300d226a_24_v2",
+   "book_id": "transitions-to-professional-nursing-practice",
+   "group": "english_spread",
+   "candidate": 89,
+   "query": "간호 실무 표준인 ADPIE는 무엇의 약자이며, 각 단계에서 간호사는 무엇을 하나요?",
+   "relevant": [
+    "chk_b70e4c300d226a_24_v2"
+   ],
+   "relevant_excerpts": [
+    "transitions-to-professional-nursing-practice_v2/exc_b70e4c300d226a_19_v2"
+   ]
+  },
+  {
+   "id": "cross-056",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_0c9f831c70200f_288_v2",
+   "book_id": "the-science-of-sleep",
+   "group": "english_spread",
+   "candidate": 90,
+   "query": "Combien d'heures de sommeil les adolescents devraient-ils avoir, et à quelle heure les lycées devraient-ils commencer selon les associations médicales ?",
+   "relevant": [
+    "chk_0c9f831c70200f_288_v2"
+   ],
+   "relevant_excerpts": [
+    "the-science-of-sleep_v2/exc_0c9f831c70200f_188_v2"
+   ]
+  },
+  {
+   "id": "cross-057",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_b9d7cc2b7c7219_54_v2",
+   "book_id": "private-pilot-for-airplane-category-airman-certification-sta",
+   "group": "english_spread",
+   "candidate": 92,
+   "query": "자가용 조종사 실기시험의 정상 접근 및 착륙 과목에서는 어떤 지식과 위험 관리를 평가하나요?",
+   "relevant": [
+    "chk_b9d7cc2b7c7219_54_v2"
+   ],
+   "relevant_excerpts": [
+    "private-pilot-for-airplane-category-airman-certification-sta_v2/exc_b9d7cc2b7c7219_25_v2"
+   ],
+   "exclude": [
+    "chk_b9d7cc2b7c7219_59_v2",
+    "chk_b9d7cc2b7c7219_63_v2",
+    "chk_b9d7cc2b7c7219_68_v2",
+    "chk_b9d7cc2b7c7219_77_v2",
+    "chk_b9d7cc2b7c7219_79_v2"
+   ]
+  },
+  {
+   "id": "cross-058",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_1c619222c448be_758_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 93,
+   "query": "如果警察沒有拘留你，只是在超市閒聊時你承認了犯罪，這段自白能當作證據嗎？",
+   "relevant": [
+    "chk_1c619222c448be_758_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_320_v5"
+   ]
+  },
+  {
+   "id": "cross-059",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_cd6c8c95ecd77e_348_v3",
+   "book_id": "principles-of-finance",
+   "group": "english_spread",
+   "candidate": 94,
+   "query": "金融危机后，美联储设立的特别贷款工具后来怎么样了？它怎样准备退出宽松的货币政策？",
+   "relevant": [
+    "chk_cd6c8c95ecd77e_348_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_225_v3"
+   ]
+  },
+  {
+   "id": "cross-060",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_76816c1b24394c_843_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 95,
+   "query": "什么样的销售工作需要向一个委员会里的多个人做推介？比如广告公司的客户经理。",
+   "relevant": [
+    "chk_76816c1b24394c_843_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_562_v2"
+   ]
+  },
+  {
+   "id": "cross-061",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_c2ea3e7080951b_207_v1",
+   "book_id": "philosophical-ethics",
+   "group": "english_spread",
+   "candidate": 96,
+   "query": "支持心理利己主義的理論論證是什麼？為什麼說理性行動按定義就是自私的？",
+   "relevant": [
+    "chk_c2ea3e7080951b_207_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_114_v1"
+   ]
+  },
+  {
+   "id": "cross-062",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_0ac720b5f94b3e_531_v4",
+   "book_id": "electromagnetics-volume-1",
+   "group": "english_spread",
+   "candidate": 97,
+   "query": "在沒有電荷和電流的無損區域中，怎麼從馬克士威方程組推導出電磁波的波動方程？",
+   "relevant": [
+    "chk_0ac720b5f94b3e_531_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_227_v4"
+   ]
+  },
+  {
+   "id": "cross-063",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_0167eaa86e24e2_344_v3",
+   "book_id": "brief-calculus",
+   "group": "english_spread",
+   "candidate": 98,
+   "query": "Pourquoi la série harmonique alternée converge-t-elle, et comment fonctionne le critère de l'intégrale ?",
+   "relevant": [
+    "chk_0167eaa86e24e2_344_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_257_v3"
+   ]
+  },
+  {
+   "id": "cross-064",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_353a824c1e4be2_380_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "group": "english_spread",
+   "candidate": 99,
+   "query": "硫化氢化能合成和光合作用有什么不同？它会产生什么副产物？",
+   "relevant": [
+    "chk_353a824c1e4be2_380_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_138_v1"
+   ]
+  },
+  {
+   "id": "cross-065",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_cd6c8c95ecd77e_317_v3",
+   "book_id": "principles-of-finance",
+   "group": "english_spread",
+   "candidate": 100,
+   "query": "연방준비제도는 연방기금금리 목표를 맞추기 위해 공개시장조작을 어떻게 사용하나요?",
+   "relevant": [
+    "chk_cd6c8c95ecd77e_317_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_207_v3"
+   ]
+  },
+  {
+   "id": "cross-066",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_1c619222c448be_827_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 101,
+   "query": "獨資企業的業主為什麼要承擔無限責任？稅務上又有什麼不利之處？",
+   "relevant": [
+    "chk_1c619222c448be_827_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_360_v5"
+   ]
+  },
+  {
+   "id": "cross-067",
+   "cohort": "cross",
+   "lang": "fr",
+   "target": "chk_2dfae4cbb39513_876_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 102,
+   "query": "Comment un enseignant peut-il activer les connaissances antérieures des élèves avant une leçon sur la classification des espèces ?",
+   "relevant": [
+    "chk_2dfae4cbb39513_876_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_537_v2"
+   ]
+  },
+  {
+   "id": "cross-068",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_0ac720b5f94b3e_131_v4",
+   "book_id": "electromagnetics-volume-1",
+   "group": "english_spread",
+   "candidate": 103,
+   "query": "低損失伝送線路の条件は何で、そのとき伝搬定数や特性インピーダンスはどう近似されますか？",
+   "relevant": [
+    "chk_0ac720b5f94b3e_131_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_54_v4"
+   ]
+  },
+  {
+   "id": "cross-069",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_353a824c1e4be2_385_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "group": "english_spread",
+   "candidate": 104,
+   "query": "海氷の内部では、塩水の塩分濃度が化学環境にどのような影響を与えますか？",
+   "relevant": [
+    "chk_353a824c1e4be2_385_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_139_v1"
+   ]
+  },
+  {
+   "id": "cross-070",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_0806a6368e307c_306_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 105,
+   "query": "TCP 什麼時候應該送出新的資料區段？Nagle 演算法解決了什麼問題？",
+   "relevant": [
+    "chk_0806a6368e307c_306_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_155_v3"
+   ]
+  },
+  {
+   "id": "cross-071",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_0ac720b5f94b3e_503_v4",
+   "book_id": "electromagnetics-volume-1",
+   "group": "english_spread",
+   "candidate": 106,
+   "query": "Warum wickelt man die Spulen eines Transformators auf einen Ringkern statt auf einen zylindrischen Kern?",
+   "relevant": [
+    "chk_0ac720b5f94b3e_503_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_213_v4"
+   ]
+  },
+  {
+   "id": "cross-072",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_2bcaee6f65ce3f_8_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 108,
+   "query": "政治“是什么”和“应该是什么”之间有什么关系？苏格拉底说人类追求的是什么？",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_8_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_6_v5"
+   ]
+  },
+  {
+   "id": "cross-073",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_2bcaee6f65ce3f_390_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 110,
+   "query": "公共政策過程的六個階段是什麼？",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_390_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_267_v5"
+   ]
+  },
+  {
+   "id": "cross-074",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_76816c1b24394c_1026_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 111,
+   "query": "Was versteht man im Marketing unter physischer Distribution, und warum kann sie ein Wettbewerbsvorteil sein?",
+   "relevant": [
+    "chk_76816c1b24394c_1026_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_695_v2"
+   ]
+  },
+  {
+   "id": "cross-075",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_353a824c1e4be2_32_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "group": "english_spread",
+   "candidate": 112,
+   "query": "全球海洋输送带（温盐环流）是怎样运作的？最古老的海水在哪里上涌？",
+   "relevant": [
+    "chk_353a824c1e4be2_32_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_17_v1"
+   ]
+  },
+  {
+   "id": "cross-076",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_2dfae4cbb39513_1023_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 113,
+   "query": "老师应该怎样决定作业、测验和课堂参与在总成绩里所占的比重？",
+   "relevant": [
+    "chk_2dfae4cbb39513_1023_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_625_v2"
+   ]
+  },
+  {
+   "id": "cross-077",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_2dfae4cbb39513_499_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 114,
+   "query": "自己決定理論でいう三つの基本的な心理的欲求とは何ですか？",
+   "relevant": [
+    "chk_2dfae4cbb39513_499_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_292_v2"
+   ]
+  },
+  {
+   "id": "cross-078",
+   "cohort": "cross",
+   "lang": "ko",
+   "target": "chk_353a824c1e4be2_339_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "group": "english_spread",
+   "candidate": 115,
+   "query": "해양 무척추동물에서 단위생식은 어떻게 일어나며, 언제 유성생식으로 바뀌나요?",
+   "relevant": [
+    "chk_353a824c1e4be2_339_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_124_v1"
+   ]
+  },
+  {
+   "id": "cross-079",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_294181915f1126_81_v1",
+   "book_id": "media-studies-101",
+   "group": "english_spread",
+   "candidate": 116,
+   "query": "媒体研究里说的“制度”是什么意思？可以用银行的例子说明制度和话语的关系吗？",
+   "relevant": [
+    "chk_294181915f1126_81_v1"
+   ],
+   "relevant_excerpts": [
+    "media-studies-101_v1/exc_294181915f1126_44_v1"
+   ]
+  },
+  {
+   "id": "cross-080",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_2bcaee6f65ce3f_150_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 118,
+   "query": "国家元首和政府首脑有什么区别？国家和政府又有什么不同？",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_150_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_102_v5"
+   ]
+  },
+  {
+   "id": "cross-081",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_e4923419014d82_425_v3",
+   "book_id": "understanding-basic-music-theory",
+   "group": "english_spread",
+   "candidate": 119,
+   "query": "和弦名称里的斜线（比如 C/E）表示什么？",
+   "relevant": [
+    "chk_e4923419014d82_425_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_349_v3"
+   ]
+  },
+  {
+   "id": "cross-082",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_7d0930a9630d25_358_v2",
+   "book_id": "principles-of-financial-accounting",
+   "group": "english_spread",
+   "candidate": 120,
+   "query": "壞帳的備抵法是怎麼運作的？備抵呆帳為什麼是資產的抵銷科目？",
+   "relevant": [
+    "chk_7d0930a9630d25_358_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_253_v2"
+   ]
+  },
+  {
+   "id": "cross-083",
+   "cohort": "cross",
+   "lang": "de",
+   "target": "chk_294181915f1126_195_v1",
+   "book_id": "media-studies-101",
+   "group": "english_spread",
+   "candidate": 121,
+   "query": "Wie hängen Technologie und menschlicher Körper nach McLuhan zusammen, und welche Annahme stellen neuere Ansätze in Frage?",
+   "relevant": [
+    "chk_294181915f1126_195_v1",
+    "chk_294181915f1126_196_v1"
+   ],
+   "relevant_excerpts": [
+    "media-studies-101_v1/exc_294181915f1126_98_v1"
+   ]
+  },
+  {
+   "id": "cross-084",
+   "cohort": "cross",
+   "lang": "zh-Hant",
+   "target": "chk_7d0930a9630d25_198_v2",
+   "book_id": "principles-of-financial-accounting",
+   "group": "english_spread",
+   "candidate": 122,
+   "query": "設備完全折舊之後，帳面價值是多少？之後還需要做折舊的調整分錄嗎？",
+   "relevant": [
+    "chk_7d0930a9630d25_198_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_147_v2"
+   ]
+  },
+  {
+   "id": "cross-085",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_294181915f1126_72_v1",
+   "book_id": "media-studies-101",
+   "group": "english_spread",
+   "candidate": 123,
+   "query": "ジジェクはスターバックスのコーヒーを例に、イデオロギーについて何を説明していますか？",
+   "relevant": [
+    "chk_294181915f1126_72_v1"
+   ],
+   "relevant_excerpts": [
+    "media-studies-101_v1/exc_294181915f1126_40_v1"
+   ]
+  },
+  {
+   "id": "cross-086",
+   "cohort": "cross",
+   "lang": "ja",
+   "target": "chk_04b51c13dbe5cb_176_v3",
+   "book_id": "principles-of-object-oriented-programming",
+   "group": "english_spread",
+   "candidate": 124,
+   "query": "リスト構造にメソッドを追加し続ける設計は、なぜ脆くて拡張しにくいのですか？",
+   "relevant": [
+    "chk_04b51c13dbe5cb_176_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-object-oriented-programming_v3/exc_04b51c13dbe5cb_144_v3"
+   ]
+  },
+  {
+   "id": "cross-087",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_b70e4c300d226a_241_v2",
+   "book_id": "transitions-to-professional-nursing-practice",
+   "group": "english_spread",
+   "candidate": 125,
+   "query": "TeamSTEPPS 培训对医疗团队的沟通和患者满意度有什么效果？",
+   "relevant": [
+    "chk_b70e4c300d226a_241_v2"
+   ],
+   "relevant_excerpts": [
+    "transitions-to-professional-nursing-practice_v2/exc_b70e4c300d226a_157_v2"
+   ]
+  },
+  {
+   "id": "cross-088",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_e4923419014d82_509_v3",
+   "book_id": "understanding-basic-music-theory",
+   "group": "english_spread",
+   "candidate": 127,
+   "query": "为什么平均律的音程听起来会有点不准？其他音乐传统怎样调整音律？",
+   "relevant": [
+    "chk_e4923419014d82_509_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_415_v3"
+   ]
+  },
+  {
+   "id": "cross-089",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_b70e4c300d226a_197_v2",
+   "book_id": "transitions-to-professional-nursing-practice",
+   "group": "english_spread",
+   "candidate": 128,
+   "query": "护士在制定职业发展计划时可以包括哪些活动？",
+   "relevant": [
+    "chk_b70e4c300d226a_197_v2"
+   ],
+   "relevant_excerpts": [
+    "transitions-to-professional-nursing-practice_v2/exc_b70e4c300d226a_129_v2"
+   ]
+  },
+  {
+   "id": "cross-090",
+   "cohort": "cross",
+   "lang": "zh-Hans",
+   "target": "chk_2bcaee6f65ce3f_70_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "group": "english_spread",
+   "candidate": 129,
+   "query": "现代自由主义在20世纪60年代是怎样和民权运动结合起来的？约翰逊总统推动了哪些政策？",
+   "relevant": [
+    "chk_2bcaee6f65ce3f_70_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_47_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-001",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_19e6e649663784_339_v2",
+   "book_id": "a-grammar-of-moloko",
+   "group": "multilingual",
+   "candidate": 0,
+   "query": "For Moloko, what sits at the heart of a sentence, and how can that word be modified to show where or in which direction something happens?",
+   "relevant": [
+    "chk_19e6e649663784_339_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_272_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-002",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_346_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 1,
+   "query": "Why does the Komnzo grammar print two lines of word-by-word translation under its example sentences for action words?",
+   "relevant": [
+    "chk_e62e73f159792c_346_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_197_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-003",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_967_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 2,
+   "query": "When a bankrupt online toy shop tried to sell its customers' personal information, what conditions did the regulator put on any buyer?",
+   "relevant": [
+    "chk_8a13048a33c5a8_967_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_725_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-004",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_983_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "group": "multilingual",
+   "candidate": 3,
+   "query": "In Yakkha the word meaning 'fall' is also used for 'be willing'; when it takes another action as its complement, which participant does its ending refer to?",
+   "relevant": [
+    "chk_f2b3906f1fb788_983_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_661_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-005",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_19e6e649663784_231_v2",
+   "book_id": "a-grammar-of-moloko",
+   "group": "multilingual",
+   "candidate": 4,
+   "query": "How can the Moloko word for 'there is' also be used to say someone is in the middle of doing something, and where might that usage come from?",
+   "relevant": [
+    "chk_19e6e649663784_231_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_183_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-006",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_970_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 5,
+   "query": "What happened step by step in 2000 when an online toy retailer went under and its customer list was advertised for sale?",
+   "relevant": [
+    "chk_8a13048a33c5a8_970_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_726_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-007",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_1f53d134b54aaf_457_v5",
+   "book_id": "operations-management",
+   "group": "multilingual",
+   "candidate": 7,
+   "query": "How did ideas about quality and producing only what is needed spread from factory floors to whole supply chains between the 1980s and 1990s?",
+   "relevant": [
+    "chk_1f53d134b54aaf_457_v5"
+   ],
+   "relevant_excerpts": [
+    "operations-management_v5/exc_1f53d134b54aaf_300_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-008",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_741_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "group": "multilingual",
+   "candidate": 8,
+   "query": "In Komnzo, how can a command form be used to express an 'if ... then' situation?",
+   "relevant": [
+    "chk_e62e73f159792c_741_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_380_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-009",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_492_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 16,
+   "query": "How do I get the area under the bell curve between two points, or the cutoff for a given percentile, using the free online graphing calculator?",
+   "relevant": [
+    "chk_0689cddaba206d_492_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_308_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-010",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1436_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 17,
+   "query": "How can I check whether several groups have similar spread before comparing their averages, using how far each score sits from its own group's average?",
+   "relevant": [
+    "chk_dd1e65de648fb2_1436_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_970_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-011",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1428_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 18,
+   "query": "Is there a way to adjust for running many pairwise comparisons that keeps the same false-alarm rate as the simplest method but misses fewer real effects?",
+   "relevant": [
+    "chk_dd1e65de648fb2_1428_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_964_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-012",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_294_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 19,
+   "query": "What is the difference between the chance of one outcome on its own and the chance of two things happening together, using a table of a computer's guesses about fashion photos?",
+   "relevant": [
+    "chk_0689cddaba206d_356_v5",
+    "chk_f213361bf057b0_294_v4"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_218_v5",
+    "os4_v4/exc_f213361bf057b0_169_v4"
+   ]
+  },
+  {
+   "id": "paraphrase-013",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_1333_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 20,
+   "query": "Where can I find a one-page summary of the standard error formulas for proportions and means?",
+   "relevant": [
+    "chk_0689cddaba206d_1333_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_774_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-014",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_64ed84430ae3b2_38_v5",
+   "book_id": "principles-of-business-statistics",
+   "group": "statistics",
+   "candidate": 21,
+   "query": "For a study of how much first-year students at one college spend, not counting books, which part is the whole group, which is the subset, and which numbers describe each?",
+   "relevant": [
+    "chk_64ed84430ae3b2_38_v5"
+   ],
+   "relevant_excerpts": [
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_15_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-015",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1549_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 22,
+   "query": "How do I check that the leftover errors from my straight-line model of grumpiness follow a bell shape, using a plot in R?",
+   "relevant": [
+    "chk_dd1e65de648fb2_1549_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_1048_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-016",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_747_v5",
+   "book_id": "ahss4",
+   "group": "statistics",
+   "candidate": 23,
+   "query": "A toy car company is comparing two gear suppliers by how many parts pass inspection; how do I estimate the gap between them with 95% confidence?",
+   "relevant": [
+    "chk_0689cddaba206d_747_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_451_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-017",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_f97f47b7a1fd68_846_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "group": "statistics",
+   "candidate": 24,
+   "query": "In the study of how a companion's body size and relationship affect ratings, how do the effects at each single level differ from the averaged effect?",
+   "relevant": [
+    "chk_f97f47b7a1fd68_846_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_426_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-018",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_927_v5",
+   "book_id": "lsj",
+   "group": "statistics",
+   "candidate": 25,
+   "query": "In the approach that updates beliefs with evidence, how are the odds after seeing the data related to the odds before, and what measures the strength of the data?",
+   "relevant": [
+    "chk_45ecdb7da7734b_927_v5",
+    "chk_dd1e65de648fb2_1807_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_1210_v3",
+    "lsj_v5/exc_45ecdb7da7734b_402_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-019",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1061_v3",
+   "book_id": "learning-statistics-with-r",
+   "group": "statistics",
+   "candidate": 26,
+   "query": "Did the two founders of classical significance testing agree on how it should work, and whose view does this textbook lean toward?",
+   "relevant": [
+    "chk_45ecdb7da7734b_1021_v5",
+    "chk_dd1e65de648fb2_1061_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_715_v3",
+    "lsj_v5/exc_45ecdb7da7734b_421_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-020",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_1073_v4",
+   "book_id": "os4",
+   "group": "statistics",
+   "candidate": 27,
+   "query": "Why does the estimated price bump for a brand-new video game change once the number of steering accessories is added to the auction model?",
+   "relevant": [
+    "chk_f213361bf057b0_1073_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_633_v4"
+   ]
+  },
+  {
+   "id": "paraphrase-021",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_7d0930a9630d25_582_v2",
+   "book_id": "principles-of-financial-accounting",
+   "group": "english_spread",
+   "candidate": 40,
+   "query": "If an employee earns $4,000 a month, why does she actually cost her employer more, and how is the extra recorded in the books?",
+   "relevant": [
+    "chk_7d0930a9630d25_582_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_414_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-022",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_324_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 41,
+   "query": "In some cultures the most admired person fits in and meets obligations to family rather than standing out; how can that affect how students respond to school?",
+   "relevant": [
+    "chk_2dfae4cbb39513_324_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_172_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-023",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_918_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 42,
+   "query": "How can a new plant species appear in the same place almost instantly when its sex cells end up with double the usual number of chromosomes?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_918_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_584_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-024",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_1c619222c448be_639_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 43,
+   "query": "When I rent an apartment, what legal interest do I hold in the place, and what do the owner and I each owe each other?",
+   "relevant": [
+    "chk_1c619222c448be_639_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_263_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-025",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_613_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 44,
+   "query": "When a student has a problem with a rule, why should a teacher hold off on giving advice and instead keep checking that they understood what the student said?",
+   "relevant": [
+    "chk_2dfae4cbb39513_613_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_364_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-026",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_1063_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 45,
+   "query": "Which tiny parasite needs both a mosquito and a human, destroys red blood cells, and kills mostly African children?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1063_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_683_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-027",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_595_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 46,
+   "query": "What are the pros and cons of sending home a regular class bulletin versus ringing up families to keep them informed?",
+   "relevant": [
+    "chk_2dfae4cbb39513_595_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_353_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-028",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_742_v2",
+   "book_id": "concepts-of-biology",
+   "group": "english_spread",
+   "candidate": 47,
+   "query": "When a cell copies a gene into a message molecule, which of the two DNA strands is read, and how does the copy differ from the other strand?",
+   "relevant": [
+    "chk_e2b7c2d4734a3e_742_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_467_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-029",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_0167eaa86e24e2_375_v3",
+   "book_id": "brief-calculus",
+   "group": "english_spread",
+   "candidate": 48,
+   "query": "Who first showed that adding up the reciprocals of all the perfect squares gives pi squared over six, and how does the argument use the power series of sine?",
+   "relevant": [
+    "chk_0167eaa86e24e2_375_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_286_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-030",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_1304_v2",
+   "book_id": "educational-psychology",
+   "group": "english_spread",
+   "candidate": 49,
+   "query": "Do young children understand that hitting someone is wrong even if an adult allows it, while the meaning of traffic light colours could be changed by agreement?",
+   "relevant": [
+    "chk_2dfae4cbb39513_1304_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_838_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-031",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_205_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 51,
+   "query": "How do companies that sell to other businesses divide their customers into groups?",
+   "relevant": [
+    "chk_76816c1b24394c_205_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_111_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-032",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e4923419014d82_131_v3",
+   "book_id": "understanding-basic-music-theory",
+   "group": "english_spread",
+   "candidate": 52,
+   "query": "Why can't a book tell me exactly how to play notes short and detached or smoothly connected on my own instrument?",
+   "relevant": [
+    "chk_e4923419014d82_131_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_98_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-033",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_1c619222c448be_397_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "group": "english_spread",
+   "candidate": 53,
+   "query": "How does the ban on excessively harsh penalties change meaning over time, and when did the first ten amendments start limiting state governments too?",
+   "relevant": [
+    "chk_1c619222c448be_397_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_169_v5"
+   ]
+  },
+  {
+   "id": "paraphrase-034",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_822_v2",
+   "book_id": "core-concepts-of-marketing",
+   "group": "english_spread",
+   "candidate": 54,
+   "query": "When do short-term incentives like coupons and giveaways help a brand the most, and what can't they fix?",
+   "relevant": [
+    "chk_76816c1b24394c_822_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_550_v2"
+   ]
+  },
+  {
+   "id": "paraphrase-035",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_353a824c1e4be2_103_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "group": "english_spread",
+   "candidate": 55,
+   "query": "How do underwater flowering plants growing in deeper, darker water adjust their leaves and pigments to catch enough light?",
+   "relevant": [
+    "chk_353a824c1e4be2_103_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_44_v1"
+   ]
+  },
+  {
+   "id": "paraphrase-036",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_667e634370ad3e_463_v3",
+   "book_id": "intro-to-logic",
+   "group": "english_spread",
+   "candidate": 56,
+   "query": "How can I express 'divisible by two' and 'has no factors other than one and itself' in predicate logic, and why does the number one sneak into the second definition?",
+   "relevant": [
+    "chk_667e634370ad3e_463_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_404_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-037",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_294181915f1126_67_v1",
+   "book_id": "media-studies-101",
+   "group": "english_spread",
+   "candidate": 57,
+   "query": "Why do people who lose out under a market economy often accept the system as natural, and how does that shape views about who is to blame for being poor?",
+   "relevant": [
+    "chk_294181915f1126_67_v1"
+   ],
+   "relevant_excerpts": [
+    "media-studies-101_v1/exc_294181915f1126_37_v1"
+   ]
+  },
+  {
+   "id": "paraphrase-038",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_434_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "group": "english_spread",
+   "candidate": 59,
+   "query": "Why can routers that share their tables with neighbours keep raising their cost estimates forever after a link breaks, and how can they avoid it?",
+   "relevant": [
+    "chk_0806a6368e307c_434_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_223_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-039",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_e4923419014d82_258_v3",
+   "book_id": "understanding-basic-music-theory",
+   "group": "english_spread",
+   "candidate": 60,
+   "query": "Why do tuned percussion instruments with struck bars give definite pitches, and does the size rule still hold for drums and cymbals?",
+   "relevant": [
+    "chk_e4923419014d82_258_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_199_v3"
+   ]
+  },
+  {
+   "id": "paraphrase-040",
+   "cohort": "paraphrase",
+   "lang": "en",
+   "target": "chk_0167eaa86e24e2_353_v3",
+   "book_id": "brief-calculus",
+   "group": "english_spread",
+   "candidate": 61,
+   "query": "Is there a smooth function whose power-series expansion around zero is exactly zero, so the expansion is useless even though it converges everywhere?",
+   "relevant": [
+    "chk_0167eaa86e24e2_353_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_265_v3"
+   ]
+  },
+  {
+   "id": "mono_es-001",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_674_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 0,
+   "query": "¿Qué debe hacer un ingeniero en Puerto Rico si tiene un conflicto de intereses con su cliente, según su código de ética?",
+   "relevant": [
+    "chk_54fcd12a32565e_603_v2",
+    "chk_8a13048a33c5a8_674_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_485_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_478_v2"
+   ]
+  },
+  {
+   "id": "mono_es-002",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_673_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 1,
+   "query": "¿Qué debe hacer un ingeniero puertorriqueño si sabe que un colega pone en peligro la seguridad o la salud de la comunidad?",
+   "relevant": [
+    "chk_54fcd12a32565e_602_v2",
+    "chk_8a13048a33c5a8_673_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_484_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_477_v2"
+   ]
+  },
+  {
+   "id": "mono_es-003",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_664_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 2,
+   "query": "En el código de los piratas traducido al español, ¿qué castigo recibe quien se duerme haciendo guardia y cómo se resuelven las peleas a bordo?",
+   "relevant": [
+    "chk_54fcd12a32565e_593_v2",
+    "chk_8a13048a33c5a8_664_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_477_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_470_v2"
+   ]
+  },
+  {
+   "id": "mono_es-004",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_178_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 4,
+   "query": "¿Qué derechos tienen los ingenieros que trabajan en empresas, por ejemplo participar en partidos políticos o no cargar con la culpa de los errores de la gerencia?",
+   "equivalents": [
+    "chk_8a13048a33c5a8_179_v2",
+    "chk_54fcd12a32565e_56_v2"
+   ],
+   "relevant": [
+    "chk_54fcd12a32565e_55_v2",
+    "chk_54fcd12a32565e_56_v2",
+    "chk_8a13048a33c5a8_178_v2",
+    "chk_8a13048a33c5a8_179_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_105_v2",
+    "business-ethics_v2/exc_8a13048a33c5a8_106_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_27_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_28_v2"
+   ]
+  },
+  {
+   "id": "mono_es-005",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_662_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 5,
+   "query": "Según el credo de los piratas, ¿cómo se reparte el botín y cuánto recibe quien pierde una pierna en servicio?",
+   "relevant": [
+    "chk_54fcd12a32565e_591_v2",
+    "chk_8a13048a33c5a8_662_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_476_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_469_v2"
+   ]
+  },
+  {
+   "id": "mono_es-006",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_43_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 6,
+   "query": "En el ejercicio del terrorista de la montaña, ¿qué dilema enfrenta el antropólogo cuando los hombres armados amenazan con ejecutar a los aldeanos?",
+   "equivalents": [
+    "chk_8a13048a33c5a8_41_v2",
+    "chk_8a13048a33c5a8_42_v2"
+   ],
+   "relevant": [
+    "chk_8a13048a33c5a8_41_v2",
+    "chk_8a13048a33c5a8_42_v2",
+    "chk_8a13048a33c5a8_43_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_11_v2",
+    "business-ethics_v2/exc_8a13048a33c5a8_12_v2",
+    "business-ethics_v2/exc_8a13048a33c5a8_13_v2"
+   ]
+  },
+  {
+   "id": "mono_es-007",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_98_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 7,
+   "query": "¿Cómo define Elena Lugo las virtudes del agente moral, y por qué no son simples hábitos automáticos?",
+   "relevant": [
+    "chk_8a13048a33c5a8_98_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_46_v2"
+   ]
+  },
+  {
+   "id": "mono_es-008",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_8a13048a33c5a8_677_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 11,
+   "query": "¿Qué dice el código de ética de los ingenieros de Puerto Rico sobre anunciar sus servicios y no quitarle un cliente a otro ingeniero?",
+   "relevant": [
+    "chk_54fcd12a32565e_606_v2",
+    "chk_8a13048a33c5a8_677_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_488_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_481_v2"
+   ]
+  },
+  {
+   "id": "mono_es-009",
+   "cohort": "mono_es",
+   "lang": "es",
+   "target": "chk_54fcd12a32565e_39_v2",
+   "book_id": "business-government-and-society",
+   "group": "multilingual",
+   "candidate": 13,
+   "query": "¿Qué es un dilema ético y qué valores forman parte de la integridad académica en la universidad?",
+   "relevant": [
+    "chk_54fcd12a32565e_39_v2"
+   ],
+   "relevant_excerpts": [
+    "business-government-and-society_v2/exc_54fcd12a32565e_17_v2"
+   ]
+  },
+  {
+   "id": "en_to_es-001",
+   "cohort": "en_to_es",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_664_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 2,
+   "query": "In the pirate code used in the engineering ethics module, what happens to a crew member caught sleeping on watch?",
+   "relevant": [
+    "chk_54fcd12a32565e_593_v2",
+    "chk_8a13048a33c5a8_664_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_477_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_470_v2"
+   ]
+  },
+  {
+   "id": "en_to_es-002",
+   "cohort": "en_to_es",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_662_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 5,
+   "query": "How was loot divided under the pirates' articles, and what compensation did someone get for losing a hand or a leg?",
+   "relevant": [
+    "chk_54fcd12a32565e_591_v2",
+    "chk_8a13048a33c5a8_662_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_476_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_469_v2"
+   ]
+  },
+  {
+   "id": "en_to_es-003",
+   "cohort": "en_to_es",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_98_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 7,
+   "query": "Which definition describes virtues as deliberate responses to concrete situations rather than automatic character traits?",
+   "relevant": [
+    "chk_8a13048a33c5a8_98_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_46_v2"
+   ]
+  },
+  {
+   "id": "en_to_es-004",
+   "cohort": "en_to_es",
+   "lang": "en",
+   "target": "chk_54fcd12a32565e_39_v2",
+   "book_id": "business-government-and-society",
+   "group": "multilingual",
+   "candidate": 13,
+   "query": "How can an ethical dilemma be defined, and what values make up academic integrity at a university?",
+   "relevant": [
+    "chk_54fcd12a32565e_39_v2"
+   ],
+   "relevant_excerpts": [
+    "business-government-and-society_v2/exc_54fcd12a32565e_17_v2"
+   ]
+  },
+  {
+   "id": "en_to_es-005",
+   "cohort": "en_to_es",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_673_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 1,
+   "query": "Must an engineer report in writing to the authorities when a colleague violates the code or endangers public safety?",
+   "relevant": [
+    "chk_54fcd12a32565e_602_v2",
+    "chk_8a13048a33c5a8_673_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_484_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_477_v2"
+   ]
+  },
+  {
+   "id": "en_to_es-006",
+   "cohort": "en_to_es",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_677_v2",
+   "book_id": "business-ethics",
+   "group": "multilingual",
+   "candidate": 11,
+   "query": "Before doing design work for others that could lead to copyrights or patents, what should engineers agree on?",
+   "relevant": [
+    "chk_54fcd12a32565e_606_v2",
+    "chk_8a13048a33c5a8_677_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_488_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_481_v2"
+   ]
+  }
+ ],
+ "skipped": [
+  {
+   "cohort": "mono_en",
+   "candidate": 28,
+   "target": "chk_1f53d134b54aaf_73_v5",
+   "reason": "mostly a reference list"
+  },
+  {
+   "cohort": "mono_en",
+   "candidate": 92,
+   "target": "chk_a7788979d09a3c_68_v1",
+   "reason": "fill-in review worksheet; no passage-specific answer"
+  },
+  {
+   "cohort": "mono_en",
+   "candidate": 102,
+   "target": "chk_04b51c13dbe5cb_304_v3",
+   "reason": "mostly Java code"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 81,
+   "target": "chk_e2b7c2d4734a3e_1998_v2",
+   "reason": "answer key; the explanation lives in the chapter text"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 85,
+   "target": "chk_a7788979d09a3c_79_v1",
+   "reason": "fill-in review worksheet"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 91,
+   "target": "chk_e2b7c2d4734a3e_694_v2",
+   "reason": "glossary; definitions repeat chapter text"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 107,
+   "target": "chk_cd6c8c95ecd77e_236_v3",
+   "reason": "reference list"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 109,
+   "target": "chk_cd6c8c95ecd77e_297_v3",
+   "reason": "mostly references"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 117,
+   "target": "chk_a7788979d09a3c_27_v1",
+   "reason": "fill-in review worksheet"
+  },
+  {
+   "cohort": "cross",
+   "candidate": 126,
+   "target": "chk_7d0930a9630d25_237_v2",
+   "reason": "figure data (numbers only)"
+  },
+  {
+   "cohort": "paraphrase",
+   "candidate": 6,
+   "target": "chk_19e6e649663784_746_v2",
+   "reason": "dictionary word list; nothing to paraphrase"
+  },
+  {
+   "cohort": "paraphrase",
+   "candidate": 50,
+   "target": "chk_e2b7c2d4734a3e_2037_v2",
+   "reason": "answer key; the explanation lives in the chapter text"
+  },
+  {
+   "cohort": "paraphrase",
+   "candidate": 58,
+   "target": "chk_04b51c13dbe5cb_280_v3",
+   "reason": "mostly Java code"
+  },
+  {
+   "cohort": "mono_es",
+   "candidate": 3,
+   "target": "chk_54fcd12a32565e_593_v2",
+   "reason": "same passage as candidate 2 in the other book"
+  },
+  {
+   "cohort": "mono_es",
+   "candidate": 8,
+   "target": "chk_54fcd12a32565e_591_v2",
+   "reason": "same passage as candidate 5 in the other book"
+  },
+  {
+   "cohort": "mono_es",
+   "candidate": 9,
+   "target": "chk_54fcd12a32565e_602_v2",
+   "reason": "same passage as candidate 1 in the other book"
+  },
+  {
+   "cohort": "mono_es",
+   "candidate": 10,
+   "target": "chk_54fcd12a32565e_55_v2",
+   "reason": "same passage as candidate 4 in the other book"
+  },
+  {
+   "cohort": "mono_es",
+   "candidate": 12,
+   "target": "chk_54fcd12a32565e_606_v2",
+   "reason": "same passage as candidate 11 in the other book"
+  },
+  {
+   "cohort": "mono_es",
+   "candidate": 14,
+   "target": "chk_54fcd12a32565e_603_v2",
+   "reason": "same passage as candidate 0 in the other book"
+  }
+ ]
+}

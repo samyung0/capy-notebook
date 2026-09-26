@@ -277,6 +277,61 @@ async def test_qwen_embedding_uses_exact_deepinfra_route(
     }
 
 
+async def test_qwen_rerank_uses_the_deepinfra_inference_route(monkeypatch):
+    from pipeline.elitellm import client as transport
+    from pipeline.retrieval.usage_extract import extract_usage
+
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request):
+        seen.update(
+            url=str(request.url),
+            auth=request.headers["authorization"],
+            body=json.loads(request.content),
+        )
+        # Shape of a live answer, 2026-09-26.
+        return httpx.Response(
+            200,
+            json={
+                "request_id": "r1",
+                "inference_status": {
+                    "runtime_ms": 75,
+                    "cost": 6.7e-06,
+                    "tokens_input": 268,
+                },
+                "scores": [0.0067, 0.0000097, 0.912],
+                "input_tokens": 268,
+            },
+        )
+
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
+    _mock_client(monkeypatch, handler)
+    spec = _spec(
+        provider_slug="deepinfra",
+        model_slug="Qwen/Qwen3-Reranker-4B",
+        byok_enabled=False,
+        thinking_levels=(),
+        default_thinking="",
+        slots=("rerank",),
+    )
+
+    raw = await transport.rerank(spec, "q", ["a", "b", "c"], timeout=5.0)
+
+    assert seen == {
+        "url": "https://api.deepinfra.com/v1/inference/Qwen/Qwen3-Reranker-4B",
+        "auth": "Bearer sk-deepinfra",
+        "body": {"queries": ["q", "q", "q"], "documents": ["a", "b", "c"]},
+    }
+    assert raw["scores"] == [0.0067, 0.0000097, 0.912]
+    assert extract_usage(raw, provider="deepinfra").input_tokens == 268
+    assert (
+        extract_usage(
+            {"inference_status": {"tokens_input": 268}}, provider="deepinfra"
+        ).input_tokens
+        == 268
+    )
+
+
 def test_openai_uses_responses_only_with_tools_and_thinking():
     spec = _spec(provider_slug="openai", model_slug="gpt-5.6-sol")
     bind_request_llm(thinking="mid")

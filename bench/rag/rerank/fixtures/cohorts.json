@@ -1,0 +1,3286 @@
+{
+ "schema_version": 1,
+ "written": "2026-09-25 by Claude Opus 5.5 from snapshot chunk text only, before any retrieval or rerank result existed for these queries",
+ "method": "Seeded candidates from families.py (seed capy-rerank-20260925) over the frozen 43-book snapshot, walked in order: samedoc candidates 0-79 of 128, nearmiss candidates 0-46 of 129. Each accepted candidate got one learner question or study request answered by the target chunk but not by its look-alike siblings (samedoc) or its nominated neighbours (nearmiss); skips are listed with reasons. Query language was pre-assigned per candidate by the seeded rule in families.py (about one in five non-English) before the candidate was read. samedoc subtype 'locator' names a printed item (Figure 8.10, Example 101, Guided Practice 1.36, Exercise 2.5.5); 'content' describes the item. Distractors are the look-alikes that do not answer; they are recorded for error classification and are never scored.",
+ "cohorts": {
+  "samedoc": "same-document competition: the answer is one chunk among look-alike siblings in a long book (numbered items, exercise lists, parallel subsections)",
+  "nearmiss": "near-miss distractor: a closely related passage exists that answers a different task, condition, number, level or concept"
+ },
+ "relevance": "relevant = target + acceptable (chunks that answer the question equally, including the same passage in a fork book such as os4/ahss4 or the R and jamovi editions, and continuation chunks of the same item). Every near-copy of a target (char 5-gram Jaccard >= 0.6 or containment >= 0.8, the qwen3.7 rule) carries an explicit acceptable/not_acceptable decision made at freeze. relevant_excerpts = excerpts holding a relevant chunk; excerpt level is primary, as search_knowledge returns excerpts. Look-alikes inside the target's own excerpt are listed under same_excerpt_siblings: excerpt-level scoring cannot separate them from the target, so they only bear on the chunk-level (displayed hit chunk) metric.",
+ "skipped": [
+  {
+   "cohort": "samedoc",
+   "candidate": 66,
+   "target": "chk_cd6c8c95ecd77e_137_v3",
+   "reason": "target is a bibliography chunk (citations only)"
+  },
+  {
+   "cohort": "nearmiss",
+   "candidate": 17,
+   "target": "chk_0c9f831c70200f_31_v2",
+   "reason": "the short-sleeper section repeats the same self-check answers word for word, so no question separates the target from its neighbour"
+  }
+ ],
+ "queries": [
+  {
+   "id": "samedoc-001",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_f97f47b7a1fd68_78_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "candidate": 0,
+   "query": "How are the 20 cursor-movement response times (568 to 1007 ms) grouped into 100 ms ranges to introduce the grouped frequency distribution and the histogram?",
+   "acceptable": [
+    "chk_f97f47b7a1fd68_77_v3",
+    "chk_f97f47b7a1fd68_79_v3"
+   ],
+   "distractors": [
+    "chk_f97f47b7a1fd68_173_v3",
+    "chk_f97f47b7a1fd68_1080_v3"
+   ],
+   "not_acceptable": [],
+   "note": "same grouped table reappears for the mode (173) and in the glossary (1080); the introduction spans 77-79",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f97f47b7a1fd68_77_v3",
+    "chk_f97f47b7a1fd68_78_v3",
+    "chk_f97f47b7a1fd68_79_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_22_v3"
+   ]
+  },
+  {
+   "id": "samedoc-002",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_352_v2",
+   "book_id": "concepts-of-biology",
+   "candidate": 1,
+   "query": "Why do ions such as sodium, potassium, calcium and chloride need a special way to get through the plasma membrane, and which other small molecules also need help?",
+   "acceptable": [],
+   "distractors": [
+    "chk_e2b7c2d4734a3e_350_v2",
+    "chk_e2b7c2d4734a3e_344_v2"
+   ],
+   "not_acceptable": [],
+   "note": "351 overlaps the lipid-soluble half but not the ions",
+   "same_excerpt_siblings": [
+    "chk_e2b7c2d4734a3e_351_v2"
+   ],
+   "relevant": [
+    "chk_e2b7c2d4734a3e_352_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_181_v2"
+   ]
+  },
+  {
+   "id": "samedoc-003",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_e4923419014d82_594_v3",
+   "book_id": "understanding-basic-music-theory",
+   "candidate": 2,
+   "query": "Answer to the transposing exercise where a trombone part written in C in bass clef has to be rewritten for horn players who read in F in treble clef",
+   "acceptable": [],
+   "distractors": [
+    "chk_e4923419014d82_138_v3",
+    "chk_e4923419014d82_140_v3",
+    "chk_e4923419014d82_368_v3"
+   ],
+   "not_acceptable": [],
+   "note": "solution chunk (Exercise 6.4) among other solution chunks",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e4923419014d82_594_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_486_v3"
+   ]
+  },
+  {
+   "id": "samedoc-004",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "fr",
+   "target": "chk_f213361bf057b0_54_v4",
+   "book_id": "os4",
+   "candidate": 3,
+   "query": "Dans une matrice de données sur les 3 142 comtés des États-Unis, que représente chaque ligne et combien de lignes et de colonnes faut-il ?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f213361bf057b0_53_v4",
+    "chk_f213361bf057b0_52_v4"
+   ],
+   "not_acceptable": [],
+   "note": "53 asks Guided Practice 1.4, 54 holds its footnote answer (3,142 rows, 11 columns)",
+   "same_excerpt_siblings": [
+    "chk_f213361bf057b0_55_v4"
+   ],
+   "relevant": [
+    "chk_f213361bf057b0_54_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_31_v4"
+   ]
+  },
+  {
+   "id": "samedoc-005",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_1184_v2",
+   "book_id": "business-ethics",
+   "candidate": 4,
+   "query": "When responsibility is treated as a virtue instead of blame, what three things should a student work out after missing an ethics class?",
+   "acceptable": [],
+   "distractors": [
+    "chk_8a13048a33c5a8_1187_v2",
+    "chk_8a13048a33c5a8_1188_v2",
+    "chk_8a13048a33c5a8_1182_v2"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_8a13048a33c5a8_1184_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_898_v2"
+   ]
+  },
+  {
+   "id": "samedoc-006",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_353a824c1e4be2_367_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "candidate": 5,
+   "query": "What animal is shown in Figure 4.5 of the mesopelagic section of the marine ecology notes, and how big is it?",
+   "acceptable": [],
+   "distractors": [
+    "chk_353a824c1e4be2_370_v1",
+    "chk_353a824c1e4be2_168_v1",
+    "chk_353a824c1e4be2_304_v1"
+   ],
+   "not_acceptable": [],
+   "note": "figure locator among other figure-caption chunks",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_353a824c1e4be2_367_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_133_v1"
+   ]
+  },
+  {
+   "id": "samedoc-007",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_1f53d134b54aaf_273_v5",
+   "book_id": "operations-management",
+   "candidate": 6,
+   "query": "In the disjunctive graph model of the job shop scheduling problem, how are the operations' processing times represented, and which nodes carry no weight?",
+   "acceptable": [
+    "chk_1f53d134b54aaf_275_v5"
+   ],
+   "distractors": [
+    "chk_1f53d134b54aaf_276_v5"
+   ],
+   "not_acceptable": [],
+   "note": "275 also states node weights and zero-weight source/sink",
+   "same_excerpt_siblings": [
+    "chk_1f53d134b54aaf_272_v5"
+   ],
+   "relevant": [
+    "chk_1f53d134b54aaf_273_v5",
+    "chk_1f53d134b54aaf_275_v5"
+   ],
+   "relevant_excerpts": [
+    "operations-management_v5/exc_1f53d134b54aaf_197_v5",
+    "operations-management_v5/exc_1f53d134b54aaf_198_v5"
+   ]
+  },
+  {
+   "id": "samedoc-008",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "es",
+   "target": "chk_e2b7c2d4734a3e_1600_v2",
+   "book_id": "concepts-of-biology",
+   "candidate": 7,
+   "query": "Busco la pregunta de repaso del capítulo sobre el sistema inmunitario que pregunta si la alergia al polen es una reacción autoinmune o una hipersensibilidad inmediata",
+   "acceptable": [
+    "chk_e2b7c2d4734a3e_1601_v2"
+   ],
+   "distractors": [
+    "chk_e2b7c2d4734a3e_1983_v2",
+    "chk_e2b7c2d4734a3e_705_v2"
+   ],
+   "not_acceptable": [],
+   "note": "1601 repeats questions 12-15 (chunk overlap)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1600_v2",
+    "chk_e2b7c2d4734a3e_1601_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_1055_v2"
+   ]
+  },
+  {
+   "id": "samedoc-009",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_1101_v2",
+   "book_id": "educational-psychology",
+   "candidate": 8,
+   "query": "Which assumptions about how much each grade emphasizes a subject and how steadily mastery accumulates lie behind grade equivalent scores, and why are experts skeptical of them?",
+   "acceptable": [],
+   "distractors": [
+    "chk_2dfae4cbb39513_1100_v2",
+    "chk_2dfae4cbb39513_1074_v2",
+    "chk_2dfae4cbb39513_1093_v2",
+    "chk_2dfae4cbb39513_1097_v2"
+   ],
+   "not_acceptable": [],
+   "note": "1100 defines grade equivalents (James example) without these assumptions",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_2dfae4cbb39513_1101_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_684_v2"
+   ]
+  },
+  {
+   "id": "samedoc-010",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1096_v3",
+   "book_id": "learning-statistics-with-r",
+   "candidate": 9,
+   "query": "In the ESP example with 62 correct answers out of 100, why must the p value lie between .02 and .03, and how does that lead to defining p as the smallest Type I error rate you would tolerate?",
+   "acceptable": [
+    "chk_45ecdb7da7734b_427_v5"
+   ],
+   "distractors": [
+    "chk_dd1e65de648fb2_1098_v3"
+   ],
+   "not_acceptable": [],
+   "note": "near-copy in the jamovi edition is added at freeze if identical; lsj 427 is the jamovi edition of the same passage",
+   "same_excerpt_siblings": [
+    "chk_dd1e65de648fb2_1095_v3",
+    "chk_dd1e65de648fb2_1097_v3"
+   ],
+   "relevant": [
+    "chk_45ecdb7da7734b_427_v5",
+    "chk_dd1e65de648fb2_1096_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_739_v3",
+    "lsj_v5/exc_45ecdb7da7734b_183_v5"
+   ]
+  },
+  {
+   "id": "samedoc-011",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_7d0930a9630d25_697_v2",
+   "book_id": "principles-of-financial-accounting",
+   "candidate": 10,
+   "query": "What does the journal entry look like when equipment is sold for cash at a gain, given as an example of an investing activity that brings cash in?",
+   "acceptable": [],
+   "distractors": [
+    "chk_7d0930a9630d25_699_v2",
+    "chk_7d0930a9630d25_698_v2",
+    "chk_7d0930a9630d25_68_v2"
+   ],
+   "not_acceptable": [],
+   "note": "Examples 1-3 share one template (inflow/outflow, gain/loss)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_7d0930a9630d25_697_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_499_v2"
+   ]
+  },
+  {
+   "id": "samedoc-012",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_7d0930a9630d25_668_v2",
+   "book_id": "principles-of-financial-accounting",
+   "candidate": 11,
+   "query": "Journal entry and effect on shares outstanding when a company buys back 1,000 shares of its own stock as treasury stock at $45 a share",
+   "acceptable": [],
+   "distractors": [
+    "chk_7d0930a9630d25_672_v2",
+    "chk_7d0930a9630d25_673_v2"
+   ],
+   "not_acceptable": [],
+   "note": "later steps sell 200 shares at $60 and at $40",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_7d0930a9630d25_668_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_474_v2"
+   ]
+  },
+  {
+   "id": "samedoc-013",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_1888_v2",
+   "book_id": "concepts-of-biology",
+   "candidate": 12,
+   "query": "Critical thinking question on why fire is more common in temperate grasslands than in subtropical deserts even though deserts get so little rain",
+   "acceptable": [],
+   "distractors": [
+    "chk_e2b7c2d4734a3e_1886_v2",
+    "chk_e2b7c2d4734a3e_1985_v2"
+   ],
+   "not_acceptable": [],
+   "note": "1887 overlaps questions 7-11 only",
+   "same_excerpt_siblings": [
+    "chk_e2b7c2d4734a3e_1887_v2"
+   ],
+   "relevant": [
+    "chk_e2b7c2d4734a3e_1888_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_1262_v2"
+   ]
+  },
+  {
+   "id": "samedoc-014",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_62_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "candidate": 13,
+   "query": "How many annotated words and hours of audio does the Yakkha corpus contain, and what was it recorded with?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f2b3906f1fb788_64_v2",
+    "chk_f2b3906f1fb788_170_v2",
+    "chk_f2b3906f1fb788_143_v2"
+   ],
+   "not_acceptable": [],
+   "note": "63 holds Table 1.1 (recordings and records) but not words, hours or recorder",
+   "same_excerpt_siblings": [
+    "chk_f2b3906f1fb788_63_v2"
+   ],
+   "relevant": [
+    "chk_f2b3906f1fb788_62_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_43_v2"
+   ]
+  },
+  {
+   "id": "samedoc-015",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_1351_v2",
+   "book_id": "educational-psychology",
+   "candidate": 14,
+   "query": "Ethical caution for teacher action research: protecting the privacy of a student with an intellectual disability whose learning you want to study",
+   "acceptable": [
+    "chk_2dfae4cbb39513_1352_v2"
+   ],
+   "distractors": [
+    "chk_2dfae4cbb39513_1353_v2",
+    "chk_2dfae4cbb39513_1354_v2"
+   ],
+   "not_acceptable": [],
+   "note": "1352 continues the privacy subsection (pseudonyms)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_2dfae4cbb39513_1351_v2",
+    "chk_2dfae4cbb39513_1352_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_864_v2",
+    "educational-psychology_v2/exc_2dfae4cbb39513_865_v2"
+   ]
+  },
+  {
+   "id": "samedoc-016",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_70d78be3f0d0ad_722_v2",
+   "book_id": "a-grammar-of-palula",
+   "candidate": 15,
+   "query": "In Palula, which kinds of noun phrases show tripartite, ergative or neutral case marking in the perfective?",
+   "acceptable": [],
+   "distractors": [
+    "chk_70d78be3f0d0ad_633_v2",
+    "chk_70d78be3f0d0ad_622_v2"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_70d78be3f0d0ad_722_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_509_v2"
+   ]
+  },
+  {
+   "id": "samedoc-017",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_c2ea3e7080951b_447_v1",
+   "book_id": "philosophical-ethics",
+   "candidate": 16,
+   "query": "What unnoticed assumption about nature's capacity to supply resources does environmental ethics challenge, and how does it show up in the belief that a healthy economy must keep growing?",
+   "acceptable": [
+    "chk_c2ea3e7080951b_448_v1"
+   ],
+   "distractors": [],
+   "not_acceptable": [],
+   "note": "448 repeats the economy paragraph (overlap)",
+   "same_excerpt_siblings": [
+    "chk_c2ea3e7080951b_450_v1",
+    "chk_c2ea3e7080951b_452_v1"
+   ],
+   "relevant": [
+    "chk_c2ea3e7080951b_447_v1",
+    "chk_c2ea3e7080951b_448_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_197_v1"
+   ]
+  },
+  {
+   "id": "samedoc-018",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_636_v5",
+   "book_id": "ahss4",
+   "candidate": 17,
+   "query": "Practice problem: construct a 99% confidence interval for the share of US adult Twitter users who get some news on Twitter (52%, standard error 2.4%)",
+   "acceptable": [],
+   "distractors": [],
+   "not_acceptable": [],
+   "note": "same exercise in os4 is added at freeze if a near-copy",
+   "same_excerpt_siblings": [
+    "chk_0689cddaba206d_637_v5",
+    "chk_0689cddaba206d_640_v5",
+    "chk_0689cddaba206d_645_v5"
+   ],
+   "relevant": [
+    "chk_0689cddaba206d_636_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_394_v5"
+   ]
+  },
+  {
+   "id": "samedoc-019",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_04b51c13dbe5cb_126_v3",
+   "book_id": "principles-of-object-oriented-programming",
+   "candidate": 18,
+   "query": "In Ballworld, how do you stop writing a new class for every combination of ball behaviors by composing two abstract update strategies through a constructor?",
+   "acceptable": [],
+   "distractors": [
+    "chk_04b51c13dbe5cb_125_v3",
+    "chk_04b51c13dbe5cb_121_v3",
+    "chk_04b51c13dbe5cb_143_v3"
+   ],
+   "not_acceptable": [],
+   "note": "125 hard-codes DoubleStrategy/TripleStrategy; 126 introduces MultiStrategy",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_04b51c13dbe5cb_126_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-object-oriented-programming_v3/exc_04b51c13dbe5cb_99_v3"
+   ]
+  },
+  {
+   "id": "samedoc-020",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_54fcd12a32565e_59_v2",
+   "book_id": "business-government-and-society",
+   "candidate": 19,
+   "query": "In Kant's drowning boy example, which combination of motive and action still has moral worth even though the rescue fails?",
+   "acceptable": [
+    "chk_54fcd12a32565e_58_v2",
+    "chk_8a13048a33c5a8_180_v2",
+    "chk_8a13048a33c5a8_181_v2"
+   ],
+   "distractors": [
+    "chk_54fcd12a32565e_67_v2",
+    "chk_54fcd12a32565e_68_v2"
+   ],
+   "not_acceptable": [],
+   "note": "58 also carries the whole table; business-ethics copies are checked at freeze; business-ethics 180-181 carry the same Kant table",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_54fcd12a32565e_58_v2",
+    "chk_54fcd12a32565e_59_v2",
+    "chk_8a13048a33c5a8_180_v2",
+    "chk_8a13048a33c5a8_181_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_107_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_30_v2"
+   ]
+  },
+  {
+   "id": "samedoc-021",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_04b51c13dbe5cb_340_v3",
+   "book_id": "principles-of-object-oriented-programming",
+   "candidate": 20,
+   "query": "In the DrJava JUnit lab, what rules must a test method's name and signature follow once you rename the autogenerated testX() method?",
+   "acceptable": [],
+   "distractors": [
+    "chk_04b51c13dbe5cb_343_v3",
+    "chk_04b51c13dbe5cb_347_v3",
+    "chk_04b51c13dbe5cb_116_v3"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_04b51c13dbe5cb_340_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-object-oriented-programming_v3/exc_04b51c13dbe5cb_285_v3"
+   ]
+  },
+  {
+   "id": "samedoc-022",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_775_v2",
+   "book_id": "core-concepts-of-marketing",
+   "candidate": 21,
+   "query": "Which type of communication system covers a bank, a factory or a retail store communicating internally, and why is it more complex than interpersonal communication?",
+   "acceptable": [],
+   "distractors": [
+    "chk_76816c1b24394c_774_v2",
+    "chk_76816c1b24394c_777_v2",
+    "chk_76816c1b24394c_778_v2"
+   ],
+   "not_acceptable": [],
+   "note": "four parallel one-paragraph subsections",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_76816c1b24394c_775_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_512_v2"
+   ]
+  },
+  {
+   "id": "samedoc-023",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "exercises",
+   "lang": "ja",
+   "target": "chk_667e634370ad3e_285_v3",
+   "book_id": "intro-to-logic",
+   "candidate": 22,
+   "query": "命題論理の演習問題2.5.5の解答を探しています。「このクラスでAを取ったなら、期末試験でもAを取ったに違いない」は論理式でどう書きますか？",
+   "acceptable": [],
+   "distractors": [
+    "chk_667e634370ad3e_349_v3",
+    "chk_667e634370ad3e_470_v3",
+    "chk_667e634370ad3e_264_v3"
+   ],
+   "not_acceptable": [],
+   "note": "solution chunks for many exercises",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_667e634370ad3e_285_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_238_v3"
+   ]
+  },
+  {
+   "id": "samedoc-024",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_919_v2",
+   "book_id": "concepts-of-biology",
+   "candidate": 23,
+   "query": "How does an allopolyploid form when gametes from two different species combine, and why does it take two generations to get a fertile hybrid?",
+   "acceptable": [
+    "chk_e2b7c2d4734a3e_920_v2"
+   ],
+   "distractors": [
+    "chk_e2b7c2d4734a3e_632_v2",
+    "chk_e2b7c2d4734a3e_1213_v2"
+   ],
+   "not_acceptable": [],
+   "note": "920 is the Figure 11.18 caption (two matings)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e2b7c2d4734a3e_919_v2",
+    "chk_e2b7c2d4734a3e_920_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_585_v2"
+   ]
+  },
+  {
+   "id": "samedoc-025",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_526_v5",
+   "book_id": "lsj",
+   "candidate": 24,
+   "query": "One-sample z-test on the psychology students' grades: what are the null and alternative hypotheses about the mean of 67.5, and what does the figure of the two hypotheses assume?",
+   "acceptable": [
+    "chk_dd1e65de648fb2_1239_v3"
+   ],
+   "distractors": [
+    "chk_45ecdb7da7734b_525_v5"
+   ],
+   "not_acceptable": [],
+   "note": "R-edition copy checked at freeze; R edition 1239 is the same passage (Figure 13.2 there)",
+   "same_excerpt_siblings": [
+    "chk_45ecdb7da7734b_527_v5",
+    "chk_45ecdb7da7734b_528_v5"
+   ],
+   "relevant": [
+    "chk_45ecdb7da7734b_526_v5",
+    "chk_dd1e65de648fb2_1239_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_836_v3",
+    "lsj_v5/exc_45ecdb7da7734b_229_v5"
+   ]
+  },
+  {
+   "id": "samedoc-026",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_858bafa062c60b_164_v7",
+   "book_id": "introductory-business-statistics",
+   "candidate": 25,
+   "query": "Why do people divide the larger sample variance by the smaller one when testing whether two variances are equal with a one-tailed F table?",
+   "acceptable": [],
+   "distractors": [
+    "chk_858bafa062c60b_149_v7",
+    "chk_858bafa062c60b_145_v7",
+    "chk_858bafa062c60b_205_v7"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_858bafa062c60b_164_v7"
+   ],
+   "relevant_excerpts": [
+    "introductory-business-statistics_v7/exc_858bafa062c60b_73_v7"
+   ]
+  },
+  {
+   "id": "samedoc-027",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_e62e73f159792c_313_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "candidate": 26,
+   "query": "In Komnzo, which initial consonants mark the proximal, medial, distal and interrogative demonstratives, and which language's demonstrative system is it compared to?",
+   "acceptable": [],
+   "distractors": [
+    "chk_e62e73f159792c_298_v2",
+    "chk_e62e73f159792c_297_v2"
+   ],
+   "not_acceptable": [],
+   "note": "314 continues Table 3.8 without the z/b/f/m explanation",
+   "same_excerpt_siblings": [
+    "chk_e62e73f159792c_314_v2"
+   ],
+   "relevant": [
+    "chk_e62e73f159792c_313_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_183_v2"
+   ]
+  },
+  {
+   "id": "samedoc-028",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_e4923419014d82_488_v3",
+   "book_id": "understanding-basic-music-theory",
+   "candidate": 27,
+   "query": "Answer key for the harmony chapter exercise on naming cadences: which cadence is the one in E-flat major, the one in G major, the F major one and the D minor one?",
+   "acceptable": [],
+   "distractors": [
+    "chk_e4923419014d82_483_v3",
+    "chk_e4923419014d82_481_v3",
+    "chk_e4923419014d82_486_v3"
+   ],
+   "not_acceptable": [],
+   "note": "Solution to Exercise 5.18 among other chapter 5 solutions",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e4923419014d82_488_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_400_v3"
+   ]
+  },
+  {
+   "id": "samedoc-029",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "es",
+   "target": "chk_1f53d134b54aaf_143_v5",
+   "book_id": "operations-management",
+   "candidate": 28,
+   "query": "¿Cuál es la fórmula convencional del OEE en la notación de Nakajima, con disponibilidad, rendimiento y calidad expresados como cocientes de tiempos y de piezas?",
+   "acceptable": [],
+   "distractors": [
+    "chk_1f53d134b54aaf_78_v5",
+    "chk_1f53d134b54aaf_85_v5",
+    "chk_1f53d134b54aaf_164_v5",
+    "chk_1f53d134b54aaf_88_v5"
+   ],
+   "not_acceptable": [],
+   "note": "chapter 2 defines OEE in words; 164 repeats only A_eff",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_1f53d134b54aaf_143_v5"
+   ],
+   "relevant_excerpts": [
+    "operations-management_v5/exc_1f53d134b54aaf_99_v5"
+   ]
+  },
+  {
+   "id": "samedoc-030",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_09cb85bde3413c_290_v4",
+   "book_id": "a-grammar-of-pite-saami",
+   "candidate": 29,
+   "query": "Pite Saami example where a distal demonstrative pronoun refers back to something that just happened, such as dropping a ski pole",
+   "acceptable": [],
+   "distractors": [
+    "chk_09cb85bde3413c_288_v4",
+    "chk_09cb85bde3413c_286_v4"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [
+    "chk_09cb85bde3413c_289_v4"
+   ],
+   "relevant": [
+    "chk_09cb85bde3413c_290_v4"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-pite-saami_v4/exc_09cb85bde3413c_236_v4"
+   ]
+  },
+  {
+   "id": "samedoc-031",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "ko",
+   "target": "chk_bdf01fb920a2eb_30_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "candidate": 30,
+   "query": "케이크 자르기 게임의 보수를 합이 0이 되도록 바꾸면 보수 행렬은 어떻게 되나요? 왜 상수합 게임이 아니라 제로섬 게임이라고 부르나요?",
+   "acceptable": [],
+   "distractors": [
+    "chk_bdf01fb920a2eb_43_v2",
+    "chk_bdf01fb920a2eb_25_v2"
+   ],
+   "not_acceptable": [],
+   "note": "29 holds the percent payoff matrix (50,50)/(40,60) but not the zero-sum conversion",
+   "same_excerpt_siblings": [
+    "chk_bdf01fb920a2eb_29_v2"
+   ],
+   "relevant": [
+    "chk_bdf01fb920a2eb_30_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_18_v2"
+   ]
+  },
+  {
+   "id": "samedoc-032",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "es",
+   "target": "chk_cd6c8c95ecd77e_489_v3",
+   "book_id": "principles-of-finance",
+   "candidate": 31,
+   "query": "¿En qué dos partes se divide la valoración de un bono y con qué fórmula de anualidad se valora el flujo de cupones?",
+   "acceptable": [
+    "chk_cd6c8c95ecd77e_490_v3"
+   ],
+   "distractors": [
+    "chk_cd6c8c95ecd77e_492_v3",
+    "chk_cd6c8c95ecd77e_491_v3"
+   ],
+   "not_acceptable": [],
+   "note": "490 combines both formulas into the full bond price",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_cd6c8c95ecd77e_489_v3",
+    "chk_cd6c8c95ecd77e_490_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_329_v3",
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_330_v3"
+   ]
+  },
+  {
+   "id": "samedoc-033",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_a7788979d09a3c_90_v1",
+   "book_id": "applied-human-anatomy",
+   "candidate": 32,
+   "query": "Heart lab exercise: at which intercostal spaces do you place the stethoscope to listen to the aortic, pulmonary, tricuspid and mitral valves?",
+   "acceptable": [],
+   "distractors": [
+    "chk_a7788979d09a3c_81_v1"
+   ],
+   "not_acceptable": [],
+   "note": "89 gives the valves' anatomical positions, not the auscultation sites",
+   "same_excerpt_siblings": [
+    "chk_a7788979d09a3c_89_v1",
+    "chk_a7788979d09a3c_91_v1"
+   ],
+   "relevant": [
+    "chk_a7788979d09a3c_90_v1"
+   ],
+   "relevant_excerpts": [
+    "applied-human-anatomy_v1/exc_a7788979d09a3c_24_v1"
+   ]
+  },
+  {
+   "id": "samedoc-034",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_e4923419014d82_550_v3",
+   "book_id": "understanding-basic-music-theory",
+   "candidate": 33,
+   "query": "Worked example: how do you find the key signature of D Lydian using the major key a perfect fourth below it?",
+   "acceptable": [
+    "chk_e4923419014d82_551_v3"
+   ],
+   "distractors": [
+    "chk_e4923419014d82_339_v3",
+    "chk_e4923419014d82_566_v3"
+   ],
+   "not_acceptable": [],
+   "note": "551 finishes the D Lydian example",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e4923419014d82_550_v3",
+    "chk_e4923419014d82_551_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_445_v3",
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_446_v3"
+   ]
+  },
+  {
+   "id": "samedoc-035",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_c2ea3e7080951b_179_v1",
+   "book_id": "philosophical-ethics",
+   "candidate": 34,
+   "query": "Using murder as the example, how does the Divine Command Theory dilemma make morality either arbitrary or independent of God's will?",
+   "acceptable": [],
+   "distractors": [],
+   "not_acceptable": [],
+   "note": "180 repeats the dilemma box without the murder example",
+   "same_excerpt_siblings": [
+    "chk_c2ea3e7080951b_178_v1",
+    "chk_c2ea3e7080951b_180_v1",
+    "chk_c2ea3e7080951b_177_v1"
+   ],
+   "relevant": [
+    "chk_c2ea3e7080951b_179_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_100_v1"
+   ]
+  },
+  {
+   "id": "samedoc-036",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_64ed84430ae3b2_186_v5",
+   "book_id": "principles-of-business-statistics",
+   "candidate": 35,
+   "query": "Central limit theorem problem comparing the chance that the mean excess phone time of 80 customers is over 20 minutes with the chance for one customer: why do the two probabilities differ?",
+   "acceptable": [
+    "chk_64ed84430ae3b2_187_v5",
+    "chk_64ed84430ae3b2_188_v5"
+   ],
+   "distractors": [
+    "chk_64ed84430ae3b2_190_v5",
+    "chk_64ed84430ae3b2_161_v5",
+    "chk_64ed84430ae3b2_180_v5"
+   ],
+   "not_acceptable": [],
+   "note": "Problem 5 statement (186) and its solution parts a (187) and b/c (188)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_64ed84430ae3b2_186_v5",
+    "chk_64ed84430ae3b2_187_v5",
+    "chk_64ed84430ae3b2_188_v5"
+   ],
+   "relevant_excerpts": [
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_156_v5",
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_157_v5",
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_158_v5"
+   ]
+  },
+  {
+   "id": "samedoc-037",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "fr",
+   "target": "chk_dd1e65de648fb2_1848_v3",
+   "book_id": "learning-statistics-with-r",
+   "candidate": 36,
+   "query": "Pour rédiger le résultat d'un test bayésien d'association, faut-il citer le package BayesFactor une seule fois au début des résultats, et à quoi ressemble la phrase courte qui rapporte le facteur de Bayes ?",
+   "acceptable": [
+    "chk_dd1e65de648fb2_1849_v3"
+   ],
+   "distractors": [
+    "chk_dd1e65de648fb2_1850_v3"
+   ],
+   "not_acceptable": [],
+   "note": "1849 overlaps the short sentence (16:1)",
+   "same_excerpt_siblings": [
+    "chk_dd1e65de648fb2_1847_v3"
+   ],
+   "relevant": [
+    "chk_dd1e65de648fb2_1848_v3",
+    "chk_dd1e65de648fb2_1849_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_1231_v3"
+   ]
+  },
+  {
+   "id": "samedoc-038",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_889_v4",
+   "book_id": "os4",
+   "candidate": 37,
+   "query": "ANOVA exercise on the hours Chinese parents spend on child care by the parent's education level: what are the hypotheses and what does the test conclude?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f213361bf057b0_901_v4"
+   ],
+   "not_acceptable": [],
+   "note": "Exercise 7.44",
+   "same_excerpt_siblings": [
+    "chk_f213361bf057b0_886_v4",
+    "chk_f213361bf057b0_890_v4"
+   ],
+   "relevant": [
+    "chk_f213361bf057b0_889_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_532_v4"
+   ]
+  },
+  {
+   "id": "samedoc-039",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_bdf01fb920a2eb_93_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "candidate": 38,
+   "query": "Discussion question on the poisoned goblet scene in The Princess Bride and why both players knowing the same information matters",
+   "acceptable": [],
+   "distractors": [
+    "chk_bdf01fb920a2eb_250_v2",
+    "chk_bdf01fb920a2eb_254_v2"
+   ],
+   "not_acceptable": [],
+   "note": "Question 2.7.3 among popular-culture question lists",
+   "same_excerpt_siblings": [
+    "chk_bdf01fb920a2eb_94_v2"
+   ],
+   "relevant": [
+    "chk_bdf01fb920a2eb_93_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_43_v2"
+   ]
+  },
+  {
+   "id": "samedoc-040",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_208_v2",
+   "book_id": "core-concepts-of-marketing",
+   "candidate": 39,
+   "query": "What does the SIC hierarchy figure show as it narrows manufacturing down, level by level, to a seven-digit product such as pliers?",
+   "acceptable": [],
+   "distractors": [
+    "chk_76816c1b24394c_207_v2",
+    "chk_76816c1b24394c_206_v2"
+   ],
+   "not_acceptable": [],
+   "note": "209 repeats the directory list and the caption without the figure description",
+   "same_excerpt_siblings": [
+    "chk_76816c1b24394c_209_v2"
+   ],
+   "relevant": [
+    "chk_76816c1b24394c_208_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_112_v2"
+   ]
+  },
+  {
+   "id": "samedoc-041",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_335_v2",
+   "book_id": "core-concepts-of-marketing",
+   "candidate": 40,
+   "query": "What is simple decision making in the consumer decision process, where a routine repurchase of the same brand skips the middle stages?",
+   "acceptable": [],
+   "distractors": [
+    "chk_76816c1b24394c_334_v2",
+    "chk_76816c1b24394c_397_v2",
+    "chk_76816c1b24394c_782_v2"
+   ],
+   "not_acceptable": [],
+   "note": "334 defines complex decision making",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_76816c1b24394c_335_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_198_v2"
+   ]
+  },
+  {
+   "id": "samedoc-042",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_1240_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "candidate": 41,
+   "query": "How many monovalent verbs are attested in the Papuan Malay corpus, and how many of them are dynamic versus stative?",
+   "acceptable": [],
+   "distractors": [
+    "chk_3fef1c40d2b33f_1243_v2",
+    "chk_3fef1c40d2b33f_1248_v2"
+   ],
+   "not_acceptable": [],
+   "note": "bivalent (535) and trivalent (7) counts sit in sibling subsections",
+   "same_excerpt_siblings": [
+    "chk_3fef1c40d2b33f_1241_v2"
+   ],
+   "relevant": [
+    "chk_3fef1c40d2b33f_1240_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_755_v2"
+   ]
+  },
+  {
+   "id": "samedoc-043",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_c2ea3e7080951b_286_v1",
+   "book_id": "philosophical-ethics",
+   "candidate": 42,
+   "query": "Which technical problems of utilitarianism does the author say may be more serious than its defenders admit, enough to question whether it is a viable theory?",
+   "acceptable": [
+    "chk_c2ea3e7080951b_287_v1"
+   ],
+   "distractors": [],
+   "not_acceptable": [],
+   "note": "287 repeats 286 and continues",
+   "same_excerpt_siblings": [
+    "chk_c2ea3e7080951b_289_v1",
+    "chk_c2ea3e7080951b_288_v1"
+   ],
+   "relevant": [
+    "chk_c2ea3e7080951b_286_v1",
+    "chk_c2ea3e7080951b_287_v1"
+   ],
+   "relevant_excerpts": [
+    "philosophical-ethics_v1/exc_c2ea3e7080951b_138_v1"
+   ]
+  },
+  {
+   "id": "samedoc-044",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_19e6e649663784_565_v2",
+   "book_id": "a-grammar-of-moloko",
+   "candidate": 43,
+   "query": "In Moloko, how are sentences like 'Mana is a builder' or 'The man is my father' formed without any verb?",
+   "acceptable": [],
+   "distractors": [
+    "chk_19e6e649663784_285_v2",
+    "chk_19e6e649663784_474_v2",
+    "chk_19e6e649663784_561_v2"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_19e6e649663784_565_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_438_v2"
+   ]
+  },
+  {
+   "id": "samedoc-045",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_353a824c1e4be2_404_v1",
+   "book_id": "marine-ecology-notes-2nd-edition",
+   "candidate": 44,
+   "query": "Why are most coral reefs less than 10,000 years old, and what happened to reefs that grew too slowly as sea level rose?",
+   "acceptable": [],
+   "distractors": [
+    "chk_353a824c1e4be2_402_v1"
+   ],
+   "not_acceptable": [],
+   "note": "405 repeats the Darwin atoll paragraph only",
+   "same_excerpt_siblings": [
+    "chk_353a824c1e4be2_405_v1",
+    "chk_353a824c1e4be2_408_v1"
+   ],
+   "relevant": [
+    "chk_353a824c1e4be2_404_v1"
+   ],
+   "relevant_excerpts": [
+    "marine-ecology-notes-2nd-edition_v1/exc_353a824c1e4be2_146_v1"
+   ]
+  },
+  {
+   "id": "samedoc-046",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "zh-Hant",
+   "target": "chk_f213361bf057b0_264_v4",
+   "book_id": "os4",
+   "candidate": 45,
+   "query": "機率分佈必須滿足哪三條規則？例如要判斷三個美國家庭收入分佈中哪一個才是正確的。",
+   "acceptable": [],
+   "distractors": [
+    "chk_f213361bf057b0_271_v4",
+    "chk_f213361bf057b0_258_v4"
+   ],
+   "not_acceptable": [],
+   "note": "ahss4 copy checked at freeze",
+   "same_excerpt_siblings": [
+    "chk_f213361bf057b0_265_v4"
+   ],
+   "relevant": [
+    "chk_f213361bf057b0_264_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_149_v4"
+   ]
+  },
+  {
+   "id": "samedoc-047",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_170_v5",
+   "book_id": "lsj",
+   "candidate": 46,
+   "query": "In jamovi, when a text data file is not quite proper csv, which formatting issues such as the separator, the quote character, the header row and junk rows at the top might you have to fix?",
+   "acceptable": [],
+   "distractors": [
+    "chk_45ecdb7da7734b_173_v5",
+    "chk_45ecdb7da7734b_172_v5"
+   ],
+   "not_acceptable": [
+    {
+     "id": "chk_dd1e65de648fb2_780_v3",
+     "reason": "the R edition's read.csv() version of the passage; the question asks about jamovi"
+    }
+   ],
+   "note": "the R edition's read.csv section is not an answer to a jamovi question",
+   "same_excerpt_siblings": [
+    "chk_45ecdb7da7734b_169_v5"
+   ],
+   "relevant": [
+    "chk_45ecdb7da7734b_170_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_82_v5"
+   ]
+  },
+  {
+   "id": "samedoc-048",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_287_v4",
+   "book_id": "os4",
+   "candidate": 47,
+   "query": "Probability exercise: chance that a man and a woman getting married both have at least a bachelor's degree, using the 2010 American Community Survey education table by gender",
+   "acceptable": [],
+   "distractors": [
+    "chk_f213361bf057b0_332_v4"
+   ],
+   "not_acceptable": [],
+   "note": "Exercise 3.11; 332 asks a similar couple question about burgers",
+   "same_excerpt_siblings": [
+    "chk_f213361bf057b0_286_v4",
+    "chk_f213361bf057b0_288_v4"
+   ],
+   "relevant": [
+    "chk_f213361bf057b0_287_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_163_v4"
+   ]
+  },
+  {
+   "id": "samedoc-049",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_6e045b04241181_66_v4",
+   "book_id": "understanding-music-past-and-present",
+   "candidate": 48,
+   "query": "In the twelve-bar blues breakdown of Elvis's Hound Dog, in which bars do the IV and V chords come in?",
+   "acceptable": [],
+   "distractors": [
+    "chk_6e045b04241181_62_v4",
+    "chk_6e045b04241181_58_v4",
+    "chk_6e045b04241181_45_v4"
+   ],
+   "not_acceptable": [],
+   "note": "62 also cites Hound Dog (homophonic texture)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_6e045b04241181_66_v4"
+   ],
+   "relevant_excerpts": [
+    "understanding-music-past-and-present_v4/exc_6e045b04241181_37_v4"
+   ]
+  },
+  {
+   "id": "samedoc-050",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_775_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "candidate": 49,
+   "query": "Why does keeping Ethernet plug and play force switches to build their MAC address tables automatically, and how does the example switch forward frames for hosts B and D?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0806a6368e307c_777_v3",
+    "chk_0806a6368e307c_776_v3",
+    "chk_0806a6368e307c_791_v3"
+   ],
+   "not_acceptable": [],
+   "note": "776/777 continue with the learning algorithm itself",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0806a6368e307c_775_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_404_v3"
+   ]
+  },
+  {
+   "id": "samedoc-051",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_667e634370ad3e_435_v3",
+   "book_id": "intro-to-logic",
+   "candidate": 50,
+   "query": "Logic exercise: your roommate claims to have proved there is an even prime greater than two; why is their formula with P(y), y > 2 and E(y) nonetheless true?",
+   "acceptable": [],
+   "distractors": [
+    "chk_667e634370ad3e_436_v3",
+    "chk_667e634370ad3e_424_v3",
+    "chk_667e634370ad3e_459_v3"
+   ],
+   "not_acceptable": [],
+   "note": "Exercise 4.4.12",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_667e634370ad3e_435_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_376_v3"
+   ]
+  },
+  {
+   "id": "samedoc-052",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_7434f7c1c6465d_180_v3",
+   "book_id": "a-grammar-of-yauyos-quechua",
+   "candidate": 51,
+   "query": "In Yauyos Quechua, how does the limitative suffix -kama mark a limit in space or time, as in 'it will still rain until February or March'?",
+   "acceptable": [],
+   "distractors": [
+    "chk_7434f7c1c6465d_186_v3",
+    "chk_7434f7c1c6465d_177_v3",
+    "chk_7434f7c1c6465d_181_v3"
+   ],
+   "not_acceptable": [],
+   "note": "177 is the case-suffix table row with the same example; 181 covers event limits and asta",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_7434f7c1c6465d_180_v3"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yauyos-quechua_v3/exc_7434f7c1c6465d_136_v3"
+   ]
+  },
+  {
+   "id": "samedoc-053",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_bdf01fb920a2eb_105_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "candidate": 52,
+   "query": "Check-your-understanding quiz on repeated games: is always playing Rock best in Rock-Paper-Scissors, and should Player 1 use a pure or mixed strategy in the repeated game with payoffs (10,-10), (-10,10), (-20,20), (0,0)?",
+   "acceptable": [
+    "chk_bdf01fb920a2eb_106_v2"
+   ],
+   "distractors": [
+    "chk_bdf01fb920a2eb_42_v2",
+    "chk_bdf01fb920a2eb_194_v2"
+   ],
+   "not_acceptable": [],
+   "note": "106 duplicates the quiz; 42 is the earlier zero-sum quiz",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_bdf01fb920a2eb_105_v2",
+    "chk_bdf01fb920a2eb_106_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_47_v2"
+   ]
+  },
+  {
+   "id": "samedoc-054",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_667e634370ad3e_167_v3",
+   "book_id": "intro-to-logic",
+   "candidate": 53,
+   "query": "What is the difference between implication and provability, in the part where Rico the Border Collie illustrates case elimination by fetching an unknown toy?",
+   "acceptable": [],
+   "distractors": [
+    "chk_667e634370ad3e_101_v3",
+    "chk_667e634370ad3e_92_v3",
+    "chk_667e634370ad3e_174_v3"
+   ],
+   "not_acceptable": [],
+   "note": "Example 2.16 among other numbered examples",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_667e634370ad3e_167_v3"
+   ],
+   "relevant_excerpts": [
+    "intro-to-logic_v3/exc_667e634370ad3e_123_v3"
+   ]
+  },
+  {
+   "id": "samedoc-055",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_634_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "candidate": 54,
+   "query": "Which syntactic properties define common nouns in Papuan Malay, including the only negator they can take?",
+   "acceptable": [],
+   "distractors": [
+    "chk_3fef1c40d2b33f_637_v2",
+    "chk_3fef1c40d2b33f_655_v2",
+    "chk_3fef1c40d2b33f_643_v2"
+   ],
+   "not_acceptable": [],
+   "note": "parallel property lists for proper, location and direction nouns",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_3fef1c40d2b33f_634_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_392_v2"
+   ]
+  },
+  {
+   "id": "samedoc-056",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_440_v5",
+   "book_id": "ahss4",
+   "candidate": 55,
+   "query": "How is the binomial formula built as the number of scenarios times the probability of a single scenario, in the insurance deductible example with four people?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0689cddaba206d_439_v5",
+    "chk_0689cddaba206d_445_v5",
+    "chk_0689cddaba206d_444_v5"
+   ],
+   "not_acceptable": [],
+   "note": "439 is Example 2.65 (one scenario, 0.103); os4 copy checked at freeze",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_440_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_275_v5"
+   ]
+  },
+  {
+   "id": "samedoc-057",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "de",
+   "target": "chk_f97f47b7a1fd68_816_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "candidate": 56,
+   "query": "Einfaktorielle ANOVA mit Zwischensubjektfaktor: Wie viele Versuchspersonen hatte jede der vier Bedingungen in der Studie 'Smiles and Leniency', und wie lautet die allgemeine Nullhypothese für k Bedingungen?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f97f47b7a1fd68_817_v3",
+    "chk_f97f47b7a1fd68_811_v3",
+    "chk_f97f47b7a1fd68_812_v3",
+    "chk_f97f47b7a1fd68_810_v3"
+   ],
+   "not_acceptable": [],
+   "note": "811 and 817 state the four-condition null without the 34 subjects",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f97f47b7a1fd68_816_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_412_v3"
+   ]
+  },
+  {
+   "id": "samedoc-058",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "de",
+   "target": "chk_cd6c8c95ecd77e_628_v3",
+   "book_id": "principles-of-finance",
+   "candidate": 57,
+   "query": "Welche empirische Kritik am CAPM betrifft Aktien mit niedrigem Beta, die höhere Renditen erzielen als vorhergesagt, und welche Alternative bietet die Verhaltensökonomik?",
+   "acceptable": [],
+   "distractors": [
+    "chk_cd6c8c95ecd77e_631_v3"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [
+    "chk_cd6c8c95ecd77e_629_v3"
+   ],
+   "relevant": [
+    "chk_cd6c8c95ecd77e_628_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_424_v3"
+   ]
+  },
+  {
+   "id": "samedoc-059",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_1266_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "candidate": 58,
+   "query": "In Papuan Malay clauses with trivalent verbs, how often is the recipient elided while the theme is kept, compared with both being elided?",
+   "acceptable": [],
+   "distractors": [
+    "chk_3fef1c40d2b33f_1265_v2",
+    "chk_3fef1c40d2b33f_1264_v2",
+    "chk_3fef1c40d2b33f_1269_v2"
+   ],
+   "not_acceptable": [],
+   "note": "Table 11.3 (57% vs 36%); Table 11.1 gives 91% elision overall",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_3fef1c40d2b33f_1266_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_772_v2"
+   ]
+  },
+  {
+   "id": "samedoc-060",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_b70e4c300d226a_284_v2",
+   "book_id": "transitions-to-professional-nursing-practice",
+   "candidate": 59,
+   "query": "According to nursing's Scope of Practice, in which three ways are healthcare professionals expected to collaborate?",
+   "acceptable": [],
+   "distractors": [
+    "chk_b70e4c300d226a_288_v2",
+    "chk_b70e4c300d226a_285_v2"
+   ],
+   "not_acceptable": [],
+   "note": "283 lists the Standard 10 competencies instead",
+   "same_excerpt_siblings": [
+    "chk_b70e4c300d226a_283_v2"
+   ],
+   "relevant": [
+    "chk_b70e4c300d226a_284_v2"
+   ],
+   "relevant_excerpts": [
+    "transitions-to-professional-nursing-practice_v2/exc_b70e4c300d226a_188_v2"
+   ]
+  },
+  {
+   "id": "samedoc-061",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_0ac720b5f94b3e_508_v4",
+   "book_id": "electromagnetics-volume-1",
+   "candidate": 60,
+   "query": "What does Figure 8.10 in the section on transformers as two-port devices show, and why is a transformer a good balun?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0ac720b5f94b3e_503_v4",
+    "chk_0ac720b5f94b3e_505_v4",
+    "chk_0ac720b5f94b3e_461_v4"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0ac720b5f94b3e_508_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_215_v4"
+   ]
+  },
+  {
+   "id": "samedoc-062",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "ja",
+   "target": "chk_f2b3906f1fb788_247_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "candidate": 61,
+   "query": "ヤッカ語で「どんな食べ物でも好きだ」のような全称的な意味は、疑問代名詞に何を付けて表しますか？",
+   "acceptable": [],
+   "distractors": [
+    "chk_f2b3906f1fb788_237_v2"
+   ],
+   "not_acceptable": [],
+   "note": "248 continues the examples without stating the rule",
+   "same_excerpt_siblings": [
+    "chk_f2b3906f1fb788_246_v2",
+    "chk_f2b3906f1fb788_248_v2"
+   ],
+   "relevant": [
+    "chk_f2b3906f1fb788_247_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_175_v2"
+   ]
+  },
+  {
+   "id": "samedoc-063",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_f97f47b7a1fd68_102_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "candidate": 62,
+   "query": "Introductory chapter exercise asking which conversions are linear transformations, such as meters to kilometers, ounces to pounds or Fahrenheit to Centigrade",
+   "acceptable": [],
+   "distractors": [
+    "chk_f97f47b7a1fd68_247_v3",
+    "chk_f97f47b7a1fd68_218_v3",
+    "chk_f97f47b7a1fd68_152_v3"
+   ],
+   "not_acceptable": [],
+   "note": "chapter exercise lists share the case-study question format",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f97f47b7a1fd68_102_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_37_v3"
+   ]
+  },
+  {
+   "id": "samedoc-064",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_0167eaa86e24e2_131_v3",
+   "book_id": "brief-calculus",
+   "candidate": 63,
+   "query": "What does Figure 2.9 in the chain rule section of the calculus book show, and which formula does it illustrate?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0167eaa86e24e2_133_v3",
+    "chk_0167eaa86e24e2_128_v3",
+    "chk_0167eaa86e24e2_105_v3"
+   ],
+   "not_acceptable": [],
+   "note": "133 is the gear example (Figure 2.10)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0167eaa86e24e2_131_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_73_v3"
+   ]
+  },
+  {
+   "id": "samedoc-065",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "de",
+   "target": "chk_0806a6368e307c_41_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "candidate": 64,
+   "query": "Aus welchen zwei Gründen kann ein Verbindungsaufbau beim verbindungsorientierten Dienst scheitern, und welche Primitive werden dann ausgelöst?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0806a6368e307c_40_v3",
+    "chk_0806a6368e307c_45_v3"
+   ],
+   "not_acceptable": [],
+   "note": "42 carries only the Figure 2.22 caption",
+   "same_excerpt_siblings": [
+    "chk_0806a6368e307c_42_v3"
+   ],
+   "relevant": [
+    "chk_0806a6368e307c_41_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_16_v3"
+   ]
+  },
+  {
+   "id": "samedoc-066",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1013_v3",
+   "book_id": "learning-statistics-with-r",
+   "candidate": 65,
+   "query": "What does Figure 10.7 show about how the sampling distribution of the mean changes as the sample size goes from 1 to 2 to 10?",
+   "acceptable": [
+    "chk_45ecdb7da7734b_367_v5"
+   ],
+   "distractors": [
+    "chk_dd1e65de648fb2_1032_v3",
+    "chk_dd1e65de648fb2_998_v3",
+    "chk_dd1e65de648fb2_1034_v3"
+   ],
+   "not_acceptable": [],
+   "note": "jamovi edition copy judged at freeze (figure number may differ); lsj 367 is the same figure and text, numbered Figure 8.8 in the jamovi edition",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_45ecdb7da7734b_367_v5",
+    "chk_dd1e65de648fb2_1013_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_684_v3",
+    "lsj_v5/exc_45ecdb7da7734b_164_v5"
+   ]
+  },
+  {
+   "id": "samedoc-067",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "fr",
+   "target": "chk_bdf01fb920a2eb_205_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "candidate": 67,
+   "query": "Quiz vrai ou faux sur le dilemme du prisonnier et le jeu de la poule mouillée : celui qui fait un écart coopère-t-il, et la paire (ne pas avouer, ne pas avouer) est-elle un équilibre ?",
+   "acceptable": [],
+   "distractors": [
+    "chk_bdf01fb920a2eb_86_v2",
+    "chk_bdf01fb920a2eb_91_v2",
+    "chk_bdf01fb920a2eb_248_v2"
+   ],
+   "not_acceptable": [],
+   "note": "248 is the repeated Prisoner's Dilemma quiz",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_bdf01fb920a2eb_205_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_87_v2"
+   ]
+  },
+  {
+   "id": "samedoc-068",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_583_v2",
+   "book_id": "business-ethics",
+   "candidate": 68,
+   "query": "In the corporate governance summary table, which theory of human nature does the stewardship model assume, giving emotion and care an equal role with rationality?",
+   "acceptable": [],
+   "distractors": [
+    "chk_8a13048a33c5a8_582_v2",
+    "chk_8a13048a33c5a8_581_v2",
+    "chk_8a13048a33c5a8_580_v2"
+   ],
+   "not_acceptable": [],
+   "note": "582 holds the other stewardship cells; 580-581 agency and stockholder rows",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_8a13048a33c5a8_583_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_417_v2"
+   ]
+  },
+  {
+   "id": "samedoc-069",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_64ed84430ae3b2_122_v5",
+   "book_id": "principles-of-business-statistics",
+   "candidate": 69,
+   "query": "Why is the sample variance computed by dividing by n - 1 rather than n in the standard deviation example with 20 data values?",
+   "acceptable": [],
+   "distractors": [
+    "chk_64ed84430ae3b2_111_v5",
+    "chk_64ed84430ae3b2_121_v5"
+   ],
+   "not_acceptable": [],
+   "note": "111 states the n-1 rule without the reason",
+   "same_excerpt_siblings": [
+    "chk_64ed84430ae3b2_123_v5"
+   ],
+   "relevant": [
+    "chk_64ed84430ae3b2_122_v5"
+   ],
+   "relevant_excerpts": [
+    "principles-of-business-statistics_v5/exc_64ed84430ae3b2_94_v5"
+   ]
+  },
+  {
+   "id": "samedoc-070",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_702_v5",
+   "book_id": "lsj",
+   "candidate": 70,
+   "query": "In the one-way ANOVA worked example with placebo, Anxifree and Joyzepam, how is the between-group sum of squares of 3.48 obtained?",
+   "acceptable": [],
+   "distractors": [
+    "chk_45ecdb7da7734b_749_v5",
+    "chk_45ecdb7da7734b_692_v5",
+    "chk_45ecdb7da7734b_712_v5"
+   ],
+   "not_acceptable": [],
+   "note": "R-edition copy checked at freeze",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_45ecdb7da7734b_702_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_311_v5"
+   ]
+  },
+  {
+   "id": "samedoc-071",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "ja",
+   "target": "chk_e62e73f159792c_232_v2",
+   "book_id": "a-grammar-of-komnzo",
+   "candidate": 71,
+   "query": "コムンゾ語の正書法を作る最初の試みは、いつ、どこで、誰が開いたワークショップでしたか？",
+   "acceptable": [],
+   "distractors": [
+    "chk_e62e73f159792c_228_v2"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [
+    "chk_e62e73f159792c_231_v2",
+    "chk_e62e73f159792c_233_v2"
+   ],
+   "relevant": [
+    "chk_e62e73f159792c_232_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-komnzo_v2/exc_e62e73f159792c_146_v2"
+   ]
+  },
+  {
+   "id": "samedoc-072",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "zh-Hant",
+   "target": "chk_0689cddaba206d_280_v5",
+   "book_id": "ahss4",
+   "candidate": 72,
+   "query": "有一題練習：市議會要調查郊區住戶，把城市分成20個社區後用不同方式抽樣，要辨認每種抽樣方法並說明在這個情境下的優缺點。",
+   "acceptable": [],
+   "distractors": [
+    "chk_0689cddaba206d_559_v5",
+    "chk_0689cddaba206d_1019_v5",
+    "chk_0689cddaba206d_230_v5"
+   ],
+   "not_acceptable": [],
+   "note": "Exercise 1.58; 230 is another sampling-methods exercise (1.41)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_280_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_174_v5"
+   ]
+  },
+  {
+   "id": "samedoc-073",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "numbered",
+   "lang": "zh-Hans",
+   "target": "chk_09cb85bde3413c_315_v4",
+   "book_id": "a-grammar-of-pite-saami",
+   "candidate": 73,
+   "query": "皮特萨米语中，定语形容词和谓语形容词的对应模式 i 和 ii 分别是什么？它们的复数标记像哪一类名词？",
+   "acceptable": [],
+   "distractors": [
+    "chk_09cb85bde3413c_316_v4",
+    "chk_09cb85bde3413c_318_v4",
+    "chk_09cb85bde3413c_322_v4"
+   ],
+   "not_acceptable": [],
+   "note": "316 is Table 7.2 itself; 318 describes patterns viii-ix",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_09cb85bde3413c_315_v4"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-pite-saami_v4/exc_09cb85bde3413c_257_v4"
+   ]
+  },
+  {
+   "id": "samedoc-074",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_7d0930a9630d25_386_v2",
+   "book_id": "principles-of-financial-accounting",
+   "candidate": 74,
+   "query": "How is depreciation per machine hour calculated under the units-of-production method, and when is the asset fully depreciated?",
+   "acceptable": [
+    "chk_7d0930a9630d25_387_v2"
+   ],
+   "distractors": [
+    "chk_7d0930a9630d25_388_v2",
+    "chk_7d0930a9630d25_390_v2",
+    "chk_7d0930a9630d25_382_v2",
+    "chk_7d0930a9630d25_385_v2"
+   ],
+   "not_acceptable": [],
+   "note": "387 applies the formula ($3.00 per hour); 382/385 are straight-line examples with the same $27,000 asset",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_7d0930a9630d25_386_v2",
+    "chk_7d0930a9630d25_387_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_275_v2",
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_276_v2"
+   ]
+  },
+  {
+   "id": "samedoc-075",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_0689cddaba206d_125_v5",
+   "book_id": "ahss4",
+   "candidate": 75,
+   "query": "Guided Practice 1.36 on outliers in the loan50 data: what are the low-end outlier cutoffs under each rule of thumb?",
+   "acceptable": [
+    "chk_0689cddaba206d_127_v5"
+   ],
+   "distractors": [
+    "chk_0689cddaba206d_99_v5",
+    "chk_0689cddaba206d_133_v5",
+    "chk_0689cddaba206d_135_v5",
+    "chk_0689cddaba206d_116_v5"
+   ],
+   "not_acceptable": [],
+   "note": "127 holds footnote 31 with the solution",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_125_v5",
+    "chk_0689cddaba206d_127_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_82_v5",
+    "ahss4_v5/exc_0689cddaba206d_84_v5"
+   ]
+  },
+  {
+   "id": "samedoc-076",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "parallel",
+   "lang": "fr",
+   "target": "chk_70d78be3f0d0ad_99_v2",
+   "book_id": "a-grammar-of-palula",
+   "candidate": 76,
+   "query": "Combien de langues autochtones l'enquête sociolinguistique de Decker a-t-elle recensées dans le district de Chitral, où l'on parle le palula ?",
+   "acceptable": [],
+   "distractors": [
+    "chk_70d78be3f0d0ad_106_v2",
+    "chk_70d78be3f0d0ad_109_v2",
+    "chk_70d78be3f0d0ad_107_v2"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_70d78be3f0d0ad_99_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_61_v2"
+   ]
+  },
+  {
+   "id": "samedoc-077",
+   "cohort": "samedoc",
+   "subtype": "content",
+   "family_kind": "exercises",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_740_v2",
+   "book_id": "educational-psychology",
+   "candidate": 77,
+   "query": "Which puzzle about water lilies doubling every day shows how irrelevant details can mislead the way a problem is represented, and what is its answer?",
+   "acceptable": [],
+   "distractors": [
+    "chk_2dfae4cbb39513_736_v2",
+    "chk_2dfae4cbb39513_737_v2"
+   ],
+   "not_acceptable": [],
+   "same_excerpt_siblings": [
+    "chk_2dfae4cbb39513_739_v2"
+   ],
+   "relevant": [
+    "chk_2dfae4cbb39513_740_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_447_v2"
+   ]
+  },
+  {
+   "id": "samedoc-078",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "numbered",
+   "lang": "en",
+   "target": "chk_0ac720b5f94b3e_225_v4",
+   "book_id": "electromagnetics-volume-1",
+   "candidate": 78,
+   "query": "Table 4.1 in the vector analysis chapter: dot products between cylindrical and Cartesian basis vectors, and the formulas converting x and y to rho and phi",
+   "acceptable": [],
+   "distractors": [
+    "chk_0ac720b5f94b3e_235_v4",
+    "chk_0ac720b5f94b3e_475_v4",
+    "chk_0ac720b5f94b3e_65_v4"
+   ],
+   "not_acceptable": [],
+   "note": "235 is the spherical counterpart (Table 4.2)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0ac720b5f94b3e_225_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_93_v4"
+   ]
+  },
+  {
+   "id": "samedoc-079",
+   "cohort": "samedoc",
+   "subtype": "locator",
+   "family_kind": "parallel",
+   "lang": "en",
+   "target": "chk_0167eaa86e24e2_432_v3",
+   "book_id": "brief-calculus",
+   "candidate": 79,
+   "query": "Example 101 in the iterated integrals chapter: how is the volume of a cone with height h and base radius b found?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0167eaa86e24e2_430_v3",
+    "chk_0167eaa86e24e2_426_v3",
+    "chk_0167eaa86e24e2_431_v3"
+   ],
+   "not_acceptable": [],
+   "note": "431 is Example 100",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0167eaa86e24e2_432_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_336_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-001",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_713_v4",
+   "book_id": "os4",
+   "candidate": 0,
+   "query": "Which region of the chi-square curve with 3 degrees of freedom is shaded as the p-value in the juror example, where the test statistic is about 5.89?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0689cddaba206d_797_v5",
+    "chk_f213361bf057b0_712_v4"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent figure: chi-square curves by degrees of freedom (ahss4 Figure 3.20) and the df/expected-count step",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f213361bf057b0_713_v4"
+   ],
+   "relevant_excerpts": [
+    "os4_v4/exc_f213361bf057b0_428_v4"
+   ]
+  },
+  {
+   "id": "nearmiss-002",
+   "cohort": "nearmiss",
+   "lang": "ko",
+   "target": "chk_0689cddaba206d_1052_v5",
+   "book_id": "ahss4",
+   "candidate": 1,
+   "query": "시험지 A형과 B형(각 30명, 평균 79.4점과 74.1점)의 평균 점수 차이에 대한 95% 신뢰구간을 t 구간으로 어떻게 계산하나요?",
+   "acceptable": [
+    "chk_0689cddaba206d_1053_v5"
+   ],
+   "distractors": [
+    "chk_0689cddaba206d_1076_v5",
+    "chk_f213361bf057b0_817_v4",
+    "chk_f213361bf057b0_820_v4"
+   ],
+   "not_acceptable": [],
+   "confusion": "same exam data, different task: hypothesis test (os4 7.3.3, df 26, p 0.26) or technology exercise",
+   "note": "1053 carries the calculation of Example 4.44",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_1052_v5",
+    "chk_0689cddaba206d_1053_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_632_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-003",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_888_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "candidate": 2,
+   "query": "How does the Yakkha grammar define adverbial clause linkage in the broad sense, as opposed to complement clauses and relative clauses?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f2b3906f1fb788_890_v2",
+    "chk_f2b3906f1fb788_891_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent: Table 14.1 characteristics and Table 14.2 markers of the same chapter",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f2b3906f1fb788_888_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_611_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-004",
+   "cohort": "nearmiss",
+   "lang": "fr",
+   "target": "chk_f97f47b7a1fd68_409_v3",
+   "book_id": "online-statistics-education-an-interactive-multimedia-course",
+   "candidate": 3,
+   "query": "Quelles méthodes graphiques plus simples que le diagramme quantile-quantile sont présentées d'abord pour vérifier une hypothèse de distribution, avec l'exemple de la roue qui tourne (spinner) ?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f97f47b7a1fd68_1107_v3",
+    "chk_f97f47b7a1fd68_416_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "glossary q-q definition and the uniform-data q-q plot subsection",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f97f47b7a1fd68_409_v3"
+   ],
+   "relevant_excerpts": [
+    "online-statistics-education-an-interactive-multimedia-course_v3/exc_f97f47b7a1fd68_198_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-005",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_54fcd12a32565e_701_v2",
+   "book_id": "business-government-and-society",
+   "candidate": 4,
+   "query": "In the Phaust Chemical role-play, what must the group playing Phaust management (Wally and Chuck) prepare about their budget-cut decisions?",
+   "acceptable": [
+    "chk_8a13048a33c5a8_502_v2"
+   ],
+   "distractors": [
+    "chk_54fcd12a32565e_703_v2",
+    "chk_8a13048a33c5a8_503_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "different stakeholder role in the same role-play (engineering society, French parent company)",
+   "note": "business-ethics copy of the management role checked at freeze; business-ethics 502 is the same role card",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_54fcd12a32565e_701_v2",
+    "chk_8a13048a33c5a8_502_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_359_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_555_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-006",
+   "cohort": "nearmiss",
+   "lang": "zh-Hans",
+   "target": "chk_e4923419014d82_464_v3",
+   "book_id": "understanding-basic-music-theory",
+   "candidate": 5,
+   "query": "《The Girl I Left Behind》一段旋律内部的乐句结构是什么？布鲁斯歌曲的主歌通常是什么曲式？",
+   "acceptable": [],
+   "distractors": [
+    "chk_e4923419014d82_472_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent: AABA jazz standard song form with bridge",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e4923419014d82_464_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_381_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-007",
+   "cohort": "nearmiss",
+   "lang": "es",
+   "target": "chk_0689cddaba206d_177_v5",
+   "book_id": "ahss4",
+   "candidate": 6,
+   "query": "Para estimar la proporción de votantes registrados que votarán por un candidato a alcalde, ¿hace falta un experimento o una muestra aleatoria, y por qué?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0689cddaba206d_197_v5",
+    "chk_0689cddaba206d_259_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "section summary and the experiments-and-generalization discussion",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_177_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_121_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-008",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_1f53d134b54aaf_132_v5",
+   "book_id": "operations-management",
+   "candidate": 7,
+   "query": "Which causes count as unplanned time (Lt2) in the table of external time losses, such as lack of demand, lack of energy or strikes?",
+   "acceptable": [],
+   "distractors": [
+    "chk_1f53d134b54aaf_137_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "neighbouring loss categories: stand-by time (Lt3) and idle time from regulations (Lt1)",
+   "same_excerpt_siblings": [
+    "chk_1f53d134b54aaf_131_v5"
+   ],
+   "relevant": [
+    "chk_1f53d134b54aaf_132_v5"
+   ],
+   "relevant_excerpts": [
+    "operations-management_v5/exc_1f53d134b54aaf_90_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-009",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_2bcaee6f65ce3f_157_v5",
+   "book_id": "politics-power-and-purpose-an-orientation-to-political-scien",
+   "candidate": 8,
+   "query": "In the Kansas court system example, how many judicial districts are there and which court hears appeals from the State Corporation Commission?",
+   "acceptable": [],
+   "distractors": [
+    "chk_2bcaee6f65ce3f_156_v5",
+    "chk_1c619222c448be_177_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "different level (Kansas municipal courts) or generic state courts in another book",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_2bcaee6f65ce3f_157_v5"
+   ],
+   "relevant_excerpts": [
+    "politics-power-and-purpose-an-orientation-to-political-scien_v5/exc_2bcaee6f65ce3f_106_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-010",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_1067_v5",
+   "book_id": "lsj",
+   "candidate": 9,
+   "query": "Why do the mean squares in the jamovi factorial ANOVA results differ slightly from the book's figures, for example 1.72667 and 0.05444?",
+   "acceptable": [],
+   "distractors": [
+    "chk_dd1e65de648fb2_1597_v3",
+    "chk_dd1e65de648fb2_1399_v3",
+    "chk_dd1e65de648fb2_1720_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "same notes in the R edition, hand-rounding differences in the one-way example, the Excel SSb note",
+   "same_excerpt_siblings": [
+    "chk_45ecdb7da7734b_1061_v5"
+   ],
+   "relevant": [
+    "chk_45ecdb7da7734b_1067_v5"
+   ],
+   "relevant_excerpts": [
+    "lsj_v5/exc_45ecdb7da7734b_422_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-011",
+   "cohort": "nearmiss",
+   "lang": "fr",
+   "target": "chk_0167eaa86e24e2_235_v3",
+   "book_id": "brief-calculus",
+   "candidate": 10,
+   "query": "Exercice : calculer exactement la limite quand u tend vers 0 de u² / (e^u + e^(-u) - 2), puis vérifier le résultat numériquement",
+   "acceptable": [
+    "chk_0167eaa86e24e2_539_v3"
+   ],
+   "distractors": [
+    "chk_0167eaa86e24e2_237_v3",
+    "chk_0167eaa86e24e2_234_v3"
+   ],
+   "not_acceptable": [
+    {
+     "id": "chk_0167eaa86e24e2_230_v3",
+     "reason": "templated problem chunk (licence line and solutions-page pointer) for a different problem"
+    },
+    {
+     "id": "chk_0167eaa86e24e2_233_v3",
+     "reason": "templated problem chunk (licence line and solutions-page pointer) for a different problem"
+    },
+    {
+     "id": "chk_0167eaa86e24e2_236_v3",
+     "reason": "templated problem chunk (licence line and solutions-page pointer) for a different problem"
+    }
+   ],
+   "confusion": "neighbouring L'Hopital problems (3.5, 3.8)",
+   "note": "539 holds the solution to Problem 3.6",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0167eaa86e24e2_235_v3",
+    "chk_0167eaa86e24e2_539_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_154_v3",
+    "brief-calculus_v3/exc_0167eaa86e24e2_405_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-012",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_783_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "candidate": 11,
+   "query": "Which four fields does a spanning tree BPDU carry, and how are two BPDUs compared to decide which one is better?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0806a6368e307c_785_v3",
+    "chk_0806a6368e307c_786_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent steps: port priority vectors and designated/blocked port states",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0806a6368e307c_783_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_409_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-013",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_6e045b04241181_547_v4",
+   "book_id": "understanding-music-past-and-present",
+   "candidate": 12,
+   "query": "In the listening guide for Copland's Fanfare for the Common Man, which intervals build the fanfare melody and what happens to the melody at the very end?",
+   "acceptable": [],
+   "distractors": [
+    "chk_6e045b04241181_530_v4",
+    "chk_6e045b04241181_516_v4"
+   ],
+   "not_acceptable": [],
+   "confusion": "other twentieth-century listening guides (Rite of Spring has a fanfare-like horn entrance; Ravel shares a clarinet line)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_6e045b04241181_547_v4"
+   ],
+   "relevant_excerpts": [
+    "understanding-music-past-and-present_v4/exc_6e045b04241181_205_v4"
+   ]
+  },
+  {
+   "id": "nearmiss-014",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_45ecdb7da7734b_843_v5",
+   "book_id": "lsj",
+   "candidate": 13,
+   "query": "With Type III sums of squares, which null model is compared with the full model when testing the main effect of milk in the coffee babble example?",
+   "acceptable": [
+    "chk_dd1e65de648fb2_1766_v3"
+   ],
+   "distractors": [
+    "chk_45ecdb7da7734b_851_v5",
+    "chk_45ecdb7da7734b_839_v5",
+    "chk_dd1e65de648fb2_1761_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "same example under Type II and Type I sums of squares",
+   "note": "1766 is the R edition's Type III passage (same models)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_45ecdb7da7734b_843_v5",
+    "chk_dd1e65de648fb2_1766_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_1183_v3",
+    "lsj_v5/exc_45ecdb7da7734b_373_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-015",
+   "cohort": "nearmiss",
+   "lang": "fr",
+   "target": "chk_0689cddaba206d_317_v5",
+   "book_id": "ahss4",
+   "candidate": 14,
+   "query": "Exercice sur l'étude de transplantation cardiaque de Stanford : quel aspect de la comparaison est plus facile à voir sur le diagramme en barres empilées que sur le diagramme en barres normalisé ?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f213361bf057b0_237_v4",
+    "chk_0689cddaba206d_531_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "same study, different exercise (survival and mosaic plot questions)",
+   "note": "Exercise 2.5 (data display)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_317_v5"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_190_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-016",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_70d78be3f0d0ad_561_v2",
+   "book_id": "a-grammar-of-palula",
+   "candidate": 15,
+   "query": "In the Palula verb chapter, why is aspect not treated as an inflectional category of its own, and in which form does gender/number agreement appear twice?",
+   "acceptable": [],
+   "distractors": [
+    "chk_70d78be3f0d0ad_244_v2",
+    "chk_70d78be3f0d0ad_617_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the parts-of-speech overview lists aspect among inflections; the TMA chapter introduces functional categories",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_70d78be3f0d0ad_561_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-palula_v2/exc_70d78be3f0d0ad_400_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-017",
+   "cohort": "nearmiss",
+   "lang": "zh-Hant",
+   "target": "chk_2dfae4cbb39513_1356_v2",
+   "book_id": "educational-psychology",
+   "candidate": 16,
+   "query": "行動研究對教師來說實際可行嗎？作者怎樣看待它額外花費的時間和精力？",
+   "acceptable": [
+    "chk_2dfae4cbb39513_1357_v2"
+   ],
+   "distractors": [
+    "chk_2dfae4cbb39513_1349_v2",
+    "chk_2dfae4cbb39513_1336_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent: cautions introduction and the assumptions of action research",
+   "note": "1357 repeats the target paragraph and continues",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_2dfae4cbb39513_1356_v2",
+    "chk_2dfae4cbb39513_1357_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_869_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-018",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_328_v3",
+   "book_id": "learning-statistics-with-r",
+   "candidate": 18,
+   "query": "How do you delete only some variables from the workspace with RStudio's Environment panel, and what does Positron offer instead?",
+   "acceptable": [],
+   "distractors": [
+    "chk_dd1e65de648fb2_349_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent panel task: loading workspace files",
+   "note": "329 (rm()) shares the target's excerpt",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_dd1e65de648fb2_328_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_208_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-019",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_0167eaa86e24e2_159_v3",
+   "book_id": "brief-calculus",
+   "candidate": 19,
+   "query": "Practice problem: to which statements, such as 'for any real x there is a larger real y' or 'between any two reals there is a rational', can the transfer principle be applied?",
+   "acceptable": [
+    "chk_0167eaa86e24e2_517_v3"
+   ],
+   "distractors": [
+    "chk_0167eaa86e24e2_469_v3",
+    "chk_0167eaa86e24e2_452_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "the detours explaining the transfer principle, not the problem",
+   "note": "517 holds the chapter 2 solutions including Problem 2.5",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0167eaa86e24e2_159_v3",
+    "chk_0167eaa86e24e2_517_v3"
+   ],
+   "relevant_excerpts": [
+    "brief-calculus_v3/exc_0167eaa86e24e2_393_v3",
+    "brief-calculus_v3/exc_0167eaa86e24e2_93_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-020",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_557_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "candidate": 20,
+   "query": "Which Papuan Malay function words can be fully reduplicated, and what is the reduplicated form of the causative verb kasi 'give'?",
+   "acceptable": [],
+   "distractors": [
+    "chk_3fef1c40d2b33f_595_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the same word classes listed again in the interpretation chapter, without the forms",
+   "note": "Table 4.2",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_3fef1c40d2b33f_557_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_342_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-021",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_cd6c8c95ecd77e_467_v3",
+   "book_id": "principles-of-finance",
+   "candidate": 21,
+   "query": "How is net present value computed from each period's cash flow R_t and the discount rate i?",
+   "acceptable": [],
+   "distractors": [
+    "chk_cd6c8c95ecd77e_472_v3",
+    "chk_cd6c8c95ecd77e_479_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent: what NPV means and the accept/reject table",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_cd6c8c95ecd77e_467_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_311_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-022",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_237_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "candidate": 22,
+   "query": "What is the sliding window in a pipelined transport protocol, and when is the window said to be closed?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0806a6368e307c_238_v3",
+    "chk_0806a6368e307c_244_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "adjacent: sequence-number wrap-around and selective repeat",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0806a6368e307c_237_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_115_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-023",
+   "cohort": "nearmiss",
+   "lang": "ja",
+   "target": "chk_00c1ece828f204_69_v1",
+   "book_id": "the-unicode-cookbook-for-linguists-managing-writing-systems-",
+   "candidate": 23,
+   "query": "文字とグリフは何が違うのですか？合字の「fi」や、フォントや斜体でaの字形が変わる例で説明している箇所を探しています。",
+   "acceptable": [],
+   "distractors": [
+    "chk_00c1ece828f204_77_v1",
+    "chk_00c1ece828f204_154_v1"
+   ],
+   "not_acceptable": [],
+   "confusion": "faulty rendering and IPA homoglyphs (italic a versus ɑ)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_00c1ece828f204_69_v1"
+   ],
+   "relevant_excerpts": [
+    "the-unicode-cookbook-for-linguists-managing-writing-systems-_v1/exc_00c1ece828f204_43_v1"
+   ]
+  },
+  {
+   "id": "nearmiss-024",
+   "cohort": "nearmiss",
+   "lang": "ko",
+   "target": "chk_db5b02ddb87a00_132_v5",
+   "book_id": "database-design",
+   "candidate": 24,
+   "query": "관계 R(ABCDE)의 예시 인스턴스에서 A의 값이 모두 고유할 때 어떤 함수 종속성을 도출할 수 있나요?",
+   "acceptable": [],
+   "distractors": [
+    "chk_db5b02ddb87a00_68_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "definition of a relation in the relational model",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_db5b02ddb87a00_132_v5"
+   ],
+   "relevant_excerpts": [
+    "database-design_v5/exc_db5b02ddb87a00_125_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-025",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1270_v3",
+   "book_id": "learning-statistics-with-r",
+   "candidate": 25,
+   "query": "What does 'independent' mean in the independent samples t-test, and when should it be used instead of a paired samples t-test?",
+   "acceptable": [],
+   "distractors": [
+    "chk_dd1e65de648fb2_1308_v3",
+    "chk_45ecdb7da7734b_549_v5",
+    "chk_45ecdb7da7734b_548_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "paired samples t-test hypotheses; the jamovi edition's version lacks the 'no special relationship' explanation",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_dd1e65de648fb2_1270_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_859_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-026",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_cd6c8c95ecd77e_359_v3",
+   "book_id": "principles-of-finance",
+   "candidate": 26,
+   "query": "When and why did the Federal Reserve stop publishing M3 money supply statistics?",
+   "acceptable": [],
+   "distractors": [
+    "chk_cd6c8c95ecd77e_358_v3",
+    "chk_cd6c8c95ecd77e_356_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "the M0-M3 definitions table",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_cd6c8c95ecd77e_359_v3"
+   ],
+   "relevant_excerpts": [
+    "principles-of-finance_v3/exc_cd6c8c95ecd77e_234_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-027",
+   "cohort": "nearmiss",
+   "lang": "zh-Hant",
+   "target": "chk_e2b7c2d4734a3e_750_v2",
+   "book_id": "concepts-of-biology",
+   "candidate": 27,
+   "query": "大腸桿菌每個細胞中大約有多少個核糖體？核糖體的大、小次單元分別負責結合什麼？",
+   "acceptable": [],
+   "distractors": [
+    "chk_e2b7c2d4734a3e_754_v2",
+    "chk_e2b7c2d4734a3e_775_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "A/P/E sites of the large subunit and the chapter summary",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e2b7c2d4734a3e_750_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_473_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-028",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_e4923419014d82_447_v3",
+   "book_id": "understanding-basic-music-theory",
+   "candidate": 28,
+   "query": "What is a cadence in music, and how do temporary resting points differ from a definite ending?",
+   "acceptable": [],
+   "distractors": [
+    "chk_e4923419014d82_162_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "melodic phrases pausing at their end",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e4923419014d82_447_v3"
+   ],
+   "relevant_excerpts": [
+    "understanding-basic-music-theory_v3/exc_e4923419014d82_368_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-029",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_dd1e65de648fb2_1552_v3",
+   "book_id": "learning-statistics-with-r",
+   "candidate": 29,
+   "query": "Which plot() option draws the residuals-versus-fitted plot for checking linearity in a regression, and what should its line look like?",
+   "acceptable": [],
+   "distractors": [
+    "chk_dd1e65de648fb2_1557_v3",
+    "chk_dd1e65de648fb2_1553_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "which = 3 scale-location plot for homogeneity of variance; residualPlots() curvature tests",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_dd1e65de648fb2_1552_v3"
+   ],
+   "relevant_excerpts": [
+    "learning-statistics-with-r_v3/exc_dd1e65de648fb2_1051_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-030",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_640_v2",
+   "book_id": "core-concepts-of-marketing",
+   "candidate": 30,
+   "query": "What share of consumer spending, jobs and GNP do service products account for, according to the goods versus services section?",
+   "acceptable": [],
+   "distractors": [
+    "chk_76816c1b24394c_641_v2",
+    "chk_76816c1b24394c_631_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "characteristics of services and the classification systems overview",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_76816c1b24394c_640_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_418_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-031",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_db5b02ddb87a00_20_v5",
+   "book_id": "database-design",
+   "candidate": 31,
+   "query": "Before database systems existed, what security problems did file-based systems have with access privileges?",
+   "acceptable": [],
+   "distractors": [
+    "chk_db5b02ddb87a00_19_v5",
+    "chk_db5b02ddb87a00_36_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "integrity problems of the same era; the DBMS security subsystem",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_db5b02ddb87a00_20_v5"
+   ],
+   "relevant_excerpts": [
+    "database-design_v5/exc_db5b02ddb87a00_15_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-032",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_f213361bf057b0_967_v4",
+   "book_id": "os4",
+   "candidate": 32,
+   "query": "In the example with six scatterplots and their residual plots, what does the solution say about how much each outlier influences the least squares line?",
+   "acceptable": [
+    "chk_0689cddaba206d_1198_v5"
+   ],
+   "distractors": [
+    "chk_f213361bf057b0_969_v4",
+    "chk_0689cddaba206d_1201_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "leverage and influential-point definitions that cite the same cases",
+   "note": "1198 is the ahss4 copy (Example 5.26)",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0689cddaba206d_1198_v5",
+    "chk_f213361bf057b0_967_v4"
+   ],
+   "relevant_excerpts": [
+    "ahss4_v5/exc_0689cddaba206d_724_v5",
+    "os4_v4/exc_f213361bf057b0_582_v4"
+   ]
+  },
+  {
+   "id": "nearmiss-033",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_0806a6368e307c_160_v3",
+   "book_id": "computer-networking-principles-protocols-and-practice",
+   "candidate": 33,
+   "query": "Which HTTP method retrieves only the header lines for a URI, for example to check that a document exists?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0806a6368e307c_161_v3"
+   ],
+   "not_acceptable": [],
+   "confusion": "HTTP and MIME headers (Content-Length, Content-Type)",
+   "note": "159 shares the target's excerpt",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0806a6368e307c_160_v3"
+   ],
+   "relevant_excerpts": [
+    "computer-networking-principles-protocols-and-practice_v3/exc_0806a6368e307c_71_v3"
+   ]
+  },
+  {
+   "id": "nearmiss-034",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_1c619222c448be_265_v5",
+   "book_id": "the-legal-and-ethical-environment-of-business",
+   "candidate": 34,
+   "query": "When can a defendant move for a directed verdict during a trial, and what does that motion argue?",
+   "acceptable": [],
+   "distractors": [
+    "chk_1c619222c448be_270_v5",
+    "chk_1c619222c448be_262_v5",
+    "chk_1c619222c448be_274_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "judgment notwithstanding the verdict (after the verdict); opening statements; key takeaways",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_1c619222c448be_265_v5"
+   ],
+   "relevant_excerpts": [
+    "the-legal-and-ethical-environment-of-business_v5/exc_1c619222c448be_104_v5"
+   ]
+  },
+  {
+   "id": "nearmiss-035",
+   "cohort": "nearmiss",
+   "lang": "de",
+   "target": "chk_19e6e649663784_638_v2",
+   "book_id": "a-grammar-of-moloko",
+   "candidate": 35,
+   "query": "Beispiele für die Präsuppositions-Assertions-Konstruktion im Moloko, bei der ein mit na markiertes Element vor der Aussage steht, etwa 'Das Mehl, es vermehrt sich'",
+   "acceptable": [],
+   "distractors": [
+    "chk_19e6e649663784_64_v2",
+    "chk_19e6e649663784_697_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the same Cicada story sentences quoted as running text or as coordination examples",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_19e6e649663784_638_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-moloko_v2/exc_19e6e649663784_484_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-036",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_3fef1c40d2b33f_1125_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "candidate": 36,
+   "query": "In Papuan Malay noun phrases, how are 'mother Klara's daughter' and 'whose sandals' expressed with the possessive marker pu?",
+   "acceptable": [],
+   "distractors": [
+    "chk_3fef1c40d2b33f_1140_v2",
+    "chk_3fef1c40d2b33f_1132_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the same construction with other examples in chapter 9",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_3fef1c40d2b33f_1125_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_680_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-037",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_76816c1b24394c_891_v2",
+   "book_id": "core-concepts-of-marketing",
+   "candidate": 37,
+   "query": "From the customer's point of view, what is the sole justification for price, and why must marketers price differently for different market segments?",
+   "acceptable": [],
+   "distractors": [
+    "chk_76816c1b24394c_893_v2",
+    "chk_76816c1b24394c_902_v2",
+    "chk_76816c1b24394c_952_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the later 'customer's view of price' section, the marketer's view, value-based pricing",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_76816c1b24394c_891_v2"
+   ],
+   "relevant_excerpts": [
+    "core-concepts-of-marketing_v2/exc_76816c1b24394c_597_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-038",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_0ac720b5f94b3e_218_v4",
+   "book_id": "electromagnetics-volume-1",
+   "candidate": 38,
+   "query": "In Cartesian coordinates, how do you integrate a vector field along a curve with the differential length dl, and what does the integral give for a constant field along a straight line from x1 to x2?",
+   "acceptable": [],
+   "distractors": [
+    "chk_0ac720b5f94b3e_222_v4",
+    "chk_0ac720b5f94b3e_223_v4",
+    "chk_0ac720b5f94b3e_308_v4"
+   ],
+   "not_acceptable": [],
+   "confusion": "integration over area and volume in the same section; dl in the potential-gradient derivation",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_0ac720b5f94b3e_218_v4"
+   ],
+   "relevant_excerpts": [
+    "electromagnetics-volume-1_v4/exc_0ac720b5f94b3e_89_v4"
+   ]
+  },
+  {
+   "id": "nearmiss-039",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_e2b7c2d4734a3e_327_v2",
+   "book_id": "concepts-of-biology",
+   "candidate": 39,
+   "query": "Which organelle detoxifies alcohol in liver cells and breaks down fatty acids by oxidation, producing hydrogen peroxide that it then splits into water and oxygen?",
+   "acceptable": [],
+   "distractors": [
+    "chk_e2b7c2d4734a3e_322_v2",
+    "chk_e2b7c2d4734a3e_339_v2",
+    "chk_e2b7c2d4734a3e_452_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "lysosomes (digestive enzymes) and the cell-component summary table",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_e2b7c2d4734a3e_327_v2"
+   ],
+   "relevant_excerpts": [
+    "concepts-of-biology_v2/exc_e2b7c2d4734a3e_162_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-040",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_f2b3906f1fb788_1125_v2",
+   "book_id": "a-grammar-of-yakkha",
+   "candidate": 40,
+   "query": "In the Yakkha story of the Linkha man's bet with the sun, why did he lose the bet?",
+   "acceptable": [],
+   "distractors": [
+    "chk_f2b3906f1fb788_1124_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the opening of the same story, which sets out the tasks",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_f2b3906f1fb788_1125_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-yakkha_v2/exc_f2b3906f1fb788_762_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-041",
+   "cohort": "nearmiss",
+   "lang": "de",
+   "target": "chk_3fef1c40d2b33f_1327_v2",
+   "book_id": "a-grammar-of-papuan-malay",
+   "candidate": 41,
+   "query": "Welche zwei Typen von Vergleichssätzen unterscheidet das Papua-Malaiische, und wie heißen nach Dixon die Bestandteile eines Vergleichs?",
+   "acceptable": [],
+   "distractors": [
+    "chk_3fef1c40d2b33f_1337_v2",
+    "chk_3fef1c40d2b33f_132_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the same two examples reused in the typological profile (word order) and the subsection summaries",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_3fef1c40d2b33f_1327_v2"
+   ],
+   "relevant_excerpts": [
+    "a-grammar-of-papuan-malay_v2/exc_3fef1c40d2b33f_811_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-042",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_2dfae4cbb39513_237_v2",
+   "book_id": "educational-psychology",
+   "candidate": 42,
+   "query": "According to Maslow, how do being needs behave differently from deficit needs once they are satisfied?",
+   "acceptable": [],
+   "distractors": [
+    "chk_2dfae4cbb39513_235_v2",
+    "chk_2dfae4cbb39513_234_v2",
+    "chk_2dfae4cbb39513_497_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the deficit-needs subsection and the two-level overview",
+   "note": "238 shares the target's excerpt",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_2dfae4cbb39513_237_v2"
+   ],
+   "relevant_excerpts": [
+    "educational-psychology_v2/exc_2dfae4cbb39513_112_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-043",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_8a13048a33c5a8_296_v2",
+   "book_id": "business-ethics",
+   "candidate": 43,
+   "query": "In the socio-technical system tables, which frameworks and capabilities are listed for the ethical environment, such as utilitarianism, rights and basic capabilities?",
+   "acceptable": [
+    "chk_54fcd12a32565e_347_v2"
+   ],
+   "distractors": [
+    "chk_8a13048a33c5a8_311_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the information-environment table (privacy in context, informed consent)",
+   "note": "347 is the same table in Business, Government and Society",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_54fcd12a32565e_347_v2",
+    "chk_8a13048a33c5a8_296_v2"
+   ],
+   "relevant_excerpts": [
+    "business-ethics_v2/exc_8a13048a33c5a8_200_v2",
+    "business-government-and-society_v2/exc_54fcd12a32565e_275_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-044",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_7d0930a9630d25_195_v2",
+   "book_id": "principles-of-financial-accounting",
+   "candidate": 44,
+   "query": "In the chapter 2 adjusting-entries example, which journal entry records $100 of depreciation on 1/31, and which accounts do Depreciation Expense and Accumulated Depreciation stand in for?",
+   "acceptable": [],
+   "distractors": [
+    "chk_7d0930a9630d25_379_v2",
+    "chk_7d0930a9630d25_378_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the fixed-asset chapter's depreciation entry ($8,700) and cost-principle explanation",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_7d0930a9630d25_195_v2"
+   ],
+   "relevant_excerpts": [
+    "principles-of-financial-accounting_v2/exc_7d0930a9630d25_146_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-045",
+   "cohort": "nearmiss",
+   "lang": "en",
+   "target": "chk_bdf01fb920a2eb_8_v2",
+   "book_id": "introduction-to-game-theory-a-discovery-approach",
+   "candidate": 45,
+   "query": "What does the book say game theory is really about, quoting Poundstone on rational but distrustful beings?",
+   "acceptable": [],
+   "distractors": [
+    "chk_bdf01fb920a2eb_9_v2",
+    "chk_bdf01fb920a2eb_27_v2"
+   ],
+   "not_acceptable": [],
+   "confusion": "the players-and-strategies subsection and the zero-sum chapter opening",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_bdf01fb920a2eb_8_v2"
+   ],
+   "relevant_excerpts": [
+    "introduction-to-game-theory-a-discovery-approach_v2/exc_bdf01fb920a2eb_6_v2"
+   ]
+  },
+  {
+   "id": "nearmiss-046",
+   "cohort": "nearmiss",
+   "lang": "ko",
+   "target": "chk_db5b02ddb87a00_96_v5",
+   "book_id": "database-design",
+   "candidate": 46,
+   "query": "개체-관계 모델에서 강한 개체(strong entity)는 어떤 경우에 해당하며, 외래 키와는 어떤 관계가 있나요?",
+   "acceptable": [],
+   "distractors": [
+    "chk_db5b02ddb87a00_95_v5",
+    "chk_db5b02ddb87a00_81_v5",
+    "chk_db5b02ddb87a00_85_v5"
+   ],
+   "not_acceptable": [],
+   "confusion": "weak entities (existence dependent) in the sibling subsection",
+   "same_excerpt_siblings": [],
+   "relevant": [
+    "chk_db5b02ddb87a00_96_v5"
+   ],
+   "relevant_excerpts": [
+    "database-design_v5/exc_db5b02ddb87a00_90_v5"
+   ]
+  }
+ ],
+ "frozen_utc": "2026-09-25T08:54:06Z"
+}

@@ -109,7 +109,7 @@ func (s *Store) postDocumentAuthority(ctx context.Context, path string, body any
 	}
 	_ = json.Unmarshal(payload, &refusal)
 	switch response.StatusCode {
-	case http.StatusConflict, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusBadRequest, http.StatusNotFound:
+	case http.StatusConflict, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusBadRequest, http.StatusNotFound, http.StatusLocked:
 		code := agenttools.ErrorCode(refusal.Code)
 		if code == "" {
 			code = agenttools.ErrUnavailableTarget
@@ -156,6 +156,8 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 			return AgentOperation{}, err
 		}
 		req.Room = room
+	} else if err := s.officeEditRefusal(ctx, target.ID); err != nil {
+		return AgentOperation{}, err
 	}
 	var out AgentOperation
 	err := s.postDocumentAuthority(ctx, "/internal/documents/edit", req, &out)
@@ -187,6 +189,9 @@ func (s *Store) UndoDocumentEdit(ctx context.Context, actorID string, inv EditIn
 		}
 		req.Room = room
 	} else {
+		if err := s.officeEditRefusal(ctx, inv.ResourceID); err != nil {
+			return AgentOperation{}, err
+		}
 		epoch := inv.Incarnation
 		req.Epoch = &epoch
 	}

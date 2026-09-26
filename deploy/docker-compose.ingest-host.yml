@@ -56,6 +56,8 @@ services:
       args:
         RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
+    # Reaps the soffice.bin a conversion timeout kills (parser/odl/document.py).
+    init: true
     environment:
       APP_ENV: production
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}

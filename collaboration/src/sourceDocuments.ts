@@ -35,8 +35,52 @@ import {
   type EditOperation,
   type Receipt,
 } from './persistence.js';
+import type { SourcePublish } from './sourceHandoff.js';
+
+/** Publishes a finalized candidate through the handoff (SourceHandoff.publish). */
+export type PublishSource = (input: SourcePublish) => Promise<unknown>;
 
 export const MAX_SOURCE_STATE_BYTES = 100 * 1024 * 1024;
+// Automatic Office refresh: this many trimmed net tokens after the idle
+// window, or any saved change left unedited for the stale window. Go
+// admission (RequestSourceRefresh) applies the same values.
+const OFFICE_REFRESH_TOKENS = 3000;
+const OFFICE_REFRESH_IDLE = '60 seconds';
+const OFFICE_REFRESH_STALE = '7 days';
+// Refresh candidates, oldest first. Like Go admission it skips a change list
+// worth no tokens, except an Office list of moves only (0 tokens), which
+// publishes through the stale rule. A file refused because its owner is at
+// the concurrent ingest-job limit (429) is stamped by REFRESH_DEFER_SQL and
+// orders behind the other due files. Store-only Office files (never processed)
+// take the same trigger whatever auto-reparse says; Go publishes them
+// export-only. A `reprocess` row is a file an export-only publication left
+// unindexed, due once its owner is active and it is out of the trash (a file
+// never parsed successfully waits for its owner's Process); Go indexes it at platform cost, and a
+// refusal moves it an hour ahead (REPROCESS_DEFER_SQL), never pulling a fresh
+// day back. `picked` keeps both branches on their partial indexes. The Go
+// store tests run these statements (TestRefreshSchedulerQuery,
+// TestReprocessSelection).
+const REFRESH_CANDIDATES_SQL = `
+  WITH picked AS (
+    SELECT file_id FROM source_documents WHERE reprocess_at<=now()
+    UNION SELECT file_id FROM source_documents WHERE checkpoint>indexed_checkpoint)
+  SELECT d.file_id,w.user_id,d.checkpoint,r.reprocess FROM picked p JOIN source_documents d ON d.file_id=p.file_id
+  JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
+  CROSS JOIN LATERAL (SELECT COALESCE(d.reprocess_at<=now(),false) AND NOT f.indexed AND d.format<>'text'
+    AND f.ever_parsed_successfully
+    AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL AS reprocess) r
+  WHERE d.running_job_id IS NULL AND f.trashed_at IS NULL
+    AND (r.reprocess OR (d.checkpoint>d.indexed_checkpoint AND d.refresh_error IS NULL
+      AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
+      AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
+        OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
+          OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_reparse AND f.ever_parsed_successfully)
+            OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))))
+  ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8`;
+const REFRESH_DEFER_SQL =
+  'UPDATE source_documents SET last_refresh_requested_at=now() WHERE file_id=$1';
+const REPROCESS_DEFER_SQL =
+  "UPDATE source_documents SET reprocess_at=now()+interval '1 hour' WHERE file_id=$1 AND reprocess_at<=now()";
 const LOW_SURROGATE = /[\uDC00-\uDFFF]/u;
 const CJK_CHARACTER =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -56,6 +100,11 @@ export interface SourceSession {
   sourceURL: string;
   state: string;
   workspaceId: string;
+}
+/** The checkpoint endpoint's answer: the new checkpoint and an edit's receipt. */
+export interface SourceCheckpointReceipt {
+  checkpoint: number;
+  operation?: Receipt;
 }
 export type SourceBaseline =
   | { version: 1; format: 'text'; text: string }
@@ -168,8 +217,48 @@ export function textEffects(before: string, after: string): NetEffect[] {
   ];
 }
 
+/** Context kept on each side of an Office text change; '…' marks a cut. */
+const EFFECT_CONTEXT_CHARS = 40;
+
+/**
+ * An Office text effect reduced to its changed span plus context. A move (the
+ * text is unchanged, only its position) carries no text at all.
+ */
+export function trimEffect(effect: NetEffect): NetEffect {
+  if (effect.operation === 'move') {
+    const { before: _before, after: _after, ...moved } = effect;
+    return moved;
+  }
+  const { before, after } = effect;
+  if (before === undefined || after === undefined) return effect;
+  let prefix = 0;
+  while (
+    prefix < before.length &&
+    prefix < after.length &&
+    before[prefix] === after[prefix]
+  )
+    prefix++;
+  let suffix = 0;
+  while (
+    suffix < before.length - prefix &&
+    suffix < after.length - prefix &&
+    before.at(-1 - suffix) === after.at(-1 - suffix)
+  )
+    suffix++;
+  const cut = (text: string) => {
+    let from = Math.max(0, prefix - EFFECT_CONTEXT_CHARS);
+    let to = text.length - Math.max(0, suffix - EFFECT_CONTEXT_CHARS);
+    if (from > 0 && LOW_SURROGATE.test(text[from])) from--;
+    if (to < text.length && LOW_SURROGATE.test(text[to])) to++;
+    return `${from > 0 ? '…' : ''}${text.slice(from, to)}${to < text.length ? '…' : ''}`;
+  };
+  return { ...effect, after: cut(after), before: cut(before) };
+}
+
+/** Estimated tokens of a change list; a move counts 0 (Go: sourceEffectTokens). */
 export function effectTokens(effects: NetEffect[]) {
   return effects.reduce((sum, effect) => {
+    if (effect.operation === 'move') return sum;
     const text = `${effect.before ?? ''}${effect.after ?? ''}${effect.caption ?? ''}`;
     const cjk = [...text].filter((char) => CJK_CHARACTER.test(char)).length;
     return (
@@ -293,6 +382,16 @@ export class SourceDocumentStore {
     );
   }
 
+  /** Whether the maintenance pause (office_editing_pause) covers this room:
+   * an Office file while a pause row exists. Text rooms keep editing. */
+  async editingPaused(room: string) {
+    const result = await this.pool.query<{ paused: boolean }>(
+      "SELECT EXISTS(SELECT 1 FROM office_editing_pause) AND EXISTS(SELECT 1 FROM source_documents WHERE file_id=$1 AND format<>'text') AS paused",
+      [sourceRoom(room).fileId]
+    );
+    return result.rows[0]?.paused === true;
+  }
+
   private async sessionForRoom(
     room: string,
     actorId: string,
@@ -313,12 +412,15 @@ export class SourceDocumentStore {
    * Applies the durable state of `room` to `document` and returns the session
    * it came from, seeding a never-opened source first. A caller that already
    * fetched the session passes it in so state and checkpoint agree.
+   * `unsavedSeed` (inspect) keeps the seed in memory when the maintenance pause
+   * refuses to save it (423).
    */
   async load(
     room: string,
     document: Y.Doc,
     actorId: string,
-    fetched?: SourceSession
+    fetched?: SourceSession,
+    unsavedSeed = false
   ): Promise<SourceSession> {
     let session = fetched ?? (await this.sessionForRoom(room, actorId, 'read'));
     if (!session.state) {
@@ -345,31 +447,42 @@ export class SourceDocumentStore {
       } else {
         state = (await runOffice('seedOffice', session.format, bytes)).state;
       }
+      const seeded = {
+        baseSourceSHA256: sha,
+        indexedBaseline: encodeBaseline(
+          await this.baseline(session, state, bytes)
+        ),
+        netTokens: 0,
+        pendingEffects: [],
+        state: Buffer.from(state).toString('base64'),
+      };
       try {
-        // The checkpoint receipt carries no actor access; keep the bootstrap's.
-        const seeded = await this.request<SourceSession>(
+        // The receipt carries only the checkpoint; the rest is what was sent.
+        const saved = await this.request<SourceCheckpointReceipt>(
           session.fileId,
           'checkpoint',
           {
+            ...seeded,
             actorIds: [actorId],
-            baseSourceSHA256: sha,
             epoch: session.epoch,
             expectedCheckpoint: 0,
-            indexedBaseline: encodeBaseline(
-              await this.baseline(session, state, bytes)
-            ),
             initialize: true,
-            netTokens: 0,
-            pendingEffects: [],
-            state: Buffer.from(state).toString('base64'),
           }
         );
-        session = { ...seeded, access: session.access };
+        session = { ...session, ...seeded, checkpoint: saved.checkpoint };
       } catch (error) {
-        if (!(error instanceof SourceRequestError) || error.status !== 409)
-          throw error;
-        session = await this.sessionForRoom(room, actorId, 'read');
-        if (!session.state) throw error;
+        if (
+          unsavedSeed &&
+          error instanceof SourceRequestError &&
+          error.status === 423
+        ) {
+          session = { ...session, ...seeded };
+        } else {
+          if (!(error instanceof SourceRequestError) || error.status !== 409)
+            throw error;
+          session = await this.sessionForRoom(room, actorId, 'read');
+          if (!session.state) throw error;
+        }
       }
     }
     Y.applyUpdate(document, Buffer.from(session.state, 'base64'));
@@ -426,7 +539,7 @@ export class SourceDocumentStore {
         effect.caption = cached.caption;
       }
     }
-    return effects;
+    return effects.map(trimEffect);
   }
 
   async rebasePublication(
@@ -497,14 +610,15 @@ export class SourceDocumentStore {
       );
       if (prior?.caption) effect.caption = prior.caption;
     }
+    const pendingEffects = rebased.effects.map(trimEffect);
     return {
       indexedBaseline: encodeBaseline({
         entries: rebased.baseline,
         format: session.format,
         version: 1,
       }),
-      netTokens: effectTokens(rebased.effects),
-      pendingEffects: rebased.effects,
+      netTokens: effectTokens(pendingEffects),
+      pendingEffects,
       rebasedState: Buffer.from(rebased.state).toString('base64'),
     };
   }
@@ -541,7 +655,7 @@ export class SourceDocumentStore {
           throw new Error('Source checkpoint exceeds byte limit');
         const effects = await this.effects(session, state);
         try {
-          const saved = await this.request<SourceSession>(
+          const saved = await this.request<SourceCheckpointReceipt>(
             fileId,
             'checkpoint',
             {
@@ -579,7 +693,7 @@ export class SourceDocumentStore {
     const room = `source:${fileId}:epoch:${session.epoch}`;
     const document = new Y.Doc();
     try {
-      const current = await this.load(room, document, actorId, session);
+      const current = await this.load(room, document, actorId, session, true);
       if (session.format === 'text') {
         return {
           access: current.access,
@@ -703,23 +817,25 @@ export class SourceDocumentStore {
           throw new Error('Source checkpoint exceeds byte limit');
         const effects = await this.effects(current, state);
         try {
-          const saved = await this.request<
-            SourceSession & { operation?: Receipt }
-          >(input.fileId, 'checkpoint', {
-            actorIds: [input.actorUserId],
-            epoch: current.epoch,
-            expectedCheckpoint: current.checkpoint,
-            netTokens: effectTokens(effects),
-            operation: input.undo
-              ? { receipt: receiptWire(input), undoOf: input.undo.undoOf }
-              : {
-                  guards,
-                  inverse: { commands: inverse },
-                  receipt: receiptWire(input),
-                },
-            pendingEffects: effects,
-            state: Buffer.from(state).toString('base64'),
-          });
+          const saved = await this.request<SourceCheckpointReceipt>(
+            input.fileId,
+            'checkpoint',
+            {
+              actorIds: [input.actorUserId],
+              epoch: current.epoch,
+              expectedCheckpoint: current.checkpoint,
+              netTokens: effectTokens(effects),
+              operation: input.undo
+                ? { receipt: receiptWire(input), undoOf: input.undo.undoOf }
+                : {
+                    guards,
+                    inverse: { commands: inverse },
+                    receipt: receiptWire(input),
+                  },
+              pendingEffects: effects,
+              state: Buffer.from(state).toString('base64'),
+            }
+          );
           if (!saved.operation)
             throw new Error('checkpoint did not return a receipt');
           return { receipt: saved.operation, room, state: update };
@@ -773,11 +889,22 @@ export class SourceDocumentStore {
     return { ...asset, bytes: Buffer.from(asset.bytes).toString('base64') };
   }
 
-  async exportCandidate(fileId: string, jobId: string) {
+  /**
+   * Exports and uploads a captured state as the job's candidate. An owner's
+   * export-only job (`publish` given) then publishes it right away through the
+   * handoff, like a refresh after its parse; a failed publication gives the
+   * export back to the scheduler instead of parking the file.
+   */
+  async exportCandidate(
+    fileId: string,
+    jobId: string,
+    publish?: PublishSource
+  ) {
     const candidate = await this.request<RefreshCandidate>(
       fileId,
       `refresh-candidate?jobId=${encodeURIComponent(jobId)}`
     );
+    let publishing = false;
     try {
       const state = Buffer.from(candidate.state, 'base64');
       let bytes: Uint8Array, seed: Uint8Array;
@@ -800,7 +927,9 @@ export class SourceDocumentStore {
           },
           {
             now: '2000-01-01T00:00:00.000Z',
-            seed: createHash('sha256').update(jobId).digest('hex'),
+            seed: createHash('sha256')
+              .update(`${fileId}:${candidate.epoch}:${candidate.checkpoint}`)
+              .digest('hex'),
           }
         );
         seed = (await runOffice('seedOffice', candidate.format, bytes)).state;
@@ -815,6 +944,8 @@ export class SourceDocumentStore {
       });
       if (!uploaded.ok)
         throw new Error(`Source candidate upload failed (${uploaded.status})`);
+      const sourceETag =
+        uploaded.headers.get('etag')?.replace(/^"|"$/g, '') ?? '';
       await this.request(fileId, 'refresh-candidate', {
         baseline: encodeBaseline(
           await this.baseline(
@@ -829,34 +960,46 @@ export class SourceDocumentStore {
         leaseToken: candidate.leaseToken,
         seed: Buffer.from(seed).toString('base64'),
         sizeBytes: bytes.byteLength,
-        sourceETag: uploaded.headers.get('etag')?.replace(/^"|"$/g, '') ?? '',
+        sourceETag,
         sourceSHA256: createHash('sha256').update(bytes).digest('hex'),
       });
+      if (publish) {
+        publishing = true;
+        // No parse or index: the publication carries no content or attempt.
+        await publish({
+          attemptId: 1,
+          checkpoint: candidate.checkpoint,
+          contentHash: '',
+          contentId: '',
+          epoch: candidate.epoch,
+          fileId,
+          jobId,
+          leaseToken: candidate.leaseToken,
+          sourceETag,
+        });
+      }
     } catch (error) {
       await this.request(fileId, 'refresh-failure', {
         error: error instanceof Error ? error.message : String(error),
         jobId,
         leaseToken: candidate.leaseToken,
-        stale: false,
+        stale: publishing && error instanceof SourceRequestError,
       });
       throw error;
     }
   }
 
-  async scheduleRefreshes() {
+  async scheduleRefreshes(publish?: PublishSource) {
     const eligible = await this.pool.query<{
       file_id: string;
       user_id: string;
       checkpoint: string;
-    }>(`
-      SELECT d.file_id,w.user_id,d.checkpoint FROM source_documents d
-      JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
-      WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL
-        AND f.trashed_at IS NULL
-        AND d.refresh_error IS NULL AND jsonb_array_length(d.pending_effects)>0
-        AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
-          OR(d.format<>'text' AND (d.desired_manual OR (w.auto_reparse AND f.ever_parsed_successfully AND d.net_tokens>=5000)) AND d.last_edited_at < now()-interval '60 seconds'))
-      ORDER BY d.last_edited_at LIMIT 8`);
+      reprocess: boolean;
+    }>(REFRESH_CANDIDATES_SQL, [
+      OFFICE_REFRESH_TOKENS,
+      OFFICE_REFRESH_IDLE,
+      OFFICE_REFRESH_STALE,
+    ]);
     for (const row of eligible.rows) {
       try {
         await this.request(row.file_id, 'refresh', {
@@ -864,8 +1007,20 @@ export class SourceDocumentStore {
           automatic: true,
         });
       } catch (error) {
+        // An owner over quota, or a race: try the reprocess again later.
+        if (row.reprocess) {
+          await this.pool.query(REPROCESS_DEFER_SQL, [row.file_id]);
+          continue;
+        }
         if (error instanceof SourceRequestError && error.status === 409)
           continue;
+        // 429 (too_many_ingest_leases, the only 429 this endpoint sends): the
+        // owner is at the concurrent ingest-job limit. A later run retries the
+        // file after the other due files.
+        if (error instanceof SourceRequestError && error.status === 429) {
+          await this.pool.query(REFRESH_DEFER_SQL, [row.file_id]);
+          continue;
+        }
         await this.pool.query(
           'UPDATE source_documents SET refresh_error=$3 WHERE file_id=$1 AND checkpoint=$2 AND running_job_id IS NULL',
           [
@@ -876,12 +1031,21 @@ export class SourceDocumentStore {
         );
       }
     }
-    const jobs = await this.pool.query<{ id: string; file_id: string }>(
-      `SELECT j.id,c.file_id FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.type='source_refresh' AND (j.status='pending' OR (j.status='running' AND j.lease_expires_at<now())) ORDER BY j.created_at LIMIT 2`
+    const jobs = await this.pool.query<{
+      id: string;
+      file_id: string;
+      handoff: boolean;
+    }>(
+      `SELECT j.id,c.file_id,COALESCE((j.payload->>'exportOnly')::boolean,false) AND COALESCE(j.payload->>'paidBy','')<>'system' AS handoff FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.type='source_refresh' AND (j.status='pending' OR (j.status='running' AND j.lease_expires_at<now())) ORDER BY j.created_at LIMIT 2`
     );
     for (const job of jobs.rows) {
       try {
-        await this.exportCandidate(job.file_id, job.id);
+        // A maintenance export-only job publishes in finalize (editing paused).
+        await this.exportCandidate(
+          job.file_id,
+          job.id,
+          job.handoff ? publish : undefined
+        );
       } catch (error) {
         if (!(error instanceof SourceRequestError) || error.status !== 409)
           console.warn('source refresh failed:', error);

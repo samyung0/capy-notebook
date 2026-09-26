@@ -4,6 +4,7 @@ import { WarningBanner } from '@/components/banners/WarningBanner';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
+import { SourceReplacedBanner } from './FileStates';
 import { SourceTextEditor } from './SourceTextEditor';
 import { useSourceSession } from './useSourceSession';
 
@@ -75,7 +76,7 @@ export function SourceTextView({
     <div className="flex h-full min-h-[60vh] flex-col">
       <FileModeControl
         canEdit={canEdit}
-        disabled={leaving || source.handoff}
+        disabled={leaving || source.handoff || source.replaced}
         mode={mode}
         onChange={(mode) => {
           if (mode === 'edit') {
@@ -86,7 +87,7 @@ export function SourceTextView({
         onSave={() => {
           void source.save().catch(() => {});
         }}
-        saveDisabled={source.handoff}
+        saveDisabled={source.handoff || source.replaced}
         status={
           editing
             ? source.handoff
@@ -134,6 +135,7 @@ export function SourceTextView({
           message={source.error}
         />
       )}
+      {source.replaced && <SourceReplacedBanner paused={source.paused} />}
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (
           source.doc ? (
@@ -142,7 +144,10 @@ export function SourceTextView({
               onPendingChange={source.pendingInput}
               onSave={source.save}
               paused={
-                !canEdit || source.handoff || source.status === 'recovery'
+                !canEdit ||
+                source.handoff ||
+                source.replaced ||
+                source.status === 'recovery'
               }
               registerFlush={source.flushHandler}
             />

@@ -21,7 +21,7 @@ from ..config import cfg
 from ..jobs import RetryableError, TerminalError
 from ..store import db as jobdb
 from ..store.db import SourceSupersededError
-from .chunking import QueryTerms
+from .chunking import Chunk, QueryTerms
 from .lang import TS_CONFIG
 
 log = logging.getLogger("capy.retrieval.store")
@@ -722,16 +722,16 @@ async def copy_content_from_donor(
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, descriptor, summary,
+                (content_id, workspace_id, fingerprint, descriptor, change_share,
                  summary_version, updated_at)
-            SELECT %s, %s, s.fingerprint, s.descriptor, s.summary,
+            SELECT %s, %s, s.fingerprint, s.descriptor, s.change_share,
                    s.summary_version, s.updated_at
             FROM rag_content_summaries s
             WHERE s.content_id = %s
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint = EXCLUDED.fingerprint,
                 descriptor = EXCLUDED.descriptor,
-                summary = EXCLUDED.summary,
+                change_share = EXCLUDED.change_share,
                 summary_version = EXCLUDED.summary_version,
                 updated_at = EXCLUDED.updated_at
             """,
@@ -886,22 +886,22 @@ async def upsert_content_summary(
     content_id: str,
     fingerprint: str,
     descriptor: str,
-    summary: str,
-    summary_version: int = 1,
+    change_share: float,
+    summary_version: int,
 ) -> None:
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, descriptor, summary,
+                (content_id, workspace_id, fingerprint, descriptor, change_share,
                  summary_version, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (content_id) DO UPDATE SET
                 workspace_id    = EXCLUDED.workspace_id,
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
-                summary         = EXCLUDED.summary,
+                change_share    = EXCLUDED.change_share,
                 summary_version = EXCLUDED.summary_version,
                 updated_at      = now()
             """,
@@ -910,10 +910,42 @@ async def upsert_content_summary(
                 workspace_id,
                 fingerprint,
                 descriptor,
-                summary,
+                change_share,
                 summary_version,
             ),
         )
+
+
+async def published_summary(
+    *, workspace_id: str, file_id: str
+) -> dict[str, Any] | None:
+    """The file's published descriptor row with the chunks it describes, for
+    the summary reuse gate; None when the file has no ready descriptor."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT cs.content_id, cs.descriptor, cs.change_share, cs.summary_version
+            FROM rag_file_contents fc
+            JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
+            JOIN rag_content_summaries cs ON cs.content_id = rc.id
+            WHERE fc.file_id = %s AND fc.workspace_id = %s
+            """,
+            (file_id, workspace_id),
+        )
+        row = await cur.fetchone()
+        if row is None:
+            return None
+        cur = await conn.execute(
+            "SELECT text, section_path FROM rag_chunks WHERE content_id = %s "
+            "ORDER BY chunk_idx",
+            (row["content_id"],),
+        )
+        chunks = [
+            Chunk(text=chunk["text"], section_path=chunk["section_path"] or "")
+            for chunk in await cur.fetchall()
+        ]
+    return {**dict(row), "chunks": chunks}
 
 
 async def content_fingerprint(content_id: str) -> str:
@@ -1039,7 +1071,7 @@ fused AS (
           FROM lex
     ) parts GROUP BY id
 )
-SELECT c.id, sf.file_id, sf.kind, c.chunk_idx, c.section_path, c.text, c.page_start,
+SELECT c.id, sf.file_id, sf.kind, c.chunk_idx, c.section_path, c.text, c.indexed_text, c.page_start,
        c.page_end, c.regions, c.lang, c.confidence, c.confidence_reasons,
        sf.file_name, fused.score, fused.flat_score,
        vec.rank AS vec_rank, vec.dist AS vec_dist, lex.rank AS lex_rank
@@ -1092,7 +1124,8 @@ async def hybrid_search(
 
     Rows carry the per-leg evidence (``vec_rank``, ``vec_dist``, ``lex_rank``)
     and ``flat_score``, the fusion with every lexical row at half weight, so
-    the caller can tell which hits the exact tier put there.
+    the caller can tell which hits the exact tier put there, plus
+    ``indexed_text`` (heading context and text), which the reranker scores.
     """
     pin = pin or await workspace_embedding_pin(workspace_id)
     sql = _SEARCH_SQL_TEMPLATE.format(
@@ -1207,7 +1240,6 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
             """
                  SELECT f.id, f.name, f.chapter_id, f.status,
                      coalesce(cs.descriptor, '') AS descriptor,
-                     coalesce(cs.summary, '') AS summary,
                      (SELECT count(*) FROM rag_chunks c
                       JOIN rag_file_contents rfc ON rfc.content_id = c.content_id
                       WHERE rfc.file_id = f.id) AS chunks
@@ -1226,7 +1258,7 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         cur = await conn.execute(
             """
             SELECT m.id, m.title AS name, m.chapter_id, 'ready' AS status,
-                   '' AS descriptor, '' AS summary, 'material' AS kind,
+                   '' AS descriptor, 'material' AS kind,
                    (SELECT count(*) FROM rag_chunks c
                     JOIN rag_material_contents mc ON mc.content_id = c.content_id
                     WHERE mc.material_id = m.id) AS chunks
@@ -1256,29 +1288,6 @@ async def file_page_source(workspace_id: str, file_id: str) -> dict[str, Any] | 
         )
         row = await cur.fetchone()
     return dict(row) if row else None
-
-
-async def file_summaries(
-    workspace_id: str, file_ids: list[str]
-) -> list[dict[str, Any]]:
-    if not file_ids:
-        return []
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT f.id, f.name, coalesce(cs.descriptor, '') AS descriptor,
-                   coalesce(cs.summary, '') AS summary
-            FROM files f
-            LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
-            LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
-            WHERE f.workspace_id = %s AND f.id = ANY(%s) AND f.trashed_at IS NULL
-            """,
-            (workspace_id, file_ids),
-        )
-        rows = [dict(row) for row in await cur.fetchall()]
-    by_id = {row["id"]: row for row in rows}
-    return [by_id[fid] for fid in file_ids if fid in by_id]
 
 
 async def file_ids_for_names(workspace_id: str, names: list[str]) -> list[str]:

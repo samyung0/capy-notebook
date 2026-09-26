@@ -10,3 +10,4 @@ class Slot(str, Enum):
     INGEST = "ingest"
     RETRIEVAL = "retrieval"
     CAPTIONING = "captioning"
+    RERANK = "rerank"

@@ -24,7 +24,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes a two-tier file summary. Each replica runs one job at a time |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
 | Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`), one document at a time behind a depth-4 FIFO; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
@@ -64,7 +64,7 @@ flowchart LR
   ImageCaption --> Chunk
   AudioTranscript --> Chunk
   DirectText --> Chunk
-  Chunk --> Index[Embed + file summary]
+  Chunk --> Index[Embed + file descriptor]
   Index --> Store[(rag_chunks / summaries)]
   Store --> Search[Hybrid search RRF]
   Search --> Agent[Chat agent loop]
@@ -92,7 +92,7 @@ network and no pin.
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
 | `quiz.py` | `quiz` | Open-answer marking. Import-free: `bench/grading` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
-| `ingest.py` | `ingest` | File descriptor and summary, and `SUMMARY_VERSION` |
+| `ingest.py` | `ingest` | File descriptor, and `SUMMARY_VERSION` |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `curate.py` | `chat` | Curate-mode system prompt, its tool-description overrides, and the progress-ledger message |
@@ -119,7 +119,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | Two-tier prose (`descriptor` + `summary`) plus `summary_version`; shared by files with identical content |
+| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and `summary_version`; shared by files with identical content |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
 logical file removes its alias; a trigger removes canonical content only after
@@ -287,9 +287,10 @@ format-specific text exception.
 The parser is OpenDataLoader 2.5.7 (a Java jar, `--table-method cluster
 --include-header-footer`, one thread) followed by the refined native repairs
 ported from the `bench/parsers` lab into `parser/odl/`: font `ToUnicode`
-repair, table-cell styles, column reading order, hidden-OCR-layer order, heading
+repairs, picture triage, table-cell styles, column reading order, hidden-OCR-layer order, heading
 and table context, footer ancestry, list geometry and text-overprint repair,
-exponents, column continuations and source-geometry table recovery. Pages whose
+exponents, column continuations, source-geometry table recovery and negation
+composition. Pages whose
 text layer has fewer than 40 characters are routed to RapidOCR (PP-OCRv6 small,
 2560 px long edge, score 0.5, models baked into the image). Fresh OCR uses
 PP-DocLayoutV3 through rapid-layout 1.2.1 to order regions only when every line
@@ -307,28 +308,229 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v6` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v11` plus the release SHA.
+Parser v7 (decision 2026-09-24; evidence in
+`bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
+`bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
+
+- **Glyph-name repair** (`fonts.repair_named_glyphs`, before Java). A simple
+  font's `ToUnicode` entries that contradict its own `/Differences` glyph names
+  are rebuilt from the names. An entry contradicts when it is a control
+  character, private use or U+FFFD, or when a maths or Greek glyph maps to
+  plain ASCII; quotes and dashes mapped to ASCII stay. A font needs two such
+  entries, or one mapped to a control character or left out. This fixes Quartz re-saves of
+  TeX output, whose NULs and ASCII letters stood for −, ≥ and Greek.
+- **TeX negation.** `negationslash` maps to U+0338, with the entry added where
+  the map leaves it out. After table recovery `fonts.compose_negations` joins
+  each slash with the relation after it into ≠, ∉, ∌, ≢ and the other
+  precomposed negations; without it the relation read un-negated.
+- **Wide ranges** (`fonts.split_wide_ranges`, before Java). Two-byte `bfrange`
+  entries that cross a last-byte block, such as mPDF's `<0000> <FFFF>`, are
+  split into per-block ranges, since veraPDF maps nothing past the first block.
+  A block with any entry the split cannot read stays as written.
+- **Nested tables.** `adapter.node_text` walks table rows, so a table that ODL
+  nests in a list item or a table cell keeps its cells: one line per row, cells
+  split by `|`.
+- **Picture triage** (`pictures.classify`, right after adaptation). An image
+  block with a side under 1 pt, or a short side under 1% of its long side, is
+  dropped: rules and spacer pixels drawn as images. The same rendered picture
+  on 5 or more pages becomes `discarded` furniture, and its image file stays in
+  the bundle. Other pictures, formula pictures included, stay images.
+
+Parser v8 (decision 2026-09-24; gate in
+`bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
+
+- **TeX maps** (`fonts.map_tex_fonts`, before Java). An embedded Type1 font
+  named after a Computer Modern or AMS family (`CM*`, `MSAM`, `MSBM`) with no
+  `ToUnicode` and no `/Encoding` gets a map from the literal encoding array in
+  its program. Names come from a checked TeX list where pypdf's value is not
+  the glyph TeX draws (`turnstileleft` ⊢, `circlecopyrt` ◯, `triangleright` ▷,
+  CMMI `phi` ϕ, `lscript` ℓ, Greek Δ and Ω), else from pypdf's list; unknown
+  names stay unmapped, and picture or Cyrillic fonts are left alone.
+- **Margin-paragraph banners.** The banner rules in `headings.correct_roles`
+  also see text blocks ODL typed as paragraphs in the margin band (top
+  `y1 < 100`, bottom `y0 > 900`), so a running head is removed however ODL
+  typed it. A paragraph banner gets no scope boundary, since it never opened a
+  scope; the other role rules and the outline roots still see headings only.
+- **Body-style demotion.** A native heading that ends with sentence
+  punctuation and whose main font and rounded size equal the page's (weighted
+  by characters) becomes body text (`body-style-heading`), outline titles
+  excepted.
+- **Capitals headings** (`headings.promote_capitals`, at the end of
+  `correct_roles`). A one-line text block in capitals (2 words and 10 letters,
+  no final full stop), with a gap of 0.8 of its height above and below and a
+  lower-case letter in the next block's first 40 characters, becomes a
+  heading one level below the heading in force; consecutive ones are
+  siblings. Title pages (up to the first native heading's page), lines with
+  '=', a folio (a Roman one only in the margins), a label repeated on 3 or
+  more pages, and the capitals form of a heading or outline title stay text.
+- **Outline headings** (`headings.insert_outline_headings`, after the outline
+  roots and before capitals headings). A PDF outline entry that no heading on
+  its destination page matches becomes a heading when a running head on that
+  page, discarded as a banner, carries the same title with its folio removed
+  (College Research prints its chapter titles only there). The heading takes
+  the most common level of the entry's matched sibling headings (same parent
+  entry), else one below the parent entry's heading, else level 1. It is
+  inserted before the page's first block with the running head's box and
+  `_source_role: outline-heading`; a body paragraph repeating the title stays.
+  v11 places it at the outline destination (below).
+- **Split ligatures** (`source_text.join_split_ligatures`, before furniture is
+  frozen). A space the PDF draws inside the ligature glyph before it (The
+  Science of Sleep's "beneﬁ ts") is dropped when the block's glyphs prove it,
+  and only where the text holds no more such sequences than the glyphs prove.
+- **Furniture.** A repeated text is furniture only when at most half its
+  occurrences sit in the page interior (`furniture.repeated_across_pages`), so
+  a citation or credit repeated mostly inside pages keeps its edge copies.
+
+Parser v9 (decision 2026-09-24; evidence in
+`bench/parsers/reports/2026-09-24-heading-levels-and-fragments.md`, gate in
+`bench/parsers/reports/2026-09-24-parser-v9-gate.md`) re-levels headings in
+`parser/odl/levels.py`, after `mark_page_numbers` and the v8 heading rules and
+before furniture is frozen. No block is added, removed or reordered, and a
+heading the PDF outline lists on its page is never demoted:
+
+- **Fragments** (`demote_fragments`). A heading becomes body text when it is a
+  formula fragment (no run of three ordinary letters, and a maths symbol or
+  letter, a private-use glyph, no ordinary letter, or only one- and
+  two-character tokens; a single letter and a dotted section number stay), a
+  run-in label ("Example 9.1.2: Let", "Proof."), one label numbered three or
+  more times with dotted, restarting or page-tracking numbers (structural words
+  such as chapter or appendix excepted), a page footer or a bare number. A bare
+  number or chapter label set above its title is discarded and becomes the
+  title's `_chapter_label`. `_source_role` names the case.
+- **Contents lines** (`demote_contents_lines`). Headings on printed contents
+  pages (a run from a contents title in the first fifth of the book, each page
+  with 4 or more lines, half ending in a page number or a leader) become body
+  text, except the contents title and titles such as "List of Figures".
+- **Backbone** (`backbone_levels`). Only in a book whose outline is not usable
+  (under 5 entries, or under 30% found as headings on their page; v8's outline
+  headings count) or, from v10, broken (below). The longest run of chapter
+  labels, else bare depth-1 numbers, rising by 1 to 3 from chapter 1 or 2 over
+  at least 20% of the pages becomes level 1 (level 2 under rising parts set at
+  least as big); numbered sections that continue their chapter take chapter
+  level + depth − 1. A chapter label after up to four words of a part tab ODL
+  merged into the same heading ("Habitat-Focused Techniques Chapter 8 -
+  Restoration") counts. Front
+  matter never parents chapter 1; preface, index, glossary and similar rank
+  with chapters; other headings take the level of numbered headings they are
+  styled like, else nest under the section in force. A chapter label ODL left
+  as body text at the top of its page is promoted (`chapter-opener`), and
+  removed banners' `_heading_boundary_level` is rescaled the same way.
+
+Parser v10 (decision 2026-09-24; evidence in
+`bench/parsers/reports/2026-09-24-outline-levels-and-running-heads.md`, gate in
+`bench/parsers/reports/2026-09-24-parser-v10-gate.md`) adds:
+
+- **Outline levels** (`outline_levels.relevel`, where v9's backbone ran). One
+  test picks the rule for each book: a usable outline (as above) that is not
+  broken takes outline levels, and every other book takes `backbone_levels`.
+  An outline is broken when an entry that is not Part-like spans over half the
+  book while most of its matched children are typed larger (a change log
+  holding every chapter), or a front-matter entry does so with children typed
+  as large. Entries drop exporters' wrappers with children ("Main Body"),
+  machine bookmarks, the deeper copy of a title bookmarked twice on one page,
+  and author tags (a title repeated verbatim 3 or more times, mostly on the
+  page of the sibling before it). Entries match headings in reading order on
+  the destination page or a neighbour; a running head never matches an entry
+  that lacks its page number, an entry listed out of order still matches on
+  its own page, and two same-level entries whose headings follow each other
+  with no body between read as one title. Walking the headings as the chunker
+  does, a level changes only where the stack contradicts the outline. A listed
+  heading closes the listed headings whose span has ended and sits directly
+  under its outline parent; a top-level one closes unlisted front matter, but
+  an unlisted Part heading stays above it. An unlisted heading or a banner
+  boundary cannot close a listed heading that is an outline ancestor of the
+  next listed heading, unless it is numbered as that heading's peer ("4.
+  Images" after "3. Organizing Content"). A same-level heading the outline
+  leaves out closes the listed section before it and becomes its sibling. A
+  changed heading carries its subtree by the same step. Only `text_level` and
+  banner `_heading_boundary_level` change.
+- **Running-head band.** The banner family scan and v8's margin paragraphs
+  use the top and bottom fifth of the page (`y1 < 200`, `y0 > 800`). A banner
+  found only through the wider band stays when its group (folio kind, page
+  offset, top or bottom, height in hundredths) covers 5 or more pages and a
+  tenth of the book's pages: Java, Java, Java's heads at y = 0.107, Compressible
+  Flow's at 0.123. Capitals headings keep the narrow band.
+- **Book-title headings** (`outline_levels.mark_book_titles`, after the
+  levels). The book title is the PDF metadata title (file names, "Microsoft
+  Word - …" and "Untitled" skipped), a single top-level outline entry spanning
+  90% of the pages, or the most prominent heading of the first page with
+  headings (within 5 pages) when it is at the bottom of the heading stack for
+  half the body. The title pages run from the first page to the last of the
+  first 10 that carries a heading with that title, past pages with body text
+  (ReStorying Education prints its title again on its introduction page). Their
+  unnumbered headings that the outline does not list under another title
+  (title, subtitle, author, series and publisher lines) get
+  `_source_role: book-title` and keep their level; v11 narrows this on later
+  body pages (below). Chunker v12 closes the
+  heading stack at that level without pushing them, so they never enter a
+  path, and keeps their text in the chunk; the gate leaves them out of anchors
+  and roots.
+
+Parser v11 (decision 2026-09-25; evidence in
+`bench/parsers/reports/2026-09-25-heading-rules-after-v10.md`, gate in
+`bench/parsers/reports/2026-09-25-parser-v11-gate.md`) changes four heading
+rules; the chunker stays at v12:
+
+- **Book titles on later body pages** (`mark_book_titles`). A page with more
+  than 150 characters of body text (text blocks that are not headings) is a
+  body page. Past the first body page, a body page keeps the book-title mark
+  only on headings that match a title source, so Census Income 2024's
+  "INTRODUCTION" and ReStorying's, printed under a repeated title, stay
+  headings. A title page repeated after a series page (the Language Science
+  Press grammars) and a title page with its own body text (NIST FIPS 203) keep
+  their marks.
+- **Outline headings at the destination** (`insert_outline_headings`). The
+  heading goes where the outline points: the page's first block that is not
+  discarded and whose top is at or below the destination minus 5 is promoted
+  (`_source_role: outline-heading`, printed text kept) when it is a body line
+  whose title key equals the entry's; otherwise the heading is inserted before
+  that block, or after the page's last block when none is that low. A
+  destination without a height (a named destination) keeps the place before
+  the page's first block. Such a body line also makes the heading when no
+  running head carries the title, if `outline_levels._entries` keeps the entry
+  and its parent entry points to another page: ReStorying's chapters that open
+  under the book-title running head get headings, while Media Studies' author
+  tags and a byline listed under its parent on the same page do not.
+- **Either folio reading** (`_family_banners`, `_wide_only`). A margin line
+  with a decimal at both ends is also read with the last number as its folio
+  when it is larger ("4 • Chapter Review 521" is page 521), and the banners of
+  both readings are kept, so OpenStax's end-matter heads form families while
+  "12 • MEDIA STUDIES 101" keeps its own.
+- **Folio-less running heads below the margin band**
+  (`_additional_banners`). Top candidates and seeds reach `y0 < 100`,
+  `y1 <= 100` (was 65). A seed set below the old 0.065 edge counts only when
+  every line repeats a body title printed earlier in larger type, or its text
+  recurs on max(5, a quarter of the) pages: Papuan Malay's "1 Introduction" at
+  y = 0.069-0.086 and Accounting Principles' licence line are banners, a label
+  such as "Example" at the top of a few pages stays a heading.
+
+The formula-picture rule, formula placeholders, stencil-mask rewriting and
+ODL's `--content-safety-off tiny` are not in v7 to v11; the tiny-text
+filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
 lies in the box and whose vertical overlap covers half the smaller height.
-Before table recovery, margin headings (top `y1 < 100`, bottom `y0 > 900`)
-that carry a leading or trailing decimal or Roman folio are grouped by folio
+Before table recovery, margin headings (top `y1 < 100`, bottom `y0 > 900`;
+v10 widens the band, above) that carry a leading or trailing decimal or Roman folio are grouped by folio
 kind, folio minus page index, top or bottom, band, font and size, whatever
 their title. A group on three or more pages becomes discarded running banners
 when some title, with digits and Roman numerals stripped, repeats on two
-pages. Bare folios join with an empty title. The group's page offset must also
-show elsewhere in the book, in one of two ways. One is a margin block outside
-the group with the same folio kind and offset that is a bare page number or
-carries a title the group does not use; front matter numbered apart therefore
-keeps its own proof. The other is group members on both the left and right
-halves of the page, as on facing pages. Another part of the same numbered
+pages. Bare folios join with an empty title. A page-top group must also show its
+page offset elsewhere in the book, in one of two ways. One is a margin block
+outside the group with the same folio kind and offset that is a bare page
+number or carries a title the group does not use; front matter numbered apart
+therefore keeps its own proof. The other is group members on both the left and
+right halves of the page, as on facing pages. Another part of the same numbered
 series proves nothing, even when ODL typed it as a paragraph, gave it no span
-evidence or split it into another band or font size. So a one-sided Exercise N,
-Question N or Step N series stays a heading unless the book prints page numbers
-at the same offset; the residual is a series that alternates page halves, which
-geometry cannot tell from facing-page heads. Numbered slide titles with no
-repeated title also stay headings. A repeated literal title in a narrow margin band
+evidence or split it into another band or font size. So a one-sided page-top
+Exercise N, Question N or Step N series stays a heading unless the book prints
+page numbers at the same offset; the residual is a series that alternates page
+halves, which geometry cannot tell from facing-page heads. Bottom-margin groups
+need no such proof: centred or full-width footers are often a book's only page
+numbering. Numbered slide titles with no repeated title also stay headings. A
+repeated literal title in a narrow margin band
 also establishes a running-banner family; alternating titles in that band
 require each rendered line to match an earlier or same-page body heading in
 larger type. Every discarded banner retains its former heading-level boundary
@@ -681,6 +883,56 @@ the applied corpus and records its receipt. After a publish, `intake.py`
 verification compares each live figure's notes and excluded flag, each
 excerpt's `figure_ids` and the book's `figure_exclusions` with the run.
 
+A library book's figure records come from `knowledge_base_pilot.figure_records`
+and `drawing_records`, which `parse` and `refresh-figures` (the builder's
+figures stage) both run. There are three kinds:
+
+- `parser_image`: the parser's image and chart blocks. Blocks 2 units or
+  thinner on the 0-1000 grid are left out; they are formula bars and rules
+  drawn as images (decision 2026-09-23). Parser v7 already drops images under
+  1 pt and types pictures repeated on 5 or more pages `discarded`, which this
+  stage does not read; the 2-unit rule stays for older parses.
+- `caption_page_reference`: `Figure N:` caption lines with no image block and
+  no vector drawing they label, boxed as the whole page.
+- `vector_drawing`: drawings in the source PDF that the parser does not report
+  (decision 2026-09-23). The source PDF must match the book's sha256.
+
+For `vector_drawing`, PyMuPDF clusters each page's visible paths with an 8 pt
+gap. A cluster becomes a record unless any of these holds:
+
+- Its shorter side is under 30 units.
+- It lies wholly in the top or bottom 100 units.
+- Over a fifth of its area is inside a parser table block or image record.
+- It frames text: word boxes cover over 20% of its area, or over 2% when a
+  rectangle frame spans it or it is all level lines. This catches callouts,
+  code blocks and ruled tables.
+- Apart from its frame, it holds only fills no taller than 45 pt and
+  hairlines: formulas and logos set as glyph outlines, and empty boxes.
+
+The id is `fig_<source14>_p<page>_<x0>_<y0>` (the rounded top-left corner), so
+it never collides with the block-index ids of the other kinds. `block_index` is
+the last block that starts above the drawing, and the record takes that block's
+section path. Excerpts link these records the way they link parser images.
+
+A captioned drawing is one record (decision 2026-09-24,
+`knowledge_base_pilot.caption_pairs`). A `Figure N:` caption line labels a
+drawing on its page when the line starts at most 115 units below the drawing's
+bottom (or up to 30 units inside its box) and either overlaps it horizontally
+or, as a short left-aligned line, ends left of a drawing that spans the page's
+middle. Closest pairs go first, one caption per drawing. The drawing keeps its
+id and box and takes the caption's text, `caption_bbox`, block index, section
+path and excluded flag, and no `caption_page_reference` record is made for that
+caption. The record then links to the excerpt holding the caption, and
+`intake.py exclude-figures` names it by its caption box, which is the box the
+excluded flag comes from on a refresh. Captions beside or above a drawing, and
+captions whose figure got no drawing record, keep their whole-page record. A
+multi-panel figure's caption labels one panel. The measurement is in
+`bench/rag/reports/2026-09-24-captioned-drawings.md`.
+
+The box covers the drawn paths only; axis labels set as text can fall outside
+it. Published books keep their records. Thresholds, the sample measurement and
+the known misses are in `bench/rag/reports/2026-09-23-vector-figures.md`.
+
 Standalone image uploads (`captionMode: standalone`, route `image_caption`) are
 still described once with the pinned vision model so the file is searchable,
 and `capture_page` shows the image itself (decision 2026-09-21): an upload is
@@ -771,7 +1023,9 @@ is retained separately as historical evidence):
   guard to those candidates and never infers recurrence again on the replaced list. Otherwise a header that sat
   inside one recovered region falls below the three-page threshold on the
   remaining pages and is indexed as body text. The parser's copy of the rule
-  (`parser/odl/furniture.py`) is pinned equal to the chunker's by test.
+  (`parser/odl/furniture.py`) is pinned equal to the chunker's by test; since
+  parser v8 it also leaves out a text with more than half its occurrences in
+  the page interior, so its edge copies stay in the chunks too.
 - **Native tables.** A table with explicit native column headers
   (`_native_table_supported`) becomes its own chunk(s): the title and header
   row repeat per row group under the token budget, merged source cells are
@@ -831,6 +1085,30 @@ hybrid search silently returns nothing for Chinese/Japanese/Korean. Changing
 a configuration or the detector is a `CHUNKER_VERSION` bump: rows indexed
 under another config do not match stemmed queries.
 
+The tokenizer also maps the typographic ligatures `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ`
+(U+FB00–U+FB06) to their letters (decision 2026-09-24). Postgres indexes them
+as written, so a PDF's `ﬁnd` or `eﬀect` never met a typed `find` or
+`effect`; on 2026-09-24, 21,168 non-reference chunks across the shared
+library's current and retained versions carried one. Only the lexical input
+changes; `text`, `indexed_text`, embeddings and `pipeline_identity` stay the
+same, so quotes and citations still match the printed PDF. Rows indexed
+before the mapping are rebuilt in place by
+`pipeline/scripts/reindex_ligatures.py` (`app` for `rag_chunks`, `library`
+for every stored version in `library_chunks`, `pilot` for the builder's pilot
+database the loader copies from; runbook §8) instead of a `CHUNKER_VERSION`
+bump, which would re-parse every donor and every library book. It rebuilds
+each row with its own `lang` configuration and keeps a reference list's empty
+vector.
+
+Printed sub- and superscripts fold the same way (decision 2026-09-24): every
+BMP character whose Unicode decomposition is `<sub>` or `<super>` maps to its
+plain character, so `H₀`, `s²` and `Hₐ` index as `H0`, `s2` and `Ha`.
+Postgres drops `₀` and `²` from a word, so a printed `H₀` had indexed as `h`
+and `s²` as the stopword `s`. Two cases stay as printed: `™` and `℠`, which
+would fold to several letters (`Java™` becoming `javatm`), and the Kanbun marks
+`㆒`–`㆟`, which would fold to ideographs. The same reindex script covers these
+rows; on 2026-09-24 it rewrote 3,239 library chunks and 2,270 pilot chunks.
+
 ### Donor reuse
 
 Before parsing, the worker hashes the uploaded bytes (`files.source_sha256`) by
@@ -848,7 +1126,7 @@ OpenDataLoader, so every MinerU-era artifact stopped being a donor and existing
 sources re-parse on their next refresh.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
-its vectors), plus its summary, into a new per-workspace
+its vectors), plus its descriptor, into a new per-workspace
 `rag_contents` row. Isolation stays `workspace_id` on the chunks; user B is
 not billed for user A's original ingest. If the pins differ, chunk text is
 copied and re-embedded into the target workspace's space.
@@ -879,14 +1157,27 @@ its short TTL remains; after that it re-parses if there is no donor row.
   use heading breadcrumbs but not a mutable logical file name.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
-4. One cheap-model call → two-tier content summary (`descriptor` ~50 words plus
-  a size-tiered `summary` of ~150/300/500 words); upsert `rag_content_summaries`.
-  Documents larger than the pinned ingest model's catalog context window are
-  map-reduced in chunk groups rather than sampled. A provider failure here
-  retries the job rather than storing a blank: an empty summary would be marked ready, copied to future
+4. The file descriptor (~50 words, one cheap-model call); upsert
+  `rag_content_summaries`. A reindex of a file whose ready descriptor has the
+  current `summary_version` first measures the net text change between the
+  published chunks and the candidate (`text_change_tokens`: chunk overlap and
+  retained headings dropped, lines aligned, then words inside each changed
+  range; spans that differ only in spacing or glyph forms count nothing; a
+  range over 1,000 words on either side counts whole, because the word diff goes
+  quadratic on repetitive text such as a renumbered CSV or a sorted table and
+  grows with the larger side of a pasted or deleted block, and the upper bound
+  can only regenerate earlier). Its
+  share of the document's estimated tokens adds to the stored `change_share`,
+  and the published descriptor is kept while that sum stays under 2%
+  (`SUMMARY_REUSE_SHARE`). At 2% or more, on a `summary_version` change, or with
+  no previous descriptor, the descriptor is regenerated from the complete
+  content and the share resets to 0. Documents larger than the pinned ingest
+  model's catalog context window are map-reduced in chunk groups (about 500
+  words of section overviews in total) rather than sampled. A provider failure here
+  retries the job rather than storing a blank: an empty descriptor would be marked ready, copied to future
   donors, and never refilled. `summary_version` is **not** part of
-  `pipeline_identity` — a prompt change must not invalidate a parse; it exists
-  so a later backfill can find stale prose, including donor copies.
+  `pipeline_identity` — a prompt change must not invalidate a parse; a refresh
+  regenerates a descriptor whose version differs.
   A final receipt settlement rejection is not an ordinary provider failure: the
   summary helper propagates `SettlementError` unchanged so the ingest worker
   closes the attempt without retrying a provider response that was already
@@ -923,14 +1214,15 @@ would let a live waiter mask a dead creator forever, and a dead waiter cascade a
 live creator's chunks away mid-write. A waiter returns from the wait only once the
 content is ready or it has taken the claim over itself.
 
-### File summaries (no tree)
+### File descriptors (no tree)
 
-Content summaries are shared by identical files. Moving a file between chapters
-does **not** re-summarize it. There is no chapter or workspace rollup: at a
+Descriptors are shared by identical files. Moving a file between chapters
+does **not** re-describe it. There is no chapter or workspace rollup: at a
 100-file workspace cap, `list_sources` can put every name and ~50-word
 descriptor into one tool result (~7k tokens), and the model has the question
-that an embedding index would not. `describe_documents` returns the detailed
-tier for up to eight files. Summaries are never embedded or cited — citations
+that an embedding index would not. There is no detailed tier; the model reads
+passages with `read_document` or `search_workspace` (`describe_documents` was
+removed on 2026-09-25). Descriptors are never embedded or cited — citations
 always point at document passages.
 
 ## Search workflow
@@ -984,9 +1276,29 @@ always point at document passages.
    different top five for the same query.
 3. Optional `file_ids` filter is applied **in SQL** and intersected with the
    request scope. The agent cannot widen a scope the user narrowed.
-4. `_rerank` is a seam that currently returns identity. Heading prefixes and
-   the per-file diversity cap are the v1 quality levers; a hosted or local
-   cross-encoder plugs in here later without changing callers.
+4. `search.rerank` reorders the first 20 fused candidates
+   (`RERANK_CANDIDATES`) with the `rerank` slot's default, DeepInfra
+   `Qwen/Qwen3-Reranker-4B` (decision 2026-09-25). It scores each row's
+   `indexed_text` (heading context and text) against the raw query, without
+   the embedding instruct prefix; candidates 21 to 40 follow in fused order.
+   The 5-second bound (`models.RERANK_TIMEOUT_S`) covers the whole wait a
+   search sees: admission and the provider request, busy retry included; the
+   zero-credit `rerank` settlement finishes in the background once the
+   scores arrive. An error, a busy provider or the bound keeps fused order
+   and logs a `capy.search` warning, so search never fails because of the
+   reranker. An unassigned rerank slot skips the call: it is the operator off
+   switch, and the only slot whose missing default is not an error. Library
+   search (`search_knowledge`) runs the same step before the excerpt fold,
+   holding no pooled library connection while the reranker runs. When a
+   search was reranked, `Passage.tier_only` marks a hit the exact tier put
+   among the 20 candidates the reranker scored (in the fused first 20 but not
+   the first 20 by `flat_score`); unreranked searches keep the counterfactual
+   below. Migration `0030` rolls out only after pipeline code that knows the
+   `rerank` slot runs on every ingest-host lane (see
+   [deployment-runbook.md](deployment-runbook.md)). The library study measured MRR@10
+   0.782 → 0.941 at 20 candidates
+   (`bench/rag/rerank/reports/2026-09-25-library-rerank.md`); workspace
+   quality was not measured.
 5. Cap how many passages any one file may contribute (`CAPY_SEARCH_PER_FILE_CAP`,
    default 4 of `CAPY_SEARCH_TOP_K` 5). A tighter cap measured worse: with 3 the
    file holding the answer lost correct passages to other files' noise.
@@ -1041,7 +1353,7 @@ The library-owned tables carry books, subjects, topics, excerpts with tag
 outcomes, figures and model-run receipts.
 
 The taxonomy has three levels (decision 2026-09-19). Areas and subjects are
-one committed fixture, `lab/knowledge/subjects.json` (12 areas, 116 subjects
+one committed fixture, `lab/knowledge/subjects.json` (12 areas, 121 subjects
 with learner aliases, assembled from the Open Textbook Library, OpenStax and
 LibreTexts subject menus); areas only group subjects on the builder dashboard
 and are a column on `library_subjects`, never a filter. Topics are derived per
@@ -1051,7 +1363,8 @@ topics its book uses under the book's subject, then drops every topic no
 tagged excerpt on a current or retained book version references, so a
 rollback never lands on excerpts whose topics are gone; `retire` runs the same
 drop after deleting the version's rows, which is when a retained version's
-topics may go. The pilot's 32 topics all sit under `statistics`.
+topics may go, and `remove` runs it after deleting a whole book. The pilot's 32
+topics all sit under `statistics`.
 
 Topic ids are unique library-wide (decision 2026-09-23). A book may tag its
 excerpts with another subject's topic without redefining it: its owner's
@@ -1081,12 +1394,19 @@ read here follows `rag_file_contents` to the current
 content, exactly as workspace search does, so a retained version is invisible
 to retrieval while staying exportable in ops. UAT and production read the same
 live library; nothing is pinned. A rollback points a book back at a retained
-version, and `retire` drops a retained version's content rows.
+version, and `retire` drops a retained version's content rows. `remove` takes a
+book out of the library (decision 2026-09-25, first used for Modern Philosophy,
+whose own text is CC BY-NC-SA): in one transaction it deletes every version's
+content rows and model runs, the version rows, the book's `rag_file_contents`,
+`files` and `rag_contents` rows and its `library_books` row, then drops the
+topics only it kept. The source PDF stays in the knowledge-base bucket
+(`books/<sha256>.pdf`), so a republish from the book's saved run restores it.
 
 - `search(query, topics, roles)`: hybrid search restricted in SQL to chunks
   whose excerpt carries a verified tag (evidence quote found in the body,
   confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching every
-  requested facet; hits fold into excerpts by best chunk, so `top_k` counts
+  requested facet; the first 20 fused chunks are reranked (search step 4),
+  then hits fold into excerpts by best chunk, so `top_k` counts
   excerpts rather than chunks, each returning with a compact reviewed teaching
   description and scope, roles, topics, pages, figure ids (without decorative
   or excluded figures) and the hit chunk.
@@ -1784,7 +2104,6 @@ A curate turn builds materials instead of answering:
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
 | `list_sources` | none | Scoped source files grouped by chapter, plus workspace study materials; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
-| `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
 | `search_knowledge` | none | Curate mode only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
 | `browse_knowledge` | none | Curate mode only. Exactly one of `subject` or `topic` (enforced in Python). A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime. Retains nothing |
@@ -1882,7 +2201,7 @@ before this contract map their legacy `status` onto an outcome on hydration,
 anything unrecognised becoming `outcome_unknown`. Tool errors carry a stable
 code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 `unavailable_target`, `stale_target`, `quota_rejected`, `lifecycle_rejected`,
-`outcome_unknown`, `limit_reached`) that the frontend localizes.
+`outcome_unknown`, `limit_reached`, `office_editing_paused`) that the frontend localizes.
 
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `insert_block`, `remove_block`, `replace_card`, `add_card`,
@@ -2036,7 +2355,7 @@ bullets, table rows their cells, code its fence; references, diagrams and
 media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
 so a note never shares a content row with a file of identical text, reuses
 vectors for unchanged chunk text from the note's previous content row (read
-before the alias moves), writes the content with no descriptor or summary,
+before the alias moves), writes the content with no descriptor,
 and clears `index_job_id`. A 404 from Go (trashed,
 standalone, deleted) ends the job without work.
 
@@ -2045,8 +2364,7 @@ Search runs one pool: the `scoped_files` CTE unions files and notes with a
 passage cites `{kind: "material", materialId, fileName: title}` with no page
 or regions. The chat panel renders such a chip with the note glyph and opens
 the note in view mode. The agent's `list_sources` keeps notes as title, id
-and kind, `describe_documents` returns a note's heading outline or its first 250
-words, `read_document` pages a note's chunks like a file's, and the file
+and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
 index starts dirty.
@@ -2100,13 +2418,29 @@ holds its source, seed, parse artifacts, canonical index and consumed
 caption digests until publication. Existing parser/ingest workers process that
 candidate without changing the readable `files` row or `rag_file_contents` alias.
 
-The workspace owner funds automatic refresh. `auto_reparse` and `auto_reindex`
-default to true. Office requires a successful prior parse, 5,000 estimated net
-tokens and 60 seconds idle, with no forced deadline. Text batches every 15
-seconds without a minimum or indefinite typing delay. A file has one running
-candidate and one coalesced desired checkpoint. Turning a switch off prevents
-new automatic admission; current leased work can finish. Failed processing
-leaves authored state intact and exposes manual processing.
+The workspace owner funds automatic refresh: provider calls only, since the
+parser page fee applies to a file's first parse (the job payload's `parseFee`;
+see observability-metering). `auto_reparse` and `auto_reindex` default to true.
+Office effects keep only the changed span plus 40 characters on each side
+(`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
+tokens count those excerpts. A move (unchanged text at a new position, as every
+later paragraph becomes when one is inserted) carries no text and counts 0
+tokens, in `effectTokens` and Go's `sourceEffectTokens` alike. Office requires a successful prior parse and 60
+seconds idle, and is due at 3,000 net tokens or once saved changes have had no
+edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
+(`officeRefresh*`) hold the same constants, and the Go store tests run the
+scheduler's SQL from `sourceDocuments.ts` against them. Text batches every 15
+seconds without a minimum or indefinite typing delay. The scheduler, like Go
+admission, skips a change list worth no tokens, except an Office list of moves
+only, which publishes through the 7-day rule, and takes files oldest first by the
+later of `last_edited_at` and `last_refresh_requested_at`. A refused automatic
+admission stores `refresh_error` and the scheduler skips the file until its
+next save, except a 429 (the owner at the concurrent ingest-job limit), which
+stamps `last_refresh_requested_at` instead so the file retries behind the other
+due files. A file has one running candidate and one
+coalesced desired checkpoint. Turning a switch off prevents new automatic
+admission; current leased work can finish. Failed processing leaves authored
+state intact and exposes manual processing.
 
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
@@ -2131,7 +2465,9 @@ valid candidate PUT URL. Clones use the last published snapshot.
 including sources with no index or search hit. Complete exact changes form a
 protected provider message outside tool-output clipping, live-history
 compaction and persisted conversation summaries. Replacements and removals
-supersede old indexed facts. Typed image placeholders can be resolved through
+supersede old indexed facts; the message tells the model that each before and
+after is an excerpt (the changed text with up to 40 characters of context) to
+match against passages, and that a move carries no text. Typed image placeholders can be resolved through
 `resolve_source_change`; the gateway verifies source access/checkpoint and the
 headless runtime extracts the exact image before image-only caption reuse.
 The same read captures published identities for every scoped file, including
@@ -2152,9 +2488,9 @@ Process file changes. Generation uses the same evidence and returns
 Text refresh uses normal full-file normalization and chunking with parsing
 skipped. A small lookup reuses embeddings only for exact indexed input and the
 same immutable model pin. Canonical content hashes include heading context,
-reference classification and citation geometry. Short and detailed summaries
-regenerate from every current chunk, with full coverage in the large-document
-reduction path.
+reference classification and citation geometry. The descriptor follows the
+reuse gate above: kept below 2% net change, otherwise regenerated from every
+current chunk, with full coverage in the large-document reduction path.
 
 ## Configuration surface
 
@@ -2186,8 +2522,8 @@ test suite.
 - **No extracted relations.** Entities + co-mention replace a knowledge graph.
   Relation extraction was most of LightRAG's ingest cost and most of its
   accuracy failures.
-- **No summary tree.** File descriptors live in `list_sources`; detailed
-  summaries are fetched on demand. Cross-document reasoning is query-time, not
+- **No summary tree.** File descriptors live in `list_sources`; the model reads
+  passages for anything more. Cross-document reasoning is query-time, not
   a precomputed rollup that cannot see the question.
 - **Scope is SQL, not a prompt hint.** The agent cannot search outside the
   user's chapter/file selection.
@@ -2199,5 +2535,6 @@ test suite.
   model call. At most one `search_workspace` per response; a later step may
   search again. The hit chunk is the context, packing overlap plus
   `read_document` cover a cut.
-- **Reranker is a seam, not a dependency.** Measure quality on real workspaces
-  before adding a vendor or a GPU to the retrieval container.
+- **Reranking degrades to fused order.** The cross-encoder is a hosted call
+  on the existing DeepInfra account; any failure, the 5-second bound or an
+  unassigned rerank slot returns the fused ranking instead of an error.

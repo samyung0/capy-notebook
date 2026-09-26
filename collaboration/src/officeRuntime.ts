@@ -111,18 +111,34 @@ interface Runtime {
   ): Promise<OfficeCheckpoint>;
 }
 
-// One worker keeps synchronous WASM parsing/export off the WebSocket event loop.
-// Operations are serialized by the worker, rather than loading a WASM runtime
-// for each keystroke or each active room.
-let worker: Worker | undefined;
-let sequence = 0;
-const pending = new Map<
-  number,
-  { resolve(value: unknown): void; reject(error: Error): void }
->();
+/** A call the Office engine refused, trapped on or did not finish in time. */
+export class OfficeEngineError extends Error {}
 
-function getWorker() {
-  if (worker) return worker;
+export const CALL_TIMEOUT_MS = 120_000;
+// A trap leaves wasm-bindgen objects poisoned, and the engine's dispose() or
+// free() in `finally` then throws one of these plain errors in place of the
+// WebAssembly.RuntimeError, so they count as traps too.
+const BROKEN_OBJECT =
+  /attempted to take ownership of Rust value while it was borrowed|recursive use of an object detected|null pointer passed to rust/;
+
+interface Call {
+  args: unknown[];
+  method: string;
+  reject(error: Error): void;
+  resolve(value: unknown): void;
+  timer?: NodeJS.Timeout;
+}
+
+// One worker keeps synchronous WASM parsing/export off the WebSocket event loop,
+// rather than loading a WASM runtime for each keystroke or each active room.
+// Calls queue here with one in flight, so each timeout counts only its own
+// work. A WebAssembly trap or a timeout fails that call and replaces the
+// worker; engine refusals are ordinary results and keep it.
+let worker: Worker | undefined;
+let active: Call | undefined;
+const queue: Call[] = [];
+
+function startWorker() {
   const runtimeURL = new URL(
     '../../vendor/betteroffice/shared/office-checkpoint.mjs',
     import.meta.url
@@ -131,51 +147,79 @@ function getWorker() {
     `
     const { parentPort, workerData } = require('node:worker_threads');
     const runtime = import(workerData);
-    let queue = Promise.resolve();
-    parentPort.on('message', ({id, method, args}) => {
-      queue = queue.then(async () => {
-        try { parentPort.postMessage({id, value: await (await runtime)[method](...args)}); }
-        catch (error) { parentPort.postMessage({id, error: String(error?.message || error)}); }
-      });
+    parentPort.on('message', async ({method, args}) => {
+      try { parentPort.postMessage({value: await (await runtime)[method](...args)}); }
+      catch (error) { parentPort.postMessage({error: String(error?.message || error), trap: error instanceof WebAssembly.RuntimeError}); }
     });
   `,
     { eval: true, workerData: runtimeURL }
   );
   created.on(
     'message',
-    (message: { id: number; value?: unknown; error?: string }) => {
-      const request = pending.get(message.id);
-      if (!request) return;
-      pending.delete(message.id);
-      if (message.error) request.reject(new Error(message.error));
-      else request.resolve(message.value);
-      if (!pending.size) created.unref();
+    (message: { value?: unknown; error?: string; trap?: boolean }) => {
+      if (worker !== created) return;
+      const call = finish();
+      if (message.error === undefined) call?.resolve(message.value);
+      else {
+        call?.reject(new OfficeEngineError(message.error));
+        if (message.trap || BROKEN_OBJECT.test(message.error)) restart();
+      }
+      next();
     }
   );
-  const fail = (error: Error) => {
+  const died = (error: Error) => {
     if (worker !== created) return;
     worker = undefined;
-    for (const request of pending.values()) request.reject(error);
-    pending.clear();
+    finish()?.reject(new OfficeEngineError(error.message));
+    next();
   };
-  created.on('error', fail);
+  created.on('error', died);
   created.on('exit', (code) =>
-    fail(new Error(`Office worker exited (${code})`))
+    died(new Error(`Office worker exited (${code})`))
   );
-  worker = created;
   return created;
+}
+
+function finish() {
+  const call = active;
+  active = undefined;
+  clearTimeout(call?.timer);
+  return call;
+}
+
+function restart() {
+  const old = worker;
+  worker = undefined;
+  void old?.terminate();
+}
+
+function next() {
+  if (active) return;
+  const call = queue.shift();
+  if (!call) {
+    worker?.unref();
+    return;
+  }
+  active = call;
+  worker ??= startWorker();
+  worker.ref();
+  call.timer = setTimeout(() => {
+    if (active !== call) return;
+    finish();
+    call.reject(new OfficeEngineError(`Office ${call.method} timed out`));
+    restart();
+    next();
+  }, CALL_TIMEOUT_MS);
+  worker.postMessage({ args: call.args, method: call.method });
 }
 
 export function runOffice<K extends keyof Runtime>(
   method: K,
   ...args: Parameters<Runtime[K]>
 ): ReturnType<Runtime[K]> {
-  const active = getWorker();
-  active.ref();
-  const id = ++sequence;
   return new Promise((resolve, reject) => {
-    pending.set(id, { reject, resolve });
-    active.postMessage({ args, id, method });
+    queue.push({ args, method, reject, resolve });
+    next();
   }) as ReturnType<Runtime[K]>;
 }
 

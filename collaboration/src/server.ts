@@ -46,10 +46,12 @@ import {
   log,
   reportHttpError,
 } from './observability.js';
-import { closeOfficeRuntime } from './officeRuntime.js';
+import { closeOfficeRuntime, OfficeEngineError } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
   materialIdFromRoom,
+  roomSaveQueue,
+  updateFitsRoom,
   YjsDocumentStore,
 } from './persistence.js';
 import { ProjectionService } from './projection.js';
@@ -66,9 +68,11 @@ import {
   sourceRoom,
 } from './sourceDocuments.js';
 import {
+  OfficeEditingPausedError,
   SOURCE_HANDOFF_CHANNEL,
   SourceHandoff,
   type SourcePublish,
+  SourcePublishingError,
 } from './sourceHandoff.js';
 import { handlePermanentStoreFailure } from './storeFailure.js';
 import {
@@ -96,7 +100,10 @@ const subscriber = new IORedis(config.redisUrl, {
 });
 const store = new YjsDocumentStore(pool);
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
-const sourceStores = new Map<string, Promise<void>>();
+// Source room size estimates from applied update bytes (updateFitsRoom).
+const sourceSizes = new WeakMap<Y.Doc, number>();
+// Office rooms the maintenance pause has flushed; cleared when it ends.
+let pausedRooms = new WeakSet<Document>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
 const failedStores = new Map<string, FailedStoreSnapshot>();
@@ -536,6 +543,17 @@ const server = new Server<CollaborationContext>({
       return;
     }
     try {
+      if (pausedRooms.has(document)) {
+        // A writer that slipped past the pause: it goes read-only (or to
+        // recovery with unsent changes) and its update is refused.
+        connection.sendStateless(
+          JSON.stringify({
+            ...sourceRoom(document.name),
+            type: 'source-editing-paused',
+          })
+        );
+        throw new OfficeEditingPausedError();
+      }
       assertUpdatePreservesContributors(document, yjsUpdate);
       if (SOURCE_ROOM_PATTERN.test(document.name)) {
         await sources.assertConnectionAccess(
@@ -543,16 +561,25 @@ const server = new Server<CollaborationContext>({
           context.userId,
           context.access
         );
-        const candidate = new Y.Doc();
-        try {
-          Y.applyUpdate(candidate, Y.encodeStateAsUpdate(document));
-          Y.applyUpdate(candidate, yjsUpdate);
-          if (
-            Y.encodeStateAsUpdate(candidate).byteLength > MAX_SOURCE_STATE_BYTES
+        if (
+          !updateFitsRoom(
+            sourceSizes,
+            document,
+            yjsUpdate,
+            MAX_SOURCE_STATE_BYTES
           )
-            throw new Error('Source checkpoint exceeds byte limit');
-        } finally {
-          candidate.destroy();
+        ) {
+          // Stateless and unrecoverable, so the client stops resending it.
+          connection.sendStateless(
+            JSON.stringify({
+              type: 'source-checkpoint-failed',
+              ...sourceRoom(document.name),
+              checkpointIds: [],
+              message: 'Source checkpoint exceeds byte limit',
+              recoverable: false,
+            })
+          );
+          throw new Error('Source checkpoint exceeds byte limit');
         }
         return;
       }
@@ -593,18 +620,29 @@ const server = new Server<CollaborationContext>({
       assertAllowedOrigin(request, config.allowedOrigins);
       assertRoomAvailable(documentName);
       if (await isRoomEvicting(documentName)) {
-        throw new Error('collaboration room is being compacted');
+        // Source rooms take this lock only to publish (sourceHandoff.ts).
+        throw SOURCE_ROOM_PATTERN.test(documentName)
+          ? new SourcePublishingError()
+          : new Error('collaboration room is being compacted');
       }
       const claims = verifyCollaborationToken(
         token,
         config.secret,
         documentName
       );
+      const readOnly = claims.access === 'read';
+      // The maintenance pause refuses writers; viewing keeps working.
+      if (
+        !readOnly &&
+        SOURCE_ROOM_PATTERN.test(documentName) &&
+        (await sources.editingPaused(documentName))
+      )
+        throw new OfficeEditingPausedError();
       await (SOURCE_ROOM_PATTERN.test(documentName)
         ? sources
         : store
       ).assertConnectionAccess(documentName, claims.sub, claims.access);
-      connectionConfig.readOnly = claims.access === 'read';
+      connectionConfig.readOnly = readOnly;
       // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
       // the shrinking-direction rule for over-quota accounts.
       return claimsContext(claims);
@@ -624,9 +662,15 @@ const server = new Server<CollaborationContext>({
       throw new Error('collaboration room is being compacted');
     }
     attachDocumentContributorTracker(document, INSTANCE_ID);
-    if (SOURCE_ROOM_PATTERN.test(documentName))
+    if (SOURCE_ROOM_PATTERN.test(documentName)) {
+      document.on('update', (update: Uint8Array) =>
+        sourceSizes.set(
+          document,
+          (sourceSizes.get(document) ?? 0) + update.byteLength
+        )
+      );
       await sources.load(documentName, document, context.userId);
-    else await store.load(documentName, document);
+    } else await store.load(documentName, document);
   },
   async onStateless({ connection, document, payload }) {
     const context = connection.context as CollaborationContext | undefined;
@@ -806,72 +850,61 @@ function sourceReceipt(
   if (!pending?.size) pendingCheckpoints.delete(document.name);
 }
 
-async function persistSource(document: Document) {
+const persistSource = roomSaveQueue(storeSource);
+
+async function storeSource(document: Document) {
   const room = document.name;
-  const previous = sourceStores.get(room) ?? Promise.resolve();
-  const next = previous
-    .catch(() => undefined)
-    .then(async () => {
-      const finish = beginStore(room);
-      const snapshot = new Y.Doc();
-      const rawState = Y.encodeStateAsUpdate(document);
-      Y.applyUpdate(snapshot, rawState);
-      const claimed = [...(pendingCheckpoints.get(room) ?? [])];
-      try {
-        assertRoomAvailable(room, true);
-        const saved = await sources.store(
-          room,
-          snapshot,
-          failedStores.get(room)?.eventId
-        );
-        failedStores.delete(room);
-        clearDocumentContributors(document, saved.contributors);
-        sourceReceipt(document, claimed, saved.checkpoint);
-      } catch (error) {
-        storeFailures++;
-        storeFailureGenerations.set(
-          room,
-          (storeFailureGenerations.get(room) ?? 0) + 1
-        );
-        const recoverable =
-          !(error instanceof SourceRequestError) ||
-          ![401, 403, 404, 409, 413, 422].includes(error.status);
-        document.broadcastStateless(
-          JSON.stringify({
-            type: 'source-checkpoint-failed',
-            ...sourceRoom(room),
-            checkpointIds: claimed,
-            message:
-              error instanceof Error ? error.message : 'Source save failed',
-            recoverable,
-          })
-        );
-        if (recoverable && !roomEvictions.isDiscarding(room)) {
-          const eventId = reportFailedStore(
-            failedStores.get(room),
-            error,
-            room
-          );
-          failedStores.set(room, {
-            checkpointIds: claimed,
-            eventId,
-            state: rawState,
-          });
-        } else {
-          failedStores.delete(room);
-          rejectAuthorizationRoom(room);
-        }
-        throw error;
-      } finally {
-        snapshot.destroy();
-        finish();
-      }
-    });
-  sourceStores.set(room, next);
+  const finish = beginStore(room);
+  const snapshot = new Y.Doc();
+  const rawState = Y.encodeStateAsUpdate(document);
+  Y.applyUpdate(snapshot, rawState);
+  const claimed = [...(pendingCheckpoints.get(room) ?? [])];
   try {
-    await next;
+    assertRoomAvailable(room, true);
+    const saved = await sources.store(
+      room,
+      snapshot,
+      failedStores.get(room)?.eventId
+    );
+    failedStores.delete(room);
+    clearDocumentContributors(document, saved.contributors);
+    sourceReceipt(document, claimed, saved.checkpoint);
+  } catch (error) {
+    storeFailures++;
+    storeFailureGenerations.set(
+      room,
+      (storeFailureGenerations.get(room) ?? 0) + 1
+    );
+    const recoverable =
+      !(error instanceof SourceRequestError) ||
+      ![401, 403, 404, 409, 413, 422].includes(error.status);
+    document.broadcastStateless(
+      JSON.stringify({
+        type: 'source-checkpoint-failed',
+        ...sourceRoom(room),
+        checkpointIds: claimed,
+        message: error instanceof Error ? error.message : 'Source save failed',
+        recoverable,
+      })
+    );
+    if (error instanceof OfficeEngineError) {
+      // Retrying a state the engine failed on cannot help; clients keep drafts.
+      reportFailedStore(undefined, error, room);
+    } else if (recoverable && !roomEvictions.isDiscarding(room)) {
+      const eventId = reportFailedStore(failedStores.get(room), error, room);
+      failedStores.set(room, {
+        checkpointIds: claimed,
+        eventId,
+        state: rawState,
+      });
+    } else {
+      failedStores.delete(room);
+      rejectAuthorizationRoom(room);
+    }
+    throw error;
   } finally {
-    if (sourceStores.get(room) === next) sourceStores.delete(room);
+    snapshot.destroy();
+    finish();
   }
 }
 
@@ -1190,7 +1223,12 @@ async function handleDocumentRequest(
         response,
         error.status,
         {
-          code: error.status === 409 ? 'stale_target' : 'unavailable_target',
+          code:
+            error.status === 409
+              ? 'stale_target'
+              : error.status === 423
+                ? 'office_editing_paused'
+                : 'unavailable_target',
           message: error.message,
         },
         error
@@ -1288,6 +1326,7 @@ const failedStoreRetries = new FailedStoreRetryRunner(
           rejectAuthorizationRoom(room);
         } else {
           reportFailedStore(failed, error, room);
+          if (error instanceof OfficeEngineError) clearIfCurrent();
         }
         return;
       }
@@ -1616,13 +1655,48 @@ const sourceRefreshTimer = setInterval(() => {
   if (schedulingSources) return;
   schedulingSources = true;
   void sources
-    .scheduleRefreshes()
+    .scheduleRefreshes((input) => sourceHandoff.publish(input))
     .catch((error) => captureError(error, { stage: 'source_refresh' }))
     .finally(() => {
       schedulingSources = false;
     });
 }, 5000);
 sourceRefreshTimer.unref();
+
+// The maintenance pause (office_editing_pause, set by operators) reaches this
+// instance within 5 s: each loaded Office room flushes, persists and closes
+// its writers once. A room that loads later, or is mid-publication, follows on
+// a later tick. Authentication refuses new writers, and a paused room refuses
+// updates from any writer that slipped through, until the row is gone.
+let pauseChecked = new WeakSet<Document>();
+const officePauseTimer = setInterval(() => {
+  void (async () => {
+    const { rows } = await pool.query<{ paused: boolean }>(
+      'SELECT EXISTS(SELECT 1 FROM office_editing_pause) AS paused'
+    );
+    if (!rows[0].paused) {
+      pauseChecked = new WeakSet();
+      pausedRooms = new WeakSet();
+      return;
+    }
+    await Promise.all(
+      [...server.hocuspocus.documents.values()]
+        .filter(
+          (document) =>
+            SOURCE_ROOM_PATTERN.test(document.name) &&
+            !pauseChecked.has(document) &&
+            !sourceHandoff.busy(document.name)
+        )
+        .map(async (document) => {
+          pauseChecked.add(document);
+          if (!(await sources.editingPaused(document.name))) return;
+          await sourceHandoff.pause(document);
+          pausedRooms.add(document);
+        })
+    );
+  })().catch((error) => captureError(error, { stage: 'office_pause' }));
+}, 5000);
+officePauseTimer.unref();
 
 projections.start();
 await server.listen(config.port);
@@ -1637,6 +1711,7 @@ async function shutdown(signal: string) {
   clearInterval(compactionTimer);
   clearInterval(heartbeatTimer);
   clearInterval(sourceRefreshTimer);
+  clearInterval(officePauseTimer);
   projections.stop();
   server.hocuspocus.flushPendingStores();
   await server.destroy();

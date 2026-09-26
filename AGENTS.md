@@ -127,6 +127,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 
 - BetterOffice's `main` tracks upstream changes. `capy-ci` is the Capy integration branch used for pinning `vendor/betteroffice`.
 - Create BetterOffice feature branches from `origin/capy-ci` and rebase them onto the latest `origin/capy-ci` before merging into `capy-ci`.
+- Upstream syncs: fast-forward `main` to a fixed upstream commit, merge it into a branch from `origin/capy-ci`, and land that branch without rebasing. If `capy-ci` moved in the meantime, merge it into the branch.
 - Update the submodule pin to a reviewed commit on `capy-ci` after merging. Commit the exact submodule SHA in Capy Notebook; builds use that pin.
 
 ## Frontend

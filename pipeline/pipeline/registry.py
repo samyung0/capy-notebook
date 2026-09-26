@@ -243,7 +243,9 @@ class Registry:
 
         with self._lock:
             self._by_pin.update(by_pin)
-            self._current.update(current)
+            # Replaced, not merged: a cleared default (the rerank off switch)
+            # must disappear here too.
+            self._current = current
             self._rev = rev
 
     def get(self, provider_slug: str, model_slug: str, version: int) -> ModelConfig:

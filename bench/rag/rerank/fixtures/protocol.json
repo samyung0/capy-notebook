@@ -1,0 +1,64 @@
+{
+ "fixed_utc": "2026-09-25T08:53:36Z",
+ "note": "Fixed before any retrieval or rerank result existed for the study queries. Only the synthetic probes (probe.py) had run; they settled the reranker scope below.",
+ "corpus": "The frozen 43-book snapshot of the live library taken 2026-09-25 for the qwen3.7 study (28,844 chunks eligible for plain search), its stored Qwen3-Embedding-4B vectors, loaded unchanged into a disposable local pgvector database.",
+ "queries": {
+  "existing": "bench/rag/qwen37/fixtures/library-queries.json, 235 known-item queries (mono_en 90, cross 90, en_to_es 6, paraphrase 40, mono_es 9) with their frozen relevance sets",
+  "new": "bench/rag/rerank/fixtures/cohorts.json, samedoc and nearmiss, frozen by freeze_cohorts.py"
+ },
+ "rerankers": {
+  "in_scope": {
+   "ali-qwen3-rerank": "Alibaba Model Studio Beijing, qwen3-rerank, OpenAI-compatible route /compatible-api/v1/reranks",
+   "di-0.6b": "DeepInfra Qwen/Qwen3-Reranker-0.6B, /v1/inference",
+   "di-4b": "DeepInfra Qwen/Qwen3-Reranker-4B",
+   "di-8b": "DeepInfra Qwen/Qwen3-Reranker-8B"
+  },
+  "excluded": {
+   "qwen3.7-text-rerank": "documented for Beijing (native route) but the Beijing workspace answers 403 AccessDenied on both routes and Singapore answers 404 Model not exist (probe.py); not callable with the available credentials",
+   "gte-rerank-v2": "still answers in Beijing, but it is the older GTE-based model that Alibaba lists as discontinued on 2026-05-30; not a candidate for new work",
+   "qwen3-vl-rerank": "multimodal reranker; the library is text"
+  }
+ },
+ "instructions": {
+  "default": "sent to all four rerankers",
+  "learner": "sent to ali-qwen3-rerank only: the probes showed DeepInfra accepts the instruction field but ignores it (identical scores under contradictory instructions, unchanged billed tokens), so a DeepInfra learner arm would duplicate its default arm. Not emulated by editing the query text."
+ },
+ "first_stage": {
+  "hybrid40": "store.hybrid_search exactly as library.search calls it (verified-tag chunk filter, 40 fused candidates, production RRF weights and exact-lookup tier) on the local copy; its excerpt fold must reproduce library.search(top_k=10) for every query",
+  "dense40": "exact cosine top 40 over the same eligible chunks with the stored halfvec vectors and the production query prefix (numpy); its ranks must match the SQL vector leg's vec_rank for every hybrid row that carries one",
+  "union": "hybrid40 plus dense40, deduplicated"
+ },
+ "arms": {
+  "hybrid": "production baseline: hybrid40 in fused order",
+  "dense": "dense40 in cosine order",
+  "rerank": "reranker score over a pool, descending; ties by the pool's first-stage position (union: hybrid position, then 40 + dense position), then chunk id. Primary pool hybrid40; secondary dense40; exploratory union.",
+  "fold": "every arm's chunk order goes through the production library fold (first chunk per excerpt, identical hit text within a book collapsed), giving the excerpt list; top 5 is what search_knowledge shows",
+  "per_book_cap_sensitivity": "library.search has no per-book cap (workspace search caps a file at 4 of 5 with overflow). The workspace rule is applied to the excerpt list of the best arm and the baseline as a sensitivity check only."
+ },
+ "replay": "One request per (reranker, instruction, query) over the union, in chunk-id order; pool arms take their documents' scores from it. DeepInfra is pointwise by construction and by probe; Alibaba documents request-relative scores, so a fixed sample checks replay against direct 40-document requests (below).",
+ "verification_and_latency_sample": "50 queries, 10 from each of mono_en, cross (with en_to_es), paraphrase (with mono_es), samedoc, nearmiss, taken in sha256('capy-rerank-sample:' + id) order. For each query, sequentially and interleaved across models: one direct hybrid40 request per reranker (default instruction), plus one direct dense40 request to ali-qwen3-rerank. Replay agreement: identical complete order, identical top 5, maximum absolute score difference. Latency: HTTP round trip of the hybrid40 requests, p50/p95 per reranker, from this PC.",
+ "metrics": {
+  "unit": "excerpt level is primary (search_knowledge returns excerpts); chunk level (the excerpt's displayed hit chunk is a relevant chunk) is secondary",
+  "mrr10": "1/rank of the first relevant excerpt within the top 10, else 0",
+  "hit1": "first relevant at rank 1",
+  "hit5": "a relevant excerpt in the top 5",
+  "ndcg5": "binary gain counted once for the first relevant excerpt (acceptable chunks are alternatives, not additional answers), ideal DCG 1: 1/log2(1 + rank) if rank <= 5",
+  "distractor_above": "nearmiss and samedoc: a known wrong chunk (distractors or not_acceptable) has its excerpt ranked above the first relevant excerpt, or in the top 10 when no relevant excerpt is",
+  "groups": "monolingual EN (mono_en), cross-lingual (cross, en_to_es), paraphrase, monolingual non-EN (mono_es), samedoc, nearmiss; plus existing (235), new (125) and all"
+ },
+ "statistics": {
+  "ci": "paired bootstrap of the mean difference, percentile 95%, 2,000 resamples, seed 20260925, stratified by fine cohort (the qwen3.7 method), versus hybrid and versus dense",
+  "sensitivity": "book-cluster bootstrap (books resampled with replacement) for the headline overall MRR@10 differences",
+  "multiplicity": "one primary endpoint; everything else is reported without correction"
+ },
+ "primary_endpoint": "overall excerpt MRR@10 of the best reranker (default instruction, hybrid40 pool) minus the hybrid baseline",
+ "best_reranker": "highest overall excerpt MRR@10 on hybrid40 with the default instruction; within 0.005 the cheaper at list price wins",
+ "lost_hit_review": "every query where the best arm loses a hybrid hit@5 is read against the exact chunk texts and classified as true error (promoted passages are less relevant, off-topic or generic), label ambiguity (a promoted passage also answers, or the query is ambiguous) or wrong-task promotion (same topic, but a different task, condition, number or item than asked). Hit@5 gains are counted, and a sample is read.",
+ "verdict_rule": {
+  "add": "all of: (a) primary endpoint 95% CI lower bound > 0; (b) no group with point MRR@10 change below -0.02 versus hybrid; (c) lost hit@5 classified true error or wrong-task promotion fewer than gained hit@5; (d) dev-PC p95 of a 40-document request <= 1.5 s and list price <= USD 0.002 per search",
+  "dont": "primary point estimate <= +0.01, or any group below -0.05, or (c) fails",
+  "inconclusive": "otherwise",
+  "also_report": "the best arm versus dense (dense top 5 is a zero-cost alternative) and the learner instruction versus default on ali-qwen3-rerank"
+ },
+ "operations": "Alibaba: at most 2 concurrent requests, retries only on 429, every failure recorded; DeepInfra: 4 concurrent, up to 4 attempts on timeouts/429/5xx. Spend stops at 90% of the caps (Alibaba CNY 30, DeepInfra USD 3). Every attempt logged without text or keys; responses cached so reruns do not bill."
+}

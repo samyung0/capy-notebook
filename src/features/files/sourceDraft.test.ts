@@ -15,7 +15,6 @@ it('merges one recovery lineage while preserving further groups and current draf
     baseSourceSHA256: string,
     doc: Y.Doc
   ): SourceDraft => ({
-    base: new Uint8Array(),
     baseSourceSHA256,
     epoch,
     fileId: 'actor:file',
@@ -52,7 +51,6 @@ it('merges one recovery lineage while preserving further groups and current draf
 it('keeps same-epoch text drafts compatible across published source hashes', () => {
   const drafts = ['old', 'new'].map(
     (hash, index): SourceDraft => ({
-      base: new Uint8Array(),
       baseSourceSHA256: hash,
       epoch: 2,
       fileId: 'actor:file',

@@ -25,5 +25,12 @@ table inet capy_ingest_filter {
 
   chain output {
     type filter hook output priority filter; policy accept;
+    # The parsers (uid 10001 in parser/Dockerfile, host networking) convert
+    # untrusted Office files; they may only open connections to the parser
+    # ports (8090 production, 8091 nonprod) over loopback, which also carries
+    # traffic to the host's own WireGuard address. Reject, not drop, so a
+    # blocked link fails at once instead of stalling the conversion.
+    meta skuid 10001 ct state new oifname "lo" tcp dport { 8090, 8091 } accept
+    meta skuid 10001 ct state new reject
   }
 }

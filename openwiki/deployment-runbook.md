@@ -550,6 +550,27 @@ Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
 an account, divide its quota among them before applying the script.
 
+Migration `0030_rerank_slot.sql` seeds DeepInfra `Qwen/Qwen3-Reranker-4B` as
+the `rerank` default and copies the environment's Qwen embedding capacity to it
+when one exists. Where none exists, set the reranker's capacity in Ops or with
+the script above; until then every search logs `rerank failed; keeping fused
+order` and returns unreranked results. It needs no new secret
+(`DEEPINFRA_API_KEY` on the retrieval service). To turn reranking off, remove
+the reranker from the `rerank` column in the Ops model catalog and save;
+running retrieval processes stop reranking within one registry poll
+(10 minutes). That save disables the reranker row, so turning reranking back
+on needs a new catalog version: clone the row into a draft in Ops, assign it
+to the `rerank` column as its default, and save.
+
+Rollout order for `0030`: run it only after pipeline code that knows the
+`rerank` slot is live on every ingest-host lane (production, UAT and
+`worker-local`). An older pipeline registry fails on the unknown slot: running
+workers stop picking up catalog changes and a restarted worker or retrieval
+service does not start. Deploy the ingest-host release first, then the app
+host whose migration applies `0030`. The gateway migrates at startup unless
+`MIGRATE=false`, so developers run a local gateway build containing `0030`
+with `MIGRATE=false` (or not at all) until `worker-local` runs that code.
+
 Migration `0010_deepseek_flash.sql` moves Flash Vision catalog entries and user
 preferences to `deepseek-flash`, carries over existing credit rates and capacity,
 and retains historical rows for pinned messages/jobs. Deploy the API/Ops build
@@ -1350,6 +1371,63 @@ stays retained behind it. Nothing is pinned per environment.
    republishing every book. That costs one loader run and no model calls,
    because the builder's output is on the developer PC.
 
+### 7.4 Parser egress and LibreOffice conversion
+
+The parser converts untrusted Office uploads with LibreOffice (7.4.7 from
+Debian bookworm in `parser/Dockerfile`, out of upstream support, so security
+fixes come only from Debian). A document can link images or text from a URL or
+a local file, so the conversion is fenced twice:
+
+- **In the parser image.** `parser/odl/document.py` gives every conversion a
+  fresh LibreOffice profile in the job's temporary directory. Its
+  `registrymodifications.xcu` blocks links from documents outside trusted
+  locations (there are none), disables macros at the highest security level and
+  sets Writer and Calc link updates to never. A conversion that exceeds
+  `CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is killed with its whole process group,
+  so `soffice.bin` cannot outlive its launcher. Ingest, `/capture_page`, and
+  Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
+  convert through this one function. It ships with the parser image; nothing to
+  apply by hand.
+- **On the host.** `deploy/ansible/ingest-host/templates/nftables.conf.j2`
+  rejects every new outbound connection from uid 10001 (the `parser` user)
+  except TCP to 8090 (production) and 8091 (nonprod) over loopback. Both
+  parsers use host networking, so this one rule in the host output chain covers
+  both. Loopback is also the route to the host's own WireGuard address, so the
+  containers' healthchecks keep working. Replies to coordinator requests are
+  established traffic and pass. The rule rejects rather than drops, so a
+  blocked link fails at once instead of holding the conversion until its
+  timeout. Nothing else in the parser needs the network: the OCR models are
+  baked into the image, the Java and LibreOffice steps run locally, and the
+  parser sends no Sentry events. If `PARSER_PORT` ever moves off 8091, change
+  the template in the same release or the nonprod healthcheck fails.
+
+Apply the host rule with the provisioning playbook (see the
+[ingest-host README](../deploy/ansible/ingest-host/README.md) for the inventory):
+
+```bash
+cd deploy/ansible/ingest-host
+ansible-playbook --ask-pass playbook.yml --check --diff   # review the output-chain change
+ansible-playbook --ask-pass playbook.yml
+```
+
+The template task checks the file with `nft -c` before installing it, and the
+handler reloads nftables. The reload replaces the `capy_ingest_filter` table in
+one transaction. Existing connections keep their conntrack state.
+
+Verify on the host (nonprod shown; production uses project `capy-ingest` and
+port 8090):
+
+```bash
+nft list chain inet capy_ingest_filter output
+parser=$(docker ps -q --filter label=com.docker.compose.project=capy-ingest-nonprod \
+  --filter label=com.docker.compose.service=parser)
+docker exec "$parser" curl -sS --max-time 5 http://1.1.1.1         # fails at once: connection refused
+docker exec "$parser" curl -sS --max-time 5 https://example.com    # fails at once: could not resolve host
+docker exec "$parser" curl -fsS http://10.77.0.2:8091/healthz      # 200
+docker inspect --format '{{.State.Health.Status}}' "$parser"       # healthy
+curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the host keeps egress
+```
+
 ---
 
 ## 8. Database
@@ -1441,6 +1519,33 @@ stays retained behind it. Nothing is pinned per environment.
    ops, verify `current_user` through both pools, and check that neither role
    belongs to a broader role. Viewer mutation requests must fail before the
    application opens the admin pool.
+
+5. **Ligature and sub/superscript keyword vectors (one-off, decisions
+   2026-09-24).** After the pipeline release whose `tokenize_for_search` maps
+   `ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ` and printed sub- and superscripts (`H₀`, `s²`) is live,
+   rebuild the lexical vector of chunks indexed before it with
+   `pipeline/scripts/reindex_ligatures.py`. It rewrites only `search` on rows
+   whose `indexed_text` holds one of those characters and whose vector is
+   stale, prints `{"candidates", "stale"}` as JSON, and is safe to rerun: a
+   second run reports `"stale": 0`. Run `--dry-run` first each time. An
+   environment already run for ligatures alone needs one more run after the
+   sub/superscript release. The shared library and the pilot database were
+   done on 2026-09-24.
+   - UAT and production: on the Coolify host, in that resource's retrieval
+     container, which already holds `DATABASE_URL`:
+     `docker exec retrieval-<resource-uuid> python pipeline/scripts/reindex_ligatures.py app --dry-run`,
+     then the same command without `--dry-run`.
+   - Local: from the repository root against the full-local database,
+     `uv run python pipeline/scripts/reindex_ligatures.py app`
+     (`DATABASE_URL` defaults to the compose database on `localhost:5432`).
+   - Shared library (§7.3): from the developer PC through the tunnel, with the
+     owner URL from `.env.local`,
+     `PGHOSTADDR=127.0.0.1 PGCONNECT_TIMEOUT=10 uv run --env-file .env.local python pipeline/scripts/reindex_ligatures.py library`.
+     It covers every stored book version. Also run `pilot` with
+     `DATABASE_URL` set to the builder's pilot database
+     (`data/knowledge-base/config.json`), since `publish` copies vectors from
+     there; otherwise a later publish from a run indexed before the mapping
+     brings the old vectors back.
 
 ---
 
@@ -2327,3 +2432,81 @@ The shared non-production parser binds `PARSER_BIND_ADDRESS` on WireGuard
 instead of loopback; configure its private address and port 8091, with production
 on port 8090 when provisioned. Local development needs a private route or an SSH
 forward. The environment manifest includes these app-host values.
+
+## Office maintenance window
+
+An Office engine upgrade that changes seed output (the fork's golden seed tests
+decide, per format) ships in a maintenance window: editing pauses, every file
+with unpublished edits publishes on the old engine at platform cost, and the
+deploy resets the saved states so rooms reseed on the new engine (decision in
+`human/frontend/office-files.md`). An upgrade that keeps seeds only bumps
+epochs. Run the window on UAT first; it doubles as the rehearsal.
+
+Migration `0031_office_maintenance.sql` adds what the window uses: the
+`office_editing_pause` row and `source_documents.reprocess_at` with its partial
+index.
+
+The commands are one binary, `office-maintenance`
+([`server/cmd/office-maintenance`](../server/cmd/office-maintenance/main.go)),
+run against the environment's database:
+
+- UAT and production: in the gateway (`server`) container, which already holds `DATABASE_URL`:
+  `docker exec server-<resource-uuid> /app/office-maintenance <command>`.
+- Local: `cd server && go run ./cmd/office-maintenance <command>`
+  (`DATABASE_URL` defaults to the compose database on `localhost:5432`).
+
+| Command | Effect |
+| --- | --- |
+| `pause` | Inserts the `office_editing_pause` row. The gateway answers `423 office_editing_paused` to Office edit sessions (`source-session` for editing, `collaboration-token`, after authorization) and to seeding, and agent edits and their Undo refuse with the tool code `office_editing_paused`, also where they commit. Within about 15 seconds (5 to notice, up to 10 for the flush) every collaboration instance runs the handoff flush on each loaded Office room, persists it once and closes its writers with `source-editing-paused`; a saved editor keeps its view read-only under the maintenance banner, one with unsaved changes goes to recovery. A room that loads later is flushed on a later tick, a room mid-publication after its handoff. Authentication refuses new writers with the reason `office-editing-paused`, a paused room refuses updates from any writer that slipped through, and a client refused on reconnect goes to the same banner or recovery. Viewing and text sources keep working. |
+| `publish-all` | Requests a publication for every Office source with unpublished edits (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. Prints one line per file and the number refused. |
+| `status` | Prints whether editing is paused, every Office source still unpublished (with its running job and `refresh_error`) and the Office publication and reprocess work in flight: `source_refresh` jobs, the `parse` or `ingest` jobs they became, and system-paid reprocess jobs. Other uploads and text refreshes are not counted. Exits 1 until editing is paused and both lists are empty. |
+| `resume` | Deletes the pause row. |
+
+A maintenance export-only publication makes the saved state the file's bytes
+without a parser or provider call: the collaboration service exports and
+uploads the candidate as for any refresh, and finalizing it replaces the file's
+bytes, bumps the epoch, stores the seed of the export as the state, drops the
+file's index and evicts the old room (editing is paused, so no writer needs a
+flush). Outside the window a store-only file's automatic export-only
+publication goes through the handoff like a refresh instead. Unless the file
+never parsed successfully it is marked for reprocessing: the refresh scheduler parses and
+indexes it at platform cost, whatever the workspace's auto-reparse setting,
+once its owner is active and it is out of the trash, with one job at a time,
+and retries a day later if that fails. A parse that timed out or ran out of
+memory is not rerun until the file's bytes or the parser version change: the
+pipeline refuses a quarantined fingerprint before calling the parser, and the
+same saved state always exports the same bytes. A file never parsed
+successfully stays unmarked and waits for its owner's Process, charged as its
+first parse.
+
+Steps:
+
+1. Beforehand, deploy the maintenance tooling on the old pin, and on UAT run
+   `pause`, `status` and `resume` once to check them.
+2. `pause`. Connected editors flush and go read-only.
+3. `publish-all`, then `status`. Repeat both until `status` prints
+   `0 unpublished, 0 in flight` with editing paused. A second `publish-all`
+   sends each file whose system republish failed to export-only. An export
+   that fails again (an engine error) stays listed with its `refresh_error`:
+   the deploy waits for the operator, who fixes the file on the old engine
+   with editing still paused. Nothing keeps a dropped state, so the deploy
+   never runs while a file is unpublished; to abort the window instead, run
+   `resume` on the old engine without deploying. The old engine's export
+   losses in these publications (charts, opaque drawings) are known and
+   accepted for UAT data.
+4. Deploy the pin bump with that window's reset migration, still paused. The
+   pin bump copies
+   [`server/migrations/templates/office_window_reset.sql`](../server/migrations/templates/office_window_reset.sql)
+   into the next numbered migration, fills the formats whose seeds changed,
+   and ships it. Its guard is the only protection: the migration refuses to
+   run, and the deploy stops, while editing is not paused or any Office source
+   of those formats has unpublished edits or a refresh in flight, and it holds
+   a lock on `source_documents` for its transaction. Then, in one statement,
+   it releases AI edit Undo, deletes refresh candidates, bumps the epoch,
+   drops the state and stored baseline and empties pending effects. No dropped
+   state is kept.
+5. `resume`. Tabs from before the deploy get 403 on reconnect and go to
+   recovery or the banner. Editing needs the pause off, so the check comes
+   after this step.
+6. Check: open one file of each format in Edit, make an edit, publish it, and
+   confirm quota and the `source_documents` rows.

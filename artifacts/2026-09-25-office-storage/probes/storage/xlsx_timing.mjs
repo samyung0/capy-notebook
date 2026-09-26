@@ -1,0 +1,12 @@
+import { readFile } from 'node:fs/promises';
+import { office, formatOf, timed } from './lib.mjs';
+const path = process.argv[2];
+const n = Number(process.argv[3] ?? 100);
+const bytes = new Uint8Array(await readFile(path));
+const seed = await office.seedOffice('xlsx', bytes);
+const editable = await office.inspectOffice(bytes, seed);
+const cells = editable.filter((e) => /!E\d+$/.test(e.label) && !/!E1$/.test(e.label)).slice(0, n);
+const commands = cells.map((e) => ({ type: 'set_cell', sheet: 'Sheet1', cell: e.label.split('!')[1], expectedValue: e.value, value: String(Number(e.value) + 1) }));
+const [one, t1] = await timed(() => office.applyOfficeCommands(bytes, seed, commands.slice(0, 1)));
+const [many, tn] = await timed(() => office.applyOfficeCommands(bytes, seed, commands));
+console.log(JSON.stringify({ file: path, oneCommandMs: t1, [`${commands.length}CommandsMs`]: tn, perCommandMs: Math.round((tn - t1) / (commands.length - 1)) }));

@@ -47,7 +47,7 @@ ROUTE_FAST = "fast"
 # Must match parser/app.py. The implementation generation and exact release
 # SHA form one identity, so rebuilt parser output cannot masquerade as an older
 # artifact even when the source is unchanged.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-rapidocr-v6"}
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-rapidocr-v11"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 

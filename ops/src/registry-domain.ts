@@ -313,7 +313,10 @@ export function assembleRegistryRequest(
     const cells = [...state.cells.values()].filter(
       (cell) => cell.slot === slot
     );
-    if (cells.filter((cell) => cell.isDefault).length !== 1) {
+    const defaults = cells.filter((cell) => cell.isDefault).length;
+    // Rerank alone may have no default: clearing it turns reranking off and
+    // search keeps its fused order.
+    if (defaults > 1 || (defaults === 0 && slot !== 'rerank')) {
       issues.push({
         code: 'missing-default',
         message: `${slot} needs exactly one default.`,

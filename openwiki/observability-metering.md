@@ -278,7 +278,10 @@ either slug before it constructs or persists that identity. Most rows call the
 named provider directly. Two exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
-  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`).
+  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
+  `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
+  (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
+  `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
 - `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
   Tencent Cloud TokenHub
   (`https://tokenhub.tencentcloudmaas.com/v1/chat/completions`,
@@ -289,25 +292,30 @@ named provider directly. Two exact routing exceptions are allowed:
   (decision 2026-09-12, `human/agentic-retrieval.md`). Thinking cannot be
   disabled on this route; `low` is the floor and the catalog default.
 
-Neither exception opens a general router path. Other DeepInfra embedding slugs
+Neither exception opens a general router path. Other DeepInfra slugs
 and other ZAI slugs fail registry validation. A ZAI user key cannot
 authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat, generate and editor also hold a per-user preference.
 The slots are `chat`, `generate`, `editor`, `quiz`, `ingest`, `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
-query embedding) and `captioning` (the vision model used for standalone image
-uploads; embedded figure captioning was retired). Retrieval and captioning are separate
-slots because the row that fills them is a different model from the text
-model.
+query embedding), `captioning` (the vision model used for standalone image
+uploads; embedded figure captioning was retired) and `rerank` (the
+cross-encoder that reorders search candidates, migration `0030`). Retrieval,
+captioning and rerank are separate slots because the row that fills them is a
+different model from the text model. Rerank is the one slot that may have no
+default: Ops lets an operator clear it, and search then keeps fused order.
+Search reads its live default rather than a pin because reranks cost the actor
+no credits.
 
 A **capability** is what a row must be able to do to sit in a slot. Operators
-set `capabilities` (`vision`, `pdf`, `embedding`) on the catalog row;
+set `capabilities` (`vision`, `pdf`, `embedding`, `rerank`) on the catalog row;
 `agentic_loop` is derived from the checked-in certification file
 (`agentic_loop_certs.json`) and can never be set by hand. The only place the
 slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop`, retrieval needs
-`embedding`, captioning needs `vision`, the other slots need nothing. Every
+`embedding`, captioning needs `vision`, rerank needs `rerank`, the other
+slots need nothing. Every
 registry save runs that subset check for drafts and for existing rows alike,
 so a stale row cannot keep a slot it no longer qualifies for; the ops error
 codes are `capability_missing` and `agentic_loop_not_certified`. The
@@ -435,7 +443,8 @@ if a delayed webhook has not yet changed `users.plan_tier`.
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
 period start) next to storage. `GET /api/usage` groups this actor's current
-month by `kind` and `surface` and returns recent `usage_events` rows. It does
+month by `kind` (`llm`, `embedding`, `rerank`, `audio`, `parse`, `email`, and
+historical `caption`) and `surface` and returns recent `usage_events` rows. It does
 not use a separate analytics table. The page shows credits, tokens, the catalog
 provider/model slugs, and `paidBy`. It does not show USD. The operator dashboard
 also reads bounded
@@ -480,7 +489,9 @@ compaction and checkpoint included (assembled back into a completion in
 that restarts on every provider `data:` event; comment-only keep-alives do not
 count, so a request parked in a provider queue times out like a silent one. The
 stream backstop bounds the whole stream. Non-streaming interactive calls such
-as query embeddings get the 15 seconds as a whole-call bound. Ingest calls keep
+as query embeddings get the 15 seconds as a whole-call bound; a search rerank
+gets 5 seconds for admission and the request, busy retry included, and settles
+in the background. Ingest calls keep
 their 120-second bound. Only the awaits on the provider are timed, so a slow
 consumer between chunks never counts as provider silence. The transport keeps
 one keep-alive `httpx` client per process (one per event loop) and parses
@@ -514,7 +525,8 @@ telemetry on the pre-call row means failed and retried attempts remain visible
 too.
 
 Ingest is a separate reservation (`surface='ingest'`), cap 20 per actor across
-every workspace (`ConcurrentIngestLeases`). Provider sessions do not count
+every workspace (`ConcurrentIngestLeases`; `paid_by='system'` sessions, below,
+do not count). Provider sessions do not count
 ingest rows. The ingest hold lasts until settle, fail, or release. It does not use the
 30-minute LLM TTL. A 24-hour backstop releases an ingest reservation that has
 no pending or running job pointing at `payload.reservationId`. A live pending
@@ -626,6 +638,25 @@ or a row that is not embedding. There is no `DefaultEmbeddingRates`. A miss is
 rates and do not call `resolveEmbedding`. Ingest embeddings still bill the
 actor at the workspace pin's rates.
 
+A search rerank has its own usage kind, `rerank`, settled at zero credits on
+the chat or generate session that ran the search. Its `provider_calls` and
+`usage_events` rows carry the reranker's provider/model and the tokens DeepInfra
+reports (`input_tokens`, or `inference_status.tokens_input`). The usage row's
+catalog columns name the reranker row the pipeline called: the settle payload
+sends its `modelVersion`, the gateway requires one on every `rerank` call and
+refuses one on any other kind, and the row must serve the `rerank` slot. Billing
+therefore shows "{surface} · Rerank · deepinfra/Qwen/Qwen3-Reranker-4B" and a
+separate Rerank bucket. The call always uses the platform key; in a BYOK chat it
+skips the capacity gate, as query embeddings do. Search takes the scores as
+soon as they arrive and the settlement finishes in a background task
+(`accounting.settle_in_background`), so a slow gateway never holds a search.
+The lease is released when the provider answers; the call row stays open until
+the background settlement applies it, and a failed one is logged and swept at
+the receipt deadline like any other unsettled call. A background rerank reply
+never overwrites the session's exhaustion flags. A timeout leaves the call
+open for its receipt window like any other uncertain call; any failure keeps
+fused order instead of failing the search.
+
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the
 single highest-volume path in the product ends up costing an unknown amount.
@@ -725,6 +756,30 @@ which is also the browser estimator's rule. Operators can create a new active
 version without deploying. Enqueue snapshots the applicable versions and
 microcredit amounts into the job, so an edit never reprices work already
 waiting in the queue. Standalone image captions bill their tokens only.
+
+### Source refreshes and maintenance republishes
+
+The page fee applies to a file's first parse only; parsing runs on the
+fixed-cost ingest host. Go writes `parseFee` into every source-refresh job
+payload, true only for a file that has never parsed successfully (such as a
+store-only upload processed manually) and never for a system-paid job. A refresh
+parse without the fee still records its pages: `credit_micros` 0 and
+`metadata.parseFee=false` on the parse event. The owner then pays only the
+refresh's provider calls (embeddings of changed chunks, and a descriptor when
+the reuse gate regenerates it), and refresh admission keeps its credit check
+for those. Uploads always pay the fee.
+
+`provider_sessions.paid_by` names who pays: `platform` (platform keys, the
+actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
+credits) and `system`. A maintenance republish opens its ingest session with
+`paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
+unexported `requestSourceRefresh` and `reprocessTx`) and its job payload carries
+`paidBy: "system"`. So does the reprocess of an export-only file, a plain parse
+job that also records its pages without the page fee. It gets no credit check
+at admission or claim, no owner storage check at claim and no lease on the
+actor's ingest slots, and `settle_ingest_provider_call` records every provider
+call at zero credits with `metadata.paidBy="system"`. The file owner stays the
+actor, because `usage_events` needs a real actor.
 
 The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The

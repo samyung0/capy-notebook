@@ -2988,6 +2988,7 @@ components:
         - ingest
         - retrieval
         - captioning
+        - rerank
       type: string
     SourceCandidateReadOutputBody:
       additionalProperties: false
@@ -3142,6 +3143,23 @@ components:
         - toolVersion
         - requestHash
         - actorUserId
+      type: object
+    SourceCheckpointSaved:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceCheckpointSaved.json
+          format: uri
+          readOnly: true
+          type: string
+        checkpoint:
+          format: int64
+          type: integer
+        operation:
+          $ref: "#/components/schemas/AgentOperation"
+      required:
+        - checkpoint
       type: object
     SourceCollaborationToken:
       additionalProperties: false
@@ -3431,14 +3449,13 @@ components:
         indexedBaseline:
           format: base64
           type: string
+          nullable: true
         indexedCheckpoint:
           format: int64
           type: integer
         netTokens:
           format: int64
           type: integer
-        operation:
-          $ref: "#/components/schemas/AgentOperation"
         pendingEffects: {}
         room:
           type: string
@@ -3449,6 +3466,7 @@ components:
         state:
           format: base64
           type: string
+          nullable: true
         workspaceId:
           type: string
       required:
@@ -8449,7 +8467,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SourceSession"
+                $ref: "#/components/schemas/SourceCheckpointSaved"
           description: OK
         default:
           content:

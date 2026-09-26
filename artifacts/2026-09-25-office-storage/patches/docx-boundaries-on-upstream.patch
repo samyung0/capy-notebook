@@ -1,0 +1,45 @@
+diff --git a/crates/docx-edit/src/seed.rs b/crates/docx-edit/src/seed.rs
+index 1a6f294a..13a7c749 100644
+--- a/crates/docx-edit/src/seed.rs
++++ b/crates/docx-edit/src/seed.rs
+@@ -1812,8 +1812,10 @@ fn run_boundary(
+     }
+     let note_marks = note_ref_mark_types(run);
+     let breaks = flow_break_offsets(run, source);
++    let text = units_text(units);
++    let empty_text = text.is_empty();
+     let mut boundary = Map::new();
+-    boundary.insert("text".to_owned(), Value::String(units_text(units)));
++    boundary.insert("text".to_owned(), Value::String(text));
+     if !note_marks.is_empty() {
+         boundary.insert("noteMarks".to_owned(), Value::Array(note_marks));
+     }
+@@ -1823,7 +1825,10 @@ fn run_boundary(
+     if let Some(key) = keys.first() {
+         boundary.insert("marksKey".to_owned(), Value::String(key.clone()));
+     }
+-    if let Some(formatting) = field(Some(run), "formatting") {
++    // restoreOriginalRuns reads `formatting` only for runs without text.
++    if let Some(formatting) = field(Some(run), "formatting")
++        && empty_text
++    {
+         boundary.insert("formatting".to_owned(), formatting.clone());
+     }
+     if let Some(changes) = field(Some(run), "propertyChanges") {
+@@ -2244,6 +2249,16 @@ fn paragraph_units(
+         }
+         unit_counts.push(units.len() - start);
+     }
++    // Store the cache only when a run carries something merging equal-formatted
++    // runs would lose: tracked formatting, note marks, flow breaks, empty runs.
++    let boundaries = boundaries.filter(|boundaries| {
++        boundaries.iter().any(|boundary| {
++            boundary.get("propertyChanges").is_some()
++                || boundary.get("noteMarks").is_some()
++                || boundary.get("breaks").is_some()
++                || boundary.get("text").and_then(Value::as_str) == Some("")
++        })
++    });
+     let attrs = paragraph_attrs(paragraph, styles, &units, &unit_counts, boundaries);
+     (units, para_attrs_to_ppr(attrs))
+ }

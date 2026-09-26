@@ -23,6 +23,10 @@ type SourceCaption struct {
 func sourceEffectTokens(effects []map[string]json.RawMessage) (int64, error) {
 	var total int64
 	for _, effect := range effects {
+		// A move keeps its text and counts 0 (effectTokens in sourceDocuments.ts).
+		if raw, ok := effect["operation"]; ok && string(raw) == `"move"` {
+			continue
+		}
 		var text string
 		for _, key := range []string{"before", "after", "caption"} {
 			if raw, ok := effect[key]; ok {

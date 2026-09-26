@@ -708,7 +708,7 @@ func (s *ReadStore) Health(ctx context.Context, stuckMinutes int) (Health, error
 				   AND ue.provider_call_id = pc.id
 			   )),
 			(SELECT count(*) FROM usage_events ue
-			 WHERE ue.kind IN ('llm', 'embedding')
+			 WHERE ue.kind IN ('llm', 'embedding', 'rerank')
 			   AND ue.created_at >= now() - interval '24 hours'
 			   AND (ue.provider_call_id IS NULL OR NOT EXISTS (
 				 SELECT 1 FROM provider_calls pc

@@ -10,7 +10,10 @@ One live library: the workspace is `library` and each book is one file.
 Publishing a book loads its content under a new content id, records book
 version n+1, marks the previous version retained and swaps the book's pointer
 in one transaction. `rollback` points a book back at a retained version,
-`retire` drops a retained version's content rows while keeping its receipts.
+`retire` drops a retained version's content rows while keeping its receipts,
+and `remove` deletes every row of a book (all versions' content rows, version
+rows, receipts and the book row). `remove` leaves the source PDF in the
+knowledge-base bucket, so a republish from the book's saved run restores it.
 
 Taxonomy: subjects come from the committed fixture `lab/knowledge/subjects.json`,
 loaded by `schema` and refreshed by every `publish`; each manifest book names
@@ -20,8 +23,8 @@ are upserted under the book's subject; a topic whose id is a subject id is
 refused. Topic ids are unique library-wide: a shared topic (another subject's,
 marked `shared` in topics.json) is never upserted, and a publish that would move
 a topic to another subject is refused. After a book's excerpts are written, and again when a version is
-retired, topics no tagged excerpt of a current or retained version references
-are dropped.
+retired or a book removed, topics no tagged excerpt of a current or retained
+version references are dropped.
 
 `schema` creates the schema and adds the nullable reviewed retrieval metadata
 column and the figure label, credit and decorative columns to existing
@@ -880,6 +883,65 @@ def retire(book_id: str, version: int) -> dict:
     return status() | {"topics_dropped": dropped}
 
 
+def remove(book_id: str) -> dict:
+    """Delete every row of a book, then the topics only it kept.
+
+    All versions go (current, retained and retired): their content rows and
+    receipts, the version rows, the book's index file rows and its book row.
+    The source PDF stays in the knowledge-base bucket (`books/<sha256>.pdf`),
+    so a republish from the book's saved run can restore it.
+    """
+    with connect() as conn, conn.transaction():
+        if not conn.execute(
+            "SELECT 1 FROM library_books WHERE id=%s", (book_id,)
+        ).fetchone():
+            raise PilotError(f"No book {book_id}")
+        contents = [
+            row[0]
+            for row in conn.execute(
+                "SELECT content_id FROM library_book_versions WHERE book_id=%s",
+                (book_id,),
+            )
+        ]
+        deleted = {
+            "rag_chunk_vectors_2560": conn.execute(
+                "DELETE FROM rag_chunk_vectors_2560 WHERE chunk_id IN "
+                "(SELECT id FROM library_chunks WHERE content_id = ANY(%s))",
+                (contents,),
+            ).rowcount
+        }
+        for table in (
+            "library_chunks",
+            "library_excerpts",
+            "library_figures",
+            "library_model_runs",
+        ):
+            deleted[table] = conn.execute(
+                f"DELETE FROM {table} WHERE content_id = ANY(%s)", (contents,)
+            ).rowcount
+        # Referencing rows first: rag_contents and files are the keys they point at.
+        for table, column in (
+            ("rag_file_contents", "file_id"),
+            ("library_book_versions", "book_id"),
+            ("library_books", "id"),
+        ):
+            deleted[table] = conn.execute(
+                f"DELETE FROM {table} WHERE {column}=%s", (book_id,)
+            ).rowcount
+        deleted["rag_contents"] = conn.execute(
+            "DELETE FROM rag_contents WHERE id = ANY(%s)", (contents,)
+        ).rowcount
+        deleted["files"] = conn.execute(
+            "DELETE FROM files WHERE id=%s", (book_id,)
+        ).rowcount
+        dropped = drop_unreferenced_topics(conn)
+    return status() | {
+        "removed": book_id,
+        "deleted": deleted,
+        "topics_dropped": dropped,
+    }
+
+
 def status() -> dict:
     with connect() as conn:
         books = conn.execute(
@@ -1219,6 +1281,15 @@ def main() -> None:
     )
     p.add_argument("--book", required=True)
     p.add_argument("--version", type=int, required=True)
+    p = sub.add_parser(
+        "remove",
+        help="delete every row of a book and the topics only it kept",
+        description="Delete every row of a book (all versions' content rows, version "
+        "rows, receipts and the book row), then the topics only it kept. The source "
+        "PDF stays in the knowledge-base bucket (books/<sha256>.pdf), so a republish "
+        "from the book's saved run restores it.",
+    )
+    p.add_argument("--book", required=True)
     sub.add_parser("status")
     sub.add_parser("check")
     args = parser.parse_args()
@@ -1242,6 +1313,8 @@ def main() -> None:
         print(json.dumps(rollback(args.book, args.version), indent=1))
     elif args.command == "retire":
         print(json.dumps(retire(args.book, args.version), indent=1))
+    elif args.command == "remove":
+        print(json.dumps(remove(args.book), indent=1))
     else:
         print(json.dumps(status(), indent=1))
 

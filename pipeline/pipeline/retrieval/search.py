@@ -1,13 +1,14 @@
 """Hybrid search over the chunk store.
 
 The pipeline is: embed the query, run vector and lexical search in one SQL
-statement, fuse by reciprocal rank, cap how much any single file may contribute,
-and return the hit passages. A reranker slots in at :func:`_rerank` — see the
-note there for why V1 ships without one.
+statement, fuse by reciprocal rank, rerank the first candidates with a
+cross-encoder (:func:`rerank`), cap how much any single file may contribute,
+and return the hit passages.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -18,6 +19,13 @@ from ..config import cfg
 from . import models, store
 from .chunking import search_query_terms
 from .lang import UND
+
+log = logging.getLogger("capy.search")
+
+# Fused candidates the reranker reorders; the rest keep fused order behind them.
+# 20 scored as well as 40 on the library study at about half the latency
+# (bench/rag/rerank/reports/2026-09-25-library-rerank.md).
+RERANK_CANDIDATES = 20
 
 
 @dataclass
@@ -165,32 +173,48 @@ async def search(
         file_ids=file_ids,
         candidates=cfg.search_candidates,
     )
-    passages = [Passage.from_row(row) for row in rows]
-    passages = await _rerank(query, passages)
+    searched = time.monotonic()
+    ranked, reranked = await rerank(query, rows)
+    passages = [Passage.from_row(row) for row in ranked]
     top = _cap_per_file(passages, cfg.search_per_file_cap)[:top_k]
-    _mark_tier_only(top, rows, top_k)
+    _mark_tier_only(top, rows, top_k, reranked)
     if stats is not None:
         langs = Counter(p.lang for p in top)
         stats.hits_lang = langs.most_common(1)[0][0] if langs else UND
         stats.query_terms = terms.terms
         stats.cjk_runs = terms.cjk_runs
         stats.embed_ms = int((embedded - started) * 1000)
-        stats.sql_ms = int((time.monotonic() - embedded) * 1000)
+        stats.sql_ms = int((searched - embedded) * 1000)
     return top
 
 
-def _mark_tier_only(top: list[Passage], rows: list[dict[str, Any]], top_k: int) -> None:
+def _mark_tier_only(
+    top: list[Passage], rows: list[dict[str, Any]], top_k: int, reranked: bool
+) -> None:
     """Flag hits that the exact tier alone put in the returned set.
 
-    ``flat_score`` is the fusion with every lexical row at half weight. Ranking
-    the candidates by it, with the same per-file cap, gives the set the caller
-    would have seen without the tier; anything in ``top`` but not in that set
-    owes its place to the tier. This is the counterfactual the telemetry
-    needs to judge whether the tier surfaces answers or noise.
+    ``rows`` are in fused order. ``flat_score`` is the fusion with every
+    lexical row at half weight. Ranking the candidates by it, with the same
+    per-file cap, gives the set the caller would have seen without the tier;
+    anything in ``top`` but not in that set owes its place to the tier. This is
+    the counterfactual the telemetry needs to judge whether the tier surfaces
+    answers or noise.
+
+    After a rerank the tier's only lever is which rows reach the reranker, so a
+    hit is tier-only when it is among the fused candidates the reranker scored
+    but not among the first :data:`RERANK_CANDIDATES` by ``flat_score``.
     """
     if not any(row["score"] != row["flat_score"] for row in rows):
         return
     flat = sorted(rows, key=lambda row: row["flat_score"], reverse=True)
+    if reranked:
+        head = {row["id"] for row in rows[:RERANK_CANDIDATES]}
+        flat_head = {row["id"] for row in flat[:RERANK_CANDIDATES]}
+        for passage in top:
+            passage.tier_only = (
+                passage.chunk_id in head and passage.chunk_id not in flat_head
+            )
+        return
     flat_top = _cap_per_file(
         [Passage.from_row(row) for row in flat], cfg.search_per_file_cap
     )
@@ -199,17 +223,45 @@ def _mark_tier_only(top: list[Passage], rows: list[dict[str, Any]], top_k: int) 
         passage.tier_only = passage.chunk_id not in without_tier
 
 
-async def _rerank(query: str, passages: list[Passage]) -> list[Passage]:
-    """Reranking seam. Currently identity.
+def _rerank_spec() -> registry.ModelConfig | None:
+    """The rerank slot's default, or None when the slot is unassigned.
 
-    A cross-encoder is the single highest-value addition to this file, and it is
-    deliberately not here yet: it needs either a hosted rerank API (a new vendor
-    and per-query cost) or a local model (a GPU in the retrieval container).
-    Heading prefixes and the per-file cap recover a large share of the same
-    benefit for free, so the ordering below stays RRF until retrieval quality is
-    measured against real workspaces.
+    The one slot whose missing default is not an error: clearing it is how an
+    operator turns reranking off. It also reads the live default instead of a
+    pin, because a rerank is recorded at zero credits like the query embedding
+    of the same search, so there is no quoted price for a pin to hold.
     """
-    return passages
+    try:
+        return registry.registry.default(registry.Slot.RERANK)
+    except registry.RegistryError:
+        return None
+
+
+async def rerank(
+    query: str, rows: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], bool]:
+    """Reorder the first fused candidates by the rerank slot's model.
+
+    Used by workspace and library search, before the per-file cap and the
+    excerpt fold. The model scores each row's ``indexed_text`` against the raw
+    query; rows past :data:`RERANK_CANDIDATES` follow in fused order. Returns
+    the rows and whether they were reranked. A search never fails because of
+    the reranker: an error, a busy provider or the call's bound keeps fused
+    order and logs a warning.
+    """
+    head = rows[:RERANK_CANDIDATES]
+    spec = _rerank_spec() if len(head) > 1 else None
+    if spec is None:
+        return rows, False
+    try:
+        scores = await models.rerank(
+            query, [row["indexed_text"] for row in head], spec=spec
+        )
+    except Exception:  # any failure keeps the fused order
+        log.warning("rerank failed; keeping fused order", exc_info=True)
+        return rows, False
+    order = sorted(range(len(head)), key=lambda index: -scores[index])
+    return [head[index] for index in order] + rows[RERANK_CANDIDATES:], True
 
 
 def _cap_per_file(passages: list[Passage], cap: int) -> list[Passage]:

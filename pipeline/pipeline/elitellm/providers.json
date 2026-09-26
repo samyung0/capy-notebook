@@ -30,7 +30,10 @@
       "name": "DeepInfra",
       "byok": false,
       "platformEnv": "DEEPINFRA_API_KEY",
-      "allowedModelSlugs": ["Qwen/Qwen3-Embedding-4B"],
+      "allowedModelSlugs": [
+        "Qwen/Qwen3-Embedding-4B",
+        "Qwen/Qwen3-Reranker-4B"
+      ],
       "thinking": []
     }
   }

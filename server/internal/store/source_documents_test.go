@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -37,15 +41,21 @@ func sourceTestSeed(t *testing.T, s *Store, actor, file string) SourceSession {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err = s.SaveSourceCheckpoint(ctx, file, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, Initialize: true, IndexedBaseline: sourceTestBaseline(doc.Format, "A"), State: []byte("initial-state"), PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64)})
-	if err != nil {
+	if _, err = s.SaveSourceCheckpoint(ctx, file, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, Initialize: true, IndexedBaseline: sourceTestBaseline(doc.Format, "A"), State: []byte("initial-state"), PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64)}); err != nil {
+		t.Fatal(err)
+	}
+	if doc, err = s.SourceSession(ctx, actor, file); err != nil {
 		t.Fatal(err)
 	}
 	return doc
 }
 func sourceTestEdit(t *testing.T, s *Store, actor string, doc SourceSession, state string) SourceSession {
 	t.Helper()
-	out, err := s.SaveSourceCheckpoint(context.Background(), doc.FileID, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000})
+	ctx := context.Background()
+	if _, err := s.SaveSourceCheckpoint(ctx, doc.FileID, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.SourceSession(ctx, actor, doc.FileID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +121,206 @@ func TestSourceRefreshManualIsOwnerOnly(t *testing.T) {
 	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "candidate-state")
 	if _, err := s.RequestSourceRefresh(ctx, editor, file.ID, false); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("editor manual refresh error = %v, want forbidden", err)
+	}
+}
+
+func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "source_auto_refresh")
+	for _, c := range []struct {
+		tokens   int
+		idle     string
+		admitted bool
+		effects  string
+	}{
+		{3000, "61 seconds", true, ""},
+		{3000, "30 seconds", false, ""},
+		{2999, "6 days", false, ""},
+		{1, "7 days 1 minute", true, ""},
+		// Moves only weigh 0 tokens and publish through the stale rule.
+		{0, "7 days 1 minute", true, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
+		{0, "6 days", false, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
+		{0, "8 days", false, `[]`},
+	} {
+		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
+		if _, err = s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,pending_effects=COALESCE(NULLIF($4,'')::jsonb,pending_effects) WHERE file_id=$1`, file.ID, c.tokens, c.idle, c.effects); err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.RequestSourceRefresh(ctx, owner, file.ID, true)
+		if (err == nil) != c.admitted || (err != nil && !errors.Is(err, ErrConflict)) {
+			t.Fatalf("%d tokens after %s: err=%v, want admitted=%v", c.tokens, c.idle, err, c.admitted)
+		}
+	}
+}
+
+// schedulerSource reads a statement or constant of the collaboration
+// scheduler (collaboration/src/sourceDocuments.ts), the first capture group of
+// pattern, so the Go tests run it verbatim.
+func schedulerSource(t *testing.T, pattern string) string {
+	t.Helper()
+	raw, err := os.ReadFile("../../../collaboration/src/sourceDocuments.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(pattern).FindSubmatch(raw)
+	if match == nil {
+		t.Fatalf("%s not found in sourceDocuments.ts", pattern)
+	}
+	return string(match[1])
+}
+
+// TestRefreshSchedulerQuery runs the collaboration scheduler's statements from
+// collaboration/src/sourceDocuments.ts verbatim with its trigger constants,
+// which must equal Go admission's.
+func TestRefreshSchedulerQuery(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	find := func(pattern string) string { return schedulerSource(t, pattern) }
+	candidatesSQL := find("(?s)const REFRESH_CANDIDATES_SQL = `(.*?)`;")
+	deferSQL := find(`(?s)const REFRESH_DEFER_SQL =\s*'(.*?)';`)
+	tokens, err := strconv.Atoi(find(`const OFFICE_REFRESH_TOKENS = (\d+);`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	idle, stale := find(`const OFFICE_REFRESH_IDLE = '(.*?)';`), find(`const OFFICE_REFRESH_STALE = '(.*?)';`)
+	var same bool
+	if err = s.pool.QueryRow(ctx, `SELECT $1::interval=make_interval(secs=>$2) AND $3::interval=make_interval(secs=>$4)`, idle, officeRefreshIdle.Seconds(), stale, officeRefreshStale.Seconds()).Scan(&same); err != nil || !same || tokens != officeRefreshTokens {
+		t.Fatalf("scheduler trigger %d/%s/%s differs from Go admission (err %v)", tokens, idle, stale, err)
+	}
+
+	owner := newBlobTestUser(t, s, "source_scheduler")
+	edited := func(netTokens int, ago, effects string) string {
+		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,last_refresh_requested_at=now()-$3::interval,pending_effects=COALESCE(NULLIF($4,'')::jsonb,pending_effects) WHERE file_id=$1`, file.ID, netTokens, ago, effects); err != nil {
+			t.Fatal(err)
+		}
+		return file.ID
+	}
+	due := edited(3000, "2 minutes", "")
+	worthless := edited(0, "8 days", `[]`) // an empty change list: Go refuses it
+	// Moves only: 0 tokens, published by the stale rule.
+	reordered := edited(0, "9 days", `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`)
+	unedited := edited(5, "8 days", "")
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	// Only this test's rows compete for the batch; the rollback restores the rest.
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited}); err != nil {
+		t.Fatal(err)
+	}
+	candidates := func() []string {
+		t.Helper()
+		rows, err := tx.Query(ctx, candidatesSQL, tokens, idle, stale)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		var files []string
+		for rows.Next() {
+			var file, user string
+			var checkpoint int64
+			var reprocess bool
+			if err := rows.Scan(&file, &user, &checkpoint, &reprocess); err != nil {
+				t.Fatal(err)
+			}
+			files = append(files, file)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		return files
+	}
+	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, due}) {
+		t.Fatalf("candidates %v, want the reordered file, the unedited one, then the due one", got)
+	}
+	// A 429 (owner at the ingest-job limit) rotates the file behind the others.
+	if _, err = tx.Exec(ctx, deferSQL, unedited); err != nil {
+		t.Fatal(err)
+	}
+	if got := candidates(); !slices.Equal(got, []string{reordered, due, unedited}) {
+		t.Fatalf("candidates after a 429 %v, want the refused file last", got)
+	}
+}
+
+func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "source_refresh_payer")
+	edited := func(everParsed bool) string {
+		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=$2 WHERE id=$1`, file.ID, everParsed); err != nil {
+			t.Fatal(err)
+		}
+		return file.ID
+	}
+	type jobPayload struct {
+		ParseFee      bool   `json:"parseFee"`
+		PaidBy        string `json:"paidBy"`
+		ReservationID string `json:"reservationId"`
+	}
+	payloadOf := func(job SourceProcessResult, err error) jobPayload {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var raw []byte
+		if err = s.pool.QueryRow(ctx, `SELECT payload FROM jobs WHERE id=$1`, job.JobID).Scan(&raw); err != nil {
+			t.Fatal(err)
+		}
+		var p jobPayload
+		if err = json.Unmarshal(raw, &p); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// The page fee applies to a file's first parse only.
+	if p := payloadOf(s.RequestSourceRefresh(ctx, owner, edited(false), false)); !p.ParseFee || p.PaidBy != models.PaidByPlatform {
+		t.Fatalf("first parse payload: %+v", p)
+	}
+	if p := payloadOf(s.RequestSourceRefresh(ctx, owner, edited(true), false)); p.ParseFee || p.PaidBy != models.PaidByPlatform {
+		t.Fatalf("refresh payload: %+v", p)
+	}
+	// The system payer admits an owner who is out of credits and takes none of
+	// the owner's ingest slots.
+	if _, err = s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros) VALUES($1,999999999999999) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros`, owner); err != nil {
+		t.Fatal(err)
+	}
+	maintained := edited(true)
+	if _, err = s.RequestSourceRefresh(ctx, owner, maintained, false); !errors.Is(err, ErrCreditsExhausted) {
+		t.Fatalf("owner-paid refresh without credits: %v", err)
+	}
+	p := payloadOf(s.requestSourceRefresh(ctx, owner, maintained, false, models.PaidBySystem, false))
+	var paidBy string
+	if err = s.pool.QueryRow(ctx, `SELECT paid_by FROM provider_sessions WHERE id=$1`, p.ReservationID).Scan(&paidBy); err != nil {
+		t.Fatal(err)
+	}
+	if p.ParseFee || p.PaidBy != models.PaidBySystem || paidBy != models.PaidBySystem {
+		t.Fatalf("system refresh: payload %+v, session paid_by=%q", p, paidBy)
+	}
+	if slots, err := s.IngestSlots(ctx, owner); err != nil || slots.SlotsUsed != 2 {
+		t.Fatalf("ingest slots: %+v %v", slots, err)
 	}
 }
 
@@ -309,6 +519,17 @@ func TestSourceCloneCopiesPublishedSnapshotAndCaptionReferences(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO image_caption_associations(id,file_id,image_sha256,caption_blob_path,size_bytes) VALUES($1,$2,$3,'captions/shared-caption',30)`, uid("ica"), file.ID, strings.Repeat("c", 64)); err != nil {
 		t.Fatal(err)
 	}
+	// The published descriptor keeps its running change share for the reuse gate.
+	contentID := uid("rgc")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'clone-hash','ready')`, contentID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, file.ID, ws.ID, contentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor,change_share,summary_version) VALUES($1,$2,'Photosynthesis.',0.0125,2)`, contentID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
 	clone, err := s.CloneWorkspace(ctx, owner, ws.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -330,6 +551,11 @@ func TestSourceCloneCopiesPublishedSnapshotAndCaptionReferences(t *testing.T) {
 	}
 	if docs != 0 || captions != 1 || refs != 2 {
 		t.Fatalf("clone copied live history or lost captions: docs=%d captions=%d refs=%d", docs, captions, refs)
+	}
+	var descriptor string
+	var share float64
+	if err = s.pool.QueryRow(ctx, `SELECT cs.descriptor,cs.change_share FROM rag_content_summaries cs JOIN rag_file_contents fc ON fc.content_id=cs.content_id WHERE fc.file_id=$1`, clonedFile).Scan(&descriptor, &share); err != nil || descriptor != "Photosynthesis." || share != 0.0125 {
+		t.Fatalf("clone descriptor=%q change_share=%v err=%v", descriptor, share, err)
 	}
 	if err = trashAndPurgeFile(ctx, s, owner, file.ID); err != nil {
 		t.Fatal(err)
@@ -439,18 +665,21 @@ func TestSourceSeedQuotaChargesCompactBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
+	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
 		ActorIDs: []string{owner}, Epoch: session.Epoch, Initialize: true,
 		State: state, IndexedBaseline: baseline, PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64),
-	})
-	if err != nil {
+	}); err != nil {
 		t.Fatalf("compact baseline should fit exact quota: %v", err)
 	}
 	usage, err = s.StorageUsage(ctx, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if usage.UsedBytes != usage.LimitBytes || string(saved.IndexedBaseline) != string(baseline) {
-		t.Fatalf("wrong baseline charge: %+v baseline=%q", usage, saved.IndexedBaseline)
+	var saved []byte
+	if err = s.pool.QueryRow(ctx, `SELECT indexed_baseline FROM source_documents WHERE file_id=$1`, file.ID).Scan(&saved); err != nil {
+		t.Fatal(err)
+	}
+	if usage.UsedBytes != usage.LimitBytes || string(saved) != string(baseline) {
+		t.Fatalf("wrong baseline charge: %+v baseline=%q", usage, saved)
 	}
 }

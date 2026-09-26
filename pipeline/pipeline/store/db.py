@@ -2031,12 +2031,12 @@ def abandon_provider_call(
 
 
 def _ingest_provider_metadata(
-    call_id: str, purpose: str, kind: str, usage: Any
+    call_id: str, purpose: str, kind: str, usage: Any, paid_by: str
 ) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "callId": call_id,
         "purpose": purpose,
-        "paidBy": "platform",
+        "paidBy": paid_by,
     }
     if usage.cached_read_tokens:
         metadata["cachedReadTokens"] = usage.cached_read_tokens
@@ -2073,10 +2073,14 @@ def settle_ingest_provider_call(
     units: int = 0,
     unit: str = "tokens",
 ) -> str:
-    """Atomically apply one post-paid ingest provider attempt."""
+    """Atomically apply one post-paid ingest provider attempt.
+
+    A ``system`` session (the maintenance republish) records the usage at
+    zero credits against its actor.
+    """
     cur.execute(
         """
-        SELECT actor_user_id, workspace_id, trace_id, surface, status
+        SELECT actor_user_id, workspace_id, trace_id, surface, status, paid_by
           FROM provider_sessions WHERE id = %s FOR UPDATE
         """,
         (session_id,),
@@ -2084,7 +2088,16 @@ def settle_ingest_provider_call(
     reservation = cur.fetchone()
     if reservation is None:
         raise ProviderSettlementRejected("ingest spend session not found")
-    actor_user_id, workspace_id, trace_id, surface, reservation_status = reservation
+    (
+        actor_user_id,
+        workspace_id,
+        trace_id,
+        surface,
+        reservation_status,
+        paid_by,
+    ) = reservation
+    if paid_by == "system":
+        credit_micros = 0
     if surface != "ingest" or reservation_status not in {
         "open",
         "settled",
@@ -2153,7 +2166,7 @@ def settle_ingest_provider_call(
             units,
             unit,
             credit_micros,
-            _ingest_provider_metadata(call_id, purpose, kind, usage),
+            _ingest_provider_metadata(call_id, purpose, kind, usage, paid_by),
         )
         if call[6:] == expected_call_receipt and event == expected_event:
             return "duplicate"
@@ -2183,7 +2196,7 @@ def settle_ingest_provider_call(
             )
         return "expired"
 
-    metadata = _ingest_provider_metadata(call_id, purpose, kind, usage)
+    metadata = _ingest_provider_metadata(call_id, purpose, kind, usage, paid_by)
 
     record_usage_event(
         cur,

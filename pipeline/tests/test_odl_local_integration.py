@@ -241,10 +241,7 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
 
     async def summarize(name, parsed_chunks):
         assert name == "integration.pdf" and parsed_chunks == chunks
-        return (
-            "French language model scores and orbital observations.",
-            "Local integration summary.",
-        )
+        return "French language model scores and orbital observations."
 
     monkeypatch.setattr(models, "embed", embed)
     monkeypatch.setattr(indexing, "summarize_file", summarize)

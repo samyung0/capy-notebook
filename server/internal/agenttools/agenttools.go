@@ -148,6 +148,8 @@ const (
 	ErrLifecycleRejected    ErrorCode = "lifecycle_rejected"
 	ErrOutcomeUnknown       ErrorCode = "outcome_unknown"
 	ErrLimitReached         ErrorCode = "limit_reached"
+	// ErrOfficeEditingPaused: the Office maintenance window pauses edits.
+	ErrOfficeEditingPaused ErrorCode = "office_editing_paused"
 )
 
 // ToolError is the safe typed error carried on a result. Message is already
@@ -220,6 +222,7 @@ func Export() Contract {
 		ErrorCodes: []ErrorCode{
 			ErrUnsupportedFormat, ErrUnsupportedOperation, ErrInvalidInput, ErrUnavailableTarget,
 			ErrStaleTarget, ErrQuotaRejected, ErrLifecycleRejected, ErrOutcomeUnknown, ErrLimitReached,
+			ErrOfficeEditingPaused,
 		},
 		EffectOperations: []EffectOperation{
 			EffectCreated, EffectEdited, EffectEditUndone, EffectTrashed, EffectRestored,
@@ -401,19 +404,6 @@ func Definitions() []Definition {
 			InputSchema:        obj(map[string]any{}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpSourceRead, OpMaterialRead},
-		}),
-		chatTool(Definition{
-			Name:      "describe_documents",
-			Retention: RetainFull,
-			Description: "Return the detailed summaries of up to eight source files or notes. Call " +
-				"after list_sources when the short descriptors are not enough " +
-				"to decide, or when the question is about what a document covers " +
-				"as a whole.",
-			InputSchema: obj(map[string]any{
-				"file_ids": idList("One to eight documents to describe.", 1, 8),
-			}, "file_ids"),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpSourceRead},
 		}),
 		chatTool(Definition{
 			Name:      "read_document",

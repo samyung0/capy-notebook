@@ -97,9 +97,12 @@ View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
 shared changes and previews the exported current replica. Saving requests a database
 checkpoint receipt and keeps the editor mounted. Ordinary metadata refetches do
-not recreate an active editor. A successful Office base handoff deliberately
-loads a fresh editing epoch and clears Undo/Redo. Starting Edit from a PDF
-citation creates the editor directly without warming the native Office viewer.
+not recreate an active editor, and neither does a completed Office base
+handoff: a saved editor keeps its current view read-only under a persistent
+banner that says a newer version is available and its changes were saved; the
+banner's Reload button reloads the page, which opens the new epoch with empty
+Undo/Redo. Starting Edit from a PDF citation creates the editor directly
+without warming the native Office viewer.
 
 The parent owns the Hocuspocus provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
@@ -219,36 +222,80 @@ room. `source_documents` stores the current state, compact indexed semantic base
 effects and durable checkpoint. The Go API rechecks current source access,
 epoch and account state through a small access-only endpoint for each incoming
 edit. Current state and semantic baseline are fetched for bootstrap and persistence;
-checkpoint writes also check storage growth. Saved means the server has
-acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same path.
+checkpoint writes also check storage growth. The checkpoint answers with the new
+checkpoint and an agent edit's receipt only, and the browser's editing session
+read carries the state without the baseline or pending effects. Saved means the
+server has acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same
+path. Each room runs one save at a time with at most one queued behind it;
+callers arriving while one is queued for the same document share it and
+receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
 
+Each incoming source update is checked without copying the room: contributor
+markers against the decoded update, and size against an estimate kept from the
+room's applied update bytes. Only when the estimate passes the 100 MB cap is the
+exact size computed; an update over the cap gets an unrecoverable
+`source-checkpoint-failed` message, so the client goes to recovery instead of
+reconnecting and resending. The exact limit at save still applies.
+
 The browser retains unacknowledged edits in an IndexedDB draft for each actor,
-file and editing session. Reopening merges compatible drafts; a receipt removes
-only the exact draft versions it covers. Another tab's newer draft remains
-available. Save, export and handoff first commit open spreadsheet inputs and
-wait for active composition or gestures. Pending input counts as unsaved even
-before it reaches the shared document.
+file and editing session. The draft is encoded and written at most every 250 ms,
+latest state only, and not at all once a receipt covers it, so a saved draft
+never returns as a recovery prompt. The source base is stored once per file and
+SHA beside the drafts (database version 3; older draft layouts are dropped) and
+removed with the last draft that uses it. Reopening merges compatible drafts; a
+receipt removes only the exact draft versions it covers. Another tab's newer
+draft remains available. Save, export and handoff first commit open spreadsheet
+inputs and wait for active composition or gestures. Pending input counts as
+unsaved even before it reaches the shared document.
 Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the parent verifies the current epoch. An old
 epoch with unsaved changes enters recovery and permits draft download instead
 of merging incompatible updates. Recovery merges drafts from the same old
 epoch/base. An explicit Discard this draft action removes only those exact
 versions and advances to the next retained group, then the current file.
-Downloading alone leaves the drafts intact. A fully acknowledged client reloads the new
-base when it learns about a completed handoff.
+Downloading alone leaves the drafts intact. A client whose changes were all
+saved when it learns about a completed handoff (from the room or on reconnect)
+shows the newer-version banner instead; a client with unsaved changes enters
+recovery.
 
 Office automatic refresh starts only after a prior successful parse, at least
-5,000 estimated net-change tokens, and 60 seconds without a server-observed
-edit. Every edit resets that idle interval; there is no maximum wait. Manual
-processing bypasses the threshold. Editing continues during processing. A newer
-saved checkpoint is rebound to the candidate's exported source. Successful
-publication briefly flushes connected writers, then atomically publishes the
-source, index, rebased current state and matching indexed baseline.
-The current checkpoint can remain ahead of the indexed checkpoint, with later
-edits retained as pending effects. A concurrent save retries only the local
-rebase against the same parsed candidate. All editors remount in the new epoch
-and clear Undo/Redo after publication.
+3,000 trimmed net-change tokens or saved changes left unedited for 7 days, and
+60 seconds without a server-observed edit. Every edit resets that idle
+interval. A text effect keeps the changed span plus 40 characters on each
+side; a move (text that only changed position, as every later paragraph does
+when one is inserted) carries no text and counts 0 tokens, so a pure reorder
+publishes through the 7-day rule. Manual processing bypasses the threshold. A
+store-only Office file (never processed) publishes export-only under the same
+trigger, whatever the workspace's auto-reparse setting, through the same
+handoff: the saved state becomes the file's bytes with no parser or provider
+call and no charge (see Maintenance window below). The owner's Process stays
+the opt-in first parse; pressed while such an export runs, it turns that job
+into the owner-paid parse of the same capture. Editing continues during
+processing. A newer
+saved checkpoint is rebound to the candidate's exported source. A started
+handoff always completes. Each connected writer goes read-only, flushes pending
+input into the document, waits until its provider has nothing unsent, and
+reports ready; it does not wait for its own checkpoint receipt. After 10
+seconds the service disconnects writers that have not answered (they reconnect
+into the new epoch, where unsaved changes go to recovery); a writer that
+disconnects is no longer waited for. The service then persists the room once.
+The publishing coordinator waits up to 60 seconds for every instance's
+acknowledgement, since that persist can queue behind a running save, and then
+publishes the source, index, rebased current state and matching indexed
+baseline atomically. The room lock covers that wait plus one Office engine
+call (3 minutes), and each instance's recovery watchdog outlasts the lock.
+While the room is locked, a reconnecting editor's authentication is refused
+with the distinct reason `source-publishing`; the editor reconnects once after
+3 seconds without showing an error, and only a second refusal before it
+authenticates shows one. Other authentication failures show at once. The
+current checkpoint can remain ahead of the indexed checkpoint, with later edits
+retained as pending effects. A concurrent save
+retries only the local rebase against the same parsed candidate. A connected
+editor that answered ready counts as saved and keeps its view under the
+newer-version banner; a disconnect clears that, so an editor that loses its
+connection before the completion goes to recovery. The new epoch starts with
+empty Undo/Redo.
 
 Export finalization compares the B2 object's size and unquoted ETag with the
 gateway's HEAD result. Rejected exports send a complete failure receipt so the
@@ -271,7 +318,85 @@ associations, without pending edits or jobs. Deleting a source fences its old
 room and cancels dependent work. Candidate sources live
 in B2; job-local downloads are temporary. Source base bytes are cached in the
 collaboration process by SHA within a bounded 128 MiB cache. Headless export,
-comparison and asset extraction run in a worker thread.
+comparison and asset extraction run in one worker thread. Calls queue on the
+main thread with one in flight and time out about 2 minutes after sending; a
+WebAssembly trap or a timeout fails that call and replaces the worker, while
+engine refusals such as `stale_target` are ordinary results. wasm-bindgen's
+broken-object errors (for example "attempted to take ownership of Rust value
+while it was borrowed") count as traps, because the engine's cleanup throws
+them in place of the trap. A save that fails
+inside the engine reports the failure to its clients, who keep their drafts,
+and is not queued for the failed-store retry.
+
+## Maintenance window
+
+An engine upgrade that changes seed output runs in a maintenance window; the
+steps and the `office-maintenance` commands are in the
+[deployment runbook](../deployment-runbook.md#office-maintenance-window).
+
+**Pause.** While the `office_editing_pause` row exists, the gateway refuses
+Office edit sessions (`source-session` for editing and `collaboration-token`
+answer `423 office_editing_paused` after authorization), seeding a room's first
+state, and agent edits and their Undo (tool error `office_editing_paused`, also
+at the checkpoint that commits them). Agent inspect of a never-opened file
+reads an unsaved in-memory seed. The collaboration service refuses writable
+connections to Office rooms at authentication with the reason
+`office-editing-paused`. Within 5 seconds of the row appearing, each instance
+runs the handoff flush on every loaded Office room (up to 10 seconds more),
+persists it once, sends `source-editing-paused` and closes the writers; a room
+that loads later is flushed on a later tick, a room mid-publication after its
+handoff, and a flushed room refuses updates from any writer that slipped
+through. Saves of rooms that were already open still land, so the flush and
+failed-store retries persist. A client whose changes were all saved keeps its
+view read-only under the same banner as a completed handoff, saying editing is
+paused and its changes were saved; one with unsaved changes goes to recovery.
+A client refused on reconnect (a token request answered 423, or the
+authentication reason) takes the same path; opening Edit during the pause shows
+the paused error. Viewing (`source-session?view=true`) and text sources are
+unaffected.
+
+**Publish all.** Every Office source with unpublished edits publishes before
+the deploy: a system-paid republish (`paid_by='system'`, no credit, storage or
+owner-state check) for files of active or blocked owners, export-only for files
+never parsed successfully (store-only uploads and failed first parses, so
+maintenance never runs a first parse), trashed files, files of suspended or
+deletion-pending owners and files whose system republish of the same checkpoint
+failed.
+
+**Export-only publication.** The candidate exports and uploads like any
+refresh, and the same saved state always exports the same bytes. A maintenance
+export-only publication (system payer) publishes in finalize
+(`publishExportTx` in `server/internal/store/office_maintenance.go`), since
+editing is paused: it makes the export the file's bytes, bumps the epoch,
+stores the export's seed as the state and its baseline as the indexed
+baseline, empties pending effects, drops the file's index and caption
+associations and evicts the old room. A save after the capture supersedes the
+job and a later run exports again. The automatic export of a store-only file
+instead keeps the finalized candidate and publishes it through the handoff,
+like a refresh after its parse: editors flush, saves made after the capture
+are rebased onto the export and stay pending, and open editors get the
+newer-version banner. Its storage is gated on the net change at publication.
+Unless the file never parsed successfully (then its owner's Process, charged as
+the first parse, stays the way to index it) it is marked (`reprocess_at`): the refresh
+scheduler then parses and indexes the file's bytes as a plain system-paid parse
+job (no page fee), whatever auto-reparse says, once the owner is active and the
+file is out of the trash, never while another parse or ingest job is queued for
+it. A failed attempt waits a day; a refused one (owner over quota) an hour. The
+first reprocess regenerates the descriptor, since none is published.
+
+**Readiness.** `office-maintenance status` fails until the pause is on and no
+Office source is unpublished and no Office publication or reprocess work
+(source refresh jobs, the parse and ingest jobs they became, system-paid
+reprocess jobs) is in flight.
+
+**Reset.** The deploy's reset migration, from
+`server/migrations/templates/office_window_reset.sql`, refuses to run unless the
+pause is on and nothing of those formats is unpublished or in flight, under a
+lock on `source_documents`; that guard is the only protection, since no dropped
+state is kept. It then bumps the epoch, drops the state and stored baseline,
+empties pending effects and deletes refresh candidates, so rooms reseed on the
+new engine. A file that cannot publish keeps the pause on until an operator
+fixes it on the old engine, so no engine ever holds another engine's state.
 
 ## Private PDF annotations
 
@@ -315,7 +440,8 @@ OOXML export. See [the test catalog](../test-catalog.md) for entry points.
 The source comparison baseline is separate from the editable Yjs state. It stores
 text and stable positions, image hashes/references, and hashes of visual metadata;
 media bytes remain in the current editor state. Office handoff publishes the rebased
-saved state and a baseline mapped into its identities, then remounts the editor.
+saved state and a baseline mapped into its identities; open editors show the
+newer-version banner.
 PPTX rebase states use schema 4 and binary changed package parts; ordinary binary
 media states remain schema 3. XLSX rebase states require the `xlsx:rebase` root,
 which older strict schema-7 readers reject. XLSX permits the server-owned

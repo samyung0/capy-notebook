@@ -2,15 +2,47 @@ import { randomUUID } from 'node:crypto';
 import type { Document, Hocuspocus } from '@hocuspocus/server';
 import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
+import { CALL_TIMEOUT_MS } from './officeRuntime.js';
 import {
   effectTokens,
   encodeBaseline,
   type SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
+  sourceRoom,
 } from './sourceDocuments.js';
 
 export const SOURCE_HANDOFF_CHANNEL = 'capy:collaboration:source-handoff';
+// Editors answer ready within READY_WINDOW_MS or are closed; each instance then
+// persists the room, possibly behind a running save, and acknowledges. The
+// coordinator waits ACK_WAIT_MS for that, then rebases and publishes within
+// about one Office engine call (CALL_TIMEOUT_MS). The room lock covers both (a
+// publication that outlives it fails at the lease check), and each instance's
+// watchdog outlasts the lock so it never restores editing while the
+// coordinator can still publish.
+const READY_WINDOW_MS = 10_000;
+const ACK_WAIT_MS = 60_000;
+const LOCK_MS = ACK_WAIT_MS + CALL_TIMEOUT_MS;
+const WATCHDOG_MS = LOCK_MS + 5000;
+
+/** Authentication refusal reason while the room is locked for a publication. */
+export const SOURCE_PUBLISHING_REASON = 'source-publishing';
+/** Hocuspocus sends `reason` to the refused provider, which retries shortly. */
+export class SourcePublishingError extends Error {
+  readonly reason = SOURCE_PUBLISHING_REASON;
+  constructor() {
+    super('Source room is locked for a publication');
+  }
+}
+/** Authentication refusal reason while Office editing is paused for maintenance. */
+export const OFFICE_EDITING_PAUSED_REASON = 'office-editing-paused';
+/** Refuses a writer during the maintenance pause; the client shows the pause. */
+export class OfficeEditingPausedError extends Error {
+  readonly reason = OFFICE_EDITING_PAUSED_REASON;
+  constructor() {
+    super('Office editing is paused for maintenance');
+  }
+}
 interface Prepare {
   checkpoint: number;
   epoch: number;
@@ -40,6 +72,8 @@ export interface SourcePublish extends Record<string, unknown> {
 
 export class SourceHandoff {
   private readonly local = new Map<string, LocalHandoff>();
+  // Maintenance pauses in progress; a publication prepare waits for its room's.
+  private readonly pausing = new Map<string, Promise<boolean>>();
   private readonly instanceId: string;
   private readonly redis: Redis;
   private readonly pool: Pool;
@@ -153,63 +187,13 @@ export class SourceHandoff {
       return;
     }
     if (event.type !== 'prepare') return;
+    const pausing = this.pausing.get(event.room);
+    if (pausing) await pausing;
     if (this.local.get(event.room)?.id === event.id) return;
     if (this.local.has(event.room)) this.reset(event.room);
     let ok = true;
     try {
-      const connections =
-        document?.getConnections().filter((c) => !c.readOnly) ?? [];
-      if (document) {
-        let timer: NodeJS.Timeout | undefined;
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const waiting: LocalHandoff = {
-              checkpoint: event.checkpoint,
-              epoch: event.epoch,
-              id: event.id,
-              ready: new Set(),
-              reject,
-              resolve,
-              sockets: new Set(connections.map((c) => c.socketId)),
-              watchdog: setTimeout(() => {
-                void this.recover(event);
-              }, 125_000),
-            };
-            this.local.set(event.room, waiting);
-            waiting.watchdog.unref();
-            if (!connections.length) {
-              resolve();
-              return;
-            }
-            timer = setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    'Editors did not finish saving before source handoff'
-                  )
-                ),
-              10_000
-            );
-            for (const connection of connections) {
-              connection.onClose(() => {
-                if (
-                  this.local.get(event.room) === waiting &&
-                  !waiting.ready.has(connection.socketId)
-                )
-                  reject(
-                    new Error('Editor disconnected before source handoff')
-                  );
-              });
-            }
-            document.broadcastStateless(
-              JSON.stringify({ ...event, type: 'source-handoff-prepare' })
-            );
-          });
-        } finally {
-          if (timer) clearTimeout(timer);
-        }
-      }
-      if (document) await this.persist(document);
+      if (document) await this.flush(document, event);
     } catch {
       ok = false;
     }
@@ -219,6 +203,118 @@ export class SourceHandoff {
       ok ? 'ready' : 'failed'
     );
     await this.redis.expire(`capy:source-handoff:${event.id}`, 120);
+  }
+
+  /**
+   * Every writer goes read-only and answers ready once the server holds its
+   * updates; one silent after the window is disconnected (it reconnects, and
+   * unsaved changes go to recovery), one that leaves stops being waited for.
+   * Then the room persists once.
+   */
+  private async flush(document: Document, event: Prepare) {
+    const connections = document.getConnections().filter((c) => !c.readOnly);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const waiting: LocalHandoff = {
+          checkpoint: event.checkpoint,
+          epoch: event.epoch,
+          id: event.id,
+          ready: new Set(),
+          reject,
+          resolve,
+          sockets: new Set(connections.map((c) => c.socketId)),
+          watchdog: setTimeout(() => {
+            void this.recover(event);
+          }, WATCHDOG_MS),
+        };
+        this.local.set(event.room, waiting);
+        waiting.watchdog.unref();
+        if (!connections.length) {
+          resolve();
+          return;
+        }
+        timer = setTimeout(() => {
+          for (const connection of connections) {
+            if (waiting.ready.has(connection.socketId)) continue;
+            connection.readOnly = true;
+            connection.webSocket.close(4408, 'Source handoff timed out');
+          }
+          resolve();
+        }, READY_WINDOW_MS);
+        for (const connection of connections) {
+          connection.onClose(() => {
+            if (
+              this.local.get(event.room) !== waiting ||
+              waiting.ready.has(connection.socketId)
+            )
+              return;
+            waiting.sockets.delete(connection.socketId);
+            if (waiting.ready.size === waiting.sockets.size) resolve();
+          });
+        }
+        document.broadcastStateless(
+          JSON.stringify({ ...event, type: 'source-handoff-prepare' })
+        );
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    await this.persist(document);
+  }
+
+  /**
+   * The maintenance pause: the handoff flush, then every writable connection
+   * closes. After a successful persist each writer first gets
+   * `source-editing-paused`, which a saved client shows as a read-only
+   * maintenance banner. Authentication refuses writers until the pause ends.
+   */
+  async pause(document: Document) {
+    const run = this.runPause(document);
+    this.pausing.set(document.name, run);
+    try {
+      return await run;
+    } finally {
+      this.pausing.delete(document.name);
+    }
+  }
+
+  /** A room whose publication handoff is under way; the pause waits for it. */
+  busy(room: string) {
+    return this.local.has(room);
+  }
+
+  private async runPause(document: Document) {
+    const { epoch, fileId } = sourceRoom(document.name);
+    const event: Prepare = {
+      checkpoint: 0,
+      epoch,
+      fileId,
+      id: `pause:${document.name}`,
+      room: document.name,
+      type: 'prepare',
+    };
+    let saved = true;
+    try {
+      await this.flush(document, event);
+    } catch {
+      saved = false;
+    }
+    if (saved)
+      document.broadcastStateless(
+        JSON.stringify({ epoch, fileId, type: 'source-editing-paused' })
+      );
+    for (const connection of document.getConnections()) {
+      const access = connection.context?.access;
+      if (access === 'read') continue;
+      connection.close({
+        code: 4423,
+        reason: OFFICE_EDITING_PAUSED_REASON,
+      } as CloseEvent);
+    }
+    if (this.local.get(document.name)?.id === event.id)
+      this.reset(document.name);
+    return saved;
   }
 
   private async current(fileId: string): Promise<SourceSession> {
@@ -299,7 +395,7 @@ export class SourceHandoff {
     const id = randomUUID();
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;
-    if ((await this.redis.set(lock, id, 'PX', 120_000, 'NX')) !== 'OK')
+    if ((await this.redis.set(lock, id, 'PX', LOCK_MS, 'NX')) !== 'OK')
       throw new SourceRequestError(503, 'Source handoff already running');
     let completed = false;
     try {
@@ -315,7 +411,7 @@ export class SourceHandoff {
           type: 'prepare',
         } satisfies Prepare)
       );
-      const deadline = Date.now() + 15_000;
+      const deadline = Date.now() + ACK_WAIT_MS;
       while (true) {
         const acknowledgments = await this.redis.hgetall(
           `capy:source-handoff:${id}`

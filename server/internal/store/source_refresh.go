@@ -54,20 +54,36 @@ type SourceRefreshPublish struct {
 	ExpectedLatestCheckpoint int64           `json:"expectedLatestCheckpoint"`
 }
 
-// Refresh attribution comes from the immutable job, never the internal caller.
-func sourceRefreshActor(ctx context.Context, tx pgx.Tx, fileID, jobID string) (string, error) {
-	var actor string
-	err := tx.QueryRow(ctx, `SELECT payload->>'actorUserId' FROM jobs WHERE id=$1 AND payload->>'fileId'=$2 AND payload->>'sourceRefresh'='true'`, jobID, fileID).Scan(&actor)
+// refreshJob is a refresh's attribution, read from the immutable job, never
+// from the internal caller. system marks a maintenance job (paid_by system);
+// exportOnly one that publishes without parsing.
+type refreshJob struct {
+	actor              string
+	system, exportOnly bool
+}
+
+func sourceRefreshJob(ctx context.Context, tx pgx.Tx, fileID, jobID string) (refreshJob, error) {
+	var job refreshJob
+	err := tx.QueryRow(ctx, `SELECT COALESCE(payload->>'actorUserId',''),COALESCE(payload->>'paidBy'='system',false),COALESCE((payload->>'exportOnly')::boolean,false) FROM jobs WHERE id=$1 AND payload->>'fileId'=$2 AND payload->>'sourceRefresh'='true'`, jobID, fileID).Scan(&job.actor, &job.system, &job.exportOnly)
 	if isNoRows(err) {
-		return "", ErrConflict
+		return job, ErrConflict
 	}
 	if err != nil {
-		return "", err
+		return job, err
 	}
-	if actor == "" {
-		return "", ErrConflict
+	if job.actor == "" {
+		return job, ErrConflict
 	}
-	return actor, nil
+	return job, nil
+}
+
+// refreshLockTx: a maintenance job skips the owner's account state and the
+// trash (maintenanceLockTx); any other job needs current edit access.
+func (s *Store) refreshLockTx(ctx context.Context, tx pgx.Tx, fileID string, job refreshJob) (string, string, error) {
+	if job.system {
+		return s.maintenanceLockTx(ctx, tx, fileID)
+	}
+	return s.sourceLockTx(ctx, tx, fileID, []string{job.actor}, true)
 }
 
 // ClaimSourceRefresh serializes export across collaboration instances. The
@@ -78,11 +94,11 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 		return SourceRefreshCandidate{}, err
 	}
 	defer tx.Rollback(ctx)
-	actor, err := sourceRefreshActor(ctx, tx, fileID, jobID)
+	job, err := sourceRefreshJob(ctx, tx, fileID, jobID)
 	if err != nil {
 		return SourceRefreshCandidate{}, err
 	}
-	if _, _, err = s.sourceLockTx(ctx, tx, fileID, []string{actor}, true); err != nil {
+	if _, _, err = s.refreshLockTx(ctx, tx, fileID, job); err != nil {
 		var locked *AccountLockedError
 		if errors.Is(err, ErrNotFound) || errors.Is(err, ErrForbidden) || errors.As(err, &locked) {
 			if _, cancelErr := tx.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','authorization','source_access_revoked','Source export access is no longer available')`, jobID); cancelErr != nil {
@@ -150,17 +166,17 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 		return err
 	}
 	defer tx.Rollback(ctx)
-	actor, err := sourceRefreshActor(ctx, tx, fileID, in.JobID)
+	job, err := sourceRefreshJob(ctx, tx, fileID, in.JobID)
 	if err != nil {
 		return err
 	}
-	_, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true)
+	_, owner, err := s.refreshLockTx(ctx, tx, fileID, job)
 	if err != nil {
 		return err
 	}
-	var format, mode, name, kind string
+	var format, mode, name, kind, sourcePath string
 	var oldSize int64
-	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,c.size_bytes FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND f.trashed_at IS NULL AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken).Scan(&format, &mode, &name, &kind, &oldSize)
+	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,c.size_bytes,COALESCE(c.source_blob_path,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND (f.trashed_at IS NULL OR $6) AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, job.system).Scan(&format, &mode, &name, &kind, &oldSize, &sourcePath)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -178,12 +194,23 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 		return ErrConflict
 	}
 	growth := in.SizeBytes - oldSize + int64(len(in.Seed)+len(in.Baseline))
-	if growth > 0 {
+	if growth > 0 && !job.system && !job.exportOnly {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
 			return err
 		}
 	}
 	if format != "text" && len(in.Seed) == 0 {
+		return ErrConflict
+	}
+	if job.exportOnly && job.system {
+		// Maintenance, with editing paused: publish in this transaction.
+		published, err := s.publishExportTx(ctx, tx, fileID, sourcePath, in)
+		if err != nil {
+			return err
+		}
+		if err = tx.Commit(ctx); err != nil || published {
+			return err
+		}
 		return ErrConflict
 	}
 	if mode == "none" {
@@ -200,7 +227,14 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, `UPDATE jobs j SET type=$2,status='pending',attempts=0,locked_at=NULL,lease_expires_at=NULL,queued_at=now(),not_before=NULL,updated_at=now(),payload=payload||jsonb_build_object('blobPath',c.source_blob_path,'sourceETag',$3::text,'sourceSHA256',$4::text,'processingPlan',$5::jsonb) FROM source_refresh_candidates c WHERE j.id=$1 AND c.job_id=j.id`, in.JobID, initialPipelineJobType(plan), in.SourceETag, in.SourceSHA256, planBytes)
+	// An owner's export-only candidate stays a running source_refresh job: the
+	// collaboration service publishes it next through the handoff
+	// (PublishSourceRefresh). Any other job continues as its parse.
+	jobType, requeue := initialPipelineJobType(plan), true
+	if job.exportOnly {
+		jobType, requeue = "source_refresh", false
+	}
+	_, err = tx.Exec(ctx, `UPDATE jobs j SET type=$2,status=CASE WHEN $6 THEN 'pending' ELSE j.status END,attempts=CASE WHEN $6 THEN 0 ELSE j.attempts END,locked_at=CASE WHEN $6 THEN NULL ELSE j.locked_at END,lease_expires_at=CASE WHEN $6 THEN NULL ELSE j.lease_expires_at END,queued_at=CASE WHEN $6 THEN now() ELSE j.queued_at END,not_before=NULL,updated_at=now(),payload=payload||jsonb_build_object('blobPath',c.source_blob_path,'sourceETag',$3::text,'sourceSHA256',$4::text,'processingPlan',$5::jsonb) FROM source_refresh_candidates c WHERE j.id=$1 AND c.job_id=j.id`, in.JobID, jobType, in.SourceETag, in.SourceSHA256, planBytes, requeue)
 	if err != nil {
 		return err
 	}
@@ -235,11 +269,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 		return doc, tx.Commit(ctx)
 	}
-	actor, err := sourceRefreshActor(ctx, tx, fileID, in.JobID)
+	job, err := sourceRefreshJob(ctx, tx, fileID, in.JobID)
 	if err != nil {
 		return SourceSession{}, err
 	}
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true)
+	ws, owner, err := s.refreshLockTx(ctx, tx, fileID, job)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -250,7 +284,13 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	var source, sha string
 	var parseKey, parseFingerprint, parseVersion *string
 	var size int64
-	err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
+	if job.exportOnly {
+		// An export-only publication through the handoff: no parse, index or
+		// ingest attempt, only the finalized export.
+		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.type='source_refresh' AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.seed IS NOT NULL FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag).Scan(&source, &sha, &size)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
+	}
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -275,25 +315,37 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if json.Unmarshal(effects, &parsed) != nil || parsed == nil || netTokens < 0 {
 		return doc, ErrConflict
 	}
-	var contentHash string
-	err = tx.QueryRow(ctx, `SELECT content_hash FROM rag_contents WHERE id=$1 AND workspace_id=$2 AND status='ready'`, in.ContentID, ws).Scan(&contentHash)
-	if err != nil {
-		if isNoRows(err) {
-			err = ErrConflict
+	if !job.exportOnly {
+		var contentHash string
+		err = tx.QueryRow(ctx, `SELECT content_hash FROM rag_contents WHERE id=$1 AND workspace_id=$2 AND status='ready'`, in.ContentID, ws).Scan(&contentHash)
+		if err != nil {
+			if isNoRows(err) {
+				err = ErrConflict
+			}
+			return doc, err
 		}
-		return doc, err
-	}
-	if contentHash != in.ContentHash {
-		return doc, ErrConflict
+		if contentHash != in.ContentHash {
+			return doc, ErrConflict
+		}
 	}
 	var growth int64
 	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint ELSE octet_length($5::bytea)::bigint END+octet_length($4::bytea)+octet_length($3::jsonb::text)-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, in.RebasedState).Scan(&growth); err != nil {
 		return doc, err
 	}
-	if growth > 0 {
+	if growth > 0 && !job.system {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
 			return doc, err
 		}
+	}
+	if job.exportOnly {
+		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: in.RebasedState, baseline: baseline, effects: effects, netTokens: netTokens}); err != nil {
+			return doc, err
+		}
+		out, err := readSourceSession(ctx, tx, fileID, ws)
+		if err != nil {
+			return out, err
+		}
+		return out, tx.Commit(ctx)
 	}
 	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
@@ -328,10 +380,8 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if err != nil {
 		return doc, err
 	}
-	if doc.BaseSourceSHA256 != "" && doc.BaseSourceSHA256 != sha {
-		if _, err = tx.Exec(ctx, `DELETE FROM artifact_cache a WHERE a.source_sha256=$1 AND NOT EXISTS(SELECT 1 FROM files f WHERE f.source_sha256=$1) AND NOT EXISTS(SELECT 1 FROM source_documents d WHERE d.base_source_sha256=$1) AND NOT EXISTS(SELECT 1 FROM source_refresh_candidates c WHERE c.source_sha256=$1)`, doc.BaseSourceSHA256); err != nil {
-			return doc, err
-		}
+	if err = releaseArtifactCacheTx(ctx, tx, doc.BaseSourceSHA256, sha); err != nil {
+		return doc, err
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, fileID); err != nil {
 		return doc, err
@@ -346,6 +396,16 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	return out, tx.Commit(ctx)
 }
 
+// releaseArtifactCacheTx drops the parse cache of a replaced base once nothing
+// names its bytes.
+func releaseArtifactCacheTx(ctx context.Context, tx pgx.Tx, oldSHA, newSHA string) error {
+	if oldSHA == "" || oldSHA == newSHA {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `DELETE FROM artifact_cache a WHERE a.source_sha256=$1 AND NOT EXISTS(SELECT 1 FROM files f WHERE f.source_sha256=$1) AND NOT EXISTS(SELECT 1 FROM source_documents d WHERE d.base_source_sha256=$1) AND NOT EXISTS(SELECT 1 FROM source_refresh_candidates c WHERE c.source_sha256=$1)`, oldSHA)
+	return err
+}
+
 func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, detail string, stale bool) error {
 	if len(detail) > 2000 {
 		detail = detail[:2000]
@@ -358,12 +418,15 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
 		return err
 	}
-	actor, err := sourceRefreshActor(ctx, tx, fileID, jobID)
+	job, err := sourceRefreshJob(ctx, tx, fileID, jobID)
 	if err != nil {
 		return err
 	}
+	actor := job.actor
+	// Trashed files too: the maintenance window exports them (a trash
+	// transition already cancelled every other refresh).
 	var workspaceID string
-	if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&workspaceID); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&workspaceID); err != nil {
 		if isNoRows(err) {
 			return ErrConflict
 		}

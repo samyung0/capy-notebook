@@ -8,7 +8,15 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"io"
 	"net/http"
+	"time"
 )
+
+// sourcePublishTimeout outlasts the collaboration publish coordinator's room
+// lock (LOCK_MS in collaboration/src/sourceHandoff.ts: a 60 s acknowledgement
+// wait plus one 120 s Office engine call), so the gateway never abandons a
+// publication the coordinator can still complete. Other collaboration calls
+// keep the client's 20 s.
+const sourcePublishTimeout = 200 * time.Second
 
 // SourceAuthority forwards only these two internal source operations through
 // the existing private collaboration connection.
@@ -26,7 +34,13 @@ func (s *Store) SourceAuthority(ctx context.Context, operation string, body json
 	obs.Inject(ctx, req)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Collaboration-Secret", s.collaborationSecret)
-	response, err := s.collaborationHTTP.Do(req)
+	client := s.collaborationHTTP
+	if operation == "/internal/source-refresh/publish" {
+		publish := *client
+		publish.Timeout = sourcePublishTimeout
+		client = &publish
+	}
+	response, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %v", ErrAuthorityUnavailable, err)
 	}

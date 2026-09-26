@@ -21,12 +21,14 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
+DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
 # Tencent Cloud TokenHub serves GLM-5.3-Flash on its own hardware through an
 # OpenAI-compatible chat route; it is the only route for the zai pin.
 TENCENT_CHAT_URL = "https://tokenhub.tencentcloudmaas.com/v1/chat/completions"
 TENCENT_PROVIDER = "tencent"
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
+DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
 ZAI_GLM_FLASH_MODEL = "glm-5.3-flash"
 
 CONTINUITY_KEYS = (
@@ -580,8 +582,11 @@ async def _post_json(
     url: str,
     headers: dict[str, str],
     body: dict[str, Any],
+    *,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
-    timeout = _call_timeout()
+    if timeout is None:
+        timeout = _call_timeout()
     async with asyncio.timeout(timeout):
         response = await _client().post(
             url, headers=headers, json=jsonable(body), timeout=httpx.Timeout(timeout)
@@ -870,6 +875,38 @@ async def embed_batch(
         },
     )
     return _as_obj(raw)
+
+
+async def rerank(
+    spec: ModelConfig,
+    query: str,
+    documents: list[str],
+    *,
+    timeout: float,
+) -> dict[str, Any]:
+    """Score documents against one query on DeepInfra's inference route.
+
+    The route pairs ``queries[i]`` with ``documents[i]``, so the query repeats
+    once per document. It accepts an ``instruction`` field but ignores it
+    (bench/rag/rerank/reports/2026-09-25-library-rerank.md), so none is sent.
+    The answer carries ``scores`` in document order and ``input_tokens``.
+    """
+    if (
+        spec.provider_slug != "deepinfra"
+        or spec.model_slug != DEEPINFRA_QWEN_RERANK_MODEL
+    ):
+        raise RegistryError(
+            f"elitellm has no rerank route for {spec.provider_slug}/{spec.model_slug}"
+        )
+    key = platform_api_key("deepinfra")
+    if not key:
+        raise RegistryError("missing DEEPINFRA_API_KEY")
+    return await _post_json(
+        DEEPINFRA_INFERENCE_URL + spec.model_slug,
+        _bearer(key),
+        {"queries": [query] * len(documents), "documents": documents},
+        timeout=timeout,
+    )
 
 
 def _thinking_for_call(spec: ModelConfig, reasoning: bool | None) -> str:

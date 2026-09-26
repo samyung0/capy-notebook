@@ -62,7 +62,6 @@ KNOWLEDGE_TOOLS = (
 ALLOWED_TOOLS = {
     "search_workspace",
     "list_sources",
-    "describe_documents",
     "read_document",
     "capture_page",
     *KNOWLEDGE_TOOLS,
@@ -99,7 +98,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "tools": [
         "search_workspace",
         "list_sources",
-        "describe_documents",
         "read_document",
     ],
     # tools_per_turn applies to both modes; curate additionally uses its

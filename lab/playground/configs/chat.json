@@ -13,7 +13,6 @@
   "tools": [
     "search_workspace",
     "list_sources",
-    "describe_documents",
     "read_document",
     "capture_page",
     "create_material",

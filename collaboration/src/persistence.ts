@@ -1273,3 +1273,62 @@ export class YjsDocumentStore {
     );
   }
 }
+
+/**
+ * One running and at most one queued save per room. A save snapshots its
+ * document when it starts, so callers arriving while one is queued for the
+ * same document share it and receive its failure. A reloaded room's new
+ * document chains its own save instead of sharing the old one's snapshot.
+ */
+export function roomSaveQueue<D extends { name: string }>(
+  save: (document: D) => Promise<void>
+) {
+  const rooms = new Map<
+    string,
+    { document: D; queued?: Promise<void>; tail: Promise<void> }
+  >();
+  return (document: D) => {
+    const room = document.name;
+    const saves = rooms.get(room);
+    if (saves?.queued && saves.document === document) return saves.queued;
+    const queued: Promise<void> = (saves?.tail ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => {
+        const current = rooms.get(room);
+        if (current?.queued === queued) current.queued = undefined;
+        return save(document);
+      });
+    rooms.set(room, { document, queued, tail: queued });
+    void queued
+      .catch(() => undefined)
+      .then(() => {
+        if (rooms.get(room)?.tail === queued) rooms.delete(room);
+      });
+    return queued;
+  };
+}
+
+/**
+ * Whether an update keeps the room within `cap` bytes. `sizes` holds an
+ * estimate from the room's applied update bytes that over-counts content GC
+ * removed, so only crossing the cap costs one exact measurement, which also
+ * resets the estimate.
+ */
+export function updateFitsRoom(
+  sizes: WeakMap<Y.Doc, number>,
+  document: Y.Doc,
+  update: Uint8Array,
+  cap: number
+) {
+  if ((sizes.get(document) ?? 0) + update.byteLength <= cap) return true;
+  const state = Y.encodeStateAsUpdate(document);
+  sizes.set(document, state.byteLength);
+  const candidate = new Y.Doc();
+  try {
+    Y.applyUpdate(candidate, state);
+    Y.applyUpdate(candidate, update);
+    return Y.encodeStateAsUpdate(candidate).byteLength <= cap;
+  } finally {
+    candidate.destroy();
+  }
+}

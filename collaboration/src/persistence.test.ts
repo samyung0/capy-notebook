@@ -9,6 +9,8 @@ import {
 import { MaterialDocumentValidationError } from './materialDocument.js';
 import {
   CollaborationAuthorizationError,
+  roomSaveQueue,
+  updateFitsRoom,
   YjsDocumentStore,
 } from './persistence.js';
 
@@ -732,5 +734,92 @@ describe('live collaboration authorization', () => {
       document.destroy();
     }
     expect(checkedActors).toContain('u_revoked');
+  });
+});
+
+describe('source room saves and size', () => {
+  function saves() {
+    const runs: {
+      document: { name: string };
+      finish: (error?: Error) => void;
+    }[] = [];
+    const persist = roomSaveQueue(
+      (document: { name: string }) =>
+        new Promise<void>((resolve, reject) => {
+          runs.push({
+            document,
+            finish: (error) => (error ? reject(error) : resolve()),
+          });
+        })
+    );
+    return { persist, runs };
+  }
+
+  it('runs one save per room and shares the queued save with its failure', async () => {
+    const { persist, runs } = saves();
+    const room = { name: 'source:f:epoch:1' };
+    const running = persist(room);
+    await vi.waitFor(() => expect(runs).toHaveLength(1));
+    const queued = persist(room);
+    expect(persist(room)).toBe(queued);
+    runs[0].finish();
+    await running;
+    await vi.waitFor(() => expect(runs).toHaveLength(2));
+    runs[1].finish(new Error('engine failed'));
+    await expect(queued).rejects.toThrow('engine failed');
+  });
+
+  it('chains a reloaded document behind the old one instead of sharing its save', async () => {
+    const { persist, runs } = saves();
+    const old = { name: 'source:f:epoch:1' };
+    const reloaded = { name: 'source:f:epoch:1' };
+    const running = persist(old);
+    await vi.waitFor(() => expect(runs).toHaveLength(1));
+    const queuedOld = persist(old);
+    const queuedNew = persist(reloaded);
+    expect(queuedNew).not.toBe(queuedOld);
+    runs[0].finish();
+    await vi.waitFor(() => expect(runs).toHaveLength(2));
+    runs[1].finish();
+    await vi.waitFor(() => expect(runs).toHaveLength(3));
+    runs[2].finish();
+    await Promise.all([running, queuedOld, queuedNew]);
+    expect(runs.map((run) => run.document)).toEqual([old, old, reloaded]);
+    expect(runs[2].document).toBe(reloaded);
+  });
+
+  it('measures a room exactly only when its size estimate crosses the cap', () => {
+    const document = new Y.Doc();
+    const sizes = new WeakMap<Y.Doc, number>();
+    document.on('update', (update: Uint8Array) =>
+      sizes.set(document, (sizes.get(document) ?? 0) + update.byteLength)
+    );
+    const text = document.getText('source');
+    for (let index = 0; index < 50; index++) text.insert(0, 'x'.repeat(20));
+    text.delete(0, text.length);
+    const estimate = sizes.get(document) ?? 0;
+    const exact = Y.encodeStateAsUpdate(document).byteLength;
+    expect(exact).toBeLessThan(estimate);
+    const peer = new Y.Doc();
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(document));
+    const edit = (value: string) => {
+      const known = Y.encodeStateVector(peer);
+      peer.getText('source').insert(0, value);
+      return Y.encodeStateAsUpdate(peer, known);
+    };
+    const small = edit('y');
+
+    expect(
+      updateFitsRoom(sizes, document, small, estimate + small.byteLength)
+    ).toBe(true);
+    expect(sizes.get(document)).toBe(estimate);
+    // The estimate crosses the cap, but GC left the room far smaller.
+    expect(updateFitsRoom(sizes, document, small, estimate)).toBe(true);
+    expect(sizes.get(document)).toBe(exact);
+    expect(
+      updateFitsRoom(sizes, document, edit('z'.repeat(estimate)), estimate)
+    ).toBe(false);
+    document.destroy();
+    peer.destroy();
   });
 });

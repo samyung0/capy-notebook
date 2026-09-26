@@ -292,8 +292,8 @@ export function DraftFields({
         <span className="font-medium text-sm">Capabilities</span>
         <p className="text-muted-foreground text-xs">
           What the model can do. Retrieval needs embedding, captioning needs
-          vision; chat needs an agentic-loop certificate, which comes from
-          model:certify and cannot be ticked here.
+          vision, rerank needs rerank; chat needs an agentic-loop certificate,
+          which comes from model:certify and cannot be ticked here.
         </p>
         <div className="flex flex-wrap gap-3">
           {capabilities.map((capability) => (

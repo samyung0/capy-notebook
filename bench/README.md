@@ -101,6 +101,14 @@ confounded by everything that changed in between.
 docker compose exec retrieval python bench/rag/scripts/rag_eval.py <workspace_id>
 ```
 
+[`provider_latency.py`](rag/scripts/provider_latency.py) interleaves DeepInfra
+and Alibaba embedding and rerank calls from the local machine, with no retries,
+and splits each request into connect, first-byte wait and body time. Findings,
+including why local builder runs time out, are in the
+[September 25 report](rag/reports/2026-09-25-provider-latency.md). The same day's
+embedding ([`qwen37/`](rag/qwen37/)) and reranker ([`rerank/`](rag/rerank/))
+comparisons over the knowledge library have their own directories.
+
 [`knowledge_scope_agent_eval.py`](rag/scripts/knowledge_scope_agent_eval.py)
 compares current knowledge-library search, cached continuation pages and
 request-scope reranking through the real curate loop. It uses local Ollama,

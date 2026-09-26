@@ -159,6 +159,9 @@ type ProviderCallUsage struct {
 	CacheWriteTokens int64
 	ReasoningTokens  int64
 	CacheAnomaly     string
+	// ModelVersion is the catalog version a rerank called; zero for every
+	// other kind, which is labeled from the session's pins.
+	ModelVersion int
 }
 
 type ProviderCallSettlement struct {
@@ -173,6 +176,7 @@ type ProviderCallSettlement struct {
 const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
+	KindRerank    = "rerank" // zero credits like a query embedding, labeled with the reranker row called
 	KindAudio     = "audio"
 	KindParse     = "parse"
 	KindEmail     = "email"
@@ -467,11 +471,11 @@ func (s *Store) SettleProviderCall(
 	if sessionID == "" || call.CallID == "" {
 		return out, fmt.Errorf("session id and provider call id are required")
 	}
-	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindAudio {
+	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank && call.Kind != KindAudio {
 		return out, fmt.Errorf("invalid provider call kind %q", call.Kind)
 	}
-	if call.Kind == KindEmbedding && call.Thinking != "" {
-		return out, errors.New("embedding provider calls cannot have thinking")
+	if (call.Kind == KindEmbedding || call.Kind == KindRerank) && call.Thinking != "" {
+		return out, errors.New("embedding and rerank provider calls cannot have thinking")
 	}
 	if call.Kind == KindLLM && !models.IsKnownThinking(call.Thinking) {
 		return out, fmt.Errorf("invalid provider call thinking %q", call.Thinking)
@@ -489,6 +493,9 @@ func (s *Store) SettleProviderCall(
 	}
 	if call.Kind != KindAudio && (call.Units != 0 || call.Unit != "") {
 		return out, errors.New("token provider calls cannot carry non-token units")
+	}
+	if (call.Kind == KindRerank) != (call.ModelVersion > 0) || call.ModelVersion < 0 {
+		return out, errors.New("rerank calls, and only they, name their catalog version")
 	}
 	return s.settleProviderCallAtomic(ctx, sessionID, call)
 }
@@ -579,7 +586,8 @@ func (s *Store) settleProviderCallAtomic(
 			       COALESCE((metadata->>'cachedReadTokens')::bigint, 0),
 			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
-			       COALESCE(metadata->>'cacheAnomaly', '')
+			       COALESCE(metadata->>'cacheAnomaly', ''),
+			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END
 			FROM usage_events
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
 			sessionID, call.CallID,
@@ -587,7 +595,7 @@ func (s *Store) settleProviderCallAtomic(
 			&recorded.Kind, &recorded.Purpose, &recorded.Thinking, &recorded.Provider, &recorded.Model,
 			&recorded.InputTokens, &recorded.OutputTokens, &recorded.Units, &recorded.Unit,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
-			&recorded.ReasoningTokens, &recorded.CacheAnomaly,
+			&recorded.ReasoningTokens, &recorded.CacheAnomaly, &recorded.ModelVersion,
 		); err != nil {
 			return settlement, err
 		}
@@ -635,14 +643,22 @@ func (s *Store) settleProviderCallAtomic(
 
 	rates := TokenRates{}
 	catalogModel, modelVersion := llmRef, llmVersion
-	if call.Kind == KindEmbedding {
+	if call.Kind == KindEmbedding || call.Kind == KindRerank {
 		catalogModel, modelVersion = embeddingRef, embeddingVersion
+		if call.Kind == KindRerank {
+			// DeepInfra's transport identity is the catalog identity.
+			catalogModel = models.Ref{ProviderSlug: call.Provider, ModelSlug: call.Model}
+			modelVersion = call.ModelVersion
+		}
 		if s.registry == nil {
 			return settlement, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
 		}
-		cfg, err := s.registry.Get(ctx, embeddingRef, embeddingVersion)
+		cfg, err := s.registry.Get(ctx, catalogModel, modelVersion)
 		if err != nil {
 			return settlement, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
+		}
+		if call.Kind == KindRerank && !cfg.Allows(models.SlotRerank) {
+			return settlement, fmt.Errorf("%w: %s v%d is not a reranker", ErrModelUnavailable, catalogModel, modelVersion)
 		}
 		rates = RatesFromConfig(cfg)
 	} else if out.paidBy == models.PaidByPlatform {
@@ -693,7 +709,7 @@ func (s *Store) settleProviderCallAtomic(
 	if call.CacheAnomaly != "" {
 		meta["cacheAnomaly"] = call.CacheAnomaly
 	}
-	if (call.Kind == KindLLM || call.Kind == KindEmbedding) && call.InputTokens == 0 && call.OutputTokens == 0 {
+	if call.Kind != KindAudio && call.InputTokens == 0 && call.OutputTokens == 0 {
 		meta["usageMissing"] = true
 	}
 	usageUnit := "tokens"
@@ -806,8 +822,8 @@ func (s *Store) IngestSlots(ctx context.Context, actorUserID string) (IngestSlot
 	err := s.pool.QueryRow(ctx, `
 		SELECT count(*) FROM provider_sessions
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-		   AND surface = $2`,
-		actorUserID, SurfaceIngest).Scan(&used)
+		   AND surface = $2 AND paid_by <> $3`,
+		actorUserID, SurfaceIngest, models.PaidBySystem).Scan(&used)
 	if err != nil {
 		return out, err
 	}
@@ -861,8 +877,8 @@ func (s *Store) beginIngestSpendTx(
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM provider_sessions
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-		   AND surface = $2`,
-		actorUserID, SurfaceIngest).Scan(&open); err != nil {
+		   AND surface = $2 AND paid_by <> $3`,
+		actorUserID, SurfaceIngest, models.PaidBySystem).Scan(&open); err != nil {
 		return "", err
 	}
 	if open >= ConcurrentIngestLeases {
@@ -884,6 +900,21 @@ func (s *Store) beginIngestSpendTx(
 		return "", err
 	}
 	return id, nil
+}
+
+// beginSystemIngestSessionTx opens the ingest session of a maintenance
+// republish (paid_by 'system'): no credit check and no lease on the actor's
+// ingest slots, and the pipeline settles its usage at zero credits.
+func beginSystemIngestSessionTx(ctx context.Context, tx pgx.Tx, actorUserID, workspaceID string) (string, error) {
+	id := uid("cr")
+	_, err := tx.Exec(ctx, `
+		INSERT INTO provider_sessions
+			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros, paid_by, expires_at)
+		VALUES ($1, $2, $3, $4, $5, 0, $6, now() + ($7 * interval '1 millisecond'))`,
+		id, actorUserID, workspaceID, nullString(obs.TraceID(ctx)), SurfaceIngest,
+		models.PaidBySystem, ingestReservationHold.Milliseconds(),
+	)
+	return id, err
 }
 
 // SettleCredits closes a reservation after its provider calls or ingest work

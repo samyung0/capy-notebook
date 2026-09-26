@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
@@ -51,7 +52,9 @@ log = logging.getLogger("capy.retrieval.chunking")
 #     extraction confidence in canonical content identity.
 # v10: repeated keys preserve interior occurrences; source roles correct heading ancestry.
 # v11: newly discarded source-backed banners retain a neutral heading boundary.
-CHUNKER_VERSION = "v11"
+# v12: a heading the parser marks as the book title closes the heading stack at
+#      its level without entering the path, and its text stays in the chunk.
+CHUNKER_VERSION = "v12"
 
 # Picture blocks arrive under two labels: ``image`` for photos and diagrams,
 # ``chart`` for plots the layout model recognises as data graphics. Same shape,
@@ -231,14 +234,38 @@ def clip_to_tokens(text: str, budget: int) -> str:
     return "".join(out)
 
 
+def _search_fold() -> dict[int, str]:
+    """PDFs print ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ (U+FB00-U+FB06) as one character each, which
+    Postgres indexes as written, so 'ﬁnd' never met a typed 'find'. Printed sub-
+    and superscripts fare worse: Postgres drops them from the word, so 'H₀'
+    indexes as 'h' and 's²' as the stopword 's'. The lexical index maps both to
+    plain letters and digits (decisions 2026-09-24); stored chunk text keeps the
+    printed form for quotes. A <sub>/<super> character folds only to a single
+    non-CJK character: '™' would turn 'Java™' into 'javatm', and the Kanbun
+    marks '㆒㆓' into ideographs."""
+    fold = {c: unicodedata.normalize("NFKC", chr(c)) for c in range(0xFB00, 0xFB07)}
+    for c in range(0x10000):
+        if not unicodedata.decomposition(chr(c)).startswith(("<sub>", "<super>")):
+            continue
+        plain = unicodedata.normalize("NFKC", chr(c))
+        if len(plain) == 1 and not is_cjk(plain):
+            fold[c] = plain
+    return fold
+
+
+SEARCH_FOLD = _search_fold()
+
+
 def tokenize_for_search(text: str) -> str:
     """Rewrite text so `to_tsvector` indexes CJK usefully.
 
-    Latin runs pass through untouched; each CJK run becomes its overlapping
+    Latin runs pass through untouched apart from typographic ligatures and sub-
+    and superscripts (:data:`SEARCH_FOLD`); each CJK run becomes its overlapping
     character bigrams (plus the single character, when the run is one long).
     Queries must be tokenized with the same function — see
     :func:`search_query_terms`.
     """
+    text = text.translate(SEARCH_FOLD)
     out: list[str] = []
     cjk: list[str] = []
     other: list[str] = []
@@ -504,6 +531,20 @@ def _build(blocks: list[_Block], section_path: str) -> Chunk:
 # ------------------------------------------------------------------ entrypoints
 
 
+def _book_title_level(block: dict) -> int | None:
+    """The level of a heading the parser marked as the book title (parser v10):
+    it ends the headings above it but is never a path component."""
+    level = block.get("text_level")
+    if (
+        block.get("type") == "text"
+        and block.get("_source_role") == "book-title"
+        and type(level) is int
+        and level > 0
+    ):
+        return level
+    return None
+
+
 def _heading_boundary_level(block: dict) -> int | None:
     level = block.get("_heading_boundary_level")
     if (
@@ -567,6 +608,13 @@ def chunk_content_list(
             if not text:
                 continue
             level = item.get("text_level")
+            if _book_title_level(item) is not None:
+                if stack and stack[-1][0] >= level:
+                    flush_section()
+                    while stack and stack[-1][0] >= level:
+                        stack.pop()
+                pending.append(_Block(text, None, page_no, bbox))
+                continue
             if isinstance(level, int) and level > 0:
                 flush_section()
                 _push_heading(stack, level, text)

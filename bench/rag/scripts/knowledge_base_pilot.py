@@ -209,16 +209,16 @@ def figure_records(blocks: list[dict], source_id: str, exclusions: list) -> list
         bbox = _bbox_coords(block.get("bbox"))
         if not bbox:
             raise PilotError("Source figure has invalid page geometry")
+        # Image blocks 2 units thin are formula bars and rules drawn as images.
+        if is_image and min(bbox[2] - bbox[0], bbox[3] - bbox[1]) <= 2:
+            continue
         page = int(block["page_idx"]) + 1
         caption = block.get("image_caption", block.get("chart_caption", []))
         if is_caption and not is_image:
             caption = [native_caption]
         if isinstance(caption, str):
             caption = [caption]
-        excluded = any(
-            item.get("page") == page and (not item.get("bbox") or item["bbox"] == bbox)
-            for item in exclusions
-        )
+        excluded = figure_excluded(exclusions, page, bbox)
         figures.append(
             {
                 "id": f"fig_{source_id[:14]}_{index}",
@@ -241,6 +241,231 @@ def figure_records(blocks: list[dict], source_id: str, exclusions: list) -> list
             }
         )
     return figures
+
+
+def figure_excluded(exclusions: list, page: int, bbox: list) -> bool:
+    return any(
+        item.get("page") == page and (not item.get("bbox") or item["bbox"] == bbox)
+        for item in exclusions
+    )
+
+
+# Vector drawings the parser does not report (thresholds measured in
+# bench/rag/reports/2026-09-23-vector-figures.md).
+DRAWING_GAP = 8  # points between the paths of one drawing
+DRAWING_MIN_SIDE = 30  # page-1000 units; smaller: accents, bullets, icons, rules
+DRAWING_MARGIN = 100  # page-1000 units: running-head and footer bands
+DRAWING_OVERLAP = 0.2  # share of a drawing inside a parser table or image record
+DRAWING_TEXT = 0.2  # word-box share of a drawing that makes it a text frame
+DRAWING_FRAMED_TEXT = 0.02  # the same inside a frame or among level lines only
+DRAWING_GLYPH = 45  # points: fills this short are glyph outlines (formulas, logos)
+# A 'Figure N:' caption line this far below a drawing labels it (page-1000 units;
+# chart axis labels set as text sit between them). Measured in
+# bench/rag/reports/2026-09-24-captioned-drawings.md.
+CAPTION_GAP = 115
+CAPTION_OVERLAP = 30  # a drawing's box may reach this far into its caption line
+
+
+def _inked(path: dict) -> bool:
+    """A stroke or fill a reader sees: neither transparent nor white."""
+    return any(
+        color and min(color) < 0.95 and opacity != 0
+        for color, opacity in (
+            (path.get("color"), path.get("stroke_opacity")),
+            (path.get("fill"), path.get("fill_opacity")),
+        )
+    )
+
+
+def _level(item: tuple) -> bool:
+    """A rectangle, or a horizontal or vertical line."""
+    return item[0] in {"re", "qu"} or (
+        item[0] == "l"
+        and (abs(item[1].x - item[2].x) < 0.5 or abs(item[1].y - item[2].y) < 0.5)
+    )
+
+
+def _frame(path: dict, cluster) -> bool:
+    """A rectangle, square or round-cornered, around the whole drawing."""
+    items = path["items"]
+    return (
+        path["rect"].get_area() >= 0.9 * cluster.get_area()
+        and len(items) <= 8
+        and all(_level(item) or item[0] == "c" for item in items)
+        and any(_level(item) for item in items)
+    )
+
+
+def caption_pairs(
+    captions: list[dict], drawings: list[dict]
+) -> list[tuple[dict, dict]]:
+    """Each caption record paired with the drawing record it labels.
+
+    A caption labels a drawing on its page when its line starts at most
+    CAPTION_GAP below the drawing's bottom (or CAPTION_OVERLAP inside it) and
+    either overlaps it horizontally or, as a short left-aligned line, ends left
+    of a drawing that spans the page's middle. Closest pairs go first; a caption
+    labels one drawing and a drawing takes one caption.
+    """
+    candidates = []
+    for caption in captions:
+        x0, y0, x1, _ = caption["caption_bbox"]
+        for drawing in drawings:
+            left, _, right, bottom = drawing["bbox"]
+            if (
+                caption["page"] == drawing["page"]
+                and -CAPTION_OVERLAP <= y0 - bottom <= CAPTION_GAP
+                and ((x0 < right and left < x1) or x1 <= left < 500 < right)
+            ):
+                candidates.append((y0 - bottom, caption["id"], drawing["id"]))
+    by_id = {f["id"]: f for f in captions + drawings}
+    pairs, used = [], set()
+    for _, caption, drawing in sorted(candidates):
+        if caption not in used and drawing not in used:
+            used |= {caption, drawing}
+            pairs.append((by_id[caption], by_id[drawing]))
+    return pairs
+
+
+def drawing_records(
+    book: dict, blocks: list[dict], source_id: str, figures: list[dict]
+) -> list[dict]:
+    """`figures` (figure_records' output) plus records for the book PDF's
+    vector drawings.
+
+    PyMuPDF joins each page's visible paths into clusters. A cluster is kept
+    unless it is small, sits in the top or bottom margin band, has over
+    DRAWING_OVERLAP of its area inside a parser table block or image record,
+    frames text (callouts, code blocks, ruled tables: words cover over
+    DRAWING_TEXT of it, or over DRAWING_FRAMED_TEXT inside a frame or among
+    level lines only), or holds nothing but short fills and hairlines besides
+    its frame (formulas and logos set as glyph outlines, empty boxes). The
+    section path is the one in force at the last block that starts above the
+    drawing, and that block's index orders it among the page's records. Ids
+    name the page and the rounded top-left corner, so they never meet the
+    block-index ids.
+
+    A drawing that a caption record labels (caption_pairs) takes that
+    caption's text, box, block index, section path and excluded flag, and the
+    caption record is dropped: one record per captioned vector figure.
+    """
+    import pymupdf
+
+    from pipeline.retrieval.chunking import _bbox_coords, _push_heading, _section_path
+
+    source = ROOT / book["pdf_path"]
+    if sha_file(source) != book["sha256"]:
+        raise PilotError(f"Source checksum mismatch: {book['id']}")
+    stack, sections, starts, avoid = [], [], [], {}
+    for block in blocks:
+        if block.get("type") == "text" and block.get("text_level"):
+            _push_heading(stack, int(block["text_level"]), block.get("text", ""))
+        sections.append(_section_path(stack))
+        bbox = _bbox_coords(block.get("bbox"))
+        page = int(block["page_idx"]) + 1 if bbox and "page_idx" in block else None
+        starts.append((page, bbox[1]) if page else None)
+        if page and block.get("type") == "table":
+            avoid.setdefault(page, []).append(bbox)
+    for figure in figures:
+        if figure["geometry_kind"] == "parser_image":
+            avoid.setdefault(figure["page"], []).append(figure["bbox"])
+
+    def overlap(a: list, b: list) -> float:
+        return max(0, min(a[2], b[2]) - max(a[0], b[0])) * max(
+            0, min(a[3], b[3]) - max(a[1], b[1])
+        )
+
+    records = []
+    with pymupdf.open(source) as pdf:
+        for number, page in enumerate(pdf, 1):
+            drawings = [d for d in page.get_drawings() if _inked(d)]
+            if not drawings:
+                continue
+            # Unrotated PDF points to the page-1000-topleft grid.
+            to_grid = page.rotation_matrix * pymupdf.Matrix(
+                1000 / page.rect.width, 1000 / page.rect.height
+            )
+            words = [
+                list(pymupdf.Rect(w[:4]) * to_grid) for w in page.get_text("words")
+            ]
+            for cluster in page.cluster_drawings(
+                drawings=drawings, x_tolerance=DRAWING_GAP, y_tolerance=DRAWING_GAP
+            ):
+                box = list(cluster * to_grid)
+                area = overlap(box, box)
+                if (
+                    min(box[2] - box[0], box[3] - box[1]) < DRAWING_MIN_SIDE
+                    or box[3] <= DRAWING_MARGIN
+                    or box[1] >= 1000 - DRAWING_MARGIN
+                    or any(
+                        overlap(box, b) > DRAWING_OVERLAP * area
+                        for b in avoid.get(number, [])
+                    )
+                ):
+                    continue
+                paths = [d for d in drawings if cluster.contains(d["rect"])]
+                inner = [d for d in paths if not _frame(d, cluster)]
+                text = sum(
+                    overlap(w, w)
+                    for w in words
+                    if box[0] <= (w[0] + w[2]) / 2 <= box[2]
+                    and box[1] <= (w[1] + w[3]) / 2 <= box[3]
+                )
+                framed = len(inner) < len(paths) or all(
+                    _level(item) for d in paths for item in d["items"]
+                )
+                # Fills no taller than a glyph, and hairline fills (rules).
+                glyphs = all(
+                    d["type"] == "f"
+                    and (d["rect"].height <= DRAWING_GLYPH or d["rect"].width <= 2)
+                    for d in inner
+                )
+                if (
+                    text > (DRAWING_FRAMED_TEXT if framed else DRAWING_TEXT) * area
+                    or glyphs
+                ):
+                    continue
+                box = [round(v, 3) for v in box]
+                anchor = max(
+                    (i for i, s in enumerate(starts) if s and s <= (number, box[1])),
+                    default=-1,
+                )
+                excluded = figure_excluded(
+                    book.get("figure_exclusions", []), number, box
+                )
+                records.append(
+                    {
+                        "id": f"fig_{source_id[:14]}_p{number}_{round(box[0])}_{round(box[1])}",
+                        "block_index": max(anchor, 0),
+                        "page": number,
+                        "bbox": box,
+                        "caption_bbox": None,
+                        "out_of_page_bounds": any(x < 0 or x > 1000 for x in box),
+                        "geometry_kind": "vector_drawing",
+                        "space": "page-1000-topleft",
+                        "original_caption": [],
+                        "original_footnote": [],
+                        "section_path": sections[anchor] if anchor >= 0 else "",
+                        "excluded": excluded,
+                        "exclusion_evidence": book.get("figure_exclusions", [])
+                        if excluded
+                        else [],
+                    }
+                )
+    captions = [f for f in figures if f["geometry_kind"] == "caption_page_reference"]
+    fields = (
+        "caption_bbox",
+        "original_caption",
+        "block_index",
+        "section_path",
+        "excluded",  # from caption_bbox, the box intake.py's exclusions name
+        "exclusion_evidence",
+    )
+    merged = set()
+    for caption, record in caption_pairs(captions, records):
+        record.update({k: caption[k] for k in fields})
+        merged.add(caption["id"])
+    return [f for f in figures if f["id"] not in merged] + records
 
 
 def build_excerpts(
@@ -396,6 +621,7 @@ def parse_books(manifest: dict, config: dict, run: Path, selected: str | None) -
             )
             encoded.append(value)
         figures = figure_records(blocks, identity, book.get("figure_exclusions", []))
+        figures = drawing_records(book, blocks, identity, figures)
         excerpts = build_excerpts(encoded, identity, figures)
         with fitz.open(source) as pdf:
             pages = len(pdf)
@@ -477,8 +703,11 @@ def refresh_figures(manifest: dict, run: Path) -> None:
             f["id"]: {k: f[k] for k in FIGURE_NOTES if k in f}
             for f in corpus["figures"]
         }
-        corpus["figures"] = figure_records(
+        figures = figure_records(
             blocks, corpus["source_id"], corpus["book"].get("figure_exclusions", [])
+        )
+        corpus["figures"] = drawing_records(
+            corpus["book"], blocks, corpus["source_id"], figures
         )
         for figure in corpus["figures"]:
             figure.update(notes.get(figure["id"], {}))
@@ -504,6 +733,10 @@ def refresh_figures(manifest: dict, run: Path) -> None:
                     "figures": len(corpus["figures"]),
                     "caption_page_references": sum(
                         f["geometry_kind"] == "caption_page_reference"
+                        for f in corpus["figures"]
+                    ),
+                    "vector_drawings": sum(
+                        f["geometry_kind"] == "vector_drawing"
                         for f in corpus["figures"]
                     ),
                 }

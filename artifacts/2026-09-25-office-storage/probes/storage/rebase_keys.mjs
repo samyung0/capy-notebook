@@ -1,0 +1,17 @@
+import { readFile } from 'node:fs/promises';
+import { office, Y, checkpoint, DETERMINISM } from './lib.mjs';
+const bytes = new Uint8Array(await readFile(process.argv[2]));
+const seed = await office.seedOffice('xlsx', bytes);
+const editable = await office.inspectOffice(bytes, seed);
+const cells = editable.filter((e) => /!E\d+$/.test(e.label) && !/!E1$/.test(e.label));
+const cmd = (e, d) => ({ type: 'set_cell', sheet: 'Sheet1', cell: e.label.split('!')[1], expectedValue: e.value, value: String(Number(e.value) + d) });
+const captured = (await office.applyOfficeCommands(bytes, seed, cells.slice(0, 5).map((e) => cmd(e, 3)))).state;
+const B = await office.exportOffice(bytes, checkpoint('xlsx', bytes, captured), DETERMINISM('job-k'));
+const latest = (await office.applyOfficeCommands(bytes, checkpoint('xlsx', bytes, captured), cells.slice(5, 10).map((e) => cmd(e, 3)))).state;
+const rebased = await office.rebaseOffice(bytes, checkpoint('xlsx', bytes, captured), checkpoint('xlsx', bytes, latest), B);
+const doc = new Y.Doc();
+Y.applyUpdate(doc, rebased.state);
+const root = doc.getMap('xlsx:rebase');
+const describe = (v) => v instanceof Uint8Array ? `bytes(${v.length})` : v instanceof Y.Map ? `map{${[...v.entries()].map(([k, x]) => `${k}: ${describe(x)}`).join(', ')}}` : v instanceof Y.Array ? `array(${v.length})` : typeof v === 'string' ? `str(${v.length}) ${v.slice(0, 80)}` : JSON.stringify(v)?.slice(0, 80);
+for (const [k, v] of root.entries()) console.log(k, '=>', describe(v).slice(0, 600));
+console.log('rebased', rebased.state.length, 'exported', B.length);

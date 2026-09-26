@@ -196,6 +196,18 @@ def _test_infra():
 
 
 @pytest.fixture(autouse=True)
+def _rerank_unassigned(monkeypatch):
+    """Search sees the rerank slot unassigned, so no test reaches DeepInfra.
+
+    The migrations seed a rerank default; tests that exercise reranking install
+    their own spec over this.
+    """
+    from pipeline.retrieval import search
+
+    monkeypatch.setattr(search, "_rerank_spec", lambda: None)
+
+
+@pytest.fixture(autouse=True)
 async def _close_pool():
     """Drop both pools between tests.
 

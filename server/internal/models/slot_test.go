@@ -14,6 +14,7 @@ func TestAllSlotsAndParsingStayInSync(t *testing.T) {
 		SlotIngest,
 		SlotRetrieval,
 		SlotCaptioning,
+		SlotRerank,
 	}
 	if got := AllSlots(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("slots = %v, want %v", got, want)
@@ -42,6 +43,8 @@ func TestSlotRequirements(t *testing.T) {
 		{SlotRetrieval, nil, true, CapabilityEmbedding},
 		{SlotCaptioning, []string{CapabilityVision, CapabilityPDF}, false, ""},
 		{SlotCaptioning, []string{CapabilityPDF}, false, CapabilityVision},
+		{SlotRerank, []string{CapabilityRerank}, false, ""},
+		{SlotRerank, []string{CapabilityEmbedding}, false, CapabilityRerank},
 		{SlotGenerate, nil, false, ""},
 		{SlotIngest, nil, false, ""},
 	}
@@ -56,7 +59,7 @@ func TestSlotRequirements(t *testing.T) {
 		t.Fatal("agentic_loop is derived and must not be operator-settable")
 	}
 	for _, slot := range AllSlots() {
-		if got, want := IsLLMSlot(string(slot)), slot != SlotRetrieval && slot != SlotCaptioning; got != want {
+		if got, want := IsLLMSlot(string(slot)), slot != SlotRetrieval && slot != SlotCaptioning && slot != SlotRerank; got != want {
 			t.Fatalf("IsLLMSlot(%q) = %t, want %t", slot, got, want)
 		}
 	}

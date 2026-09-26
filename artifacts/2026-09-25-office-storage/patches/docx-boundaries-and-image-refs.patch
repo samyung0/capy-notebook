@@ -1,0 +1,232 @@
+diff --git a/crates/docx-edit/src/engine.rs b/crates/docx-edit/src/engine.rs
+index 57768221..c9deb15d 100644
+--- a/crates/docx-edit/src/engine.rs
++++ b/crates/docx-edit/src/engine.rs
+@@ -410,6 +410,47 @@ pub struct EngineSession {
+     regions: RefCell<Option<ResidentRegionState>>,
+     pagination: RefCell<PaginationState>,
+     display: RefCell<DisplayState>,
++    /// SHRINK PROTOTYPE: source package media, part path to display data URL.
++    /// Lowering swaps `media:<part>` image references for these URLs, so the
++    /// display list and renderer see exactly what they saw before.
++    media: RefCell<Option<Rc<std::collections::HashMap<String, String>>>>,
++}
++
++/// SHRINK PROTOTYPE: replace `media:<part>` image sources in lowered blocks.
++fn resolve_media_refs(
++    blocks: &mut [docx_layout::types::LayoutBlock],
++    media: &std::collections::HashMap<String, String>,
++) {
++    use docx_layout::types::{LayoutBlock, ParagraphBlock, Run};
++    let resolve = |src: &mut String| {
++        if let Some(path) = src.strip_prefix("media:")
++            && let Some(url) = media.get(path)
++        {
++            *src = url.clone();
++        }
++    };
++    let paragraph = |block: &mut ParagraphBlock| {
++        for run in &mut block.runs {
++            if let Run::Image(image) = run {
++                resolve(&mut image.src);
++            }
++        }
++    };
++    for block in blocks {
++        match block {
++            LayoutBlock::Paragraph(block) => paragraph(block),
++            LayoutBlock::Image(block) => resolve(&mut block.src),
++            LayoutBlock::Table(table) => {
++                for row in &mut table.rows {
++                    for cell in &mut row.cells {
++                        resolve_media_refs(&mut cell.blocks, media);
++                    }
++                }
++            }
++            LayoutBlock::TextBox(text_box) => text_box.content.iter_mut().for_each(paragraph),
++            _ => {}
++        }
++    }
+ }
+ 
+ fn hash_bytes(bytes: &[u8]) -> u64 {
+@@ -584,9 +625,17 @@ impl EngineSession {
+             regions: RefCell::new(None),
+             pagination: RefCell::new(PaginationState::default()),
+             display: RefCell::new(DisplayState::default()),
++            media: RefCell::new(None),
+         }
+     }
+ 
++    /// SHRINK PROTOTYPE: attach the source package's media (part path to
++    /// display data URL) and drop lowered stories that resolved without it.
++    pub fn set_media(&self, media: std::collections::HashMap<String, String>) {
++        *self.media.borrow_mut() = Some(Rc::new(media));
++        self.render.borrow_mut().stories.clear();
++    }
++
+     /// Editing document.
+     pub fn doc(&self) -> &EditingDoc {
+         &self.doc
+@@ -622,7 +671,10 @@ impl EngineSession {
+         epoch: u64,
+         env: &RenderEnv,
+     ) -> Result<(), BridgeError> {
+-        let blocks = yrs_doc_to_layout_blocks(&self.doc, story, env)?;
++        let mut blocks = yrs_doc_to_layout_blocks(&self.doc, story, env)?;
++        if let Some(media) = self.media.borrow().as_ref() {
++            resolve_media_refs(&mut blocks, media);
++        }
+         let mut render = self.render.borrow_mut();
+         render.cache_misses = render.cache_misses.wrapping_add(1);
+         render.stories.insert(
+diff --git a/crates/docx-edit/src/seed.rs b/crates/docx-edit/src/seed.rs
+index 174ed75f..7f481ab0 100644
+--- a/crates/docx-edit/src/seed.rs
++++ b/crates/docx-edit/src/seed.rs
+@@ -1617,6 +1617,7 @@ fn run_boundary(
+         })
+         .collect::<String>();
+     let note_marks = note_ref_mark_types(run);
++    let empty_text = text.is_empty();
+     let mut boundary = Map::new();
+     boundary.insert("text".to_owned(), Value::String(text));
+     if !note_marks.is_empty() {
+@@ -1625,7 +1626,11 @@ fn run_boundary(
+     if let Some(key) = keys.first() {
+         boundary.insert("marksKey".to_owned(), Value::String(key.clone()));
+     }
+-    if let Some(formatting) = field(Some(run), "formatting") {
++    // SHRINK PROTOTYPE: restoreOriginalRuns reads `formatting` only for runs
++    // without text; non-empty runs take their formatting from live marks.
++    if let Some(formatting) = field(Some(run), "formatting")
++        && (!shrink_needed_boundaries() || empty_text)
++    {
+         boundary.insert("formatting".to_owned(), formatting.clone());
+     }
+     if let Some(changes) = field(Some(run), "propertyChanges") {
+@@ -1634,6 +1639,27 @@ fn run_boundary(
+     Some(Value::Object(boundary))
+ }
+ 
++/// SHRINK PROTOTYPE switch: `DOCX_SHRINK_BOUNDARIES=all` keeps today's cache.
++fn shrink_needed_boundaries() -> bool {
++    std::env::var("DOCX_SHRINK_BOUNDARIES").map_or(true, |value| value != "all")
++}
++
++/// SHRINK PROTOTYPE switch: `DOCX_SHRINK_MEDIA=inline` keeps data URLs.
++fn shrink_media_refs() -> bool {
++    std::env::var("DOCX_SHRINK_MEDIA").map_or(true, |value| value != "inline")
++}
++
++/// A boundary list is worth storing only when a run carries data that has no
++/// story unit or that merging equal-formatted runs would drop.
++fn boundaries_needed(boundaries: &[Value]) -> bool {
++    boundaries.iter().any(|boundary| {
++        boundary.get("propertyChanges").is_some()
++            || boundary.get("noteMarks").is_some()
++            || boundary.get("breaks").is_some()
++            || boundary.get("text").and_then(Value::as_str) == Some("")
++    })
++}
++
+ fn resolved_text_formatting(formatting: Option<&Value>, styles: &StyleResolver) -> Option<Value> {
+     let style = formatting
+         .and_then(|formatting| string(field(Some(formatting), "styleId")))
+@@ -1994,6 +2020,8 @@ fn paragraph_units(
+         }
+         unit_counts.push(units.len() - start);
+     }
++    let boundaries = boundaries
++        .filter(|boundaries| !shrink_needed_boundaries() || boundaries_needed(boundaries));
+     let attrs = paragraph_attrs(paragraph, styles, &units, &unit_counts, boundaries);
+     (units, para_attrs_to_ppr(attrs))
+ }
+@@ -2937,12 +2965,63 @@ fn units_to_raw_ops(
+     Ok(ops)
+ }
+ 
+-fn seed_plan(plan: StoryPlan) -> Result<(String, Vec<RawOp>, BTreeSet<String>), String> {
++/// SHRINK PROTOTYPE: package media keyed by a hash of its data URL, so a
++/// seeded image can name its part instead of carrying the bytes.
++pub(crate) type MediaPaths = std::collections::HashMap<u64, String>;
++
++pub(crate) fn media_key(data_url: &str) -> u64 {
++    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
++    for byte in data_url.as_bytes() {
++        hash ^= u64::from(*byte);
++        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
++    }
++    hash ^ (data_url.len() as u64).rotate_left(32)
++}
++
++pub(crate) const MEDIA_REF_PREFIX: &str = "media:";
++
++fn media_paths(envelope: &docx_parse::S9WireEnvelope) -> MediaPaths {
++    envelope
++        .document
++        .package
++        .media_entries
++        .iter()
++        .map(|(_, file)| (media_key(&file.data_url), file.path.clone()))
++        .collect()
++}
++
++fn reference_media(units: &mut [InlineUnit], media: &MediaPaths) {
++    for unit in units {
++        let UnitContent::Embed { kind, payload } = &mut unit.content else {
++            continue;
++        };
++        if kind != "image" {
++            continue;
++        }
++        let Some(Value::String(src)) = payload.get("src") else {
++            continue;
++        };
++        if let Some(path) = media.get(&media_key(src)) {
++            payload.insert(
++                "src".to_owned(),
++                Value::String(format!("{MEDIA_REF_PREFIX}{path}")),
++            );
++        }
++    }
++}
++
++fn seed_plan(
++    plan: StoryPlan,
++    media: &MediaPaths,
++) -> Result<(String, Vec<RawOp>, BTreeSet<String>), String> {
+     let StoryPlan {
+         story_id,
+-        units,
++        mut units,
+         comment_coverage,
+     } = plan;
++    if shrink_media_refs() {
++        reference_media(&mut units, media);
++    }
+     let mut referenced_fonts = BTreeSet::new();
+     let mut ops = units_to_raw_ops(units, &mut referenced_fonts)?;
+     if !comment_coverage.is_empty() {
+@@ -2984,8 +3063,11 @@ pub(crate) fn referenced_fonts(
+ 
+ pub fn seed_parsed_docx(
+     document: &EditingDoc,
+-    envelope: docx_parse::S9WireEnvelope,
++    mut envelope: docx_parse::S9WireEnvelope,
+ ) -> Result<Vec<String>, String> {
++    let media = media_paths(&envelope);
++    // As upstream does: the media table never needs a serde_json copy.
++    envelope.document.package.media_entries.clear();
+     let mut referenced_fonts = BTreeSet::new();
+     collect_font_table_fonts(&envelope, &mut referenced_fonts);
+     let parsed = serde_json::to_value(&envelope.document).map_err(|error| error.to_string())?;
+@@ -3107,7 +3189,7 @@ pub fn seed_parsed_docx(
+         .map_err(|error| error.to_string())?;
+     let mut batches = Vec::with_capacity(context.plans.len());
+     for plan in context.plans {
+-        let (story_id, ops, fonts) = seed_plan(plan)?;
++        let (story_id, ops, fonts) = seed_plan(plan, &media)?;
+         batches.push((story_id, ops));
+         referenced_fonts.extend(fonts);
+     }

@@ -90,7 +90,7 @@ def test_pack_keeps_only_cited_passages_and_all_selected_results():
         evidence_passage_ids={"cited", "unused"},
     )
     ctx.evidence_notes = [
-        {"name": "describe_documents", "text": "日" * 8192} for _ in range(6)
+        {"name": "list_sources", "text": "日" * 8192} for _ in range(6)
     ]
     packed = evidence.pack(ctx, [1, 1])
     assert [p["chunk_id"] for p in packed["passages"]] == ["cited"]
@@ -102,7 +102,7 @@ async def test_full_results_batch_as_conversation_context_on_a_small_window(
     monkeypatch,
 ):
     results = [
-        {"name": "describe_documents", "text": f"result-{i}:" + "日" * 8192}
+        {"name": "list_sources", "text": f"result-{i}:" + "日" * 8192}
         for i in range(14)
     ]
     turns = await evidence.history_turns(

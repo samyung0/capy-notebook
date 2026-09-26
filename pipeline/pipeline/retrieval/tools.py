@@ -396,8 +396,6 @@ def _scope_ids(value: Any) -> list[str] | None:
 async def _resolve_scope(
     ctx: ToolContext,
     raw_scope: Any = None,
-    *,
-    required_file_ids: bool = False,
 ) -> ResolvedScope | ToolResult:
     if raw_scope is _MISSING:
         scope: dict[str, Any] = {}
@@ -411,8 +409,6 @@ async def _resolve_scope(
     chapter_ids = _scope_ids(scope.get("chapter_ids", _MISSING))
     if file_ids is None or chapter_ids is None:
         return _refused(_INVALID_SCOPE)
-    if required_file_ids and not file_ids:
-        return _refused("describe_documents needs at least one file id.")
 
     outline = await _scope_outline(ctx)
     files = list(outline.get("files") or [])
@@ -630,72 +626,6 @@ def _source_listing(
         if lines
         else "This workspace has no sources or materials in scope."
     )
-
-
-_DESCRIBE_CAP = 8
-
-
-async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    requested = _scope_ids(args.get("file_ids", _MISSING))
-    if requested is None:
-        return _refused(_INVALID_SCOPE)
-    resolved = await _resolve_scope(
-        ctx,
-        {"file_ids": requested},
-        required_file_ids=True,
-    )
-    if isinstance(resolved, ToolResult):
-        return resolved
-    if len(resolved.file_ids) > _DESCRIBE_CAP:
-        return _refused(f"describe_documents accepts at most {_DESCRIBE_CAP} file ids.")
-    outline = await _scope_outline(ctx)
-    notes = {
-        str(item["id"])
-        for item in outline.get("files") or []
-        if item.get("kind") == "material"
-    }
-    file_ids = [fid for fid in resolved.file_ids if fid not in notes]
-    rows = await store.file_summaries(ctx.workspace_id, file_ids)
-    lines: list[str] = []
-    for file in rows:
-        head = f"### {file['name']} (file_id={file['id']})"
-        body = file.get("summary") or file.get("descriptor") or "(no summary yet)"
-        lines.append(f"{head}\n{body}")
-    for note_id in (fid for fid in resolved.file_ids if fid in notes):
-        lines.append(await _describe_note(note_id, ctx.workspace_id))
-    if not lines:
-        return _result("No summaries for those documents.")
-    return _result("\n\n".join(lines))
-
-
-_NOTE_EXCERPT_WORDS = 250
-
-
-async def _describe_note(note_id: str, workspace_id: str) -> str:
-    """A note has no summary: its heading outline, or its first words when it
-    has no headings."""
-    try:
-        resp = await asyncio.to_thread(
-            _get_json,
-            f"/api/internal/materials/{note_id}/index-text?workspaceId={workspace_id}",
-        )
-    except requests.RequestException as exc:
-        return f"### (id={note_id})\nCould not read the note: {exc}"
-    if resp.status_code != 200:
-        return f"### (id={note_id})\nThe note is not available."
-    body = resp.json() if isinstance(resp.json(), dict) else {}
-    text = str(body.get("text") or "")
-    head = f"### {body.get('title') or ''} (id={note_id}, kind=material)"
-    headings = [
-        line.strip() for line in text.splitlines() if line.lstrip().startswith("#")
-    ]
-    if headings:
-        return head + "\n" + "\n".join(headings)
-    words = text.split()
-    excerpt = " ".join(words[:_NOTE_EXCERPT_WORDS])
-    if len(words) > _NOTE_EXCERPT_WORDS:
-        excerpt += " …"
-    return head + "\n" + (excerpt or "(empty note)")
 
 
 def _material_line(item: dict[str, Any]) -> str:
@@ -1724,10 +1654,6 @@ async def _restore_file(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return result
 
 
-def _get_json(path: str) -> requests.Response:
-    return requests.get(_material_url(path), headers=_material_headers(), timeout=15)
-
-
 def _post_json(path: str, payload: dict[str, Any]) -> requests.Response:
     return requests.post(
         _material_url(path),
@@ -1886,7 +1812,6 @@ _register("read_knowledge", _read_knowledge)
 _register("create_ledger", _create_ledger)
 _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
-_register("describe_documents", _describe_documents)
 _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)

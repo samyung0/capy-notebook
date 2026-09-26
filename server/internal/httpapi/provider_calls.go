@@ -23,6 +23,7 @@ type providerCallReq struct {
 	CacheWriteTokens int64  `json:"cacheWriteTokens"`
 	ReasoningTokens  int64  `json:"reasoningTokens"`
 	CacheAnomaly     string `json:"cacheAnomaly"`
+	ModelVersion     int    `json:"modelVersion"`
 }
 
 func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +51,7 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		CacheWriteTokens: req.CacheWriteTokens,
 		ReasoningTokens:  req.ReasoningTokens,
 		CacheAnomaly:     req.CacheAnomaly,
+		ModelVersion:     req.ModelVersion,
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "spend session not found"})

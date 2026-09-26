@@ -68,9 +68,11 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
     out = NormalizedUsage()
     if block is None:
         return out
+    # DeepInfra's inference route (rerank) answers with top-level input_tokens
+    # and repeats the count as inference_status.tokens_input.
     out.input_tokens = _int(
         _attr(block, "prompt_tokens", "input_tokens", "promptTokens", "inputTokens")
-    )
+    ) or _int(_attr(_attr(block, "inference_status"), "tokens_input"))
     out.output_tokens = _int(
         _attr(
             block,

@@ -133,7 +133,7 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 		}
 	}
 	var count int
-	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 3 {
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM model_capacities`).Scan(&count); err != nil || count != 4 {
 		t.Fatalf("bootstrap rows=%d err=%v", count, err)
 	}
 	for _, want := range []struct {
@@ -143,6 +143,7 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 		{"deepseek", "deepseek-flash", 91, 13},
 		{"tencent", "glm-5.3-flash", 30, 24},
 		{"deepinfra", "Qwen/Qwen3-Embedding-4B", 200, 80},
+		{"deepinfra", "Qwen/Qwen3-Reranker-4B", 200, 80},
 	} {
 		var total, reserve int
 		err := tx.QueryRow(ctx, `SELECT concurrency_total, interactive_reserve
@@ -151,4 +152,58 @@ func TestModelCapacityBootstrapUsesTransportAndPreservesOverrides(t *testing.T) 
 			t.Fatalf("%s/%s: %d/%d err=%v", want.provider, want.model, total, reserve, err)
 		}
 	}
+}
+
+func TestRerankMigrationSeedsDefaultAndCarriesDeepInfraCapacity(t *testing.T) {
+	s := openMigrateTestStore(t)
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM model_configs WHERE model_slug = 'Qwen/Qwen3-Reranker-4B';
+		DELETE FROM model_capacities;
+		INSERT INTO model_capacities VALUES ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 17, 5)`); err != nil {
+		t.Fatal(err)
+	}
+	body, err := migrations.FS.ReadFile("0030_rerank_slot.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := tx.Exec(ctx, string(body)); err != nil {
+			t.Fatalf("migration application %d: %v", i+1, err)
+		}
+	}
+	for name, query := range map[string]string{
+		"rerank default": `SELECT count(*)=1 FROM model_configs
+		  WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Reranker-4B' AND enabled
+		  AND slots=ARRAY['rerank'] AND capabilities=ARRAY['rerank'] AND is_default_for=ARRAY['rerank']
+		  AND micros_per_input_token=63 AND thinking_levels='{}' AND context_window_tokens=0`,
+		"capacity from the embedding row": `SELECT count(*)=1 FROM model_capacities
+		  WHERE provider='deepinfra' AND model='Qwen/Qwen3-Reranker-4B'
+		  AND concurrency_total=17 AND interactive_reserve=5`,
+	} {
+		var ok bool
+		if err := tx.QueryRow(ctx, query).Scan(&ok); err != nil || !ok {
+			t.Fatalf("%s: ok=%v err=%v", name, ok, err)
+		}
+	}
+	// DeepInfra may serve the reranker only in the rerank slot.
+	nested, err := tx.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = nested.Exec(ctx, `
+		INSERT INTO model_configs (version, provider_name, model_name, provider_slug, model_slug,
+		  platform_enabled, context_window_tokens, slots, capabilities,
+		  micros_per_input_token, micros_per_output_token, micros_per_cached_input_token)
+		VALUES (2, 'Qwen', 'Reranker 4B', 'deepinfra', 'Qwen/Qwen3-Reranker-4B',
+		  true, 0, ARRAY['captioning'], ARRAY['vision'], 63, 63, 63)`)
+	if err == nil || !strings.Contains(err.Error(), "model_configs_deepinfra_check") {
+		t.Fatalf("expected the deepinfra check, got %v", err)
+	}
+	_ = nested.Rollback(ctx)
 }

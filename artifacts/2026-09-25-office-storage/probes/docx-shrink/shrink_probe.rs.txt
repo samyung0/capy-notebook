@@ -1,0 +1,97 @@
+//! SHRINK PROTOTYPE probe (scratch, not for commit): seed a DOCX with the
+//! prototype switches, report the stored state size, then lower every story
+//! with the source media attached and check that every image resolves to the
+//! package's display data URL.
+//!
+//! cargo run --release -p betteroffice-docx-edit --example shrink_probe -- in.docx [state.bin]
+use std::collections::HashMap;
+use std::time::Instant;
+
+use docx_edit::EngineSession;
+use docx_edit::bridge::RenderEnv;
+use docx_layout::types::{LayoutBlock, Run};
+use yrs::{Map, ReadTxn, Transact};
+
+fn images(blocks: &[LayoutBlock], out: &mut Vec<String>) {
+    for block in blocks {
+        match block {
+            LayoutBlock::Paragraph(paragraph) => {
+                for run in &paragraph.runs {
+                    if let Run::Image(image) = run {
+                        out.push(image.src.clone());
+                    }
+                }
+            }
+            LayoutBlock::Image(image) => out.push(image.src.clone()),
+            LayoutBlock::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        images(&cell.blocks, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn main() {
+    let mut args = std::env::args().skip(1);
+    let path = args.next().expect("docx path");
+    let out = args.next();
+    let bytes = std::fs::read(&path).expect("read docx");
+    let envelope = docx_edit::parse_docx_for_edit(&bytes).expect("parse");
+    let media: HashMap<String, String> = envelope
+        .document
+        .package
+        .media_entries
+        .iter()
+        .map(|(_, file)| (file.path.clone(), file.data_url.clone()))
+        .collect();
+    // A 45-bit id like the headless runtime's randomInt(1, 0x1fffffffffff),
+    // so varint widths match the stored states measured before.
+    let client_id = std::env::var("SHRINK_CLIENT_ID")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0x1234_5678_9abc_u64);
+    let engine = EngineSession::new(client_id);
+    let started = Instant::now();
+    docx_edit::seed_parsed_docx(engine.doc(), envelope).expect("seed");
+    let seed_ms = started.elapsed().as_millis();
+    let state = engine.doc().encode_state_as_update_v1();
+    if let Some(out) = out {
+        std::fs::write(out, &state).expect("write state");
+    }
+    let stories: Vec<String> = {
+        let txn = engine.doc().yrs_doc().transact();
+        txn.get_map("stories")
+            .map(|stories| stories.iter(&txn).map(|(id, _)| id.to_string()).collect())
+            .unwrap_or_default()
+    };
+    engine.set_media(media.clone());
+    let env = RenderEnv::default();
+    let mut srcs = Vec::new();
+    let started = Instant::now();
+    for story in &stories {
+        engine
+            .with_lowered_story(story, &env, |blocks| images(blocks, &mut srcs))
+            .expect("lower");
+    }
+    let lower_ms = started.elapsed().as_millis();
+    let resolved = srcs
+        .iter()
+        .filter(|src| media.values().any(|url| url == *src))
+        .count();
+    let unresolved = srcs.iter().filter(|src| src.starts_with("media:")).count();
+    println!(
+        "{{\"file\":{:?},\"state\":{},\"seedMs\":{},\"stories\":{},\"images\":{},\"resolvedToPackageDataUrl\":{},\"unresolvedRefs\":{},\"lowerMs\":{}}}",
+        path.rsplit(['/', '\\']).next().unwrap_or(&path),
+        state.len(),
+        seed_ms,
+        stories.len(),
+        srcs.len(),
+        resolved,
+        unresolved,
+        lower_ms
+    );
+}

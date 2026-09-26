@@ -173,8 +173,12 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"pendingEffects":null`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
 	}
+	// The editor read carries the state but leaves the baseline and effects server-side.
 	full := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
-	if full.Code != http.StatusOK || bytes.Contains(full.Body.Bytes(), []byte(`"pendingEffects":null`)) {
-		t.Fatalf("editor session must stay untrimmed = %d body=%s", full.Code, full.Body.String())
+	if full.Code != http.StatusOK ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"pendingEffects":null`)) {
+		t.Fatalf("editor session = %d body=%s", full.Code, full.Body.String())
 	}
 }

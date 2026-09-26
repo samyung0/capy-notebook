@@ -34,6 +34,9 @@ func TestEliteLLMProvidersRejectUnknownAndHops(t *testing.T) {
 	if ok, reason := catalog.AllowsModel("deepinfra", SeededHopEmbedSlug); !ok {
 		t.Fatalf("seeded qwen embed: %s", reason)
 	}
+	if ok, reason := catalog.AllowsModel("deepinfra", "Qwen/Qwen3-Reranker-4B"); !ok {
+		t.Fatalf("seeded qwen rerank: %s", reason)
+	}
 	if ok, reason := catalog.AllowsModel("zai", "glm-5.3-flash"); !ok {
 		t.Fatalf("routed GLM: %s", reason)
 	}

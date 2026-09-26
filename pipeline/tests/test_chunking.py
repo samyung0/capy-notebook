@@ -17,6 +17,7 @@ from pipeline.retrieval.chunking import (
     search_query_terms,
     tokenize_for_search,
 )
+from pipeline.retrieval.packing import pack_blocks
 
 
 def test_short_unique_tails_survive_section_and_oversized_block_boundaries(monkeypatch):
@@ -473,6 +474,29 @@ def test_a_stray_cjk_character_does_not_shatter_the_latin_text():
     assert "H" not in tokens
 
 
+def test_printed_ligatures_meet_typed_letters():
+    """PDFs print 'ﬁ', 'ﬀ', 'ﬂ' as one character each, which Postgres indexes
+    as written; the index and a typed query have to agree on plain letters."""
+    indexed = tokenize_for_search("the eﬀect of ﬂow on ﬁnal 光合作用").split()
+    query = search_query_terms("effect flow final 光合作用")
+
+    assert set(query.all_of.split()) <= set(indexed)
+    assert "光合" in indexed and "合作" in indexed and "作用" in indexed
+    assert query.cjk_runs == 1
+    assert tokenize_for_search("ﬀ ﬁ ﬂ ﬃ ﬄ ﬅ ﬆ") == "ff fi fl ffi ffl st st"
+
+
+def test_printed_sub_and_superscripts_meet_typed_characters():
+    """Postgres drops '₀' and '²' from a word, so a printed 'H₀' indexed as 'h'
+    and 's²' as the stopword 's'. They fold like ligatures; '™' (several
+    letters) and the Kanbun marks (ideographs) stay as printed."""
+    indexed = tokenize_for_search("reject H₀ when s² exceeds σ₁² under Hₐ").split()
+    query = search_query_terms("H0 s2 Ha")
+
+    assert set(query.all_of.split()) <= set(indexed)
+    assert tokenize_for_search("x⁻¹ φᵢ Java™ ㆒") == "x−1 φi Java™ ㆒"
+
+
 def test_query_terms_are_or_joined_for_websearch_tsquery():
     terms = search_query_terms("光合作用")
 
@@ -503,3 +527,34 @@ def test_estimate_tokens_counts_cjk_per_character():
         "合成"
     )
     assert clip_to_tokens("光合作用ATP", 4) == "光合作用"
+
+
+def test_a_book_title_closes_the_path_without_entering_it() -> None:
+    # ReStorying: the title ends the "Contents" scope and its text stays readable.
+    def block(text, page, level=None, role=None):
+        item = {
+            "type": "text",
+            "text": text,
+            "page_idx": page,
+            "bbox": [100, 100, 900, 120],
+        }
+        if level:
+            item["text_level"] = level
+        if role:
+            item["_source_role"] = role
+        return item
+
+    blocks = [
+        block("Contents", 0, 1),
+        block("Chapter listing.", 0),
+        block("ReStorying Education", 1, 1, "book-title"),
+        block("Edited by the authors.", 1),
+        block("Chapter 1", 2, 2),
+        block("First chapter text.", 2),
+    ]
+    for chunks in (chunk_content_list(blocks), pack_blocks(blocks, frozenset())):
+        assert [(c.section_path, c.text) for c in chunks] == [
+            ("Contents", "Chapter listing."),
+            ("", "ReStorying Education\n\nEdited by the authors."),
+            ("Chapter 1", "First chapter text."),
+        ]

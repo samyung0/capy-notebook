@@ -118,7 +118,7 @@ async def run_case(case: tuple, live: bool) -> dict:
             return await tools._capture_page(args, context)
         if tool in {"read_document", "search_workspace"}:
             return tools.ToolResult(passages=[passage])
-        if tool in {"list_sources", "describe_documents"}:
+        if tool == "list_sources":
             return tools.ToolResult(
                 text_parts=[f"{name}, file_id=f_1, relevant PDF page {page}."]
             )

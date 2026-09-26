@@ -96,9 +96,6 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return f"{args.get('excerpt_id') or ''} page {args.get('page')}"
     if name == "list_sources":
         return "listing sources"
-    if name == "describe_documents":
-        ids = args.get("file_ids") or []
-        return ", ".join(str(i) for i in ids[:8])
     if name == "read_document":
         return str(args.get("file_id") or "")
     if name == "capture_page":

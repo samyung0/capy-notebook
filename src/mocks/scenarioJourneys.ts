@@ -210,17 +210,17 @@ export async function runJourney(
     doc
       .getText('source')
       .insert(doc.getText('source').length, `\n${scenarioMarker}`);
-    await writeSourceDraft({
-      base: new TextEncoder().encode(
-        'A source for trying application errors.\n'
-      ),
-      baseSourceSHA256: session.baseSourceSHA256,
-      epoch: session.epoch,
-      fileId: `${db.user.id}:${scenarioText}`,
-      id: 'mock-scenario-recovered',
-      state: Y.encodeStateAsUpdate(doc),
-      version: crypto.randomUUID(),
-    });
+    await writeSourceDraft(
+      {
+        baseSourceSHA256: session.baseSourceSHA256,
+        epoch: session.epoch,
+        fileId: `${db.user.id}:${scenarioText}`,
+        id: 'mock-scenario-recovered',
+        state: Y.encodeStateAsUpdate(doc),
+        version: crypto.randomUUID(),
+      },
+      new TextEncoder().encode('A source for trying application errors.\n')
+    );
     doc.destroy();
     advanceScenarioSource(scenarioText);
     await sourceOpen();

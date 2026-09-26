@@ -144,7 +144,6 @@ it('keeps MSW source drafts out of the durable browser database', async () => {
   });
   vi.stubGlobal('indexedDB', { open });
   const draft = {
-    base: new Uint8Array(),
     baseSourceSHA256: 'mock-base',
     epoch: 1,
     fileId: 'mock-user:mock-file',
@@ -153,7 +152,7 @@ it('keeps MSW source drafts out of the durable browser database', async () => {
     version: '1',
   };
   expect(await readSourceDrafts(draft.fileId)).toEqual([]);
-  await writeSourceDraft(draft);
+  await writeSourceDraft(draft, new Uint8Array());
   await clearSourceDrafts([draft]);
   expect(open).not.toHaveBeenCalled();
 });
