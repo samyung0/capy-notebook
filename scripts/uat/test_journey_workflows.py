@@ -109,7 +109,7 @@ assert(job.steps.some(s => s.uses === './.github/actions/cache-betteroffice'));
 const prepared = job.steps.findIndex(s => s.run === 'pnpm office:prepare');
 assert(prepared > 0 && prepared < job.steps.findIndex(s => s.run === 'pnpm e2e:uat:journeys'));
 assert.equal(job.steps[prepared]['timeout-minutes'], 30);
-assert.equal(job['timeout-minutes'], 120);
+assert.equal(job['timeout-minutes'], 150);
 
 assert.equal(job.steps.find(s => s.name?.startsWith('Clean up')).if, 'always()');
 assert.equal(job.steps.find(s => s.uses?.startsWith('actions/upload-artifact')).if, 'always()');
