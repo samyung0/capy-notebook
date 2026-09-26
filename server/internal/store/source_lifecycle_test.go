@@ -40,7 +40,7 @@ func testRefreshFinalize(t *testing.T, s *Store, doc SourceSession, job SourcePr
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = s.FinalizeSourceRefresh(ctx, doc.FileID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: sourceTestBaseline(doc.Format, "B")})
+	err = s.FinalizeSourceRefresh(ctx, doc.FileID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", SeedBytes: int64(len("fresh-seed"))})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestSourceCaptionAdmissionAndDerivedTokens(t *testing.T) {
 	}
 	doc := sourceTestSeed(t, s, owner, file.ID)
 	effects := json.RawMessage(`[{"id":"image-1","kind":"image","before":"abc","after":"汉😀"},{"id":"text-1","kind":"text","after":"かな"}]`)
-	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("authored"), PendingEffects: effects, NetTokens: 5})
+	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("authored"), PendingEffects: effects, NetTokens: 5, SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)})
 	if err != nil {
 		t.Fatal(err)
 	}

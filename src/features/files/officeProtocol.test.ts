@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import * as Y from 'yjs';
 import {
   isOfficeHostMessage,
   isOfficeRuntimeMessage,
@@ -7,6 +8,7 @@ import {
 import {
   isCurrentOfficeRuntimeMessage,
   officeRuntimeKey,
+  replicaCatchUp,
 } from './useOfficeRuntime';
 
 describe('office host protocol', () => {
@@ -183,4 +185,21 @@ it('accepts bounded citation changes without a document reload', () => {
   expect(
     isOfficeHostMessage({ ...message, citation: { page: -1, quote: 'text' } })
   ).toBe(false);
+});
+
+// After collaboration-ready the host sends only what the replica lacks: a room
+// above the engines' 64 MiB per-update cap is never sent back as one update.
+it('answers a ready replica with only what it lacks', () => {
+  const host = new Y.Doc();
+  host.getText('room').insert(0, 'x'.repeat(100_000));
+  const replica = new Y.Doc();
+  const replicaState = Y.encodeStateAsUpdate(host); // the load's initial update
+  Y.applyUpdate(replica, replicaState);
+  host.getText('room').insert(0, 'late');
+  const catchUp = replicaCatchUp(host, replicaState);
+  expect(catchUp.byteLength).toBeLessThan(100);
+  Y.applyUpdate(replica, catchUp);
+  expect(replica.getText('room').toString()).toBe(
+    host.getText('room').toString()
+  );
 });

@@ -19,7 +19,8 @@ export interface SourceCandidateResponse {
   jobId: string;
   leaseToken: string;
   sourceBlobPath: string;
-  state: string;
+  /** @nullable */
+  state: string | null;
   uploadHeaders: SourceCandidateResponseUploadHeaders;
   uploadURL: string;
 }

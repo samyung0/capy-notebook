@@ -282,7 +282,9 @@ the numbers in the storage reports' "after" columns are met within 10% on the sa
    with no later edits returns the state to NULL.
 5. **Copy-on-write candidates**, as in `pptx-and-shared-overhead.md` 5.3: the candidate starts with
    a NULL state, `SaveSourceCheckpoint` copies the captured state before replacing it when the
-   checkpoints match, readers use `COALESCE`.
+   checkpoints match, readers take the source row's state while the checkpoints still match and
+   the candidate's copy after (`CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END`;
+   `COALESCE` would read a newer save's state when the captured state was NULL).
 6. **Quota rule** (backend-storage-quota): a migration redefines the generated `storage_bytes` as
    pending effects plus `max(0, state - seed size)` (plus a stored baseline when one exists),
    candidates count zero while transient, and reconciliation (`storage.go` near 609) follows.
@@ -318,10 +320,13 @@ test:go`, the fork's `test:poc` and `e2e:slow` pass, and `openwiki/frontend/offi
    publications (charts, opaque drawings) are known and accepted for UAT data.
 4. Commit and push C5 and C6 (pin bump, Capy changes, reset migration). The deploy runs the
    migration while editing is still paused.
-5. Check: open one file of each format in Edit, make an edit, publish it, and confirm quota and
-   `source_documents` rows match C5's rules.
-6. Turn off the pause. Tabs from before the deploy get 403 on reconnect and go to recovery or the
+   While old and new services overlap during the deploy, text first opens and publications can
+   fail (text editing is not paused, and each API refuses the other's unknown fields); the edits
+   stay in drafts and in the room.
+5. Turn off the pause. Tabs from before the deploy get 403 on reconnect and go to recovery or the
    banner.
+6. Check (Edit needs the pause off): open one file of each format in Edit, make an edit, publish
+   it, and confirm quota and `source_documents` rows match C5's rules.
 
 ## Not in this round
 

@@ -154,6 +154,20 @@ export default defineConfig(({ mode }) => {
           ),
         },
         {
+          find: '@betteroffice/fonts',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/fonts/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/fonts-cjk',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './src/office-runtime/noCjkFonts.ts'
+          ),
+        },
+        {
           find: '@betteroffice/pptx/editor',
           replacement: path.resolve(
             import.meta.dirname,

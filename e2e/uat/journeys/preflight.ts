@@ -162,16 +162,18 @@ export default async function preflight() {
   );
   if (failures.length) throw new Error(failures.join('\n'));
   // The required fixture index is checked before any signup or provider mutation.
-  const basic = path.resolve('e2e/fixtures/files/basic');
   for (const name of [
-    'lesson.docx',
-    'grades.xlsx',
-    'lesson.pptx',
-    'notes.txt',
-    'digital.pdf',
-    'delimiter-limit.csv',
+    'basic/lesson.docx',
+    'basic/grades.xlsx',
+    'basic/lesson.pptx',
+    'basic/notes.txt',
+    'basic/digital.pdf',
+    'basic/delimiter-limit.csv',
+    'rich-content/exchange-plan.docx',
+    'rich-content/course-guide.xlsx',
+    'rich-content/lecture.pptx',
   ]) {
-    if (!readFileSync(path.join(basic, name)).length)
+    if (!readFileSync(path.resolve('e2e/fixtures/files', name)).length)
       throw new Error(`Required UAT fixture is empty: ${name}`);
   }
 }

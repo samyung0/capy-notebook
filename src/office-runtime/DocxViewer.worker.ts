@@ -1,21 +1,46 @@
 /// <reference lib="webworker" />
 
 import type { DisplayList } from '@betteroffice/docx/layout/render';
-import { openDocumentViewer } from '@betteroffice/docx/viewer';
+import {
+  configureDefaultFonts,
+  openDocumentViewer,
+} from '@betteroffice/docx/viewer';
+import {
+  type OfficeFace,
+  officeFonts,
+  onOfficeFontFailure,
+  usedOfficeFaces,
+} from './officeFonts';
 
 type Request = { bytes: ArrayBuffer; id: number };
 type Response =
-  | { displayList: DisplayList; id: number; pageCount: number; type: 'ready' }
+  | {
+      displayList: DisplayList;
+      faces: OfficeFace[];
+      id: number;
+      pageCount: number;
+      type: 'ready';
+    }
   | { id: number; message: string; type: 'error' };
+
+// The viewer registers the faces the layout requires before laying out.
+configureDefaultFonts({ fonts: officeFonts });
+let fontFailure: Error | undefined;
+onOfficeFontFailure((error) => {
+  fontFailure ??= error;
+});
 
 self.onmessage = (event: MessageEvent<Request>) => {
   const { bytes, id } = event.data;
   void openDocumentViewer(new Uint8Array(bytes)).then(
     (document) => {
       try {
+        // A missing face would leave the fallback layout: fail instead.
+        if (fontFailure) throw fontFailure;
         const displayList = document.displayList();
         post({
           displayList,
+          faces: usedOfficeFaces(),
           id,
           pageCount: displayList.pages.length,
           type: 'ready',

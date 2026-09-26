@@ -1,6 +1,6 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: Shared assertion helpers execute inside the UAT tests. */
 import assert from 'node:assert/strict';
-import type { FrameLocator } from '@playwright/test';
+import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import * as Y from 'yjs';
 import { sanitize } from './evidence';
@@ -15,6 +15,7 @@ type Checkpoint = {
   state: Uint8Array;
 };
 type OfficeRuntime = {
+  seedOffice(format: OfficeFormat, base: Uint8Array): Promise<Checkpoint>;
   exportOffice(
     base: Uint8Array,
     checkpoint: Checkpoint,
@@ -49,8 +50,15 @@ export async function savedState(run: UatRun, fileId: string) {
 
 export async function savedExport(run: UatRun, fileId: string) {
   const row = await savedState(run, fileId);
-  const state = Buffer.from(string(row.state), 'base64');
+  const source = await run.blob(string(row.base_blob_path));
+  const base = Buffer.from(source.bodyBase64, 'base64');
+  assert.equal(sha256(base), row.base_source_sha256);
+  // A NULL state is seed(base) until the first save: the published source is
+  // the current content (human/frontend/office-files.md, storage record).
+  const state =
+    row.state === null ? null : Buffer.from(string(row.state), 'base64');
   if (row.format === 'text') {
+    if (!state) return { bytes: base, row, text: base.toString() };
     const doc = new Y.Doc();
     try {
       Y.applyUpdate(doc, state);
@@ -63,26 +71,134 @@ export async function savedExport(run: UatRun, fileId: string) {
   assert(
     row.format === 'docx' || row.format === 'xlsx' || row.format === 'pptx'
   );
-  const source = await run.blob(string(row.base_blob_path));
-  const base = Buffer.from(source.bodyBase64, 'base64');
-  assert.equal(sha256(base), row.base_source_sha256);
-  const checkpoint: Checkpoint = {
-    baseSha256: source.sha256,
-    format: row.format,
-    schemaVersion: 1,
-    state,
-  };
   const native = await engine();
-  const bytes = await native.exportOffice(base, checkpoint, {
-    now: '2026-01-01T00:00:00.000Z',
-    seed: sha256(state),
-  });
+  const checkpoint: Checkpoint = state
+    ? {
+        baseSha256: source.sha256,
+        format: row.format,
+        schemaVersion: 1,
+        state,
+      }
+    : await native.seedOffice(row.format, base);
+  const bytes = state
+    ? await native.exportOffice(base, checkpoint, {
+        now: '2026-01-01T00:00:00.000Z',
+        seed: sha256(state),
+      })
+    : base;
   const entries = await native.inspectOffice(base, checkpoint);
   return {
     bytes: Buffer.from(bytes),
     row,
     text: entries.map((entry) => entry.value).join('\n'),
   };
+}
+
+/** Size of seed(base), the part of the editing state the owner is not charged for. */
+export async function seedBytes(format: OfficeFormat, base: Uint8Array) {
+  return (await (await engine()).seedOffice(format, base)).state.byteLength;
+}
+
+/** The owner's storage charge as the app reports it. */
+export async function storageCharge(run: UatRun) {
+  return Number(object(await api(run.owner, '/api/billing')).storageUsedBytes);
+}
+
+/**
+ * The owner's charge since `before` (read before the upload) is the source
+ * plus its pending effects, editing-state growth beyond the recorded seed and
+ * a stored baseline (human/backend-storage-quota.md, 2026-09-25 Office rule).
+ */
+export async function officeCharge(
+  run: UatRun,
+  fileId: string,
+  before: number
+) {
+  const [charge, rows] = await Promise.all([
+    storageCharge(run),
+    run.query(
+      `SELECT f.size_bytes,d.checkpoint,d.seed_bytes,d.pending_effects,d.net_tokens,
+      octet_length(d.state) AS state_bytes,
+      COALESCE(octet_length(NULLIF(d.pending_effects,'[]'::jsonb)::text),0) AS effects_bytes,
+      octet_length(d.indexed_baseline) AS baseline_bytes
+      FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=%s`,
+      [fileId]
+    ),
+  ]);
+  assert.equal(rows.length, 1, `missing source row for ${fileId}`);
+  const row = rows[0];
+  const growth =
+    row.state_bytes === null
+      ? 0
+      : Math.max(0, Number(row.state_bytes) - Number(row.seed_bytes));
+  assert.equal(
+    charge - before,
+    Number(row.size_bytes) +
+      Number(row.effects_bytes) +
+      growth +
+      Number(row.baseline_bytes ?? 0)
+  );
+  await run.attach(`${fileId}-charge`, {
+    ...row,
+    charge: charge - before,
+    pending_effects: undefined,
+  });
+  return row;
+}
+
+/** Waits for the edit header's durable save status. */
+export async function saved(page: Page) {
+  await expect(
+    page.getByRole('status').filter({ hasText: /^Saved$/ })
+  ).toBeVisible({ timeout: 60_000 });
+}
+
+/**
+ * Waits for the automatic publication while `actor` keeps the file open in
+ * Edit (records 19 and 20): the editor stays mounted and read-only under the
+ * banner, which says its changes were saved, and the banner's button reloads
+ * the whole page. Call it inside the 60 s idle window after the last save.
+ */
+export async function publishWhileEditing(
+  run: UatRun,
+  actor: Actor,
+  fileId: string
+) {
+  const { page } = actor;
+  const mounted = await page
+    .locator('iframe[src*="office-runtime"]')
+    .elementHandle();
+  const runtime = await mounted?.contentFrame();
+  assert(mounted && runtime, 'no Office runtime is mounted');
+  // A remount replaces the iframe document; a reload replaces the page.
+  await runtime.evaluate(() => {
+    Object.assign(window, { uatMounted: true });
+  });
+  await page.evaluate(() => {
+    Object.assign(window, { uatPage: true });
+  });
+  const published = await automaticPublication(run, fileId);
+  const banner = page
+    .getByRole('alert')
+    .filter({ hasText: 'A newer version of this file is available.' });
+  await expect(
+    banner.getByText(
+      'A newer version of this file is available. Your changes were saved.',
+      { exact: true }
+    )
+  ).toBeVisible({ timeout: 60_000 });
+  await saved(page);
+  await expect(
+    page.getByRole('button', { exact: true, name: 'Save' })
+  ).toBeDisabled();
+  assert(await mounted.evaluate((node) => node.isConnected));
+  assert(await runtime.evaluate(() => 'uatMounted' in window));
+  await Promise.all([
+    page.waitForEvent('load'),
+    banner.getByRole('button', { exact: true, name: 'Reload' }).click(),
+  ]);
+  assert(!(await page.evaluate(() => 'uatPage' in window)));
+  return published;
 }
 
 export async function savedFacts(run: UatRun, fileId: string, facts: string[]) {
@@ -107,13 +223,14 @@ export async function openEditor(
   workspaceId: string,
   fileId: string
 ): Promise<FrameLocator> {
-  await openFile(run, actor, workspaceId, fileId);
-  await actor.page
-    .getByRole('button', { exact: true, name: 'Material mode' })
-    .click();
-
-  // This normal action waits for the replica-ready Save control before typing.
-  await actor.page.getByRole('button', { exact: true, name: 'Save' }).click();
+  // The URL's mode, not the Material mode toggle: the browser remembers the
+  // last mode per file, so a second open would toggle back to View.
+  await openFile(run, actor, workspaceId, fileId, 'edit');
+  // Save is enabled once the replica is ready; large workbooks take longer
+  // than the action timeout to open.
+  const save = actor.page.getByRole('button', { exact: true, name: 'Save' });
+  await expect(save).toBeEnabled({ timeout: 120_000 });
+  await save.click();
   return actor.page.frameLocator('iframe[src*="office-runtime"]');
 }
 
@@ -165,17 +282,19 @@ export async function editOffice(
 export async function replaceSlideText(
   frame: FrameLocator,
   slide: number,
-  text: string
+  text: string,
+  // Input-only coordinates, as a share of the slide, inside the paragraph to
+  // replace; the default is the basic fixture's text box at 1in,1in on its
+  // 10in x 7.5in slide. Exported content proves which text actually changed.
+  at = { x: 0.17, y: 0.155 }
 ) {
   await frame.locator('aside button').nth(slide).click();
-  // Input-only coordinates target the fixture's text box at 1in,1in on its
-  // 10in x 7.5in slide. Exported content proves which text actually changed.
   const canvas = frame.getByTestId('pptx-slide-canvas');
   const box = await canvas.boundingBox();
   assert(box, 'slide canvas cannot receive a pointer action');
   await canvas.click({
     clickCount: 3,
-    position: { x: box.width * 0.17, y: box.height * 0.155 },
+    position: { x: box.width * at.x, y: box.height * at.y },
   });
   await frame.getByRole('application').pressSequentially(text);
 }
@@ -206,13 +325,10 @@ export function assertPreserved(format: OfficeFormat, bytes: Uint8Array) {
   }
 }
 
+/** The owner's Process: publishes the saved checkpoint after parsing it. */
 export async function refresh(run: UatRun, fileId: string) {
   const checkpoint = await savedState(run, fileId);
   const before = await fileRow(run, fileId);
-  await run.record('blob', string(checkpoint.base_blob_path), {
-    fileId,
-    sourceSha256: checkpoint.base_source_sha256,
-  });
   const result = object(
     await api(
       run.owner,
@@ -223,17 +339,50 @@ export async function refresh(run: UatRun, fileId: string) {
     )
   );
   await run.attach(`${fileId}-process`, result);
-  const jobId = string(result.jobId);
+  return publication(run, fileId, checkpoint, before, string(result.jobId));
+}
+
+/**
+ * The automatic refresh publishing the checkpoint saved now (3,000 net tokens
+ * after 60 s idle; a store-only file publishes export-only).
+ */
+export async function automaticPublication(run: UatRun, fileId: string) {
+  return publication(
+    run,
+    fileId,
+    await savedState(run, fileId),
+    await fileRow(run, fileId)
+  );
+}
+
+async function publication(
+  run: UatRun,
+  fileId: string,
+  checkpoint: Record<string, unknown>,
+  before: Record<string, unknown>,
+  jobId?: string
+) {
+  await run.record('blob', string(checkpoint.base_blob_path), {
+    fileId,
+    sourceSha256: checkpoint.base_source_sha256,
+  });
   await run.poll(
     'published saved checkpoint',
     async () => {
-      const jobs = await run.query(
-        `SELECT j.id,j.status,j.error FROM jobs j JOIN jobs requested ON requested.id=%s
+      // The owner's Process names its job and the jobs sharing its lease;
+      // an automatic refresh is found by its file once it starts.
+      const jobs = jobId
+        ? await run.query(
+            `SELECT j.id,j.status,j.error FROM jobs j JOIN jobs requested ON requested.id=%s
         WHERE j.payload->>'fileId'=%s AND (j.id=requested.id OR
         j.payload->>'sourceLeaseToken'=requested.payload->>'sourceLeaseToken')`,
-        [jobId, fileId]
-      );
-      assert(jobs.length > 0, `missing source refresh job ${jobId}`);
+            [jobId, fileId]
+          )
+        : await run.query(
+            "SELECT id,status,error FROM jobs WHERE payload->>'fileId'=%s AND payload->>'sourceRefresh'='true'",
+            [fileId]
+          );
+      assert(!jobId || jobs.length > 0, `missing source refresh job ${jobId}`);
       for (const job of jobs) {
         await run.record('job', string(job.id), { fileId });
         assert.notEqual(

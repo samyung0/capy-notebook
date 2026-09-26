@@ -109,6 +109,11 @@ interface Runtime {
     format: OfficeFormat,
     bytes: Uint8Array
   ): Promise<OfficeCheckpoint>;
+  /** Pending XLSX effects read off the checkpoint's overrides against the base. */
+  xlsxPendingEffects(
+    bytes: Uint8Array,
+    checkpoint: OfficeCheckpoint
+  ): Promise<NetEffect[]>;
 }
 
 /** A call the Office engine refused, trapped on or did not finish in time. */
@@ -137,12 +142,34 @@ interface Call {
 let worker: Worker | undefined;
 let active: Call | undefined;
 const queue: Call[] = [];
+const runtimeURL = new URL(
+  '../../vendor/betteroffice/shared/office-checkpoint.mjs',
+  import.meta.url
+).href;
+let documentRoots:
+  | Promise<Readonly<Record<OfficeFormat, readonly string[]>>>
+  | undefined;
+
+/**
+ * The top-level Yjs roots each engine's state may hold, Capy's contributor
+ * map included (the bundle's OFFICE_DOCUMENT_ROOTS). Importing the bundle
+ * here loads no WASM; engines initialize on first use, in the worker.
+ */
+export function officeDocumentRoots() {
+  documentRoots ??= import(runtimeURL).then(
+    (runtime: {
+      OFFICE_DOCUMENT_ROOTS: Readonly<Record<OfficeFormat, readonly string[]>>;
+    }) => runtime.OFFICE_DOCUMENT_ROOTS,
+    (error: unknown) => {
+      // A failed import is retried by the next call, not cached.
+      documentRoots = undefined;
+      throw error;
+    }
+  );
+  return documentRoots;
+}
 
 function startWorker() {
-  const runtimeURL = new URL(
-    '../../vendor/betteroffice/shared/office-checkpoint.mjs',
-    import.meta.url
-  ).href;
   const created = new Worker(
     `
     const { parentPort, workerData } = require('node:worker_threads');

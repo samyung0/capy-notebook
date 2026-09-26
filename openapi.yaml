@@ -3038,6 +3038,7 @@ components:
           type: string
         state:
           format: base64
+          nullable: true
           type: string
         uploadHeaders:
           additionalProperties:
@@ -3085,11 +3086,6 @@ components:
           format: int64
           minimum: 0
           type: integer
-        indexedBaseline:
-          format: base64
-          type: string
-        initialize:
-          type: boolean
         netTokens:
           format: int64
           minimum: 0
@@ -3097,6 +3093,10 @@ components:
         operation:
           $ref: "#/components/schemas/SourceCheckpointOperation"
         pendingEffects: {}
+        seedBytes:
+          format: int64
+          minimum: 0
+          type: integer
         state:
           format: base64
           type: string
@@ -3306,9 +3306,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        baseline:
-          format: base64
-          type: string
         checkpoint:
           format: int64
           type: integer
@@ -3319,9 +3316,10 @@ components:
           type: string
         leaseToken:
           type: string
-        seed:
-          format: base64
-          type: string
+        seedBytes:
+          format: int64
+          minimum: 0
+          type: integer
         sizeBytes:
           format: int64
           type: integer
@@ -3337,8 +3335,7 @@ components:
         - sourceSHA256
         - sizeBytes
         - sourceETag
-        - seed
-        - baseline
+        - seedBytes
       type: object
     SourceRefreshInputBody:
       additionalProperties: false

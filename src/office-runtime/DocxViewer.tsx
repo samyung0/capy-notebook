@@ -6,10 +6,12 @@ import type {
   OfficeCitation,
 } from '@/features/files/officeProtocol';
 import { CITATION_FILL, docxCitation } from './citations';
+import { type OfficeFace, registerOfficeFaces } from './officeFonts';
 
 type WorkerResponse =
   | {
       displayList: DisplayList;
+      faces: OfficeFace[];
       id: number;
       pageCount: number;
       type: 'ready';
@@ -37,6 +39,7 @@ export function DocxViewer({
     );
     const id = 1;
     let stopped = false;
+    let cancelled = false;
     const stopWorker = () => {
       if (stopped) return;
       stopped = true;
@@ -54,8 +57,19 @@ export function DocxViewer({
       // parser, transient Yrs projection, and viewer WASM memory are released
       // during ordinary reading rather than waiting for edit/unmount.
       stopWorker();
-      setDisplayList(event.data.displayList);
-      onAnalysis({ format: 'docx', pageCount: event.data.pageCount });
+      const { displayList, faces, pageCount } = event.data;
+      // Paint with the faces the worker measured, under their Office names.
+      void registerOfficeFaces(faces).then(
+        () => {
+          if (cancelled) return;
+          setDisplayList(displayList);
+          onAnalysis({ format: 'docx', pageCount });
+        },
+        (value: unknown) => {
+          if (!cancelled)
+            onError(value instanceof Error ? value : new Error(String(value)));
+        }
+      );
     };
     worker.onerror = (event) => {
       stopWorker();
@@ -63,7 +77,10 @@ export function DocxViewer({
     };
     const transferable = bytes.slice().buffer;
     worker.postMessage({ bytes: transferable, id }, [transferable]);
-    return stopWorker;
+    return () => {
+      cancelled = true;
+      stopWorker();
+    };
   }, [bytes, onAnalysis, onError]);
 
   useLayoutEffect(() => {

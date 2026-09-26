@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
 func sourceTestFile(t *testing.T, s *Store, owner, name, kind string) (Workspace, File) {
@@ -34,25 +35,29 @@ func sourceTestBaseline(format, text string) []byte {
 	}
 	return []byte(`{"version":1,"format":"` + format + `","entries":[]}`)
 }
+
+// sourceTestSeed opens the editing session: the row starts with a NULL state
+// (seed(base)) and a derived baseline, and nothing is saved.
 func sourceTestSeed(t *testing.T, s *Store, actor, file string) SourceSession {
 	t.Helper()
-	ctx := context.Background()
-	doc, err := s.SourceSession(ctx, actor, file)
+	doc, err := s.SourceSession(context.Background(), actor, file)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = s.SaveSourceCheckpoint(ctx, file, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, Initialize: true, IndexedBaseline: sourceTestBaseline(doc.Format, "A"), State: []byte("initial-state"), PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64)}); err != nil {
-		t.Fatal(err)
-	}
-	if doc, err = s.SourceSession(ctx, actor, file); err != nil {
 		t.Fatal(err)
 	}
 	return doc
 }
+
+// sourceTestSeedBytes is the seed size the first save reports in these tests.
+const sourceTestSeedBytes = 4
+
 func sourceTestEdit(t *testing.T, s *Store, actor string, doc SourceSession, state string) SourceSession {
 	t.Helper()
 	ctx := context.Background()
-	if _, err := s.SaveSourceCheckpoint(ctx, doc.FileID, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}); err != nil {
+	save := SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}
+	if doc.State == nil {
+		save.SeedBytes, save.BaseSourceSHA256 = sourceTestSeedBytes, strings.Repeat("a", 64)
+	}
+	if _, err := s.SaveSourceCheckpoint(ctx, doc.FileID, save); err != nil {
 		t.Fatal(err)
 	}
 	out, err := s.SourceSession(ctx, actor, doc.FileID)
@@ -70,9 +75,9 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'viewer')`, ws.ID, viewer); err != nil {
 		t.Fatal(err)
 	}
-	// A viewer opening first may initialize the trusted seed, but cannot author.
+	// A viewer opening first saves nothing (the state is seed(base)) and cannot author.
 	doc := sourceTestSeed(t, s, viewer, file.ID)
-	if len(doc.IndexedBaseline) == 0 || doc.Checkpoint != 0 {
+	if doc.State != nil || doc.IndexedBaseline != nil || doc.Checkpoint != 0 {
 		t.Fatalf("bad seed: %+v", doc)
 	}
 	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); err != nil {
@@ -87,7 +92,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
 		t.Fatalf("owner edit admission: %v", err)
 	}
-	req := SourceCheckpoint{ActorIDs: []string{viewer}, Epoch: doc.Epoch, ExpectedCheckpoint: 0, State: []byte("new"), PendingEffects: json.RawMessage(`[]`)}
+	req := SourceCheckpoint{ActorIDs: []string{viewer}, Epoch: doc.Epoch, ExpectedCheckpoint: 0, State: []byte("new"), PendingEffects: json.RawMessage(`[]`), SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64)}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); err == nil {
 		t.Fatal("viewer authored checkpoint")
 	}
@@ -346,12 +351,28 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if _, err = s.ClaimSourceRefresh(ctx, file.ID, job.JobID); !errors.Is(err, ErrConflict) {
 		t.Fatalf("duplicate export claim: %v", err)
 	}
+	// Copy-on-write: the candidate holds no state until a save lands, and the
+	// claim reads the row's.
+	captured := func() []byte {
+		t.Helper()
+		var state []byte
+		if err := s.pool.QueryRow(ctx, `SELECT state FROM source_refresh_candidates WHERE file_id=$1`, file.ID).Scan(&state); err != nil {
+			t.Fatal(err)
+		}
+		return state
+	}
+	if string(candidate.State) != "candidate-state" || captured() != nil {
+		t.Fatalf("capture: claimed %q, stored %q", candidate.State, captured())
+	}
 	baseline := sourceTestBaseline(doc.Format, "B")
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: baseline}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", SeedBytes: int64(len("fresh-seed"))}
 	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
 		t.Fatal(err)
 	}
 	doc = sourceTestEdit(t, s, owner, doc, "newer-state")
+	if string(captured()) != "candidate-state" {
+		t.Fatalf("the first later save copied %q", captured())
+	}
 	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
 		t.Fatal(err)
 	}
@@ -372,6 +393,9 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: 1, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, IndexedBaseline: baseline, RebasedState: []byte("rebased-newer-state"), PendingEffects: residual, NetTokens: 3}
 	// Another save wins while the native rebase is being calculated.
 	doc = sourceTestEdit(t, s, owner, doc, "newest-state")
+	if string(captured()) != "candidate-state" {
+		t.Fatalf("a second later save replaced the copy with %q", captured())
+	}
 	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale rebase published: %v", err)
 	}
@@ -389,9 +413,24 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	// Retry only rebasing against the latest save; the same parsed candidate publishes.
 	publish.ExpectedLatestCheckpoint = doc.Checkpoint
 	publish.RebasedState = []byte("rebased-newest-state")
+	// A rebased DOCX state without its baseline would be compared against the
+	// export's identities.
+	publish.IndexedBaseline = nil
+	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
+		t.Fatalf("rebased state without its baseline: %v", err)
+	}
+	publish.IndexedBaseline = baseline
+	// An export-only publication's reprocess mark ends once the file is indexed.
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET reprocess_at=now() WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
 	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
 	if err != nil {
 		t.Fatal(err)
+	}
+	var marked bool
+	if err = s.pool.QueryRow(ctx, `SELECT reprocess_at IS NOT NULL FROM source_documents WHERE file_id=$1`, file.ID).Scan(&marked); err != nil || marked {
+		t.Fatalf("reprocess mark after an indexing publication: %v %v", marked, err)
 	}
 	var normalizedResidual []byte
 	if err = s.pool.QueryRow(ctx, `SELECT $1::jsonb`, residual).Scan(&normalizedResidual); err != nil {
@@ -399,6 +438,14 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	}
 	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || string(published.State) != "rebased-newest-state" || published.BaseRevision != 2 || string(published.IndexedBaseline) != string(baseline) || string(published.PendingEffects) != string(normalizedResidual) {
 		t.Fatalf("bad base promotion: %+v", published)
+	}
+	// The rebased state grew from seed(export): charged beyond its size only.
+	var seedBytes, storage int64
+	if err = s.pool.QueryRow(ctx, `SELECT seed_bytes,storage_bytes FROM source_documents WHERE file_id=$1`, file.ID).Scan(&seedBytes, &storage); err != nil {
+		t.Fatal(err)
+	}
+	if want := int64(len(normalizedResidual) + len("rebased-newest-state") - len("fresh-seed") + len(baseline)); seedBytes != int64(len("fresh-seed")) || storage != want {
+		t.Fatalf("seed_bytes=%d storage_bytes=%d, want %d and %d", seedBytes, storage, len("fresh-seed"), want)
 	}
 	var publishedCaptions, totalCaptions, candidates, receipt int
 	if err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM image_caption_associations WHERE file_id=$1 AND published),(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1),(SELECT (payload->>'sourcePublishedCheckpoint')::int FROM jobs WHERE id=$2)`, file.ID, job.JobID).Scan(&publishedCaptions, &totalCaptions, &candidates, &receipt); err != nil {
@@ -486,7 +533,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text", Baseline: sourceTestBaseline("text", "B")}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text"}); err != nil {
 		t.Fatal(err)
 	}
 	latest := sourceTestEdit(t, s, owner, doc, "state-a-again")
@@ -501,11 +548,11 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='text-b' WHERE file_id=$1`, file.ID, contentID); err != nil {
 		t.Fatal(err)
 	}
-	published, err := s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-text", ContentID: contentID, ContentHash: "text-b", IndexedBaseline: sourceTestBaseline("text", "B"), PendingEffects: residual, NetTokens: 2, ExpectedLatestCheckpoint: latest.Checkpoint})
+	published, err := s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-text", ContentID: contentID, ContentHash: "text-b", PendingEffects: residual, NetTokens: 2, ExpectedLatestCheckpoint: latest.Checkpoint})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || string(published.IndexedBaseline) != string(sourceTestBaseline("text", "B")) || published.NetTokens != 2 {
+	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || published.IndexedBaseline != nil || published.NetTokens != 2 {
 		t.Fatalf("text residual or lineage lost: %+v", published)
 	}
 }
@@ -645,41 +692,153 @@ func TestSourceExportLeaseExhaustionPreservesEdits(t *testing.T) {
 	}
 }
 
-func TestSourceSeedQuotaChargesCompactBaseline(t *testing.T) {
+// An Office source is charged its pending effects plus its state's growth
+// beyond the seed (human/backend-storage-quota.md, 2026-09-25): opening saves
+// nothing, and a refresh candidate is uncharged while transient.
+func TestSourceQuotaChargesEffectsAndGrowthBeyondSeed(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "source_baseline_quota")
-	_, file := sourceTestFile(t, s, owner, "lesson.pptx", "presentation")
-	state := []byte(strings.Repeat("s", 4096))
-	baseline := sourceTestBaseline("pptx", "")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "source_quota_rule")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	// Opening charges nothing beyond the source.
+	var opened int64
+	if err = s.pool.QueryRow(ctx, `SELECT storage_bytes FROM source_documents WHERE file_id=$1`, file.ID).Scan(&opened); err != nil || opened != 0 {
+		t.Fatalf("storage after opening: %d %v", opened, err)
+	}
 	usage, err := s.StorageUsage(ctx, owner)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Fill the account so exactly one state plus the compact baseline can fit.
-	remaining := int64(len(state) + len(baseline) + 2)
-	if _, err = s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, usage.LimitBytes-remaining); err != nil {
+	// Room for exactly 100 bytes of growth; an empty effect list costs nothing.
+	if _, err = s.pool.Exec(ctx, `UPDATE files SET size_bytes=size_bytes+$2 WHERE id=$1`, file.ID, usage.LimitBytes-usage.UsedBytes-100); err != nil {
 		t.Fatal(err)
 	}
-	session, err := s.SourceSession(ctx, owner, file.ID)
+	const seed = 4096
+	save := func(state int) error {
+		_, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, State: []byte(strings.Repeat("s", state)), PendingEffects: json.RawMessage(`[]`), NetTokens: 1, SeedBytes: seed, BaseSourceSHA256: strings.Repeat("a", 64)})
+		return err
+	}
+	var quota *QuotaExceededError
+	if err = save(seed + 101); !errors.As(err, &quota) {
+		t.Fatalf("growth past the quota: %v", err)
+	}
+	if err = save(seed + 100); err != nil {
+		t.Fatalf("growth that fits exactly: %v", err)
+	}
+	if usage, err = s.StorageUsage(ctx, owner); err != nil || usage.UsedBytes != usage.LimitBytes {
+		t.Fatalf("after the first save: %+v %v", usage, err)
+	}
+	// At the quota, a refresh is still admitted and charges nothing.
+	if _, err = s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
+		t.Fatalf("refresh at the quota: %v", err)
+	}
+	if usage, err = s.StorageUsage(ctx, owner); err != nil || usage.UsedBytes != usage.LimitBytes {
+		t.Fatalf("after admission: %+v %v", usage, err)
+	}
+}
+
+// A refresh that captured a NULL state (seed(base)) still reads NULL after a
+// save lands: the save copies NULL into the candidate, and the readers (Go's
+// claim and the service's CAPTURED_STATE_SQL, run verbatim) take the copy
+// once the checkpoints differ instead of the row's newer state.
+func TestNullCaptureSurvivesALaterSave(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
-		ActorIDs: []string{owner}, Epoch: session.Epoch, Initialize: true,
-		State: state, IndexedBaseline: baseline, PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64),
-	}); err != nil {
-		t.Fatalf("compact baseline should fit exact quota: %v", err)
-	}
-	usage, err = s.StorageUsage(ctx, owner)
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "null_capture")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false) // Process with no edits
 	if err != nil {
 		t.Fatal(err)
 	}
-	var saved []byte
-	if err = s.pool.QueryRow(ctx, `SELECT indexed_baseline FROM source_documents WHERE file_id=$1`, file.ID).Scan(&saved); err != nil {
+	sourceTestEdit(t, s, owner, doc, "later-state")
+	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if usage.UsedBytes != usage.LimitBytes || string(saved) != string(baseline) {
-		t.Fatalf("wrong baseline charge: %+v baseline=%q", usage, saved)
+	reader := schedulerSource(t, `(?s)export const CAPTURED_STATE_SQL =\s*'(.*?)';`)
+	var captured []byte
+	if err = s.pool.QueryRow(ctx, `SELECT `+reader+` FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id WHERE c.file_id=$1`, file.ID).Scan(&captured); err != nil {
+		t.Fatal(err)
+	}
+	if candidate.State != nil || captured != nil {
+		t.Fatalf("captured seed(base) read as %q (claim) and %q (service)", candidate.State, captured)
+	}
+}
+
+// Migration 0033 books the formula change of existing rows in the storage
+// ledger: rebuilt on the pre-0033 shape in a rolled-back transaction, an
+// owner's ledger equals a full recount before and after it.
+func TestOfficeStorageRuleMigrationKeepsTheLedger(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "storage_rule_ledger")
+	_, office := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	_, text := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	body, err := migrations.FS.ReadFile("0033_office_storage_rule.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, q := range []string{
+		// The pre-0033 shape. Other tests' rows only need to satisfy it.
+		`UPDATE source_documents SET state=COALESCE(state,''),indexed_baseline=COALESCE(indexed_baseline,'')`,
+		`ALTER TABLE source_documents DROP COLUMN storage_bytes`,
+		`ALTER TABLE source_documents DROP COLUMN seed_bytes`,
+		`ALTER TABLE source_documents ALTER COLUMN state SET DEFAULT '', ALTER COLUMN state SET NOT NULL, ALTER COLUMN indexed_baseline SET DEFAULT '', ALTER COLUMN indexed_baseline SET NOT NULL`,
+		`ALTER TABLE source_documents ADD COLUMN storage_bytes bigint GENERATED ALWAYS AS (octet_length(state)::bigint+octet_length(indexed_baseline)+octet_length(pending_effects::text)) STORED`,
+		`UPDATE source_refresh_candidates SET state=COALESCE(state,'')`,
+		`ALTER TABLE source_refresh_candidates DROP COLUMN seed_bytes, ADD COLUMN seed bytea, ADD COLUMN baseline bytea NOT NULL DEFAULT '', ADD COLUMN user_id text REFERENCES users(id) ON DELETE CASCADE, ALTER COLUMN state SET NOT NULL`,
+		`UPDATE source_refresh_candidates c SET user_id=f.user_id FROM files f WHERE f.id=c.file_id`,
+		`ALTER TABLE source_refresh_candidates ALTER COLUMN user_id SET NOT NULL, ADD COLUMN storage_bytes bigint GENERATED ALWAYS AS (octet_length(state)::bigint+COALESCE(octet_length(seed),0)+size_bytes+octet_length(baseline)) STORED`,
+		`CREATE TRIGGER source_refresh_candidates_owner_before BEFORE INSERT OR UPDATE OF file_id ON source_refresh_candidates FOR EACH ROW EXECUTE FUNCTION set_source_storage_owner()`,
+		`CREATE TRIGGER source_refresh_candidates_storage_after AFTER INSERT OR UPDATE OR DELETE ON source_refresh_candidates FOR EACH ROW EXECUTE FUNCTION account_source_storage()`,
+		// An edited Office file with a refresh in flight, and an edited text file.
+		`INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,indexed_baseline,pending_effects) VALUES('` + office.ID + `','docx',1,'p',convert_to(repeat('s',300),'UTF8'),convert_to(repeat('b',100),'UTF8'),'[{"id":"p"}]')`,
+		`INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,indexed_baseline,pending_effects) VALUES('` + text.ID + `','text',1,'p',convert_to(repeat('t',50),'UTF8'),convert_to(repeat('c',20),'UTF8'),'[]')`,
+		`INSERT INTO jobs(id,type) VALUES('job_ledger_` + office.ID + `','source_refresh')`,
+		`INSERT INTO source_refresh_candidates(file_id,job_id,epoch,checkpoint,lease_token,state,seed,baseline,size_bytes) VALUES('` + office.ID + `','job_ledger_` + office.ID + `',1,0,'lease',convert_to(repeat('k',70),'UTF8'),convert_to(repeat('e',30),'UTF8'),convert_to(repeat('f',10),'UTF8'),1000)`,
+	} {
+		if _, err = tx.Exec(ctx, q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	ledger := func(candidates string) (booked, recount int64) {
+		t.Helper()
+		if err := tx.QueryRow(ctx, `SELECT
+			COALESCE((SELECT used_bytes FROM user_storage WHERE user_id=$1),0)+COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas WHERE user_id=$1),0),
+			COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1),0)
+			+COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)`+candidates+`
+			+COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id=$1 AND status='ready'),0)
+			+COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1),0)
+			+COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE owner_user_id=$1),0)`, owner).Scan(&booked, &recount); err != nil {
+			t.Fatal(err)
+		}
+		return booked, recount
+	}
+	if booked, recount := ledger(`+COALESCE((SELECT sum(storage_bytes) FROM source_refresh_candidates WHERE user_id=$1),0)`); booked != recount {
+		t.Fatalf("before 0033: booked %d, recount %d", booked, recount)
+	}
+	if _, err = tx.Exec(ctx, string(body)); err != nil {
+		t.Fatal(err)
+	}
+	// Recounted like reconcileStorageUserTx: no candidates, the new rule.
+	if booked, recount := ledger(""); booked != recount {
+		t.Fatalf("after 0033: booked %d, recount %d", booked, recount)
 	}
 }

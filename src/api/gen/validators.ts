@@ -4246,6 +4246,8 @@ export const checkpointSourceDocumentBodyExpectedCheckpointMin = 0;
 
 export const checkpointSourceDocumentBodyNetTokensMin = 0;
 
+export const checkpointSourceDocumentBodySeedBytesMin = 0;
+
 
 
 export const CheckpointSourceDocumentBody = zod.object({
@@ -4253,8 +4255,6 @@ export const CheckpointSourceDocumentBody = zod.object({
   "baseSourceSHA256": zod.string().optional(),
   "epoch": zod.int().min(1),
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
-  "indexedBaseline": zod.string().optional(),
-  "initialize": zod.boolean().optional(),
   "netTokens": zod.int().min(checkpointSourceDocumentBodyNetTokensMin),
   "operation": zod.object({
   "guards": zod.unknown().optional(),
@@ -4271,6 +4271,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "undoOf": zod.string().optional()
 }).optional(),
   "pendingEffects": zod.unknown(),
+  "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "state": zod.string()
 })
 
@@ -4415,7 +4416,7 @@ export const ClaimSourceRefreshResponse = zod.object({
   "jobId": zod.string(),
   "leaseToken": zod.string(),
   "sourceBlobPath": zod.string(),
-  "state": zod.string(),
+  "state": zod.string().nullable(),
   "uploadHeaders": zod.record(zod.string(), zod.string()),
   "uploadURL": zod.string()
 })
@@ -4432,13 +4433,16 @@ export const FinalizeSourceRefreshHeader = zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
+export const finalizeSourceRefreshBodySeedBytesMin = 0;
+
+
+
 export const FinalizeSourceRefreshBody = zod.object({
-  "baseline": zod.string(),
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "jobId": zod.string(),
   "leaseToken": zod.string(),
-  "seed": zod.string(),
+  "seedBytes": zod.int().min(finalizeSourceRefreshBodySeedBytesMin),
   "sizeBytes": zod.int(),
   "sourceETag": zod.string(),
   "sourceSHA256": zod.string()

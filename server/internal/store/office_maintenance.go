@@ -15,9 +15,13 @@ import (
 // file with unpublished edits on the old engine, wait for zero, deploy the
 // reset. Runbook: openwiki/deployment-runbook.md, "Office maintenance window".
 
-// ErrOfficeEditingPaused refuses Office edit sessions, agent edits and seeding
-// while the maintenance pause is on.
+// ErrOfficeEditingPaused refuses Office edit sessions and agent edits while
+// the maintenance pause is on.
 var ErrOfficeEditingPaused = errors.New("office editing is paused for maintenance")
+
+// ErrOfficeEditingNotPaused refuses publish-all outside the pause: its
+// export-only publications evict rooms without a flush.
+var ErrOfficeEditingNotPaused = errors.New("office editing is not paused; run office-maintenance pause first")
 
 // SetOfficeEditingPaused sets or clears the pause (office-maintenance
 // pause/resume). The collaboration service applies it within 5 seconds.
@@ -99,6 +103,13 @@ type OfficePublication struct {
 // rest republish at platform cost, without the credit, storage or owner-state
 // checks. A file with a refresh in flight waits for the next run.
 func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublication, error) {
+	var paused bool
+	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM office_editing_pause)`).Scan(&paused); err != nil {
+		return nil, err
+	}
+	if !paused {
+		return nil, ErrOfficeEditingNotPaused
+	}
 	// ponytail: the failed-republish lookup scans failed jobs per file; index
 	// jobs by payload fileId if a window ever holds thousands of files.
 	rows, err := s.pool.Query(ctx, `SELECT d.file_id,w.user_id,
@@ -205,7 +216,8 @@ func (s *Store) OfficeReadiness(ctx context.Context) (OfficeReadiness, error) {
 }
 
 // exportPublication is what an export-only publication writes: the export as
-// the file's bytes, with the state, baseline and effects that go with it.
+// the file's bytes, with the state, baseline and effects that go with it (nil
+// state and baseline: seed(export) and its derived baseline).
 type exportPublication struct {
 	jobID, sourcePath, sha, etag           string
 	size, checkpoint, attemptID, netTokens int64
@@ -231,7 +243,9 @@ func (s *Store) publishExportTx(ctx context.Context, tx pgx.Tx, fileID, sourcePa
 	if _, err := tx.Exec(ctx, `SELECT enqueue_source_collaboration_eviction($1,'discard')`, fileID); err != nil {
 		return false, err
 	}
-	err := applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: sourcePath, sha: in.SourceSHA256, etag: in.SourceETag, size: in.SizeBytes, checkpoint: in.Checkpoint, state: in.Seed, baseline: in.Baseline, effects: json.RawMessage(`[]`)})
+	// No edits after the capture: the state is seed(export) (NULL) and the
+	// baseline is derived from the export.
+	err := applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: sourcePath, sha: in.SourceSHA256, etag: in.SourceETag, size: in.SizeBytes, checkpoint: in.Checkpoint, effects: json.RawMessage(`[]`)})
 	return err == nil, err
 }
 
@@ -257,7 +271,7 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,parsed_blob_path=NULL,parsed_fingerprint=NULL,parsed_parser_version=NULL,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,indexed_baseline=$4,base_revision=d.base_revision+1,base_blob_path=$5,base_source_sha256=$6,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.baseline, p.sourcePath, p.sha, p.effects, p.netTokens); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,seed_bytes=`+rebasedSeedBytes+`,indexed_baseline=$4,base_revision=d.base_revision+1,base_blob_path=$5,base_source_sha256=$6,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.baseline, p.sourcePath, p.sha, p.effects, p.netTokens); err != nil {
 		return err
 	}
 	if err := invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
@@ -326,7 +340,7 @@ func (s *Store) reprocessTx(ctx context.Context, tx pgx.Tx, result SourceProcess
 // It reports false for any other running job.
 func (s *Store) upgradeExportTx(ctx context.Context, tx pgx.Tx, jobID, actor, ws, name, kind, mode string, ever bool) (bool, error) {
 	var exportOnly, finalized bool
-	err := tx.QueryRow(ctx, `SELECT COALESCE((j.payload->>'exportOnly')::boolean,false),c.seed IS NOT NULL FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.id=$1 AND j.type='source_refresh' AND j.status IN ('pending','running') FOR UPDATE OF j,c`, jobID).Scan(&exportOnly, &finalized)
+	err := tx.QueryRow(ctx, `SELECT COALESCE((j.payload->>'exportOnly')::boolean,false),c.seed_bytes IS NOT NULL FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.id=$1 AND j.type='source_refresh' AND j.status IN ('pending','running') FOR UPDATE OF j,c`, jobID).Scan(&exportOnly, &finalized)
 	if isNoRows(err) || (err == nil && !exportOnly) {
 		return false, nil
 	}

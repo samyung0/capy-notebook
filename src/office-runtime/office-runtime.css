@@ -1,5 +1,7 @@
 :root {
-  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  /* Generic families only: documents register their fonts as FontFaces under
+     Office family names in this document (officeFonts.ts). */
+  font-family: ui-sans-serif, system-ui, sans-serif;
   color: #172033;
   background: #f5f7fa;
 }

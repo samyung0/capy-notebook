@@ -12,12 +12,13 @@ import (
 )
 
 type SourceRefreshCandidate struct {
-	FileID           string `json:"fileId"`
-	JobID            string `json:"jobId"`
-	Epoch            int64  `json:"epoch"`
-	Checkpoint       int64  `json:"checkpoint"`
-	LeaseToken       string `json:"leaseToken"`
-	State            []byte `json:"state"`
+	FileID     string `json:"fileId"`
+	JobID      string `json:"jobId"`
+	Epoch      int64  `json:"epoch"`
+	Checkpoint int64  `json:"checkpoint"`
+	LeaseToken string `json:"leaseToken"`
+	// Null when the captured state is seed(base).
+	State            []byte `json:"state" nullable:"true"`
 	SourceBlobPath   string `json:"sourceBlobPath"`
 	Format           string `json:"format"`
 	BaseSourceURL    string `json:"baseSourceURL"`
@@ -34,24 +35,29 @@ type SourceRefreshFinalize struct {
 	SourceSHA256 string `json:"sourceSHA256"`
 	SizeBytes    int64  `json:"sizeBytes"`
 	SourceETag   string `json:"sourceETag"`
-	Seed         []byte `json:"seed"`
-	Baseline     []byte `json:"baseline"`
+	// Size of seed(export); a publication that rebases later edits records it
+	// as the new state's seed size. Required for Office sources.
+	SeedBytes int64 `json:"seedBytes" minimum:"0"`
 }
 
 type SourceRefreshPublish struct {
-	AttemptID                int64           `json:"attemptId" minimum:"1"`
-	JobID                    string          `json:"jobId"`
-	Epoch                    int64           `json:"epoch"`
-	Checkpoint               int64           `json:"checkpoint"`
-	LeaseToken               string          `json:"leaseToken"`
-	SourceETag               string          `json:"sourceETag"`
-	ContentID                string          `json:"contentId"`
-	ContentHash              string          `json:"contentHash"`
-	PendingEffects           json.RawMessage `json:"pendingEffects"`
-	NetTokens                int64           `json:"netTokens"`
-	IndexedBaseline          []byte          `json:"indexedBaseline,omitempty"`
-	RebasedState             []byte          `json:"rebasedState,omitempty"`
-	ExpectedLatestCheckpoint int64           `json:"expectedLatestCheckpoint"`
+	AttemptID      int64           `json:"attemptId" minimum:"1"`
+	JobID          string          `json:"jobId"`
+	Epoch          int64           `json:"epoch"`
+	Checkpoint     int64           `json:"checkpoint"`
+	LeaseToken     string          `json:"leaseToken"`
+	SourceETag     string          `json:"sourceETag"`
+	ContentID      string          `json:"contentId"`
+	ContentHash    string          `json:"contentHash"`
+	PendingEffects json.RawMessage `json:"pendingEffects"`
+	NetTokens      int64           `json:"netTokens"`
+	// Office only, and only when edits saved after the capture were rebased
+	// onto the export: the rebased state, and for DOCX and PPTX its baseline.
+	// Without them the state returns to seed(export) and the baseline is
+	// derived from the export.
+	IndexedBaseline          []byte `json:"indexedBaseline,omitempty"`
+	RebasedState             []byte `json:"rebasedState,omitempty"`
+	ExpectedLatestCheckpoint int64  `json:"expectedLatestCheckpoint"`
 }
 
 // refreshJob is a refresh's attribution, read from the immutable job, never
@@ -112,7 +118,9 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 	}
 	out := SourceRefreshCandidate{FileID: fileID, JobID: jobID}
 	var attempts int
-	err = tx.QueryRow(ctx, `SELECT c.epoch,c.checkpoint,c.state,d.format,d.base_blob_path,d.base_source_sha256,d.base_revision,j.attempts FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND d.running_job_id=j.id AND d.epoch=c.epoch AND j.type='source_refresh' AND(j.status='pending' OR(j.status='running' AND j.lease_expires_at<now())) FOR UPDATE OF c,d,j`, fileID, jobID).Scan(&out.Epoch, &out.Checkpoint, &out.State, &out.Format, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.BaseRevision, &attempts)
+	// Copy-on-write: while no save has landed since the capture, the captured
+	// state is the row's own (NULL for both: seed(base)).
+	err = tx.QueryRow(ctx, `SELECT c.epoch,c.checkpoint,CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,d.format,d.base_blob_path,d.base_source_sha256,d.base_revision,j.attempts FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND d.running_job_id=j.id AND d.epoch=c.epoch AND j.type='source_refresh' AND(j.status='pending' OR(j.status='running' AND j.lease_expires_at<now())) FOR UPDATE OF c,d,j`, fileID, jobID).Scan(&out.Epoch, &out.Checkpoint, &out.State, &out.Format, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.BaseRevision, &attempts)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -175,8 +183,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 		return err
 	}
 	var format, mode, name, kind, sourcePath string
-	var oldSize int64
-	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,c.size_bytes,COALESCE(c.source_blob_path,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND (f.trashed_at IS NULL OR $6) AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, job.system).Scan(&format, &mode, &name, &kind, &oldSize, &sourcePath)
+	err = tx.QueryRow(ctx, `SELECT d.format,f.parse_mode,f.name,f.kind,COALESCE(c.source_blob_path,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=d.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND d.epoch=c.epoch AND d.running_job_id=j.id AND f.revision=d.base_revision AND (f.trashed_at IS NULL OR $6) AND j.status='running' AND j.type='source_refresh' AND j.lease_expires_at>now() FOR UPDATE OF c,d,f,j`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, job.system).Scan(&format, &mode, &name, &kind, &sourcePath)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -190,16 +197,23 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if in.SizeBytes > maxBytes {
 		return ErrConflict
 	}
-	if !validSourceBaseline(in.Baseline, format) {
-		return ErrConflict
-	}
-	growth := in.SizeBytes - oldSize + int64(len(in.Seed)+len(in.Baseline))
-	if growth > 0 && !job.system && !job.exportOnly {
-		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
+	// The candidate is uncharged while transient, and publication gates the
+	// net growth. Before paying for a parse, refuse what publication would
+	// certainly refuse: it charges at least the new bytes and a source row
+	// with no state, baseline or effects (0 bytes) in place of the current
+	// row; later saves are charged when they land.
+	if !job.system {
+		var growth int64
+		if err = tx.QueryRow(ctx, `SELECT $2::bigint-f.size_bytes-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, in.SizeBytes).Scan(&growth); err != nil {
 			return err
 		}
+		if growth > 0 {
+			if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
+				return err
+			}
+		}
 	}
-	if format != "text" && len(in.Seed) == 0 {
+	if format != "text" && in.SeedBytes <= 0 {
 		return ErrConflict
 	}
 	if job.exportOnly && job.system {
@@ -220,7 +234,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7,seed=$8,baseline=$9 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes, in.Seed, in.Baseline); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7,seed_bytes=$8 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes, in.SeedBytes); err != nil {
 		return err
 	}
 	planBytes, err := json.Marshal(plan)
@@ -229,12 +243,13 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	}
 	// An owner's export-only candidate stays a running source_refresh job: the
 	// collaboration service publishes it next through the handoff
-	// (PublishSourceRefresh). Any other job continues as its parse.
+	// (PublishSourceRefresh), under a lease renewed here for that handoff. Any
+	// other job continues as its parse.
 	jobType, requeue := initialPipelineJobType(plan), true
 	if job.exportOnly {
 		jobType, requeue = "source_refresh", false
 	}
-	_, err = tx.Exec(ctx, `UPDATE jobs j SET type=$2,status=CASE WHEN $6 THEN 'pending' ELSE j.status END,attempts=CASE WHEN $6 THEN 0 ELSE j.attempts END,locked_at=CASE WHEN $6 THEN NULL ELSE j.locked_at END,lease_expires_at=CASE WHEN $6 THEN NULL ELSE j.lease_expires_at END,queued_at=CASE WHEN $6 THEN now() ELSE j.queued_at END,not_before=NULL,updated_at=now(),payload=payload||jsonb_build_object('blobPath',c.source_blob_path,'sourceETag',$3::text,'sourceSHA256',$4::text,'processingPlan',$5::jsonb) FROM source_refresh_candidates c WHERE j.id=$1 AND c.job_id=j.id`, in.JobID, jobType, in.SourceETag, in.SourceSHA256, planBytes, requeue)
+	_, err = tx.Exec(ctx, `UPDATE jobs j SET type=$2,status=CASE WHEN $6 THEN 'pending' ELSE j.status END,attempts=CASE WHEN $6 THEN 0 ELSE j.attempts END,locked_at=CASE WHEN $6 THEN NULL ELSE j.locked_at END,lease_expires_at=CASE WHEN $6 THEN NULL ELSE now()+interval '5 minutes' END,queued_at=CASE WHEN $6 THEN now() ELSE j.queued_at END,not_before=NULL,updated_at=now(),payload=payload||jsonb_build_object('blobPath',c.source_blob_path,'sourceETag',$3::text,'sourceSHA256',$4::text,'processingPlan',$5::jsonb) FROM source_refresh_candidates c WHERE j.id=$1 AND c.job_id=j.id`, in.JobID, jobType, in.SourceETag, in.SourceSHA256, planBytes, requeue)
 	if err != nil {
 		return err
 	}
@@ -287,7 +302,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if job.exportOnly {
 		// An export-only publication through the handoff: no parse, index or
 		// ingest attempt, only the finalized export.
-		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.type='source_refresh' AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.seed IS NOT NULL FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag).Scan(&source, &sha, &size)
+		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.type='source_refresh' AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.seed_bytes IS NOT NULL FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag).Scan(&source, &sha, &size)
 	} else {
 		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
 	}
@@ -302,17 +317,36 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	effects := in.PendingEffects
 	netTokens := in.NetTokens
-	baseline := in.IndexedBaseline
-	if !validSourceBaseline(baseline, doc.Format) {
-		return doc, ErrConflict
-	}
-	if doc.Format != "text" {
-		if len(in.RebasedState) == 0 || len(in.RebasedState) > 100<<20 {
-			return doc, ErrConflict
-		}
-	}
 	var parsed []json.RawMessage
 	if json.Unmarshal(effects, &parsed) != nil || parsed == nil || netTokens < 0 {
+		return doc, ErrConflict
+	}
+	// NULL columns: with no edits after the capture the state returns to
+	// seed(export) and the baseline is derived from the export. Only a
+	// rebase of later edits stores a state, and a DOCX or PPTX baseline.
+	var state, baseline []byte
+	if len(in.RebasedState) > 0 {
+		state = in.RebasedState
+	}
+	if len(in.IndexedBaseline) > 0 {
+		baseline = in.IndexedBaseline
+	}
+	// A rebased state exists only when saves landed after the capture, and a
+	// rebased DOCX or PPTX state needs its baseline (its identities are not the
+	// export's); XLSX keeps none, and text never stores either.
+	switch {
+	case doc.Format == "text":
+		if state != nil || baseline != nil {
+			return doc, ErrConflict
+		}
+	case state == nil:
+		if baseline != nil || doc.Checkpoint != in.Checkpoint || len(parsed) != 0 {
+			return doc, ErrConflict
+		}
+	case len(state) > 100<<20 || doc.Checkpoint == in.Checkpoint || (doc.Format == "xlsx") == (baseline != nil):
+		return doc, ErrConflict
+	}
+	if baseline != nil && !validSourceBaseline(baseline, doc.Format) {
 		return doc, ErrConflict
 	}
 	if !job.exportOnly {
@@ -328,8 +362,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 			return doc, ErrConflict
 		}
 	}
+	// The file's new bytes plus its storage_bytes afterwards (migration 0033's
+	// rule: a text state keeps its seed size, a rebased state grew from
+	// seed(export)) minus before.
 	var growth int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes) + CASE WHEN d.format='text' THEN octet_length(d.state)::bigint ELSE octet_length($5::bytea)::bigint END+octet_length($4::bytea)+octet_length($3::jsonb::text)-d.storage_bytes-c.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, in.RebasedState).Scan(&growth); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+COALESCE(octet_length($4::bytea),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-d.seed_bytes) ELSE GREATEST(0,COALESCE(octet_length($5::bytea),0)-COALESCE(c.seed_bytes,0)) END-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, state).Scan(&growth); err != nil {
 		return doc, err
 	}
 	if growth > 0 && !job.system {
@@ -338,7 +375,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 	}
 	if job.exportOnly {
-		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: in.RebasedState, baseline: baseline, effects: effects, netTokens: netTokens}); err != nil {
+		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, baseline: baseline, effects: effects, netTokens: netTokens}); err != nil {
 			return doc, err
 		}
 		out, err := readSourceSession(ctx, tx, fileID, ws)
@@ -368,9 +405,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 	}
 	if doc.Format == "text" {
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_baseline=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,desired_manual=desired_manual AND $6::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, baseline, source, sha, effects, netTokens)
+		// Text keeps its lineage; its baseline is the exported blob decoded.
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_baseline=NULL,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens)
 	} else {
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,indexed_checkpoint=$2,indexed_baseline=$6,state=$3,base_revision=base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE checkpoint END,desired_manual=desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, in.RebasedState, source, sha, baseline, effects, netTokens)
+		// Indexed now, so an export-only publication's reprocess mark is done.
+		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,indexed_baseline=$6,state=$3,seed_bytes=`+rebasedSeedBytes+`,reprocess_at=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, baseline, effects, netTokens)
 		if err == nil {
 			// Rebase can change native identities. Release AI edit guards and
 			// their Undo with the old editing epoch.
@@ -395,6 +434,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	return out, tx.Commit(ctx)
 }
+
+// rebasedSeedBytes is the seed size of a published Office state ($3): 0 for
+// NULL, which is seed(export) itself, else the size of the candidate's
+// seed(export) that the rebased state grew from.
+const rebasedSeedBytes = `CASE WHEN $3::bytea IS NULL THEN 0 ELSE (SELECT c.seed_bytes FROM source_refresh_candidates c WHERE c.file_id=d.file_id) END`
 
 // releaseArtifactCacheTx drops the parse cache of a replaced base once nothing
 // names its bytes.

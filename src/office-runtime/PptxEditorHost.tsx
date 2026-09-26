@@ -4,6 +4,7 @@ import { m } from '@/i18n';
 import type {
   OfficeCollaboration,
   OfficeExporter,
+  OfficeFlusher,
 } from './officeCollaboration';
 import { loadPptxFonts } from './pptxFonts';
 
@@ -11,6 +12,7 @@ export function PptxEditorHost({
   bytes,
   collaboration,
   onExporter,
+  onFlusher,
   fileName,
   onError,
   onSave,
@@ -18,19 +20,29 @@ export function PptxEditorHost({
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
   onExporter: (exporter: OfficeExporter | null) => void;
+  onFlusher: (flusher: OfficeFlusher | null) => void;
   fileName: string;
   onError: (error: Error) => void;
-  onSave: (bytes: Uint8Array) => void;
+  onSave: () => void;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
   useEffect(() => {
     onExporter(async () => {
       const api = apiRef.current;
       if (!api) throw new Error('Editor is still loading');
+      // save() refuses while accepted input is still pending.
+      await api.flushPendingInput();
       return api.save();
     });
-    return () => onExporter(null);
-  }, [onExporter]);
+    onFlusher(async () => {
+      if (!apiRef.current) throw new Error('Editor is still loading');
+      await apiRef.current.flushPendingInput();
+    });
+    return () => {
+      onExporter(null);
+      onFlusher(null);
+    };
+  }, [onExporter, onFlusher]);
   useEffect(() => {
     if (!(import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false'))
       return;
@@ -89,7 +101,10 @@ export function PptxEditorHost({
         onReady={(api) => {
           apiRef.current = api;
         }}
-        onSave={onSave}
+        // The save button and Ctrl/Cmd+S request the checkpoint; nothing serializes.
+        onSaveRequest={() => {
+          onSave();
+        }}
       />
     </div>
   );

@@ -6,7 +6,6 @@ import { strFromU8, unzipSync, zipSync } from 'fflate';
 import type { Actor, UatRun } from './runtime';
 
 export const fact = 'Wetland plants absorb carbon and protect the shoreline.';
-export const basic = new URL('../../fixtures/files/basic/', import.meta.url);
 export function object(value: unknown): Record<string, unknown> {
   assert(value !== null && typeof value === 'object' && !Array.isArray(value));
   return value as Record<string, unknown>;
@@ -87,8 +86,15 @@ export async function invite(
   assert.equal(members[0]?.role, role);
 }
 
-export async function fixture(name: string, marker: string) {
-  const bytes = await readFile(new URL(name, basic));
+/** A committed file from the named set under `e2e/fixtures/files/`. */
+export async function fixture(
+  name: string,
+  marker: string,
+  set: 'basic' | 'rich-content' = 'basic'
+) {
+  const bytes = await readFile(
+    new URL(`../../fixtures/files/${set}/${name}`, import.meta.url)
+  );
   if (/\.(docx|xlsx|pptx)$/.test(name)) {
     const parts = unzipSync(bytes);
     let replacements = 0;
@@ -111,7 +117,7 @@ export async function fixture(name: string, marker: string) {
 
 export async function fileRow(run: UatRun, fileId: string) {
   const rows = await run.query(
-    `SELECT id,workspace_id,user_id,name,kind,status,indexed,
+    `SELECT id,workspace_id,user_id,name,kind,status,indexed,parse_mode,
     blob_path,source_sha256,size_bytes,revision,trashed_at,trash_episode_id FROM files WHERE id=%s`,
     [fileId]
   );
@@ -119,14 +125,16 @@ export async function fileRow(run: UatRun, fileId: string) {
   return rows[0];
 }
 
+/** Opens the file, in `mode` when given (the URL's mode wins over the one the browser remembers). */
 export async function openFile(
   run: UatRun,
   actor: Actor,
   workspaceId: string,
-  fileId: string
+  fileId: string,
+  mode?: 'view' | 'edit'
 ) {
   await actor.page.goto(
-    `${run.env.appUrl}/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}`
+    `${run.env.appUrl}/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}${mode ? `&mode=${mode}` : ''}`
   );
 }
 
@@ -134,7 +142,8 @@ export async function upload(
   run: UatRun,
   workspaceId: string,
   name: string,
-  bytes: Buffer
+  bytes: Buffer,
+  storeOnly = false
 ) {
   const page = run.owner.page;
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
@@ -150,6 +159,14 @@ export async function upload(
     mimeType: 'application/octet-stream',
     name,
   });
+  if (storeOnly) {
+    // Office files default to parsing; "No parsing" stores the file only.
+    await page
+      .getByRole('combobox')
+      .filter({ hasText: 'Fast parsing' })
+      .click();
+    await page.getByRole('option', { exact: true, name: 'No parsing' }).click();
+  }
   const path = `/api/workspaces/${workspaceId}/sources/uploads`;
   const reservation = page
     .waitForResponse(
@@ -199,6 +216,10 @@ export async function upload(
   assert.equal(stored.sha256, sha256(bytes));
   assert.equal(stored.size, bytes.length);
   assert.equal(row.user_id, run.owner.id);
+  if (storeOnly) {
+    assert.equal(row.parse_mode, 'none');
+    assert.equal(row.status, 'ready');
+  }
   const sessions = await run.query(
     'SELECT status,declared_size,file_id FROM upload_sessions WHERE id=%s',
     [uploadId]
@@ -318,6 +339,17 @@ export async function settledSpend(
     }
   }
   await run.attach(`${fileId}-spend`, sessions);
+}
+
+/** No provider session or model, caption or parse usage belongs to the workspace. */
+export async function noProviderCalls(run: UatRun, workspaceId: string) {
+  const rows = await run.query(
+    `SELECT (SELECT count(*)::int FROM provider_sessions WHERE workspace_id=%s) AS sessions,
+    (SELECT count(*)::int FROM usage_events WHERE workspace_id=%s
+      AND kind IN ('llm','embedding','caption','parse')) AS usage`,
+    [workspaceId, workspaceId]
+  );
+  assert.deepEqual(rows[0], { sessions: 0, usage: 0 });
 }
 
 export async function officeBundle(run: UatRun, fileId: string) {

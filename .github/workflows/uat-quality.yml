@@ -134,7 +134,7 @@ jobs:
     needs: smoke
     runs-on: ubuntu-24.04
     environment: uat
-    timeout-minutes: 120
+    timeout-minutes: 150
     env:
       UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
       EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}
@@ -209,7 +209,7 @@ jobs:
         timeout-minutes: 3
         run: scripts/uat/verify-journey-releases.sh before
       - name: Run critical-path journeys
-        timeout-minutes: 50
+        timeout-minutes: 95
         run: pnpm e2e:uat:journeys
       - name: Clean up this run's disposable resources
         if: always()

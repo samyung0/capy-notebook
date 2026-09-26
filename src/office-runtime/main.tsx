@@ -148,7 +148,9 @@ function OfficeRuntime() {
     () =>
       file?.initialUpdate
         ? {
-            clientId: crypto.getRandomValues(new Uint32Array(1))[0],
+            // Never 0, the client the DOCX seed is written under (Yrs does
+            // not move a colliding id).
+            clientId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
             initialUpdate: file.initialUpdate,
             onReplica: reportReplica,
           }
@@ -397,6 +399,7 @@ function OfficeRuntime() {
               collaboration={collaboration}
               onError={reportError}
               onExporter={reportExporter}
+              onFlusher={reportFlusher}
               onSave={save}
             />
           ) : file.format === 'xlsx' ? (
@@ -416,6 +419,7 @@ function OfficeRuntime() {
               fileName={file.fileName}
               onError={reportError}
               onExporter={reportExporter}
+              onFlusher={reportFlusher}
               onSave={save}
             />
           )

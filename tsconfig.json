@@ -27,6 +27,10 @@
       "@betteroffice/docx-i18n": [
         "./vendor/betteroffice/packages/docx-i18n/src/index.ts"
       ],
+      "@betteroffice/fonts": [
+        "./vendor/betteroffice/packages/fonts/src/index.ts"
+      ],
+      "@betteroffice/fonts-cjk": ["./src/office-runtime/noCjkFonts.ts"],
       "@betteroffice/xlsx": [
         "./vendor/betteroffice/packages/xlsx/src/index.ts"
       ],

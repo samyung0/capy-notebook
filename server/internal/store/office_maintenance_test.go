@@ -39,13 +39,21 @@ func maintenanceTestEdited(t *testing.T, s *Store, owner, name string, storeOnly
 	return file.ID
 }
 
+// maintenanceTestPause turns the pause on until the test ends.
+func maintenanceTestPause(t *testing.T, s *Store) {
+	t.Helper()
+	if err := s.SetOfficeEditingPaused(context.Background(), true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.SetOfficeEditingPaused(context.Background(), false) })
+}
+
 func TestOfficeEditingPause(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "office_pause")
 	_, open := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 	doc := sourceTestSeed(t, s, owner, open.ID) // a room opened before the pause
-	_, fresh := sourceTestFile(t, s, owner, "fresh.docx", "doc")
 	_, text := sourceTestFile(t, s, owner, "notes.txt", "txt")
 	if err := s.SetOfficeEditingPaused(ctx, true); err != nil {
 		t.Fatal(err)
@@ -59,19 +67,11 @@ func TestOfficeEditingPause(t *testing.T) {
 	if err := s.AssertOfficeEditable(ctx, text.ID); err != nil {
 		t.Fatalf("text edit session: %v", err)
 	}
-	// Seeding refuses; the open room's flush still saves.
-	freshDoc, err := s.SourceSession(ctx, owner, fresh.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.SaveSourceCheckpoint(ctx, fresh.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: freshDoc.Epoch, Initialize: true, IndexedBaseline: sourceTestBaseline("docx", "A"), State: []byte("seed"), PendingEffects: json.RawMessage(`[]`), BaseSourceSHA256: strings.Repeat("a", 64)})
-	if !errors.Is(err, ErrOfficeEditingPaused) {
-		t.Fatalf("seed during the pause: %v", err)
-	}
+	// The open room's flush still saves, its first save included.
 	sourceTestEdit(t, s, owner, doc, "flushed-state")
 	// An agent edit that passed the gateway's check just before the pause is
 	// refused where it commits.
-	_, err = s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
+	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
 	if !errors.Is(err, ErrOfficeEditingPaused) {
 		t.Fatalf("agent edit commit during the pause: %v", err)
 	}
@@ -127,6 +127,11 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// Its export-only publications evict rooms unflushed: the pause comes first.
+	if _, err := s.PublishAllOfficeSources(ctx); !errors.Is(err, ErrOfficeEditingNotPaused) {
+		t.Fatalf("publish-all without the pause: %v", err)
+	}
+	maintenanceTestPause(t, s)
 
 	published, err := s.PublishAllOfficeSources(ctx)
 	if err != nil {
@@ -192,8 +197,7 @@ func TestExportOnlyPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	baseline := sourceTestBaseline("docx", "B")
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", Seed: []byte("fresh-seed"), Baseline: baseline}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", SeedBytes: int64(len("fresh-seed"))}
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
@@ -207,14 +211,15 @@ func TestExportOnlyPublication(t *testing.T) {
 	if blobPath != candidate.SourceBlobPath || sha != finalize.SourceSHA256 || size != 120 || revision != 2 || indexed || hasHash {
 		t.Fatalf("file row: %s %s %d %d indexed=%v hash=%v", blobPath, sha, size, revision, indexed, hasHash)
 	}
-	var epoch, checkpoint, indexedCheckpoint, netTokens int64
+	// The state is seed(export) again: NULL, with a derived baseline.
+	var epoch, checkpoint, indexedCheckpoint, netTokens, seedBytes int64
 	var state, storedBaseline []byte
 	var effects string
 	var marked, running bool
-	if err = s.pool.QueryRow(ctx, `SELECT epoch,checkpoint,indexed_checkpoint,net_tokens,state,indexed_baseline,pending_effects::text,reprocess_at IS NOT NULL,running_job_id IS NOT NULL FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &checkpoint, &indexedCheckpoint, &netTokens, &state, &storedBaseline, &effects, &marked, &running); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT epoch,checkpoint,indexed_checkpoint,net_tokens,seed_bytes,state,indexed_baseline,pending_effects::text,reprocess_at IS NOT NULL,running_job_id IS NOT NULL FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &checkpoint, &indexedCheckpoint, &netTokens, &seedBytes, &state, &storedBaseline, &effects, &marked, &running); err != nil {
 		t.Fatal(err)
 	}
-	if epoch != 2 || indexedCheckpoint != checkpoint || netTokens != 0 || string(state) != "fresh-seed" || string(storedBaseline) != string(baseline) || effects != "[]" || !marked || running {
+	if epoch != 2 || indexedCheckpoint != checkpoint || netTokens != 0 || seedBytes != 0 || state != nil || storedBaseline != nil || effects != "[]" || !marked || running {
 		t.Fatalf("source row: epoch=%d checkpoint=%d/%d tokens=%d state=%q effects=%s marked=%v running=%v", epoch, checkpoint, indexedCheckpoint, netTokens, state, effects, marked, running)
 	}
 	var aliases, captions, candidates int
@@ -261,12 +266,14 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	baseline := sourceTestBaseline("docx", "D")
-	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d", Seed: []byte("seed-d"), Baseline: baseline}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d", SeedBytes: int64(len("seed-d"))}); err != nil {
 		t.Fatal(err)
 	}
+	// The handoff that follows gets a fresh lease.
 	var jobType, status string
-	if err = s.pool.QueryRow(ctx, `SELECT type,status FROM jobs WHERE id=$1`, job.JobID).Scan(&jobType, &status); err != nil || jobType != "source_refresh" || status != "running" {
-		t.Fatalf("finalize should keep the export for the handoff: %s %s %v", jobType, status, err)
+	var renewed bool
+	if err = s.pool.QueryRow(ctx, `SELECT type,status,lease_expires_at>now()+interval '4 minutes' FROM jobs WHERE id=$1`, job.JobID).Scan(&jobType, &status, &renewed); err != nil || jobType != "source_refresh" || status != "running" || !renewed {
+		t.Fatalf("finalize should keep the export for the handoff: %s %s renewed=%v %v", jobType, status, renewed, err)
 	}
 	doc, err := s.SourceSession(ctx, owner, file)
 	if err != nil {
@@ -283,7 +290,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "rebased-later" || published.NetTokens != 1 || published.BaseRevision != 2 {
+	if published.Epoch != 2 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "rebased-later" || string(published.IndexedBaseline) != string(baseline) || published.NetTokens != 1 || published.BaseRevision != 2 {
 		t.Fatalf("export publication: %+v", published)
 	}
 	var marked, indexed bool
@@ -297,6 +304,65 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	}
 	if again, err := s.PublishSourceRefresh(ctx, file, publish); err != nil || again.Epoch != 2 {
 		t.Fatalf("publication receipt replay: %+v %v", again, err)
+	}
+}
+
+// An automatic export is gated like a refresh: finalize refuses what the
+// publication would certainly refuse (the new bytes against a source row with
+// nothing left), and the publication refuses the net growth it then charges.
+func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "store_only_quota")
+	file := maintenanceTestEdited(t, s, owner, "lesson.docx", true)
+	usage, err := s.StorageUsage(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Another upload leaves 1,000 bytes of headroom.
+	var ws string
+	var size int64
+	if err = s.pool.QueryRow(ctx, `SELECT workspace_id,size_bytes FROM files WHERE id=$1`, file).Scan(&ws, &size); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.CreateSourceReady(ctx, ws, owner, "big.pdf", "pdf", nil, "", usage.LimitBytes-usage.UsedBytes-1000, "sources/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=3000,last_edited_at=now()-interval '2 minutes' WHERE file_id=$1`, file); err != nil {
+		t.Fatal(err)
+	}
+	job, err := s.RequestSourceRefresh(ctx, owner, file, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := s.ClaimSourceRefresh(ctx, file, job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("f", 64), SizeBytes: size + 5000, SourceETag: "etag-f", SeedBytes: int64(len("seed-f"))}
+	var quota *QuotaExceededError
+	if err = s.FinalizeSourceRefresh(ctx, file, finalize); !errors.As(err, &quota) {
+		t.Fatalf("finalize of an export that cannot fit: %v", err)
+	}
+	finalize.SizeBytes = size + 500
+	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
+		t.Fatal(err)
+	}
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), IndexedBaseline: sourceTestBaseline("docx", "F"), RebasedState: []byte(strings.Repeat("r", 2000+len("seed-f"))), ExpectedLatestCheckpoint: candidate.Checkpoint}
+	// With no save after the capture the state returns to seed(export): a
+	// rebased state is refused.
+	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
+		t.Fatalf("rebased state without a later save: %v", err)
+	}
+	// A save lands during the export; its rebase, 2,000 bytes past the export's
+	// seed, does not fit.
+	doc, err := s.SourceSession(ctx, owner, file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish.ExpectedLatestCheckpoint = sourceTestEdit(t, s, owner, doc, "later-state").Checkpoint
+	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.As(err, &quota) {
+		t.Fatalf("export past the quota: %v", err)
 	}
 }
 
@@ -327,7 +393,7 @@ func TestProcessDuringExportOnlyIsKept(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return file, candidate, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("e", 64), SizeBytes: 90, SourceETag: "etag-e", Seed: []byte("seed-e"), Baseline: sourceTestBaseline("docx", "E")}
+		return file, candidate, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("e", 64), SizeBytes: 90, SourceETag: "etag-e", SeedBytes: int64(len("seed-e"))}
 	}
 	job := func(id string) (jobType string, exportOnly bool, paidBy, reservation string, fee bool) {
 		t.Helper()
@@ -368,7 +434,7 @@ func TestProcessDuringExportOnlyIsKept(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.PublishSourceRefresh(ctx, late, SourceRefreshPublish{AttemptID: 1, JobID: finalize.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-e", PendingEffects: json.RawMessage(`[]`), IndexedBaseline: finalize.Baseline, RebasedState: finalize.Seed, ExpectedLatestCheckpoint: doc.Checkpoint})
+	_, err = s.PublishSourceRefresh(ctx, late, SourceRefreshPublish{AttemptID: 1, JobID: finalize.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-e", PendingEffects: json.RawMessage(`[]`), ExpectedLatestCheckpoint: doc.Checkpoint})
 	if !errors.Is(err, ErrConflict) {
 		t.Fatalf("the export's own publication after Process: %v", err)
 	}
@@ -405,6 +471,7 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 	if _, err := s.RequestSourceRefresh(ctx, owner, file, false); !errors.As(err, &locked) {
 		t.Fatalf("owner refresh while frozen: %v", err)
 	}
+	maintenanceTestPause(t, s)
 	published, err := s.PublishAllOfficeSources(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -418,8 +485,7 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	baseline := sourceTestBaseline("docx", "B")
-	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 5 << 20, SourceETag: "etag-b", Seed: []byte("seed-b"), Baseline: baseline}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 5 << 20, SourceETag: "etag-b", SeedBytes: int64(len("seed-b"))}); err != nil {
 		t.Fatal(err)
 	}
 	content := uid("rc")
@@ -436,11 +502,11 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 			t.Fatal(step.q, err)
 		}
 	}
-	out, err := s.PublishSourceRefresh(ctx, file, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, jobID), JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: content, ContentHash: "hash-b", PendingEffects: json.RawMessage(`[]`), IndexedBaseline: baseline, RebasedState: []byte("seed-b"), ExpectedLatestCheckpoint: candidate.Checkpoint})
+	out, err := s.PublishSourceRefresh(ctx, file, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, jobID), JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: content, ContentHash: "hash-b", PendingEffects: json.RawMessage(`[]`), ExpectedLatestCheckpoint: candidate.Checkpoint})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Epoch != 2 || out.IndexedCheckpoint != out.Checkpoint {
+	if out.Epoch != 2 || out.IndexedCheckpoint != out.Checkpoint || out.State != nil || out.IndexedBaseline != nil {
 		t.Fatalf("frozen owner's republish: %+v", out)
 	}
 }
@@ -648,8 +714,7 @@ func TestOfficeReadiness(t *testing.T) {
 
 // The reset template refuses while an Office source is unpublished or editing
 // is not paused, then drops every state of the reset formats under a new
-// epoch. It targets the window's NULL-state schema, so each run makes state
-// and baseline nullable inside its rolled-back transaction.
+// epoch. Each run rolls back.
 func TestOfficeWindowResetTemplate(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -668,9 +733,6 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = tx.Rollback(context.Background()) })
 		for _, q := range append([]string{
-			`ALTER TABLE source_documents ALTER COLUMN state DROP NOT NULL, ALTER COLUMN indexed_baseline DROP NOT NULL`,
-			`ALTER TABLE source_documents DROP COLUMN storage_bytes`,
-			`ALTER TABLE source_documents ADD COLUMN storage_bytes bigint GENERATED ALWAYS AS (COALESCE(octet_length(state),0)::bigint+COALESCE(octet_length(indexed_baseline),0)+octet_length(pending_effects::text)) STORED`,
 			// Other tests' rows count as published.
 			`UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]',running_job_id=NULL WHERE file_id<>'` + file + `'`,
 		}, steps...) {
@@ -679,7 +741,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 			}
 		}
 		if _, err = tx.Exec(ctx, reset); err != nil {
-			_ = tx.Rollback(ctx) // release the ALTER's lock for the next run
+			_ = tx.Rollback(ctx) // release the reset's lock for the next run
 		}
 		return tx, err
 	}
@@ -696,7 +758,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 	}
 	var epoch int64
 	var dropped bool
-	if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND indexed_baseline IS NULL AND pending_effects='[]'::jsonb FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &dropped); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND indexed_baseline IS NULL AND pending_effects='[]'::jsonb FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &dropped); err != nil {
 		t.Fatal(err)
 	}
 	if epoch != 2 || !dropped {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,7 +24,8 @@ func TestSourceEditCheckpointReceiptAndUndo(t *testing.T) {
 	doc := sourceTestSeed(t, s, owner, file.ID)
 	usedBefore := userUsedBytes(t, s, owner)
 
-	// States keep the seed's byte length so used-bytes deltas isolate the inverse charge.
+	// The first save reports a seed as long as its state, so used-bytes deltas
+	// isolate the inverse charge.
 	inverse := json.RawMessage(`{"commands":[{"type":"replace_text","expectedText":"new","text":"old","offset":0}]}`)
 	guards := json.RawMessage(`[{"kind":"text","offset":0,"length":3,"runs":[{"client":1,"clock":0,"len":3}]}]`)
 	edit := SourceCheckpointOperation{
@@ -33,6 +35,7 @@ func TestSourceEditCheckpointReceiptAndUndo(t *testing.T) {
 	saved, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
 		ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("edited!-state"),
 		PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), Operation: &edit,
+		SeedBytes: int64(len("edited!-state")), BaseSourceSHA256: strings.Repeat("a", 64),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +108,7 @@ func TestTrashReleasesAvailableUndo(t *testing.T) {
 	}
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{
 		ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("new"),
-		PendingEffects: json.RawMessage(`[]`), Operation: &edit,
+		PendingEffects: json.RawMessage(`[]`), Operation: &edit, SeedBytes: sourceTestSeedBytes, BaseSourceSHA256: strings.Repeat("a", 64),
 	}); err != nil {
 		t.Fatal(err)
 	}

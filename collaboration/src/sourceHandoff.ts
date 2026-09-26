@@ -4,8 +4,8 @@ import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import { CALL_TIMEOUT_MS } from './officeRuntime.js';
 import {
+  CAPTURED_STATE_SQL,
   effectTokens,
-  encodeBaseline,
   type SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
@@ -355,30 +355,30 @@ export class SourceHandoff {
     if (session.epoch !== input.epoch)
       throw new SourceRequestError(409, 'Source epoch changed');
     if (session.format === 'text') {
-      const candidate = await this.pool.query<{ state: Buffer }>(
-        'SELECT state FROM source_refresh_candidates WHERE file_id=$1 AND job_id=$2 AND lease_token=$3 AND checkpoint=$4',
+      const candidate = await this.pool.query<{ state: Buffer | null }>(
+        `SELECT ${CAPTURED_STATE_SQL} AS state FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.lease_token=$3 AND c.checkpoint=$4`,
         [input.fileId, input.jobId, input.leaseToken, input.checkpoint]
       );
       if (!candidate.rows[0])
         throw new SourceRequestError(409, 'Source candidate changed');
       // Text retains its Y.Text lineage. Later edits remain a residual against
-      // the just-indexed checkpoint, even while users keep typing.
+      // the just-indexed checkpoint, even while users keep typing. That
+      // baseline is the exported text, so Go derives it from the new blob.
       const baseline = await this.sources.baseline(
         session,
-        candidate.rows[0].state
+        candidate.rows[0].state ?? (await this.sources.seed(session)).seed
       );
       for (let attempt = 0; attempt < 4; attempt++) {
         const latest = attempt ? await this.current(input.fileId) : session;
         const effects = await this.sources.effects(
           latest,
-          Buffer.from(latest.state, 'base64'),
+          await this.sources.stateOf(latest),
           baseline
         );
         try {
           return await this.sources.request(fileId, 'publish', {
             ...publication,
             expectedLatestCheckpoint: latest.checkpoint,
-            indexedBaseline: encodeBaseline(baseline),
             netTokens: effectTokens(effects),
             pendingEffects: effects,
           });

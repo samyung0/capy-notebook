@@ -189,24 +189,36 @@ Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
-Collaborative source saves account `source_documents` state, compact indexed
-semantic baseline and serialized pending JSON through generated `storage_bytes` and the same storage
-delta ledger. `source_refresh_candidates` accounts its captured state, new
-source bytes, fresh seed and its semantic baseline while processing. Owner changes transfer those
-charges with the file. Admission, checkpoint growth and publication run under
-source/workspace/account locks. Publication accounts the net size after
-replacing the old base and removing candidate storage, including any larger
-rebased Office state and residual effects. Negative changes remain negative ledger deltas.
+A collaborative source is charged its source bytes (`files.size_bytes`) plus
+the generated `source_documents.storage_bytes` (migration 0033): its serialized
+pending effects (an empty list costs nothing, so opening a file charges only
+its source), plus its editing state's growth beyond the seed it started
+from (`max(0, state - seed_bytes)`; a NULL state is the seed and costs
+nothing), plus a stored baseline when one exists (only after a publication
+that rebased later DOCX or PPTX edits). The engine's representation of the
+file is a platform cost. The first save records `seed_bytes`; a publication
+that rebased later edits records the size of the export's seed its state grew
+from (the candidate keeps that size, not the seed), and one without later
+edits returns the state to NULL. A refresh candidate is uncharged while
+transient: admission does not gate on it, and publication gates the net change
+of the file's bytes and its source row. Before a parse is paid for, finalize
+refuses (except for system jobs) what publication would certainly refuse: the
+new bytes minus the old, plus a source row with no state, baseline or effects,
+minus the current row. Reconciliation sums the same columns. Owner changes
+transfer the charge with the file. Checkpoint growth and publication run under
+source/workspace/account locks. Negative changes remain negative ledger
+deltas.
 
 Maintenance-window publications (`paid_by='system'`, see the
-[deployment runbook](deployment-runbook.md#office-maintenance-window)) skip the storage gates at
-admission, export finalization and publication, so an over-quota owner's
-saved edits still publish; the resulting deltas still land in the owner's
-ledger. An export-only publication replaces `files.size_bytes` with the
-export's size and the state with the export's seed (or, through the handoff,
-the state rebased onto the export) and drops the index; the automatic export of
-a store-only file is gated on that net change at publication, like a refresh.
-A window's reset drops the states of the reset formats and keeps no copy.
+[deployment runbook](deployment-runbook.md#office-maintenance-window)) skip the
+storage gates at finalize and publication, so an over-quota owner's saved edits
+still publish; the resulting deltas still land in the owner's ledger. An
+export-only publication replaces `files.size_bytes` with the export's size,
+returns the state to NULL (seed(export); through the handoff, a later save's
+state rebased onto the export instead) and drops the index; the automatic
+export of a store-only file is gated at finalize and publication, like a
+refresh. A window's reset drops the states of the reset formats and keeps no
+copy.
 
 A candidate retains old A and exported B temporarily. Successful Office handoff
 rebinds the latest saved state to B, clears Undo/Redo and releases A. XLSX/PPTX

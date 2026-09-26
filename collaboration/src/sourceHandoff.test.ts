@@ -8,7 +8,6 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { parse } from 'yaml';
 import * as Y from 'yjs';
 import {
-  decodeBaseline,
   encodeBaseline,
   SourceDocumentStore,
   SourceRequestError,
@@ -477,7 +476,7 @@ test('publication retry uses the durable fenced receipt before checking the new 
   expect(f.redis.publish).not.toHaveBeenCalled();
 });
 
-test('text publication advances the semantic baseline while retaining newer edits', async () => {
+test('text publication leaves the baseline to the export while retaining newer edits', async () => {
   const f = setup();
   const state = (text: string) => {
     const doc = new Y.Doc();
@@ -503,7 +502,7 @@ test('text publication advances the semantic baseline while retaining newer edit
   }));
   let published:
     | {
-        indexedBaseline: string;
+        indexedBaseline?: string;
         pendingEffects: unknown;
         expectedLatestCheckpoint: number;
       }
@@ -526,11 +525,8 @@ test('text publication advances the semantic baseline while retaining newer edit
     leaseToken: 'lease',
     sourceETag: 'etag',
   });
-  expect(decodeBaseline(published!.indexedBaseline, 'text')).toEqual({
-    format: 'text',
-    text: 'Exam Monday',
-    version: 1,
-  });
+  // The export is the captured text, so Go derives the baseline from it.
+  expect(published!.indexedBaseline).toBeUndefined();
   expect(published!.pendingEffects).toMatchObject([
     { after: 'Tues', before: 'Mon', operation: 'replace' },
   ]);

@@ -46,7 +46,18 @@ import {
   log,
   reportHttpError,
 } from './observability.js';
-import { closeOfficeRuntime, OfficeEngineError } from './officeRuntime.js';
+import {
+  endOfficeResync,
+  OFFICE_UPDATE_UNHELD,
+  officeUpdateViolation,
+  resyncOfficeConnection,
+} from './officeRoots.js';
+import {
+  closeOfficeRuntime,
+  OfficeEngineError,
+  officeDocumentRoots,
+  type SourceFormat,
+} from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
   materialIdFromRoom,
@@ -102,6 +113,11 @@ const store = new YjsDocumentStore(pool);
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
 // Source room size estimates from applied update bytes (updateFitsRoom).
 const sourceSizes = new WeakMap<Y.Doc, number>();
+// Each loaded source room's format, for the Office root check.
+const sourceFormats = new WeakMap<Y.Doc, SourceFormat>();
+// The engines' document roots, read once at boot: the message hook stays free
+// of I/O, and a bundle that cannot load stops the service at start.
+const officeRoots = await officeDocumentRoots();
 // Office rooms the maintenance pause has flushed; cleared when it ends.
 let pausedRooms = new WeakSet<Document>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
@@ -521,6 +537,10 @@ async function withDistributedEviction<T>(
 
 const server = new Server<CollaborationContext>({
   address: config.host,
+  // A message dropped for a resync (resyncOfficeConnection) is behind us.
+  async afterHandleMessage({ connection }) {
+    endOfficeResync(connection);
+  },
   async afterUnloadDocument({ documentName }) {
     pendingCheckpoints.delete(documentName);
     if (!SOURCE_ROOM_PATTERN.test(documentName)) store.forgetRoom(documentName);
@@ -561,6 +581,8 @@ const server = new Server<CollaborationContext>({
           context.userId,
           context.access
         );
+        const format = sourceFormats.get(document);
+        let refusal: string | null = null;
         if (
           !updateFitsRoom(
             sourceSizes,
@@ -568,18 +590,31 @@ const server = new Server<CollaborationContext>({
             yjsUpdate,
             MAX_SOURCE_STATE_BYTES
           )
-        ) {
+        )
+          refusal = 'Source checkpoint exceeds byte limit';
+        else if (format && format !== 'text')
+          refusal = officeUpdateViolation(
+            document,
+            yjsUpdate,
+            format,
+            officeRoots[format]
+          );
+        if (refusal === OFFICE_UPDATE_UNHELD) {
+          resyncOfficeConnection(connection);
+          return;
+        }
+        if (refusal) {
           // Stateless and unrecoverable, so the client stops resending it.
           connection.sendStateless(
             JSON.stringify({
               type: 'source-checkpoint-failed',
               ...sourceRoom(document.name),
               checkpointIds: [],
-              message: 'Source checkpoint exceeds byte limit',
+              message: refusal,
               recoverable: false,
             })
           );
-          throw new Error('Source checkpoint exceeds byte limit');
+          throw new Error(refusal);
         }
         return;
       }
@@ -631,13 +666,18 @@ const server = new Server<CollaborationContext>({
         documentName
       );
       const readOnly = claims.access === 'read';
-      // The maintenance pause refuses writers; viewing keeps working.
-      if (
-        !readOnly &&
-        SOURCE_ROOM_PATTERN.test(documentName) &&
-        (await sources.editingPaused(documentName))
-      )
-        throw new OfficeEditingPausedError();
+      // The maintenance pause refuses writers; viewing keeps working. Once it
+      // is over, a room paused earlier takes this writer's updates at once
+      // instead of on the next pause poll.
+      if (!readOnly && SOURCE_ROOM_PATTERN.test(documentName)) {
+        if (await sources.editingPaused(documentName))
+          throw new OfficeEditingPausedError();
+        const loaded = server.hocuspocus.documents.get(documentName);
+        if (loaded) {
+          pausedRooms.delete(loaded);
+          pauseChecked.delete(loaded);
+        }
+      }
       await (SOURCE_ROOM_PATTERN.test(documentName)
         ? sources
         : store
@@ -669,7 +709,12 @@ const server = new Server<CollaborationContext>({
           (sourceSizes.get(document) ?? 0) + update.byteLength
         )
       );
-      await sources.load(documentName, document, context.userId);
+      const session = await sources.load(
+        documentName,
+        document,
+        context.userId
+      );
+      sourceFormats.set(document, session.format);
     } else await store.load(documentName, document);
   },
   async onStateless({ connection, document, payload }) {

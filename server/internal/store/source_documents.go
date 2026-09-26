@@ -16,7 +16,8 @@ import (
 
 // SourceSession: browser reads send null indexedBaseline and pendingEffects
 // (server-side only), and the viewer read sends null state unless a checkpoint
-// is ahead of the indexed one.
+// is ahead of the indexed one. A null state is seed(base) until the first save,
+// and a null indexedBaseline is derived from the base.
 type SourceSession struct {
 	FileID            string          `json:"fileId"`
 	WorkspaceID       string          `json:"workspaceId"`
@@ -44,10 +45,11 @@ type SourceCheckpoint struct {
 	State              []byte          `json:"state"`
 	PendingEffects     json.RawMessage `json:"pendingEffects"`
 	NetTokens          int64           `json:"netTokens" minimum:"0"`
-	// Only a trusted initial seed may bind the SHA computed from source bytes.
+	// The first save over a null state (seed(base)) records the seed's size,
+	// and binds the SHA the service computed from the source bytes when the
+	// file has none yet (a store-only upload).
+	SeedBytes        int64  `json:"seedBytes,omitempty" minimum:"0"`
 	BaseSourceSHA256 string `json:"baseSourceSHA256,omitempty"`
-	Initialize       bool   `json:"initialize,omitempty"`
-	IndexedBaseline  []byte `json:"indexedBaseline,omitempty"`
 	// A direct AI edit or its Undo commits its receipt (and inverse) with the
 	// checkpoint so the saved state and the durable effect cannot diverge.
 	Operation *SourceCheckpointOperation `json:"operation,omitempty"`
@@ -262,14 +264,15 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return out, err
 	}
 	defer tx.Rollback(ctx)
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, !in.Initialize)
+	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true)
 	if err != nil {
 		return out, err
 	}
 	// Sizes only: the stored state alone may reach 100 MB.
 	var format, sha string
-	var epoch, baseRevision, stateBytes, oldEffectsBytes, baselineBytes int64
-	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,octet_length(state),octet_length(pending_effects::text),octet_length(indexed_baseline) FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &stateBytes, &oldEffectsBytes, &baselineBytes); err != nil {
+	var epoch, baseRevision, storageBytes, baselineBytes, seedBytes int64
+	var seeded bool
+	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,storage_bytes,COALESCE(octet_length(indexed_baseline),0),seed_bytes,state IS NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &storageBytes, &baselineBytes, &seedBytes, &seeded); err != nil {
 		return out, err
 	}
 	if in.Operation != nil {
@@ -284,10 +287,10 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			return out, tx.Commit(ctx)
 		}
 	}
-	// The maintenance pause refuses seeding an Office room and committing an
-	// agent edit or Undo (a replayed receipt above still answers); saves of
-	// rooms already open still land, so the pause's flush persists.
-	if (in.Initialize || in.Operation != nil) && format != "text" {
+	// The maintenance pause refuses committing an Office agent edit or Undo (a
+	// replayed receipt above still answers); saves of rooms already open still
+	// land, so the pause's flush persists.
+	if in.Operation != nil && format != "text" {
 		var paused bool
 		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM office_editing_pause)`).Scan(&paused); err != nil {
 			return out, err
@@ -306,38 +309,43 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if revision != baseRevision {
 		return out, ErrConflict
 	}
-	if in.Initialize && (out.Checkpoint != 0 || stateBytes != 0 || len(effects) != 0 || (len(in.BaseSourceSHA256) != 64 || (sha != "" && sha != in.BaseSourceSHA256))) {
+	// The first save over seed(base) records the seed's size and binds the
+	// source SHA once; later saves carry neither.
+	if seeded != (in.SeedBytes > 0) || (!seeded && in.BaseSourceSHA256 != "") {
 		return out, ErrConflict
 	}
+	if seeded {
+		if len(in.BaseSourceSHA256) != 64 || (sha != "" && sha != in.BaseSourceSHA256) {
+			return out, ErrConflict
+		}
+		seedBytes, sha = in.SeedBytes, in.BaseSourceSHA256
+		if _, err = tx.Exec(ctx, `UPDATE files SET source_sha256=$2 WHERE id=$1 AND source_sha256 IS NULL`, fileID, sha); err != nil {
+			return out, err
+		}
+	}
 	var effectsBytes int64
-	if err = tx.QueryRow(ctx, `SELECT octet_length($1::jsonb::text)`, in.PendingEffects).Scan(&effectsBytes); err != nil {
+	// An empty list costs nothing (migration 0033's rule).
+	if err = tx.QueryRow(ctx, `SELECT COALESCE(octet_length(NULLIF($1::jsonb,'[]'::jsonb)::text),0)`, in.PendingEffects).Scan(&effectsBytes); err != nil {
 		return out, err
 	}
-	growth := int64(len(in.State)) - stateBytes - oldEffectsBytes + effectsBytes
+	// storage_bytes after this save (migration 0033's rule) minus before.
+	growth := effectsBytes + max(0, int64(len(in.State))-seedBytes) + baselineBytes - storageBytes
 	if in.Operation != nil {
 		// The retained inverse is owner storage too: admit state and inverse
 		// growth together.
 		growth += int64(len(in.Operation.Inverse) + len(in.Operation.Guards))
-	}
-	if in.Initialize {
-		if !validSourceBaseline(in.IndexedBaseline, format) {
-			return out, ErrConflict
-		}
-		growth += int64(len(in.IndexedBaseline)) - baselineBytes
 	}
 	if growth > 0 {
 		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
 			return out, err
 		}
 	}
-	if in.Initialize {
-		if _, err = tx.Exec(ctx, `UPDATE files SET source_sha256=$2 WHERE id=$1 AND source_sha256 IS NULL`, fileID, in.BaseSourceSHA256); err != nil {
-			return out, err
-		}
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET state=$2,indexed_baseline=$4,base_source_sha256=$3,updated_at=now() WHERE file_id=$1`, fileID, in.State, in.BaseSourceSHA256, in.IndexedBaseline)
-	} else {
-		err = tx.QueryRow(ctx, `UPDATE source_documents SET state=$2,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, in.State, in.PendingEffects, in.NetTokens).Scan(&out.Checkpoint)
+	// A refresh that captured the state being replaced keeps its own copy from
+	// now on; until a save lands, its NULL state reads this row's.
+	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates c SET state=d.state FROM source_documents d WHERE c.file_id=$1 AND d.file_id=c.file_id AND c.epoch=d.epoch AND c.checkpoint=d.checkpoint`, fileID); err != nil {
+		return out, err
 	}
+	err = tx.QueryRow(ctx, `UPDATE source_documents SET state=$2,seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, in.State, in.PendingEffects, in.NetTokens, seedBytes, sha).Scan(&out.Checkpoint)
 	if err != nil {
 		return out, err
 	}
@@ -524,11 +532,6 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if err != nil {
 		return result, err
 	}
-	if !system {
-		if err = s.gateStorageTx(ctx, tx, owner, int64(len(doc.State))); err != nil {
-			return result, err
-		}
-	}
 	jobID := uid("job")
 	lease := uid("srclease")
 	// The per-page parse fee applies to a file's first parse only; a refresh of
@@ -540,7 +543,10 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if _, err = tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,'source_refresh',$2)`, jobID, payload); err != nil {
 		return result, err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_candidates(file_id,job_id,epoch,checkpoint,lease_token,state) VALUES($1,$2,$3,$4,$5,$6)`, fileID, jobID, doc.Epoch, doc.Checkpoint, lease, doc.State); err != nil {
+	// Copy-on-write: the candidate's NULL state is the source's state at this
+	// checkpoint until a save copies it (SaveSourceCheckpoint). A transient
+	// candidate is uncharged; publication gates the net growth.
+	if _, err = tx.Exec(ctx, `INSERT INTO source_refresh_candidates(file_id,job_id,epoch,checkpoint,lease_token) VALUES($1,$2,$3,$4,$5)`, fileID, jobID, doc.Epoch, doc.Checkpoint, lease); err != nil {
 		return result, err
 	}
 	// A maintenance request is not the owner's Process: a failed one must not
@@ -552,7 +558,8 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	return result, tx.Commit(ctx)
 }
 
-// The collaboration runtime owns projection; reject missing or mismatched baselines.
+// The collaboration runtime owns projection; reject a malformed or mismatched
+// stored baseline (only an Office publication that rebased later edits stores one).
 func validSourceBaseline(raw []byte, format string) bool {
 	var baseline struct {
 		Version int                `json:"version"`

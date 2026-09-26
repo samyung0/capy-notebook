@@ -120,8 +120,8 @@ Windows, Bun 1.3.3, stable toolchain 1.98.1, wasm-pack 0.15.0. For Bun, a copy o
   error: BadPathName: failed to open root directory: /C:/WEB/betteroffice-merge/packages/fonts/src
         at <anonymous> (C:\WEB\betteroffice-merge\packages\fonts\src\cdn.test.ts:99:29)
 
-  Expected to contain: "C:\\Users\\yungc\\AppData\\Local\\Temp\\office-quality-renderer-EC8KrG\\commit\\index.js"
-  Received: "export * from \"/@fs/C:/Users/yungc/AppData/Local/Temp/office-quality-renderer-EC8KrG/commit/index.js\";"
+  Expected to contain: "%TEMP%\\office-quality-renderer-EC8KrG\\commit\\index.js"
+  Received: "export * from \"/@fs/%TEMP%/office-quality-renderer-EC8KrG/commit/index.js\";"
         at <anonymous> (C:\WEB\betteroffice-merge\scripts\office-quality\renderer.test.ts:55:32)
 
   TypeError: undefined is not an object (evaluating 'Object.keys(publish.on)')

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { afterAll, expect, test } from 'vitest';
+import type { Pool } from 'pg';
+import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
 import {
   EditError,
@@ -8,17 +9,44 @@ import {
   officeGuards,
   verifyOfficeGuards,
 } from './editCommands.js';
+import { officeUpdateViolation } from './officeRoots.js';
 import {
   closeOfficeRuntime,
+  type OfficeEntry,
   type OfficeFormat,
+  officeDocumentRoots,
   runOffice,
 } from './officeRuntime.js';
-import { effectTokens, trimEffect } from './sourceDocuments.js';
+import {
+  effectTokens,
+  SourceDocumentStore,
+  type SourceSession,
+  trimEffect,
+} from './sourceDocuments.js';
 
 const BASE_MISMATCH = /base/;
 const BODY_POSITION = /^body:(\d+)$/;
 
 afterAll(closeOfficeRuntime);
+afterEach(() => vi.unstubAllGlobals());
+
+/** The engine command that sets an entry's text: a cell in XLSX, else a paragraph. */
+function setText(format: OfficeFormat, target: OfficeEntry, text: string) {
+  return format === 'xlsx'
+    ? {
+        cell: target.label.slice(target.label.lastIndexOf('!') + 1),
+        expectedValue: target.value,
+        sheet: target.label.slice(0, target.label.lastIndexOf('!')),
+        type: 'set_cell' as const,
+        value: text,
+      }
+    : {
+        expectedText: target.value,
+        targetId: target.id,
+        text,
+        type: 'replace_text' as const,
+      };
+}
 
 test.each([
   ['docx', 'poc/fixtures/feature-rich.docx'],
@@ -161,7 +189,7 @@ test.each([
   ['xlsx', 'apps/demo/public/sample.xlsx'],
   ['pptx', 'apps/demo/public/betteroffice-demo.pptx'],
 ] as const)(
-  '%s publishes checkpoint 10 while keeping saved 11 and a usable compact baseline',
+  '%s publishes checkpoint 10 while keeping saved 11 with matching pending effects',
   async (format, path) => {
     const bytes = await readFile(
       new URL(`../../vendor/betteroffice/${path}`, import.meta.url)
@@ -227,11 +255,15 @@ test.each([
         (entry) => entry.value === 'Saved at checkpoint 11'
       )
     ).toBe(true);
-    const effects = await runOffice(
-      'compareBaselines',
-      result.baseline,
-      await runOffice('officeBaseline', parsed, rebased)
-    );
+    // XLSX keeps no baseline: its effects are read off the overrides.
+    const effects =
+      format === 'xlsx'
+        ? await runOffice('xlsxPendingEffects', parsed, rebased)
+        : await runOffice(
+            'compareBaselines',
+            result.baseline,
+            await runOffice('officeBaseline', parsed, rebased)
+          );
     expect(effects).toEqual(result.effects);
     const value = (text: string) =>
       format === 'xlsx' ? JSON.stringify({ kind: 'text', value: text }) : text;
@@ -255,3 +287,103 @@ test.each([
   },
   60_000
 );
+
+test.each([
+  ['docx', 'apps/demo/public/betteroffice-demo.docx'],
+  ['xlsx', 'apps/demo/public/sample.xlsx'],
+  ['pptx', 'apps/demo/public/betteroffice-demo.pptx'],
+] as const)(
+  '%s seeds one lineage on every instance and its room takes only its document roots',
+  async (format, path) => {
+    const bytes = await readFile(
+      new URL(`../../vendor/betteroffice/${path}`, import.meta.url)
+    );
+    // A NULL state is seed(base) wherever it loads, so seeds must be identical.
+    const seed = await runOffice('seedOffice', format, bytes);
+    const again = await runOffice('seedOffice', format, bytes);
+    expect(Buffer.from(seed.state).equals(Buffer.from(again.state))).toBe(true);
+    const roots = (await officeDocumentRoots())[format];
+    const room = new Y.Doc();
+    Y.applyUpdate(room, seed.state);
+    expect(
+      [...room.share.keys()].filter((root) => !roots.includes(root))
+    ).toEqual([]);
+    const [target] = (await runOffice('inspectOffice', bytes, seed)).filter(
+      (entry) => entry.value.length > 0
+    );
+    const edited = await runOffice('applyOfficeCommands', bytes, seed, [
+      setText(format, target, 'Edited by Capy'),
+    ]);
+    expect(
+      officeUpdateViolation(
+        room,
+        Y.diffUpdate(edited.state, Y.encodeStateVector(room)),
+        format,
+        roots
+      )
+    ).toBeNull();
+    const client = (write: (document: Y.Doc) => void) => {
+      const document = new Y.Doc();
+      Y.applyUpdate(document, seed.state);
+      const before = Y.encodeStateVector(document);
+      write(document);
+      return Y.encodeStateAsUpdate(document, before);
+    };
+    expect(
+      officeUpdateViolation(
+        room,
+        client((document) => document.getMap('foreign').set('x', 1)),
+        format,
+        roots
+      )
+    ).toMatch('outside');
+    if (format !== 'pptx') return;
+    // A client may change only the comment flavour in pptx:meta.
+    const meta = (write: (map: Y.Map<unknown>) => void) =>
+      officeUpdateViolation(
+        room,
+        client((document) => write(document.getMap('pptx:meta'))),
+        format,
+        roots
+      );
+    const key = [...room.getMap('pptx:meta').keys()].find(
+      (name) => name !== 'commentFlavor'
+    );
+    if (!key) throw new Error('fixture has no deck metadata');
+    expect(meta((map) => map.set('commentFlavor', 'modern'))).toBeNull();
+    expect(meta((map) => map.set(key, 'changed'))).toMatch('pptx:meta');
+    expect(meta((map) => map.delete(key))).toMatch('pptx:meta');
+  },
+  60_000
+);
+
+test('XLSX pending effects come from its overrides with no stored baseline', async () => {
+  const bytes = await readFile(
+    new URL(
+      '../../vendor/betteroffice/apps/demo/public/sample.xlsx',
+      import.meta.url
+    )
+  );
+  const seed = await runOffice('seedOffice', 'xlsx', bytes);
+  const [target] = (await runOffice('inspectOffice', bytes, seed)).filter(
+    (entry) => entry.value.length > 0
+  );
+  const edited = await runOffice('applyOfficeCommands', bytes, seed, [
+    setText('xlsx', target, 'Changed'),
+  ]);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(bytes))
+  );
+  const store = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+  const session = {
+    baseSourceSHA256: seed.baseSha256,
+    format: 'xlsx',
+    indexedBaseline: null,
+    pendingEffects: [],
+    sourceURL: 'http://base',
+  } as unknown as SourceSession;
+  expect(await store.effects(session, edited.state)).toMatchObject([
+    { kind: 'text', label: target.label, operation: 'replace' },
+  ]);
+}, 60_000);

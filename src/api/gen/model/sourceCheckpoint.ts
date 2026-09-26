@@ -19,11 +19,11 @@ export interface SourceCheckpoint {
   epoch: number;
   /** @minimum 0 */
   expectedCheckpoint: number;
-  indexedBaseline?: string;
-  initialize?: boolean;
   /** @minimum 0 */
   netTokens: number;
   operation?: SourceCheckpointOperation;
   pendingEffects: unknown;
+  /** @minimum 0 */
+  seedBytes?: number;
   state: string;
 }

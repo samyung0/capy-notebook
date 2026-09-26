@@ -11,6 +11,7 @@ import {
   SourceRequestError,
   type SourceSession,
   textEffects,
+  textSeed,
   textState,
   trimEffect,
 } from './sourceDocuments.js';
@@ -111,7 +112,7 @@ test('Office text effects keep the changed span with 40 characters of context', 
 
 test('an owner at the ingest-job limit rotates the file back, other refusals park it', async () => {
   const query = vi.fn(async (sql: string, _params?: unknown[]) => ({
-    rows: sql.includes('WITH picked')
+    rows: sql.includes('UNION ALL')
       ? [
           { checkpoint: '3', file_id: 'f_busy', user_id: 'u_1' },
           { checkpoint: '5', file_id: 'f_broke', user_id: 'u_1' },
@@ -248,7 +249,7 @@ test.each([204, 409])(
           checkpoint: 2,
           epoch: 1,
           leaseToken: 'lease',
-          seed: state,
+          seedBytes: Buffer.from(state, 'base64').byteLength,
           sourceETag: 'candidate-etag',
         });
         expect(body.sourceSHA256).toMatch(SHA256);
@@ -274,11 +275,12 @@ test.each([204, 409])(
 );
 
 test.each([
-  [undefined, 0],
-  [new SourceRequestError(503, 'Source handoff already running'), 1],
+  [undefined, false],
+  [new SourceRequestError(409, 'Source candidate changed'), true],
+  [new SourceRequestError(503, 'Source handoff already running'), false],
 ])(
   'an owner export-only candidate publishes through the handoff after finalize (failure %s)',
-  async (failure, failures) => {
+  async (failure, stale) => {
     const doc = new Y.Doc();
     doc.getText('source').insert(0, 'text');
     const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
@@ -325,10 +327,10 @@ test.each([
       leaseToken: 'lease',
       sourceETag: 'etag',
     });
-    // A refused publication returns the export to the scheduler (stale), so
-    // the file is not parked until its next save.
-    expect(refused).toHaveLength(failures);
-    if (failures) expect(refused[0]).toMatchObject({ stale: true });
+    // A superseded publication (409) returns the export to the scheduler
+    // (stale); any other refusal parks the file until its next save.
+    expect(refused).toHaveLength(failure ? 1 : 0);
+    if (failure) expect(refused[0]).toMatchObject({ stale });
   }
 );
 
@@ -426,26 +428,60 @@ test('a source edit retries from freshly loaded state after a checkpoint CAS con
   expect(result.receipt.operationId).toBe('op_1');
 });
 
-test('inspecting a never-opened source keeps the bootstrap access after seeding', async () => {
+test('a NULL state loads seed(base) and saves nothing until the first save reports the seed', async () => {
+  const bytes = Buffer.from('﻿base text');
+  const sha = createHash('sha256').update(bytes).digest('hex');
   const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
-  vi.spyOn(store, 'session').mockResolvedValue({
+  const session = {
     access: 'write',
     baseSourceSHA256: '',
     checkpoint: 0,
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
+    indexedBaseline: null,
+    pendingEffects: [],
+    room: 'source:f_1:epoch:1',
     sourceURL: 'http://base',
-  } as unknown as SourceSession);
+    state: null,
+  } as unknown as SourceSession;
+  vi.spyOn(store, 'session').mockResolvedValue(session);
   vi.spyOn(
     store as unknown as { base: () => Promise<Buffer> },
     'base'
-  ).mockResolvedValue(Buffer.from('seed'));
-  // The checkpoint answers with its receipt only; the seeded state is local.
-  vi.spyOn(store, 'request').mockResolvedValue({ checkpoint: 0 });
-  const inspection = await store.inspect('f_1', 'u1');
-  expect(inspection.access).toBe('write');
-  expect(inspection.text).toBe('seed');
+  ).mockResolvedValue(bytes);
+  const request = vi
+    .spyOn(store, 'request')
+    .mockResolvedValue({ checkpoint: 1 });
+  // Loading, and agent inspect, read the seed and persist nothing.
+  expect((await store.inspect('f_1', 'u1')).text).toBe('﻿base text');
+  const room = new Y.Doc();
+  const loaded = await store.load(session.room, room, 'u1');
+  expect(loaded.baseSourceSHA256).toBe(sha);
+  expect(request).not.toHaveBeenCalled();
+  // Every instance seeds the same lineage, so replicas merge without duplication.
+  const other = new Y.Doc();
+  await store.load(session.room, other, 'u2');
+  Y.applyUpdate(room, Y.encodeStateAsUpdate(other));
+  expect(room.getText('source').toString()).toBe('﻿base text');
+  // The first save stores the state and its seed size; effects run against
+  // the baseline derived from the base.
+  room.getText('source').insert(room.getText('source').length, '!');
+  room
+    .getMap('__capy_pending_contributors')
+    .set('author', { access: 'write', nonce: 'n', userId: 'u1' });
+  await store.store(session.room, room);
+  expect(request).toHaveBeenCalledWith(
+    'f_1',
+    'checkpoint',
+    expect.objectContaining({
+      baseSourceSHA256: sha,
+      pendingEffects: [expect.objectContaining({ after: '!', before: '' })],
+      seedBytes: textSeed(bytes).byteLength,
+    })
+  );
+  room.destroy();
+  other.destroy();
 });
 
 test('Office rebase uses the captured state and latest saved state, retaining captions by media hash', async () => {
@@ -483,15 +519,7 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
   const pool = {
     query: vi.fn(async () => ({
       rows: [
-        {
-          baseline: Buffer.from(
-            encodeBaseline({ entries: [], format: 'pptx', version: 1 }),
-            'base64'
-          ),
-          seed: Buffer.from('seed10'),
-          source_sha256: digest(newSource),
-          state: Buffer.from('captured10'),
-        },
+        { source_sha256: digest(newSource), state: Buffer.from('captured10') },
       ],
     })),
   };
@@ -549,7 +577,14 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     expect.objectContaining({ state: Buffer.from('saved11') }),
     newSource
   );
-  expect(result.rebasedState).toBe(Buffer.from('rebased11').toString('base64'));
+  expect(result).toMatchObject({
+    indexedBaseline: encodeBaseline({
+      entries: [],
+      format: 'pptx',
+      version: 1,
+    }),
+    rebasedState: Buffer.from('rebased11').toString('base64'),
+  });
   // Rebased text effects are trimmed, and netTokens counts the trimmed text.
   expect(result.pendingEffects).toMatchObject([
     { caption: 'A saved caption', id: 'new-id' },
@@ -566,8 +601,9 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     { ...session, checkpoint: 10 },
     { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
   );
-  expect(same.rebasedState).toBe(Buffer.from('seed10').toString('base64'));
-  expect(same.pendingEffects).toEqual([]);
+  // No save after the capture: the state and baseline go back to NULL, meaning
+  // seed(export) and its derived baseline.
+  expect(same).toEqual({ netTokens: 0, pendingEffects: [] });
   expect(runtime).not.toHaveBeenCalled();
   expect(request).not.toHaveBeenCalled();
 });

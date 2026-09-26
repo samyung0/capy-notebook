@@ -16,7 +16,7 @@ export default defineConfig({
   fullyParallel: false,
   globalSetup: path.join(directory, 'preflight.ts'),
   globalTeardown: path.join(directory, 'cleanup.ts'),
-  globalTimeout: 45 * 60_000,
+  globalTimeout: 90 * 60_000,
   maxFailures: 1,
   outputDir: path.join(directory, 'test-results'),
   projects: [{ name: 'uat-journeys-chromium', use: devices['Desktop Chrome'] }],

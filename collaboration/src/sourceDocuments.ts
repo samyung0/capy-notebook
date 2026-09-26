@@ -55,32 +55,43 @@ const OFFICE_REFRESH_STALE = '7 days';
 // take the same trigger whatever auto-reparse says; Go publishes them
 // export-only. A `reprocess` row is a file an export-only publication left
 // unindexed, due once its owner is active and it is out of the trash (a file
-// never parsed successfully waits for its owner's Process); Go indexes it at platform cost, and a
-// refusal moves it an hour ahead (REPROCESS_DEFER_SQL), never pulling a fresh
-// day back. `picked` keeps both branches on their partial indexes. The Go
-// store tests run these statements (TestRefreshSchedulerQuery,
-// TestReprocessSelection).
+// never parsed successfully waits for its owner's Process); Go indexes it at
+// platform cost, a refusal moves it an hour ahead (REPROCESS_DEFER_SQL) and
+// never pulls a fresh day back, and indexing the file clears its mark. Each
+// branch takes its 8 oldest on its own partial index before the merge (a file
+// due in both may come twice; the second request answers 409). The Go store
+// tests run these statements (TestRefreshSchedulerQuery, TestReprocessSelection).
 const REFRESH_CANDIDATES_SQL = `
-  WITH picked AS (
-    SELECT file_id FROM source_documents WHERE reprocess_at<=now()
-    UNION SELECT file_id FROM source_documents WHERE checkpoint>indexed_checkpoint)
-  SELECT d.file_id,w.user_id,d.checkpoint,r.reprocess FROM picked p JOIN source_documents d ON d.file_id=p.file_id
-  JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
-  CROSS JOIN LATERAL (SELECT COALESCE(d.reprocess_at<=now(),false) AND NOT f.indexed AND d.format<>'text'
-    AND f.ever_parsed_successfully
-    AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL AS reprocess) r
-  WHERE d.running_job_id IS NULL AND f.trashed_at IS NULL
-    AND (r.reprocess OR (d.checkpoint>d.indexed_checkpoint AND d.refresh_error IS NULL
-      AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
-      AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
-        OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
-          OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_reparse AND f.ever_parsed_successfully)
-            OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))))
-  ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8`;
+  SELECT file_id,user_id,checkpoint,reprocess FROM (
+    (SELECT d.file_id,w.user_id,d.checkpoint,true AS reprocess,GREATEST(d.last_edited_at,d.last_refresh_requested_at) AS due
+      FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id JOIN users u ON u.id=w.user_id
+      WHERE d.reprocess_at<=now() AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND NOT f.indexed
+        AND d.format<>'text' AND f.ever_parsed_successfully
+        AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
+      ORDER BY d.reprocess_at LIMIT 8)
+    UNION ALL
+    (SELECT d.file_id,w.user_id,d.checkpoint,false,GREATEST(d.last_edited_at,d.last_refresh_requested_at)
+      FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
+      WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
+        AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
+        AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
+          OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
+            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_reparse AND f.ever_parsed_successfully)
+              OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))
+      ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8)
+  ) picked ORDER BY due LIMIT 8`;
 const REFRESH_DEFER_SQL =
   'UPDATE source_documents SET last_refresh_requested_at=now() WHERE file_id=$1';
 const REPROCESS_DEFER_SQL =
   "UPDATE source_documents SET reprocess_at=now()+interval '1 hour' WHERE file_id=$1 AND reprocess_at<=now()";
+/**
+ * A refresh candidate's captured state (copy-on-write): the source row's own
+ * while no save has landed since the capture, else the copy that save made
+ * (SaveSourceCheckpoint). NULL is seed(base). Go's ClaimSourceRefresh reads it
+ * the same way.
+ */
+export const CAPTURED_STATE_SQL =
+  'CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END';
 const LOW_SURROGATE = /[\uDC00-\uDFFF]/u;
 const CJK_CHARACTER =
   /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
@@ -92,13 +103,15 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceFormat;
-  indexedBaseline: string;
+  /** Null: derived from the base (SourceDocumentStore.indexedBaseline). */
+  indexedBaseline: string | null;
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: NetEffect[];
   room: string;
   sourceURL: string;
-  state: string;
+  /** Null: seed(base) until the first save (SourceDocumentStore.seed). */
+  state: string | null;
   workspaceId: string;
 }
 /** The checkpoint endpoint's answer: the new checkpoint and an edit's receipt. */
@@ -147,7 +160,8 @@ export interface RefreshCandidate {
   jobId: string;
   leaseToken: string;
   sourceBlobPath: string;
-  state: string;
+  /** Null: the captured state is seed(base). */
+  state: string | null;
   uploadHeaders: Record<string, string>;
   uploadURL: string;
 }
@@ -172,6 +186,56 @@ export function textState(state: Uint8Array) {
     return document.getText('source').toString();
   } finally {
     document.destroy();
+  }
+}
+
+/** A text source's bytes as text; newlines and a BOM are kept, invalid UTF-8 throws. */
+function decodeText(bytes: Uint8Array) {
+  return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
+    bytes
+  );
+}
+
+/**
+ * seed(base) of a text source, written under a fixed client so every instance
+ * seeds the same Yjs lineage for a state that is still NULL (the Office
+ * engines seed under their own fixed client).
+ */
+export function textSeed(bytes: Uint8Array) {
+  const document = new Y.Doc();
+  try {
+    document.clientID = 0;
+    document.getText('source').insert(0, decodeText(bytes));
+    return Y.encodeStateAsUpdate(document);
+  } finally {
+    document.destroy();
+  }
+}
+
+/** A byte-bounded LRU keyed by source SHA: bases, their seeds and baselines. */
+class ByteCache<V> {
+  private readonly entries = new Map<string, { bytes: number; value: V }>();
+  private used = 0;
+  private readonly budget: number;
+  constructor(budget: number) {
+    this.budget = budget;
+  }
+  get(key: string) {
+    const entry = this.entries.get(key);
+    if (!entry) return;
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry.value;
+  }
+  set(key: string, value: V, bytes: number) {
+    if (this.entries.has(key)) return;
+    for (const [oldest, entry] of this.entries) {
+      if (this.used + bytes <= this.budget) break;
+      this.used -= entry.bytes;
+      this.entries.delete(oldest);
+    }
+    this.entries.set(key, { bytes, value });
+    this.used += bytes;
   }
 }
 
@@ -291,9 +355,18 @@ export async function readSourceBytes(url: string) {
   return Buffer.concat(chunks, size);
 }
 
+type SourceBase = Pick<
+  SourceSession,
+  'format' | 'sourceURL' | 'baseSourceSHA256'
+>;
+
 export class SourceDocumentStore {
-  private readonly bases = new Map<string, Buffer>();
-  private baseBytes = 0;
+  // Sessions authorize access before these lookups. Immutable byte identity
+  // lets rooms reuse a bounded set of downloaded bases and what derives from
+  // them: seed(base) for a NULL state, its baseline for a NULL one.
+  private readonly bases = new ByteCache<Buffer>(128 * 1024 * 1024);
+  private readonly seeds = new ByteCache<Uint8Array>(64 * 1024 * 1024);
+  private readonly baselines = new ByteCache<SourceBaseline>(64 * 1024 * 1024);
   private readonly pool: Pool;
   private readonly apiURL: string;
   private readonly secret: string;
@@ -305,27 +378,69 @@ export class SourceDocumentStore {
 
   private async base(url: string, sha: string) {
     const cached = sha ? this.bases.get(sha) : undefined;
-    if (cached) {
-      this.bases.delete(sha);
-      this.bases.set(sha, cached);
-      return cached;
-    }
+    if (cached) return cached;
     const bytes = await readSourceBytes(url);
     const actual = createHash('sha256').update(bytes).digest('hex');
     if (sha && actual !== sha) throw new Error('Source SHA mismatch');
-    // Sessions authorize access before this lookup. Immutable byte identity
-    // lets checkpoint comparisons reuse a bounded set of downloaded bases.
-    const budget = 128 * 1024 * 1024;
-    while (this.baseBytes + bytes.length > budget && this.bases.size) {
-      const oldest = this.bases.keys().next().value!;
-      this.baseBytes -= this.bases.get(oldest)!.length;
-      this.bases.delete(oldest);
-    }
-    if (!this.bases.has(actual)) {
-      this.bases.set(actual, bytes);
-      this.baseBytes += bytes.length;
-    }
+    this.bases.set(actual, bytes, bytes.length);
     return bytes;
+  }
+
+  /**
+   * seed(base), what a NULL state stands for, and the base's SHA (computed
+   * when the file has none bound yet). Seeds are deterministic, so every
+   * instance loads the same Yjs lineage.
+   */
+  async seed(session: SourceBase) {
+    const bytes = await this.base(session.sourceURL, session.baseSourceSHA256);
+    const sha =
+      session.baseSourceSHA256 ||
+      createHash('sha256').update(bytes).digest('hex');
+    const key = `${session.format}:${sha}`;
+    let seed = this.seeds.get(key);
+    if (!seed) {
+      seed =
+        session.format === 'text'
+          ? textSeed(bytes)
+          : (await runOffice('seedOffice', session.format, bytes)).state;
+      this.seeds.set(key, seed, seed.byteLength);
+    }
+    return { seed, sha };
+  }
+
+  /** The durable state: the stored one, else seed(base). */
+  async stateOf(session: SourceBase & Pick<SourceSession, 'state'>) {
+    return session.state
+      ? Buffer.from(session.state, 'base64')
+      : (await this.seed(session)).seed;
+  }
+
+  /**
+   * The indexed baseline: the stored one (a publication that rebased later
+   * edits), else derived from the base: the decoded text, or the baseline of
+   * seed(base). XLSX keeps none; its effects come from its overrides.
+   */
+  private async indexedBaseline(session: SourceSession) {
+    if (session.indexedBaseline)
+      return decodeBaseline(session.indexedBaseline, session.format);
+    const bytes = await this.base(session.sourceURL, session.baseSourceSHA256);
+    if (session.format === 'text')
+      return { format: 'text', text: decodeText(bytes), version: 1 } as const;
+    const { seed, sha } = await this.seed(session);
+    const key = `${session.format}:${sha}`;
+    let baseline = this.baselines.get(key);
+    if (!baseline) {
+      baseline = await this.baseline(session, seed, bytes);
+      this.baselines.set(key, baseline, JSON.stringify(baseline).length);
+    }
+    return baseline;
+  }
+
+  /** What the first save over a NULL state reports: its seed's size and the base SHA. */
+  private async seedReport(session: SourceSession) {
+    if (session.state) return {};
+    const { seed, sha } = await this.seed(session);
+    return { baseSourceSHA256: sha, seedBytes: seed.byteLength };
   }
 
   async request<T>(
@@ -410,83 +525,26 @@ export class SourceDocumentStore {
 
   /**
    * Applies the durable state of `room` to `document` and returns the session
-   * it came from, seeding a never-opened source first. A caller that already
-   * fetched the session passes it in so state and checkpoint agree.
-   * `unsavedSeed` (inspect) keeps the seed in memory when the maintenance pause
-   * refuses to save it (423).
+   * it came from. A NULL state loads seed(base) and persists nothing; the
+   * first save stores it (with the base SHA bound, as returned here). A caller
+   * that already fetched the session passes it in so state and checkpoint
+   * agree.
    */
   async load(
     room: string,
     document: Y.Doc,
     actorId: string,
-    fetched?: SourceSession,
-    unsavedSeed = false
+    fetched?: SourceSession
   ): Promise<SourceSession> {
-    let session = fetched ?? (await this.sessionForRoom(room, actorId, 'read'));
-    if (!session.state) {
-      const bytes = await this.base(
-        session.sourceURL,
-        session.baseSourceSHA256
-      );
-      const sha = createHash('sha256').update(bytes).digest('hex');
-      if (session.baseSourceSHA256 && sha !== session.baseSourceSHA256)
-        throw new Error('Source SHA mismatch');
-      let state: Uint8Array;
-      if (session.format === 'text') {
-        const initial = new Y.Doc();
-        initial
-          .getText('source')
-          .insert(
-            0,
-            new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
-              bytes
-            )
-          );
-        state = Y.encodeStateAsUpdate(initial);
-        initial.destroy();
-      } else {
-        state = (await runOffice('seedOffice', session.format, bytes)).state;
-      }
-      const seeded = {
-        baseSourceSHA256: sha,
-        indexedBaseline: encodeBaseline(
-          await this.baseline(session, state, bytes)
-        ),
-        netTokens: 0,
-        pendingEffects: [],
-        state: Buffer.from(state).toString('base64'),
-      };
-      try {
-        // The receipt carries only the checkpoint; the rest is what was sent.
-        const saved = await this.request<SourceCheckpointReceipt>(
-          session.fileId,
-          'checkpoint',
-          {
-            ...seeded,
-            actorIds: [actorId],
-            epoch: session.epoch,
-            expectedCheckpoint: 0,
-            initialize: true,
-          }
-        );
-        session = { ...session, ...seeded, checkpoint: saved.checkpoint };
-      } catch (error) {
-        if (
-          unsavedSeed &&
-          error instanceof SourceRequestError &&
-          error.status === 423
-        ) {
-          session = { ...session, ...seeded };
-        } else {
-          if (!(error instanceof SourceRequestError) || error.status !== 409)
-            throw error;
-          session = await this.sessionForRoom(room, actorId, 'read');
-          if (!session.state) throw error;
-        }
-      }
+    const session =
+      fetched ?? (await this.sessionForRoom(room, actorId, 'read'));
+    if (session.state) {
+      Y.applyUpdate(document, Buffer.from(session.state, 'base64'));
+      return session;
     }
-    Y.applyUpdate(document, Buffer.from(session.state, 'base64'));
-    return session;
+    const { seed, sha } = await this.seed(session);
+    Y.applyUpdate(document, seed);
+    return { ...session, baseSourceSHA256: sha };
   }
 
   async baseline(
@@ -508,25 +566,46 @@ export class SourceDocumentStore {
     return { entries, format: session.format, version: 1 };
   }
 
+  /**
+   * Net effects of `state` against the indexed baseline (or `from`). XLSX
+   * reads them off its overrides against the base (xlsxPendingEffects).
+   */
   async effects(
     session: SourceSession,
     state: Uint8Array,
-    from = decodeBaseline(session.indexedBaseline, session.format)
+    from?: SourceBaseline
   ) {
-    const current = await this.baseline(session, state);
-    if (from.format === 'text' && current.format === 'text')
-      return textEffects(from.text, current.text);
-    if (
-      from.format === 'text' ||
-      current.format === 'text' ||
-      from.format !== current.format
-    )
-      throw new Error('Source baseline format changed');
-    const effects = await runOffice(
-      'compareBaselines',
-      from.entries,
-      current.entries
-    );
+    let effects: NetEffect[];
+    if (session.format === 'xlsx') {
+      const bytes = await this.base(
+        session.sourceURL,
+        session.baseSourceSHA256
+      );
+      effects = await runOffice('xlsxPendingEffects', bytes, {
+        baseSha256:
+          session.baseSourceSHA256 ||
+          createHash('sha256').update(bytes).digest('hex'),
+        format: 'xlsx',
+        schemaVersion: 1,
+        state,
+      });
+    } else {
+      const indexed = from ?? (await this.indexedBaseline(session));
+      const current = await this.baseline(session, state);
+      if (indexed.format === 'text' && current.format === 'text')
+        return textEffects(indexed.text, current.text);
+      if (
+        indexed.format === 'text' ||
+        current.format === 'text' ||
+        indexed.format !== current.format
+      )
+        throw new Error('Source baseline format changed');
+      effects = await runOffice(
+        'compareBaselines',
+        indexed.entries,
+        current.entries
+      );
+    }
     for (const effect of effects) {
       const cached = session.pendingEffects.find(
         (old) =>
@@ -554,12 +633,10 @@ export class SourceDocumentStore {
     if (session.format === 'text')
       throw new Error('Office rebase requires an Office source');
     const result = await this.pool.query<{
-      state: Buffer;
-      seed: Buffer;
-      baseline: Buffer;
+      state: Buffer | null;
       source_sha256: string;
     }>(
-      'SELECT state,seed,baseline,source_sha256 FROM source_refresh_candidates WHERE file_id=$1 AND job_id=$2 AND lease_token=$3 AND epoch=$4 AND checkpoint=$5',
+      `SELECT ${CAPTURED_STATE_SQL} AS state,c.source_sha256 FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.lease_token=$3 AND c.epoch=$4 AND c.checkpoint=$5`,
       [
         session.fileId,
         input.jobId,
@@ -571,18 +648,11 @@ export class SourceDocumentStore {
     const candidate = result.rows[0];
     if (!candidate)
       throw new SourceRequestError(409, 'Source candidate changed');
-    if (session.checkpoint === input.checkpoint) {
-      if (!candidate.seed.length)
-        throw new Error('Source candidate seed is missing');
-      const baseline = candidate.baseline.toString('base64');
-      decodeBaseline(baseline, session.format);
-      return {
-        indexedBaseline: baseline,
-        netTokens: 0,
-        pendingEffects: [],
-        rebasedState: candidate.seed.toString('base64'),
-      };
-    }
+    // No save after the capture: the state returns to seed(export) (NULL) and
+    // the baseline is derived from the export.
+    if (session.checkpoint === input.checkpoint)
+      return { netTokens: 0, pendingEffects: [] };
+    if (!session.state) throw new Error('Source state is missing after a save');
     const link = await this.request<{ sourceURL: string }>(
       session.fileId,
       `refresh-source?jobId=${encodeURIComponent(input.jobId)}&leaseToken=${encodeURIComponent(input.leaseToken)}`
@@ -599,7 +669,10 @@ export class SourceDocumentStore {
     const rebased = await runOffice(
       'rebaseOffice',
       oldSource,
-      { ...checkpoint, state: candidate.state },
+      {
+        ...checkpoint,
+        state: candidate.state ?? (await this.seed(session)).seed,
+      },
       { ...checkpoint, state: Buffer.from(session.state, 'base64') },
       exported
     );
@@ -612,10 +685,14 @@ export class SourceDocumentStore {
     }
     const pendingEffects = rebased.effects.map(trimEffect);
     return {
-      indexedBaseline: encodeBaseline({
-        entries: rebased.baseline,
-        format: session.format,
-        version: 1,
+      // The rebased baseline lives in the rebased state's identities, which
+      // the export alone does not reproduce; XLSX keeps none.
+      ...(session.format !== 'xlsx' && {
+        indexedBaseline: encodeBaseline({
+          entries: rebased.baseline,
+          format: session.format,
+          version: 1,
+        }),
       }),
       netTokens: effectTokens(pendingEffects),
       pendingEffects,
@@ -648,7 +725,7 @@ export class SourceDocumentStore {
       const session = await this.sessionForRoom(room, actors[0], 'write');
       const merged = new Y.Doc();
       try {
-        Y.applyUpdate(merged, Buffer.from(session.state, 'base64'));
+        Y.applyUpdate(merged, await this.stateOf(session));
         Y.applyUpdate(merged, Y.encodeStateAsUpdate(snapshot));
         const state = Y.encodeStateAsUpdate(merged);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
@@ -659,6 +736,7 @@ export class SourceDocumentStore {
             fileId,
             'checkpoint',
             {
+              ...(await this.seedReport(session)),
               actorIds: actors,
               epoch,
               expectedCheckpoint: session.checkpoint,
@@ -686,14 +764,14 @@ export class SourceDocumentStore {
   /**
    * Editable view of the current durable source: the text with its checkpoint
    * and epoch, or the Office entries (paragraphs, cells, shapes) with their
-   * stable ids. Reads only; a never-opened source is seeded in memory.
+   * stable ids. Reads only; a NULL state reads seed(base) and saves nothing.
    */
   async inspect(fileId: string, actorId: string): Promise<SourceInspection> {
     const session = await this.session(fileId, actorId);
     const room = `source:${fileId}:epoch:${session.epoch}`;
     const document = new Y.Doc();
     try {
-      const current = await this.load(room, document, actorId, session, true);
+      const current = await this.load(room, document, actorId, session);
       if (session.format === 'text') {
         return {
           access: current.access,
@@ -821,6 +899,7 @@ export class SourceDocumentStore {
             input.fileId,
             'checkpoint',
             {
+              ...(await this.seedReport(current)),
               actorIds: [input.actorUserId],
               epoch: current.epoch,
               expectedCheckpoint: current.checkpoint,
@@ -882,7 +961,7 @@ export class SourceDocumentStore {
         baseSha256: session.baseSourceSHA256,
         format: session.format,
         schemaVersion: 1,
-        state: Buffer.from(session.state, 'base64'),
+        state: await this.stateOf(session),
       },
       effect.assetRef
     );
@@ -906,10 +985,17 @@ export class SourceDocumentStore {
     );
     let publishing = false;
     try {
-      const state = Buffer.from(candidate.state, 'base64');
+      const state = await this.stateOf({
+        baseSourceSHA256: candidate.baseSourceSHA256,
+        format: candidate.format,
+        sourceURL: candidate.baseSourceURL,
+        state: candidate.state,
+      });
       let bytes: Uint8Array, seed: Uint8Array;
       if (candidate.format === 'text') {
         bytes = new TextEncoder().encode(textState(state));
+        // Text publication keeps its state, so its seedBytes only marks the
+        // candidate finalized.
         seed = state;
       } else {
         const base = await this.base(
@@ -920,7 +1006,10 @@ export class SourceDocumentStore {
           'exportOffice',
           base,
           {
-            baseSha256: candidate.baseSourceSHA256,
+            // Unbound until a first save (a store-only upload never edited).
+            baseSha256:
+              candidate.baseSourceSHA256 ||
+              createHash('sha256').update(base).digest('hex'),
             format: candidate.format,
             schemaVersion: 1,
             state,
@@ -946,19 +1035,13 @@ export class SourceDocumentStore {
         throw new Error(`Source candidate upload failed (${uploaded.status})`);
       const sourceETag =
         uploaded.headers.get('etag')?.replace(/^"|"$/g, '') ?? '';
+      // A publication that rebases later edits records seed(export)'s size.
       await this.request(fileId, 'refresh-candidate', {
-        baseline: encodeBaseline(
-          await this.baseline(
-            { baseSourceSHA256: '', format: candidate.format, sourceURL: '' },
-            seed,
-            bytes
-          )
-        ),
         checkpoint: candidate.checkpoint,
         epoch: candidate.epoch,
         jobId,
         leaseToken: candidate.leaseToken,
-        seed: Buffer.from(seed).toString('base64'),
+        seedBytes: seed.byteLength,
         sizeBytes: bytes.byteLength,
         sourceETag,
         sourceSHA256: createHash('sha256').update(bytes).digest('hex'),
@@ -983,7 +1066,12 @@ export class SourceDocumentStore {
         error: error instanceof Error ? error.message : String(error),
         jobId,
         leaseToken: candidate.leaseToken,
-        stale: publishing && error instanceof SourceRequestError,
+        // Only a superseded publication (409) goes back to the scheduler at
+        // once; any other refusal parks the file until its next save.
+        stale:
+          publishing &&
+          error instanceof SourceRequestError &&
+          error.status === 409,
       });
       throw error;
     }

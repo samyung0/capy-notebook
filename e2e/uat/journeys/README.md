@@ -1,6 +1,6 @@
 # UAT critical paths
 
-Run these ten journeys deliberately through **Deterministic UAT quality**.
+Run these thirteen journeys deliberately through **Deterministic UAT quality**.
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -23,6 +23,7 @@ asserted. The existing authorization suite remains separate.
 | Checkout | App-created sandbox customer/session/reservation, expected price and return URLs, session expiration. |
 | Billing | Sandbox subscription, paid renewal using a test clock, webhook-backed plan projection, deletion blocker and cancellation. Hosted payment-form entry is not covered. |
 | DOCX, XLSX, PPTX | Browser reserve/PUT/complete, exact source hash, parse/index facts and vectors, saved native edits from two accounts, first open by a third account, native export, reprocessing, trash/restore/purge. Spreadsheet formulas and document content survive. |
+| Rich-content DOCX, XLSX, PPTX | Store-only uploads ("No parsing"), so no parser, embedding or LLM call; the workspace has no provider session or model usage. Owner and editor make the fixture README's edits in the browser; both edits and the README's preserved content survive in the saved export (DOCX eastAsia language tags excepted), and the editor and viewer accessibility mirrors show them. The owner's charge is the source alone after opening and grows only by pending effects and state growth beyond seed(base) after edits. DOCX and XLSX then publish: the owner pastes a fixed, marked text worth about 3,500 net tokens, and the automatic refresh publishes the file export-only after 60 s idle while the editor stays open; its view stays mounted and read-only under the banner saying its changes were saved, the banner's button reloads the page, the published file keeps the content, and the charge is the new source alone. PPTX does not publish: its editor takes text only as single key presses, too slow to reach the trigger; the basic PPTX journey and the fork's rebase tests cover PPTX publication. |
 | UTF-8 text | Browser edit, persisted Y.Text, automatic indexing and exact published bytes. |
 | Digital PDF | Upload/index and unchanged bytes; unavailable source collaboration room and API-based private annotation isolation. Pointer gestures and visual rendering are outside this assertion policy. |
 | Invalid CSV | Direct-ingest cell limit fails terminally with the exact persisted job error, no index/model spend publishes, exact expected error reaches Sentry. |
@@ -52,17 +53,19 @@ still export as PDF. Live imports are excluded from this unattended gate.
 
 ## Fixtures
 
-Commit small synthetic inputs under `e2e/fixtures/files/`. The working set is
-`basic/`, with exact contents and regeneration instructions in its README.
-Use additional named directories for future sets, with a README documenting
-each source, expected facts, editing capabilities and preserved content.
+Commit small synthetic inputs under `e2e/fixtures/files/`, one directory per
+set, each with a README documenting its source, expected facts, editing
+capabilities and preserved content. `fixture(name, marker, set)` in `files.ts`
+reads `basic/` by default or another named set such as `rich-content/`.
 See `e2e/fixtures/files/README.md` for the full format matrix.
 
 Office/text copies receive a unique run marker in memory before uploading;
-committed originals are never changed by a run. The current runner explicitly
-names its fixtures in `files.spec.ts`. To add a set, add parameterized cases
-with explicit content/edit expectations there. Merely putting files in a
-directory does not create coverage. Never commit real documents, credentials,
+committed originals are never changed by a run. `files.spec.ts` names the
+`basic/` fixtures and `richContent.spec.ts` the `rich-content/` ones, whose
+edits and checks live in `richContent.ts`. A new set needs cases with explicit
+content/edit expectations; merely putting files in a directory does not create
+coverage. `pnpm e2e:uat:journeys --grep rich-content` runs only the rich-content
+journeys. Never commit real documents, credentials,
 user data, screenshots, signed URLs or generated run reports.
 
 ## One-time setup

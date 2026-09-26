@@ -1285,6 +1285,13 @@ def set_file_indexed(cur, file_id: str, indexed: bool) -> None:
         "UPDATE files SET indexed=%s WHERE id=%s AND trashed_at IS NULL",
         (indexed, file_id),
     )
+    if indexed:
+        # An export-only publication's reprocess mark is done once the file is
+        # indexed; clearing it keeps the scheduler's partial index small.
+        cur.execute(
+            "UPDATE source_documents SET reprocess_at=NULL WHERE file_id=%s AND reprocess_at IS NOT NULL",
+            (file_id,),
+        )
 
 
 def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:

@@ -175,7 +175,7 @@ export async function cleanupRun(id: string) {
           UNION SELECT parsed_blob_path FROM files WHERE user_id=ANY(%s::text[])
           UNION SELECT caption_blob_path FROM files WHERE user_id=ANY(%s::text[])
           UNION SELECT base_blob_path FROM source_documents WHERE user_id=ANY(%s::text[])
-          UNION SELECT source_blob_path FROM source_refresh_candidates WHERE user_id=ANY(%s::text[])
+          UNION SELECT c.source_blob_path FROM source_refresh_candidates c JOIN files f ON f.id=c.file_id WHERE f.user_id=ANY(%s::text[])
           UNION SELECT object_path FROM upload_sessions WHERE user_id=ANY(%s::text[])
           UNION SELECT final_path FROM upload_sessions WHERE user_id=ANY(%s::text[])
           UNION SELECT object_path FROM editor_assets WHERE user_id=ANY(%s::text[])

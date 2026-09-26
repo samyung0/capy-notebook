@@ -59,6 +59,17 @@ hashes and copies intact builds into the generated package directories; a miss
 rebuilds normally. CSS, the checkpoint bundle, and the environment-specific Vite
 output are rebuilt on each run.
 
+**Pin bump checklist.** The fork's `bun run test:golden` (the DOCX/PPTX golden
+seeds and `shared/office-checkpoint.test.ts`, then the XLSX golden seeds in
+`crates/betteroffice-xlsx/tests/storage.rs`) must pass on the new pin; frontend
+CI runs it inside `vendor/betteroffice` after the office build. A golden seed
+hash that differs between the old and the new pin means the seed output
+changed, so the bump ships in a [maintenance window](#maintenance-window).
+Until parser-tolerant XLSX binding lands, any change under `crates/xlsx-parse`,
+`crates/xlsx-model` or `crates/betteroffice-xlsx` counts as seed-changing for
+XLSX: a room binds to a fingerprint of the whole parse, which four golden
+workbooks cannot vouch for.
+
 ## Browser loading model
 
 `office-runtime.html` is a second Vite entry rendered from the separate origin
@@ -110,14 +121,53 @@ raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
 
-PowerPoint deck schema v3 stores embedded media as native Yrs byte buffers in
-`pptx:meta.media`; parsed non-media metadata remains in `packageJson`. Opening
-v1/v2 states migrates the decimal-array JSON bytes and Yrs garbage collection
-removes the replaced payload from subsequent checkpoints. Late edits still
-merge, including a concurrent legacy schema migration. Source fingerprints,
-edited roots and exact media bytes are preserved; exporting still requires the
-matching source file. Older editor engines reject v3, so an engine rollout
-requires those editors to reload before receiving migrated updates.
+Each format accepts exactly one fork-owned state schema and rejects every
+other; there are no migrations. Office editing state stores only what users
+changed, over the fingerprinted source that every open requires:
+
+- DOCX seeds under a fixed client id, so seeds and baselines are
+  byte-identical. Source images are `media:<part>` references into the source
+  package, resolved at lowering; an inserted image keeps its data URL until the
+  next publication rebases it into a reference. Charts and drawings the model
+  cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
+  and export unchanged until edited.
+- XLSX (schema 8) keeps the sheet topology plus per-cell overrides keyed by
+  stable identity; unedited cells come from the source. Pending effects are
+  read off the overrides (`xlsxPendingEffects`: one per changed cell, per row
+  or column insert or delete, per formatting range), so XLSX keeps no stored
+  baseline. A publication rebases later edits as overrides over the export and
+  fails explicitly when the result does not reproduce the latest workbook. An
+  array formula keeps its `t="array"` range only while its anchor cell still
+  holds its original content; otherwise it saves as a single-cell formula.
+- PPTX keeps no parsed package or media in Yjs: both come from the source
+  package. Inserted pictures stay binary on their shape, and rebase overlays
+  store changed parts, media included, as bytes. Comments live in
+  `pptx:comments`.
+
+The collaboration service refuses a client update that writes outside the
+engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
+map included) or, in PPTX, writes or deletes anything in `pptx:meta` other
+than `commentFlavor`. The refusal is the unrecoverable
+`source-checkpoint-failed` message, like an oversized update. An update that
+only refers to content the room does not hold (the room reloaded without a
+client's last unsaved typing, and the client typed before its sync step 2) is
+dropped instead, and that connection gets the room's sync step 1: its step 2
+reply carries everything the room lacks, the dropped update included, with no
+disconnect (`collaboration/src/officeRoots.ts`).
+
+DOCX and PPTX measure and paint with the fork's bundled metric-compatible
+fonts (`@betteroffice/fonts`: Carlito for Calibri, Caladea for Cambria,
+Liberation for Arial, Times New Roman and Courier New). `DocxEditorHost`
+configures them at module scope and the DOCX viewer worker configures them
+before layout. Each face the engine loads is also registered as a `FontFace`
+under the Office family it stands in for, in the runtime iframe, so the page
+paints what was measured (the viewer worker reports its faces with the display
+list). The runtime's own interface names only generic families
+(`office-runtime.css`), so a document's family never repaints it. PPTX loads
+the Liberation Sans faces as `Arial`. The CJK add-on
+is not shipped, so CJK text keeps the browser's fonts. A face that fails to load
+shows an explicit error instead of the fallback layout
+(`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
 
 The iframe sandbox allows scripts and its own origin, but the runtime origin is
 cross-origin from the app, cookie-less, and restricted to the app by CSP
@@ -219,15 +269,30 @@ download signs on click, and audio retry signs a fresh link. Read links use
 ## Edit and save lifecycle
 
 DOCX, XLSX and PPTX edits share an authenticated `source:<fileId>:epoch:<n>`
-room. `source_documents` stores the current state, compact indexed semantic baseline, exact net
-effects and durable checkpoint. The Go API rechecks current source access,
-epoch and account state through a small access-only endpoint for each incoming
-edit. Current state and semantic baseline are fetched for bootstrap and persistence;
-checkpoint writes also check storage growth. The checkpoint answers with the new
+room. `source_documents` stores the current state, trimmed net effects and
+durable checkpoint. A NULL state means seed(base) until the first edit:
+opening, viewing and agent inspect persist nothing, and every instance loads
+the same deterministic seed (text seeds under a fixed client too). The first
+save stores the state with its seed's size (`seed_bytes`) and binds the source
+SHA of a never-parsed upload. A NULL `indexed_baseline` means the baseline is
+derived from the base: the decoded text, or the engine baseline of seed(base);
+the service caches seeds and derived baselines by base SHA next to the bases.
+Only a publication that rebased later DOCX or PPTX edits stores a baseline,
+because the rebased state's identities cannot be derived; a publication
+without later edits returns the state and baseline to NULL. The Go API
+rechecks current source access, epoch and account state through a small
+access-only endpoint for each incoming edit. Checkpoint writes check storage
+growth (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
 checkpoint and an agent edit's receipt only, and the browser's editing session
 read carries the state without the baseline or pending effects. Saved means the
 server has acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same
-path. Each room runs one save at a time with at most one queued behind it;
+path. The DOCX File > Save and the PPTX save button request the same
+checkpoint through `onSaveRequest`, with nothing serialized. The XLSX save
+button has no such hook: it serializes the workbook, and the runtime discards
+the bytes and requests the checkpoint. Flushing pending input awaits each editor's own
+flush (`flushPendingInput` in DOCX and PPTX; XLSX `flush`, which settles or
+throws), and exports use the editors' save APIs, which flush first. Each room
+runs one save at a time with at most one queued behind it;
 callers arriving while one is queued for the same document share it and
 receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
@@ -318,7 +383,11 @@ exported or processed. Clones copy its published source/index and caption
 associations, without pending edits or jobs. Deleting a source fences its old
 room and cancels dependent work. Candidate sources live
 in B2; job-local downloads are temporary. Source base bytes are cached in the
-collaboration process by SHA within a bounded 128 MiB cache. Headless export,
+collaboration process by SHA within a bounded 128 MiB cache, their seeds and
+derived baselines within 64 MiB each. A refresh candidate is copy-on-write:
+admission stores no state, the save that first replaces the captured state
+copies it into the candidate, and readers take the row's state while no save
+has landed since the capture. Headless export,
 comparison and asset extraction run in one worker thread. Calls queue on the
 main thread with one in flight and time out about 2 minutes after sending; a
 WebAssembly trap or a timeout fails that call and replaces the worker, while
@@ -337,10 +406,10 @@ steps and the `office-maintenance` commands are in the
 
 **Pause.** While the `office_editing_pause` row exists, the gateway refuses
 Office edit sessions (`source-session` for editing and `collaboration-token`
-answer `423 office_editing_paused` after authorization), seeding a room's first
-state, and agent edits and their Undo (tool error `office_editing_paused`, also
-at the checkpoint that commits them). Agent inspect of a never-opened file
-reads an unsaved in-memory seed. The collaboration service refuses writable
+answer `423 office_editing_paused` after authorization), and agent edits and
+their Undo (tool error `office_editing_paused`, also at the checkpoint that
+commits them). Agent inspect reads a NULL state's seed in memory, as always.
+The collaboration service refuses writable
 connections to Office rooms at authentication with the reason
 `office-editing-paused`. Within 5 seconds of the row appearing, each instance
 runs the handoff flush on every loaded Office room (up to 10 seconds more),
@@ -348,7 +417,8 @@ persists it once, sends `source-editing-paused` and closes the writers; a room
 that loads later is flushed on a later tick, a room mid-publication after its
 handoff, and a flushed room refuses updates from any writer that slipped
 through. Saves of rooms that were already open still land, so the flush and
-failed-store retries persist. A client whose changes were all saved keeps its
+failed-store retries persist. After `resume`, the next writer's authentication
+clears a room's refusal at once. A client whose changes were all saved keeps its
 view read-only under the same banner as a completed handoff, saying editing is
 paused and its changes were saved; one with unsaved changes goes to recovery.
 A client refused on reconnect (a token request answered 423, or the
@@ -356,8 +426,8 @@ authentication reason) takes the same path; opening Edit during the pause shows
 the paused error. Viewing (`source-session?view=true`) and text sources are
 unaffected.
 
-**Publish all.** Every Office source with unpublished edits publishes before
-the deploy: a system-paid republish (`paid_by='system'`, no credit, storage or
+**Publish all.** It refuses to run unless the pause is on. Every Office source
+with unpublished edits publishes before the deploy: a system-paid republish (`paid_by='system'`, no credit, storage or
 owner-state check) for files of active or blocked owners, export-only for files
 never parsed successfully (store-only uploads and failed first parses, so
 maintenance never runs a first parse), trashed files, files of suspended or
@@ -369,14 +439,17 @@ refresh, and the same saved state always exports the same bytes. A maintenance
 export-only publication (system payer) publishes in finalize
 (`publishExportTx` in `server/internal/store/office_maintenance.go`), since
 editing is paused: it makes the export the file's bytes, bumps the epoch,
-stores the export's seed as the state and its baseline as the indexed
-baseline, empties pending effects, drops the file's index and caption
+returns the state and indexed baseline to NULL (seed(export) and its derived
+baseline), empties pending effects, drops the file's index and caption
 associations and evicts the old room. A save after the capture supersedes the
 job and a later run exports again. The automatic export of a store-only file
 instead keeps the finalized candidate and publishes it through the handoff,
 like a refresh after its parse: editors flush, saves made after the capture
 are rebased onto the export and stay pending, and open editors get the
-newer-version banner. Its storage is gated on the net change at publication.
+newer-version banner. Its storage is gated on the net change at publication,
+and finalize renews its job lease for the handoff. A publication refused for
+any reason but a superseded candidate (409) parks the file until its next
+save.
 Unless the file never parsed successfully (then its owner's Process, charged as
 the first parse, stays the way to index it) it is marked (`reprocess_at`): the refresh
 scheduler then parses and indexes the file's bytes as a plain system-paid parse
@@ -394,7 +467,8 @@ reprocess jobs) is in flight.
 `server/migrations/templates/office_window_reset.sql`, refuses to run unless the
 pause is on and nothing of those formats is unpublished or in flight, under a
 lock on `source_documents`; that guard is the only protection, since no dropped
-state is kept. It then bumps the epoch, drops the state and stored baseline,
+state is kept. It then bumps the epoch, drops the state (and its seed size) and
+stored baseline,
 empties pending effects and deletes refresh candidates, so rooms reseed on the
 new engine. A file that cannot publish keeps the pause on until an operator
 fixes it on the old engine, so no engine ever holds another engine's state.
@@ -438,17 +512,10 @@ fences, candidate processing and scoped caption reuse. The fork's tests cover
 Office CRDT convergence, structural operations, comments, headless restore and
 OOXML export. See [the test catalog](../test-catalog.md) for entry points.
 
-The source comparison baseline is separate from the editable Yjs state. It stores
-text and stable positions, image hashes/references, and hashes of visual metadata;
-media bytes remain in the current editor state. Office handoff publishes the rebased
-saved state and a baseline mapped into its identities; open editors show the
-newer-version banner.
-PPTX rebase states use schema 4 and binary changed package parts; ordinary binary
-media states remain schema 3. XLSX rebase states require the `xlsx:rebase` root,
-which older strict schema-7 readers reject. XLSX permits the server-owned
-`__capy_pending_contributors` map alongside strict workbook roots and preserves
-its deletion history during sync. Both reconstruct the current source
-from the published base plus changed parts; no full old source remains in state.
-Schema migration
-`0015_source_semantic_baseline.sql` targets the cleared first-UAT dataset and refuses
-existing saved source states/candidates instead of discarding or reinterpreting them.
+The source comparison baseline is separate from the editable Yjs state. It holds
+text and stable positions, image hashes and references, and hashes of visual
+metadata. Office handoff publishes the rebased saved state and, for DOCX and
+PPTX, a baseline mapped into its identities; open editors show the
+newer-version banner. The maintenance window's reset migration
+(`0034_office_window_reset.sql`, from the template) drops every Office state
+of the old engine so rooms reseed on the new one.

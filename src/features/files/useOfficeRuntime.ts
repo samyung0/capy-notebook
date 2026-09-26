@@ -37,6 +37,18 @@ export function officeRuntimeKey(
   return file.id;
 }
 
+/**
+ * What a runtime replica that reported `replicaState` still lacks of `doc`.
+ * The engines refuse a single incoming update above 64 MiB, so a large room is
+ * never sent back whole.
+ */
+export function replicaCatchUp(doc: Y.Doc, replicaState: Uint8Array) {
+  return Y.encodeStateAsUpdate(
+    doc,
+    Y.encodeStateVectorFromUpdate(replicaState)
+  );
+}
+
 export function isCurrentOfficeRuntimeMessage(
   messageRevision: number,
   currentRevision: number
@@ -361,13 +373,11 @@ export function useOfficeRuntime({
           active.status === 'recovery'
         )
           return;
-        Y.applyUpdate(
-          active.doc,
-          new Uint8Array(message.bytes),
-          SOURCE_IFRAME_ORIGIN
-        );
+        const replicaUpdate = new Uint8Array(message.bytes);
+        Y.applyUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
         if (message.type === 'collaboration-ready') {
-          const bytes = Y.encodeStateAsUpdate(active.doc).slice().buffer;
+          const bytes = replicaCatchUp(active.doc, replicaUpdate).slice()
+            .buffer;
           post(
             {
               bytes,

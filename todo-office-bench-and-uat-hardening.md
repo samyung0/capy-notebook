@@ -25,6 +25,9 @@ register it in `bench/README.md` and the benchmark table in `AGENTS.md`.
   34% (editor, 2.86 to 3.83 MB) and 50% (viewer, 1.41 to 2.11 MB) for PPTX; find which upstream
   additions (font metric tables from `c3c17939`, TIFF decoding, new renderers) the viewer
   needs, and measure the effect on first view in the browser.
+- The XLSX toolbar save: it has no `onSaveRequest`, so it serializes the workbook and Capy
+  discards the bytes (Ctrl/Cmd+S goes to the checkpoint without it). Measure that
+  serialization on the 100k-cell sheet; if it matters, add an XLSX `onSaveRequest` in the fork.
 
 The fork's golden seed and state-size budget tests land with the storage round.
 This family adds the numbers that are too slow or too large for CI.

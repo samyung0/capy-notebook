@@ -371,3 +371,22 @@ async def test_publication_retry_requires_completed_candidate_and_keeps_parsed_w
         ]
     finally:
         db.reset_source_refresh(token)
+
+
+def test_indexing_a_file_clears_its_reprocess_mark(workspace):
+    file_id = workspace.add_file("source.docx")
+    with workspace._connect() as conn:
+        conn.execute(
+            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,reprocess_at) VALUES(%s,'docx',1,%s,now())",
+            (file_id, "sources/" + file_id),
+        )
+    with workspace._connect() as conn, conn.transaction(), conn.cursor() as cur:
+        db.set_file_indexed(cur, file_id, True)
+    with workspace._connect() as conn:
+        assert (
+            conn.execute(
+                "SELECT reprocess_at FROM source_documents WHERE file_id=%s",
+                (file_id,),
+            ).fetchone()[0]
+            is None
+        )

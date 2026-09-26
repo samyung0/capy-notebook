@@ -21,15 +21,14 @@ export function XlsxEditorHost({
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onPendingChange: (pending: boolean) => void;
   fileName: string;
-  onSave: (bytes: Uint8Array) => void;
+  onSave: () => void;
 }) {
   const apiRef = useRef<XlsxEditorApi | null>(null);
   useEffect(() => {
     onExporter(async () => {
-      const api = apiRef.current;
-      if (!api) throw new Error('Editor is still loading');
-      api.flush();
-      return api.handle.save();
+      if (!apiRef.current) throw new Error('Editor is still loading');
+      // Settles pending input first, or throws.
+      return apiRef.current.save();
     });
     onFlusher(() => {
       if (!apiRef.current) throw new Error('Editor is still loading');

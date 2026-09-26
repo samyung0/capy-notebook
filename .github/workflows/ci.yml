@@ -79,6 +79,9 @@ jobs:
       - run: pnpm test:site
       - run: pnpm typecheck:office
       - run: pnpm test:office
+      # The pinned fork's golden seeds; a changed seed needs a maintenance window (record 23).
+      - run: bun run test:golden
+        working-directory: vendor/betteroffice
       - run: pnpm test:uat-seed
       - run: pnpm test
       - run: pnpm --filter @capy-notebook/ops typecheck
