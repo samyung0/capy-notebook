@@ -3448,8 +3448,8 @@ components:
           type: string
         indexedBaseline:
           format: base64
-          type: string
           nullable: true
+          type: string
         indexedCheckpoint:
           format: int64
           type: integer
@@ -3465,8 +3465,8 @@ components:
           type: string
         state:
           format: base64
-          type: string
           nullable: true
+          type: string
         workspaceId:
           type: string
       required:
