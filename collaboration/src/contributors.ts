@@ -83,6 +83,26 @@ export function documentContributors(document: Y.Doc): DocumentContributor[] {
   return markerSnapshot(document);
 }
 
+/**
+ * Applies `update` to `document` and reports whether it changed anything but
+ * contributor markers. A writer's sync with nothing new still writes its
+ * marker, so a marker alone does not mean the document changed.
+ */
+export function applyContentUpdate(document: Y.Doc, update: Uint8Array) {
+  const markers: unknown = document.getMap(CONTRIBUTORS_ROOT);
+  let changed = false;
+  document.transact((transaction) => {
+    Y.applyUpdate(document, update);
+    changed = [...transaction.changed.keys()].some((type) => type !== markers);
+  });
+  // Structs waiting on missing ones may be content: count them as a change.
+  return (
+    changed ||
+    document.store.pendingStructs !== null ||
+    document.store.pendingDs !== null
+  );
+}
+
 // The current marker client of each tracked room (see the tracker below).
 const markerClients = new WeakMap<Y.Doc, () => number>();
 

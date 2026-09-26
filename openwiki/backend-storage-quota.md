@@ -196,7 +196,9 @@ its source), plus its editing state's growth beyond the seed it started
 from (`max(0, state - seed_bytes)`; a NULL state is the seed and costs
 nothing), plus a stored baseline when one exists (only after a publication
 that rebased later DOCX or PPTX edits). The engine's representation of the
-file is a platform cost. The first save records `seed_bytes`; a publication
+file is a platform cost. The first save with an edit records `seed_bytes` (a
+save with nothing changed stores nothing, so opening and saving leaves the
+state NULL); a publication
 that rebased later edits records the size of the export's seed its state grew
 from (the candidate keeps that size, not the seed), and one without later
 edits returns the state to NULL. A refresh candidate is uncharged while

@@ -272,10 +272,14 @@ DOCX, XLSX and PPTX edits share an authenticated `source:<fileId>:epoch:<n>`
 room. `source_documents` stores the current state, trimmed net effects and
 durable checkpoint. A NULL state means seed(base) until the first edit:
 opening, viewing and agent inspect persist nothing, and every instance loads
-the same deterministic seed (text seeds under a fixed client too). The first
-save stores the state with its seed's size (`seed_bytes`) and binds the source
-SHA of a never-parsed upload. A NULL `indexed_baseline` means the baseline is
-derived from the base: the decoded text, or the engine baseline of seed(base);
+the same deterministic seed (text seeds under a fixed client too). A writer's
+sync writes its contributor marker even when it brings nothing new, so a save
+whose room adds nothing to the durable state but markers stores nothing and
+answers with the current checkpoint: Saved shows, and a NULL state stays NULL.
+The first save with an edit stores the state with its seed's size
+(`seed_bytes`) and binds the source SHA of a never-parsed upload. A NULL
+`indexed_baseline` means the baseline is derived from the base: the decoded
+text, or the engine baseline of seed(base);
 the service caches seeds and derived baselines by base SHA next to the bases.
 Only a publication that rebased later DOCX or PPTX edits stores a baseline,
 because the rebased state's identities cannot be derived; a publication

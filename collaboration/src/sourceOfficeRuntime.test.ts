@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import type { Pool } from 'pg';
 import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
+import { attachDocumentContributorTracker } from './contributors.js';
 import {
   EditError,
   officeError,
@@ -353,6 +354,69 @@ test.each([
     expect(meta((map) => map.set('commentFlavor', 'modern'))).toBeNull();
     expect(meta((map) => map.set(key, 'changed'))).toMatch('pptx:meta');
     expect(meta((map) => map.delete(key))).toMatch('pptx:meta');
+  },
+  60_000
+);
+
+test.each([
+  ['docx', 'apps/demo/public/betteroffice-demo.docx'],
+  ['xlsx', 'apps/demo/public/sample.xlsx'],
+  ['pptx', 'apps/demo/public/betteroffice-demo.pptx'],
+] as const)(
+  'a NULL %s room saved without edits stays NULL; one edit is stored',
+  async (format, path) => {
+    const bytes = await readFile(
+      new URL(`../../vendor/betteroffice/${path}`, import.meta.url)
+    );
+    const seed = await runOffice('seedOffice', format, bytes);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(bytes))
+    );
+    const store = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+    const session = {
+      access: 'write',
+      baseSourceSHA256: seed.baseSha256,
+      checkpoint: 0,
+      epoch: 1,
+      format,
+      indexedBaseline: null,
+      pendingEffects: [],
+      room: 'source:f_1:epoch:1',
+      sourceURL: 'http://base',
+      state: null,
+    } as unknown as SourceSession;
+    vi.spyOn(store, 'session').mockResolvedValue(session);
+    const request = vi
+      .spyOn(store, 'request')
+      .mockResolvedValue({ checkpoint: 1 });
+    const room = new Y.Doc();
+    attachDocumentContributorTracker(room, 'instance');
+    await store.load(session.room, room, 'u1');
+    // An editor's replica holds the same seed: its sync adds only a marker.
+    const writer = {
+      connection: { context: { access: 'write', userId: 'u1' } },
+      source: 'connection',
+    };
+    Y.applyUpdate(room, seed.state, writer);
+    expect(await store.store(session.room, room)).toMatchObject({
+      checkpoint: 0,
+    });
+    expect(request).not.toHaveBeenCalled();
+    const [target] = (await runOffice('inspectOffice', bytes, seed)).filter(
+      (entry) => entry.value.length > 0
+    );
+    const edited = await runOffice('applyOfficeCommands', bytes, seed, [
+      setText(format, target, 'Edited by Capy'),
+    ]);
+    Y.applyUpdate(room, edited.state, writer);
+    await store.store(session.room, room);
+    expect(request).toHaveBeenCalledWith(
+      'f_1',
+      'checkpoint',
+      expect.objectContaining({ seedBytes: seed.state.byteLength })
+    );
+    room.destroy();
   },
   60_000
 );

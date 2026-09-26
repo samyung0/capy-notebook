@@ -3,6 +3,10 @@ import type { Pool } from 'pg';
 import { afterEach, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
 import { signCollaborationToken, verifyCollaborationToken } from './auth.js';
+import {
+  attachDocumentContributorTracker,
+  documentContributors,
+} from './contributors.js';
 import * as officeRuntime from './officeRuntime.js';
 import {
   effectTokens,
@@ -428,7 +432,7 @@ test('a source edit retries from freshly loaded state after a checkpoint CAS con
   expect(result.receipt.operationId).toBe('op_1');
 });
 
-test('a NULL state loads seed(base) and saves nothing until the first save reports the seed', async () => {
+test('a NULL state loads seed(base), a save without edits stores nothing, and the first edit reports the seed', async () => {
   const bytes = Buffer.from('﻿base text');
   const sha = createHash('sha256').update(bytes).digest('hex');
   const store = new SourceDocumentStore({} as Pool, 'http://gateway', 'secret');
@@ -456,20 +460,32 @@ test('a NULL state loads seed(base) and saves nothing until the first save repor
   // Loading, and agent inspect, read the seed and persist nothing.
   expect((await store.inspect('f_1', 'u1')).text).toBe('﻿base text');
   const room = new Y.Doc();
+  attachDocumentContributorTracker(room, 'instance');
   const loaded = await store.load(session.room, room, 'u1');
   expect(loaded.baseSourceSHA256).toBe(sha);
   expect(request).not.toHaveBeenCalled();
-  // Every instance seeds the same lineage, so replicas merge without duplication.
+  // Every instance seeds the same lineage, so replicas merge without
+  // duplication. A writer's sync with nothing new still leaves its marker;
+  // saving it stores nothing and answers with the current checkpoint.
+  const writer = {
+    connection: { context: { access: 'write', userId: 'u1' } },
+    source: 'connection',
+  };
   const other = new Y.Doc();
   await store.load(session.room, other, 'u2');
-  Y.applyUpdate(room, Y.encodeStateAsUpdate(other));
+  Y.applyUpdate(room, Y.encodeStateAsUpdate(other), writer);
   expect(room.getText('source').toString()).toBe('﻿base text');
-  // The first save stores the state and its seed size; effects run against
-  // the baseline derived from the base.
-  room.getText('source').insert(room.getText('source').length, '!');
-  room
-    .getMap('__capy_pending_contributors')
-    .set('author', { access: 'write', nonce: 'n', userId: 'u1' });
+  expect(documentContributors(room)).toHaveLength(1);
+  expect(await store.store(session.room, room)).toMatchObject({
+    checkpoint: 0,
+  });
+  expect(request).not.toHaveBeenCalled();
+  // One edit makes the next save store the state and its seed size; effects
+  // run against the baseline derived from the base.
+  room.transact(
+    () => room.getText('source').insert(room.getText('source').length, '!'),
+    writer
+  );
   await store.store(session.room, room);
   expect(request).toHaveBeenCalledWith(
     'f_1',

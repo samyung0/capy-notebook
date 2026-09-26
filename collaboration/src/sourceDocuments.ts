@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import * as Y from 'yjs';
 import { type CollaborationAccess, SOURCE_ROOM_PATTERN } from './auth.js';
 import {
+  applyContentUpdate,
   documentContributors,
   removeDocumentContributors,
 } from './contributors.js';
@@ -726,7 +727,11 @@ export class SourceDocumentStore {
       const merged = new Y.Doc();
       try {
         Y.applyUpdate(merged, await this.stateOf(session));
-        Y.applyUpdate(merged, Y.encodeStateAsUpdate(snapshot));
+        // Only markers beyond the durable state (a writer that opened and
+        // saved without editing): nothing to store, so a NULL state stays
+        // seed(base). The current checkpoint is the durability receipt.
+        if (!applyContentUpdate(merged, Y.encodeStateAsUpdate(snapshot)))
+          return { checkpoint: session.checkpoint, contributors };
         const state = Y.encodeStateAsUpdate(merged);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
           throw new Error('Source checkpoint exceeds byte limit');
