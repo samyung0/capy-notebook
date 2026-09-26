@@ -73,9 +73,10 @@ for (const id of ['source-replaced', 'source-draft-recovery']) {
     expect(await readFile((await download.path())!, 'utf8')).toContain(marker);
     await expect(page).toHaveURL(/mode=edit/);
     await page.reload();
+    // A full dev-server reload takes about 5 s before the mode button renders.
     await expect(
       page.getByRole('button', { name: 'Material mode' })
-    ).toHaveAttribute('aria-pressed', 'true');
+    ).toHaveAttribute('aria-pressed', 'true', { timeout: 30_000 });
 
     await expect(draft).toHaveValue(new RegExp(marker), { timeout: 30_000 });
     await expect(page.getByTestId('mock-scenario-panel')).toHaveAttribute(
@@ -151,9 +152,10 @@ test('permission loss follows the note page guard', async ({ page }) => {
   ).toBeVisible();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await page.reload();
+  // A full dev-server reload takes about 5 s before the note renders.
   await expect(
     page.getByText('A note for trying application errors.', { exact: true })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
 });
 
