@@ -8,7 +8,9 @@ test.describe('quiz sharing', () => {
   }) => {
     await ownerPage.goto('/create');
     const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
-    await ownerPage.getByRole('button', { exact: true, name: 'New' }).click();
+    await ownerPage
+      .getByRole('button', { exact: true, name: 'New Materials' })
+      .click();
     await ownerPage
       .getByRole('menuitem', { exact: true, name: 'Quiz' })
       .click();

@@ -80,7 +80,10 @@ async function sourceResponses(
 
 async function chooseSources(page: Page, workspaceId: string, names: string[]) {
   await page.goto('/workspaces/' + workspaceId);
-  await page.getByRole('button', { exact: true, name: 'Add file' }).click();
+  await page
+    .locator('[data-workspace-add-menu]')
+    .getByRole('button', { exact: true, name: 'Add file' })
+    .click();
   await page.getByRole('menuitem', { name: 'Upload or import' }).click();
   const [chooser] = await Promise.all([
     page.waitForEvent('filechooser'),
