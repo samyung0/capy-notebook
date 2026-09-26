@@ -29,7 +29,7 @@ carries a `shareRole` of `editor` or `viewer` that applies to every signed-in
 nonmember. A caller's **effective role** is the more permissive of their
 membership and the share role. Content authority follows the effective role;
 workspace settings and membership follow persisted membership only. Migration
-`0029_workspace_editor_viewer_roles.sql` applies these role constraints and ACL
+`0032_workspace_editor_viewer_roles.sql` applies these role constraints and ACL
 triggers to existing databases; unsupported persisted roles fail migration
 validation instead of being remapped.
 
