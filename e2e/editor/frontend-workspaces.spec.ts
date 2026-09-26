@@ -23,7 +23,8 @@ test('workspace creation and editing share icon and description fields', async (
     .getByRole('button', { exact: true, name: 'Choose icon' })
     .click();
   const picker = page.getByRole('dialog', { exact: true, name: 'Choose icon' });
-  await picker.getByRole('button', { exact: true, name: 'Waves' }).click();
+  // The section link also shows the icon count.
+  await picker.getByRole('button', { name: /^Waves/ }).click();
   await picker.getByRole('button', { exact: true, name: 'waves-03' }).click();
   await picker.getByRole('button', { exact: true, name: 'Use icon' }).click();
   await expect(create.locator('img').first()).toHaveAttribute(
