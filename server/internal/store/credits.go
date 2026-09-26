@@ -159,6 +159,9 @@ type ProviderCallUsage struct {
 	CacheWriteTokens int64
 	ReasoningTokens  int64
 	CacheAnomaly     string
+	// ModelVersion is the catalog version a rerank called; zero for every
+	// other kind, which is labeled from the session's pins.
+	ModelVersion int
 }
 
 type ProviderCallSettlement struct {
@@ -173,6 +176,7 @@ type ProviderCallSettlement struct {
 const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
+	KindRerank    = "rerank" // zero credits like a query embedding, labeled with the reranker row called
 	KindAudio     = "audio"
 	KindParse     = "parse"
 	KindEmail     = "email"
@@ -467,11 +471,11 @@ func (s *Store) SettleProviderCall(
 	if sessionID == "" || call.CallID == "" {
 		return out, fmt.Errorf("session id and provider call id are required")
 	}
-	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindAudio {
+	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank && call.Kind != KindAudio {
 		return out, fmt.Errorf("invalid provider call kind %q", call.Kind)
 	}
-	if call.Kind == KindEmbedding && call.Thinking != "" {
-		return out, errors.New("embedding provider calls cannot have thinking")
+	if (call.Kind == KindEmbedding || call.Kind == KindRerank) && call.Thinking != "" {
+		return out, errors.New("embedding and rerank provider calls cannot have thinking")
 	}
 	if call.Kind == KindLLM && !models.IsKnownThinking(call.Thinking) {
 		return out, fmt.Errorf("invalid provider call thinking %q", call.Thinking)
@@ -489,6 +493,9 @@ func (s *Store) SettleProviderCall(
 	}
 	if call.Kind != KindAudio && (call.Units != 0 || call.Unit != "") {
 		return out, errors.New("token provider calls cannot carry non-token units")
+	}
+	if (call.Kind == KindRerank) != (call.ModelVersion > 0) || call.ModelVersion < 0 {
+		return out, errors.New("rerank calls, and only they, name their catalog version")
 	}
 	return s.settleProviderCallAtomic(ctx, sessionID, call)
 }
@@ -579,7 +586,8 @@ func (s *Store) settleProviderCallAtomic(
 			       COALESCE((metadata->>'cachedReadTokens')::bigint, 0),
 			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
-			       COALESCE(metadata->>'cacheAnomaly', '')
+			       COALESCE(metadata->>'cacheAnomaly', ''),
+			       CASE WHEN kind = 'rerank' THEN model_version ELSE 0 END
 			FROM usage_events
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
 			sessionID, call.CallID,
@@ -587,7 +595,7 @@ func (s *Store) settleProviderCallAtomic(
 			&recorded.Kind, &recorded.Purpose, &recorded.Thinking, &recorded.Provider, &recorded.Model,
 			&recorded.InputTokens, &recorded.OutputTokens, &recorded.Units, &recorded.Unit,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
-			&recorded.ReasoningTokens, &recorded.CacheAnomaly,
+			&recorded.ReasoningTokens, &recorded.CacheAnomaly, &recorded.ModelVersion,
 		); err != nil {
 			return settlement, err
 		}
@@ -635,14 +643,22 @@ func (s *Store) settleProviderCallAtomic(
 
 	rates := TokenRates{}
 	catalogModel, modelVersion := llmRef, llmVersion
-	if call.Kind == KindEmbedding {
+	if call.Kind == KindEmbedding || call.Kind == KindRerank {
 		catalogModel, modelVersion = embeddingRef, embeddingVersion
+		if call.Kind == KindRerank {
+			// DeepInfra's transport identity is the catalog identity.
+			catalogModel = models.Ref{ProviderSlug: call.Provider, ModelSlug: call.Model}
+			modelVersion = call.ModelVersion
+		}
 		if s.registry == nil {
 			return settlement, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
 		}
-		cfg, err := s.registry.Get(ctx, embeddingRef, embeddingVersion)
+		cfg, err := s.registry.Get(ctx, catalogModel, modelVersion)
 		if err != nil {
 			return settlement, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
+		}
+		if call.Kind == KindRerank && !cfg.Allows(models.SlotRerank) {
+			return settlement, fmt.Errorf("%w: %s v%d is not a reranker", ErrModelUnavailable, catalogModel, modelVersion)
 		}
 		rates = RatesFromConfig(cfg)
 	} else if out.paidBy == models.PaidByPlatform {
@@ -693,7 +709,7 @@ func (s *Store) settleProviderCallAtomic(
 	if call.CacheAnomaly != "" {
 		meta["cacheAnomaly"] = call.CacheAnomaly
 	}
-	if (call.Kind == KindLLM || call.Kind == KindEmbedding) && call.InputTokens == 0 && call.OutputTokens == 0 {
+	if call.Kind != KindAudio && call.InputTokens == 0 && call.OutputTokens == 0 {
 		meta["usageMissing"] = true
 	}
 	usageUnit := "tokens"

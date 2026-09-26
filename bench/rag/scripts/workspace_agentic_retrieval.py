@@ -314,7 +314,7 @@ async def run(only: set[str] | None, repeat: int) -> None:
             )
             passages = [search.Passage.from_row(r) for r in rows]
             top = [] if rejected else search._cap_per_file(passages, 4)[:5]
-            search._mark_tier_only(top, rows, 5)
+            search._mark_tier_only(top, rows, 5, False)
             if stats is not None:
                 langs = Counter(p.lang for p in top)
                 stats.hits_lang = langs.most_common(1)[0][0] if langs else "und"

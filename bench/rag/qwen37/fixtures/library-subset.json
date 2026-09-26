@@ -1,0 +1,64 @@
+{
+  "purpose": "Books pulled read-only from the live knowledge library for the qwen3.7 comparison. Only chunks eligible for plain production library search are used (searchable, current version, verified excerpt tag at confidence >= 0.8, not non_teaching).",
+  "chosen_on": "2026-09-25, from per-book language and script counts of the live library before any retrieval run",
+  "groups": {
+    "multilingual": {
+      "why": "Every book whose eligible chunks carry non-English prose or non-Latin script: vernacular examples with IPA (seven grammars), writing systems (Unicode cookbook), Chinese legal terms, genuine Spanish passages (business ethics, business-government-society, duplicated between them), a Japanese term (operations management), Arabic script (Middle East), sung German/Latin texts (music history). The live library holds no Chinese, Japanese or Korean prose; 'es'/'fr'/'de' detections elsewhere are code, formulas and glossed tables.",
+      "books": [
+        "a-grammar-of-komnzo",
+        "a-grammar-of-moloko",
+        "a-grammar-of-palula",
+        "a-grammar-of-papuan-malay",
+        "a-grammar-of-pite-saami",
+        "a-grammar-of-yakkha",
+        "a-grammar-of-yauyos-quechua",
+        "the-unicode-cookbook-for-linguists-managing-writing-systems-",
+        "chinese-contract-law",
+        "business-ethics",
+        "business-government-and-society",
+        "operations-management",
+        "keys-to-understanding-the-middle-east",
+        "understanding-music-past-and-present"
+      ]
+    },
+    "statistics": {
+      "why": "All seven statistics books, the subject of the frozen 24 pilot questions; includes the near-duplicate pair os4/ahss4 as production does.",
+      "books": [
+        "os4",
+        "ahss4",
+        "learning-statistics-with-r",
+        "lsj",
+        "introductory-business-statistics",
+        "principles-of-business-statistics",
+        "online-statistics-education-an-interactive-multimedia-course"
+      ]
+    },
+    "english_spread": {
+      "why": "One book per further subject across sciences, business, law, humanities, computing and health, avoiding near-duplicate pairs (core-concepts-of-marketing but not introducing-marketing).",
+      "books": [
+        "concepts-of-biology",
+        "electromagnetics-volume-1",
+        "principles-of-financial-accounting",
+        "computer-networking-principles-protocols-and-practice",
+        "database-design",
+        "core-concepts-of-marketing",
+        "the-legal-and-ethical-environment-of-business",
+        "understanding-basic-music-theory",
+        "educational-psychology",
+        "applied-human-anatomy",
+        "the-science-of-sleep",
+        "marine-ecology-notes-2nd-edition",
+        "brief-calculus",
+        "intro-to-logic",
+        "principles-of-object-oriented-programming",
+        "principles-of-finance",
+        "politics-power-and-purpose-an-orientation-to-political-scien",
+        "media-studies-101",
+        "transitions-to-professional-nursing-practice",
+        "philosophical-ethics",
+        "introduction-to-game-theory-a-discovery-approach",
+        "private-pilot-for-airplane-category-airman-certification-sta"
+      ]
+    }
+  }
+}

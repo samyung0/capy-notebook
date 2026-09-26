@@ -220,6 +220,19 @@ describe('registry request assembly', () => {
     }
   });
 
+  it('lets rerank alone go without a default', () => {
+    const snapshot = registry();
+    snapshot.slots = [...snapshot.slots, 'rerank', 'quiz'];
+    const assembled = assembleRegistryRequest(
+      snapshot,
+      createRegistryState(snapshot)
+    );
+    expect(assembled.valid).toBe(false);
+    if (!assembled.valid) {
+      expect(assembled.issues.map((issue) => issue.slot)).toEqual(['quiz']);
+    }
+  });
+
   it('blocks embedding changes until acknowledged', () => {
     const snapshot = registry();
     const beta = modelRefId(snapshot.configs[1]);

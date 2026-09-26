@@ -1276,9 +1276,29 @@ always point at document passages.
    different top five for the same query.
 3. Optional `file_ids` filter is applied **in SQL** and intersected with the
    request scope. The agent cannot widen a scope the user narrowed.
-4. `_rerank` is a seam that currently returns identity. Heading prefixes and
-   the per-file diversity cap are the v1 quality levers; a hosted or local
-   cross-encoder plugs in here later without changing callers.
+4. `search.rerank` reorders the first 20 fused candidates
+   (`RERANK_CANDIDATES`) with the `rerank` slot's default, DeepInfra
+   `Qwen/Qwen3-Reranker-4B` (decision 2026-09-25). It scores each row's
+   `indexed_text` (heading context and text) against the raw query, without
+   the embedding instruct prefix; candidates 21 to 40 follow in fused order.
+   The 5-second bound (`models.RERANK_TIMEOUT_S`) covers the whole wait a
+   search sees: admission and the provider request, busy retry included; the
+   zero-credit `rerank` settlement finishes in the background once the
+   scores arrive. An error, a busy provider or the bound keeps fused order
+   and logs a `capy.search` warning, so search never fails because of the
+   reranker. An unassigned rerank slot skips the call: it is the operator off
+   switch, and the only slot whose missing default is not an error. Library
+   search (`search_knowledge`) runs the same step before the excerpt fold,
+   holding no pooled library connection while the reranker runs. When a
+   search was reranked, `Passage.tier_only` marks a hit the exact tier put
+   among the 20 candidates the reranker scored (in the fused first 20 but not
+   the first 20 by `flat_score`); unreranked searches keep the counterfactual
+   below. Migration `0030` rolls out only after pipeline code that knows the
+   `rerank` slot runs on every ingest-host lane (see
+   [deployment-runbook.md](deployment-runbook.md)). The library study measured MRR@10
+   0.782 → 0.941 at 20 candidates
+   (`bench/rag/rerank/reports/2026-09-25-library-rerank.md`); workspace
+   quality was not measured.
 5. Cap how many passages any one file may contribute (`CAPY_SEARCH_PER_FILE_CAP`,
    default 4 of `CAPY_SEARCH_TOP_K` 5). A tighter cap measured worse: with 3 the
    file holding the answer lost correct passages to other files' noise.
@@ -1385,7 +1405,8 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
 - `search(query, topics, roles)`: hybrid search restricted in SQL to chunks
   whose excerpt carries a verified tag (evidence quote found in the body,
   confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching every
-  requested facet; hits fold into excerpts by best chunk, so `top_k` counts
+  requested facet; the first 20 fused chunks are reranked (search step 4),
+  then hits fold into excerpts by best chunk, so `top_k` counts
   excerpts rather than chunks, each returning with a compact reviewed teaching
   description and scope, roles, topics, pages, figure ids (without decorative
   or excluded figures) and the hit chunk.
@@ -2514,5 +2535,6 @@ test suite.
   model call. At most one `search_workspace` per response; a later step may
   search again. The hit chunk is the context, packing overlap plus
   `read_document` cover a cut.
-- **Reranker is a seam, not a dependency.** Measure quality on real workspaces
-  before adding a vendor or a GPU to the retrieval container.
+- **Reranking degrades to fused order.** The cross-encoder is a hosted call
+  on the existing DeepInfra account; any failure, the 5-second bound or an
+  unassigned rerank slot returns the fused ranking instead of an error.

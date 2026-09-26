@@ -194,7 +194,7 @@ func ValidateThinking(slots, levels []string, defaultThinking string) error {
 	}
 	if !hasLLM {
 		if len(levels) > 0 || defaultThinking != "" {
-			return fmt.Errorf("retrieval/captioning rows must omit thinking")
+			return fmt.Errorf("retrieval/captioning/rerank rows must omit thinking")
 		}
 		return nil
 	}

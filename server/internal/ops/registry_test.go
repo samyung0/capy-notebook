@@ -519,6 +519,28 @@ func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing
 	}
 }
 
+func TestRegistryCompileAllowsUnassignedRerankSlot(t *testing.T) {
+	snapshot := RegistrySnapshot{
+		Version: 1,
+		Slots:   models.AllSlots(),
+		Configs: []CatalogConfig{{
+			ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Reranker-4B",
+			Version: 1, Enabled: true, PlatformEnabled: true,
+			Slots: []string{models.SlotRerank}, IsDefaultFor: []string{models.SlotRerank},
+			Capabilities: []string{models.CapabilityRerank},
+		}},
+	}
+	request := gridRequest(snapshot)
+	request.Cells[0].IsDefault = false
+	if _, _, defaults, err := compileGrid(request, snapshot); err != nil || len(defaults) != 0 {
+		t.Fatalf("clearing the rerank default = %v, defaults %v", err, defaults)
+	}
+	request.Cells = nil
+	if _, _, _, err := compileGrid(request, snapshot); err != nil {
+		t.Fatalf("removing the reranker from its slot = %v", err)
+	}
+}
+
 func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 	t.Parallel()
 	current := CatalogConfig{

@@ -308,6 +308,7 @@
   "billing_tokens": "输入 {input} · 输出 {output}",
   "billing_kind_llm": "语言模型",
   "billing_kind_embedding": "向量嵌入",
+  "billing_kind_rerank": "重排序",
   "billing_kind_caption": "图片说明",
   "billing_kind_parse": "文档解析",
   "billing_kind_email": "邮件",

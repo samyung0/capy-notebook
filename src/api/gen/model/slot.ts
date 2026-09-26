@@ -16,4 +16,5 @@ export const Slot = {
   ingest: 'ingest',
   retrieval: 'retrieval',
   captioning: 'captioning',
+  rerank: 'rerank',
 } as const;

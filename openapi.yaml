@@ -2988,6 +2988,7 @@ components:
         - ingest
         - retrieval
         - captioning
+        - rerank
       type: string
     SourceCandidateReadOutputBody:
       additionalProperties: false

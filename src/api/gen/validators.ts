@@ -2303,7 +2303,7 @@ export const GetMistakesResponse = zod.object({
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning']))
+  "slots": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning', 'rerank']))
 })
 
 

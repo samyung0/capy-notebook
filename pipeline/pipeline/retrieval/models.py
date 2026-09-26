@@ -375,6 +375,56 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
     return out
 
 
+# The whole wait a search sees for a rerank, busy retry included. Past it
+# search keeps fused order.
+RERANK_TIMEOUT_S = 5.0
+
+
+async def rerank(query: str, documents: list[str], *, spec: ModelConfig) -> list[float]:
+    """Relevance of each document to ``query``, in document order.
+
+    Settles as kind ``rerank`` at zero credits, labeled with ``spec``'s catalog
+    row. The scores return as soon as they arrive and the settlement finishes
+    in the background, so :data:`RERANK_TIMEOUT_S` bounds admission and the
+    provider request, which is timed out itself rather than cancelled from
+    outside; a timed-out call stays open for its receipt window like any other
+    uncertain call.
+    """
+    bound = time.monotonic() + RERANK_TIMEOUT_S
+
+    async def _one(deadline: float) -> Any:
+        async with _tracked_call(
+            kind=accounting.KIND_RERANK,
+            purpose=accounting.KIND_RERANK,
+            spec=spec,
+            deadline=min(deadline, bound),
+        ) as call_id:
+            raw = await elitellm.rerank(
+                spec, query, documents, timeout=bound - time.monotonic()
+            )
+            accounting.settle_in_background(
+                call_id=call_id,
+                kind=accounting.KIND_RERANK,
+                purpose=accounting.KIND_RERANK,
+                thinking="",
+                spec=spec,
+                usage=extract_usage(raw, provider=spec.provider_slug),
+            )
+        return raw
+
+    raw = await _call_with_retry(_one)
+    scores = raw.get("scores") if isinstance(raw, dict) else None
+    if (
+        not isinstance(scores, list)
+        or len(scores) != len(documents)
+        or not all(
+            isinstance(score, (int, float)) and math.isfinite(score) for score in scores
+        )
+    ):
+        raise elitellm.ProviderError("rerank answered without one score per document")
+    return [float(score) for score in scores]
+
+
 async def complete(
     messages: list[dict[str, Any]],
     *,

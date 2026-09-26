@@ -4,9 +4,9 @@ import "github.com/danielgtaylor/huma/v2"
 
 // Slot is one named place the product calls a model. Each slot holds one
 // default pin; the user-selectable slots also hold a per-user preference.
-// Retrieval and captioning are separate slots because the row that fills them
-// is a different model from the text model: no single model both runs the
-// chat agent loop and emits vectors.
+// Retrieval, captioning and rerank are separate slots because the row that
+// fills them is a different model from the text model: no single model both
+// runs the chat agent loop and emits vectors or relevance scores.
 type Slot string
 
 // UserModelSlot is the subset exposed by the account model picker.
@@ -20,6 +20,7 @@ const (
 	SlotIngest     = "ingest"
 	SlotRetrieval  = "retrieval"
 	SlotCaptioning = "captioning"
+	SlotRerank     = "rerank"
 )
 
 var allSlots = []Slot{
@@ -30,6 +31,7 @@ var allSlots = []Slot{
 	SlotIngest,
 	SlotRetrieval,
 	SlotCaptioning,
+	SlotRerank,
 }
 
 var userModelSlots = []UserModelSlot{
@@ -39,11 +41,11 @@ var userModelSlots = []UserModelSlot{
 }
 
 // llmSlots are the slots served by a text model: they need a context window
-// and thinking levels. Retrieval and captioning rows omit both.
+// and thinking levels. Retrieval, captioning and rerank rows omit both.
 var llmSlots = []Slot{SlotChat, SlotGenerate, SlotEditor, SlotQuiz, SlotIngest}
 
 // Capability is something a catalog row must be able to do to sit in a slot.
-// Vision, pdf and embedding are set by operators on the row. AgenticLoop is
+// Vision, pdf, embedding and rerank are set by operators on the row. AgenticLoop is
 // derived from the checked-in certification file and can never be set by hand.
 type Capability string
 
@@ -51,6 +53,7 @@ const (
 	CapabilityVision      = "vision"
 	CapabilityPDF         = "pdf"
 	CapabilityEmbedding   = "embedding"
+	CapabilityRerank      = "rerank"
 	CapabilityAgenticLoop = "agentic_loop"
 )
 
@@ -58,6 +61,7 @@ var operatorCapabilities = []Capability{
 	CapabilityVision,
 	CapabilityPDF,
 	CapabilityEmbedding,
+	CapabilityRerank,
 }
 
 // slotRequirements is the only place the slot -> capability policy lives.
@@ -65,6 +69,7 @@ var slotRequirements = map[Slot][]Capability{
 	SlotChat:       {CapabilityAgenticLoop},
 	SlotRetrieval:  {CapabilityEmbedding},
 	SlotCaptioning: {CapabilityVision},
+	SlotRerank:     {CapabilityRerank},
 }
 
 // AllSlots returns every model slot in display order.

@@ -744,6 +744,9 @@ func compileGrid(
 			requiredDefaults[slot] = true
 		}
 	}
+	// The one slot whose default may be cleared: an unassigned rerank slot is
+	// how an operator turns reranking off, and search then keeps fused order.
+	delete(requiredDefaults, models.SlotRerank)
 	for slot := range requiredDefaults {
 		if _, ok := defaults[slot]; !ok {
 			return nil, nil, nil, validation("slot %q needs exactly one default", slot)

@@ -35,6 +35,7 @@ from ..jobs import TerminalError
 from . import models, store
 from .chunking import search_query_terms
 from .knowledge_metadata import RetrievalMetadata
+from .search import rerank
 
 ROLES = ("introduction", "formal", "worked_example", "exercise", "summary", "reference")
 
@@ -415,8 +416,9 @@ async def search(
 ) -> SearchResult:
     """Excerpt-level hybrid search restricted to verified tags.
 
-    ``vector`` bypasses query embedding; evaluations and tests use it so a
-    search costs no provider call.
+    The fused chunks are reranked (``search.rerank``) before they fold into
+    excerpts. ``vector`` bypasses query embedding; evaluations and tests use it
+    to skip that provider call.
     """
     topics, roles = _validate_facets(topics, roles)
     top_k = top_k or cfg.search_top_k
@@ -467,6 +469,9 @@ async def search(
             return SearchResult([], topics, roles, available)
         chunk_to_excerpt = await _chunk_excerpts(conn, [r["id"] for r in rows])
         ordered: list[tuple[str, dict[str, Any]]] = []
+    # No pooled connection is held while the reranker runs.
+    rows, _ = await rerank(query, rows)
+    async with db.connection() as conn:
         seen: set[str] = set()
         passages: set[str] = set()
         for row in rows:

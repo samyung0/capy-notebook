@@ -278,7 +278,10 @@ either slug before it constructs or persists that identity. Most rows call the
 named provider directly. Two exact routing exceptions are allowed:
 
 - `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
-  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`).
+  OpenAI-compatible embedding endpoint (`DEEPINFRA_API_KEY`), and
+  `deepinfra/Qwen/Qwen3-Reranker-4B` its inference endpoint
+  (`/v1/inference/Qwen/Qwen3-Reranker-4B`). The database check
+  `model_configs_deepinfra_check` keeps each in its own slot, never BYOK.
 - `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
   Tencent Cloud TokenHub
   (`https://tokenhub.tencentcloudmaas.com/v1/chat/completions`,
@@ -296,18 +299,23 @@ A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat, generate and editor also hold a per-user preference.
 The slots are `chat`, `generate`, `editor`, `quiz`, `ingest`, `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
-query embedding) and `captioning` (the vision model used for standalone image
-uploads; embedded figure captioning was retired). Retrieval and captioning are separate
-slots because the row that fills them is a different model from the text
-model.
+query embedding), `captioning` (the vision model used for standalone image
+uploads; embedded figure captioning was retired) and `rerank` (the
+cross-encoder that reorders search candidates, migration `0030`). Retrieval,
+captioning and rerank are separate slots because the row that fills them is a
+different model from the text model. Rerank is the one slot that may have no
+default: Ops lets an operator clear it, and search then keeps fused order.
+Search reads its live default rather than a pin because reranks cost the actor
+no credits.
 
 A **capability** is what a row must be able to do to sit in a slot. Operators
-set `capabilities` (`vision`, `pdf`, `embedding`) on the catalog row;
+set `capabilities` (`vision`, `pdf`, `embedding`, `rerank`) on the catalog row;
 `agentic_loop` is derived from the checked-in certification file
 (`agentic_loop_certs.json`) and can never be set by hand. The only place the
 slot-to-capability policy lives is the map in
 `server/internal/models/slot.go`: chat needs `agentic_loop`, retrieval needs
-`embedding`, captioning needs `vision`, the other slots need nothing. Every
+`embedding`, captioning needs `vision`, rerank needs `rerank`, the other
+slots need nothing. Every
 registry save runs that subset check for drafts and for existing rows alike,
 so a stale row cannot keep a slot it no longer qualifies for; the ops error
 codes are `capability_missing` and `agentic_loop_not_certified`. The
@@ -435,7 +443,8 @@ if a delayed webhook has not yet changed `users.plan_tier`.
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
 period start) next to storage. `GET /api/usage` groups this actor's current
-month by `kind` and `surface` and returns recent `usage_events` rows. It does
+month by `kind` (`llm`, `embedding`, `rerank`, `audio`, `parse`, `email`, and
+historical `caption`) and `surface` and returns recent `usage_events` rows. It does
 not use a separate analytics table. The page shows credits, tokens, the catalog
 provider/model slugs, and `paidBy`. It does not show USD. The operator dashboard
 also reads bounded
@@ -480,7 +489,9 @@ compaction and checkpoint included (assembled back into a completion in
 that restarts on every provider `data:` event; comment-only keep-alives do not
 count, so a request parked in a provider queue times out like a silent one. The
 stream backstop bounds the whole stream. Non-streaming interactive calls such
-as query embeddings get the 15 seconds as a whole-call bound. Ingest calls keep
+as query embeddings get the 15 seconds as a whole-call bound; a search rerank
+gets 5 seconds for admission and the request, busy retry included, and settles
+in the background. Ingest calls keep
 their 120-second bound. Only the awaits on the provider are timed, so a slow
 consumer between chunks never counts as provider silence. The transport keeps
 one keep-alive `httpx` client per process (one per event loop) and parses
@@ -626,6 +637,25 @@ or a row that is not embedding. There is no `DefaultEmbeddingRates`. A miss is
 `model_unavailable`. Editor and quiz pass empty embed
 rates and do not call `resolveEmbedding`. Ingest embeddings still bill the
 actor at the workspace pin's rates.
+
+A search rerank has its own usage kind, `rerank`, settled at zero credits on
+the chat or generate session that ran the search. Its `provider_calls` and
+`usage_events` rows carry the reranker's provider/model and the tokens DeepInfra
+reports (`input_tokens`, or `inference_status.tokens_input`). The usage row's
+catalog columns name the reranker row the pipeline called: the settle payload
+sends its `modelVersion`, the gateway requires one on every `rerank` call and
+refuses one on any other kind, and the row must serve the `rerank` slot. Billing
+therefore shows "{surface} · Rerank · deepinfra/Qwen/Qwen3-Reranker-4B" and a
+separate Rerank bucket. The call always uses the platform key; in a BYOK chat it
+skips the capacity gate, as query embeddings do. Search takes the scores as
+soon as they arrive and the settlement finishes in a background task
+(`accounting.settle_in_background`), so a slow gateway never holds a search.
+The lease is released when the provider answers; the call row stays open until
+the background settlement applies it, and a failed one is logged and swept at
+the receipt deadline like any other unsettled call. A background rerank reply
+never overwrites the session's exhaustion flags. A timeout leaves the call
+open for its receipt window like any other uncertain call; any failure keeps
+fused order instead of failing the search.
 
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the

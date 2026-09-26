@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
@@ -216,6 +217,85 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 	}
 	if n := eventCount(t, s, userID, sessionID); n != 3 {
 		t.Fatalf("provider call rows = %d, want 3", n)
+	}
+}
+
+func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	llm, _ := platformSessionRates()
+	embed := TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1}
+	sessionID, err := s.BeginProviderSession(
+		ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ProviderCallUsage{
+		CallID:       "pc_rerank",
+		Kind:         KindRerank,
+		Purpose:      KindRerank,
+		Provider:     "deepinfra",
+		Model:        "Qwen/Qwen3-Reranker-4B",
+		InputTokens:  9000,
+		ModelVersion: 1,
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
+		t.Fatal(err)
+	}
+	if replay, err := s.SettleProviderCall(ctx, sessionID, call); err != nil || !replay.Duplicate {
+		t.Fatalf("replay = %#v, %v", replay, err)
+	}
+	// Each refusal has its own open call row, so only the rule under test stops it.
+	unversioned := call
+	unversioned.CallID, unversioned.ModelVersion = "pc_rerank_unversioned", 0
+	versionedEmbedding := call
+	versionedEmbedding.CallID, versionedEmbedding.Kind, versionedEmbedding.Purpose =
+		"pc_embed_versioned", KindEmbedding, KindEmbedding
+	versionedEmbedding.Model = "Qwen/Qwen3-Embedding-4B"
+	notReranker := call
+	notReranker.CallID, notReranker.Model = "pc_rerank_embedder", "Qwen/Qwen3-Embedding-4B"
+	for _, tc := range []struct {
+		call ProviderCallUsage
+		want string
+	}{
+		{unversioned, "catalog version"},
+		{versionedEmbedding, "catalog version"},
+		{notReranker, "not a reranker"},
+	} {
+		mustInsertProviderCall(t, s, sessionID, tc.call)
+		if _, err := s.SettleProviderCall(ctx, sessionID, tc.call); err == nil ||
+			!strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s settled with %v, want %q", tc.call.CallID, err, tc.want)
+		}
+	}
+	var version int
+	var credits int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT model_version, credit_micros FROM usage_events WHERE provider_call_id=$1`,
+		call.CallID).Scan(&version, &credits); err != nil {
+		t.Fatal(err)
+	}
+	// Billing renders "<surface> · <kind> · <providerSlug>/<modelSlug>" from
+	// these rows and buckets by kind.
+	report, err := s.UserUsageReport(ctx, userID, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Recent) != 1 || version != 1 || credits != 0 ||
+		report.Recent[0].Kind != KindRerank ||
+		report.Recent[0].ProviderSlug != "deepinfra" ||
+		report.Recent[0].ModelSlug != "Qwen/Qwen3-Reranker-4B" ||
+		len(report.ByKind) != 1 || report.ByKind[0].Key != KindRerank {
+		t.Fatalf("rerank usage = v%d %d credits, recent %#v, by kind %#v",
+			version, credits, report.Recent, report.ByKind)
 	}
 }
 

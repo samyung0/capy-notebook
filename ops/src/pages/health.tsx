@@ -166,7 +166,7 @@ export function HealthPage() {
           value={formatCount(data.appliedWithoutUsage24h)}
         />
         <MetricCard
-          detail="LLM or embedding usage without its provider-call row, last 24 hours"
+          detail="LLM, embedding or rerank usage without its provider-call row, last 24 hours"
           label="Unlinked provider usage"
           tone={data.providerUsageWithoutCall24h > 0 ? 'danger' : 'success'}
           value={formatCount(data.providerUsageWithoutCall24h)}

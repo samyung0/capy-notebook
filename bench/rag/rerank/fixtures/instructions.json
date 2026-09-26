@@ -1,0 +1,14 @@
+{
+  "fixed_utc": "2026-09-25T08:24:44Z",
+  "note": "Written before any rerank request of this study, including the synthetic schema probes, and never edited after. Both texts are sent explicitly to every model so every reranker receives identical input.",
+  "instructions": {
+    "default": {
+      "text": "Given a web search query, retrieve relevant passages that answer the query.",
+      "source": "The documented default of the Alibaba text-rerank API (qwen3-rerank, qwen3.7-text-rerank), also used on 2026-09-13. DeepInfra documents the same sentence without the final period as its default for Qwen3-Reranker; the period is kept here so all vendors see the same bytes."
+    },
+    "learner": {
+      "text": "Given a learner's question or study request in any language, retrieve the textbook passage that answers it, matching the specific example, exercise, condition or numbers it asks about.",
+      "rationale": "One task-specific instruction for the knowledge library: queries come from learners or from the curate agent's study searches, often in another language than the English passages, and the failure class under test is a similar passage that answers a different example, exercise, condition or value. Run only on the best one or two rerankers under the default instruction, selected by the rule in protocol.json."
+    }
+  }
+}

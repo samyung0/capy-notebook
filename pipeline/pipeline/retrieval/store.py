@@ -1124,7 +1124,8 @@ async def hybrid_search(
 
     Rows carry the per-leg evidence (``vec_rank``, ``vec_dist``, ``lex_rank``)
     and ``flat_score``, the fusion with every lexical row at half weight, so
-    the caller can tell which hits the exact tier put there.
+    the caller can tell which hits the exact tier put there, plus
+    ``indexed_text`` (heading context and text), which the reranker scores.
     """
     pin = pin or await workspace_embedding_pin(workspace_id)
     sql = _SEARCH_SQL_TEMPLATE.format(

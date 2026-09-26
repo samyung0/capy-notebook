@@ -550,6 +550,27 @@ Apply to one explicitly selected database with
 `psql -v ON_ERROR_STOP=1 -f deploy/model-capacities.sql`. If environments share
 an account, divide its quota among them before applying the script.
 
+Migration `0030_rerank_slot.sql` seeds DeepInfra `Qwen/Qwen3-Reranker-4B` as
+the `rerank` default and copies the environment's Qwen embedding capacity to it
+when one exists. Where none exists, set the reranker's capacity in Ops or with
+the script above; until then every search logs `rerank failed; keeping fused
+order` and returns unreranked results. It needs no new secret
+(`DEEPINFRA_API_KEY` on the retrieval service). To turn reranking off, remove
+the reranker from the `rerank` column in the Ops model catalog and save;
+running retrieval processes stop reranking within one registry poll
+(10 minutes). That save disables the reranker row, so turning reranking back
+on needs a new catalog version: clone the row into a draft in Ops, assign it
+to the `rerank` column as its default, and save.
+
+Rollout order for `0030`: run it only after pipeline code that knows the
+`rerank` slot is live on every ingest-host lane (production, UAT and
+`worker-local`). An older pipeline registry fails on the unknown slot: running
+workers stop picking up catalog changes and a restarted worker or retrieval
+service does not start. Deploy the ingest-host release first, then the app
+host whose migration applies `0030`. The gateway migrates at startup unless
+`MIGRATE=false`, so developers run a local gateway build containing `0030`
+with `MIGRATE=false` (or not at all) until `worker-local` runs that code.
+
 Migration `0010_deepseek_flash.sql` moves Flash Vision catalog entries and user
 preferences to `deepseek-flash`, carries over existing credit rates and capacity,
 and retains historical rows for pinned messages/jobs. Deploy the API/Ops build

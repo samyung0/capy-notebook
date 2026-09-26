@@ -128,6 +128,51 @@ async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
     assert sent["provider"] == "tencent"
     assert sent["model"] == "glm-5.3-flash"
     assert sent["thinking"] == "max"
+    assert "modelVersion" not in sent
+
+
+async def test_rerank_settles_under_its_own_catalog_version(monkeypatch):
+    """A rerank names its catalog version, and its late background reply
+    never rolls back the exhaustion flags a newer LLM settlement set."""
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    sent = {}
+
+    async def post_settlement(payload):
+        sent.update(payload)
+        return {"creditsExhausted": False, "terminalCallAllowed": False}
+
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    token = accounting.bind("cr_rerank")
+    state = accounting.current()
+    state.credits_exhausted = state.terminal_call_allowed = True
+    try:
+        await accounting.settle(
+            call_id="pc_rerank",
+            kind=accounting.KIND_RERANK,
+            purpose=accounting.KIND_RERANK,
+            thinking="",
+            spec=_spec(
+                version=3,
+                provider_slug="deepinfra",
+                model_slug="Qwen/Qwen3-Reranker-4B",
+                byok_enabled=False,
+                thinking_levels=(),
+                default_thinking="",
+            ),
+            usage=NormalizedUsage(input_tokens=268),
+        )
+    finally:
+        accounting.reset(token)
+
+    assert (sent["kind"], sent["purpose"], sent["provider"], sent["model"]) == (
+        "rerank",
+        "rerank",
+        "deepinfra",
+        "Qwen/Qwen3-Reranker-4B",
+    )
+    assert sent["modelVersion"] == 3 and sent["inputTokens"] == 268
+    assert state.credits_exhausted and state.terminal_call_allowed
 
 
 async def test_open_and_abandon_are_noop_when_unbound():

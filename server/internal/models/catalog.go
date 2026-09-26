@@ -160,7 +160,7 @@ func (c *EliteLLMProviders) AllowsModel(slug, modelSlug string) (bool, string) {
 	}
 	if slug == ProviderDeepInfra {
 		if !containsString(spec.AllowedModelSlugs, modelSlug) {
-			return false, "deepinfra is only allowed for the seeded qwen embed hop"
+			return false, "deepinfra is only allowed for the seeded qwen embed and rerank hops"
 		}
 		return true, ""
 	}

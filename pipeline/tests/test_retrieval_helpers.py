@@ -959,16 +959,32 @@ def test_tier_only_marks_the_hits_the_exact_tier_added():
     ]
     top = [Passage.from_row(row) for row in rows[:3]]
 
-    _mark_tier_only(top, rows, top_k=3)
+    _mark_tier_only(top, rows, top_k=3, reranked=False)
 
     assert [p.tier_only for p in top] == [True, False, False]
+
+
+def test_after_a_rerank_tier_only_marks_hits_the_tier_put_among_the_candidates():
+    """The tier's lever is which rows the reranker scores: the exact row is in
+    the fused first 20 only because of the tier, while a row the reranker
+    lifted from inside both heads, or from the unreranked tail, owes nothing
+    to it."""
+    rows = [_row("exact", 0.030, 0.0001)] + [
+        _row(f"v{i}", 0.020 - i * 0.0001, 0.020 - i * 0.0001) for i in range(25)
+    ]
+    ranked = [rows[20], rows[0], rows[15]]  # v19, exact, v14
+    top = [Passage.from_row(row) for row in ranked]
+
+    _mark_tier_only(top, rows, top_k=3, reranked=True)
+
+    assert [p.tier_only for p in top] == [False, True, False]
 
 
 def test_tier_only_is_untouched_when_no_tier_fired():
     rows = [_row("a", 0.02, 0.02), _row("b", 0.01, 0.01)]
     top = [Passage.from_row(row) for row in rows]
 
-    _mark_tier_only(top, rows, top_k=1)
+    _mark_tier_only(top, rows, top_k=1, reranked=False)
 
     assert not any(p.tier_only for p in top)
 

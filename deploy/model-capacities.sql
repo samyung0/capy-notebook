@@ -19,12 +19,16 @@
 -- These are steady-state estimates. Bursts, shorter calls or larger prompts
 -- can still receive 429s; concurrency does not enforce the per-minute quotas.
 -- Interactive reserves: 80% Tencent GLM / 60% DeepSeek / 40% embedding.
+-- The reranker is a separate DeepInfra model on the same account, with its own
+-- 200-request limit. Only interactive search calls it, so its reserve never
+-- binds; it copies the embedding's 80.
 
 WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
   VALUES
     ('deepseek', 'deepseek-flash', 2500, 2200),
     ('tencent', 'glm-5.3-flash', 30, 24),
-    ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80)
+    ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
+    ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)
 )
 INSERT INTO model_capacities (provider, model, concurrency_total, interactive_reserve)
 SELECT provider, model, concurrency_total, interactive_reserve FROM capacities c

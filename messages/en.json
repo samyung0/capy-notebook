@@ -311,6 +311,7 @@
   "billing_tokens": "{input} in · {output} out",
   "billing_kind_llm": "Language model",
   "billing_kind_embedding": "Embeddings",
+  "billing_kind_rerank": "Rerank",
   "billing_kind_caption": "Figure captions",
   "billing_kind_parse": "Document parse",
   "billing_kind_email": "Email",

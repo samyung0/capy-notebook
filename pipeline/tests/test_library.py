@@ -252,6 +252,23 @@ async def test_top_k_folds_the_hits_into_that_many_excerpts(library_db):
     assert [e.id for e in two.excerpts] == ["e_worked", "e_intro"]
 
 
+async def test_reranked_chunks_fold_into_excerpts(library_db, monkeypatch):
+    """The reranker's best chunk leads, and becomes its excerpt's hit."""
+    from pipeline.retrieval import models, search
+
+    async def rerank(query, documents, *, spec):
+        return [1.0 if "extrapolation" in text else 0.0 for text in documents]
+
+    monkeypatch.setattr(search, "_rerank_spec", lambda: "rerank-spec")
+    monkeypatch.setattr(models, "rerank", rerank)
+
+    result = await library.search("regression", vector=_unit_vector(0))
+    assert [(e.id, e.hit_chunk_id) for e in result.excerpts] == [
+        ("e_worked", "c_worked_b"),
+        ("e_intro", "c_intro"),
+    ]
+
+
 async def test_empty_role_filter_reports_what_the_topic_holds(library_db):
     result = await library.search(
         "exercises",

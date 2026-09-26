@@ -30,6 +30,9 @@ log = logging.getLogger("capy.accounting")
 
 KIND_LLM = "llm"
 KIND_EMBEDDING = "embedding"
+# A search rerank: zero credits like a query embedding, labeled with the
+# reranker row it called.
+KIND_RERANK = "rerank"
 KIND_AUDIO = "audio"
 
 PURPOSE_AGENT = "agent"
@@ -568,16 +571,47 @@ async def settle(
         "model": elitellm.transport_model_slug(spec),
         **usage.as_dict(),
     }
+    if kind == KIND_RERANK:
+        # The gateway labels a rerank with this catalog row; every other call
+        # is labeled from the session's pins.
+        payload["modelVersion"] = spec.version
     deadline = state.receipt_deadlines.get(call_id)
     response = await _finish_known_receipt(
         _post_settlement(payload, deadline=deadline)
         if deadline is not None
         else _post_settlement(payload)
     )
-    state.credits_exhausted = bool(response.get("creditsExhausted"))
-    state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
+    if kind != KIND_RERANK:
+        # A rerank settles in the background, so its reply can land after a
+        # newer LLM settlement and must not roll these flags back.
+        state.credits_exhausted = bool(response.get("creditsExhausted"))
+        state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
     state.settled_calls += 1
     return state
+
+
+def settle_in_background(**receipt: Any) -> asyncio.Task[Any] | None:
+    """Settle a known receipt without making the caller wait for it.
+
+    For zero-credit calls whose caller only needs the provider's answer (the
+    search rerank). A failure is logged; the call row stays open and the
+    receipt-deadline sweep abandons it, as for any unsettled call.
+    """
+    if current() is None:
+        return None
+    task = asyncio.ensure_future(settle(**receipt))
+    _background.add(task)
+    task.add_done_callback(_finish_background_settlement)
+    return task
+
+
+def _finish_background_settlement(task: asyncio.Task[Any]) -> None:
+    _background.discard(task)
+    if not task.cancelled() and task.exception() is not None:
+        log.error(
+            "provider receipt could not be settled in the background",
+            exc_info=task.exception(),
+        )
 
 
 async def settle_units(

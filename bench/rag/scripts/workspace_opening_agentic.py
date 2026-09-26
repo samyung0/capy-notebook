@@ -330,7 +330,7 @@ async def run(preflight=False):
             top = search._cap_per_file([search.Passage.from_row(r) for r in rows], 4)[
                 :5
             ]
-            search._mark_tier_only(top, rows, 5)
+            search._mark_tier_only(top, rows, 5, False)
             if stats is not None:
                 stats.hits_lang = top[0].lang if top else "und"
                 stats.query_terms, stats.cjk_runs = terms.terms, terms.cjk_runs

@@ -424,7 +424,7 @@ async def fresh() -> None:
             top = search._cap_per_file(
                 [search.Passage.from_row(row) for row in rows], 4
             )[:limit]
-            search._mark_tier_only(top, rows, limit)
+            search._mark_tier_only(top, rows, limit, False)
             if stats is not None:
                 stats.hits_lang = top[0].lang if top else "und"
                 stats.query_terms, stats.cjk_runs = terms.terms, terms.cjk_runs

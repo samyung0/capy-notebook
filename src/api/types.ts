@@ -60,8 +60,8 @@ import type {
    them bind to the wire contract instead of restating it. Contracts whose UI
    shape is richer than the wire (rich text, the Question union,
    non-transferable roles) are overridden further down. */
-/** The slots a user may pick a model for. Ingest, retrieval and captioning
- * are operator-only: they are chosen from the registry and never stored per
+/** The slots a user may pick a model for. Ingest, retrieval, captioning and
+ * rerank are operator-only: they are chosen from the registry and never stored per
  * user, so they are absent from the query enum the server accepts. Quiz is
  * user-selectable and includes in-tab `browser:` keys that never live in
  * model_configs. */

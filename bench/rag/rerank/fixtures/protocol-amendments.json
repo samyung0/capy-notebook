@@ -1,0 +1,14 @@
+{
+ "amendments": [
+  {
+   "fixed_utc": "2026-09-25T09:19:36Z",
+   "before": "any rerank request for a study query (only first-stage pools had been computed)",
+   "finding": "For all 360 queries the hybrid fused top 40 has exactly the membership of the dense top 40 (pools-check.json: union size 40 for every query, no lexical-only row). At lexical weight 0.5 a lexical-only candidate scores at most 0.5/61 = 0.0082, below the 1/(60+40) = 0.0100 of the 40th vector candidate, so outside the exact-lookup tier (two or three content terms, all matched) the lexical leg can only reorder the vector top 40, never add to it. No study query triggered the tier.",
+   "changes": [
+    "The hybrid40, dense40 and union pools are one candidate set. Reranked arms are reported once, over that set (scores from one 40-document request per query in chunk-id order); dense40 and union rerank arms would repeat it and are dropped. The first-stage arms hybrid and dense remain: they order the same 40 chunks differently.",
+    "The union-score replay question disappears: the scored request is already the 40-document pool. The verification sample keeps its 50 queries but changes its requests: every reranker gets the same 40 documents in fused (production) order, which measures uncached latency and tests whether document order changes scores; ali-qwen3-rerank additionally gets the first 20 documents of that order, which tests whether scores depend on the other documents in the request (the documented request-relative caveat). The dense40 direct request, which would now duplicate the scored request, is dropped.",
+    "Candidate recall of the shared pool (relevant excerpt among the 40 chunks) is reported as the ceiling every arm shares."
+   ]
+  }
+ ]
+}
