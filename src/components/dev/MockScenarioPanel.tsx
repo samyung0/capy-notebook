@@ -157,7 +157,10 @@ export default function MockScenarioPanel() {
           )
             matchedRequests++;
         };
-        worker.events.on('request:match', observed);
+        // A pending request matches only when its delay ends. It only has to
+        // start: MSW resolves it with the handlers current at that moment.
+        const event = id === 'auth-busy' ? 'request:start' : 'request:match';
+        worker.events.on(event, observed);
         try {
           const note = await runJourney(
             id as JourneyId,
@@ -171,8 +174,7 @@ export default function MockScenarioPanel() {
             () =>
               matchedRequests > 0 ||
               expected.length === 0 ||
-              id === 'workspace-timeout' ||
-              id === 'auth-busy',
+              id === 'workspace-timeout',
             'scenario request'
           );
           if (
@@ -202,7 +204,7 @@ export default function MockScenarioPanel() {
           if (!permanentScenarios.includes(id) && id !== 'import-job-pending')
             worker.resetHandlers();
         } finally {
-          worker.events.removeListener('request:match', observed);
+          worker.events.removeListener(event, observed);
         }
       });
     previous.current = task.then(
