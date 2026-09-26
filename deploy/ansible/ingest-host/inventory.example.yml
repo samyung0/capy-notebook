@@ -5,11 +5,14 @@ all:
       ansible_user: root
       ingest_hostname: capy-ingest-1
       ingest_wireguard_address: 10.77.0.2/32
-      ingest_wireguard_peer_address: 10.77.0.1/32
       ingest_configure_wireguard: true
-      # Public key and public endpoint of the app/Coolify host's WireGuard peer.
-      ingest_wireguard_peer_public_key: QOs40Fn+XJVjpu8Ucsa6iY6s4lCIjAcGxcT5bDa8yB4=
-      ingest_wireguard_peer_endpoint: 49.12.219.255:51820
+      # The app/Coolify host whose database this ingest host reaches: its wg0
+      # public key (`wg show wg0 public-key`), public endpoint and wg0 address.
+      # The template writes this one peer and replaces any other, so copy them
+      # from the live app host rather than from an older inventory.
+      ingest_wireguard_peer_public_key: <app host wg0 public key>
+      ingest_wireguard_peer_endpoint: <app host public IP>:51820
+      ingest_wireguard_peer_address: <app host wg0 address>/32
       # GitHub workflows own application configuration and release checkouts.
       # Select only provisioned stacks; use [] for host-only setup.
       ingest_watchdog_stacks: [nonprod]
