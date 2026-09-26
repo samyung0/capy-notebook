@@ -52,7 +52,7 @@ import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
 import { GeneratePanel } from '@/features/workspace/GeneratePanel';
 import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
 import { StorageOwnerBanner } from '@/features/workspace/StorageOwnerBanner';
-import { WorkspaceMenu } from '@/features/workspace/WorkspaceMenu';
+import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
@@ -351,7 +351,7 @@ export default function WorkspaceOpen() {
                 )}
               </div>
               {lg && (
-                <WorkspaceMenu
+                <WorkspacePicker
                   cloning={cloneWorkspaceIsPending}
                   onClone={
                     readOnly && canClone
@@ -547,6 +547,7 @@ export default function WorkspaceOpen() {
         <AddSourceDialog
           initialMode={addSource}
           onClose={() => setAddSource(null)}
+          onOpenItem={setOpenItem}
           open
           workspaceId={workspaceId}
         />

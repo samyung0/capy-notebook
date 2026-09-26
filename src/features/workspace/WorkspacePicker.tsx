@@ -46,7 +46,7 @@ function FooterItem({
  * workspaces, with settings (or clone, for a visitor) fixed at the bottom.
  * This replaces the old header card and its back link.
  */
-export function WorkspaceMenu({
+export function WorkspacePicker({
   workspace,
   onOpenSettings,
   onClone,

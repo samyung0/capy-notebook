@@ -133,6 +133,8 @@ async def test_full_results_batch_as_conversation_context_on_a_small_window(
         model_name="Flash",
         provider_slug="deepseek",
         model_slug="deepseek-v4-flash",
+        thinking_levels=("high",),
+        default_thinking="high",
         context_window_tokens=32_768,
     )
     summary = await compact.summarize_checkpoint(

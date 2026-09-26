@@ -73,12 +73,12 @@ export function RecentItemsCard() {
   const isLoading = filesLoading || materialsLoading || workspacesLoading;
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex h-full flex-col gap-3">
       <h3 className="t-card-title px-4">{m.dashboard_recent()}</h3>
       {paused ? (
-        <QueryPausedState />
+        <QueryPausedState className="h-full min-h-full flex-1" />
       ) : isLoading ? (
-        <SkeletonList count={8} rowHeight={52} />
+        <SkeletonList className="px-3" count={8} rowHeight={52} />
       ) : items.length === 0 ? (
         <p className="px-1 pt-2 pb-4 text-center text-fg-muted">
           {m.dashboard_recent_empty()}
@@ -87,11 +87,11 @@ export function RecentItemsCard() {
         <div className="flex -translate-x-0.5 flex-col gap-1 px-2">
           {items.map((item) => (
             <div
-              className="group relative rounded-button"
+              className="group relative flex items-start justify-between rounded-button hover:bg-surface-hover-bg"
               key={`${item.kind}-${item.id}`}
             >
               <Link
-                className="flex items-start gap-3 rounded-button px-1 py-2 hover:bg-surface-hover-bg"
+                className="flex flex-1 items-start gap-3 rounded-button px-1 py-2"
                 preload="intent"
                 {...recentLink(item)}
               >
@@ -108,7 +108,7 @@ export function RecentItemsCard() {
                     }
                   />
                 </span>
-                <span className="min-w-0 flex-1">
+                <span className="min-w-0 flex-1 leading-tight">
                   <span className="line-clamp-2 font-semibold text-fg">
                     {item.title}
                   </span>
@@ -129,7 +129,7 @@ export function RecentItemsCard() {
                     : toMaterialActionTarget(item.material)
                 }
                 display="hover"
-                hoverClassName="absolute top-1.5 right-1"
+                hoverClassName="mt-1 mr-1.5"
                 readOnly={!item.canEdit}
                 showMove={false}
                 workspaceId={item.workspaceId}

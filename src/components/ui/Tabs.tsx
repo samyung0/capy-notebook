@@ -1,6 +1,7 @@
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
-type Tab = string | { value: string; label: string; tone?: 'danger' };
+type Tab = string | { value: string; label: ReactNode; tone?: 'danger' };
 
 export interface TabsProps {
   bottomBorder?: boolean;

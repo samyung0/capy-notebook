@@ -541,6 +541,29 @@ func TestRegistryCompileAllowsUnassignedRerankSlot(t *testing.T) {
 	}
 }
 
+func TestRegistryCompileRefusesInstantRowMovedIntoChat(t *testing.T) {
+	snapshot := RegistrySnapshot{
+		Version: 1,
+		Slots:   models.AllSlots(),
+		Configs: []CatalogConfig{{
+			ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash",
+			Version: 1, Enabled: true, Slots: []string{models.SlotEditor},
+			IsDefaultFor:   []string{models.SlotEditor},
+			ThinkingLevels: []string{"instant"}, DefaultThinking: "instant",
+			ContextWindowTokens: 32_768,
+		}},
+	}
+	request := gridRequest(snapshot)
+	chat := request.Cells[0]
+	chat.Slot = models.SlotChat
+	chat.IsDefault = false
+	request.Cells = append(request.Cells, chat)
+	_, _, _, err := compileGrid(request, snapshot)
+	if !IsValidation(err) || !strings.Contains(err.Error(), "instant") {
+		t.Fatalf("expected instant chat validation, got %v", err)
+	}
+}
+
 func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 	t.Parallel()
 	current := CatalogConfig{

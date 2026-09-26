@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Panel } from '@/components/app/layout';
+import { GoogleIcon, MicrosoftIcon } from '@/components/ui/BrandIcons';
 import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
@@ -14,7 +15,6 @@ import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { clerkMessage, redirectAfterAuth, ssoUrls } from './clerk';
-import { GoogleIcon, MicrosoftIcon } from './ProviderIcons';
 import { newPasswordSchema, signInPasswordSchema } from './password';
 
 type Mode = 'signIn' | 'signUp';

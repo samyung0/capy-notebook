@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe } from '@/api/hooks';
 import { Avatar } from '@/components/ui/Avatar';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
@@ -37,7 +38,7 @@ function SearchButton() {
 }
 
 function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
-  const { data: me } = useMe({ errorBoundary: false });
+  const { data: me, isPending } = useMe({ errorBoundary: false });
   const navigate = useNavigate();
   const [themeOpen, setThemeOpen] = useState(false);
 
@@ -71,18 +72,36 @@ function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
         ]}
         trigger={
           <button
-            className="flex items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg"
+            aria-busy={isPending}
+            aria-label={isPending ? m.a11y_loading() : undefined}
+            className="flex h-11.5 w-[176px] shrink-0 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg"
             type="button"
           >
-            <Avatar
-              className="size-9.5 text-[15.2px]"
-              name={me?.name}
-              src={me?.avatarUrl}
+            {isPending ? (
+              <>
+                <Skeleton className="size-9.5 shrink-0 rounded-full" />
+                <Skeleton className="h-4 min-w-0 flex-1" />
+              </>
+            ) : (
+              <>
+                <Avatar
+                  className="size-9.5 text-[15.2px]"
+                  name={me?.name}
+                  src={me?.avatarUrl}
+                />
+                <span
+                  className="min-w-0 flex-1 truncate text-left font-bold"
+                  title={me?.name}
+                >
+                  {me?.name ?? '—'}
+                </span>
+              </>
+            )}
+            <Icon
+              className="shrink-0 text-fg-muted"
+              name="chevronDown"
+              size={16}
             />
-            <span className="text-left">
-              <span className="block font-bold">{me?.name ?? '—'}</span>
-            </span>
-            <Icon className="text-fg-muted" name="chevronDown" size={16} />
           </button>
         }
       />

@@ -210,7 +210,10 @@ function SelectSeparator({
 }: React.ComponentProps<typeof SelectPrimitive.Separator>) {
   return (
     <SelectPrimitive.Separator
-      className={cn('pointer-events-none mx-3 my-1 h-px bg-line', className)}
+      className={cn(
+        'pointer-events-none -mx-1 my-0 h-px bg-divider',
+        className
+      )}
       data-slot="select-separator"
       {...props}
     />

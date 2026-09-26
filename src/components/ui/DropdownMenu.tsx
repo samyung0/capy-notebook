@@ -154,7 +154,10 @@ function DropdownMenuSeparator({
   return (
     <DropdownMenuPrimitive.Separator
       {...useDropdownMenuScope()}
-      className={cn('-mx-1 my-1 h-px bg-divider', className)}
+      className={cn(
+        'pointer-events-none -mx-1 my-1 h-px bg-divider',
+        className
+      )}
       data-slot="dropdown-menu-separator"
       {...props}
     />

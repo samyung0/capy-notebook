@@ -796,7 +796,7 @@ func compileGrid(
 		if defaultFor == nil {
 			defaultFor = []string{}
 		}
-		drafts = append(drafts, compiledDraft{
+		moved := compiledDraft{
 			gridDraft: gridDraft{
 				ID:                        fmt.Sprintf("catalog:%s:%d", target.Ref, target.Version),
 				ProviderName:              config.ProviderName,
@@ -816,7 +816,13 @@ func compileGrid(
 			},
 			Slots:      sortedSlots,
 			DefaultFor: defaultFor,
-		})
+		}
+		// A row moved into new slots is republished, so it must pass the same
+		// slot rules as a draft (e.g. chat rows cannot offer instant thinking).
+		if err := validateConfigForSlots(moved.gridDraft, sortedSlots); err != nil {
+			return nil, nil, nil, err
+		}
+		drafts = append(drafts, moved)
 		delete(existing, target)
 	}
 	sort.Slice(drafts, func(i, j int) bool { return drafts[i].ID < drafts[j].ID })

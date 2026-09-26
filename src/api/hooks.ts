@@ -1514,8 +1514,6 @@ export function useDeleteMaterial(wsId: string) {
   });
 }
 
-/** Create a user-authored note (markdown) material and reveal it in-pane. */
-export type CreateNoteInput = Omit<CreateMaterialReq, 'kind'>;
 /** Create the quiz or flashcard set a note embeds; the caller inserts the
  * returned id as a reference block. */
 export function useCreateEmbeddedMaterial() {
@@ -1532,16 +1530,15 @@ export function useCreateEmbeddedMaterial() {
   });
 }
 
-export function useCreateNote(wsId: string) {
+/** Create a workspace material of any kind; non-note kinds pass content
+ * holding their element. */
+export function useCreateMaterial(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: CreateNoteInput = {}) =>
-      api.post<Material>(`/workspaces/${wsId}/materials`, {
-        kind: 'note',
-        ...input,
-      }),
+    mutationFn: (body: CreateMaterialReq) =>
+      api.post<Material>(`/workspaces/${wsId}/materials`, body),
     onSuccess: (mt) => {
-      track('note_created', { workspaceId: wsId });
+      if (mt.kind === 'note') track('note_created', { workspaceId: wsId });
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       invalidateOwnedMaterials(qc);
       qc.setQueryData(qk.material(mt.id), mt);

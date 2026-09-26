@@ -24,6 +24,8 @@ export function ButtonCard({
       <button
         className={cn(
           'flex h-auto max-h-22 min-w-30 items-center justify-center rounded-card! px-6.5 py-3 transition-[transform,translate,scale,box-shadow] ease-(--motion-ease-smooth-out) hover:-translate-y-0.5 hover:bg-initial hover:shadow-card',
+          // Selected when used as a toggle (aria-pressed).
+          'aria-pressed:border-solid-accent-1! aria-pressed:bg-tint-accent-1! aria-pressed:ring-1 aria-pressed:ring-solid-accent-1',
           flex === 'col' && 'flex-col gap-1.5',
           flex === 'row' && 'flex-row gap-2',
           className

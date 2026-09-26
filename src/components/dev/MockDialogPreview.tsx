@@ -6,13 +6,11 @@ import { TaskEditDialog } from '@/features/tasks/TaskEditDialog';
 import {
   AddSourceDialog,
   type PendingSource,
-  SourceDetailsDialog,
 } from '@/features/workspace/AddSourceDialog';
 import { WorkspaceTransferDialog } from '@/features/workspace/WorkspaceMemberManager';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { tasks, workspaces } from '@/mocks/db';
 import { scenarioWorkspace } from '@/mocks/scenarioFixtures';
-import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import type { MockDialogId } from './mockDialogOptions';
 
 const source: PendingSource = {
@@ -105,15 +103,12 @@ export default function MockDialogPreview({
     <AppErrorBoundary>
       {dialog === 'onboarding' ? (
         <OnboardingDialog />
-      ) : dialog === 'source-chooser' ? (
-        <AddSourceDialog onClose={onClose} open workspaceId={workspaceId} />
       ) : (
-        <SourceDetailsDialog
-          initialSources={initialSources}
+        <AddSourceDialog
+          initialMode={dialog === 'source-details' ? 'import' : 'upload'}
+          initialSources={dialog === 'source-chooser' ? [] : initialSources}
           onClose={onClose}
-          onEmpty={onClose}
           open
-          uploadPolicy={sourceUploadPolicy}
           workspaceId={workspaceId}
         />
       )}
