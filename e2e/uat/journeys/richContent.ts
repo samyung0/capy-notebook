@@ -170,19 +170,27 @@ export async function expectRichContent(
       frame.getByRole('region', { name: 'Page footer' }).first()
     ).toBeAttached();
   } else if (format === 'xlsx') {
+    const cell = (name: string) =>
+      frame.getByRole('gridcell', { exact: true, name });
+    // The mirror holds only painted cells. At the journeys' 1280x720 the
+    // runtime paints `CC info` up to column G, so the grid scrolls right, as
+    // a user would, until H5 is painted.
+    await frame.getByRole('tab', { exact: true, name: 'CC info' }).click();
+    const page = frame.owner().page();
+    await expect(async () => {
+      if (await cell('H5, 4').count()) return;
+      await frame.owner().hover();
+      await page.mouse.wheel(200, 0);
+      await expect(cell('H5, 4')).toBeAttached({ timeout: 1000 });
+    }).toPass({ timeout });
     for (const [sheet, label] of [
-      ['CC info', 'H5, 4'],
       ['Faculty Database', `C3, ${XLSX_NOTE}`],
       ['Summary', 'D4, 5.4'],
     ]) {
       await frame.getByRole('tab', { exact: true, name: sheet }).click();
-      await expect(
-        frame.getByRole('gridcell', { exact: true, name: label })
-      ).toBeAttached({ timeout });
+      await expect(cell(label)).toBeAttached({ timeout });
     }
-    await expect(
-      frame.getByRole('gridcell', { exact: true, name: 'C4, 10' })
-    ).toBeAttached();
+    await expect(cell('C4, 10')).toBeAttached();
     await expect(
       frame.getByRole('img', { name: /^Average workload by area, / })
     ).toBeAttached();
