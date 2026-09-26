@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { redirectAfterAuth } from './clerk';
+import { redirectAfterAuth, signInHref } from './clerk';
 
 // Vitest runs these in node; the helper only reads window.location.
 function withSearch(search: string) {
@@ -18,6 +18,19 @@ describe('redirectAfterAuth', () => {
       `?redirect_url=${encodeURIComponent('https://capynotebook.com/workspace-invites/tok')}`
     );
     expect(redirectAfterAuth()).toBe('/workspace-invites/tok');
+  });
+
+  it('returns to the page AuthGate sent to sign-in', () => {
+    vi.stubGlobal('window', {
+      location: { pathname: '/workspace-invites/tok', search: '?x=1' },
+    });
+    const { pathname, search } = new URL(
+      signInHref(),
+      'https://capynotebook.com'
+    );
+    expect(pathname).toBe('/sign-in');
+    withSearch(search);
+    expect(redirectAfterAuth()).toBe('/workspace-invites/tok?x=1');
   });
 
   it('falls back to the dashboard for other origins or nothing', () => {

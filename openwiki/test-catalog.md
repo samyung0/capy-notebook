@@ -82,7 +82,7 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 | [`src/lib/analytics.test.ts`](../src/lib/analytics.test.ts) | Closed `AnalyticsEvent` union exhaustiveness, size/duration/score/card buckets, parameterized pageview paths, clone/study source, ingest once-per-file, and quota-only `quota_blocked` props. |
 | [`src/features/auth/password.test.ts`](../src/features/auth/password.test.ts) | The sign-up password rule (12 characters, a digit, a symbol) accepts compliant passwords including CJK and names each missing rule in order; the sign-in schema keeps surrounding spaces. |
 | [`src/features/auth/profile-photo.test.ts`](../src/features/auth/profile-photo.test.ts) | Accepted photo MIME types, exact Clerk 10,000,000-byte limit and rejected unsupported files. |
-| [`src/features/auth/clerk.test.ts`](../src/features/auth/clerk.test.ts) | `redirect_url` keeps same-origin relative and absolute destinations with search and hash, and falls back to `/` for protocol-relative, backslash and foreign-origin values. |
+| [`src/features/auth/clerk.test.ts`](../src/features/auth/clerk.test.ts) | `redirect_url` keeps same-origin relative and absolute destinations with search and hash, the sign-in URL `AuthGate` builds reads back as the page it left, and values fall back to `/` for protocol-relative, backslash and foreign-origin values. |
 
 ### Email authoring
 

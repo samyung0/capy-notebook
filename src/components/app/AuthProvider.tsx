@@ -1,7 +1,8 @@
-import { ClerkProvider, RedirectToSignIn, Show, useAuth } from '@clerk/react';
+import { ClerkProvider, Show, useAuth } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { queryClient } from '@/api/queryClient';
+import { signInHref } from '@/features/auth/clerk';
 import { m } from '@/i18n';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
@@ -70,6 +71,16 @@ export function AppAuthProvider({ children, pending }: AuthProviderProps) {
       <AuthTokenBridge pending={pending}>{children}</AuthTokenBridge>
     </ClerkProvider>
   );
+}
+
+/** Sends the visitor to /sign-in with this page in the `redirect_url` query,
+ * which every auth page reads and keeps. Clerk's RedirectToSignIn puts it in
+ * the hash (`/sign-in#/?redirect_url=`), which our auth pages never read. */
+function RedirectToSignIn() {
+  useEffect(() => {
+    window.location.assign(signInHref());
+  }, []);
+  return null;
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {

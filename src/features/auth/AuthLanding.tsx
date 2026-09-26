@@ -221,8 +221,6 @@ export function NewPasswordForm({
 
 function SignInCard() {
   const { signIn } = useSignIn();
-  const router = useRouter();
-  const target = redirectAfterAuth();
   const [step, setStep] = useState<'form' | 'newPassword'>('form');
   const [formError, setFormError] = useState<string | null>(null);
   const id = useId();
@@ -238,10 +236,9 @@ function SignInCard() {
     defaultValues: { email: '', password: '' },
     resolver: zodResolver(schema),
   });
+  // No navigate: AuthLanding's signed-in effect leaves this page.
   const finish = async () => {
-    const { error } = await signIn.finalize({
-      navigate: async () => router.history.push(target),
-    });
+    const { error } = await signIn.finalize();
     return error ? clerkMessage(error) : null;
   };
 
@@ -355,8 +352,6 @@ function SignInCard() {
 
 function SignUpCard() {
   const { signUp } = useSignUp();
-  const router = useRouter();
-  const target = redirectAfterAuth();
   const [step, setStep] = useState<'form' | 'code'>('form');
   const [formError, setFormError] = useState<string | null>(null);
   const [sentAt, setSentAt] = useState<number | null>(null);
@@ -436,9 +431,8 @@ function SignUpCard() {
                 setFormError(clerkMessage(error));
                 return;
               }
-              const { error: finalizeError } = await signUp.finalize({
-                navigate: async () => router.history.push(target),
-              });
+              // No navigate: AuthLanding's signed-in effect leaves this page.
+              const { error: finalizeError } = await signUp.finalize();
               if (finalizeError) setFormError(clerkMessage(finalizeError));
             })}
           >
@@ -606,6 +600,9 @@ export function AuthLanding({ mode }: { mode: Mode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   // A signed-in visitor (saved URL, browser history) has nothing to do here.
+  // This is also the only exit after signing in or up on this page. The new
+  // session remounts the router tree (AuthTokenBridge), so a target pushed by
+  // finalize would leave this effect reading the target's URL, not ours.
   useEffect(() => {
     if (isLoaded && isSignedIn) router.history.replace(redirectAfterAuth());
   }, [isLoaded, isSignedIn, router]);

@@ -32,9 +32,11 @@ export async function mockAuthAction(operation: string): Promise<Result> {
 const action = (operation: string) => () => mockAuthAction(operation);
 const signIn = {
   create: action('reset-start'),
-  finalize: async ({ navigate }: { navigate: () => Promise<void> }) => {
+  // A real session makes AuthLanding's signed-in effect leave the page; the
+  // mock never signs in, so it leaves here.
+  finalize: async () => {
     const result = await mockAuthAction('finalize');
-    if (!result.error) await navigate();
+    if (!result.error) window.location.replace(redirectAfterAuth());
     return result;
   },
   password: async () => {

@@ -9,9 +9,18 @@ export function clerkMessage(
   return error.longMessage || error.message || m.auth_error_generic();
 }
 
-/** Same-origin return path after auth, from the `redirect_url` query. Clerk's
- * RedirectToSignIn sends the full current URL, our own links send a path; both
- * reduce to path, search and hash on this origin, anything else to `/`. */
+/** Sign-in page URL that returns to `returnTo` (a same-origin path) after auth. */
+export function signInHref(
+  returnTo = `${window.location.pathname}${window.location.search}`
+) {
+  const path =
+    returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
+  return `/sign-in?${new URLSearchParams({ redirect_url: path })}`;
+}
+
+/** Same-origin return path after auth, from the `redirect_url` query. A path
+ * or an absolute URL reduces to path, search and hash on this origin, anything
+ * else to `/`. */
 export function redirectAfterAuth(): string {
   const raw = new URLSearchParams(window.location.search).get('redirect_url');
   if (!raw) return '/';

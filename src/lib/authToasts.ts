@@ -1,16 +1,8 @@
 import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
+import { signInHref } from '@/features/auth/clerk';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/observability';
-
-/** Safe same-origin return path for post-auth redirect. */
-export function signInHref(
-  returnTo = `${window.location.pathname}${window.location.search}`
-) {
-  const path =
-    returnTo.startsWith('/') && !returnTo.startsWith('//') ? returnTo : '/';
-  return `/sign-in?${new URLSearchParams({ redirect_url: path })}`;
-}
 
 export function toastCloneError(
   err: unknown,

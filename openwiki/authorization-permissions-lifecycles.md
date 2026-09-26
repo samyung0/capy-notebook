@@ -478,8 +478,12 @@ Microsoft, email plus password, forgot-password and create-account links),
 password; the verified reset also signs the user in) and `/sso-callback`
 (Clerk's redirect callback, which completes the session or transfers a
 first-time OAuth account into sign-up). A same-origin `redirect_url` query
-carries the post-auth destination through every hop. Links between auth pages
-use SPA navigation and preserve search parameters. Sign-up and new-password
+carries the post-auth destination through every hop. `AuthGate` sends
+signed-out visitors to `/sign-in?redirect_url=<path>` itself; Clerk's
+`RedirectToSignIn` would put the URL in the hash, which the auth pages do not
+read. Once a session is active, the landing's signed-in effect is the only
+redirect to the destination; `finalize` does not navigate. Links between auth
+pages use SPA navigation and preserve search parameters. Sign-up and new-password
 forms require 12 characters with a digit and a symbol; sign-in only checks
 non-empty. OAuth accounts are never asked for a password.
 
