@@ -562,14 +562,18 @@ running retrieval processes stop reranking within one registry poll
 on needs a new catalog version: clone the row into a draft in Ops, assign it
 to the `rerank` column as its default, and save.
 
-Rollout order for `0030`: run it only after pipeline code that knows the
-`rerank` slot is live on every ingest-host lane (production, UAT and
-`worker-local`). An older pipeline registry fails on the unknown slot: running
-workers stop picking up catalog changes and a restarted worker or retrieval
-service does not start. Deploy the ingest-host release first, then the app
-host whose migration applies `0030`. The gateway migrates at startup unless
-`MIGRATE=false`, so developers run a local gateway build containing `0030`
-with `MIGRATE=false` (or not at all) until `worker-local` runs that code.
+Rollout order for `0030`: an older pipeline registry fails on the unknown
+`rerank` slot (running workers stop picking up catalog changes; a restarted
+worker or retrieval service does not start). **Deploy ingest** refuses a
+revision the backend does not serve yet, so deploy the app (its migration
+applies `0030`, and the retrieval service ships with it), then that
+environment's ingest lane immediately after at the same revision; in between,
+running workers keep the catalog they loaded. This coupling is specific to
+`0030` (a migration writing catalog content older pipeline code cannot
+read), not to every deploy, and ends once every lane runs that code. The
+gateway migrates at startup unless `MIGRATE=false`, so developers run a local
+gateway build containing `0030` with `MIGRATE=false` (or not at all) until
+`worker-local` runs that code.
 
 Migration `0010_deepseek_flash.sql` moves Flash Vision catalog entries and user
 preferences to `deepseek-flash`, carries over existing credit rates and capacity,
