@@ -20,7 +20,11 @@ register it in `bench/README.md` and the benchmark table in `AGENTS.md`.
   export at 10k, 50k and 100k cells. Start from `probes/xlsx-lazy/`.
 - Collaboration service cost per incoming update and browser draft write cost
   per keystroke.
-- WASM sizes of the viewer and editor builds against the previous pin.
+- WASM sizes of the viewer and editor builds against the previous pin. The upstream merge
+  (2026-09-26, `capy/upstream-merge` at `b8ee465c`) grew them 10-13% for DOCX and XLSX and
+  34% (editor, 2.86 to 3.83 MB) and 50% (viewer, 1.41 to 2.11 MB) for PPTX; find which upstream
+  additions (font metric tables from `c3c17939`, TIFF decoding, new renderers) the viewer
+  needs, and measure the effect on first view in the browser.
 
 The fork's golden seed and state-size budget tests land with the storage round.
 This family adds the numbers that are too slow or too large for CI.

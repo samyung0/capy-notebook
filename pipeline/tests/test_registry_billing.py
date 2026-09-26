@@ -190,8 +190,9 @@ def test_claim_gating_matrix(monkeypatch):
     assert worker._account_allows_ingest("f_1", system, True) is True
     platform = {**payload, "paidBy": "platform"}
     assert worker._account_allows_ingest("f_1", platform, True) is False
+    # It skips the owner's storage too; lifecycle stays in ingest_accounts_active.
     state["owner_ok"] = False
-    assert worker._account_allows_ingest("f_1", system, True) is False
+    assert worker._account_allows_ingest("f_1", system, True) is True
     state["owner_ok"] = True
 
     state["actor_ok"] = True

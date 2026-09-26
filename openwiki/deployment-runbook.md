@@ -2411,3 +2411,81 @@ The shared non-production parser binds `PARSER_BIND_ADDRESS` on WireGuard
 instead of loopback; configure its private address and port 8091, with production
 on port 8090 when provisioned. Local development needs a private route or an SSH
 forward. The environment manifest includes these app-host values.
+
+## Office maintenance window
+
+An Office engine upgrade that changes seed output (the fork's golden seed tests
+decide, per format) ships in a maintenance window: editing pauses, every file
+with unpublished edits publishes on the old engine at platform cost, and the
+deploy resets the saved states so rooms reseed on the new engine (decision in
+`human/frontend/office-files.md`). An upgrade that keeps seeds only bumps
+epochs. Run the window on UAT first; it doubles as the rehearsal.
+
+Migration `0031_office_maintenance.sql` adds what the window uses: the
+`office_editing_pause` row and `source_documents.reprocess_at` with its partial
+index.
+
+The commands are one binary, `office-maintenance`
+([`server/cmd/office-maintenance`](../server/cmd/office-maintenance/main.go)),
+run against the environment's database:
+
+- UAT and production: in the gateway (`server`) container, which already holds `DATABASE_URL`:
+  `docker exec server-<resource-uuid> /app/office-maintenance <command>`.
+- Local: `cd server && go run ./cmd/office-maintenance <command>`
+  (`DATABASE_URL` defaults to the compose database on `localhost:5432`).
+
+| Command | Effect |
+| --- | --- |
+| `pause` | Inserts the `office_editing_pause` row. The gateway answers `423 office_editing_paused` to Office edit sessions (`source-session` for editing, `collaboration-token`, after authorization) and to seeding, and agent edits and their Undo refuse with the tool code `office_editing_paused`, also where they commit. Within about 15 seconds (5 to notice, up to 10 for the flush) every collaboration instance runs the handoff flush on each loaded Office room, persists it once and closes its writers with `source-editing-paused`; a saved editor keeps its view read-only under the maintenance banner, one with unsaved changes goes to recovery. A room that loads later is flushed on a later tick, a room mid-publication after its handoff. Authentication refuses new writers with the reason `office-editing-paused`, a paused room refuses updates from any writer that slipped through, and a client refused on reconnect goes to the same banner or recovery. Viewing and text sources keep working. |
+| `publish-all` | Requests a publication for every Office source with unpublished edits (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. Prints one line per file and the number refused. |
+| `status` | Prints whether editing is paused, every Office source still unpublished (with its running job and `refresh_error`) and the Office publication and reprocess work in flight: `source_refresh` jobs, the `parse` or `ingest` jobs they became, and system-paid reprocess jobs. Other uploads and text refreshes are not counted. Exits 1 until editing is paused and both lists are empty. |
+| `resume` | Deletes the pause row. |
+
+A maintenance export-only publication makes the saved state the file's bytes
+without a parser or provider call: the collaboration service exports and
+uploads the candidate as for any refresh, and finalizing it replaces the file's
+bytes, bumps the epoch, stores the seed of the export as the state, drops the
+file's index and evicts the old room (editing is paused, so no writer needs a
+flush). Outside the window a store-only file's automatic export-only
+publication goes through the handoff like a refresh instead. Unless the file
+never parsed successfully it is marked for reprocessing: the refresh scheduler parses and
+indexes it at platform cost, whatever the workspace's auto-reparse setting,
+once its owner is active and it is out of the trash, with one job at a time,
+and retries a day later if that fails. A parse that timed out or ran out of
+memory is not rerun until the file's bytes or the parser version change: the
+pipeline refuses a quarantined fingerprint before calling the parser, and the
+same saved state always exports the same bytes. A file never parsed
+successfully stays unmarked and waits for its owner's Process, charged as its
+first parse.
+
+Steps:
+
+1. Beforehand, deploy the maintenance tooling on the old pin, and on UAT run
+   `pause`, `status` and `resume` once to check them.
+2. `pause`. Connected editors flush and go read-only.
+3. `publish-all`, then `status`. Repeat both until `status` prints
+   `0 unpublished, 0 in flight` with editing paused. A second `publish-all`
+   sends each file whose system republish failed to export-only. An export
+   that fails again (an engine error) stays listed with its `refresh_error`:
+   the deploy waits for the operator, who fixes the file on the old engine
+   with editing still paused. Nothing keeps a dropped state, so the deploy
+   never runs while a file is unpublished; to abort the window instead, run
+   `resume` on the old engine without deploying. The old engine's export
+   losses in these publications (charts, opaque drawings) are known and
+   accepted for UAT data.
+4. Deploy the pin bump with that window's reset migration, still paused. The
+   pin bump copies
+   [`server/migrations/templates/office_window_reset.sql`](../server/migrations/templates/office_window_reset.sql)
+   into the next numbered migration, fills the formats whose seeds changed,
+   and ships it. Its guard is the only protection: the migration refuses to
+   run, and the deploy stops, while editing is not paused or any Office source
+   of those formats has unpublished edits or a refresh in flight, and it holds
+   a lock on `source_documents` for its transaction. Then, in one statement,
+   it releases AI edit Undo, deletes refresh candidates, bumps the epoch,
+   drops the state and stored baseline and empties pending effects. No dropped
+   state is kept.
+5. `resume`. Tabs from before the deploy get 403 on reconnect and go to
+   recovery or the banner. Editing needs the pause off, so the check comes
+   after this step.
+6. Check: open one file of each format in Edit, make an edit, publish it, and
+   confirm quota and the `source_documents` rows.

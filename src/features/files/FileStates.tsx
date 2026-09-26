@@ -69,10 +69,11 @@ export function FileEmpty({
 }
 
 /**
- * A newer version was published while this saved editor stayed open. The view
- * stays as it is, read-only; reloading the page opens the new version.
+ * A newer version was published while this saved editor stayed open, or the
+ * maintenance pause closed it (`paused`). The view stays as it is, read-only;
+ * reloading the page opens the new version.
  */
-export function SourceReplacedBanner() {
+export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
   return (
     <WarningBanner
       action={
@@ -85,7 +86,7 @@ export function SourceReplacedBanner() {
         </ErrorAction>
       }
       icon="info"
-      message={m.source_edit_replaced()}
+      message={paused ? m.source_edit_paused() : m.source_edit_replaced()}
     />
   );
 }

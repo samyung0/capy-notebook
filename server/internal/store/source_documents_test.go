@@ -137,18 +137,23 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 		tokens   int
 		idle     string
 		admitted bool
+		effects  string
 	}{
-		{3000, "61 seconds", true},
-		{3000, "30 seconds", false},
-		{2999, "6 days", false},
-		{1, "7 days 1 minute", true},
+		{3000, "61 seconds", true, ""},
+		{3000, "30 seconds", false, ""},
+		{2999, "6 days", false, ""},
+		{1, "7 days 1 minute", true, ""},
+		// Moves only weigh 0 tokens and publish through the stale rule.
+		{0, "7 days 1 minute", true, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
+		{0, "6 days", false, `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`},
+		{0, "8 days", false, `[]`},
 	} {
 		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
 		if _, err = s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval WHERE file_id=$1`, file.ID, c.tokens, c.idle); err != nil {
+		if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,pending_effects=COALESCE(NULLIF($4,'')::jsonb,pending_effects) WHERE file_id=$1`, file.ID, c.tokens, c.idle, c.effects); err != nil {
 			t.Fatal(err)
 		}
 		_, err = s.RequestSourceRefresh(ctx, owner, file.ID, true)
@@ -158,24 +163,29 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 	}
 }
 
+// schedulerSource reads a statement or constant of the collaboration
+// scheduler (collaboration/src/sourceDocuments.ts), the first capture group of
+// pattern, so the Go tests run it verbatim.
+func schedulerSource(t *testing.T, pattern string) string {
+	t.Helper()
+	raw, err := os.ReadFile("../../../collaboration/src/sourceDocuments.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	match := regexp.MustCompile(pattern).FindSubmatch(raw)
+	if match == nil {
+		t.Fatalf("%s not found in sourceDocuments.ts", pattern)
+	}
+	return string(match[1])
+}
+
 // TestRefreshSchedulerQuery runs the collaboration scheduler's statements from
 // collaboration/src/sourceDocuments.ts verbatim with its trigger constants,
 // which must equal Go admission's.
 func TestRefreshSchedulerQuery(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	raw, err := os.ReadFile("../../../collaboration/src/sourceDocuments.ts")
-	if err != nil {
-		t.Fatal(err)
-	}
-	find := func(pattern string) string {
-		t.Helper()
-		match := regexp.MustCompile(pattern).FindSubmatch(raw)
-		if match == nil {
-			t.Fatalf("%s not found in sourceDocuments.ts", pattern)
-		}
-		return string(match[1])
-	}
+	find := func(pattern string) string { return schedulerSource(t, pattern) }
 	candidatesSQL := find("(?s)const REFRESH_CANDIDATES_SQL = `(.*?)`;")
 	deferSQL := find(`(?s)const REFRESH_DEFER_SQL =\s*'(.*?)';`)
 	tokens, err := strconv.Atoi(find(`const OFFICE_REFRESH_TOKENS = (\d+);`))
@@ -189,27 +199,29 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	}
 
 	owner := newBlobTestUser(t, s, "source_scheduler")
-	edited := func(netTokens int, ago string) string {
+	edited := func(netTokens int, ago, effects string) string {
 		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
 		if _, err := s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,last_refresh_requested_at=now()-$3::interval WHERE file_id=$1`, file.ID, netTokens, ago); err != nil {
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=$2,last_edited_at=now()-$3::interval,last_refresh_requested_at=now()-$3::interval,pending_effects=COALESCE(NULLIF($4,'')::jsonb,pending_effects) WHERE file_id=$1`, file.ID, netTokens, ago, effects); err != nil {
 			t.Fatal(err)
 		}
 		return file.ID
 	}
-	due := edited(3000, "2 minutes")
-	worthless := edited(0, "8 days") // effects worth no tokens: Go refuses them
-	unedited := edited(5, "8 days")
+	due := edited(3000, "2 minutes", "")
+	worthless := edited(0, "8 days", `[]`) // an empty change list: Go refuses it
+	// Moves only: 0 tokens, published by the stale rule.
+	reordered := edited(0, "9 days", `[{"id":"p","kind":"text","label":"Paragraph","operation":"move"}]`)
+	unedited := edited(5, "8 days", "")
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
 	// Only this test's rows compete for the batch; the rollback restores the rest.
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, unedited}); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited}); err != nil {
 		t.Fatal(err)
 	}
 	candidates := func() []string {
@@ -223,7 +235,8 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		for rows.Next() {
 			var file, user string
 			var checkpoint int64
-			if err := rows.Scan(&file, &user, &checkpoint); err != nil {
+			var reprocess bool
+			if err := rows.Scan(&file, &user, &checkpoint, &reprocess); err != nil {
 				t.Fatal(err)
 			}
 			files = append(files, file)
@@ -233,14 +246,14 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		}
 		return files
 	}
-	if got := candidates(); !slices.Equal(got, []string{unedited, due}) {
-		t.Fatalf("candidates %v, want the unedited file then the due one", got)
+	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, due}) {
+		t.Fatalf("candidates %v, want the reordered file, the unedited one, then the due one", got)
 	}
 	// A 429 (owner at the ingest-job limit) rotates the file behind the others.
 	if _, err = tx.Exec(ctx, deferSQL, unedited); err != nil {
 		t.Fatal(err)
 	}
-	if got := candidates(); !slices.Equal(got, []string{due, unedited}) {
+	if got := candidates(); !slices.Equal(got, []string{reordered, due, unedited}) {
 		t.Fatalf("candidates after a 429 %v, want the refused file last", got)
 	}
 }
@@ -298,7 +311,7 @@ func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {
 	if _, err = s.RequestSourceRefresh(ctx, owner, maintained, false); !errors.Is(err, ErrCreditsExhausted) {
 		t.Fatalf("owner-paid refresh without credits: %v", err)
 	}
-	p := payloadOf(s.requestSourceRefresh(ctx, owner, maintained, false, models.PaidBySystem))
+	p := payloadOf(s.requestSourceRefresh(ctx, owner, maintained, false, models.PaidBySystem, false))
 	var paidBy string
 	if err = s.pool.QueryRow(ctx, `SELECT paid_by FROM provider_sessions WHERE id=$1`, p.ReservationID).Scan(&paidBy); err != nil {
 		t.Fatal(err)

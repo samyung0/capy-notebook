@@ -134,7 +134,7 @@ export default function SheetView({
           message={runtime.error}
         />
       )}
-      {runtime.replaced && <SourceReplacedBanner />}
+      {runtime.replaced && <SourceReplacedBanner paused={runtime.paused} />}
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />

@@ -131,7 +131,7 @@ export function SourceTextView({
           message={source.error}
         />
       )}
-      {source.replaced && <SourceReplacedBanner />}
+      {source.replaced && <SourceReplacedBanner paused={source.paused} />}
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (
           source.doc ? (

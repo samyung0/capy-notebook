@@ -179,8 +179,8 @@ Record 21. This must be deployed and tried on UAT before the window, on the curr
 3. **Readiness check**. An operator command that prints every Office source still unpublished and
    every `source_refresh`, `parse` or `ingest` job in flight. The deploy waits for zero.
 4. **Reset migration template**. One statement per window that, for the formats whose golden seeds
-   changed, copies each state it drops into an archive table kept 30 days (with the old engine's
-   pin), bumps `epoch`, drops the state and the stored baseline, empties pending effects and
+   changed, refuses to run unless editing is paused and nothing is unpublished (no archive; a
+   file that cannot publish keeps the pause on until an operator fixes it), bumps `epoch`, drops the state and the stored baseline, empties pending effects and
    deletes refresh candidates, the same shape as `trash.go` near 405. C5 instantiates it.
 5. **Runbook**. A window section in `openwiki/deployment-runbook.md` with these steps and the
    commands.

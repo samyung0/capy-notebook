@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import { api } from '@/api/client';
+import { api, isApiError } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { m } from '@/i18n';
@@ -14,6 +14,7 @@ import {
 } from './sourceDraft';
 import {
   createSourceProvider,
+  OFFICE_EDITING_PAUSED_REASON,
   SOURCE_PUBLISHING_REASON,
   type SourceProvider,
 } from './sourceProvider';
@@ -66,6 +67,18 @@ export function sourceChangesCovered(
   return Math.max(state.acknowledged, handedOff) >= state.sequence;
 }
 
+/**
+ * Whether a refusal is the Office maintenance pause: the gateway's
+ * `office_editing_paused` answer (token or session) or the collaboration
+ * service's `office-editing-paused` authentication reason.
+ */
+export function maintenancePaused(value: unknown): boolean {
+  return (
+    value === OFFICE_EDITING_PAUSED_REASON ||
+    (isApiError(value) && value.code === 'office_editing_paused')
+  );
+}
+
 export function useSourceSession(fileId: string, enabled: boolean) {
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
@@ -98,8 +111,10 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     setBufferDirty(pending);
   }, []);
   const [handoff, setHandoff] = useState(false);
-  // A newer version was published while this saved view stayed open.
+  // A newer version was published while this saved view stayed open, or the
+  // maintenance pause closed it (paused: the banner says so).
   const [replaced, setReplaced] = useState(false);
+  const [paused, setPaused] = useState(false);
   const flushHandler = useRef<((pause?: boolean) => Promise<void>) | null>(
     null
   );
@@ -156,7 +171,11 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     };
     const fail = (value: unknown) => {
       if (cancelled) return;
-      const next = value instanceof Error ? value : new Error(String(value));
+      const next = maintenancePaused(value)
+        ? new Error(m.source_edit_paused_error())
+        : value instanceof Error
+          ? value
+          : new Error(String(value));
       setError(next.message);
       setStatus('error');
       for (const waiter of flushWaiters.current.splice(0)) waiter.reject(next);
@@ -177,6 +196,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     setDirty(false);
     setHandoff(false);
     setReplaced(false);
+    setPaused(false);
     setSynced(false);
     setError(null);
     setLoaded(null);
@@ -259,9 +279,10 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         restoredDrafts = [];
         queueDraftWrite(() => clearSourceDrafts(acknowledgedDrafts));
       };
-      // A newer version was published. A saved client keeps its view
-      // read-only under the reload banner; unsaved changes go to recovery.
-      const replace = () => {
+      // A newer version was published, or the maintenance pause closed the
+      // room. A saved client keeps its view read-only under the reload
+      // banner; unsaved changes go to recovery.
+      const replace = (pause = false) => {
         if (
           sourceChangesCovered(active, active.handedOff) &&
           !bufferDirtyRef.current
@@ -270,6 +291,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           active.acknowledged = active.sequence;
           markSaved();
           setHandoff(false);
+          setPaused(pause);
           setReplaced(true);
         } else {
           active.recovery = true;
@@ -295,14 +317,19 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         name: session.room,
         // A publication's first refusal never gets here (sourceProvider.ts).
         onAuthenticationFailed: ({ reason }) => {
-          if (!active.recovery)
-            fail(
-              new Error(
-                reason === SOURCE_PUBLISHING_REASON
-                  ? m.source_edit_publishing()
-                  : reason
-              )
-            );
+          if (active.recovery) return;
+          // Paused before this client saw the room's paused message.
+          if (maintenancePaused(reason)) {
+            replace(true);
+            return;
+          }
+          fail(
+            new Error(
+              reason === SOURCE_PUBLISHING_REASON
+                ? m.source_edit_publishing()
+                : reason
+            )
+          );
         },
         onDisconnect: () => {
           active.disconnects++;
@@ -381,6 +408,10 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             replace();
             return;
           }
+          if (event.type === 'source-editing-paused') {
+            replace(true);
+            return;
+          }
           if (
             event.type === 'source-checkpoint-failed' &&
             event.epoch === session.epoch
@@ -427,12 +458,19 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             for (const resolve of unsyncedWaiters.splice(0)) resolve();
         },
         token: async () => {
-          const token =
-            initialToken ??
-            (await api.post<SourceCollaborationToken>(
-              `/files/${fileId}/collaboration-token`,
-              {}
-            ));
+          let token: SourceCollaborationToken;
+          try {
+            token =
+              initialToken ??
+              (await api.post<SourceCollaborationToken>(
+                `/files/${fileId}/collaboration-token`,
+                {}
+              ));
+          } catch (error) {
+            // A reconnect during the maintenance pause.
+            if (!cancelled && maintenancePaused(error)) replace(true);
+            throw error;
+          }
           if (cancelled) throw new Error(m.source_edit_session_changed());
           initialToken = null;
           if (token.epoch !== session.epoch || token.room !== session.room) {
@@ -513,6 +551,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     error,
     flushHandler,
     handoff,
+    paused,
     pendingInput,
     replaced,
     save,

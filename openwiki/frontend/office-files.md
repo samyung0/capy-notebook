@@ -259,9 +259,19 @@ shows the newer-version banner instead; a client with unsaved changes enters
 recovery.
 
 Office automatic refresh starts only after a prior successful parse, at least
-5,000 estimated net-change tokens, and 60 seconds without a server-observed
-edit. Every edit resets that idle interval; there is no maximum wait. Manual
-processing bypasses the threshold. Editing continues during processing. A newer
+3,000 trimmed net-change tokens or saved changes left unedited for 7 days, and
+60 seconds without a server-observed edit. Every edit resets that idle
+interval. A text effect keeps the changed span plus 40 characters on each
+side; a move (text that only changed position, as every later paragraph does
+when one is inserted) carries no text and counts 0 tokens, so a pure reorder
+publishes through the 7-day rule. Manual processing bypasses the threshold. A
+store-only Office file (never processed) publishes export-only under the same
+trigger, whatever the workspace's auto-reparse setting, through the same
+handoff: the saved state becomes the file's bytes with no parser or provider
+call and no charge (see Maintenance window below). The owner's Process stays
+the opt-in first parse; pressed while such an export runs, it turns that job
+into the owner-paid parse of the same capture. Editing continues during
+processing. A newer
 saved checkpoint is rebound to the candidate's exported source. A started
 handoff always completes. Each connected writer goes read-only, flushes pending
 input into the document, waits until its provider has nothing unsent, and
@@ -316,6 +326,76 @@ while it was borrowed") count as traps, because the engine's cleanup throws
 them in place of the trap. A save that fails
 inside the engine reports the failure to its clients, who keep their drafts,
 and is not queued for the failed-store retry.
+
+## Maintenance window
+
+An engine upgrade that changes seed output runs in a maintenance window; the
+steps and the `office-maintenance` commands are in the
+[deployment runbook](../deployment-runbook.md#office-maintenance-window).
+
+**Pause.** While the `office_editing_pause` row exists, the gateway refuses
+Office edit sessions (`source-session` for editing and `collaboration-token`
+answer `423 office_editing_paused` after authorization), seeding a room's first
+state, and agent edits and their Undo (tool error `office_editing_paused`, also
+at the checkpoint that commits them). Agent inspect of a never-opened file
+reads an unsaved in-memory seed. The collaboration service refuses writable
+connections to Office rooms at authentication with the reason
+`office-editing-paused`. Within 5 seconds of the row appearing, each instance
+runs the handoff flush on every loaded Office room (up to 10 seconds more),
+persists it once, sends `source-editing-paused` and closes the writers; a room
+that loads later is flushed on a later tick, a room mid-publication after its
+handoff, and a flushed room refuses updates from any writer that slipped
+through. Saves of rooms that were already open still land, so the flush and
+failed-store retries persist. A client whose changes were all saved keeps its
+view read-only under the same banner as a completed handoff, saying editing is
+paused and its changes were saved; one with unsaved changes goes to recovery.
+A client refused on reconnect (a token request answered 423, or the
+authentication reason) takes the same path; opening Edit during the pause shows
+the paused error. Viewing (`source-session?view=true`) and text sources are
+unaffected.
+
+**Publish all.** Every Office source with unpublished edits publishes before
+the deploy: a system-paid republish (`paid_by='system'`, no credit, storage or
+owner-state check) for files of active or blocked owners, export-only for files
+never parsed successfully (store-only uploads and failed first parses, so
+maintenance never runs a first parse), trashed files, files of suspended or
+deletion-pending owners and files whose system republish of the same checkpoint
+failed.
+
+**Export-only publication.** The candidate exports and uploads like any
+refresh, and the same saved state always exports the same bytes. A maintenance
+export-only publication (system payer) publishes in finalize
+(`publishExportTx` in `server/internal/store/office_maintenance.go`), since
+editing is paused: it makes the export the file's bytes, bumps the epoch,
+stores the export's seed as the state and its baseline as the indexed
+baseline, empties pending effects, drops the file's index and caption
+associations and evicts the old room. A save after the capture supersedes the
+job and a later run exports again. The automatic export of a store-only file
+instead keeps the finalized candidate and publishes it through the handoff,
+like a refresh after its parse: editors flush, saves made after the capture
+are rebased onto the export and stay pending, and open editors get the
+newer-version banner. Its storage is gated on the net change at publication.
+Unless the file never parsed successfully (then its owner's Process, charged as
+the first parse, stays the way to index it) it is marked (`reprocess_at`): the refresh
+scheduler then parses and indexes the file's bytes as a plain system-paid parse
+job (no page fee), whatever auto-reparse says, once the owner is active and the
+file is out of the trash, never while another parse or ingest job is queued for
+it. A failed attempt waits a day; a refused one (owner over quota) an hour. The
+first reprocess regenerates the descriptor, since none is published.
+
+**Readiness.** `office-maintenance status` fails until the pause is on and no
+Office source is unpublished and no Office publication or reprocess work
+(source refresh jobs, the parse and ingest jobs they became, system-paid
+reprocess jobs) is in flight.
+
+**Reset.** The deploy's reset migration, from
+`server/migrations/templates/office_window_reset.sql`, refuses to run unless the
+pause is on and nothing of those formats is unpublished or in flight, under a
+lock on `source_documents`; that guard is the only protection, since no dropped
+state is kept. It then bumps the epoch, drops the state and stored baseline,
+empties pending effects and deletes refresh candidates, so rooms reseed on the
+new engine. A file that cannot publish keeps the pause on until an operator
+fixes it on the old engine, so no engine ever holds another engine's state.
 
 ## Private PDF annotations
 

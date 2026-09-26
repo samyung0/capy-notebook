@@ -13,8 +13,10 @@ import {
   type OfficeFormat,
   runOffice,
 } from './officeRuntime.js';
+import { effectTokens, trimEffect } from './sourceDocuments.js';
 
 const BASE_MISMATCH = /base/;
+const BODY_POSITION = /^body:(\d+)$/;
 
 afterAll(closeOfficeRuntime);
 
@@ -54,6 +56,50 @@ test.each([
   },
   60_000
 );
+
+// Inserting a paragraph moves every later one. Moves weigh nothing, so one
+// inserted paragraph stays far below the 3,000-token automatic trigger (it
+// counted 3,055 when moves carried 40 characters each).
+test('one paragraph inserted near the top of a long DOCX weighs only itself', async () => {
+  const bytes = await readFile(
+    new URL(
+      '../../e2e/fixtures/files/rich-content/exchange-plan.docx',
+      import.meta.url
+    )
+  );
+  const initial = await runOffice('seedOffice', 'docx', bytes);
+  const from = await runOffice('officeBaseline', bytes, {
+    ...initial,
+    format: 'docx',
+    schemaVersion: 1,
+  });
+  const inserted = 'A new paragraph typed after the title.';
+  const to = from.flatMap((entry) => {
+    const index = BODY_POSITION.exec(entry.position)?.[1];
+    const shifted =
+      index && Number(index) >= 1
+        ? { ...entry, position: `body:${Number(index) + 1}` }
+        : entry;
+    return entry.position === 'body:0'
+      ? [
+          shifted,
+          {
+            ...entry,
+            id: 'body:paragraph:NEW',
+            position: 'body:1',
+            value: inserted,
+          },
+        ]
+      : [shifted];
+  });
+  const effects = (await runOffice('compareBaselines', from, to)).map(
+    trimEffect
+  );
+  expect(effects.filter((e) => e.operation === 'move').length).toBeGreaterThan(
+    100
+  );
+  expect(effectTokens(effects)).toBe(Math.ceil(inserted.length / 4));
+}, 60_000);
 
 test('DOCX agent edits round-trip through the packaged runtime with Capy guards', async () => {
   const bytes = await readFile(

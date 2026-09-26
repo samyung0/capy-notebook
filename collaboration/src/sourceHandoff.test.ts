@@ -15,6 +15,7 @@ import {
   type SourceSession,
 } from './sourceDocuments.js';
 import {
+  OFFICE_EDITING_PAUSED_REASON,
   SOURCE_PUBLISHING_REASON,
   SourceHandoff,
   SourcePublishingError,
@@ -144,6 +145,106 @@ test('handoff requires a clean receipt for the matching epoch, checkpoint and so
   expect(f.handoff.ready(f.session.room, 'socket', ready)).toBe(true);
   await preparing;
   expect(f.persist).toHaveBeenCalledWith(f.document);
+  expect(f.redis.hset).toHaveBeenCalledWith(
+    'capy:source-handoff:handoff',
+    'instance',
+    'ready'
+  );
+  await f.handoff.handle(JSON.stringify({ ...f.event, type: 'cancel' }));
+});
+
+test('the maintenance pause flushes the room, persists and closes its writers', async () => {
+  const f = setup();
+  const writer = Object.assign(f.connection, { close: vi.fn() });
+  const viewer = {
+    ...f.connection,
+    close: vi.fn(),
+    context: { access: 'read' },
+    readOnly: true,
+    socketId: 'viewer',
+  };
+  Object.assign(f.document, { getConnections: () => [writer, viewer] });
+  const paused = f.handoff.pause(f.document);
+  expect(f.document.broadcastStateless).toHaveBeenCalledWith(
+    expect.stringContaining('"type":"source-handoff-prepare"')
+  );
+  expect(
+    f.handoff.ready(f.session.room, 'socket', {
+      checkpoint: 0,
+      clean: true,
+      epoch: 1,
+      id: `pause:${f.session.room}`,
+    })
+  ).toBe(true);
+  await expect(paused).resolves.toBe(true);
+  expect(f.persist).toHaveBeenCalledWith(f.document);
+  expect(f.document.broadcastStateless).toHaveBeenLastCalledWith(
+    JSON.stringify({ epoch: 1, fileId: 'f', type: 'source-editing-paused' })
+  );
+  expect(writer.close).toHaveBeenCalledWith(
+    expect.objectContaining({ reason: OFFICE_EDITING_PAUSED_REASON })
+  );
+  expect(viewer.close).not.toHaveBeenCalled();
+});
+
+test('a pause whose persist fails closes its writers without claiming they were saved', async () => {
+  const f = setup();
+  const writer = Object.assign(f.connection, { close: vi.fn() });
+  f.persist.mockRejectedValue(new Error('checkpoint failed'));
+  const paused = f.handoff.pause(f.document);
+  f.handoff.ready(f.session.room, 'socket', {
+    checkpoint: 0,
+    clean: true,
+    epoch: 1,
+    id: `pause:${f.session.room}`,
+  });
+  await expect(paused).resolves.toBe(false);
+  expect(f.document.broadcastStateless).not.toHaveBeenCalledWith(
+    expect.stringContaining('source-editing-paused')
+  );
+  expect(writer.close).toHaveBeenCalledOnce();
+});
+
+test('a silent writer is disconnected after the window and the pause still persists', async () => {
+  vi.useFakeTimers();
+  const f = setup();
+  Object.assign(f.connection, { close: vi.fn() });
+  const paused = f.handoff.pause(f.document);
+  await vi.advanceTimersByTimeAsync(10_100);
+  await expect(paused).resolves.toBe(true);
+  expect(f.connection.webSocket.close).toHaveBeenCalledWith(
+    4408,
+    'Source handoff timed out'
+  );
+  expect(f.persist).toHaveBeenCalledOnce();
+});
+
+test('a publication prepare during a pause waits for it instead of resetting it', async () => {
+  const f = setup();
+  let closed = false;
+  Object.assign(f.connection, {
+    close: vi.fn(() => {
+      closed = true;
+    }),
+  });
+  Object.assign(f.document, {
+    getConnections: () => (closed ? [] : [f.connection]),
+  });
+  const paused = f.handoff.pause(f.document);
+  const preparing = f.handoff.handle(JSON.stringify(f.event));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  // Still the pause's flush: the publication did not replace its entry.
+  expect(
+    f.handoff.ready(f.session.room, 'socket', {
+      checkpoint: 0,
+      clean: true,
+      epoch: 1,
+      id: `pause:${f.session.room}`,
+    })
+  ).toBe(true);
+  await expect(paused).resolves.toBe(true);
+  await preparing;
+  expect(f.persist).toHaveBeenCalledTimes(2);
   expect(f.redis.hset).toHaveBeenCalledWith(
     'capy:source-handoff:handoff',
     'instance',

@@ -148,6 +148,8 @@ const (
 	ErrLifecycleRejected    ErrorCode = "lifecycle_rejected"
 	ErrOutcomeUnknown       ErrorCode = "outcome_unknown"
 	ErrLimitReached         ErrorCode = "limit_reached"
+	// ErrOfficeEditingPaused: the Office maintenance window pauses edits.
+	ErrOfficeEditingPaused ErrorCode = "office_editing_paused"
 )
 
 // ToolError is the safe typed error carried on a result. Message is already
@@ -220,6 +222,7 @@ func Export() Contract {
 		ErrorCodes: []ErrorCode{
 			ErrUnsupportedFormat, ErrUnsupportedOperation, ErrInvalidInput, ErrUnavailableTarget,
 			ErrStaleTarget, ErrQuotaRejected, ErrLifecycleRejected, ErrOutcomeUnknown, ErrLimitReached,
+			ErrOfficeEditingPaused,
 		},
 		EffectOperations: []EffectOperation{
 			EffectCreated, EffectEdited, EffectEditUndone, EffectTrashed, EffectRestored,

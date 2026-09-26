@@ -467,6 +467,7 @@ def _finish_ok(
     reservation_id: str = "",
     source_revision: int | None = None,
     source_etag: str = "",
+    parse_fee: bool = True,
 ) -> bool:
     refresh = db.source_refresh_for(file_id)
     if refresh is not None:
@@ -511,7 +512,7 @@ def _finish_ok(
                     job_id=job_id,
                     attempt=int(attempt or 1),
                     outcome="succeeded",
-                    charged=True,
+                    charged=parse_fee,
                 )
                 db.settle_credit_reservation(cur, reservation_id)
                 db.set_file_status(cur, file_id, "ready")
@@ -782,14 +783,16 @@ def _account_allows_ingest(file_id: str, payload: dict, check_credits: bool) -> 
     actor = payload.get("actorUserId") or ""
     if not actor:
         return False
+    # A system-paid job (a maintenance republish or an export-only file's
+    # reprocess) skips the owner's storage and the credit checks.
+    system = payload.get("paidBy") == "system"
     with db.connect() as conn, conn.cursor() as cur:
         if not db.ingest_accounts_active(cur, file_id, actor):
             return False
         owner = db.file_owner_user_id(cur, file_id)
-        if not owner or not db.account_allows_ingest(cur, owner):
+        if not owner or not (system or db.account_allows_ingest(cur, owner)):
             return False
-        # A system-paid job (the maintenance republish) spends no credits.
-        if not check_credits or payload.get("paidBy") == "system":
+        if not check_credits or system:
             return True
         return db.actor_has_credits(cur, actor)
 
@@ -1130,7 +1133,10 @@ def _pipeline_identity(
 
 def _parse_fee(payload: dict) -> bool:
     """Whether this job's parse pays the page fee. Go decides it for each
-    source refresh at admission; an upload's parse is its first and pays."""
+    source refresh at admission; an upload's parse is its first and pays; a
+    system-paid job (an export-only file's reprocess) never does."""
+    if payload.get("paidBy") == "system":
+        return False
     return payload.get("sourceRefresh") is not True or payload["parseFee"] is True
 
 
@@ -2382,6 +2388,7 @@ async def _process_ingest_job(
             reservation_id=_reservation_id(payload),
             source_revision=source_revision,
             source_etag=source_etag,
+            parse_fee=_parse_fee(payload),
         )
         if not committed:
             return
@@ -2437,6 +2444,7 @@ async def _process_ingest_job(
         reservation_id=_reservation_id(payload),
         source_revision=source_revision,
         source_etag=source_etag,
+        parse_fee=_parse_fee(payload),
     )
     if not committed:
         return

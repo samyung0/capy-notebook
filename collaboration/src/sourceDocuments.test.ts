@@ -98,11 +98,25 @@ test('Office text effects keep the changed span with 40 characters of context', 
   ).toBe(`xa${'😀'.repeat(20)}…`);
   const added = { ...effect, before: undefined, operation: 'add' } as const;
   expect(trimEffect(added)).toBe(added);
+  // A move keeps its text: it carries none and weighs nothing.
+  const moved = trimEffect({
+    ...effect,
+    after: head,
+    before: head,
+    operation: 'move',
+  });
+  expect(moved).toEqual({
+    id: 'p',
+    kind: 'text',
+    label: 'Paragraph',
+    operation: 'move',
+  });
+  expect(effectTokens([moved, { ...moved, kind: 'image' }])).toBe(0);
 });
 
 test('an owner at the ingest-job limit rotates the file back, other refusals park it', async () => {
   const query = vi.fn(async (sql: string, _params?: unknown[]) => ({
-    rows: sql.includes('FROM source_documents d')
+    rows: sql.includes('WITH picked')
       ? [
           { checkpoint: '3', file_id: 'f_busy', user_id: 'u_1' },
           { checkpoint: '5', file_id: 'f_broke', user_id: 'u_1' },
@@ -261,6 +275,65 @@ test.each([204, 409])(
       );
       expect(calls).toHaveLength(4);
     }
+  }
+);
+
+test.each([
+  [undefined, 0],
+  [new SourceRequestError(503, 'Source handoff already running'), 1],
+])(
+  'an owner export-only candidate publishes through the handoff after finalize (failure %s)',
+  async (failure, failures) => {
+    const doc = new Y.Doc();
+    doc.getText('source').insert(0, 'text');
+    const state = Buffer.from(Y.encodeStateAsUpdate(doc)).toString('base64');
+    doc.destroy();
+    const refused: unknown[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('refresh-candidate?'))
+          return Response.json({
+            baseSourceSHA256: 'sha',
+            baseSourceURL: 'http://base',
+            checkpoint: 2,
+            epoch: 1,
+            format: 'text',
+            leaseToken: 'lease',
+            state,
+            uploadHeaders: {},
+            uploadURL: 'http://upload',
+          });
+        if (url === 'http://upload')
+          return new Response(null, { headers: { etag: '"etag"' } });
+        if (url.endsWith('/refresh-failure'))
+          refused.push(JSON.parse(String(init!.body)));
+        return new Response(null, { status: 204 });
+      })
+    );
+    const publish = vi.fn(async () => {
+      if (failure) throw failure;
+    });
+    const store = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+    const exported = store.exportCandidate('f_1', 'job_1', publish);
+    await (failure
+      ? expect(exported).rejects.toBe(failure)
+      : expect(exported).resolves.toBeUndefined());
+    expect(publish).toHaveBeenCalledWith({
+      attemptId: 1,
+      checkpoint: 2,
+      contentHash: '',
+      contentId: '',
+      epoch: 1,
+      fileId: 'f_1',
+      jobId: 'job_1',
+      leaseToken: 'lease',
+      sourceETag: 'etag',
+    });
+    // A refused publication returns the export to the scheduler (stale), so
+    // the file is not parked until its next save.
+    expect(refused).toHaveLength(failures);
+    if (failures) expect(refused[0]).toMatchObject({ stale: true });
   }
 );
 

@@ -453,6 +453,7 @@ export function useOfficeRuntime({
     iframeSandbox: config.sandbox,
     iframeUrl: config.url,
     mode,
+    paused: source.paused,
     ready: mode === 'view' ? !!analysis : replicaReady,
     replaced: source.replaced,
     retryView,

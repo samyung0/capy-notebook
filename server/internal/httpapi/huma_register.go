@@ -171,6 +171,14 @@ func mapHTTPError(err error) error {
 			Errors: []*huma.ErrorDetail{{Message: "source_changed"}},
 		}
 	}
+	if errors.Is(err, store.ErrOfficeEditingPaused) {
+		return &huma.ErrorModel{
+			Status: http.StatusLocked,
+			Title:  http.StatusText(http.StatusLocked),
+			Detail: err.Error(),
+			Errors: []*huma.ErrorDetail{{Message: "office_editing_paused"}},
+		}
+	}
 	if errors.Is(err, store.ErrAuthorityUnavailable) {
 		return huma.Error503ServiceUnavailable(
 			"collaboration authority unavailable",

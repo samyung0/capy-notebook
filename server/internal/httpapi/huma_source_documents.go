@@ -124,6 +124,10 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// After authorization, so an actor without access still reads not found.
+	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
 	// The browser opens the state; the baseline and effects stay server-side.
 	session.IndexedBaseline, session.PendingEffects = nil, nil
 	return a.sourceSessionResponse(ctx, session)
@@ -160,6 +164,9 @@ func (a *api) checkpointSourceDocument(ctx context.Context, in *sourceCheckpoint
 func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborationTokenInput) (*sourceTokenOutput, error) {
 	session, err := a.s.SourceSession(ctx, userID(ctx), in.ID)
 	if err != nil {
+		return nil, hErr(err)
+	}
+	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
 	me, err := a.s.Me(ctx, userID(ctx))

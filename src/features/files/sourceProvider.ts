@@ -37,6 +37,8 @@ export function registerMockSourceProvider(
 /** The collaboration service's refusal while the room is locked for a
  * publication (collaboration/src/sourceHandoff.ts). */
 export const SOURCE_PUBLISHING_REASON = 'source-publishing';
+/** The refusal while Office editing is paused for maintenance. */
+export const OFFICE_EDITING_PAUSED_REASON = 'office-editing-paused';
 const PUBLISHING_RETRY_MS = 3000;
 
 /** Under MSW the mock is the only allowed provider: a real socket would

@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest';
+import { ApiError } from '@/api/client';
+import { OFFICE_EDITING_PAUSED_REASON } from './sourceProvider';
 import {
   acknowledgeSourceCheckpoint,
+  maintenancePaused,
   sourceChangesCovered,
 } from './useSourceSession';
 
@@ -35,4 +38,21 @@ it('keeps a replaced view under the banner only when the server holds its change
   // An edit after ready (or after the receipt) is unsaved again.
   state.sequence++;
   expect(sourceChangesCovered(state, 3)).toBe(false);
+});
+
+it('takes the maintenance pause from either refusal to the paused view', () => {
+  // The collaboration service's authentication reason, and the gateway's 423
+  // on a reconnect's token or an Edit open.
+  expect(maintenancePaused(OFFICE_EDITING_PAUSED_REASON)).toBe(true);
+  expect(
+    maintenancePaused(
+      new ApiError(423, 'Locked', 'office editing is paused for maintenance', {
+        code: 'office_editing_paused',
+      })
+    )
+  ).toBe(true);
+  expect(maintenancePaused('permission-denied')).toBe(false);
+  expect(
+    maintenancePaused(new ApiError(403, 'Forbidden', '', { code: 'x' }))
+  ).toBe(false);
 });

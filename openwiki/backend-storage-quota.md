@@ -198,6 +198,16 @@ source/workspace/account locks. Publication accounts the net size after
 replacing the old base and removing candidate storage, including any larger
 rebased Office state and residual effects. Negative changes remain negative ledger deltas.
 
+Maintenance-window publications (`paid_by='system'`, see the
+[deployment runbook](deployment-runbook.md#office-maintenance-window)) skip the storage gates at
+admission, export finalization and publication, so an over-quota owner's
+saved edits still publish; the resulting deltas still land in the owner's
+ledger. An export-only publication replaces `files.size_bytes` with the
+export's size and the state with the export's seed (or, through the handoff,
+the state rebased onto the export) and drops the index; the automatic export of
+a store-only file is gated on that net change at publication, like a refresh.
+A window's reset drops the states of the reset formats and keeps no copy.
+
 A candidate retains old A and exported B temporarily. Successful Office handoff
 rebinds the latest saved state to B, clears Undo/Redo and releases A. XLSX/PPTX
 state can retain binary package parts needed by later edits but absent or different

@@ -68,6 +68,7 @@ import {
   sourceRoom,
 } from './sourceDocuments.js';
 import {
+  OfficeEditingPausedError,
   SOURCE_HANDOFF_CHANNEL,
   SourceHandoff,
   type SourcePublish,
@@ -101,6 +102,8 @@ const store = new YjsDocumentStore(pool);
 const sources = new SourceDocumentStore(pool, config.apiUrl, config.secret);
 // Source room size estimates from applied update bytes (updateFitsRoom).
 const sourceSizes = new WeakMap<Y.Doc, number>();
+// Office rooms the maintenance pause has flushed; cleared when it ends.
+let pausedRooms = new WeakSet<Document>();
 const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const serviceCommandCompletions = new ServiceCommandCompletions();
 const failedStores = new Map<string, FailedStoreSnapshot>();
@@ -540,6 +543,17 @@ const server = new Server<CollaborationContext>({
       return;
     }
     try {
+      if (pausedRooms.has(document)) {
+        // A writer that slipped past the pause: it goes read-only (or to
+        // recovery with unsent changes) and its update is refused.
+        connection.sendStateless(
+          JSON.stringify({
+            ...sourceRoom(document.name),
+            type: 'source-editing-paused',
+          })
+        );
+        throw new OfficeEditingPausedError();
+      }
       assertUpdatePreservesContributors(document, yjsUpdate);
       if (SOURCE_ROOM_PATTERN.test(document.name)) {
         await sources.assertConnectionAccess(
@@ -616,12 +630,19 @@ const server = new Server<CollaborationContext>({
         config.secret,
         documentName
       );
+      const readOnly = claims.access === 'comment' || claims.access === 'read';
+      // The maintenance pause refuses writers; viewing keeps working.
+      if (
+        !readOnly &&
+        SOURCE_ROOM_PATTERN.test(documentName) &&
+        (await sources.editingPaused(documentName))
+      )
+        throw new OfficeEditingPausedError();
       await (SOURCE_ROOM_PATTERN.test(documentName)
         ? sources
         : store
       ).assertConnectionAccess(documentName, claims.sub, claims.access);
-      connectionConfig.readOnly =
-        claims.access === 'comment' || claims.access === 'read';
+      connectionConfig.readOnly = readOnly;
       // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
       // the shrinking-direction rule for over-quota accounts.
       return claimsContext(claims);
@@ -1203,7 +1224,12 @@ async function handleDocumentRequest(
         response,
         error.status,
         {
-          code: error.status === 409 ? 'stale_target' : 'unavailable_target',
+          code:
+            error.status === 409
+              ? 'stale_target'
+              : error.status === 423
+                ? 'office_editing_paused'
+                : 'unavailable_target',
           message: error.message,
         },
         error
@@ -1630,13 +1656,48 @@ const sourceRefreshTimer = setInterval(() => {
   if (schedulingSources) return;
   schedulingSources = true;
   void sources
-    .scheduleRefreshes()
+    .scheduleRefreshes((input) => sourceHandoff.publish(input))
     .catch((error) => captureError(error, { stage: 'source_refresh' }))
     .finally(() => {
       schedulingSources = false;
     });
 }, 5000);
 sourceRefreshTimer.unref();
+
+// The maintenance pause (office_editing_pause, set by operators) reaches this
+// instance within 5 s: each loaded Office room flushes, persists and closes
+// its writers once. A room that loads later, or is mid-publication, follows on
+// a later tick. Authentication refuses new writers, and a paused room refuses
+// updates from any writer that slipped through, until the row is gone.
+let pauseChecked = new WeakSet<Document>();
+const officePauseTimer = setInterval(() => {
+  void (async () => {
+    const { rows } = await pool.query<{ paused: boolean }>(
+      'SELECT EXISTS(SELECT 1 FROM office_editing_pause) AS paused'
+    );
+    if (!rows[0].paused) {
+      pauseChecked = new WeakSet();
+      pausedRooms = new WeakSet();
+      return;
+    }
+    await Promise.all(
+      [...server.hocuspocus.documents.values()]
+        .filter(
+          (document) =>
+            SOURCE_ROOM_PATTERN.test(document.name) &&
+            !pauseChecked.has(document) &&
+            !sourceHandoff.busy(document.name)
+        )
+        .map(async (document) => {
+          pauseChecked.add(document);
+          if (!(await sources.editingPaused(document.name))) return;
+          await sourceHandoff.pause(document);
+          pausedRooms.add(document);
+        })
+    );
+  })().catch((error) => captureError(error, { stage: 'office_pause' }));
+}, 5000);
+officePauseTimer.unref();
 
 projections.start();
 await server.listen(config.port);
@@ -1651,6 +1712,7 @@ async function shutdown(signal: string) {
   clearInterval(compactionTimer);
   clearInterval(heartbeatTimer);
   clearInterval(sourceRefreshTimer);
+  clearInterval(officePauseTimer);
   projections.stop();
   server.hocuspocus.flushPendingStores();
   await server.destroy();

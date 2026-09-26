@@ -414,9 +414,11 @@ def test_a_refresh_of_a_parsed_file_records_its_pages_without_the_page_fee(
     upload = _ingest_payload()
     refresh = _ingest_payload(sourceRefresh=True, parseFee=False)
     first_parse = _ingest_payload(sourceRefresh=True, parseFee=True)
+    # An export-only file's reprocess: a plain parse at platform cost.
+    reprocess = _ingest_payload(paidBy="system")
     token = worker._resource_rates.set(upload["resourceRates"])
     try:
-        for payload in (upload, refresh, first_parse):
+        for payload in (upload, refresh, first_parse, reprocess):
             worker._record_parse_usage_tx(
                 None,
                 usage=worker.obs.ParseUsage(pages=3),
@@ -432,8 +434,13 @@ def test_a_refresh_of_a_parsed_file_records_its_pages_without_the_page_fee(
     finally:
         worker._resource_rates.reset(token)
 
-    assert [event["parse_pages"] for event in recorded] == [3, 3, 3]
-    assert [event["credit_micros"] for event in recorded] == [3_000_000, 0, 3_000_000]
+    assert [event["parse_pages"] for event in recorded] == [3, 3, 3, 3]
+    assert [event["credit_micros"] for event in recorded] == [
+        3_000_000,
+        0,
+        3_000_000,
+        0,
+    ]
 
 
 def test_invalid_artifact_returns_to_parse_only_once(monkeypatch):

@@ -26,7 +26,8 @@
     "quota_rejected",
     "lifecycle_rejected",
     "outcome_unknown",
-    "limit_reached"
+    "limit_reached",
+    "office_editing_paused"
   ],
   "effectOperations": [
     "created",

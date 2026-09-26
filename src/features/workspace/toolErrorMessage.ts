@@ -22,6 +22,8 @@ export function toolErrorMessage(error: ToolError | undefined): string {
       return m.chat_tool_error_outcome_unknown();
     case 'limit_reached':
       return m.chat_tool_error_limit_reached();
+    case 'office_editing_paused':
+      return m.chat_tool_error_office_editing_paused();
     default:
       return m.chat_tool_failed();
   }

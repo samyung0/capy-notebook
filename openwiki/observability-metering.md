@@ -727,6 +727,30 @@ version without deploying. Enqueue snapshots the applicable versions and
 microcredit amounts into the job, so an edit never reprices work already
 waiting in the queue. Standalone image captions bill their tokens only.
 
+### Source refreshes and maintenance republishes
+
+The page fee applies to a file's first parse only; parsing runs on the
+fixed-cost ingest host. Go writes `parseFee` into every source-refresh job
+payload, true only for a file that has never parsed successfully (such as a
+store-only upload processed manually) and never for a system-paid job. A refresh
+parse without the fee still records its pages: `credit_micros` 0 and
+`metadata.parseFee=false` on the parse event. The owner then pays only the
+refresh's provider calls (embeddings of changed chunks, and a descriptor when
+the reuse gate regenerates it), and refresh admission keeps its credit check
+for those. Uploads always pay the fee.
+
+`provider_sessions.paid_by` names who pays: `platform` (platform keys, the
+actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
+credits) and `system`. A maintenance republish opens its ingest session with
+`paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
+unexported `requestSourceRefresh` and `reprocessTx`) and its job payload carries
+`paidBy: "system"`. So does the reprocess of an export-only file, a plain parse
+job that also records its pages without the page fee. It gets no credit check
+at admission or claim, no owner storage check at claim and no lease on the
+actor's ingest slots, and `settle_ingest_provider_call` records every provider
+call at zero credits with `metadata.paidBy="system"`. The file owner stays the
+actor, because `usage_events` needs a real actor.
+
 The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The
 historical database column names still say parse download/upload, but those
@@ -747,28 +771,6 @@ whole-host CPU/memory separate from per-worker cgroups and page billing.
 
 Every queue claim opens `ingest_job_attempts` in the same transaction as the
 claim. Terminal success, retry, capacity wait, supersession, and failure close
-### Source refreshes and maintenance republishes
-
-The page fee applies to a file's first parse only; parsing runs on the
-fixed-cost ingest host. Go writes `parseFee` into every source-refresh job
-payload, true only for a file that has never parsed successfully (such as a
-store-only upload processed manually) and never for a system-paid job. A refresh
-parse without the fee still records its pages: `credit_micros` 0 and
-`metadata.parseFee=false` on the parse event. The owner then pays only the
-refresh's provider calls (embeddings of changed chunks, and a descriptor when
-the reuse gate regenerates it), and refresh admission keeps its credit check
-for those. Uploads always pay the fee.
-
-`provider_sessions.paid_by` names who pays: `platform` (platform keys, the
-actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
-credits) and `system`. A maintenance republish opens its ingest session with
-`paid_by='system'` (`beginSystemIngestSessionTx`, reachable only through the
-unexported `requestSourceRefresh`) and its job payload carries
-`paidBy: "system"`. It gets no credit check at admission or claim and no lease
-on the actor's ingest slots, and `settle_ingest_provider_call` records every
-provider call at zero credits with `metadata.paidBy="system"`. The file owner
-stays the actor, because `usage_events` needs a real actor.
-
 that exact row. The lease reaper closes rows abandoned by a dead worker as
 `lease_expired`. An exhausted parse or ingest lease also closes its credit
 reservation and source-fenced file state in that transaction. Capacity waits

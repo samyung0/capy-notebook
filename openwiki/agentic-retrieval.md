@@ -2180,7 +2180,7 @@ before this contract map their legacy `status` onto an outcome on hydration,
 anything unrecognised becoming `outcome_unknown`. Tool errors carry a stable
 code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 `unavailable_target`, `stale_target`, `quota_rejected`, `lifecycle_rejected`,
-`outcome_unknown`, `limit_reached`) that the frontend localizes.
+`outcome_unknown`, `limit_reached`, `office_editing_paused`) that the frontend localizes.
 
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `insert_block`, `remove_block`, `replace_card`, `add_card`,
@@ -2402,13 +2402,16 @@ parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). `auto_reparse` and `auto_reindex` default to true.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
-tokens count those excerpts. Office requires a successful prior parse and 60
+tokens count those excerpts. A move (unchanged text at a new position, as every
+later paragraph becomes when one is inserted) carries no text and counts 0
+tokens, in `effectTokens` and Go's `sourceEffectTokens` alike. Office requires a successful prior parse and 60
 seconds idle, and is due at 3,000 net tokens or once saved changes have had no
 edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
 (`officeRefresh*`) hold the same constants, and the Go store tests run the
 scheduler's SQL from `sourceDocuments.ts` against them. Text batches every 15
 seconds without a minimum or indefinite typing delay. The scheduler, like Go
-admission, skips changes worth no tokens, and takes files oldest first by the
+admission, skips a change list worth no tokens, except an Office list of moves
+only, which publishes through the 7-day rule, and takes files oldest first by the
 later of `last_edited_at` and `last_refresh_requested_at`. A refused automatic
 admission stores `refresh_error` and the scheduler skips the file until its
 next save, except a 429 (the owner at the concurrent ingest-job limit), which
@@ -2443,7 +2446,7 @@ protected provider message outside tool-output clipping, live-history
 compaction and persisted conversation summaries. Replacements and removals
 supersede old indexed facts; the message tells the model that each before and
 after is an excerpt (the changed text with up to 40 characters of context) to
-match against passages. Typed image placeholders can be resolved through
+match against passages, and that a move carries no text. Typed image placeholders can be resolved through
 `resolve_source_change`; the gateway verifies source access/checkpoint and the
 headless runtime extracts the exact image before image-only caption reuse.
 The same read captures published identities for every scoped file, including
