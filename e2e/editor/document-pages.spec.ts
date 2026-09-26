@@ -352,7 +352,8 @@ test('workspace links remember each file and material mode independently', async
   const popupReady = page.context().waitForEvent('page');
   await file.click({ modifiers: ['ControlOrMeta'] });
   const popup = await popupReady;
-  await expect(popup).toHaveURL(/file=f_1/);
+  // Only the new tab's URL matters; its full Vite load can exceed 5 s.
+  await popup.waitForURL(/file=f_1/, { waitUntil: 'commit' });
   await expect(page).toHaveURL(currentURL);
   await popup.close();
 
