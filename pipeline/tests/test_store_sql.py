@@ -31,6 +31,40 @@ from pipeline.store import db
 pytestmark = pytest.mark.integration
 
 
+@pytest.mark.parametrize("role", ("import", "parse", "ingest"))
+def test_worker_telemetry_persists_samples_and_rollup(workspace, role):
+    import psycopg
+
+    instance = f"{role}-{secrets.token_hex(6)}"
+    for state, cores in (("idle", 1), ("busy", 3)):
+        db.record_worker_sample(
+            environment="test",
+            host_id="test-host",
+            worker_instance_id=instance,
+            role=role,
+            release_sha="test-release",
+            state=state,
+            stage="",
+            job_attempt_id=None,
+            values={"cpu_cores": cores, "memory_bytes": 1024},
+        )
+
+    with psycopg.connect(workspace.dsn) as conn:
+        samples = conn.execute(
+            "SELECT role, state FROM ingest_worker_samples "
+            "WHERE worker_instance_id=%s ORDER BY sampled_at",
+            (instance,),
+        ).fetchall()
+        rollup = conn.execute(
+            "SELECT role, sum(samples), sum(busy_samples), max(cpu_cores_max) "
+            "FROM ingest_worker_sample_rollups WHERE worker_instance_id=%s "
+            "GROUP BY role",
+            (instance,),
+        ).fetchone()
+    assert samples == [(role, "idle"), (role, "busy")]
+    assert rollup == (role, 2, 1, 3)
+
+
 def _install_running_pipeline_claim(
     conn,
     *,

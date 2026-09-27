@@ -241,3 +241,23 @@ actionable issue. The BetterOffice change is reviewed and pushed to `capy-ci`
 at `64bbde820878c769e7b6678ac36880c618734b79`; it changes React pending callbacks,
 not native seed output or checkpoint encoding. The retained reviews and
 measurement provenance are summarized in [the review record](review-astra-xhigh-2026-09-27.md).
+
+## Deployment telemetry follow-up
+
+Office revision `7c0caaf3` passed CI with 39 Docker browser and 77 editor
+cases, one intentional skip and no retries. UAT app and ingest deployed that
+revision, with all four release markers matching and editing enabled.
+Post-deploy database logs exposed an older telemetry gap: the import worker
+emits role `import`, but both raw-sample and minute-rollup constraints only
+allowed `parse` and `ingest`. The actual database test reproduced the same
+constraint failure for import while the other two roles passed.
+
+Migration `0037_import_worker_telemetry.sql` extends both constraints. The same
+real writer test then passed for all three roles, including raw rows and minute
+rollups. The Ops history chart also needed a separate import series: its former
+non-parse branch treated import as ingest and could overwrite that bucket. The
+aggregation now keeps all three roles separate, with both input orders tested.
+The 29 Ops tests, Ops typecheck and focused Go migration harness passed. A
+fresh Astra xhigh review found no actionable issue. Failed historical telemetry samples
+cannot be reconstructed; this gap did not affect the worker's job execution.
+The final release gate follows deployment of this correction.

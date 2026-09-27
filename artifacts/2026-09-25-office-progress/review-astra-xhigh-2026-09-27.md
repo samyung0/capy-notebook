@@ -118,6 +118,22 @@ the native aggregate and 12 strict quota receipts. Every quiet publication
 cleared state and baseline. All three contributing runs had clean cleanup and
 matching ingest identities; partial file measurements were excluded. Report: `/private/tmp/capy-office-storage-astra-review.md`.
 
+## Deployment telemetry correction
+
+Post-deploy database logs exposed a preexisting import-worker telemetry gap.
+The worker emits `import`, while the raw-sample and minute-rollup constraints
+accepted only `parse` and `ingest`. A real PostgreSQL reproduction failed on
+the same import constraint while the existing roles passed. Forward migration
+`0037` extends both constraints; all three real-writer cases then passed with
+both raw rows and rollups verified. The Ops history chart now keeps import
+metrics separate instead of assigning every non-parse row to ingest.
+
+A fresh Astra xhigh reviewer found no actionable issue in the migration,
+writer test, aggregation or chart wiring. The migration and ledger entry run
+in one transaction; the Ops query already produces one row per minute/role.
+The 29 Ops tests, Ops typecheck and focused Go migration harness passed.
+Report: `/private/tmp/capy-import-telemetry-astra-review.md`.
+
 ## Evidence limits
 
 An additional Astra xhigh pass examined the earlier modified-click timeout in
