@@ -78,6 +78,15 @@ ownership-transfer confirmation, and `FileViewer`. These are the existing
 components with fixture data. Broken-file launchers use missing bytes or failed
 local resources. The separate Office save journeys open valid files before editing.
 
+### Biology 101 Office samples
+
+Biology 101's normal Files list includes the committed rich-content fixtures
+`exchange-plan.docx`, `course-guide.xlsx` and `lecture.pptx`. Open either View or
+Edit to use the local native runtime. Their source bytes come directly from
+`e2e/fixtures/files/rich-content`; `src/mocks/officeFixtures.ts` maps them to the
+matching native checkpoint seeds. Saves stay in the in-memory mock rooms until
+a full page reload. User scenarios Reset leaves these files and their saves intact.
+
 ## Remaining product and mock gaps
 
 These findings are observable with the new scenarios. They were not changed as
@@ -179,7 +188,9 @@ Neither is equivalent to an MSW response override.
 edits, explicit page/form retry, draft download/discard/reload, Office export
 recovery, pending auth cancellation and note guard behavior.
 `e2e/editor/file-errors.spec.ts` covers preview retries and actual workspace
-launchers. Office fixture checkpoints are generated from the matching
-`e2e/fixtures/files/basic` files using BetterOffice's `seedOffice` helper.
+launchers. `e2e/editor/biology-office.spec.ts` opens each rich sample in View and
+Edit, saves, and checks its Biology source session and byte link after scenario
+reset. Office fixture checkpoints are generated from the matching
+`e2e/fixtures/files/basic` and `rich-content` files using BetterOffice's `seedOffice` helper.
 Regenerate with `pnpm exec tsx scripts/dev/seed-scenario-office.ts` after changing
 these fixtures or the BetterOffice pin.

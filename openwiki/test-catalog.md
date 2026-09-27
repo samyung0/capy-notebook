@@ -505,14 +505,22 @@ reports are retained for 30 days.
 | `scripts/uat/test_journey_workflows.py` | Offline promotion/cleanup wiring, blank quality SHA resolution from the live backend with explicit-target and lookup-failure checks, shared revision across quality jobs, pinned DB tunnel validation and actual ingest image mismatch rejection. Included in `pnpm test:deployment`. |
 
 Supporting helper (not a test): [`e2e/uat/support.ts`](../e2e/uat/support.ts)
+creates short-lived synthetic Clerk sessions and authenticated API calls shared
+by the authorization and UI-quality suites.
 
 The rich-content DOCX journey waits for the collaborator to render the owner's
 edit and for the target's text cursor before clicking and typing, since remote
 layout updates briefly gate hit testing while the accessibility mirror remains.
 Failed rich-content convergence retains the last saved text, checkpoint and
 epoch in the run's sanitized evidence instead of relying on truncated ZIP bytes.
-creates short-lived synthetic Clerk sessions and authenticated API calls shared
-by the authorization and UI-quality suites.
+
+Coverage limits: DOCX preservation currently exempts run language metadata.
+PPTX checks saved slide text and the available viewer/notes content; its editor
+has no slide-text accessibility mirror, paste or composition coverage. A passing
+rich-content run does not establish those behaviors. The
+[2026-09-27 investigation](../artifacts/2026-09-25-office-progress/investigation-2026-09-27.md)
+records the native no-edit language loss and a real clipboard event that reached
+the PPTX frame without producing a saved edit.
 
 ---
 
@@ -839,6 +847,7 @@ Chat reasoning and response guards (2026-09-22):
 - `e2e/editor/file-errors.spec.ts`: MSW User scenarios PDF annotation-load failures show one retryable toast before PDF download completes, repeat on failed retry and recover without remounting the PDF; CSV/text/image failures recover after a manual retry with an unchanged signed URL; Office view retry recovers through session and parser failures; workspace statistics/indexing share a retryable panel error; User scenarios navigates broken text/material fixtures to real workspace URLs that survive reloads. Run `pnpm run e2e:msw:editor --workers=1 file-errors.spec.ts`; add `-g 'PDF annotation load toast'` for the focused toast retry/dismiss check.
 
 - `e2e/editor/scenario-journeys.spec.ts`: one-click source save failure, cancelled file-link navigation with unsaved changes, and retry without remounting, source replacement/recovered draft download and IndexedDB persistence across reload followed by discard, Office checkpoint failure after editing valid files, accepted View/Edit URL transitions, Office Edit reloads, and rejected-export URL retention, scenario reset, page/form retries, pending auth cancellation, pending import polling/reset, permanent state reload/reset, Office export failure with draft download, and note permission loss through the parent guard. Run `pnpm run e2e:msw:editor --workers=1 scenario-journeys.spec.ts`.
+- `e2e/editor/biology-office.spec.ts`: Biology 101's committed rich DOCX/XLSX/PPTX fixtures open in native View/Edit, save, and retain their source links and Biology workspace identity after User scenarios Reset. Run `pnpm run e2e:msw:editor --workers=1 biology-office.spec.ts`.
 
 Popover appearance ownership is documented in [frontend/motion.md](frontend/motion.md). The shared border/background/shadow consolidation adds no new test cases; filter and notification content retain transparent, borderless, shadowless wrappers, and tag autocomplete retains `shadow-lg`.
 

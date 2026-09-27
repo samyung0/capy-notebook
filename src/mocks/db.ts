@@ -64,6 +64,7 @@ import { errorMaterials } from './errorMaterials';
 import { seedNotes } from './noteContent';
 import { embeddedSeeds } from './noteContent/helpers';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
+import { biologyOfficeFixtures } from './officeFixtures';
 import {
   buildSmallPerfDocument,
   PERF_LARGE_NOTE,
@@ -361,6 +362,9 @@ export function textUrl(body: string): string {
  * without asking for links fails here too. */
 export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
   ...Object.fromEntries(
+    biologyOfficeFixtures.map((file) => [file.id, { url: file.sourceURL }])
+  ),
+  ...Object.fromEntries(
     ['pending', 'processing', 'failed', 'ready'].map((status) => [
       `bio-state-${status}`,
       {
@@ -401,6 +405,22 @@ export const fileLinks: Record<string, { previewUrl?: string; url: string }> = {
 };
 
 export const files: SourceFile[] = [
+  ...biologyOfficeFixtures.map(
+    (file, position): SourceFile => ({
+      addedAt: hours(1),
+      chapterId: null,
+      hasBytes: true,
+      id: file.id,
+      indexed: false,
+      kind: file.kind,
+      name: file.name,
+      position: position + dialogFiles.length + 4,
+      revision: 1,
+      sizeBytes: file.sizeBytes,
+      status: 'ready',
+      workspaceId: 'ws_bio',
+    })
+  ),
   ...dialogFiles.map((file, position) => ({
     ...dialogSourceFile(file.id),
     position,

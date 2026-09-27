@@ -196,9 +196,8 @@ const mockInviteCandidates: MockInviteCandidate[] = [
 
 const SOURCE_EPOCH = 1;
 
-/** Text sources get a live mock session: the room is seeded from the file's
- * mock link, so its Yjs state is what the sidecar would hand out. Office and
- * binary kinds have no fixture bytes, so they answer 503 like `dialogFiles`. */
+/** Fixture Office sources use native checkpoint seeds; text sources seed from
+ * their mock byte link. Intentionally broken preview files still answer 503. */
 async function mockSourceSession(
   fileId: string
 ): Promise<SourceSession | null> {

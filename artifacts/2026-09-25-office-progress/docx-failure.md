@@ -1,5 +1,11 @@
 # Rich DOCX failure investigation, 2026-09-27
 
+Follow-up: [the continued investigation](investigation-2026-09-27.md) reproduces
+the original helper's misplaced sentence through durable UAT storage, verifies
+all three current rich-content journeys, and identifies remaining application
+gaps. The test changes described below are committed in `75512bb3`; the pending
+UAT and uncommitted status at the end of this earlier report is superseded.
+
 The local reproduction points to a journey input-readiness race. The owner's
 `人數：24人` survives. The collaborator's complete sentence is present in the
 export, but appended to the first heading, `2022 至 2023 年度`, instead of

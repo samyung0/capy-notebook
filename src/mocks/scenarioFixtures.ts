@@ -23,6 +23,7 @@ import * as db from './db';
 import docxStateURL from './fixtures/docx-checkpoint.bin?url';
 import pptxStateURL from './fixtures/pptx-checkpoint.bin?url';
 import xlsxStateURL from './fixtures/xlsx-checkpoint.bin?url';
+import { biologyOfficeFixtures } from './officeFixtures';
 import { LAST_SCENARIO } from './scenarios';
 
 export const scenarioWorkspace = 'ws_scenarios';
@@ -215,17 +216,18 @@ export function seedScenarioFixtures() {
   });
 }
 
-export async function prepareScenarioOffice(
+async function prepareOfficeSource(
+  fileId: string,
   format: OfficeFormat,
+  fixture: { sourceURL: string; stateURL: string },
   signal: AbortSignal
 ) {
-  const fixture = office[format];
   const response = await fetch(fixture.stateURL, { signal });
   if (!response.ok)
     throw new Error(`Office fixture state: HTTP ${response.status}`);
   const state = new Uint8Array(await response.arrayBuffer());
   signal.throwIfAborted();
-  sourceSeeds.set(`mock-scenario-${format}`, {
+  sourceSeeds.set(fileId, {
     epoch: 1,
     format,
     sourceURL: fixture.sourceURL,
@@ -233,9 +235,31 @@ export async function prepareScenarioOffice(
   });
 }
 
+export function prepareScenarioOffice(
+  format: OfficeFormat,
+  signal: AbortSignal
+) {
+  return prepareOfficeSource(
+    `mock-scenario-${format}`,
+    format,
+    office[format],
+    signal
+  );
+}
+
 export async function scenarioSourceSession(
   fileId: string
 ): Promise<SourceSession | null> {
+  const biologyFixture = biologyOfficeFixtures.find(
+    (fixture) => fixture.id === fileId
+  );
+  if (!sourceSeeds.has(fileId) && biologyFixture)
+    await prepareOfficeSource(
+      fileId,
+      biologyFixture.format,
+      biologyFixture,
+      new AbortController().signal
+    );
   const format = fileId.replace('mock-scenario-', '');
   if (!sourceSeeds.has(fileId) && format in office)
     await prepareScenarioOffice(
@@ -266,7 +290,7 @@ export async function scenarioSourceSession(
     sourceIdentity: fileId,
     sourceURL: seed.sourceURL,
     state: sourceRoomState(room),
-    workspaceId: scenarioWorkspace,
+    workspaceId: file.workspaceId,
   };
 }
 
@@ -321,7 +345,7 @@ export async function resetScenarioFixtures(captureAccount: boolean) {
       db.trash.splice(i, 1);
   // Include deleted fixtures: their drafts and links can outlive the file row.
   const fileIds = new Set([
-    ...sourceSeeds.keys(),
+    ...[...sourceSeeds.keys()].filter((id) => id.startsWith('mock-scenario-')),
     ...Object.keys(db.fileLinks).filter((id) =>
       id.startsWith('mock-scenario-')
     ),
