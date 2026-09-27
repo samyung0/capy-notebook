@@ -29,7 +29,8 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium-editor',
-      use: { ...devices['Desktop Chrome'] },
+      // The headless shell can strand modified-click tabs (Playwright #42142).
+      use: { ...devices['Desktop Chrome'], channel: 'chromium' },
     },
   ],
   reporter: [

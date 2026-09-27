@@ -517,19 +517,24 @@ layout updates briefly gate hit testing while the accessibility mirror remains.
 Failed rich-content convergence retains the last saved text, checkpoint and
 epoch in the run's sanitized evidence instead of relying on truncated ZIP bytes.
 
-Coverage limits: DOCX preservation currently exempts run language metadata.
-PPTX checks saved slide text and the available viewer/notes content; its editor
-has no slide-text accessibility mirror, paste or composition coverage. A passing
-rich-content run does not establish those behaviors. The
-[2026-09-27 investigation](../artifacts/2026-09-25-office-progress/investigation-2026-09-27.md)
-records the native no-edit language loss and a real clipboard event that reached
-the PPTX frame without producing a saved edit.
+DOCX preservation checks all six Japanese language metadata entries. The rich
+PPTX journey pastes through the real clipboard into the native text input and
+checks the exported text. Native tests cover composition; the live journey
+does not drive an operating-system IME or provide a slide-text accessibility
+mirror. The [September 27 investigation](../artifacts/2026-09-25-office-progress/investigation-2026-09-27.md)
+records the original failures, and the [Astra review](../artifacts/2026-09-25-office-progress/review-astra-xhigh-2026-09-27.md)
+records the fixes and their verification.
 
 ---
 
 ## Playwright e2e — editor feature matrix (`e2e/editor/`)
 
-MSW + Vite only (`pnpm e2e:msw:editor`); no Docker.
+MSW + Vite only (`pnpm e2e:msw:editor`); no Docker. The editor project uses
+full Chromium's headless mode because the separate headless shell can strand
+modified-click tabs ([Playwright #42142](https://github.com/microsoft/playwright/issues/42142)).
+
+CI uploads both browser suites' reports and failure traces for seven days,
+including failed attempts whose retry succeeds.
 
 | File                                                                                | About                                                                                                                                   |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |

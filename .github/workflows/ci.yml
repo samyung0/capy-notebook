@@ -117,9 +117,8 @@ jobs:
       - run: pnpm run e2e:install
       - run: pnpm run e2e
       - run: pnpm run e2e:msw:editor
-      # Docker/Vite make these suites timing sensitive, and a failure that only
-      # reproduces on the runner is undiagnosable without the traces.
-      - if: failure()
+      # Retain failed-attempt traces even when a retry makes the job succeed.
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
           if-no-files-found: ignore

@@ -261,3 +261,37 @@ The 29 Ops tests, Ops typecheck and focused Go migration harness passed. A
 fresh Astra xhigh review found no actionable issue. Failed historical telemetry samples
 cannot be reconstructed; this gap did not affect the worker's job execution.
 The final release gate follows deployment of this correction.
+
+## Completed UAT release and browser follow-up
+
+Runtime revision `a71058954e48b7ac825faf2af16c47a61a388c05` is deployed to
+UAT: [app 36322439115](https://github.com/samyung0/capy-notebook/actions/runs/36322439115),
+[ingest 36322854067](https://github.com/samyung0/capy-notebook/actions/runs/36322854067)
+and [Ops 36322920031](https://github.com/samyung0/capy-notebook/actions/runs/36322920031)
+all succeeded. All four public release markers match. Fresh import, parse and
+ingest raw samples and minute rollups persist at this revision, confirming the
+telemetry correction through the live writer.
+
+[UAT quality 36323141116](https://github.com/samyung0/capy-notebook/actions/runs/36323141116)
+passed smoke checks, all nine authenticated browser checks and all 13 lifecycle
+journeys. Journey cleanup finished at 14:07:52 UTC with `failed: []`; all five
+ingest container and image identities match before and after. Retained account
+ledgers, cached objects, delayed upload deletions and hidden B2 versions follow
+the existing retention policy. Both verifier tunnels closed after their runs.
+
+The release-scoped Sentry scan contains only the deliberate oversized-CSV
+failure, trace `580991ffc1e4ab37165d80181f86ce6c`, which matches the gate's
+terminal-failure evidence and ingest logs. The app/Ops/database/collaboration
+audit found no service failure; the gateway recorded one client-aborted
+notification request. Containers have no restarts or OOM kills. Office editing
+remains enabled with no unpublished or in-flight work after cleanup.
+
+[CI 36322032704](https://github.com/samyung0/capy-notebook/actions/runs/36322032704)
+succeeded with 39 Docker browser passes, 76 editor passes, one editor case that
+passed its retry and one intentional skip. That retry repeated the modified-click
+headless-shell failure. The reviewed follow-up uses full Chromium for the editor
+project and uploads CI artifacts even when a retry succeeds. Its isolated
+application check passed in 33.5 seconds with no retries. This follow-up changes
+test infrastructure and documentation only; the deployed runtime stays at
+`a7105895`. The [Astra review](review-astra-xhigh-2026-09-27.md) records the
+upstream evidence and the limit on attributing the historical failure exactly.

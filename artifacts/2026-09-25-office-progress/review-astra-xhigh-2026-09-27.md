@@ -149,6 +149,33 @@ Report: `/private/tmp/capy-office-tab-astra-review.md`. If it recurs, retain
 `DEBUG=pw:protocol` and browser logs for the child target; later passing runs
 alone cannot establish its historical cause.
 
+CI `36322032704` repeated that timeout and passed its retry. The failure-only
+artifact upload lost the failed attempt's trace. Another Astra xhigh review
+checked the recurrence, local protocol recordings and
+[Playwright issue 42142](https://github.com/microsoft/playwright/issues/42142).
+A maintainer bisected the upstream regression to
+[Chromium change 7987972](https://chromium-review.googlesource.com/c/chromium/src/+/7987972),
+which changes headless-shell new-window creation. A later report describes
+the same committed child tab with no Playwright page event.
+
+The editor project now selects the supported full Chromium headless channel,
+retaining the installed browser version, native modified click, event waiter
+and all assertions. CI retains artifacts even when a retry succeeds. The
+bounded Astra review found no actionable issue in those changes or the
+corrected test-catalog coverage descriptions. Report:
+`/private/tmp/capy-office-tab-protocol-astra-review.md`. This is a mitigation
+for a matching upstream failure, not proof of which CDP command blocked in
+the unavailable historical recording.
+
+The unchanged shell configuration passed ten protocol-logged application
+repetitions. Full Chromium passed four of five repetitions under concurrent
+diagnostic load; the other failed before the modified click when the first
+PDF toolbar missed its five-second readiness assertion. The isolated rerun
+then passed in 33.5 seconds without retries. Static native modified-click
+controls passed 50 times per browser mode on both macOS and Linux ARM64.
+These controls validate the configuration, but do not reproduce the historical
+CI race. The suite's timeout and navigation assertions remain unchanged.
+
 These reviews establish the inspected code paths and retained reproductions.
 They do not certify every possible Office document or replace the deployed
 UAT gate. The two original failed DOCX exports were not retained; the fresh
