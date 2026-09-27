@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -21,8 +21,41 @@ import {
   writeEvidence,
   writeManifest,
 } from './evidence';
-import { refresh } from './office';
+import { refresh, savedExport } from './office';
 import type { UatRun } from './runtime';
+
+test('saved export accepts an untouched store-only source but keeps checkpoint hash checks', async () => {
+  const bytes = Buffer.from('The original stored source.');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const row = {
+    base_blob_path: 'sources/untouched',
+    base_source_sha256: '',
+    checkpoint: 0,
+    format: 'text',
+    state: null as string | null,
+  };
+  const run = {
+    blob: async () => ({ bodyBase64: bytes.toString('base64'), sha256: hash }),
+    query: async () => [row],
+  } as unknown as UatRun;
+  assert.deepEqual((await savedExport(run, 'file_fixture')).bytes, bytes);
+  row.checkpoint = 1;
+  await assert.rejects(
+    savedExport(run, 'file_fixture'),
+    /missing its source hash/
+  );
+  row.checkpoint = 0;
+  row.state = 'AA==';
+  await assert.rejects(
+    savedExport(run, 'file_fixture'),
+    /missing its source hash/
+  );
+  row.state = null;
+  row.base_source_sha256 = hash;
+  assert.deepEqual((await savedExport(run, 'file_fixture')).bytes, bytes);
+  row.base_source_sha256 = '0'.repeat(64);
+  await assert.rejects(savedExport(run, 'file_fixture'), assert.AssertionError);
+});
 
 test('Office publication stops on a terminal pipeline job while the old file stays ready', async () => {
   const recorded: string[] = [];

@@ -933,6 +933,13 @@ money bound; these limits only stop abuse patterns.
 identity changes there, and a 429 becomes billing state that silently drifts.
 They authenticate by signature and both providers apply their own delivery rate.
 
+The secret-authenticated service routes `/api/internal/*` and
+`/internal/collaboration/*` also bypass the user/IP limiter. Collaboration
+bootstrap, access checks, saves, publication and note projection share a service
+IP and must not consume one anonymous caller's 60/minute allowance. Their
+service-secret checks, per-file authorization and ingest admission gates still
+apply. Public file session/token/process routes retain their normal user limits.
+
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
 still allows arbitrary parallel spend. `BeginProviderSession` counts open

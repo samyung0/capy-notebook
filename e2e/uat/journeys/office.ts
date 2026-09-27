@@ -52,7 +52,20 @@ export async function savedExport(run: UatRun, fileId: string) {
   const row = await savedState(run, fileId);
   const source = await run.blob(string(row.base_blob_path));
   const base = Buffer.from(source.bodyBase64, 'base64');
-  assert.equal(sha256(base), row.base_source_sha256);
+  if (row.base_source_sha256 === '') {
+    // Store-only uploads acquire their hash on the first real checkpoint.
+    // A poll may read the untouched row while that save is still in flight.
+    assert.equal(
+      row.checkpoint,
+      0,
+      'Saved checkpoint is missing its source hash'
+    );
+    assert.equal(
+      row.state,
+      null,
+      'Stored editing state is missing its source hash'
+    );
+  } else assert.equal(sha256(base), row.base_source_sha256);
   // A NULL state is seed(base) until the first save: the published source is
   // the current content (human/frontend/office-files.md, storage record).
   const state =
