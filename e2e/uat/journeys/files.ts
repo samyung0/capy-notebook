@@ -321,14 +321,29 @@ export async function settledSpend(
   fileId: string,
   noCalls = false
 ) {
-  const sessions = await run.query(
-    `SELECT DISTINCT p.id,p.status,p.settled_at,
+  // A timed-out provider attempt can outlive its settled parent session.
+  // Ingest allows 120 s plus 5 min for its receipt, then a minutely sweep.
+  const sessions = await run.poll(
+    `settled provider calls ${fileId}`,
+    () =>
+      run.query(
+        `SELECT DISTINCT p.id,p.status,p.settled_at,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id AND c.status='open') AS open_calls,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id) AS calls,
     (SELECT count(*)::int FROM usage_events u WHERE u.reservation_id=p.id) AS receipts
     FROM provider_sessions p JOIN jobs j ON j.payload->>'reservationId'=p.id
     WHERE j.payload->>'fileId'=%s`,
-    [fileId]
+        [fileId]
+      ),
+    (rows) =>
+      rows.length > 0 &&
+      rows.every(
+        (row) =>
+          (row.status === 'settled' || row.status === 'released') &&
+          row.settled_at &&
+          row.open_calls === 0
+      ),
+    8 * 60_000
   );
   assert(sessions.length > 0, 'ingest must have a recorded spend reservation');
   for (const session of sessions) {

@@ -21,8 +21,48 @@ import {
   writeEvidence,
   writeManifest,
 } from './evidence';
+import { settledSpend } from './files';
 import { refresh, savedExport } from './office';
 import type { UatRun } from './runtime';
+
+test('settled ingest spend waits for an uncertain attempt to reach its receipt deadline', async () => {
+  let openCalls = 1;
+  const recorded: string[] = [];
+  const run = {
+    attach: async () => {},
+    poll: async <T>(
+      _label: string,
+      read: () => Promise<T>,
+      accept: (value: T) => boolean
+    ) => {
+      assert.equal(accept(await read()), false);
+      openCalls = 0;
+      const settled = await read();
+      assert.equal(accept(settled), true);
+      return settled;
+    },
+    query: async () => [
+      {
+        calls: 3,
+        id: 'session_fixture',
+        open_calls: openCalls,
+        receipts: 2,
+        settled_at: '2026-09-28T00:00:00Z',
+        status: 'settled',
+      },
+    ],
+    record: async (_kind: string, id: string) => {
+      recorded.push(id);
+    },
+  } as unknown as UatRun;
+  await settledSpend(run, 'file_fixture');
+  assert.deepEqual(recorded, ['session_fixture']);
+  openCalls = 1;
+  await assert.rejects(
+    settledSpend(run, 'file_fixture', true),
+    assert.AssertionError
+  );
+});
 
 test('saved export accepts an untouched store-only source but keeps checkpoint hash checks', async () => {
   const bytes = Buffer.from('The original stored source.');
