@@ -2,12 +2,14 @@
 // This is an opt-in capacity measurement, outside the regular UAT test directory.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { read as readWorkbook } from 'xlsx';
 import { readManifest, verify } from '../../../e2e/uat/journeys/evidence';
 import {
   fixture,
   object,
-  officeBundle,
+  officeParseReceipt,
   processed,
   upload,
   workspace,
@@ -38,10 +40,13 @@ for (const [set, name] of [
     const workspaceId = await workspace(run, `storage-${name}`);
     const before = await storageCharge(run);
     const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
-    const bytes = await fixture(name, marker, set);
+    // Paired measurements reuse the exact uploaded ZIP bytes across releases.
+    const bytes = process.env.OFFICE_STORAGE_INPUT_DIR
+      ? await readFile(path.join(process.env.OFFICE_STORAGE_INPUT_DIR, set, name))
+      : await fixture(name, marker, set);
     const fileId = await upload(run, workspaceId, name, bytes);
     await processed(run, fileId, []);
-    await officeBundle(run, fileId);
+    await officeParseReceipt(run, fileId);
     async function measure(phase: string) {
       const [stored] = await run.query(
         `WITH target AS (
@@ -72,6 +77,7 @@ for (const [set, name] of [
         [fileId, fileId, fileId]
       );
       assert(stored && Number(stored.chunks) > 0, 'Missing processed content');
+      assert.equal(Number(stored.cache_bytes), 0, 'Office parse output persisted in B2');
       const stateBytes = Number(
         stored.editing === null ? 0 : object(stored.editing).state_bytes
       );
@@ -163,7 +169,7 @@ for (const [set, name] of [
     await measure('edited');
     await refresh(run, fileId);
     await processed(run, fileId, []);
-    await officeBundle(run, fileId);
+    await officeParseReceipt(run, fileId);
     await officeCharge(run, fileId, before);
     await measure('reparsed');
   });

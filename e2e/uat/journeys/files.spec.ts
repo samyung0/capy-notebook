@@ -10,7 +10,7 @@ import {
   indexText,
   invite,
   object,
-  officeBundle,
+  officeParseReceipt,
   openFile,
   processed,
   settledSpend,
@@ -46,7 +46,7 @@ for (const [format, name] of [
     const bytes = await fixture(name, marker);
     const fileId = await upload(run, workspaceId, name, bytes);
     await processed(run, fileId, [marker]);
-    await officeBundle(run, fileId);
+    await officeParseReceipt(run, fileId);
     const editor = await run.createActor(`${format}-editor`);
     await invite(run, workspaceId, editor, 'editor');
     const outsider = await run.createActor(`${format}-outsider`);
@@ -130,7 +130,7 @@ for (const [format, name] of [
         ? [marker, 'Fresh client confirmed']
         : [ownerFact, editorFact, 'Fresh client confirmed']
     );
-    await officeBundle(run, fileId);
+    await officeParseReceipt(run, fileId);
     const source = await run.blob(string(published.blob_path));
     assert.equal(source.sha256, published.source_sha256);
     assertPreserved(format, Buffer.from(source.bodyBase64, 'base64'));

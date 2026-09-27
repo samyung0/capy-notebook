@@ -71,8 +71,7 @@ class Config:
     )
     db_sync_pool_max_size: int = int(_env("CAPY_DB_SYNC_POOL_MAX_SIZE", "4"))
     db_async_pool_max_size: int = int(_env("CAPY_DB_ASYNC_POOL_MAX_SIZE", "8"))
-    # Durable derived artifacts and parse-bundle reuse copies are swept from B2
-    # when unused. Required local parse handoffs have a shorter spool TTL.
+    # Durable captions/transcripts expire independently of local parse handoffs.
     caption_cache_ttl_days: int = int(_env("CAPY_CAPTION_CACHE_TTL_DAYS", "90"))
     parse_zip_ttl_hours: int = int(_env("CAPY_PARSE_ZIP_TTL_HOURS", "6"))
     parse_source_ttl_hours: int = int(_env("CAPY_PARSE_SOURCE_TTL_HOURS", "2"))

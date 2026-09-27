@@ -360,9 +360,8 @@ func (s *Store) KnownObjectPaths(ctx context.Context, paths []string) (map[strin
 	return known, rows.Err()
 }
 
-// SweepArtifactCache drops cold durable cache objects that no in-flight ingest
-// still needs. The required parse handoff remains local; only its B2 reuse copy
-// enters artifact_cache.
+// SweepArtifactCache drops cold caption/transcript caches that no in-flight
+// ingest still needs. Document parse handoffs remain in the local spool.
 func (s *Store) SweepArtifactCache(ctx context.Context, captionTTLDays int) (int64, error) {
 	if captionTTLDays < 1 {
 		captionTTLDays = 90
@@ -374,8 +373,6 @@ func (s *Store) SweepArtifactCache(ctx context.Context, captionTTLDays int) (int
 		         AND a.last_used_at < now() - make_interval(days => $1))
 
 		     OR (a.kind = 'derived_text'
-		         AND a.last_used_at < now() - make_interval(days => $1))
-		     OR (a.kind = 'parse_bundle'
 		         AND a.last_used_at < now() - make_interval(days => $1))
 		    )
 		  AND NOT EXISTS (

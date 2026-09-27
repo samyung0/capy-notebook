@@ -94,6 +94,10 @@ stored payloads. The optional
 `pnpm exec playwright test --config bench/parsers/scripts/office_storage_ingest.config.ts`
 uses the authorized UAT journey environment, fresh run ID, verifier tunnel and
 normal cleanup to measure real upload, editing and reparse/index storage.
+For paired releases, set `OFFICE_STORAGE_INPUT_DIR` to frozen marked copies in
+`basic/` and `rich-content/` subdirectories so both runs upload identical bytes.
+Current Office receipt checks verify real parsing and the absence of both cache
+rows and any exact-key B2 parse-bundle versions.
 
 The August 28 accuracy harness belonged to the previous parser stack. The
 September 8 OpenDataLoader comparison instead freezes source PDFs and evaluates

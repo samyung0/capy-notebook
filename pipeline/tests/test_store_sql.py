@@ -3248,32 +3248,6 @@ async def test_artifact_gc_skips_in_flight_jobs(workspace):
     )
 
 
-async def test_artifact_gc_owns_cold_durable_parse_bundles(workspace):
-    from pipeline.store import db
-
-    sha = "ce" * 32
-    key = f"parse-bundles/{sha}.zip"
-    workspace.scalar(
-        """
-        INSERT INTO artifact_cache
-            (object_path, kind, source_sha256, size_bytes, last_used_at)
-        VALUES (%s, 'parse_bundle', %s, 128, now() - interval '200 days')
-        RETURNING object_path
-        """,
-        (key, sha),
-    )
-
-    with workspace._connect() as conn:
-        cur = conn.cursor()
-        deleted = db.sweep_artifact_cache(cur, caption_ttl_days=90)
-        conn.commit()
-
-    assert deleted >= 1
-    assert not workspace.scalar(
-        "SELECT count(*) FROM artifact_cache WHERE object_path = %s", (key,)
-    )
-
-
 async def test_steal_refuses_a_creator_whose_lease_is_still_live(workspace):
     import json
 

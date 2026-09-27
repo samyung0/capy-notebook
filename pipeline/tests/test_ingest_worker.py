@@ -1,11 +1,5 @@
-"""Offline unit tests for the ingest worker's processing-plan execution.
-
-Figure selection and captioning live in ``parse/figures.py`` and are tested
-there. What is left here is the branching the worker owns: which contract route
-is executed, whether captioning runs at all, and the ordering
-the whole feature rests on — that captions are on the blocks before chunking, so
-they reach embedding and summarization rather than arriving
-after the passage they belong to has already been built.
+"""Offline tests for route selection, validated local parse handoff,
+source fencing, donor reuse, provider admission and ingest retry handling.
 """
 
 from __future__ import annotations
@@ -352,7 +346,6 @@ def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
         "sha256": "aa" * 32,
     }
     artifact = _artifact()
-    artifact["durableKey"] = "parse-bundles/" + "a" * 64 + ".zip"
     monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
     monkeypatch.setattr(worker.db, "ingest_accounts_active", lambda *_a: True)
@@ -360,11 +353,6 @@ def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
         worker.db,
         "require_current_file_source",
         lambda *_a: events.append(("source",)),
-    )
-    monkeypatch.setattr(
-        worker,
-        "_touch_or_upsert_artifact",
-        lambda **values: events.append(("cache", values)) or True,
     )
     monkeypatch.setattr(
         worker.db,
@@ -393,13 +381,6 @@ def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
     assert enqueue[3]["parseArtifact"] == artifact
     assert enqueue[3]["parseJobId"] == "job_parse"
     assert "parseArtifact" not in payload
-    cache = next(event for event in events if event[0] == "cache")
-    assert cache[1] == {
-        "object_path": artifact["durableKey"],
-        "kind": "parse_bundle",
-        "source_sha256": "aa" * 32,
-        "size_bytes": artifact["size"],
-    }
     assert events[-1] == ("set", "job_parse", "done")
 
 
@@ -523,33 +504,6 @@ def test_optional_cache_registration_drops_a_row_for_a_reaped_object(monkeypatch
         source_sha256="aa" * 32,
     )
     assert [event[0] for event in events] == ["upsert", "drop"]
-
-
-def test_parse_handoff_drops_unregistered_durable_key(monkeypatch):
-    payload = _ingest_payload()
-    payload.pop("parseArtifact")
-    payload.pop("parseJobId")
-    payload["localSource"] = {"key": "sources/source-1", "sha256": "aa" * 32}
-    artifact = _artifact()
-    artifact["durableKey"] = "parse-bundles/" + "a" * 64 + ".zip"
-    queued: list[dict] = []
-    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
-    monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
-    monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **_values: False)
-    monkeypatch.setattr(worker.obs, "take_parse_usage", worker.obs.ParseUsage)
-    monkeypatch.setattr(
-        worker.db, "enqueue_job", lambda _c, _i, _t, p: queued.append(p)
-    )
-    monkeypatch.setattr(worker.db, "set_job", lambda *_a: None)
-
-    assert worker._handoff_parsed_artifact(
-        job={"id": "job_parse", "attempts": 1},
-        payload=payload,
-        file_id="f_1",
-        workspace_id="ws_1",
-        artifact=artifact,
-    )
-    assert "durableKey" not in queued[0]["parseArtifact"]
 
 
 async def test_the_processing_plan_selects_the_route(parse_stub):

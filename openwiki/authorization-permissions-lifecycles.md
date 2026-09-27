@@ -644,7 +644,7 @@ Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 
 Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
-editor assets, upload-session paths, source collaboration bases and refresh candidates. Image-caption payloads are owned by `image_caption_associations`; optional parse/audio caches use `artifact_cache`. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
+editor assets, upload-session paths, source collaboration bases and refresh candidates. Image-caption payloads are owned by `image_caption_associations`; optional audio caches use `artifact_cache`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.

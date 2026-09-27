@@ -134,7 +134,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	}
 	sourcePath := "sources/" + uid("blob")
 	captionPath := "captions/" + uid("blob")
-	parseBundlePath := "parse-bundles/" + uid("blob") + ".zip"
+	derivedPath := "derived-text/" + uid("blob") + ".json"
 	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "doc.pdf", "pdf",
 		nil, "", 100, sourcePath)
 	if err != nil {
@@ -146,15 +146,15 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO artifact_cache
-		(object_path, kind, source_sha256) VALUES ($1, 'parse_bundle', $2)`,
-		parseBundlePath, "abc"); err != nil {
+		(object_path, kind, source_sha256) VALUES ($1, 'derived_text', $2)`,
+		derivedPath, "abc"); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, captionPath); got != 1 {
 		t.Fatalf("caption refs = %d, want 1", got)
 	}
-	if got := blobRefCount(t, s, parseBundlePath); got != 1 {
-		t.Fatalf("parse bundle refs = %d, want 1", got)
+	if got := blobRefCount(t, s, derivedPath); got != 1 {
+		t.Fatalf("derived-text refs = %d, want 1", got)
 	}
 	if err := trashAndPurgeFile(ctx, s, ownerID, file.ID); err != nil {
 		t.Fatal(err)
@@ -165,8 +165,8 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	if blobQueued(t, s, captionPath) {
 		t.Error("caption cache was queued when its file was deleted")
 	}
-	if blobQueued(t, s, parseBundlePath) {
-		t.Error("parse bundle cache was queued when its file was deleted")
+	if blobQueued(t, s, derivedPath) {
+		t.Error("derived-text cache was queued when its file was deleted")
 	}
 	n, err := s.SweepArtifactCache(ctx, 0)
 	if err != nil {
@@ -186,11 +186,11 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	if !blobQueued(t, s, captionPath) {
 		t.Error("caption cache was not queued by GC")
 	}
-	if got := blobRefCount(t, s, parseBundlePath); got != 0 {
-		t.Errorf("parse bundle refs after GC = %d, want 0", got)
+	if got := blobRefCount(t, s, derivedPath); got != 0 {
+		t.Errorf("derived-text refs after GC = %d, want 0", got)
 	}
-	if !blobQueued(t, s, parseBundlePath) {
-		t.Error("parse bundle cache was not queued by GC")
+	if !blobQueued(t, s, derivedPath) {
+		t.Error("derived-text cache was not queued by GC")
 	}
 }
 
@@ -398,14 +398,14 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "sources/" + uid("blob")
-	cachePath := "parse-cache/" + uid("blob") + ".zip"
+	cachePath := "derived-text/" + uid("blob") + ".json"
 	_, err = s.CreateSourceReady(ctx, source.ID, ownerID, "shared.pptx", "slides",
 		nil, "", 2048, path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO artifact_cache
-		(object_path, kind, source_sha256) VALUES ($1, 'parse_bundle', 'clone-source')`,
+		(object_path, kind, source_sha256) VALUES ($1, 'derived_text', 'clone-source')`,
 		cachePath); err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +519,7 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Error("the clone's object was queued for deletion with the original")
 	}
 	if got := blobRefCount(t, s, cachePath); got != 1 {
-		t.Errorf("parse cache refs after deleting original = %d, want cache only", got)
+		t.Errorf("derived-text cache refs after deleting original = %d, want cache only", got)
 	}
 
 	if err := s.DeleteWorkspace(ctx, clonerID, clone.ID); err != nil {
@@ -529,10 +529,10 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Error("object was not queued once no workspace referenced it")
 	}
 	if got := blobRefCount(t, s, cachePath); got != 1 {
-		t.Errorf("parse cache refs after deleting clone = %d, want cache only", got)
+		t.Errorf("derived-text cache refs after deleting clone = %d, want cache only", got)
 	}
 	if blobQueued(t, s, cachePath) {
-		t.Error("parse cache was queued while its cache reference remained")
+		t.Error("derived-text cache was queued while its cache reference remained")
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE artifact_cache
 		SET last_used_at=now() - interval '200 days' WHERE object_path=$1`,
@@ -543,10 +543,10 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, cachePath); got != 0 {
-		t.Errorf("parse cache refs after cache expiry = %d, want 0", got)
+		t.Errorf("derived-text cache refs after cache expiry = %d, want 0", got)
 	}
 	if !blobQueued(t, s, cachePath) {
-		t.Error("parse cache was not queued after its file and cache references expired")
+		t.Error("derived-text cache was not queued after its file and cache references expired")
 	}
 }
 

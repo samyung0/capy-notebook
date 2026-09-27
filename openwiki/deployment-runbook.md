@@ -883,18 +883,30 @@ Pick one:
    versioning on, the blob reaper's deletes only hide objects and storage grows
    without bound.
 
-Do **not** put a B2 lifecycle rule on `captions/`, `derived-text/`, `previews/`,
-or `parse-bundles/`. Those prefixes are owned by `artifact_cache` and the blob
-reaper. A bucket lifecycle rule would delete objects the database still
-believes are live. They expire by TTL-since-last-use, which defaults to 90 days.
+Do **not** put a current-object B2 lifecycle rule on `captions/` or
+`derived-text/`. Their database references and the blob reaper own cleanup;
+unused reuse caches default to 90 days. The retired `previews/` and
+`parse-bundles/` prefixes remain covered by the report-only orphan sweep.
+Migration `0038` releases registered parse bundles through the deletion outbox
+with a 15-minute reader grace; hidden versions follow the bucket lifecycle.
+For this migration, finish the measurement baseline and its cleanup, verify the
+target environment has no pending/running parse, ingest or source-refresh jobs,
+then stop its old parse coordinator and ingest worker before deploying the app.
+Keep them stopped until **Deploy ingest** activates the matching new release.
+Preparation accepts existing stopped consumers only at the recorded previous
+SHA; the parser and newly activated consumers must still be running.
+An old coordinator could otherwise upload a ZIP after migration deleted the
+cache rows, fail the new cache-kind constraint, and leave an unregistered object.
+The existing rule requiring local consumers to stop before changing the shared
+nonproduction parser still applies. If deployment fails after migration 0038
+commits, keep old consumers stopped while recovering the new release.
 
-The required parse ZIP handoff remains in the parser/worker shared local volume.
+The required parse ZIP handoff stays in the parser/worker shared local volume.
 `CAPY_PARSE_ZIP_TTL_HOURS` controls those local fingerprint bundles, and
 `CAPY_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
-worker sweeps both on a 5-minute timer while the queue is idle. After verifying
-a local parse ZIP, the coordinator makes up to three attempts to copy it to the
-separate `parse-bundles/` B2 prefix for later identical-source reuse. A failed
-copy does not fail the current job and creates no cache row. A job retains its
+worker sweeps both on a 5-minute timer while the queue is idle and protects
+artifacts still needed by active jobs. The coordinator validates the local ZIP
+before handing it to ingest and never copies it to B2. A job retains its
 verified source across capacity waits and retries, then deletes it after
 committed success or terminal failure.
 

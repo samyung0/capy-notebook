@@ -1522,8 +1522,6 @@ def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
                  AND a.last_used_at < now() - make_interval(days => %s))
              OR (a.kind = 'derived_text'
                  AND a.last_used_at < now() - make_interval(days => %s))
-             OR (a.kind = 'parse_bundle'
-                 AND a.last_used_at < now() - make_interval(days => %s))
             )
           AND NOT EXISTS (
               SELECT 1
@@ -1534,7 +1532,6 @@ def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
           )
         """,
         (
-            caption_ttl_days,
             caption_ttl_days,
             caption_ttl_days,
         ),
