@@ -12,6 +12,7 @@ checks of these changes.
 | `provider_receipt_probe_astra_review` | Waiting for uncertain provider receipts in the UAT spend probe | No actionable findings. Existing accounting assertions remain intact. |
 | `comment_ci_astra_review` | Comment accessible name and fixture-name isolation after the separate `d5d31d17` merge | No actionable findings. Browser execution remained with the parent. |
 | `parse_cache_measurement_astra_closing` | Comparison assembler, report/JSON, migration evidence and closing look at the two CI fixes | One evidence-wording correction verified; no remaining actionable findings. |
+| `editor_ci_astra_review` | Three assertions/setup failures in the expanded editor suite from `d5d31d17` | No actionable findings. Confirmed rendered-text geometry, Slate selection readiness and heading-based accessible naming. |
 
 ## Rollout findings and corrections
 
@@ -63,3 +64,20 @@ The final reviewer did not independently certify the subsequently downloaded
 full UAT gate artifacts or the parent's error audit. Those results are recorded
 separately in the [measurement report](../../bench/parsers/reports/2026-09-28-office-storage-no-parse-cache.md)
 and [rollout evidence](parse-cache-rollout-2026-09-28.json).
+
+## Follow-up editor CI review
+
+CI 36338724004 passed the 39 Docker browser cases, including the comment fix,
+but exposed two failures and one retry in the expanded editor suite. The bounded
+review confirmed each cause against CI evidence and the current components.
+Callout alignment compared the icon with the CSS line-height box instead of the
+rendered text; the corrected measurement retains the strict one-pixel limit.
+The to-do setup could delete with a collapsed or incorrect selection; it now
+drags the exact fixture text, asserts the selected string and waits for Slate's
+selection toolbar before Backspace. The slash group test expected obsolete copy;
+it now requires a nonempty visible heading and a matching accessible group name.
+All existing editing, spacing, indentation and insertion checks remain.
+
+The reviewer inspected the parent's initial three-case pass. After that review,
+the parent also passed all nine repetitions with one worker and retries disabled,
+and formatting/lint checks. Full Linux CI is checked separately after the push.

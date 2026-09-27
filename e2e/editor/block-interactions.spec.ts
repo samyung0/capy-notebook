@@ -85,12 +85,12 @@ test.describe('block editing', () => {
         .querySelector('[data-callout-icon]')!
         .getBoundingClientRect();
       const paragraph = element.querySelector('.slate-p')!;
-      const style = getComputedStyle(paragraph);
-      const firstLineCenter =
-        paragraph.getBoundingClientRect().top +
-        Number.parseFloat(style.paddingTop) +
-        Number.parseFloat(style.lineHeight) / 2;
-      return Math.abs(icon.top + icon.height / 2 - firstLineCenter);
+      const text = document.createRange();
+      text.selectNodeContents(paragraph.querySelector('[data-slate-string]')!);
+      const firstLine = text.getClientRects()[0];
+      return Math.abs(
+        icon.top + icon.height / 2 - firstLine.top - firstLine.height / 2
+      );
     });
     expect(alignment).toBeLessThan(1);
     await callout.getByRole('button', { name: 'Callout style' }).click();
@@ -133,7 +133,8 @@ test.describe('block editing', () => {
       'mat_note_bio_feature_matrix',
       'Editor feature matrix'
     );
-    const todo = editor.getByText('Todo open — try each toolbar control', {
+    const todoText = 'Todo open — try each toolbar control';
+    const todo = editor.getByText(todoText, {
       exact: true,
     });
     const bullet = editor.getByText('Bulleted item — organelles', {
@@ -145,9 +146,20 @@ test.describe('block editing', () => {
     expect(
       await todo.evaluate((element) => element.getBoundingClientRect().left)
     ).toBeCloseTo(bulletLeft, 0);
-    await todo.click();
-    await page.keyboard.press('Home');
-    await page.keyboard.press('Shift+End');
+    await todo.scrollIntoViewIfNeeded();
+    const bounds = (await todo.boundingBox())!;
+    const centerY = bounds.y + bounds.height / 2;
+    await page.mouse.move(bounds.x + bounds.width - 1, centerY);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + 1, centerY, { steps: 8 });
+    await page.mouse.up();
+    await expect
+      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+      .toBe(todoText);
+    // Slate's selection toolbar confirms the range is ready for Backspace.
+    await expect(
+      page.getByRole('toolbar', { name: 'Selection actions' })
+    ).toBeVisible();
     await page.keyboard.press('Backspace');
     const empty = editor.locator('.slate-p[placeholder]');
     await expect(empty).toHaveCount(1);

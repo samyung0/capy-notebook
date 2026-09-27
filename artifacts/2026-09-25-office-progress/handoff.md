@@ -365,3 +365,25 @@ materials. Follow-up `5416fcaa` restores the localized `Comment` accessible name
 gives each test material a UUID-suffixed title. Existing test assertions and
 product title uniqueness remain intact. These main follow-ups do not change the
 measured UAT runtime, which remains `21a8f996`; production was untouched.
+
+### Follow-up editor CI corrections
+
+[CI 36338724004](https://github.com/samyung0/capy-notebook/actions/runs/36338724004)
+passed the 39 Docker browser cases and the backend, pipeline, frontend and Office
+pin jobs. The expanded editor suite from `d5d31d17` had 102 passes, two failures,
+one flaky case and one skip. All three problematic cases reproduced locally.
+
+The callout test measured a one-pixel difference from the CSS line-height box,
+while the rendered first text line differed by only half a pixel. It now measures
+the rendered line and preserves the existing strict one-pixel assertion. The
+slash group test expected the obsolete `File operations` label instead of `File`;
+it now verifies that the accessible group name matches its nonempty visible
+heading. The to-do test used platform-dependent Home/End selection and could
+send Backspace with a collapsed selection, removing the list marker. It now
+drags the exact fixture text, verifies the selection and waits for Slate's
+selection toolbar before deletion. All original editing and layout checks remain.
+
+These are test-only corrections. The focused three-case run passed, followed by
+nine repetitions with one worker and no retries. Formatting/lint passed. An
+explicit Astra xhigh reviewer found no actionable issue in the bounded changes;
+full Linux CI remains the final check after pushing this follow-up.

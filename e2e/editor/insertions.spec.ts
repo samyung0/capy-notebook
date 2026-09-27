@@ -65,9 +65,10 @@ test.describe('inline and block insertions', () => {
     await page.keyboard.type('/');
     const listbox = page.getByRole('listbox');
     await expect(listbox).toBeVisible();
-    await expect(listbox.getByRole('group').first()).toHaveAccessibleName(
-      'File operations'
-    );
+    const firstGroup = listbox.getByRole('group').first();
+    const groupHeading = await firstGroup.getByRole('heading').innerText();
+    expect(groupHeading.trim()).not.toBe('');
+    await expect(firstGroup).toHaveAccessibleName(groupHeading);
     await expect(
       listbox.getByRole('option', { exact: true, name: 'Image' })
     ).toHaveAttribute('aria-selected', 'true');
