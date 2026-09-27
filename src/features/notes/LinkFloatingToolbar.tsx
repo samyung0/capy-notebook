@@ -15,7 +15,9 @@ import {
 import { useEditorPlugin, useEditorRef, usePluginOption } from 'platejs/react';
 import { useMemo, useState } from 'react';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
+import { Input } from '@/components/ui/Input';
 import { PopupMotion } from '@/components/ui/PopupMotion';
+import { Separator } from '@/components/ui/Separator';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -60,7 +62,7 @@ export function LinkFloatingToolbar() {
     >
       {state.isEditing ? (
         <form
-          className="z-50 flex w-80 flex-col gap-2 rounded-card border border-line bg-surface p-2 shadow-pop"
+          className="z-50 flex w-80 flex-col rounded-lg border border-line bg-surface p-1 text-fg shadow-pop"
           onSubmit={(event) => {
             event.preventDefault();
             setAttemptedSubmit(true);
@@ -69,33 +71,31 @@ export function LinkFloatingToolbar() {
             setAttemptedSubmit(false);
           }}
         >
-          <label className="flex flex-col gap-1">
-            <span className="font-medium text-fg-muted text-xs">
-              {m.editor_link_url()}
-            </span>
-            <FloatingLinkUrlInput
+          <FloatingLinkUrlInput asChild>
+            <Input
               aria-invalid={invalid}
               aria-label={m.editor_link_url()}
-              className={cn(
-                'h-8 min-w-0 flex-1 rounded-input border border-line bg-surface px-2 text-sm outline-none',
-                'focus:border-line-strong focus:ring-2 focus:ring-focus',
-                invalid && 'border-solid-error'
-              )}
+              className="h-7 py-1 font-medium text-sm"
+              leftIcon="link"
               placeholder="https://example.com"
+              variant="transparent"
+              wrapperClassName={cn(
+                'rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4',
+                invalid && 'ring-1 ring-solid-error'
+              )}
             />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="font-medium text-fg-muted text-xs">
-              {m.editor_link_text()}
-            </span>
-            <input
-              aria-label={m.editor_link_text()}
-              className="h-8 min-w-0 rounded-input border border-line bg-surface px-2 text-sm outline-none focus:border-line-strong focus:ring-2 focus:ring-focus"
-              onChange={(event) => setOption('text', event.target.value)}
-              placeholder={m.editor_link_text_placeholder()}
-              value={text}
-            />
-          </label>
+          </FloatingLinkUrlInput>
+          <Separator className="my-1" />
+          <Input
+            aria-label={m.editor_link_text()}
+            className="h-7 py-1 font-medium text-sm"
+            leftIcon="alignLeft"
+            onChange={(event) => setOption('text', event.target.value)}
+            placeholder={m.editor_link_text_placeholder()}
+            value={text}
+            variant="transparent"
+            wrapperClassName="rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4"
+          />
           <div className="flex items-center justify-end gap-0">
             <FloatingActionButton label={m.editor_link_save()} type="submit">
               <EditorIcon name="check" />

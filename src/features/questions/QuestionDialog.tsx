@@ -490,7 +490,7 @@ function QuestionDialogSession({
           <span className="min-w-0 truncate">
             {block?.type === 'text' ? (
               <TextView
-                className="whitespace-nowrap [&>span]:inline [&_.katex-display]:m-0 [&_.katex-display]:inline"
+                className="whitespace-nowrap [&>span]:inline"
                 text={label}
               />
             ) : (

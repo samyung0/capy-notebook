@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Capy export layout choices</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f3f2ef;
+        color: #242424;
+        font:
+          14px/1.55 Inter,
+          Segoe UI,
+          sans-serif;
+      }
+      button,
+      select {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      a {
+        color: #5744a5;
+      }
+      header {
+        padding: 24px max(20px, calc((100% - 1120px) / 2));
+        background: #fff;
+        border-bottom: 1px solid #e0ded9;
+      }
+      header h1 {
+        font-size: 23px;
+        letter-spacing: -0.5px;
+        margin: 4px 0 8px;
+      }
+      header p {
+        margin: 6px 0;
+        color: #666;
+      }
+      .eyebrow {
+        font-size: 11px;
+        letter-spacing: 1.8px;
+        text-transform: uppercase;
+        color: #777;
+      }
+      .choices {
+        display: flex;
+        gap: 8px;
+        margin: 20px 0 12px;
+        flex-wrap: wrap;
+      }
+      .choices button {
+        flex: 1;
+        min-width: 200px;
+        text-align: left;
+        border: 1px solid #dedbd5;
+        background: #fff;
+        border-radius: 9px;
+        padding: 12px 15px;
+      }
+      .choices button[aria-pressed="true"] {
+        border-color: #6f5eb8;
+        background: #f4f0ff;
+        box-shadow: 0 0 0 1px #6f5eb8;
+      }
+      .choices strong,
+      .choices small {
+        display: block;
+      }
+      .choices small {
+        color: #65606e;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+      .tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 18px;
+      }
+      .tools button,
+      select,
+      .download {
+        padding: 7px 12px;
+        border: 1px solid #dedbd5;
+        border-radius: 6px;
+        background: #fff;
+      }
+      .tools button[aria-pressed="true"] {
+        background: #28252e;
+        color: #fff;
+        border-color: #28252e;
+      }
+      .download {
+        margin-left: auto;
+        text-decoration: none;
+      }
+      .status {
+        font-size: 12px;
+        margin: 12px auto;
+        color: #666;
+        max-width: 850px;
+        padding: 0 16px;
+      }
+      main {
+        padding: 12px 20px 60px;
+      }
+      .paper {
+        max-width: 850px;
+        margin: auto;
+        background: #fff;
+        padding: 55px 62px;
+        box-shadow: 0 2px 14px #29221a12;
+        border: 1px solid #e2dfda;
+        overflow-wrap: anywhere;
+        font:
+          15px/1.65 Georgia,
+          serif;
+      }
+      .paper.md {
+        font-family:
+          Segoe UI,
+          sans-serif;
+      }
+      .paper h1 {
+        font-size: 30px;
+        line-height: 1.2;
+        margin: 0 0 28px;
+      }
+      .paper h2 {
+        font:
+          600 21px/1.35 Segoe UI,
+          sans-serif;
+        margin: 32px 0 14px;
+        break-after: avoid;
+      }
+      .paper h3 {
+        font-size: 18px;
+        margin: 20px 0 9px;
+      }
+      .paper h4 {
+        font-size: 16px;
+      }
+      .paper h5 {
+        font-size: 14px;
+      }
+      .paper h6 {
+        font-size: 13px;
+      }
+      .paper p {
+        margin: 9px 0;
+      }
+      .paper blockquote {
+        margin: 18px 0;
+        padding: 5px 20px;
+        border-left: 3px solid #bbb;
+        color: #4b4652;
+      }
+      .paper hr {
+        border: 0;
+        border-top: 1px solid #bbb;
+        margin: 24px 0;
+      }
+      .paper pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #f5f4f2;
+        padding: 16px;
+        font:
+          12px/1.65 Consolas,
+          monospace;
+      }
+      .paper code {
+        font:
+          13px/1.5 Consolas,
+          monospace;
+        background: #f4f3f1;
+      }
+      .paper .toc {
+        font:
+          13px/1.7 Segoe UI,
+          sans-serif;
+        columns: 2;
+        column-gap: 28px;
+        margin-bottom: 22px;
+      }
+      .toc a {
+        display: block;
+        text-decoration: none;
+      }
+      .paper table {
+        border-collapse: collapse;
+        width: 100%;
+        margin: 14px 0 20px;
+        font:
+          13px/1.5 Segoe UI,
+          sans-serif;
+      }
+      .paper th,
+      .paper td {
+        border: 1px solid #dad8d3;
+        padding: 10px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .paper th {
+        background: #f0eeea;
+        font-weight: 600;
+      }
+      .paper .columns td {
+        border: 0;
+        border-left: 1px solid #dedbd5;
+      }
+      .paper .columns td:first-child {
+        border: 0;
+      }
+      .callout {
+        padding: 12px 15px;
+        margin: 12px 0;
+        background: #eff6ff;
+        border-left: 3px solid #3b82f6;
+      }
+      .callout.success {
+        background: #eef5f0;
+        border-color: #5f9174;
+      }
+      .callout.warning {
+        background: #faf4e8;
+        border-color: #be963f;
+      }
+      .callout.danger {
+        background: #f9eeeb;
+        border-color: #b96558;
+      }
+      .callout b {
+        font-family:
+          Segoe UI,
+          sans-serif;
+        font-size: 13px;
+      }
+      .question {
+        margin: 16px 0 24px;
+        break-inside: avoid;
+      }
+      .qhead {
+        display: flex;
+        gap: 14px;
+        justify-content: space-between;
+      }
+      .qhead strong {
+        font-weight: 600;
+      }
+      .marks {
+        white-space: nowrap;
+        color: #666;
+        font:
+          12px Segoe UI,
+          sans-serif;
+        padding-top: 4px;
+      }
+      .options {
+        list-style: none;
+        padding: 0 0 0 22px;
+        margin: 10px 0;
+      }
+      .options li {
+        margin: 5px 0;
+      }
+      .answer {
+        margin: 13px 0 20px;
+        padding: 12px 16px;
+        font-size: 14px;
+      }
+      .answer p {
+        margin: 5px 0;
+      }
+      .answer small {
+        font-family:
+          Segoe UI,
+          sans-serif;
+        color: #666;
+      }
+      .answer-key {
+        margin-top: 28px;
+        padding-top: 16px;
+        border-top: 2px solid #bbb;
+      }
+      .writing {
+        height: 50px;
+        background: repeating-linear-gradient(
+          to bottom,
+          transparent,
+          transparent 24px,
+          #d9d6d0 24px,
+          #d9d6d0 25px
+        );
+        margin: 8px 0;
+      }
+      .flash {
+        padding: 14px 0;
+        border-bottom: 1px solid #dedbd5;
+        break-inside: avoid;
+      }
+      .flash p:first-child {
+        font-weight: 600;
+      }
+      .label {
+        font:
+          11px Segoe UI,
+          sans-serif;
+        color: #777;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+      }
+      .video {
+        margin: 18px 0;
+        max-width: 560px;
+        break-inside: avoid;
+      }
+      .video p {
+        margin: 8px 0;
+      }
+      .video-preview {
+        display: grid;
+        position: relative;
+        aspect-ratio: 16 / 9;
+        overflow: hidden;
+        background: #242424;
+        border-radius: 3px;
+        place-items: center;
+      }
+      .video-preview img {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        color: white;
+      }
+      .video-play {
+        display: grid;
+        z-index: 1;
+        width: 68px;
+        height: 48px;
+        border-radius: 12px;
+        background: #c00;
+        color: white;
+        font:
+          24px Arial,
+          sans-serif;
+        text-indent: 3px;
+        place-items: center;
+      }
+      .video .video-caption {
+        color: #646464;
+        font:
+          12px/1.5 Arial,
+          sans-serif;
+      }
+      .diagram {
+        width: 100%;
+        max-width: 300px;
+        display: block;
+        margin: 18px auto;
+      }
+      .caption {
+        text-align: center;
+        color: #666;
+        font:
+          12px Segoe UI,
+          sans-serif;
+      }
+      .source {
+        font:
+          12px/1.7 Consolas,
+          monospace;
+        white-space: pre-wrap;
+      }
+      .coverage {
+        max-width: 1120px;
+        font-family:
+          Segoe UI,
+          sans-serif;
+      }
+      .coverage table {
+        font-size: 13px;
+      }
+      .coverage h2 {
+        margin-top: 12px;
+      }
+      .notice {
+        border-left: 3px solid #8d7d51;
+        padding-left: 14px;
+        color: #605844;
+        font:
+          13px/1.6 Segoe UI,
+          sans-serif;
+      }
+      .jump {
+        max-width: 190px;
+      }
+      .hidden {
+        display: none !important;
+      }
+      @media (max-width: 650px) {
+        header {
+          padding: 20px 16px;
+        }
+        .choices {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+        .choices button {
+          min-width: 0;
+        }
+        .paper {
+          padding: 26px 20px;
+        }
+        .paper .toc {
+          columns: 1;
+        }
+        main {
+          padding: 10px 8px 40px;
+        }
+        .download {
+          margin-left: 0;
+        }
+        .paper .columns td {
+          display: block;
+          width: 100% !important;
+          border-left: 0;
+          border-bottom: 1px solid #ddd;
+        }
+        .paper th,
+        .paper td {
+          padding: 7px;
+        }
+        .tools {
+          gap: 6px;
+        }
+      }
+      @media print {
+        header,
+        .status {
+          display: none;
+        }
+        body {
+          background: #fff;
+        }
+        main {
+          padding: 0;
+        }
+        .paper {
+          box-shadow: none;
+          border: 0;
+          padding: 0;
+          max-width: none;
+        }
+        .answer-key {
+          break-before: page;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="eyebrow">Capy Notebook · Export proposal</div>
+      <h1>Choose how study blocks become a document</h1>
+      <p>
+        Three layouts using the complete <b>Editor feature matrix</b> fixture.
+        Every quiz answer and flashcard back is preserved.
+      </p>
+      <div class="choices" aria-label="Export layouts">
+        <button data-profile="study" aria-pressed="true">
+          <strong>A · Study handout</strong
+          ><small
+            >Questions first, then an answer key. Cards in pairs.</small
+          ></button
+        ><button data-profile="annotated" aria-pressed="false">
+          <strong>B · Answered notes</strong
+          ><small>Answer and explanation below each question.</small></button
+        ><button data-profile="worksheet" aria-pressed="false">
+          <strong>C · Practice worksheet</strong
+          ><small
+            >Writing space and card prompts. All answers at the end.</small
+          >
+        </button>
+      </div>
+      <div class="tools" aria-label="Preview controls">
+        <button data-format="docx" aria-pressed="true">DOCX layout</button
+        ><button data-format="markdown" aria-pressed="false">
+          Markdown preview</button
+        ><button data-format="source" aria-pressed="false">
+          Markdown source</button
+        ><button data-format="coverage" aria-pressed="false">
+          Block coverage</button
+        ><label
+          >Jump to
+          <select class="jump" id="jump">
+            <option value="">Document start</option>
+            <option value="youtube-embed">YouTube</option>
+            <option value="quiz-block">Quiz</option>
+            <option value="flashcards-block">Flashcards</option>
+            <option value="columns">Columns</option>
+            <option value="text-marks-styles">Text styles</option>
+          </select></label
+        ><button class="download" id="download">Download sample .md</button>
+      </div>
+    </header>
+    <p class="status" id="status" aria-live="polite"></p>
+    <main><article class="paper" id="paper"></article></main>
+    <style>
+      .paper .katex-display {
+        overflow-x: auto;
+        max-width: 100%;
+        padding: 4px 0;
+      }
+    </style>
+    <script type="module" src="./preview.mjs?revision=4"></script>
+  </body>
+</html>

@@ -8,6 +8,7 @@ import {
   flip,
   offset,
   shift,
+  size,
   useFloating,
 } from '@platejs/floating';
 import type { PointRef, TComboboxInputElement } from 'platejs';
@@ -16,11 +17,16 @@ import {
   type PlateElementProps,
   useEditorRef,
 } from 'platejs/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { PopupMotion } from '@/components/ui/PopupMotion';
+import {
+  ToolbarPopoverGroup,
+  ToolbarPopoverItem,
+} from '@/components/ui/ToolbarPopover';
 import { m } from '@/i18n';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
 import { useCollaborationActions } from './Collaboration';
+import { EditorIcon } from './EditorIcon';
 import { useEditorRuntime } from './EditorRuntime';
 import {
   commandMatches,
@@ -28,7 +34,7 @@ import {
   type EditorCommand,
 } from './editorCommands';
 import { isEditorCommandAllowed } from './editorMode';
-import { useNoteEditorPrefs } from './noteEditorPrefs';
+import { useNoteEditorPrefs, WIDGET_GROUPS } from './noteEditorPrefs';
 
 export function SlashInputElement(
   props: PlateElementProps<TComboboxInputElement>
@@ -46,6 +52,8 @@ export function SlashInputElement(
   const isSelectingCommandRef = useRef(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const listboxId = useId();
+  const activeOptionRef = useRef<HTMLButtonElement>(null);
 
   const { refs, floatingStyles } = useFloating({
     middleware: [
@@ -55,6 +63,15 @@ export function SlashInputElement(
         padding: 12,
       }),
       shift({ padding: 12 }),
+      size({
+        apply({ availableHeight, elements }) {
+          elements.floating.style.setProperty(
+            '--slash-available-height',
+            `${Math.max(0, availableHeight)}px`
+          );
+        },
+        padding: 12,
+      }),
     ],
     open: true,
     placement: 'bottom-start',
@@ -118,17 +135,24 @@ export function SlashInputElement(
       ? [...EDITOR_COMMANDS, collaborationCommand]
       : EDITOR_COMMANDS;
 
-    return availableCommands.filter(
+    const matching = availableCommands.filter(
       (command) =>
         enabled[command.group] &&
         isEditorCommandAllowed(command, allowExternalAssets) &&
         commandMatches(command, query)
+    );
+    return WIDGET_GROUPS.flatMap((group) =>
+      matching.filter((command) => command.group === group.id)
     );
   }, [allowExternalAssets, canEdit, collaboration, enabled, query]);
 
   useEffect(() => {
     setActiveIndex(0);
   }, [query]);
+
+  useEffect(() => {
+    activeOptionRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [activeIndex, commands]);
 
   function select(index: number) {
     const command = commands[index];
@@ -159,6 +183,10 @@ export function SlashInputElement(
           </span>
           <input
             {...inputProps}
+            aria-activedescendant={
+              commands[activeIndex] ? `${listboxId}-${activeIndex}` : undefined
+            }
+            aria-controls={listboxId}
             aria-expanded={commands.length > 0}
             aria-label={m.editor_search_commands_aria()}
             className="absolute inset-0 size-full bg-transparent outline-none"
@@ -197,7 +225,8 @@ export function SlashInputElement(
         </span>
         <FloatingPortal>
           <PopupMotion
-            className="block max-h-72 w-72 overflow-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+            className="block max-h-[min(80vh,38rem,var(--slash-available-height,38rem))] w-72 overflow-auto rounded-lg border border-line bg-surface px-1 pt-2 pb-1.5 font-medium text-fg text-sm leading-(--body-line-height) shadow-pop"
+            id={listboxId}
             open
             positionClassName="z-50"
             positionRef={refs.setFloating}
@@ -205,25 +234,42 @@ export function SlashInputElement(
             style={floatingStyles}
           >
             {commands.length ? (
-              commands.map((command, index) => (
-                <button
-                  aria-selected={index === activeIndex}
-                  className="flex w-full flex-col rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg aria-selected:bg-surface-hover-bg"
-                  key={command.id}
-                  onClick={() => select(index)}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActiveIndex(index)}
-                  role="option"
-                  type="button"
-                >
-                  <span className="font-medium text-fg text-sm">
-                    {command.label}
-                  </span>
-                  <span className="text-fg-muted text-xs">
-                    {command.description}
-                  </span>
-                </button>
-              ))
+              WIDGET_GROUPS.map((group) => {
+                const items = commands.filter(
+                  (command) => command.group === group.id
+                );
+                if (!items.length) return null;
+                return (
+                  <ToolbarPopoverGroup
+                    key={group.id}
+                    label={group.label}
+                    role="group"
+                  >
+                    {items.map((command) => {
+                      const index = commands.indexOf(command);
+                      return (
+                        <ToolbarPopoverItem
+                          aria-selected={index === activeIndex}
+                          className="aria-selected:bg-surface-hover-bg"
+                          icon={<EditorIcon name={command.icon} />}
+                          id={`${listboxId}-${index}`}
+                          key={command.id}
+                          label={command.label}
+                          onClick={() => select(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setActiveIndex(index)}
+                          ref={
+                            index === activeIndex ? activeOptionRef : undefined
+                          }
+                          role="option"
+                          shortcut={command.shortcut}
+                          tabIndex={-1}
+                        />
+                      );
+                    })}
+                  </ToolbarPopoverGroup>
+                );
+              })
             ) : (
               <span className="block px-2 py-3 text-fg-muted text-sm">
                 {m.editor_commands_none()}

@@ -65,11 +65,24 @@ test.describe('inline and block insertions', () => {
     await page.keyboard.type('/');
     const listbox = page.getByRole('listbox');
     await expect(listbox).toBeVisible();
+    await expect(listbox.getByRole('group').first()).toHaveAccessibleName(
+      'File operations'
+    );
+    await expect(
+      listbox.getByRole('option', { exact: true, name: 'Image' })
+    ).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowDown');
+    await expect(
+      listbox.getByRole('option', { exact: true, name: 'YouTube embed' })
+    ).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    const lastOption = listbox.getByRole('option').last();
+    await expect(lastOption).toHaveAttribute('aria-selected', 'true');
+    await expect(lastOption).toBeInViewport();
     await page.keyboard.type('table');
 
-    const option = listbox
-      .getByRole('option')
-      .filter({ hasText: 'Insert a 2 × 2 table' });
+    const option = listbox.getByRole('option', { exact: true, name: 'Table' });
     await expect(option).toBeVisible();
     await option.click();
 

@@ -1,8 +1,9 @@
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
-import { MarkdownPlugin, serializeMd } from '@platejs/markdown';
+import { MarkdownPlugin } from '@platejs/markdown';
 import type { QueryClient } from '@tanstack/react-query';
-import { KEYS, type SlatePlugin } from 'platejs';
+import { KEYS } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
+import { resolveEditorAsset } from '@/api/editorAssets';
 import { cardsQuery, quizQuery } from '@/api/hooks';
 import {
   assertMaterialDocument,
@@ -13,9 +14,9 @@ import {
   type MaterialElement,
   type MaterialNode,
   type MaterialValue,
-  materialRefNode,
   quizNode,
 } from '@/features/materials/document';
+import type { ExportFormat } from './export/render';
 
 type MarkdownEditor = PlateEditor & {
   getApi: (plugin: typeof MarkdownPlugin) => {
@@ -75,9 +76,8 @@ export function importJsonDocument(
   return sanitizeImportedDocument(editor, assertMaterialDocument(source));
 }
 
-/** Embedded materials are exported inline: each reference is replaced by the
- * quiz or flashcards block built from the material it points at. A reference
- * that cannot be read is exported as it is. */
+/** Resolve a snapshot once for both formats. A failed read must not result in
+ * a successful but incomplete document download. */
 async function resolveMaterialRefs(
   value: MaterialValue,
   queryClient: QueryClient
@@ -85,43 +85,68 @@ async function resolveMaterialRefs(
   return Promise.all(
     value.map(async (node) => {
       if (!isMaterialRefElement(node) || !node.materialId) return node;
-      try {
-        if (node.refKind === 'quiz') {
-          const quiz = await queryClient.fetchQuery(quizQuery(node.materialId));
-          return quizNode({
-            questions: quiz.questions,
-          });
-        }
-        const cards = await queryClient.fetchQuery(cardsQuery(node.materialId));
-        return flashcardsNode(
-          cards.map((card) => ({
-            back: card.back,
-            front: card.front,
-            id: card.id,
-          }))
-        );
-      } catch {
-        // Kept as a fence so the block is visible in the export rather than
-        // silently dropped.
-        return materialRefNode(
-          '',
-          node.refKind,
-          `# This ${node.refKind === 'quiz' ? 'quiz' : 'flashcard set'} could not be exported.`
-        );
+      if (node.refKind === 'quiz') {
+        const quiz = await queryClient.fetchQuery({
+          ...quizQuery(node.materialId),
+          retry: false,
+          staleTime: 0,
+        });
+        return quizNode({
+          questions: quiz.questions,
+        });
       }
+      const cards = await queryClient.fetchQuery({
+        ...cardsQuery(node.materialId),
+        retry: false,
+        staleTime: 0,
+      });
+      return flashcardsNode(
+        cards.map((card) => ({
+          back: card.back,
+          front: card.front,
+          id: card.id,
+        }))
+      );
     })
   );
 }
 
-export async function exportMarkdownDocument(
+export async function exportNoteDocument(
   editor: PlateEditor,
-  queryClient: QueryClient
-): Promise<string> {
+  queryClient: QueryClient,
+  format: ExportFormat,
+  signal?: AbortSignal
+) {
   const value = await resolveMaterialRefs(
-    editor.children as MaterialValue,
+    structuredClone(editor.children) as MaterialValue,
     queryClient
   );
-  return serializeMd(editor, { value });
+  const ids = new Set<string>();
+  const visit = (nodes: MaterialNode[]) =>
+    nodes.forEach((node) => {
+      if ('text' in node) return;
+      if (typeof node.assetId === 'string') ids.add(node.assetId);
+      visit(node.children);
+    });
+  visit(value);
+  const assetUrls: Record<string, string> = {};
+  for (const id of ids)
+    assetUrls[id] = (await resolveEditorAsset(id, signal)).url;
+  const { runExportWorker } = await import('./export/client');
+  const current = new URL(location.href);
+  const noteUrl = new URL(current.pathname, current.origin);
+  if (current.searchParams.has('material'))
+    noteUrl.searchParams.set('material', current.searchParams.get('material')!);
+  noteUrl.searchParams.set('mode', 'view');
+  return runExportWorker(
+    {
+      assetUrls,
+      format,
+      noteUrl: noteUrl.href,
+      value,
+    },
+    signal
+  );
 }
 
 export async function importDocxDocument(
@@ -136,16 +161,6 @@ export async function importDocxDocument(
   );
 }
 
-export async function exportDocxDocument(
-  editor: PlateEditor,
-  plugins: SlatePlugin[]
-): Promise<Blob> {
-  const { exportToDocx } = await loadDocxIo();
-  return exportToDocx(editor.children as MaterialValue, {
-    editorPlugins: plugins,
-  });
-}
-
 export function downloadEditorFile(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -154,7 +169,7 @@ export function downloadEditorFile(blob: Blob, filename: string) {
   document.body.append(link);
   link.click();
   link.remove();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function downloadEditorText(

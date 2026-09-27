@@ -5,7 +5,7 @@ import { THEMES } from '@/theme/theme';
 /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
  * when a diagram is actually rendered. */
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
-async function getMermaid() {
+export async function getMermaid() {
   if (!mermaidPromise) {
     mermaidPromise = import('mermaid').then((mod) => {
       const mermaid = mod.default;

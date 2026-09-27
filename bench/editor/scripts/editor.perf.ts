@@ -140,7 +140,7 @@ async function openNote(
   const gated = note === PERF_LARGE_NOTE;
   const startedAt = Date.now();
   await page.goto(
-    `/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(note.id)}`
+    `/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(note.id)}&mode=${choice === 'readOnly' ? 'view' : 'edit'}`
   );
 
   const openAnyway = page.getByTestId('heavy-material-open');

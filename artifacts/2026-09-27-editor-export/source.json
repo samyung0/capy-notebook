@@ -1,0 +1,1168 @@
+{
+  "note": {
+    "chapterId": null,
+    "daysAgo": 0,
+    "id": "mat_note_bio_feature_matrix",
+    "title": "Editor feature matrix (all blocks)",
+    "value": [
+      {
+        "children": [
+          {
+            "text": "Editor feature matrix"
+          }
+        ],
+        "type": "h1"
+      },
+      {
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "type": "toc"
+      },
+      {
+        "children": [
+          {
+            "text": "This note intentionally exercises every Plate feature except uploaded media nodes (img / audio / file)."
+          }
+        ],
+        "type": "p"
+      },
+      {
+        "children": [
+          {
+            "text": "Headings"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": "Heading 3"
+          }
+        ],
+        "type": "h3"
+      },
+      {
+        "children": [
+          {
+            "text": "Heading 4"
+          }
+        ],
+        "type": "h4"
+      },
+      {
+        "children": [
+          {
+            "text": "Heading 5"
+          }
+        ],
+        "type": "h5"
+      },
+      {
+        "children": [
+          {
+            "text": "Heading 6"
+          }
+        ],
+        "type": "h6"
+      },
+      {
+        "children": [
+          {
+            "text": "Text marks & styles"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": "plain · "
+          },
+          {
+            "bold": true,
+            "text": "bold"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "italic": true,
+            "text": "italic"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "underline": true,
+            "text": "underline"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "strikethrough": true,
+            "text": "strike"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "code": true,
+            "text": "inline code"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "kbd": true,
+            "text": "Ctrl"
+          },
+          {
+            "text": "+"
+          },
+          {
+            "kbd": true,
+            "text": "B"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "highlight": true,
+            "text": "highlight"
+          },
+          {
+            "text": " · H"
+          },
+          {
+            "subscript": true,
+            "text": "2"
+          },
+          {
+            "text": "O · E=mc"
+          },
+          {
+            "superscript": true,
+            "text": "2"
+          }
+        ],
+        "type": "p"
+      },
+      {
+        "children": [
+          {
+            "color": "#dc2626",
+            "text": "colored"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "backgroundColor": "#fef9c3",
+            "color": "#854d0e",
+            "text": "tinted"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "fontSize": "24px",
+            "text": "larger"
+          },
+          {
+            "text": " · "
+          },
+          {
+            "fontFamily": "Georgia, serif",
+            "text": "serif sample"
+          }
+        ],
+        "type": "p"
+      },
+      {
+        "children": [
+          {
+            "text": "Inline link: "
+          },
+          {
+            "children": [
+              {
+                "text": "OpenStax Biology"
+              }
+            ],
+            "type": "a",
+            "url": "https://openstax.org/details/books/biology-2e"
+          },
+          {
+            "text": " · mention "
+          },
+          {
+            "children": [
+              {
+                "text": ""
+              }
+            ],
+            "type": "mention",
+            "value": "Kate Malone"
+          },
+          {
+            "text": " · inline math "
+          },
+          {
+            "children": [
+              {
+                "text": ""
+              }
+            ],
+            "texExpression": "\\Delta G = \\Delta H - T\\Delta S",
+            "type": "inline_equation"
+          },
+          {
+            "text": "."
+          }
+        ],
+        "type": "p"
+      },
+      {
+        "children": [
+          {
+            "text": "Alignment"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": "Left-aligned paragraph (default)."
+          }
+        ],
+        "type": "p",
+        "align": "left"
+      },
+      {
+        "children": [
+          {
+            "text": "Center-aligned paragraph."
+          }
+        ],
+        "type": "p",
+        "align": "center"
+      },
+      {
+        "children": [
+          {
+            "text": "Right-aligned paragraph."
+          }
+        ],
+        "type": "p",
+        "align": "right"
+      },
+      {
+        "children": [
+          {
+            "text": "Justify-aligned paragraph: membranes separate compartments so gradients can do work across the bilayer."
+          }
+        ],
+        "type": "p",
+        "align": "justify"
+      },
+      {
+        "children": [
+          {
+            "text": "Lists"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": "Bulleted item — organelles"
+          }
+        ],
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "disc"
+      },
+      {
+        "children": [
+          {
+            "text": "Bulleted item — membranes"
+          }
+        ],
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "disc"
+      },
+      {
+        "children": [
+          {
+            "text": "Numbered step — isolate the variable"
+          }
+        ],
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "decimal"
+      },
+      {
+        "children": [
+          {
+            "text": "Numbered step — apply the model"
+          }
+        ],
+        "type": "p",
+        "indent": 1,
+        "listStyleType": "decimal"
+      },
+      {
+        "children": [
+          {
+            "text": "Todo checked — skim the matrix"
+          }
+        ],
+        "type": "p",
+        "checked": true,
+        "indent": 1,
+        "listStyleType": "todo"
+      },
+      {
+        "children": [
+          {
+            "text": "Todo open — try each toolbar control"
+          }
+        ],
+        "type": "p",
+        "checked": false,
+        "indent": 1,
+        "listStyleType": "todo"
+      },
+      {
+        "children": [
+          {
+            "text": "Quote & divider"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "“Nothing in biology makes sense except in the light of evolution.” — Theodosius Dobzhansky"
+              }
+            ],
+            "type": "p"
+          }
+        ],
+        "type": "blockquote"
+      },
+      {
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "type": "hr"
+      },
+      {
+        "children": [
+          {
+            "text": "Callout variants"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "Info callout — background reading is linked above."
+              }
+            ],
+            "type": "p"
+          }
+        ],
+        "type": "callout",
+        "variant": "info"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "Success callout — you covered every non-media block."
+              }
+            ],
+            "type": "p"
+          }
+        ],
+        "type": "callout",
+        "variant": "success"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "Warning callout — osmolarity units trip people up."
+              }
+            ],
+            "type": "p"
+          }
+        ],
+        "type": "callout",
+        "variant": "warning"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "Danger callout — do not confuse lysis with crenation."
+              }
+            ],
+            "type": "p"
+          }
+        ],
+        "type": "callout",
+        "variant": "danger"
+      },
+      {
+        "children": [
+          {
+            "text": "Code block"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "def atp_yield(glucose_mol: float) -> float:"
+              }
+            ],
+            "type": "code_line"
+          },
+          {
+            "children": [
+              {
+                "text": "    \"\"\"Rough aerobic yield (~30-32 ATP / glucose).\"\"\""
+              }
+            ],
+            "type": "code_line"
+          },
+          {
+            "children": [
+              {
+                "text": "    return glucose_mol * 30"
+              }
+            ],
+            "type": "code_line"
+          }
+        ],
+        "lang": "python",
+        "type": "code_block"
+      },
+      {
+        "children": [
+          {
+            "text": "Table"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Process"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "th"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Location"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "th"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "ATP net"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "th"
+              }
+            ],
+            "type": "tr"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Glycolysis"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Cytosol"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "2"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              }
+            ],
+            "type": "tr"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Krebs cycle"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Mitochondrial matrix"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "2"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              }
+            ],
+            "type": "tr"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "ETC / oxidative phosphorylation"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "Inner membrane"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              },
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "text": "~28"
+                      }
+                    ],
+                    "type": "p"
+                  }
+                ],
+                "type": "td"
+              }
+            ],
+            "type": "tr"
+          }
+        ],
+        "type": "table"
+      },
+      {
+        "children": [
+          {
+            "text": "Columns"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "bold": true,
+                    "text": "Two-column left"
+                  },
+                  {
+                    "text": " — structure."
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "50%"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "bold": true,
+                    "text": "Two-column right"
+                  },
+                  {
+                    "text": " — function."
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "50%"
+          }
+        ],
+        "type": "column_group"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "Prokaryote"
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "33.333%"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "Eukaryote animal"
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "33.333%"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "Eukaryote plant"
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "33.334%"
+          }
+        ],
+        "type": "column_group"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "Wide column: endosymbiotic origin of mitochondria."
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "66.667%"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "Narrow: DNA circular."
+                  }
+                ],
+                "type": "p"
+              }
+            ],
+            "type": "column",
+            "width": "33.333%"
+          }
+        ],
+        "type": "column_group"
+      },
+      {
+        "children": [
+          {
+            "text": "Block equation"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "texExpression": "\\mathrm{C_6H_{12}O_6} + 6\\,\\mathrm{O_2} \\rightarrow 6\\,\\mathrm{CO_2} + 6\\,\\mathrm{H_2O} + \\text{ATP}",
+        "type": "equation"
+      },
+      {
+        "children": [
+          {
+            "text": "YouTube embed"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "provider": "youtube",
+        "type": "video",
+        "videoId": "URUJD5NEXC8"
+      },
+      {
+        "children": [
+          {
+            "text": "Mermaid diagram"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "text": "Respiration overview"
+              }
+            ],
+            "type": "mermaid_caption"
+          }
+        ],
+        "id": "mermaid_bio_feature_matrix",
+        "source": "flowchart TB\n  Glucose --> Glycolysis\n  Glycolysis --> Pyruvate\n  Pyruvate --> Krebs\n  Krebs --> ETC\n  ETC --> ATP",
+        "type": "mermaid"
+      },
+      {
+        "children": [
+          {
+            "text": "Quiz block"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "id": "block_v95wmbbo7je",
+        "materialId": "mat_embed_bio_matrix_quiz",
+        "refKind": "quiz",
+        "type": "material_ref"
+      },
+      {
+        "children": [
+          {
+            "text": "Flashcards block"
+          }
+        ],
+        "type": "h2"
+      },
+      {
+        "children": [
+          {
+            "text": ""
+          }
+        ],
+        "id": "block_z99pdb2o7je",
+        "materialId": "mat_embed_bio_matrix_cards",
+        "refKind": "flashcards",
+        "type": "material_ref"
+      },
+      {
+        "children": [
+          {
+            "text": "End of matrix. Media uploads ("
+          },
+          {
+            "code": true,
+            "text": "img"
+          },
+          {
+            "text": " / "
+          },
+          {
+            "code": true,
+            "text": "audio"
+          },
+          {
+            "text": " / "
+          },
+          {
+            "code": true,
+            "text": "file"
+          },
+          {
+            "text": ") are omitted on purpose."
+          }
+        ],
+        "type": "p"
+      }
+    ],
+    "workspaceId": "ws_bio",
+    "workspaceName": "Biology 101"
+  },
+  "embedded": [
+    {
+      "block": {
+        "children": [
+          {
+            "children": [
+              {
+                "text": ""
+              }
+            ],
+            "id": "bio_matrix_q_mcq",
+            "question": {
+              "id": "bio_matrix_q_mcq",
+              "labels": "letters",
+              "layout": "paper",
+              "level": "recall",
+              "parts": [
+                {
+                  "answer": {
+                    "correct": [
+                      0
+                    ],
+                    "options": [
+                      "Cytosol",
+                      "Nucleus",
+                      "Golgi lumen"
+                    ],
+                    "type": "mcq"
+                  },
+                  "blocks": [
+                    {
+                      "text": "Where does glycolysis occur?",
+                      "type": "text"
+                    }
+                  ],
+                  "id": "bio_matrix_q_mcq:part",
+                  "markscheme": [
+                    "Glycolysis occurs in the cytosol of the cell."
+                  ],
+                  "solution": [
+                    {
+                      "text": "Glycolysis occurs in the cytosol of the cell.",
+                      "type": "text"
+                    }
+                  ]
+                }
+              ],
+              "stem": []
+            },
+            "type": "quiz_question"
+          },
+          {
+            "children": [
+              {
+                "text": ""
+              }
+            ],
+            "id": "bio_matrix_q_multi",
+            "question": {
+              "id": "bio_matrix_q_multi",
+              "labels": "letters",
+              "layout": "paper",
+              "level": "application",
+              "parts": [
+                {
+                  "answer": {
+                    "correct": [
+                      0,
+                      2
+                    ],
+                    "options": [
+                      "Mitochondria",
+                      "Lysosomes",
+                      "Chloroplasts"
+                    ],
+                    "type": "multi"
+                  },
+                  "blocks": [
+                    {
+                      "text": "Which organelles contain their own DNA? (multi)",
+                      "type": "text"
+                    }
+                  ],
+                  "id": "bio_matrix_q_multi:part",
+                  "markscheme": [
+                    "Both mitochondria and chloroplasts have their own DNA."
+                  ],
+                  "solution": [
+                    {
+                      "text": "Both mitochondria and chloroplasts have their own DNA.",
+                      "type": "text"
+                    }
+                  ]
+                }
+              ],
+              "stem": []
+            },
+            "type": "quiz_question"
+          },
+          {
+            "children": [
+              {
+                "text": ""
+              }
+            ],
+            "id": "bio_matrix_q_bool",
+            "question": {
+              "id": "bio_matrix_q_bool",
+              "labels": "letters",
+              "layout": "paper",
+              "level": "recall",
+              "parts": [
+                {
+                  "answer": {
+                    "correct": true,
+                    "type": "boolean"
+                  },
+                  "blocks": [
+                    {
+                      "text": "Ribosomes are present in both prokaryotes and eukaryotes.",
+                      "type": "text"
+                    }
+                  ],
+                  "id": "bio_matrix_q_bool:part",
+                  "markscheme": [
+                    "True — ribosomes are not membrane-bound."
+                  ],
+                  "solution": [
+                    {
+                      "text": "True — ribosomes are not membrane-bound.",
+                      "type": "text"
+                    }
+                  ]
+                }
+              ],
+              "stem": []
+            },
+            "type": "quiz_question"
+          },
+          {
+            "children": [
+              {
+                "text": ""
+              }
+            ],
+            "id": "bio_matrix_q_short",
+            "question": {
+              "id": "bio_matrix_q_short",
+              "labels": "letters",
+              "layout": "paper",
+              "level": "recall",
+              "parts": [
+                {
+                  "answer": {
+                    "accepted": [
+                      "ATP",
+                      "adenosine triphosphate"
+                    ],
+                    "type": "short"
+                  },
+                  "blocks": [
+                    {
+                      "text": "The main short-term energy carrier is ____.",
+                      "type": "text"
+                    }
+                  ],
+                  "id": "bio_matrix_q_short:part",
+                  "markscheme": [
+                    "ATP is the cell’s short-term energy currency."
+                  ],
+                  "solution": [
+                    {
+                      "text": "ATP is the cell’s short-term energy currency.",
+                      "type": "text"
+                    }
+                  ]
+                }
+              ],
+              "stem": []
+            },
+            "type": "quiz_question"
+          }
+        ],
+        "id": "quiz_xp08isyo7jd",
+        "type": "quiz"
+      },
+      "id": "mat_embed_bio_matrix_quiz",
+      "kind": "quiz",
+      "noteId": "mat_note_bio_feature_matrix"
+    },
+    {
+      "block": {
+        "children": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "What does ATP stand for?"
+                  }
+                ],
+                "type": "flashcard_front"
+              },
+              {
+                "children": [
+                  {
+                    "text": "Adenosine triphosphate — cellular energy currency"
+                  }
+                ],
+                "type": "flashcard_back"
+              }
+            ],
+            "id": "fc_bio_matrix_1",
+            "type": "flashcard"
+          },
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "text": "Define osmosis"
+                  }
+                ],
+                "type": "flashcard_front"
+              },
+              {
+                "children": [
+                  {
+                    "text": "Diffusion of water across a semi-permeable membrane"
+                  }
+                ],
+                "type": "flashcard_back"
+              }
+            ],
+            "id": "fc_bio_matrix_2",
+            "type": "flashcard"
+          }
+        ],
+        "id": "flashcards_2nlcyivo7je",
+        "type": "flashcards"
+      },
+      "id": "mat_embed_bio_matrix_cards",
+      "kind": "flashcards",
+      "noteId": "mat_note_bio_feature_matrix"
+    }
+  ]
+}

@@ -30,7 +30,9 @@ nodes and old question JSON are rejected, without a compatibility converter.
 `QuestionDialog` is shared by the bank and quiz edit page. It reuses
 `ToolbarGroup`, `ToolbarButton` and `SimpleDialog`; block editors replace the
 dialog body and keep Remove beside Save. English and Chinese labels use
-Paraglide. MathLive edits formulas in both questions and notes. `BlockToolbar`
+Paraglide. MathLive renders formulas in both viewing and editing, including
+question-editing previews. Read-only previews use the shared `MathPreview`
+component with matching fonts/layout and no keyboard or menu controls. `BlockToolbar`
 is shared by question blocks, note embeds, tables and columns.
 
 Charts reuse the SVG renderer extracted from ChatChart. Graphs store a bounded

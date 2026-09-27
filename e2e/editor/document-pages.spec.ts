@@ -268,9 +268,16 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
       toolbar.evaluate((element) => element.scrollWidth > element.clientWidth)
     )
     .toBe(true);
-  await toolbar.evaluate((element) => {
-    element.scrollLeft = element.scrollWidth;
-  });
+  await toolbar.hover();
+  await page.mouse.wheel(0, 1000);
+  await expect
+    .poll(() => toolbar.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(0);
+  await page.mouse.wheel(0, -1000);
+  await expect
+    .poll(() => toolbar.evaluate((element) => element.scrollLeft))
+    .toBe(0);
+  await page.mouse.wheel(0, 1000);
   await expect
     .poll(() => toolbar.evaluate((element) => element.scrollLeft))
     .toBeGreaterThan(0);

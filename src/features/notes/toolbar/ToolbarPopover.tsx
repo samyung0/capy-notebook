@@ -1,45 +1,44 @@
 import { useEditorRef } from 'platejs/react';
-import { Button } from '@/components/ui/Button';
-import { PopoverClose, PopoverContent } from '@/components/ui/Popover';
+import { PopoverClose } from '@/components/ui/Popover';
+import {
+  ToolbarPopoverContent as SharedToolbarPopoverContent,
+  ToolbarPopoverItem,
+} from '@/components/ui/ToolbarPopover';
 import { cn } from '@/lib/cn';
 
 /** Preserve focus handed to an editor command or its dialog. */
 export function ToolbarPopoverContent({
   open,
+  className,
   ...props
-}: React.ComponentProps<typeof PopoverContent> & { open: boolean }) {
+}: React.ComponentProps<typeof SharedToolbarPopoverContent> & {
+  open: boolean;
+}) {
   const editor = useEditorRef();
   return (
-    <PopoverContent
+    <SharedToolbarPopoverContent
       aria-hidden={!open || undefined}
+      className={cn('ignore-click-outside/toolbar', className)}
       inert={!open}
       onCloseAutoFocus={(event) => event.preventDefault()}
-      onEscapeKeyDown={() => editor.tf.focus()}
+      onEscapeKeyDown={(event) => {
+        // Escape dismisses this popup, not Plate's underlying block selection.
+        event.stopPropagation();
+        editor.tf.focus();
+      }}
       {...props}
     />
   );
 }
 
 export function ToolbarPopoverRow({
-  label,
-  icon,
-  shortcut,
-  className,
   onClick,
   ...props
-}: React.ComponentProps<typeof Button> & {
-  label: string;
-  icon?: React.ReactNode;
-  shortcut?: string;
-}) {
+}: React.ComponentProps<typeof ToolbarPopoverItem>) {
   const editor = useEditorRef();
   return (
     <PopoverClose asChild>
-      <Button
-        className={cn(
-          'h-auto w-full justify-start gap-2 px-2 py-1.5 text-left font-normal [&_svg]:size-4',
-          className
-        )}
+      <ToolbarPopoverItem
         onClick={(event) => {
           onClick?.(event);
           if (
@@ -48,23 +47,8 @@ export function ToolbarPopoverRow({
           )
             editor.tf.focus();
         }}
-        size="sm"
-        type="button"
-        variant="ghost-hover"
         {...props}
-      >
-        {icon && (
-          <span className="flex size-4 shrink-0 items-center justify-center">
-            {icon}
-          </span>
-        )}
-        <span className="min-w-0 flex-1">{label}</span>
-        {shortcut && (
-          <kbd aria-hidden className="ml-auto shrink-0 text-fg-muted text-xs">
-            {shortcut}
-          </kbd>
-        )}
-      </Button>
+      />
     </PopoverClose>
   );
 }

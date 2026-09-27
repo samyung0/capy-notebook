@@ -489,6 +489,9 @@ zoom buttons at the right. Below lg, zoom is hidden and the center tools scroll
 horizontally with `scroll-fade-x` and no scrollbar. Menus render in portals so
 the scrolling mask does not clip them.
 
+The toolbar uses the shared `useHorizontalWheelScroll` hook for ordinary
+mouse-wheel scrolling, with the same input and boundary handling as Tabs and Plate.
+
 Draw chooses Pen or Highlight; Text collects a label before placement; Shape
 chooses Rectangle or Ellipse. Highlight applies to text selections, and choosing
 it for a fully highlighted selection removes just that selected portion.

@@ -3,7 +3,7 @@ import {
   slateRangeToRelativeRange,
   type YjsEditor,
 } from '@slate-yjs/core';
-import { NodeApi, type Path } from 'platejs';
+import { NodeApi, type Path, RangeApi } from 'platejs';
 import {
   createPlatePlugin,
   type PlateElementProps,
@@ -24,7 +24,6 @@ import {
 import type { MaterialComment, MaterialDiscussion } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { InputTitle } from '@/components/ui/Input';
 import {
   Popover,
   PopoverContent,
@@ -307,9 +306,10 @@ export function CollaborationProvider({
   const [dialogOpen, setDialogOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const commentSelection = useRef<NonNullable<typeof editor.selection> | null>(
-    null
-  );
+  const commentTarget = useRef<{
+    blockId: string;
+    selection: NonNullable<typeof editor.selection>;
+  } | null>(null);
   const mutationPending =
     deleteDiscussionIsPending ||
     createDiscussionIsPending ||
@@ -323,32 +323,29 @@ export function CollaborationProvider({
 
   async function submitNewComment() {
     const text = comment.trim();
-    const selection = commentSelection.current;
-    if (!text || !selection) return;
+    const target = commentTarget.current;
+    if (!text || !target) return;
+    const { blockId, selection } = target;
     const yjsEditor = editor as typeof editor & YjsEditor;
     if (!yjsEditor.sharedRoot) {
       setError(m.editor_collab_not_ready());
       return;
     }
     try {
-      const relative = slateRangeToRelativeRange(
-        yjsEditor.sharedRoot,
-        editor,
-        selection
-      );
-      const blockId = editor.api.node([selection.anchor.path[0]])?.[0]?.id as
-        | string
-        | undefined;
-      const quote = editor.api.string(selection);
+      const relative = RangeApi.isCollapsed(selection)
+        ? null
+        : slateRangeToRelativeRange(yjsEditor.sharedRoot, editor, selection);
       await createDiscussion({
-        anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
-        anchorQuote: quote.slice(0, 1000),
-        anchorStart: bytesToBase64(Y.encodeRelativePosition(relative.anchor)),
+        ...(relative && {
+          anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
+          anchorQuote: editor.api.string(selection).slice(0, 1000),
+          anchorStart: bytesToBase64(Y.encodeRelativePosition(relative.anchor)),
+        }),
         anchorVersion: 1,
         blockId,
         contentRich: richComment(text),
       });
-      commentSelection.current = null;
+      commentTarget.current = null;
       setDialogOpen(false);
       setComment('');
     } catch (cause) {
@@ -386,8 +383,14 @@ export function CollaborationProvider({
       isOwner: role === 'owner',
       mutationPending,
       openComment: () => {
-        if (!canEdit || !editor.selection || editor.api.isCollapsed()) return;
-        commentSelection.current = structuredClone(editor.selection);
+        if (!canEdit || !editor.selection) return;
+        const blockId = editor.api.node([editor.selection.anchor.path[0]])?.[0]
+          ?.id;
+        if (typeof blockId !== 'string' || !blockId) return;
+        commentTarget.current = {
+          blockId,
+          selection: structuredClone(editor.selection),
+        };
         setComment('');
         setError(null);
         setDialogOpen(true);
@@ -434,7 +437,7 @@ export function CollaborationProvider({
           <>
             <Button
               onClick={() => {
-                commentSelection.current = null;
+                commentTarget.current = null;
                 setDialogOpen(false);
               }}
               size="lg"
@@ -453,14 +456,13 @@ export function CollaborationProvider({
           </>
         }
         onClose={() => {
-          commentSelection.current = null;
+          commentTarget.current = null;
           setDialogOpen(false);
         }}
         open={dialogOpen}
         title={m.editor_add_comment()}
       >
-        <label className="flex flex-col gap-1.5">
-          <InputTitle>{m.editor_comment()}</InputTitle>
+        <label className="mt-3 flex flex-col gap-1.5">
           <Textarea
             onChange={(event) => setComment(event.target.value)}
             rows={4}

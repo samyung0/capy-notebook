@@ -5,14 +5,13 @@ import { CreatePDFAnnotationBody } from '@/api/gen/validators';
 import { Button } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Input, InputError } from '@/components/ui/Input';
-import {
-  Popover,
-  PopoverClose,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { Popover, PopoverClose, PopoverTrigger } from '@/components/ui/Popover';
 import { ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import {
+  ToolbarPopoverContent as PopoverContent,
+  ToolbarPopoverButton,
+} from '@/components/ui/ToolbarPopover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -107,13 +106,13 @@ export function PdfAnnotationToolbar({
       <PopoverContent
         align="center"
         aria-hidden={toolPopover !== label || undefined}
-        className="w-40 gap-0.5 p-1"
+        className="w-40"
         inert={toolPopover !== label}
       >
         {options.map((option) => (
           <PopoverClose asChild key={option.tool}>
-            <Button
-              className="h-auto w-full justify-start gap-2 px-2 py-1.5 font-normal [&_svg]:size-4"
+            <ToolbarPopoverButton
+              aria-pressed={tool === option.tool}
               onClick={() => onTool(option.tool)}
               size="sm"
               type="button"
@@ -124,7 +123,7 @@ export function PdfAnnotationToolbar({
               {tool === option.tool && (
                 <Icon className="ml-auto" name="check" />
               )}
-            </Button>
+            </ToolbarPopoverButton>
           </PopoverClose>
         ))}
       </PopoverContent>
@@ -157,7 +156,7 @@ export function PdfAnnotationToolbar({
               <Icon name="text" />
             </ToolbarButton>
           </PopoverTrigger>
-          <PopoverContent>
+          <PopoverContent className="w-64 px-2.5">
             <form
               className="flex flex-col gap-2"
               onSubmit={handleSubmit(({ text }) => {
@@ -169,12 +168,18 @@ export function PdfAnnotationToolbar({
               <Input
                 aria-invalid={!!errors.text}
                 aria-label={m.pdf_text()}
+                className="rounded-lg"
                 maxLength={2000}
                 placeholder={m.pdf_text()}
                 {...register('text')}
               />
               {errors.text && <InputError errors={[errors.text]} />}
-              <Button size="sm" type="submit" variant="accent">
+              <Button
+                className="rounded-lg"
+                size="sm"
+                type="submit"
+                variant="accent"
+              >
                 {m.pdf_place_text()}
               </Button>
             </form>
@@ -193,7 +198,7 @@ export function PdfAnnotationToolbar({
               />
             </ToolbarButton>
           </PopoverTrigger>
-          <PopoverContent className="grid w-auto grid-cols-3 gap-2">
+          <PopoverContent className="grid w-auto grid-cols-3 gap-2 px-2.5">
             {COLORS.map((value) => (
               <button
                 aria-label={m.pdf_annotation_color({ color: value })}

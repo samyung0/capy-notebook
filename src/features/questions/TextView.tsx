@@ -1,4 +1,4 @@
-import { Katex } from '@/features/materials/Katex';
+import { MathPreview } from '@/features/materials/MathPreview';
 import { cn } from '@/lib/cn';
 import { parseMathText } from './parseMathText';
 
@@ -24,7 +24,10 @@ export function TextView({
             )}
             key={index}
           >
-            <Katex displayMode={token.type === 'display'} tex={token.value} />
+            <MathPreview
+              displayMode={token.type === 'display'}
+              tex={token.value}
+            />
           </span>
         )
       )}

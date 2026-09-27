@@ -3,11 +3,8 @@ import { FontSizePlugin } from '@platejs/basic-styles/react';
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { ToolbarPopoverContent as PopoverContent } from '@/components/ui/ToolbarPopover';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
@@ -88,7 +85,7 @@ export function FontSizeControl() {
           </PopoverTrigger>
           <PopoverContent
             align="center"
-            className="max-h-64 w-14 gap-0 overflow-y-auto p-1"
+            className="ignore-click-outside/toolbar max-h-64 w-14 gap-0 overflow-y-auto p-1"
             onCloseAutoFocus={(event) => {
               event.preventDefault();
               editor.tf.focus();
@@ -100,7 +97,7 @@ export function FontSizeControl() {
                 <button
                   aria-selected={size === cursorFontSize}
                   className={cn(
-                    'flex h-8 w-full items-center justify-center rounded-button text-sm outline-none',
+                    'flex h-7 w-full items-center justify-center rounded-lg font-medium text-sm leading-(--body-line-height) outline-none',
                     'hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus',
                     size === cursorFontSize &&
                       'bg-tint-accent-1 text-tint-accent-1-fg'

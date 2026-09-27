@@ -10,8 +10,8 @@ The CSS recipes share timing while keeping component semantics separate:
 
 - Popover contains arbitrary controls; Select chooses a value; DropdownMenu
   contains commands, checkboxes and submenus. `Menu` is the data-driven action
-  list over DropdownMenu. Paragraph styles use `ToolbarMenuContent` and `MenuRow`. Other Plate toolbar
-  command lists use `ToolbarPopoverContent` and `ToolbarPopoverRow`, with ordinary
+  list over DropdownMenu. Plate toolbar
+  command lists, including paragraph styles, use `ToolbarPopoverContent` and `ToolbarPopoverRow`, with ordinary
   button keyboard behavior and preserved editor/command focus on close. PDF Draw
   and Shape also use Popover; these converted toolbar triggers have no chevron.
   Shared command-menu content becomes inert during its retained exit, including
@@ -56,6 +56,11 @@ The CSS recipes share timing while keeping component semantics separate:
   existing messages, pagination and ordinary refetches do not stagger the list.
 - `useLoadingReveal` runs once after an initial skeleton resolves and applies
   blur/opacity only to visible rows/cards, never the full scroll container.
+
+The `html` and `body` elements clip horizontal overflow so portalled tooltips
+following offscreen toolbar buttons cannot create a page scrollbar. Explicit
+scroll containers inside the page retain horizontal scrolling; tooltip lifetime
+and vertical page scrolling stay unchanged.
 
 Shared `PopoverContent` supplies `border border-line bg-surface shadow-pop`.
 Editor and PDF popovers inherit these styles. Filter and notification popovers

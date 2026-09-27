@@ -279,7 +279,10 @@ export function Header({
     >
       {leading}
       <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
-        <FileIcon className="size-5 shrink-0 -translate-y-px" name={icon} />
+        <FileIcon
+          className="size-4 shrink-0 -translate-y-px md:size-5"
+          name={icon}
+        />
         <h2
           className={cn(
             'min-w-0 flex-1 truncate',
@@ -299,7 +302,10 @@ export function Header({
               render={<span role="status" />}
               tabIndex={0}
             >
-              <Icon name={STATUS_ICON[editorStatus.saveState]} size={16} />
+              <Icon
+                className="size-4 lg:size-5"
+                name={STATUS_ICON[editorStatus.saveState]}
+              />
               <span className="sr-only">{statusLabel}</span>
             </TooltipTrigger>
             <TooltipContent side="bottom">{statusLabel}</TooltipContent>

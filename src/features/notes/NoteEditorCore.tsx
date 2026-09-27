@@ -10,7 +10,15 @@ import {
   useEditorSelector,
   usePlateEditor,
 } from 'platejs/react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type ComponentProps,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
@@ -50,6 +58,7 @@ import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorStatus } from './editorMode';
 import { FloatingToolbar } from './FloatingToolbar';
 import { noteComponents } from './nodeComponents';
+import { useNoteEditorPrefs } from './noteEditorPrefs';
 import { buildPlugins } from './plugins';
 import {
   remoteCursorRangesForEntry,
@@ -105,11 +114,15 @@ function DocumentStatsFooter({
   limitError: string | null;
   stats: MaterialDocumentStats;
 }) {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   if (!(limitError || shouldShowDocumentStats(stats))) return null;
   return (
     <div
       aria-label={m.editor_doc_stats()}
-      className="mx-auto mb-20 flex w-full max-w-3xl gap-3 px-5 pb-4 text-fg-muted text-xs sm:px-10"
+      className={cn(
+        'mx-auto mb-20 flex w-full gap-3 px-5 pb-4 text-fg-muted text-xs sm:px-10',
+        displayWidth === 'half' && 'md:max-w-3xl'
+      )}
     >
       <span
         className={cn(
@@ -144,6 +157,24 @@ function DocumentStatsFooter({
       {limitError && (
         <span className="font-medium text-solid-error">{limitError}</span>
       )}
+    </div>
+  );
+}
+
+// Keep this component identity stable: changing Editable's `as` remounts Slate.
+function NoteEditorSurface({ children, ...props }: ComponentProps<'div'>) {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
+  return (
+    <div {...props}>
+      <div
+        className={cn(
+          'mx-auto w-full px-5 sm:px-10',
+          displayWidth === 'half' && 'md:max-w-3xl'
+        )}
+        data-note-content=""
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -226,14 +257,17 @@ const NoteEditorContent = memo(function NoteEditorContent({
   return (
     <PlateContainer className="relative [&_.slate-selection-area]:z-50 [&_.slate-selection-area]:border [&_.slate-selection-area]:border-action-accent/25 [&_.slate-selection-area]:bg-action-accent/15">
       <PlateContent
+        as={NoteEditorSurface}
         className={cn(
-          'note-editor mx-auto min-h-75 max-w-3xl px-5 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! sm:px-10',
+          'note-editor min-h-75 w-full pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100!',
           shouldShowStats && 'pb-16'
         )}
         decorate={decorate}
         onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
       />
+      {/* Share the editor's containing block so scrolling moves both natively. */}
+      <FloatingToolbar />
     </PlateContainer>
   );
 });
@@ -635,10 +669,6 @@ export function NoteEditorCore({
                   </>
                 )}
               </div>
-              {/* Inside the scroller on purpose: floating-ui only listens to
-               * scroll on the toolbar's own overflow ancestors, so a sibling
-               * of this box would stay pinned while the block scrolls away. */}
-              <FloatingToolbar />
             </div>
             <EditorCommandPalette />
             {editorAiEnabled(allowExternalAssets) && <AiMenu />}

@@ -15,10 +15,11 @@ export const HEADING_CLASS: Record<string, string> = {
 
 export const PARAGRAPH_CLASS = 'py-1 px-0 leading-relaxed text-fg';
 export const BLOCKQUOTE_CLASS =
-  'my-1 border-l-2 border-line pl-4 text-fg-secondary italic';
-export const HR_CLASS = 'my-5 border-divider';
+  'my-2 border-l-2 border-line pl-4 text-fg-secondary italic';
+export const HR_CLASS =
+  'h-0.5 rounded-sm border-none bg-divider bg-clip-content';
 export const CODE_BLOCK_CLASS =
-  'group/code relative overflow-auto rounded-button my-1 bg-surface-hover-bg pr-4 p-8 text-sm [tab-size:2] print:break font-mono text-fg';
+  'group/code relative overflow-auto rounded-button my-1 bg-surface-hover-bg pr-4 p-6 text-sm [tab-size:2] print:break font-mono text-fg';
 export const LINK_CLASS = 'text-link underline underline-offset-2';
 
 export const UL_CLASS = 'my-2 ml-5 list-disc space-y-1';
@@ -32,16 +33,15 @@ export const TH_CLASS =
   'h-12 border border-line bg-surface-hover-bg px-3 py-2 text-left font-semibold';
 
 export const CALLOUT_CLASS =
-  'group/callout relative my-2 flex gap-3 rounded-button border-l-4 px-4 py-3';
+  'group/callout relative my-2 flex items-start gap-3 rounded-sm border-l-4 px-4 py-3 leading-relaxed';
 export const COLUMN_GROUP_CLASS =
   'group/columns relative my-2 flex size-full gap-2 flex-row';
 export const COLUMN_CLASS =
-  'group/column relative min-w-0 shrink rounded-button border border-line border-dashed p-2 w-(--column-width) basis-(--column-width)';
+  'group/column relative min-w-0 shrink rounded-button border border-transparent p-2 w-(--column-width) basis-(--column-width)';
 
-export const TOC_BOX_CLASS = 'my-3';
-export const TOC_TITLE_CLASS = 'mb-2 t-label text-fg-muted';
+export const TOC_BOX_CLASS = 'my-3 rounded-md';
 export const TOC_ITEM_CLASS =
-  'rounded-button py-1 text-left underline hover:bg-surface-hover-bg -translate-x-1.5';
+  'w-full justify-start whitespace-normal rounded-none px-0 py-1 text-left text-base font-medium leading-normal underline active:scale-100';
 export const TOC_EMPTY_CLASS = 'text-sm text-fg-muted';
 export function tocItemIndent(headingType: string): CSSProperties {
   return {
@@ -53,7 +53,7 @@ export const MENTION_CLASS =
   'rounded bg-tint-accent-1 px-1 text-tint-accent-1-fg';
 
 export const EQUATION_BLOCK_CLASS =
-  'my-3 overflow-auto rounded-card border border-line p-3 text-center';
+  'my-1 overflow-auto rounded-sm p-2 text-center';
 
 /* leaf marks */
 export const CODE_MARK_CLASS =

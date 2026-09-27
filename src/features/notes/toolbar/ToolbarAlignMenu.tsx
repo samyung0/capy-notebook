@@ -1,10 +1,7 @@
 import { useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { ToolbarPopoverContent as PopoverContent } from '@/components/ui/ToolbarPopover';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
@@ -39,7 +36,10 @@ export function AlignMenu({ editor }: { editor: AnyEditor }) {
           </ToolbarButton>
         </span>
       </PopoverTrigger>
-      <PopoverContent align="start" className="flex w-auto gap-1 p-1">
+      <PopoverContent
+        align="start"
+        className="ignore-click-outside/toolbar flex w-auto gap-1 p-1"
+      >
         <ToolbarButton
           active={alignment === 'left'}
           label={m.editor_align_left()}

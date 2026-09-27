@@ -153,17 +153,11 @@ const StaticListKit: AnyPlugin[] = [
           return (nextProps: AnyPlugin) => {
             const element = nextProps.element as {
               checked?: boolean;
-              indent?: number;
             };
             return createElement(
               'div',
               {
-                className: 'relative my-1 flex items-start gap-2',
-                style: {
-                  marginLeft: element.indent
-                    ? `${element.indent * 24}px`
-                    : undefined,
-                },
+                className: 'relative',
               },
               createElement('input', {
                 'aria-label': element.checked
@@ -171,7 +165,7 @@ const StaticListKit: AnyPlugin[] = [
                   : 'Incomplete task',
                 checked: Boolean(element.checked),
                 className:
-                  'mt-2 size-4 shrink-0 rounded border-line-strong accent-action-accent',
+                  'absolute -left-6 mt-[calc((1lh-1rem)/2)] -translate-y-px size-4 rounded border-line-strong accent-action-accent [font:inherit]',
                 disabled: true,
                 readOnly: true,
                 type: 'checkbox',
@@ -180,8 +174,8 @@ const StaticListKit: AnyPlugin[] = [
                 'div',
                 {
                   className: element.checked
-                    ? 'min-w-0 flex-1 text-fg-muted line-through'
-                    : 'min-w-0 flex-1',
+                    ? 'min-w-0 text-fg-muted line-through'
+                    : 'min-w-0',
                 },
                 nextProps.children
               )

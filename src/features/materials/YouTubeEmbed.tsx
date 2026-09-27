@@ -23,7 +23,7 @@ export function YouTubeEmbed({
   editable?: boolean;
 }) {
   return (
-    <div className="overflow-hidden rounded-card border border-line bg-black">
+    <div className="overflow-hidden rounded-lg border border-line bg-black">
       <div className="aspect-video">
         <iframe
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"

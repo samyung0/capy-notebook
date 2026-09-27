@@ -8,28 +8,30 @@ import {
   useEditorRef,
   usePlateEditor,
 } from 'platejs/react';
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Icon } from '@/components/ui/Icon';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { Katex } from '@/features/materials/Katex';
+import { MathPreview } from '@/features/materials/MathPreview';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { MathField } from './MathField';
+import { MathField, type MathFieldControls } from './MathField';
 import { mathTextToValue, valueToMathText } from './mathTextValue';
 
 export { mathTextToValue, valueToMathText } from './mathTextValue';
 
-const FormulaKeyboard = createContext<
-  ((toggle: (() => void) | null) => void) | undefined
+const FormulaControls = createContext<
+  ((controls: MathFieldControls | null) => void) | undefined
 >(undefined);
 
 function Equation({ children, ...props }: PlateElementProps) {
   const editor = useEditorRef();
-  const registerKeyboard = useContext(FormulaKeyboard);
+  const registerControls = useContext(FormulaControls);
   const tex = String(props.element.texExpression ?? '');
   const [editing, setEditing] = useState(!tex);
   const [draft, setDraft] = useState(tex);
+  const [editingHeight, setEditingHeight] = useState<number>();
   const display = props.element.type === 'equation';
   const save = (next: string) => {
     const at = editor.api.findPath(props.element);
@@ -42,26 +44,35 @@ function Equation({ children, ...props }: PlateElementProps) {
         {editing ? (
           <MathField
             displayMode={display}
+            minHeight={editingHeight}
             onCancel={() => {
               setDraft(tex);
               setEditing(false);
             }}
             onChange={setDraft}
             onCommit={save}
-            onKeyboardControl={registerKeyboard}
+            onControlsReady={registerControls}
             value={draft}
           />
         ) : (
           <button
             aria-label={m.question_ui_formula()}
-            className="cursor-text"
-            onClick={() => {
+            className={cn(
+              'cursor-text',
+              display && 'block min-h-14 w-full px-6 py-4'
+            )}
+            onClick={(event) => {
+              if (display) {
+                setEditingHeight(
+                  event.currentTarget.getBoundingClientRect().height
+                );
+              }
               setDraft(tex);
               setEditing(true);
             }}
             type="button"
           >
-            <Katex displayMode={display} tex={tex} />
+            <MathPreview displayMode={display} tex={tex} />
           </button>
         )}
       </span>
@@ -81,12 +92,7 @@ export function TextEditor({
   compact?: boolean;
   toolbarTarget?: HTMLElement | null;
 }) {
-  const [keyboardControl, setKeyboardControl] = useState<(() => void) | null>(
-    null
-  );
-  const registerKeyboard = useCallback((toggle: (() => void) | null) => {
-    setKeyboardControl(() => toggle);
-  }, []);
+  const [controls, setControls] = useState<MathFieldControls | null>(null);
   const editor = usePlateEditor({
     plugins: [
       ParagraphPlugin,
@@ -125,14 +131,29 @@ export function TextEditor({
         >
           {m.question_ui_display()}
         </ToolbarButton>
-        <ToolbarButton
-          disabled={!keyboardControl}
-          label={m.question_ui_formula_keyboard()}
-          onClick={keyboardControl ?? undefined}
-          onMouseDown={(event) => event.preventDefault()}
-        >
-          ⌨
-        </ToolbarButton>
+        <span className="flex flex-col justify-center">
+          {controls?.toggleKeyboard && (
+            <ToolbarButton
+              className="h-4"
+              data-math-keyboard-toggle
+              label={m.question_ui_formula_keyboard()}
+              onClick={controls?.toggleKeyboard}
+              onMouseDown={(event) => event.preventDefault()}
+            >
+              <Icon name="keyboard" />
+            </ToolbarButton>
+          )}
+          <ToolbarButton
+            aria-haspopup="menu"
+            className="h-4"
+            disabled={!controls}
+            label={m.question_ui_formula_menu()}
+            onClick={controls?.showMenu}
+            onMouseDown={(event) => event.preventDefault()}
+          >
+            <Icon name="menu" />
+          </ToolbarButton>
+        </span>
       </ToolbarGroup>
       <ToolbarGroup>
         {[
@@ -157,7 +178,7 @@ export function TextEditor({
     </>
   );
   return (
-    <FormulaKeyboard.Provider value={registerKeyboard}>
+    <FormulaControls.Provider value={setControls}>
       <Plate
         editor={editor}
         onValueChange={({ value: next }) => onChange(valueToMathText(next))}
@@ -182,6 +203,6 @@ export function TextEditor({
           )}
         />
       </Plate>
-    </FormulaKeyboard.Provider>
+    </FormulaControls.Provider>
   );
 }

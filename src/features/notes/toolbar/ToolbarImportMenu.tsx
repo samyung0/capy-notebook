@@ -115,11 +115,7 @@ export function ImportMenu({
             <EditorIcon name="upload" />
           </ToolbarButton>
         </PopoverTrigger>
-        <ToolbarPopoverContent
-          align="start"
-          className="w-52 gap-0.5 p-1"
-          open={open}
-        >
+        <ToolbarPopoverContent align="start" className="w-52" open={open}>
           <ToolbarPopoverRow
             label={m.editor_import_md()}
             onClick={() => chooseFile('markdown')}

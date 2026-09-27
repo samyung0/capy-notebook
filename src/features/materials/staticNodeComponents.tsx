@@ -11,7 +11,8 @@ import {
   type SlateLeafProps,
 } from 'platejs/static';
 import type { CSSProperties, MouseEvent } from 'react';
-import { EditorIcon } from '@/features/notes/EditorIcon';
+import { Button } from '@/components/ui/Button';
+import { CalloutIcon } from '@/features/notes/CalloutIcon';
 import {
   BLOCKQUOTE_CLASS,
   BOLD_MARK_CLASS,
@@ -44,13 +45,11 @@ import {
   TOC_BOX_CLASS,
   TOC_EMPTY_CLASS,
   TOC_ITEM_CLASS,
-  TOC_TITLE_CLASS,
   tocItemIndent,
   UL_CLASS,
 } from '@/features/notes/nodeStyles';
 import {
   CALLOUT_VARIANT_CLASS,
-  type CalloutVariant,
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
@@ -68,9 +67,9 @@ import type {
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
-import { Katex } from './Katex';
 import { MaterialRefCard } from './MaterialRefCard';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
+import { MathPreview } from './MathPreview';
 import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
 import { Mermaid } from './Mermaid';
 import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
@@ -105,7 +104,9 @@ function mark(as: keyof HTMLElementTagNameMap, className?: string) {
 function Hr(props: SlateElementProps) {
   return (
     <SlateElement {...props}>
-      <hr className={HR_CLASS} />
+      <div className="py-6">
+        <hr className={HR_CLASS} />
+      </div>
       {props.children}
     </SlateElement>
   );
@@ -188,20 +189,6 @@ function Column(props: SlateElementProps) {
   );
 }
 
-function CalloutIcon({ variant }: { variant: CalloutVariant }) {
-  const className = 'mt-0.5 size-5 shrink-0';
-  switch (variant) {
-    case 'success':
-      return <EditorIcon className={className} name="circleCheck" />;
-    case 'warning':
-      return <EditorIcon className={className} name="error" />;
-    case 'danger':
-      return <EditorIcon className={className} name="circleX" />;
-    default:
-      return <EditorIcon className={className} name="info" />;
-  }
-}
-
 function Callout(props: SlateElementProps) {
   const variant = normalizeCalloutVariant(
     (props.element as { variant?: unknown }).variant
@@ -235,21 +222,22 @@ function Toc(props: SlateElementProps) {
     KEYS.heading.includes(node.type as (typeof KEYS.heading)[number])
   );
   return (
-    <SlateElement {...props}>
-      <div className={TOC_BOX_CLASS}>
-        <p className={TOC_TITLE_CLASS}>{m.toc_title()}</p>
+    <SlateElement {...props} className={TOC_BOX_CLASS}>
+      <div>
         {headings.length ? (
-          <nav className="flex flex-col">
+          <nav aria-label={m.toc_title()} className="flex flex-col gap-0">
             {headings.map((node, order) => (
-              <button
+              <Button
                 className={TOC_ITEM_CLASS}
                 key={(node.id as string | undefined) ?? order}
                 onClick={(event) => scrollToHeading(event, order)}
+                size="xs"
                 style={tocItemIndent(node.type as string)}
                 type="button"
+                variant="ghost-hover"
               >
                 {NodeApi.string(node)}
-              </button>
+              </Button>
             ))}
           </nav>
         ) : (
@@ -279,7 +267,7 @@ function BlockEquation(props: SlateElementProps) {
   return (
     <SlateElement {...props}>
       <div className={EQUATION_BLOCK_CLASS}>
-        <Katex displayMode tex={tex} />
+        <MathPreview displayMode tex={tex} />
       </div>
       {props.children}
     </SlateElement>
@@ -292,7 +280,7 @@ function InlineEquation(props: SlateElementProps) {
   );
   return (
     <SlateElement {...props} as="span">
-      <Katex displayMode={false} tex={tex} />
+      <MathPreview displayMode={false} tex={tex} />
       {props.children}
     </SlateElement>
   );

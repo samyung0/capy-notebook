@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Client export measurement</title>
+  </head>
+  <body>
+    <p>Client export measurement. Results are collected by export-probe.mjs.</p>
+    <script type="module">
+      import { convert } from "./export-probe-core.ts";
+      const worker = new Worker(
+        new URL("./export-probe-worker.ts", import.meta.url),
+        { type: "module" },
+      );
+      let sequence = 0;
+      const pending = new Map();
+      let workerError;
+      worker.onerror = (event) => {
+        workerError = event.message;
+        for (const item of pending.values())
+          item.reject(new Error(workerError));
+        pending.clear();
+      };
+      worker.onmessage = ({ data }) => {
+        const result = pending.get(data.id);
+        pending.delete(data.id);
+        data.error
+          ? result.reject(new Error(data.error))
+          : result.resolve(data);
+      };
+      window.exportProbe = async (input, offload) => {
+        const text =
+          "Membranes separate compartments. ATP powers cellular activity. "
+            .repeat(Math.ceil(input.textLength / 62))
+            .slice(0, input.textLength);
+        input = {
+          ...input,
+          value: Array.from({ length: input.count }, (_, index) => ({
+            type: index % 20 === 0 ? "h2" : "p",
+            children: [{ text: `Block ${index + 1}: ${text}` }],
+          })),
+        };
+        let previous = performance.now(),
+          maxDelay = 0;
+        const timer = setInterval(() => {
+          const now = performance.now();
+          maxDelay = Math.max(maxDelay, now - previous - 16);
+          previous = now;
+        }, 16);
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        const start = performance.now();
+        try {
+          if (offload && workerError) throw new Error(workerError);
+          const output = offload
+            ? await new Promise((resolve, reject) => {
+                const id = ++sequence;
+                pending.set(id, { resolve, reject });
+                worker.postMessage({ id, input });
+              })
+            : await convert(input);
+          const elapsed = performance.now() - start;
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          return { ...output, elapsed, maxDelay };
+        } finally {
+          clearInterval(timer);
+        }
+      };
+    </script>
+  </body>
+</html>

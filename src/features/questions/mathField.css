@@ -1,0 +1,93 @@
+:host {
+  --caret-color: #000;
+  --selection-color: var(--text-primary);
+  --selection-background-color: var(--tint-accent-1-bg);
+  --highlight-text: transparent;
+  --text-highlight-background-color: transparent;
+  --text-font-family: KaTeX_Main, "Times New Roman", serif;
+}
+
+/* MathLive 0.110 exposes caret color, but no caret-height variable or part. */
+:host .ML__caret,
+:host .ML__text-caret {
+  position: relative;
+  display: inline-block;
+}
+
+:host .ML__caret::after,
+:host .ML__text-caret::after {
+  position: absolute;
+  bottom: -0.15em;
+  height: 1em;
+}
+
+/* Match ToolbarPopover inside MathLive's shadow root, retaining its native
+   matrix grid, templates and keyboard navigation. */
+:host .ui-menu-container {
+  --ui-menu-bg: var(--surface-card-bg);
+  --ui-menu-text: var(--text-primary);
+  --ui-menu-text-active: var(--text-primary);
+  --ui-menu-bg-active: color-mix(
+    in srgb,
+    var(--surface-card-hover-bg) 80%,
+    transparent
+  );
+  --ui-menu-bg-active-muted: var(--ui-menu-bg-active);
+  --ui-font-family: var(--font-sans);
+  --ui-font-size: 14px;
+  --ui-line-height: var(--body-line-height);
+  padding: 6px 4px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+}
+
+:host .ui-menu-container:not(.insert-matrix-submenu) > li {
+  min-height: 28px;
+  padding: 0 8px;
+  margin: 0;
+  border-radius: 8px;
+}
+
+:host .ui-menu-container > li > .label {
+  padding: 0;
+  border: 0;
+}
+
+:host .ui-menu-container > li > .label.indent {
+  margin-inline-start: 20px;
+}
+
+:host .ui-menu-container > li > .ui-checkmark {
+  position: absolute;
+  inset-inline-start: 8px;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+:host .ui-menu-container > li > .label.heading {
+  padding-top: 12px;
+  padding-bottom: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+:host .ui-menu-container > li > kbd {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+:host .insert-matrix-submenu {
+  padding: 8px;
+}

@@ -14,7 +14,7 @@ import type {
   UserColor,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -507,16 +507,19 @@ export function ChatPanel({
           onClick: openNew,
         },
       ])}
-      <Dialog onOpenChange={setHistoryOpen} open={historyOpen}>
-        <DialogContent aria-describedby={undefined} className="max-w-lg">
-          <DialogTitle className="pr-10 pb-4">{m.chat_history()}</DialogTitle>
-          <div className="flex max-h-[60dvh] flex-col gap-1 overflow-y-auto p-1">
+      <SimpleDialog
+        onClose={() => setHistoryOpen(false)}
+        open={historyOpen}
+        title={m.chat_history()}
+      >
+        <div className="flex max-h-[60dvh] -translate-x-2.5 flex-col gap-1 overflow-y-auto">
+          <div className="pr-2">
             {conversations?.length ? (
               conversations.map((c) => (
                 <Button
                   aria-current={c.id === conversationId ? 'true' : undefined}
                   className={cn(
-                    'h-auto w-full shrink-0 justify-start rounded-card px-3 py-3 text-left font-normal',
+                    'h-auto min-h-11 w-full shrink-0 justify-start py-2 text-left font-normal',
                     c.id === conversationId && 'bg-surface-hover-bg'
                   )}
                   iconLeft="message"
@@ -542,13 +545,13 @@ export function ChatPanel({
                 </Button>
               ))
             ) : (
-              <p className="py-8 text-center text-fg-muted text-sm">
+              <p className="text-fg-muted text-sm">
                 {m.chat_no_conversations()}
               </p>
             )}
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </SimpleDialog>
 
       <div
         className="flex flex-1 flex-col gap-4 self-stretch overflow-auto px-2 py-4 2xl:px-4"

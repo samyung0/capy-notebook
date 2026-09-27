@@ -1,0 +1,1370 @@
+[
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 33.75,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x1-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 33.75,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 28.828125,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x1-filled",
+    "latex": "\\begin{pmatrix}{x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 28.828125,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 69.109375,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x2-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 69.109375,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 59.265625,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x2-filled",
+    "latex": "\\begin{pmatrix}{x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 59.265625,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 104.46875,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x3-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 104.46875,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 89.703125,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x3-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 89.703125,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 139.828125,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x4-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 139.828125,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 120.140625,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x4-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 120.140625,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.78125,
+      "width": 175.1875,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x5-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 175.1875,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 150.578125,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-1x5-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 150.578125,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 44.5,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x1-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{}\\\\ \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 44.5,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 39.578125,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x1-filled",
+    "latex": "\\begin{pmatrix}{x}\\\\ {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 39.578125,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 79.859375,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x2-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 79.859375,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 70.015625,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x2-filled",
+    "latex": "\\begin{pmatrix}{x} & {x}\\\\ {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 70.015625,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 115.21875,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x3-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 115.21875,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 100.453125,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x3-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x}\\\\ {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 100.453125,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 150.578125,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x4-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 150.578125,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 130.890625,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x4-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 130.890625,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.984375,
+      "width": 185.9375,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x5-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 185.9375,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 161.328125,
+      "height": 46.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-2x5-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 161.328125,
+      "height": 46.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 49.90625,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x1-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{}\\\\ \\placeholder{}\\\\ \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 49.90625,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 44.984375,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x1-filled",
+    "latex": "\\begin{pmatrix}{x}\\\\ {x}\\\\ {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 44.984375,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 85.265625,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x2-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 85.265625,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 75.421875,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x2-filled",
+    "latex": "\\begin{pmatrix}{x} & {x}\\\\ {x} & {x}\\\\ {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 75.421875,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 120.625,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x3-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 120.625,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 105.859375,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x3-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x}\\\\ {x} & {x} & {x}\\\\ {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 105.859375,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 155.984375,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x4-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 155.984375,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.96875,
+      "width": 136.296875,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x4-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 136.296875,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.96875,
+      "width": 191.34375,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x5-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 191.34375,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.96875,
+      "width": 166.734375,
+      "height": 69.875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-3x5-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.96875,
+      "width": 166.734375,
+      "height": 69.875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 49.90625,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x1-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{}\\\\ \\placeholder{}\\\\ \\placeholder{}\\\\ \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 49.90625,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 44.984375,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x1-filled",
+    "latex": "\\begin{pmatrix}{x}\\\\ {x}\\\\ {x}\\\\ {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 44.984375,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 85.265625,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x2-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 85.265625,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 75.421875,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x2-filled",
+    "latex": "\\begin{pmatrix}{x} & {x}\\\\ {x} & {x}\\\\ {x} & {x}\\\\ {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 75.421875,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 120.625,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x3-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 120.625,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 105.859375,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x3-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x}\\\\ {x} & {x} & {x}\\\\ {x} & {x} & {x}\\\\ {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 105.859375,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 155.984375,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x4-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 155.984375,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.796875,
+      "width": 136.296875,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x4-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 136.296875,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.796875,
+      "width": 191.34375,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x5-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 191.34375,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.796875,
+      "width": 166.734375,
+      "height": 93.296875
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-4x5-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.796875,
+      "width": 166.734375,
+      "height": 93.296875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 49.90625,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x1-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{}\\\\ \\placeholder{}\\\\ \\placeholder{}\\\\ \\placeholder{}\\\\ \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 49.90625,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 44.984375,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x1-filled",
+    "latex": "\\begin{pmatrix}{x}\\\\ {x}\\\\ {x}\\\\ {x}\\\\ {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 44.984375,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 85.265625,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x2-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 85.265625,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 75.421875,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x2-filled",
+    "latex": "\\begin{pmatrix}{x} & {x}\\\\ {x} & {x}\\\\ {x} & {x}\\\\ {x} & {x}\\\\ {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 75.421875,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 120.625,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x3-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 120.625,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 105.859375,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x3-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x}\\\\ {x} & {x} & {x}\\\\ {x} & {x} & {x}\\\\ {x} & {x} & {x}\\\\ {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 105.859375,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 155.984375,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x4-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 155.984375,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 136.296875,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x4-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 136.296875,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.984375,
+      "width": 191.34375,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x5-empty",
+    "latex": "\\begin{pmatrix}\\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\\\ \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{} & \\placeholder{}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 191.34375,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 98,
+      "y": 420.984375,
+      "width": 166.734375,
+      "height": 116.328125
+    },
+    "heightDelta": 0,
+    "id": "insert-matrix-5x5-filled",
+    "latex": "\\begin{pmatrix}{x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\\\ {x} & {x} & {x} & {x} & {x}\\end{pmatrix}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 166.734375,
+      "height": 116.328125
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 26.78125,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-abs-empty",
+    "latex": "|\\placeholder{}|",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 26.78125,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 21.859375,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-abs-filled",
+    "latex": "|{x}|",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 21.859375,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 34.859375,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-nth-root-empty",
+    "latex": "\\sqrt[\\placeholder{}]{\\placeholder{}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 34.859375,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 27.390625,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-nth-root-filled",
+    "latex": "\\sqrt[{x}]{{x}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 27.390625,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 56.984375,
+      "height": 24.15625
+    },
+    "heightDelta": 0,
+    "id": "insert-log-base-empty",
+    "latex": "\\log_{\\placeholder{}}\\placeholder{}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 56.984375,
+      "height": 24.15625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 44.546875,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-log-base-filled",
+    "latex": "\\log_{{x}}{x}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 44.546875,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 83.46875,
+      "height": 36.5625
+    },
+    "heightDelta": 0,
+    "id": "insert-derivative-empty",
+    "latex": "\\dfrac{\\mathrm{d}}{\\mathrm{d}x}\\placeholder{}\\bigm|_{x=\\placeholder{}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 83.46875,
+      "height": 36.5625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 71.03125,
+      "height": 36.5625
+    },
+    "heightDelta": 0,
+    "id": "insert-derivative-filled",
+    "latex": "\\dfrac{\\mathrm{d}}{\\mathrm{d}x}{x}\\bigm|_{x={x}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 71.03125,
+      "height": 36.5625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 96.421875,
+      "height": 39.671875
+    },
+    "heightDelta": 0,
+    "id": "insert-nth-derivative-empty",
+    "latex": "\\dfrac{\\mathrm{d}^{\\placeholder{}}}{\\mathrm{d}x^{\\placeholder{}}}\\placeholder{}\\bigm|_{x=\\placeholder{}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 96.421875,
+      "height": 39.671875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 79.75,
+      "height": 36.5625
+    },
+    "heightDelta": 0,
+    "id": "insert-nth-derivative-filled",
+    "latex": "\\dfrac{\\mathrm{d}^{{x}}}{\\mathrm{d}x^{{x}}}{x}\\bigm|_{x={x}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 79.75,
+      "height": 36.5625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 74.265625,
+      "height": 29.421875
+    },
+    "heightDelta": 0,
+    "id": "insert-integral-empty",
+    "latex": "\\int_{\\placeholder{}}^{\\placeholder{}}\\placeholder{}\\,\\mathrm{d}\\placeholder{}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 74.265625,
+      "height": 29.421875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 60.1875,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-integral-filled",
+    "latex": "\\int_{{x}}^{{x}}{x}\\,\\mathrm{d}{x}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 60.1875,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 51.734375,
+      "height": 27.671875
+    },
+    "heightDelta": 0,
+    "id": "insert-sum-empty",
+    "latex": "\\sum_{\\placeholder{}}^{\\placeholder{}}\\placeholder{}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 51.734375,
+      "height": 27.671875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 39.296875,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-sum-filled",
+    "latex": "\\sum_{{x}}^{{x}}{x}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 39.296875,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 49.5625,
+      "height": 27.671875
+    },
+    "heightDelta": 0,
+    "id": "insert-product-empty",
+    "latex": "\\prod_{\\placeholder{}}^{\\placeholder{}}\\placeholder{}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 49.5625,
+      "height": 27.671875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 37.125,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-product-filled",
+    "latex": "\\prod_{{x}}^{{x}}{x}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 37.125,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 26.78125,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-modulus-empty",
+    "latex": "\\lvert\\placeholder{}\\rvert",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 26.78125,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 21.859375,
+      "height": 24.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-modulus-filled",
+    "latex": "\\lvert{x}\\rvert",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 21.859375,
+      "height": 24.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 58.015625,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-argument-empty",
+    "latex": "\\arg(\\placeholder{})",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 58.015625,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 53.09375,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-argument-filled",
+    "latex": "\\arg({x})",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 53.09375,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 46.453125,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-real-part-empty",
+    "latex": "\\Re(\\placeholder{})",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 46.453125,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 41.53125,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-real-part-filled",
+    "latex": "\\Re({x})",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 41.53125,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 41.78125,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-imaginary-part-empty",
+    "latex": "\\Im(\\placeholder{})",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 41.78125,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 36.859375,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-imaginary-part-filled",
+    "latex": "\\Im({x})",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 36.859375,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.984375,
+      "width": 16,
+      "height": 23.640625
+    },
+    "heightDelta": 0,
+    "id": "insert-conjugate-empty",
+    "latex": "\\overline{\\placeholder{}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.984375,
+      "width": 16,
+      "height": 23.640625
+    },
+    "widthDelta": 0
+  },
+  {
+    "edit": {
+      "x": 579.171875,
+      "y": 394.78125,
+      "width": 11.078125,
+      "height": 23.21875
+    },
+    "heightDelta": 0,
+    "id": "insert-conjugate-filled",
+    "latex": "\\overline{{x}}",
+    "view": {
+      "x": 571.171875,
+      "y": 394.78125,
+      "width": 11.078125,
+      "height": 23.21875
+    },
+    "widthDelta": 0
+  }
+]

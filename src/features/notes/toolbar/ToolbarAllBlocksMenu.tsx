@@ -1,6 +1,7 @@
 import { KEYS } from 'platejs';
 import { useState } from 'react';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { ToolbarPopoverGroup } from '@/components/ui/ToolbarPopover';
 import { useNoteBlockDialogs } from '@/features/notes/blocks/dialogContext';
 import type { CollaborationActions } from '@/features/notes/Collaboration';
 import { EditorIcon } from '@/features/notes/EditorIcon';
@@ -52,7 +53,7 @@ export function ToolbarAllBlocksMenu({
       </PopoverTrigger>
       <ToolbarPopoverContent
         align="start"
-        className="max-h-[min(80vh,38rem)] w-72 gap-0 overflow-y-auto rounded-card p-1"
+        className="max-h-[min(80vh,38rem)] w-72 overflow-y-auto pt-2"
         data-all-blocks-menu
         open={moreOpen}
       >
@@ -61,18 +62,13 @@ export function ToolbarAllBlocksMenu({
             (command) => command.group === group.id
           );
           const hasComment = group.id === 'general' && canEdit && collaboration;
-          if (!commands.length && !hasComment) {
+          const hasInlineMarks = group.id === 'inlineElements';
+          if (!commands.length && !hasComment && !hasInlineMarks) {
             return null;
           }
 
           return (
-            <section aria-labelledby={`all-blocks-${group.id}`} key={group.id}>
-              <h3
-                className="px-2 pt-2 pb-1 font-semibold text-fg-muted text-xs tracking-wide first:pt-1"
-                id={`all-blocks-${group.id}`}
-              >
-                {group.label}
-              </h3>
+            <ToolbarPopoverGroup key={group.id} label={group.label}>
               {commands.map((command) => (
                 <ToolbarPopoverRow
                   icon={<EditorIcon name={command.icon} />}
@@ -84,7 +80,6 @@ export function ToolbarAllBlocksMenu({
               ))}
               {hasComment && (
                 <ToolbarPopoverRow
-                  className="mt-1 border-divider border-t pt-2"
                   icon={<EditorIcon name="commentAdd" />}
                   label={m.editor_comment()}
                   onClick={() => {
@@ -94,18 +89,24 @@ export function ToolbarAllBlocksMenu({
                   shortcut="Ctrl/Cmd+Shift+M"
                 />
               )}
-            </section>
+              {hasInlineMarks && (
+                <>
+                  <ToolbarPopoverRow
+                    icon={<EditorIcon name="subscript" />}
+                    label={m.editor_subscript()}
+                    onClick={() => mark(KEYS.sub)}
+                  />
+                  <ToolbarPopoverRow
+                    icon={<EditorIcon name="superscript" />}
+                    label={m.editor_superscript()}
+                    onClick={() => mark(KEYS.sup)}
+                  />
+                </>
+              )}
+            </ToolbarPopoverGroup>
           );
         })}
         <div className="mt-1 border-divider border-t pt-1">
-          <ToolbarPopoverRow
-            label={m.editor_subscript()}
-            onClick={() => mark(KEYS.sub)}
-          />
-          <ToolbarPopoverRow
-            label={m.editor_superscript()}
-            onClick={() => mark(KEYS.sup)}
-          />
           <ToolbarPopoverRow
             label={m.editor_clear_formatting()}
             onClick={clearFormatting}

@@ -12,7 +12,7 @@ export function BlockToolbar({
       role="toolbar"
       {...props}
       className={cn(
-        'flex w-fit max-w-[90vw] items-center gap-0 overflow-x-auto rounded-full border border-line bg-surface p-1 shadow-pop',
+        'flex w-fit max-w-[90vw] items-center gap-0 overflow-x-auto rounded-input border border-line bg-surface p-1 shadow-pop',
         '[&_[data-toolbar-group]]:after:hidden',
         className
       )}
@@ -28,7 +28,7 @@ export function FloatingToolbar({
 }: Omit<React.ComponentProps<typeof PopupMotion>, 'asChild'>) {
   return (
     <PopupMotion asChild {...props}>
-      <BlockToolbar className={className}>{children}</BlockToolbar>
+      <BlockToolbar className={cn('px-2', className)}>{children}</BlockToolbar>
     </PopupMotion>
   );
 }
@@ -46,7 +46,7 @@ export function FloatingBlockToolbar({
         asChild
         avoidCollisions={false}
         className={cn(
-          'motion-popup motion-blur-in z-50 outline-hidden data-[state=closed]:[animation-fill-mode:forwards]',
+          'motion-popup motion-blur-in z-50 px-1.5 outline-hidden data-[state=closed]:[animation-fill-mode:forwards]',
           className
         )}
         contentEditable={false}

@@ -9,6 +9,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
+import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
 import { FileModeControl, useFileMode } from './FileModeControl';
@@ -133,6 +134,7 @@ export default function PdfView({
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+  useHorizontalWheelScroll(toolbar);
   const [mode, setMode] = useFileMode(!!annotationFile, 'view');
   const editing = mode === 'edit';
   const [annotationBusy, setAnnotationBusy] = useState(false);

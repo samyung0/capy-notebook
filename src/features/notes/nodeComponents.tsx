@@ -1,5 +1,6 @@
 import { useLink } from '@platejs/link/react';
 import { isOrderedList } from '@platejs/list';
+import { useBlockSelected } from '@platejs/selection/react';
 import { useTocElementState } from '@platejs/toc/react';
 import { KEYS, NodeApi, type Path, type TLinkElement } from 'platejs';
 import {
@@ -9,6 +10,7 @@ import {
   PlateLeaf,
   type PlateLeafProps,
   useEditorRef,
+  useFocused,
   useReadOnly,
   useSelected,
 } from 'platejs/react';
@@ -18,22 +20,19 @@ import {
   memo,
   type MouseEvent as ReactMouseEvent,
   useEffect,
+  useRef,
   useState,
 } from 'react';
+import { Button } from '@/components/ui/Button';
 import { ContentSwap } from '@/components/ui/ContentSwap';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
-import { Katex } from '@/features/materials/Katex';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { MathPreview } from '@/features/materials/MathPreview';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MathField } from '@/features/questions/MathField';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { CalloutIcon } from './CalloutIcon';
 import { Column, ColumnGroup } from './ColumnNodes';
 import { MediaAssetElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
@@ -57,14 +56,12 @@ import {
   TOC_BOX_CLASS,
   TOC_EMPTY_CLASS,
   TOC_ITEM_CLASS,
-  TOC_TITLE_CLASS,
   tocItemIndent,
   UL_CLASS,
 } from './nodeStyles';
 import {
   CALLOUT_VARIANT_CLASS,
   CALLOUT_VARIANTS,
-  type CalloutVariant,
   CODE_BLOCK_LANGUAGES,
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
@@ -76,6 +73,10 @@ import {
   TableRowElement,
 } from './TableNodes';
 import { ToolbarButton } from './toolbar/ToolbarButton';
+import {
+  ToolbarPopoverContent,
+  ToolbarPopoverRow,
+} from './toolbar/ToolbarPopover';
 
 /* ------------------------------------------------------------- block elements */
 
@@ -123,13 +124,83 @@ function Blockquote(props: PlateElementProps) {
 }
 
 function Hr(props: PlateElementProps) {
+  const readOnly = useReadOnly();
+  const selected = useSelected();
+  const focused = useFocused();
   return (
     <PlateElement {...props}>
-      <div contentEditable={false}>
-        <hr className={HR_CLASS} />
+      <div className="py-6" contentEditable={false}>
+        <hr
+          className={cn(
+            HR_CLASS,
+            selected &&
+              focused &&
+              'ring-2 ring-line-strong ring-offset-2 ring-offset-surface',
+            !readOnly && 'cursor-pointer'
+          )}
+        />
       </div>
       {props.children}
     </PlateElement>
+  );
+}
+
+function BlockStyleMenu({
+  label,
+  value,
+  options,
+  onValueChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly { label: string; value: string }[];
+  onValueChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const editor = useEditorRef();
+  const restoreFocus = useRef(false);
+  return (
+    <Popover modal={false} onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={label}
+          className="h-7 w-auto rounded-lg px-2 py-0 font-medium text-xs"
+          data-plate-prevent-deselect
+          size="sm"
+          variant="ghost-muted"
+        >
+          {options.find((option) => option.value === value)?.label ?? value}
+        </Button>
+      </PopoverTrigger>
+      <ToolbarPopoverContent
+        align="end"
+        aria-label={label}
+        className="max-h-[min(18rem,var(--radix-popover-content-available-height))] w-48 overflow-y-auto"
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (restoreFocus.current) {
+            restoreFocus.current = false;
+            // Native controls inside Slate can retain its logical focus flag.
+            editor.tf.blur();
+            editor.tf.focus();
+          }
+        }}
+        open={open}
+      >
+        {options.map((option) => (
+          <ToolbarPopoverRow
+            className="shrink-0"
+            key={option.value}
+            label={option.label}
+            onClick={() => {
+              restoreFocus.current = true;
+              onValueChange(option.value);
+            }}
+            selected={option.value === value}
+          />
+        ))}
+      </ToolbarPopoverContent>
+    </Popover>
   );
 }
 
@@ -158,6 +229,7 @@ function CodeBlock(props: PlateElementProps) {
     <PlateElement
       {...props}
       as="pre"
+      attributes={{ ...props.attributes, spellCheck: false }}
       className={CODE_BLOCK_CLASS}
       data-language={language}
     >
@@ -170,31 +242,21 @@ function CodeBlock(props: PlateElementProps) {
             {getCodeBlockLanguageLabel(language)}
           </span>
         ) : (
-          <Select
+          <BlockStyleMenu
+            label={m.editor_code_language()}
             onValueChange={(value) => {
               const at = editor.api.findPath(props.element);
-              if (at) editor.tf.setNodes({ lang: value }, { at });
+              if (at) {
+                editor.tf.setNodes({ lang: value }, { at });
+                editor.tf.focus({ at: editor.api.start(at) });
+              }
             }}
+            options={CODE_BLOCK_LANGUAGES.map((item) => ({
+              label: getCodeBlockLanguageLabel(item.value),
+              value: item.value,
+            }))}
             value={language}
-          >
-            <SelectTrigger
-              aria-label={m.editor_code_language()}
-              className="h-full w-auto translate-y-px bg-transparent py-0 pr-1.5 pl-2 font-semibold text-fg-muted hover:text-fg"
-              data-plate-prevent-deselect
-              showDownIcon={false}
-              size="sm"
-              variant="ghost"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end" className="max-h-72">
-              {CODE_BLOCK_LANGUAGES.map((item) => (
-                <SelectItem key={item.value} size="sm" value={item.value}>
-                  {getCodeBlockLanguageLabel(item.value)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         )}
         <button
           aria-label={copied ? m.editor_code_copied() : m.editor_copy_code()}
@@ -293,20 +355,6 @@ function Lic(props: PlateElementProps) {
 }
 
 /* callout */
-function CalloutIcon({ variant }: { variant: CalloutVariant }) {
-  const className = 'mt-0.5 size-5 shrink-0';
-  switch (variant) {
-    case 'success':
-      return <EditorIcon className={className} name="circleCheck" />;
-    case 'warning':
-      return <EditorIcon className={className} name="error" />;
-    case 'danger':
-      return <EditorIcon className={className} name="circleX" />;
-    default:
-      return <EditorIcon className={className} name="info" />;
-  }
-}
-
 function Callout(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
@@ -320,43 +368,26 @@ function Callout(props: PlateElementProps) {
       className={cn(
         CALLOUT_CLASS,
         CALLOUT_VARIANT_CLASS[variant],
-        !readOnly && 'pr-28'
+        !readOnly && 'pr-20'
       )}
       data-callout-variant={variant}
     >
-      <span contentEditable={false}>
-        <CalloutIcon variant={variant} />
-      </span>
+      <CalloutIcon variant={variant} />
       <div className="min-w-0 flex-1 text-fg">{props.children}</div>
       {!readOnly && (
-        <div
-          className="absolute top-2 right-2 rounded-button bg-surface/80"
-          contentEditable={false}
-        >
-          <Select
+        <div className="absolute top-1 right-1" contentEditable={false}>
+          <BlockStyleMenu
+            label={m.editor_callout_style()}
             onValueChange={(value) => {
               const at = editor.api.findPath(props.element);
-              if (at) editor.tf.setNodes({ variant: value }, { at });
+              if (at) {
+                editor.tf.setNodes({ variant: value }, { at });
+                editor.tf.focus({ at: editor.api.start(at) });
+              }
             }}
+            options={CALLOUT_VARIANTS}
             value={variant}
-          >
-            <SelectTrigger
-              aria-label={m.editor_callout_style()}
-              className="h-7 w-24 bg-transparent px-2 py-0 text-xs"
-              data-plate-prevent-deselect
-              size="sm"
-              variant="ghost"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              {CALLOUT_VARIANTS.map((item) => (
-                <SelectItem key={item.value} size="sm" value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         </div>
       )}
     </PlateElement>
@@ -411,7 +442,7 @@ const TocEntry = memo(
     type: string;
   }) {
     return (
-      <button
+      <Button
         className={TOC_ITEM_CLASS}
         onClick={(event) => {
           event.preventDefault();
@@ -426,11 +457,13 @@ const TocEntry = memo(
             target: { path, type: 'node' },
           });
         }}
+        size="xs"
         style={tocItemIndent(type)}
         type="button"
+        variant="ghost-hover"
       >
         {title}
-      </button>
+      </Button>
     );
   },
   (previous, next) =>
@@ -443,14 +476,21 @@ const TocEntry = memo(
 
 function Toc(props: PlateElementProps) {
   const state = useTocElementState();
+  const isBlockSelected = useBlockSelected();
   const headings = state.headingList;
 
   return (
-    <PlateElement {...props}>
-      <div className={TOC_BOX_CLASS} contentEditable={false}>
-        <p className={TOC_TITLE_CLASS}>{m.toc_title()}</p>
+    <PlateElement
+      {...props}
+      className={cn(
+        TOC_BOX_CLASS,
+        isBlockSelected &&
+          '[&_button:hover]:bg-action-accent/20 [&_button:hover]:text-fg'
+      )}
+    >
+      <div contentEditable={false}>
         {headings.length ? (
-          <nav className="flex flex-col">
+          <nav aria-label={m.toc_title()} className="flex flex-col gap-0">
             {headings.map((heading) => (
               <TocEntry
                 editor={state.editor}
@@ -497,6 +537,7 @@ function EquationBody({
   );
   const [editing, setEditing] = useState(selected && !readOnly);
   const [draft, setDraft] = useState(tex);
+  const [editingHeight, setEditingHeight] = useState<number>();
   function commit(value: string) {
     if (!readOnly) {
       const at = editor.api.findPath(props.element);
@@ -508,6 +549,7 @@ function EquationBody({
     return (
       <MathField
         displayMode={displayMode}
+        minHeight={editingHeight}
         onCancel={() => setEditing(false)}
         onChange={setDraft}
         onCommit={commit}
@@ -515,22 +557,25 @@ function EquationBody({
       />
     );
   }
-  if (readOnly) return <Katex displayMode={displayMode} tex={tex} />;
+  if (readOnly) return <MathPreview displayMode={displayMode} tex={tex} />;
   return (
     <button
       aria-label={m.editor_equation()}
       className={cn(
         'max-w-full cursor-text text-inherit',
-        displayMode && 'w-full'
+        displayMode && 'block min-h-14 w-full px-6 py-4'
       )}
-      onClick={() => {
+      onClick={(event) => {
+        if (displayMode) {
+          setEditingHeight(event.currentTarget.getBoundingClientRect().height);
+        }
         setDraft(tex);
         setEditing(true);
       }}
       type="button"
     >
       {tex ? (
-        <Katex displayMode={displayMode} tex={tex} />
+        <MathPreview displayMode={displayMode} tex={tex} />
       ) : (
         <span className="text-fg-muted">{m.editor_equation()}</span>
       )}

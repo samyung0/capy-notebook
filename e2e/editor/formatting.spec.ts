@@ -4,6 +4,75 @@ import { chooseAllBlocksEntry } from '../helpers/editor';
 import { openEditorNote } from './helpers';
 
 test.describe('formatting', () => {
+  test('undo and redo work after the editor loses selection', async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
+    await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' history probe');
+    const outside = page.getByRole('textbox', {
+      name: 'Ask about your sources…',
+    });
+    await outside.click();
+    await expect(editor).not.toBeFocused();
+    await expect(
+      page.getByRole('button', { exact: true, name: 'Undo' })
+    ).toBeEnabled();
+    await page.getByRole('button', { exact: true, name: 'Undo' }).click();
+    await expect(editor).not.toContainText('history probe');
+    await outside.click();
+    await expect(
+      page.getByRole('button', { exact: true, name: 'Redo' })
+    ).toBeEnabled();
+    await page.getByRole('button', { exact: true, name: 'Redo' }).click();
+    await expect(editor).toContainText('history probe');
+  });
+  test('block type popover applies a keyboard choice and returns focus to the editor', async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
+    await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
+    const trigger = page.getByRole('button', {
+      exact: true,
+      name: 'Block type',
+    });
+    await trigger.click();
+    const popup = page.locator(
+      '[data-slot="popover-content"][data-state="open"]'
+    );
+    await expect(
+      popup.getByRole('button', { exact: true, name: 'Paragraph' })
+    ).toBeFocused();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Tab');
+    await expect(
+      popup.getByRole('button', { exact: true, name: 'Heading 2' })
+    ).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(
+      editor.getByRole('heading', {
+        level: 2,
+        name: EDITOR_NOTE.firstParagraph,
+      })
+    ).toBeVisible();
+    await expect(editor).toBeFocused();
+    await trigger.click();
+    await expect(
+      popup.getByRole('button', { exact: true, name: 'Heading 2' })
+    ).toHaveAttribute('aria-pressed', 'true');
+    await page.keyboard.press('Escape');
+    await expect(editor).toBeFocused();
+  });
+
   test('toolbar scrolls on narrow screens and honors group settings', async ({
     page,
   }) => {
@@ -25,13 +94,28 @@ test.describe('formatting', () => {
       .toBe(true);
     await expect(scroller).toHaveCSS('overflow-x', 'auto');
     const settings = toolbar.getByRole('button', {
-      name: 'Editor command settings',
+      name: 'Editor settings',
     });
     await expect(settings).toBeInViewport();
 
-    await scroller.evaluate((element) => {
-      element.scrollLeft = element.scrollWidth;
-    });
+    await scroller.hover();
+    await page.mouse.wheel(0, 120);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(0);
+    await page.mouse.wheel(0, -1000);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollLeft))
+      .toBe(0);
+    await page.mouse.wheel(0, 10_000);
+    await expect
+      .poll(() =>
+        scroller.evaluate(
+          (element) =>
+            element.scrollWidth - element.clientWidth - element.scrollLeft
+        )
+      )
+      .toBeLessThanOrEqual(1);
     const table = toolbar.getByRole('button', {
       exact: true,
       name: 'Table controls',
@@ -45,8 +129,43 @@ test.describe('formatting', () => {
     await page.keyboard.press('Escape');
     await page.keyboard.press('Escape');
 
+    await page.mouse.move(0, 0);
+    await table.hover();
+    await expect(
+      page
+        .locator('[data-slot="tooltip-content"]')
+        .filter({ hasText: 'Table controls' })
+    ).toBeVisible();
+    const overflowDuringScroll = page.evaluate(async () => {
+      let maxOverflow = 0;
+      for (let frame = 0; frame < 30; frame++) {
+        await new Promise(requestAnimationFrame);
+        maxOverflow = Math.max(
+          maxOverflow,
+          document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        );
+      }
+      return maxOverflow;
+    });
+    await page.mouse.wheel(0, -10_000);
+    await expect
+      .poll(() => scroller.evaluate((element) => element.scrollLeft))
+      .toBe(0);
+    expect(await overflowDuringScroll).toBe(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            document.documentElement.scrollWidth -
+            document.documentElement.clientWidth
+        )
+      )
+      .toBe(0);
+
     await settings.click();
-    const dialog = page.getByRole('dialog', { name: 'Editor commands' });
+    const dialog = page.getByRole('dialog', { name: 'Editor settings' });
+    await dialog.getByRole('button', { exact: true, name: 'Commands' }).click();
     await dialog.getByRole('switch', { name: /Text decorations/ }).click();
     await dialog.getByRole('button', { exact: true, name: 'Apply' }).click();
     await expect(groups).toHaveCount(7);
@@ -255,6 +374,18 @@ test.describe('formatting', () => {
       .click();
     await expect(threeColumns).toHaveAttribute('aria-pressed', 'true');
     await expect(twoColumns).toHaveAttribute('aria-pressed', 'false');
+
+    const columnGroup = editor.locator('.slate-column_group').first();
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await columnMenu
+        .getByRole('button', { exact: true, name: 'Two equal columns' })
+        .click();
+      await expect(columnGroup.locator('.slate-p')).toHaveCount(2);
+      await columnMenu
+        .getByRole('button', { exact: true, name: 'Three equal columns' })
+        .click();
+      await expect(columnGroup.locator('.slate-p')).toHaveCount(3);
+    }
 
     await editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }).click();
     await expect(threeColumns).toHaveAttribute('aria-pressed', 'false');

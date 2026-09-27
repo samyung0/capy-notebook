@@ -176,9 +176,13 @@ function mergeEnabledGroups(value: unknown): EnabledMap {
   return migrated;
 }
 
+export type NoteDisplayWidth = 'half' | 'full';
+
 interface NoteEditorPrefsState {
+  displayWidth: NoteDisplayWidth;
   enabled: EnabledMap;
   setAll: (value: boolean) => void;
+  setDisplayWidth: (displayWidth: NoteDisplayWidth) => void;
   setEnabled: (enabled: EnabledMap) => void;
   toggle: (id: WidgetGroupId) => void;
 }
@@ -186,6 +190,7 @@ interface NoteEditorPrefsState {
 export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
   persist(
     (set) => ({
+      displayWidth: 'half',
       enabled: { ...ALL_ENABLED },
       setAll: (value) =>
         set(() => ({
@@ -194,6 +199,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
             return acc;
           }, {} as EnabledMap),
         })),
+      setDisplayWidth: (displayWidth) => set({ displayWidth }),
       setEnabled: (enabled) => set({ enabled: { ...enabled } }),
       toggle: (id) =>
         set((s) => ({ enabled: { ...s.enabled, [id]: !s.enabled[id] } })),
@@ -205,6 +211,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
         return {
           ...current,
           ...p,
+          displayWidth: p.displayWidth === 'full' ? 'full' : 'half',
           enabled: mergeEnabledGroups(p.enabled),
         };
       },

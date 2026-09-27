@@ -1,11 +1,8 @@
 import { useEditorRef, useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
 import { ColorPicker } from '@/components/ui/ColorPicker';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { ToolbarPopoverContent as PopoverContent } from '@/components/ui/ToolbarPopover';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 
@@ -57,7 +54,7 @@ export function FontColorControl({
       </PopoverTrigger>
       <PopoverContent
         align="center"
-        className="w-64 p-2.5"
+        className="ignore-click-outside/toolbar w-64 px-2.5"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           editor.tf.focus();

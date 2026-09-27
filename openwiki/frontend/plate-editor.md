@@ -121,17 +121,42 @@ CenterContent
                 └── CollaborationProvider
                     ├── NoteToolbar
                     ├── scroll box
-                    │   ├── PlateContent
-                    │   └── FloatingToolbar (edit only)
+                    │   └── PlateContainer (relative)
+                    │       ├── PlateContent + link actions
+                    │       └── FloatingToolbar (edit only)
                     ├── EditorCommandPalette
                     └── AiMenu (edit only)
 ```
 
-`FloatingToolbar` lives inside the scroll box because floating-ui only watches
-scroll on the toolbar's own overflow ancestors; as a sibling of that box it
-stayed pinned while the selected block scrolled away. Its buttons are the same
+`FloatingToolbar` shares the editor's positioned `PlateContainer`, following
+Plate playground's placement beside the editable content. The browser scrolls
+the toolbar and selection together immediately; Floating UI still handles
+selection changes and collision placement. The fixed toolbar and its portalled
+popovers use Plate's `ignore-click-outside/toolbar` class, so formatting a live
+selection does not briefly close and reopen the floating toolbar. Merely mounting inside the scroll
+box left its absolute containing block outside that box, so it had to catch up
+through JavaScript on every scroll. Link actions already use this structure.
+Its buttons are the same
 `ToolbarButton` the top row uses, so both rows share one icon colour, size and
 hover treatment; the Ask AI button only overrides the square width.
+
+Long notes use 32-block chunks with `content-visibility: auto`. Each chunk has
+24px inline padding and matching negative margins, keeping text aligned while
+including the drag-handle gutter inside its paint containment. Without that
+space, handles exist but are clipped and cannot receive pointer input.
+Heading handles use the computed line height to center on the first line,
+sharing one positioning rule across H1–H6 and wrapped headings.
+List handles measure the first rendered text line to account for internal
+numbered/todo wrappers. Todo checkboxes use the CSS line height to center on
+the first line, including wrapped rows. Todo rows use only Plate's indent;
+the checkbox sits 24px before the text in both editable and static renderers,
+so empty slash-command hints share the text position without overlapping it.
+
+TOC entries reuse `Button` in Edit and View modes, retaining heading indentation
+and hover transitions. Rows are square, full-width and gapless, with a local
+override disabling press shrink. The TOC margin sits on its Plate element so
+the drag handle aligns with the first text line. The navigation has an accessible
+label without a visible caption; selected TOC blocks use accent hover colors.
 
 `components/ui/BlockToolbar` owns the shared floating surface for selection,
 link and block actions, question-dialog blocks and the single-column workspace
@@ -155,6 +180,9 @@ data. After sync, Slate-Yjs replaces editor children from the shared root.
 Yjs-aware history is installed by `YjsPlugin`; ordinary Slate history must not
 be layered on top. Normalizers must be deterministic and idempotent because
 they run for remote operations too.
+The toolbar subscribes directly to Yjs UndoManager stack events, including
+undo/redo and clear, so availability updates without editor focus or selection.
+Its actions use the same Yjs history as note editing.
 
 ## Stable IDs and persisted node data
 
@@ -203,16 +231,59 @@ nodes in a note and references anywhere but the top level. A markdown fence
 imports as a pending reference (`materialId: ''` plus the fence body in
 `pending`); the mounted editor claims it in the shared document
 (`resolvingBy`) and the client whose claim survives the merge creates the
-row; markdown export resolves references back into inline blocks first and
-keeps an unresolvable one as a placeholder fence. Removing the reference
+row; readable Markdown and DOCX exports resolve references into study handouts
+and fail explicitly if a required reference cannot be read. Removing the reference
 trashes the row at the next projection and undo restores it (see
 [authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
 stay inline. Mermaid, chart and graph embeds render view-only in every editor
 mode. Selecting one shows the shared floating Edit/Copy/Delete toolbar; Edit
 opens a dialog. Chart and graph nodes store their question block under `block`
 and a single empty text child; graphs export their SVG before saving. Inline
-and display equations edit in-place with MathLive and render with KaTeX outside
-editing. The math toolbar inserts formulas and common symbol templates.
+and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
+
+## Readable note exports
+
+`documentAdapters.ts` snapshots the live editor, resolves quiz/card projections
+through existing authenticated queries, and obtains asset URLs. `export/client.ts`
+starts a dedicated module worker for each Markdown or DOCX export. The worker
+flattens quizzes into questions followed by answers, marking schemes and worked
+solutions, and flashcards into front/back pairs. It serializes the complete
+snapshot, downloads assets, normalizes raster images with OffscreenCanvas, and
+creates the DOCX or ZIP. No conversion endpoint or server job is involved.
+
+DOM-dependent figures are requested sequentially from the main thread and cached
+per export. KaTeX generates markup in the worker; the main thread lays it out and
+rasterizes it. Charts include a visible legend and data table. Mermaid uses the
+existing renderer. Figure rasterization uses an isolated iframe so html2canvas
+does not clone the mounted editor. Completion, failure or editor unmount terminates
+the worker; duplicate clicks are disabled, and errors appear as a toast.
+
+Markdown uses standard headings, nested lists, links and tables, with labeled
+quotes for callouts, sequential columns, LaTeX math and captioned Mermaid fences.
+Rich/merged tables use HTML. Images and attachments produce a ZIP containing
+`document.md` and relative `assets/`; text-only exports remain `.md`.
+DOCX uses blue info callouts, grey quote/divider borders, plain answer keys, images
+for formulas/diagrams, and borderless tables for columns. Private audio/file links
+return to the note in view mode rather than retaining expiring signed URLs.
+Each DOCX outline becomes a native Word TOC field covering heading levels 1–6,
+with indented TOC styles, dot leaders and page-number fields. Cached entries retain
+the outline before a viewer updates fields; no page numbers are invented in the
+browser. The document requests field updates on opening. Word calculates pages,
+and its Update Table command refreshes renamed/new headings. Other viewers may
+require a manual update. Answer/solution labels use keep-with-next paragraphs,
+not heading styles, so they do not enter the TOC. Markdown retains heading links.
+Unknown blocks and failed required asset reads stop the export instead of silently
+omitting content. Readable exports do not round-trip interactive study blocks.
+
+YouTube becomes a labeled watch link in Markdown. DOCX embeds a poster with a play
+button, picture/title hyperlinks and Office's `wp15:webVideoPr` metadata, plus Word
+2013 compatibility mode. Desktop Word recognizes a native web-video object; other
+viewers may display the linked poster. The video remains online. No raw URL or
+internet-requirement caption is printed. Word for the web playback is not verified.
+
+Coverage and large-document measurements: `export/export.test.ts`,
+`e2e/editor/exports.spec.ts`, and
+`bench/editor/reports/2026-09-27-client-export-implementation.md`.
 
 ## Persistence and save status
 
@@ -442,6 +513,9 @@ Go enforces paired anchors and strict size/version/quote bounds.
 When creating a comment, the browser converts the selected Slate range with
 `slateRangeToRelativeRange`. Rendering reverses it with
 `relativeRangeToSlateRange` against the live shared root.
+With only a cursor, the comment attaches to the containing top-level block,
+including an empty block, without text anchors or a quote. The browser captures
+the block ID when the comment dialog opens.
 
 Comment highlighting is local decoration state. It is never applied with
 `editor.tf.setNodes`, so opening or hovering a comment cannot create a Yjs
@@ -465,6 +539,11 @@ the shared tabs scroll fade, while settings stay pinned and group preferences
 still control visibility. PDF keeps its centered annotation tools, page count,
 zoom controls and horizontal scrolling on narrow screens.
 
+Tabs and both toolbar scroll containers share `useHorizontalWheelScroll`.
+Vertical mouse-wheel input scrolls overflowing controls horizontally without
+React state updates. Horizontal gestures and zoom keep native behavior, and
+wheel input passes through at the scroll boundaries.
+
 `components/ui/ToolbarButton` reuses `BASE_BUTTON_STYLE` for shared button behavior
 and supplies both editors' 32px buttons, focus/disabled
 styles, purple active tint, and dropdown triggers (content width, 4px gap and
@@ -478,10 +557,22 @@ their existing styling.
 
 Plate's All blocks, media upload, import/export and table controls use Popover
 with icon-only triggers. PDF Draw and Shape also use Popover. Paragraph/block
-styles retain DropdownMenu and its chevron. Table groups open nested popovers
+styles also use Popover, with a current-choice check and no chevron. Table groups open nested popovers
 on click or keyboard activation. Popover actions are buttons navigated with Tab;
 the table size grid retains arrow-key selection. Command popovers become inert
 on close and preserve focus handed to the editor or a command's dialog.
+All blocks groups Subscript and Superscript with Inline elements, using shared
+Hugeicons; Clear formatting remains in the footer.
+The slash popup shares All blocks' group headings, compact icon rows, shortcut
+hints and rounded-lg container. Results follow the same group order; arrow
+selection scrolls the active row into view while focus stays in the query.
+Both use EDITOR_COMMANDS and conditional Comment; All blocks additionally
+offers Subscript, Superscript and Clear formatting.
+
+Callout variant and code-language choosers share a muted text trigger and the
+Plate popover rows, with a check for the current value. Choosing a value updates
+the owning block and returns focus to the editor. Callout icons share their
+first-paragraph line alignment between editable and static rendering.
 
 Plate marks subscribe in `MarkToolbarButton`, shared by the fixed and selection
 toolbars. Primitive selection results drive list, link, table and column states;
@@ -489,10 +580,26 @@ the table trigger follows the selected table, independently of menu visibility.
 The top column controls indicate two/three columns, while the column popup
 matches the exact width preset. Alignment choices highlight the selected block's
 alignment and the trigger shows its icon. Insertion commands retain their behavior.
+Column outlines are dashed only in Edit mode; transparent borders retain the
+same layout in viewing. Column drag markers use the shared gap midpoint for
+both adjacent edges. Layout changes discard a lone empty paragraph in a removed
+column before Plate merges its contents, preventing repeated 2↔3 switches from
+accumulating blank lines. Authored block sequences and textless embeds survive.
 The table menu's cell/merge subscriptions remain inside the unmounted-when-closed
 menu body, keeping those reads off the typing path.
 
 ## Commands
+
+Editor settings uses the shared workspace-style tabs: General holds Display
+size and Commands holds toolbar group visibility. Both preferences apply on
+Apply and persist locally in `capy-note-editor-prefs`. Half width retains the
+768px centered reading container; Full width fills the pane. Below `md`, both
+fill the available width. Note previews use the same preference.
+
+Slate's editable root spans the pane at either size. A stable `as` component
+wraps its children in the width-constrained inner container, leaving margin
+clicks inside the editable root and retaining native keyboard handling and
+Plate's chunk rendering. Width changes do not recreate the editor.
 
 `editorCommands.ts` is the shared command catalog. Editors can open commands by
 typing `/`, through toolbar menus, or with `mod+k`. Commands, document mutations
@@ -613,3 +720,77 @@ Collaboration tests cover JWT claims/origin checks, stable-block command
 preconditions, and v3 browser provider/v4 server convergence plus read-only
 enforcement. Docker E2E adds PostgreSQL/Redis/sidecar coverage for persistence,
 projection, reconnect, and multi-context behavior.
+
+Plate and PDF toolbar popovers share `components/ui/ToolbarPopover`: 8px corners,
+4px container padding, gapless 28px rows, 14px medium text and the dropdown
+body line height. Plate wraps shared buttons to restore editor/command focus.
+Insert adds an 8px top padding plus 4px above its first section label; later
+labels have 12px above and all labels have 6px below. Color/input layouts retain
+their horizontal insets with 4px vertical padding. Base Button and account Menu
+styles are unchanged.
+
+Horizontal rules follow Plate playground: a 2px line inside 24px vertical
+padding, with a line-strong ring while selected and focused. The padded area
+participates in Slate void selection, allowing Backspace/Delete removal.
+Static rendering shares the same line and spacing without selection styling.
+
+The floating link editor uses shared Input rows with leading icons and a
+Separator, matching Plate playground's compact layout. Its container uses the
+popover's rounded-lg corners; shared confirm/cancel actions remain in the footer.
+Plate's FloatingLinkUrlInput composes the shared Input via asChild to preserve
+URL state and focus behavior.
+
+MathLive's inline editor removes the internal container's minimum height and
+padding; its outline and vertically centered menu trigger do not increase line
+height. Inline formulas omit the keyboard button, including question-editor
+controls. Block formulas retain both buttons. The keyboard button toggles the keyboard, Escape first hides
+an open keyboard, and unmounting any formula editor hides the shared keyboard.
+Pointer-down outside the formula, keyboard and its toggles also hides it,
+including toolbar controls that preserve editor focus.
+Question editors retain external controls, with the menu below the keyboard for
+block formulas and a centered menu alone for inline formulas.
+The formula menu filters MathLive's native items to Insert Matrix, Insert, Mode,
+Copy and Paste. Its shadow-root CSS matches ToolbarPopover's tokens, row spacing,
+border and shadow, retaining native matrix grids, templates and clipboard formats.
+Checkmarks are 12px, vertically centered, with an 8px gap before aligned labels.
+Menu keyboard events remain inside MathLive; Escape closes the menu without
+cancelling formula editing. These actions use the existing LaTeX document field.
+MathField clears MathLive's menu items before commit/cancel and in layout-effect
+cleanup before the field disconnects, closing the shared overlay and cancelling
+pending submenu work. Closing before commit also finishes menu focus restoration
+before React replaces the editor with its preview.
+MathLive 0.110 does not perform that cleanup itself; leaving it open makes the
+next field's menu call `showPopover()` on a disconnected element.
+MathPreview mounts inert, read-only MathLive fields without keyboard/menu controls,
+using the same fonts and layout as editing and a spoken-math accessible label. This
+preserves native placeholders, accents and fractions in notes, question editors and
+question/quiz views. KaTeX remains confined to export figures, where empty slots map
+to `\square`; saved editable formulas retain their original placeholders.
+
+Block formula previews and MathLive share 16px vertical padding and the same
+math font size. Opening an existing block reserves its preview height while
+MathLive loads. When MathLive is already registered by a preview, MathField
+constructs the editor synchronously in its layout effect before the first paint.
+Awaiting even a cached dynamic import left one empty, collapsed frame on opening.
+MathPreview also reuses the registered constructor synchronously when editing ends,
+with its LaTeX in the initial `value` attribute before connection. Setting the value
+after mounting left the first frame empty until MathLive's next animation frame.
+New blank formulas still load MathLive lazily. Inline fields use textstyle; block fields use displaystyle.
+The shared MathField uses app-theme selection colors, serif text zones without
+MathLive's text-zone tint, and a black 1em caret. The caret-height override lives
+inside MathLive's shadow root because version 0.110 exposes no CSS part for it.
+Text carets use the same zero-height inline-block baseline anchor as math
+carets. Both MathLive modes use normal 400 font weight rather than inheriting the
+surrounding UI weight. Keyboard/menu columns sit 8px inside the outlines, with
+20px controls and a 2px gap. Inline fields cancel their 36px right and 8px left
+padding with negative margins, so the outline/menu overlay adjacent text instead
+of increasing the formula's layout width. The menu has an opaque surface background
+and sits above adjacent text. Existing nonempty formulas do not acquire a minimum
+width when opened. Matching negative vertical margins preserve line height. At a text-run
+boundary, typing `-` switches to math before MathLive handles the key, allowing
+its native `->` shortcut to insert an arrow outside the text. Hyphens inside
+a text run keep their text behavior.
+Unmodified horizontal arrows skip the redundant first/last child positions of
+`\overline` groups using MathLive's public element-info and movement commands,
+matching its accent navigation. Internal characters remain editable; modified
+arrows and other structures retain native navigation.

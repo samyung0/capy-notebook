@@ -337,6 +337,11 @@
     font-size: 16px;
   }
   html,
+  body {
+    /* Portalled tooltips can follow scrolled anchors beyond the viewport. */
+    overflow-x: clip;
+  }
+  html,
   body,
   #root {
     height: 100%;
@@ -399,6 +404,12 @@
 }
 
 @layer components {
+  /* Paint-contained chunks must include the block drag-handle gutter. */
+  .note-editor [data-slate-chunk] {
+    margin-inline: -24px;
+    padding-inline: 24px;
+  }
+
   .note-editor .slate-selectable:has(> [data-slot="block-selection"]) {
     box-shadow: inset 0 0 0 9999px var(--tint-accent-1-bg);
   }

@@ -194,10 +194,10 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 6,
+    chapterCount: 0,
     createdAt: days(40),
     description: '',
-    fileCount: 24,
+    fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-01',
     id: 'ws_bio',
@@ -219,10 +219,10 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 4,
+    chapterCount: 0,
     createdAt: days(30),
     description: '',
-    fileCount: 12,
+    fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-02',
     id: 'ws_calc',
@@ -244,10 +244,10 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 5,
+    chapterCount: 0,
     createdAt: days(22),
     description: '',
-    fileCount: 18,
+    fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-03',
     id: 'ws_hist',
@@ -269,10 +269,10 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 3,
+    chapterCount: 0,
     createdAt: days(12),
     description: '',
-    fileCount: 9,
+    fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-04',
     id: 'ws_chem',
@@ -294,10 +294,10 @@ export const workspaces: Workspace[] = [
       canManageMembers: true,
       canView: true,
     },
-    chapterCount: 7,
+    chapterCount: 0,
     createdAt: days(8),
     description: '',
-    fileCount: 21,
+    fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-05',
     id: 'ws_eng',
@@ -528,10 +528,14 @@ export const files: SourceFile[] = [
   },
 ];
 
-// Keep Biology's card totals in step with its file-state showcase.
-workspaces[0].fileCount = files.filter(
-  (file) => file.workspaceId === 'ws_bio'
-).length;
+for (const workspace of workspaces) {
+  workspace.chapterCount = chapters.filter(
+    (chapter) => chapter.workspaceId === workspace.id
+  ).length;
+  workspace.fileCount = files.filter(
+    (file) => file.workspaceId === workspace.id
+  ).length;
+}
 
 const seedQuizzes: Quiz[] = [
   {

@@ -2,8 +2,8 @@ import { TablePlugin, useTableMergeState } from '@platejs/table/react';
 import { KEYS } from 'platejs';
 import { useEditorPlugin, useEditorSelector } from 'platejs/react';
 import { useState } from 'react';
-import { Button } from '@/components/ui/Button';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { ToolbarPopoverButton } from '@/components/ui/ToolbarPopover';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { m } from '@/i18n';
@@ -192,15 +192,14 @@ function TablePopoverGroup({
   return (
     <Popover onOpenChange={setOpen} open={parentOpen && open}>
       <PopoverTrigger asChild>
-        <Button
-          className="h-auto w-full justify-start gap-2 px-2 py-1.5 font-normal [&_svg]:size-4"
+        <ToolbarPopoverButton
           disabled={disabled}
           size="sm"
           type="button"
           variant="ghost-hover"
         >
           {trigger}
-        </Button>
+        </ToolbarPopoverButton>
       </PopoverTrigger>
       <ToolbarPopoverContent
         align="start"

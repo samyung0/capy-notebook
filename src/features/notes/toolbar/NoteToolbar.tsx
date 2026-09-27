@@ -17,12 +17,9 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
+import { ToolbarPopoverContent as PopoverContent } from '@/components/ui/ToolbarPopover';
 import { openAiMenu } from '@/features/notes/ai/aiMenuState';
 import { useCollaborationActions } from '@/features/notes/Collaboration';
 import {
@@ -52,19 +49,21 @@ import {
   MarkToolbarButton,
   ToolbarButton,
 } from '@/features/notes/toolbar/ToolbarButton';
+import { EditorSettingsDialog } from '@/features/notes/toolbar/ToolbarEditorSettingsDialog';
 import { ExportMenu } from '@/features/notes/toolbar/ToolbarExportMenu';
 import { FontColorControl } from '@/features/notes/toolbar/ToolbarFontColorControl';
 import { FontSizeControl } from '@/features/notes/toolbar/ToolbarFontSizeControl';
+import { ToolbarHistory } from '@/features/notes/toolbar/ToolbarHistory';
 import {
   type ImportKind,
   ImportMenu,
 } from '@/features/notes/toolbar/ToolbarImportMenu';
 import { MediaUploadMenu } from '@/features/notes/toolbar/ToolbarMediaUploadMenu';
 import { TableMenu } from '@/features/notes/toolbar/ToolbarTableMenu';
-import { WidgetSettingsDialog } from '@/features/notes/toolbar/ToolbarWidgetSettingsDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { editorAiEnabled } from '@/lib/features';
+import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 
 // TODO: what is this
 // Plate's plugin transforms are intentionally richer than its base editor type.
@@ -72,13 +71,13 @@ import { editorAiEnabled } from '@/lib/features';
 export type AnyEditor = any;
 
 export function NoteToolbar({ className }: { className?: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useHorizontalWheelScroll(scrollRef);
   const editor = useEditorRef() as AnyEditor;
   const { allowExternalAssets, canEdit } = useEditorRuntime();
   const canCreateAssets = allowExternalAssets;
   const enabled = useNoteEditorPrefs((state) => state.enabled);
   const collaboration = useCollaborationActions();
-  const canUndo = useEditorSelector((ed) => ed.history.undos.length > 0, []);
-  const canRedo = useEditorSelector((ed) => ed.history.redos.length > 0, []);
   const inLink = useEditorSelector(
     (ed) => ed.api.some({ match: { type: KEYS.link } }),
     []
@@ -170,10 +169,16 @@ export function NoteToolbar({ className }: { className?: string }) {
     <>
       <Toolbar
         aria-label={m.editor_doc_formatting()}
-        className={cn('sticky top-0 z-20', className)}
+        className={cn(
+          'ignore-click-outside/toolbar sticky top-0 z-20',
+          className
+        )}
         role="toolbar"
       >
-        <div className="scroll-fade-x flex h-full min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          className="scroll-fade-x flex h-full min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          ref={scrollRef}
+        >
           {enabled.general && (
             <ToolbarGroup className="gap-1">
               {canEdit && collaboration && (
@@ -194,26 +199,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               <BlockTypeMenu onBlock={block} />
             </ToolbarGroup>
           )}
-          {enabled.history && (
-            <ToolbarGroup>
-              <ToolbarButton
-                disabled={!canUndo}
-                label={m.editor_undo()}
-                onClick={() => editor.tf.undo()}
-                shortcut={EDITOR_SHORTCUTS.undo}
-              >
-                <EditorIcon name="undo" />
-              </ToolbarButton>
-              <ToolbarButton
-                disabled={!canRedo}
-                label={m.editor_redo()}
-                onClick={() => editor.tf.redo()}
-                shortcut={EDITOR_SHORTCUTS.redo}
-              >
-                <EditorIcon name="redo" />
-              </ToolbarButton>
-            </ToolbarGroup>
-          )}
+          {enabled.history && <ToolbarHistory />}
           {enabled.fileOperations && (
             <ToolbarGroup className="gap-1">
               {canCreateAssets && <MediaUploadMenu editor={editor} />}
@@ -287,7 +273,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                     </ToolbarButton>
                   </PopoverTrigger>
                   <PopoverContent
-                    className="w-auto p-0"
+                    className="ignore-click-outside/toolbar w-auto p-0"
                     onCloseAutoFocus={(event) => event.preventDefault()}
                     onOpenAutoFocus={(event) => event.preventDefault()}
                   >
@@ -443,7 +429,7 @@ export function NoteToolbar({ className }: { className?: string }) {
               <EditorIcon name="sparkles" />
             </ToolbarButton>
           )}
-          <WidgetSettingsDialog />
+          <EditorSettingsDialog />
         </div>
       </Toolbar>
       <Dialog

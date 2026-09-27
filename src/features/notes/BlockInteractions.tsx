@@ -128,13 +128,31 @@ function DraggableBlock(props: PlateElementProps) {
           : 'group'
       )}
       data-slot="block-wrapper"
-      onMouseEnter={() => {
+      onMouseEnter={(event) => {
         if (isDragging) return;
         const block = editor.api.toDOMNode(element);
         if (!block) return;
-        const marginTop =
-          Number.parseFloat(window.getComputedStyle(block).marginTop) || 0;
-        setHandleTop(marginTop + 3);
+        // List wrappers add their own spacing inside the Plate element.
+        const listLine = element.listStyleType
+          ? block.querySelector('[data-slate-leaf]')?.getClientRects()[0]
+          : undefined;
+        if (listLine) {
+          setHandleTop(
+            listLine.top -
+              event.currentTarget.getBoundingClientRect().top +
+              (listLine.height - 24) / 2
+          );
+          return;
+        }
+        const style = window.getComputedStyle(block);
+        const marginTop = Number.parseFloat(style.marginTop) || 0;
+        // Center the 24px handle on the first line, including wrapped headings.
+        setHandleTop(
+          marginTop +
+            (isType(editor, element, KEYS.heading)
+              ? (Number.parseFloat(style.lineHeight) - 24) / 2
+              : 3)
+        );
       }}
     >
       {!isInTable && (

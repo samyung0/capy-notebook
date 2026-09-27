@@ -19,3 +19,4 @@
 - Developer Epo requested (2026-09-24) danger user toasts use motion-error-shake on appearance through the existing error variant. src/components/ui/Sonner.tsx
 - Developer Epo approved (2026-09-27) rendering tag autocomplete inside the enclosing dialog to allow wheel/touch scrolling while preserving the Files panel floating Add menu's modal outside-click dismissal without opening underlying files. src/components/ui/TagSelect.tsx src/components/ui/Popover.tsx src/components/ui/Menu.tsx
 - Developer Epo requested (2026-09-27) workspace settings closes automatically after a successful Save; failed saves retain the open dialog and draft. src/features/workspace/WorkspaceFormDialog.tsx
+- Developer approved (2026-09-27) clipping horizontal overflow at the page boundary so lingering tooltips during toolbar scrolling cannot add a page scrollbar; horizontal scrolling remains available inside toolbars, tabs and other explicit scroll containers. src/styles/tailwind.css

@@ -1,5 +1,4 @@
 import { useDraggable, useDropLine } from '@platejs/dnd';
-import { setColumns } from '@platejs/layout';
 import { PathApi, type TColumnElement } from 'platejs';
 import {
   PlateElement,
@@ -18,6 +17,7 @@ import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { setColumnLayout } from './columnLayout';
 import { FloatingActionButton } from './nodeComponents';
 import { COLUMN_CLASS, COLUMN_GROUP_CLASS } from './nodeStyles';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
@@ -60,7 +60,8 @@ function ColumnFloatingToolbarContent() {
   const editor = useEditorRef();
   const element = useElement<TColumnElement>();
   const changeLayout = (widths: string[]) => {
-    setColumns(editor, { at: element, widths });
+    const at = editor.api.findPath(element);
+    if (at) setColumnLayout(editor, at, widths);
   };
 
   const remove = () => {
@@ -126,7 +127,11 @@ export function Column(props: PlateElementProps) {
     <PlateElement
       {...props}
       attributes={{ ...props.attributes, 'data-slot': 'column' }}
-      className={cn(COLUMN_CLASS, draggable.isDragging && 'opacity-45')}
+      className={cn(
+        COLUMN_CLASS,
+        !readOnly && 'border-line border-dashed',
+        draggable.isDragging && 'opacity-45'
+      )}
       ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
       style={width ? ({ '--column-width': width } as CSSProperties) : undefined}
     >
@@ -144,13 +149,14 @@ export function Column(props: PlateElementProps) {
         </button>
       )}
       {props.children}
-      {dropLine && (
+      {!readOnly && dropLine && (
         <div
           className={cn(
             'absolute inset-y-0 z-20 w-0.5 bg-action-accent',
-            dropLine === 'left' ? '-left-1' : '-right-1'
+            dropLine === 'left' ? '-left-1.5' : '-right-1.5'
           )}
           contentEditable={false}
+          data-column-drop-line
         />
       )}
     </PlateElement>

@@ -3,6 +3,7 @@ import { createSlateEditor } from 'platejs';
 import { PlateStatic } from 'platejs/static';
 import { useMemo } from 'react';
 import type { MaterialKind } from '@/api/types';
+import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { cn } from '@/lib/cn';
 import {
   createMaterialDocument,
@@ -28,6 +29,7 @@ export function MaterialPreview({
   className?: string;
   title?: string;
 }) {
+  const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const editor = useMemo(
     () =>
       createSlateEditor({
@@ -71,7 +73,8 @@ export function MaterialPreview({
       <MaterialRenderProvider value={renderContext}>
         <PlateStatic
           className={cn(
-            'note-editor mx-auto min-h-75 w-full max-w-3xl px-5 pt-4 pb-36 text-base outline-none sm:px-10',
+            'note-editor mx-auto min-h-75 w-full px-5 pt-4 pb-36 text-base outline-none sm:px-10',
+            (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl',
             className
           )}
           editor={editor}

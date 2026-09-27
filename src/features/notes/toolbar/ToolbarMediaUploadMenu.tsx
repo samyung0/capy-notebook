@@ -22,11 +22,7 @@ export function MediaUploadMenu({ editor }: { editor: AnyEditor }) {
           <EditorIcon name="filePlus" />
         </ToolbarButton>
       </PopoverTrigger>
-      <ToolbarPopoverContent
-        align="start"
-        className="w-42 gap-0.5 p-1"
-        open={open}
-      >
+      <ToolbarPopoverContent align="start" className="w-42" open={open}>
         <ToolbarPopoverRow
           icon={<EditorIcon name="image" />}
           label={m.editor_upload_image()}

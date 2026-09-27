@@ -416,13 +416,13 @@ export default function WorkspaceOpen() {
             {viewer}
             <FloatingToolbar
               aria-label={m.workspace_tools()}
-              className="p-1.5"
+              className="gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"
               open={!toolsOpen}
               positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
             >
               {panelTabs.map((t) => (
                 <ToolbarButton
-                  className="size-10 gap-0 sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                  className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
                   key={t}
                   label={tabLabel(t)}
                   onClick={() => showTab(t)}
@@ -434,7 +434,7 @@ export default function WorkspaceOpen() {
               ))}
               {rowProps.onOpenSettings && (
                 <ToolbarButton
-                  className="size-10 gap-0 sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                  className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
                   label={m.workspace_settings()}
                   onClick={rowProps.onOpenSettings}
                   tooltipSide="top"

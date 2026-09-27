@@ -472,18 +472,18 @@ test('All blocks toggles closed with a second click and keyboard activation', as
     'Import document',
     'Export document',
     'Table controls',
+    'Block type',
   ]) {
     const control = toolbar.getByRole('button', { exact: true, name });
     await expect(control).toHaveAttribute('aria-haspopup', 'dialog');
-    await expect(control.locator('svg')).toHaveCount(1);
+    await expect(control.locator('svg')).toHaveCount(
+      name === 'Block type' ? 0 : 1
+    );
     await control.click();
     await expect(control).toHaveAttribute('data-state', 'open');
     await page.keyboard.press('Escape');
     await expect(control).toHaveAttribute('data-state', 'closed');
   }
-  const paragraph = toolbar.getByRole('button', { name: 'Block type' });
-  await expect(paragraph).toHaveAttribute('aria-haspopup', 'menu');
-  await expect(paragraph.locator('svg')).toHaveCount(1);
   const trigger = page.getByRole('button', { exact: true, name: 'All blocks' });
   await trigger.click();
   await expect(trigger).toHaveAttribute('data-state', 'open');

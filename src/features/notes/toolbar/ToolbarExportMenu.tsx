@@ -1,15 +1,14 @@
 import { useQueryClient } from '@tanstack/react-query';
-import type { SlatePlugin } from 'platejs';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { userToast } from '@/components/ui/userToast';
 import {
   downloadEditorFile,
   downloadEditorText,
-  exportDocxDocument,
-  exportMarkdownDocument,
+  exportNoteDocument,
 } from '@/features/notes/documentAdapters';
 import { EditorIcon } from '@/features/notes/EditorIcon';
-import { MaterialKit } from '@/features/notes/plugins';
+import type { ExportFormat } from '@/features/notes/export/render';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import {
@@ -20,34 +19,55 @@ import { m } from '@/i18n';
 
 export function ExportMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const controller = useRef<AbortController | null>(null);
   const queryClient = useQueryClient();
+  useEffect(() => () => controller.current?.abort(), []);
+  const exportFile = async (format: ExportFormat) => {
+    if (controller.current) return;
+    const task = new AbortController();
+    controller.current = task;
+    setBusy(true);
+    setOpen(false);
+    try {
+      const result = await exportNoteDocument(
+        editor,
+        queryClient,
+        format,
+        task.signal
+      );
+      downloadEditorFile(result.blob, `document.${result.extension}`);
+    } catch (cause) {
+      if (!task.signal.aborted)
+        userToast({
+          description:
+            cause instanceof Error ? cause.message : m.editor_export_failed(),
+          title: m.editor_export_failed(),
+          variant: 'error',
+        });
+    } finally {
+      controller.current = null;
+      if (!task.signal.aborted) setBusy(false);
+    }
+  };
   return (
     <Popover modal={false} onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton label={m.editor_export()}>
+        <ToolbarButton
+          disabled={busy}
+          label={busy ? m.editor_export_preparing() : m.editor_export()}
+        >
           <EditorIcon name="download" />
         </ToolbarButton>
       </PopoverTrigger>
-      <ToolbarPopoverContent
-        align="start"
-        className="w-52 gap-0.5 p-1"
-        open={open}
-      >
+      <ToolbarPopoverContent align="start" className="w-52" open={open}>
         <ToolbarPopoverRow
           label={m.editor_export_md()}
-          onClick={() =>
-            void exportMarkdownDocument(editor, queryClient).then((markdown) =>
-              downloadEditorText(markdown, 'document.md', 'text/markdown')
-            )
-          }
+          onClick={() => void exportFile('markdown')}
         />
         <ToolbarPopoverRow
           label={m.editor_export_docx()}
-          onClick={() =>
-            void exportDocxDocument(editor, MaterialKit as SlatePlugin[]).then(
-              (blob) => downloadEditorFile(blob, 'document.docx')
-            )
-          }
+          onClick={() => void exportFile('docx')}
         />
         <ToolbarPopoverRow
           label={m.editor_export_json()}
