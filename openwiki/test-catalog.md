@@ -535,6 +535,9 @@ modified-click tabs ([Playwright #42142](https://github.com/microsoft/playwright
 
 CI uploads both browser suites' reports and failure traces for seven days,
 including failed attempts whose retry succeeds.
+The Office save-recovery scenarios allow two minutes overall for native
+initialization and a full Vite reload; their individual assertion deadlines
+remain unchanged.
 
 | File                                                                                | About                                                                                                                                   |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |

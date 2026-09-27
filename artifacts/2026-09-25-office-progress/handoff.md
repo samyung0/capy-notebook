@@ -295,3 +295,22 @@ application check passed in 33.5 seconds with no retries. This follow-up changes
 test infrastructure and documentation only; the deployed runtime stays at
 `a7105895`. The [Astra review](review-astra-xhigh-2026-09-27.md) records the
 upstream evidence and the limit on attributing the historical failure exactly.
+
+The test-infrastructure follow-up `0fe773e5` passed
+[CI 36324953303](https://github.com/samyung0/capy-notebook/actions/runs/36324953303).
+The modified-click case passed on its first attempt in 42.4 seconds. The
+retained artifacts exposed a different DOCX recovery timeout: every assertion
+passed, but the complete open/edit/fail/retry/mode/reload/reset workflow took
+60.794 seconds against a 60-second test budget. Reset's idle assertion took
+1.468 seconds, within its existing five-second allowance. Its retry passed in
+59.7 seconds. This is a whole-test budget failure, not a save-recovery defect.
+
+The existing three-format recovery workflow now has a 120-second total budget;
+individual operation and assertion deadlines remain unchanged. The bounded
+Astra xhigh review found no actionable issue, and all three cases passed locally
+with retries disabled (DOCX 40.3 seconds, XLSX 28.3 seconds, PPTX 22.3 seconds).
+Formatting and lint checks passed. This correction is test-only and does not
+require another UAT deployment. The post-cleanup UAT soak from 14:07:55 through
+approximately 14:28 UTC recorded no application or ingest errors, warnings or
+Sentry events, with healthy containers, no restarts or OOM kills, and Office
+editing enabled.

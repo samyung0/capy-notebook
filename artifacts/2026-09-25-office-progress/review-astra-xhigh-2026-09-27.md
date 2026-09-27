@@ -174,7 +174,24 @@ PDF toolbar missed its five-second readiness assertion. The isolated rerun
 then passed in 33.5 seconds without retries. Static native modified-click
 controls passed 50 times per browser mode on both macOS and Linux ARM64.
 These controls validate the configuration, but do not reproduce the historical
-CI race. The suite's timeout and navigation assertions remain unchanged.
+CI race. That test's timeout and navigation assertions remain unchanged.
+
+CI `36324953303` passed the modified-click case on its first attempt in 42.4
+seconds. A different DOCX recovery case exceeded its 60-second total budget
+and passed its retry. The newly retained failed-attempt trace establishes the
+cause: all assertions completed successfully, but the entire workflow finished
+in 60.794 seconds. The final idle assertion started with about 678 milliseconds
+left overall and took 1.468 seconds, inside its own five-second allowance. The
+save-failure, manual-retry and original-iframe checks had passed more than
+25 seconds before the total deadline. Native initialization and a full Vite
+reload consumed most of the workflow's budget.
+
+A bounded Astra xhigh review confirmed that giving just the existing
+DOCX/XLSX/PPTX recovery workflow 120 seconds is justified. Individual operation
+and assertion deadlines, suite defaults and retries remain unchanged. No
+application save-recovery defect is demonstrated. All three cases then passed
+locally with retries disabled in 1.7 minutes total; formatting and lint checks
+passed. Report: `/private/tmp/capy-office-docx-budget-astra-review.md`.
 
 These reviews establish the inspected code paths and retained reproductions.
 They do not certify every possible Office document or replace the deployed
