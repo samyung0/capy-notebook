@@ -23,6 +23,7 @@ import { EditError } from './editCommands.js';
 import {
   drainIsDurable,
   evictMaterialRoomEpoch,
+  flushRoomStores,
   parseRoomEvictionMode,
   RoomEvictionCoordinator,
   type RoomEvictionMode,
@@ -261,8 +262,12 @@ function evictLocalRoom(
         }
         server.hocuspocus.closeConnections(room);
       }
-      server.hocuspocus.flushPendingStores();
-      await waitForStores(room);
+      await flushRoomStores(
+        server.hocuspocus,
+        room,
+        waitForStores,
+        EVICTION_TIMEOUT_MS
+      );
       if (
         mode === 'drain' &&
         !drainIsDurable(
@@ -306,8 +311,12 @@ function persistLocalRoom(room: string, operationId?: string) {
     // Restoration widens access. Keep the live room and its connections in
     // place, flush anything already pending, then let later edits continue on
     // the normal debounce cycle.
-    server.hocuspocus.flushPendingStores();
-    await waitForStores(room);
+    await flushRoomStores(
+      server.hocuspocus,
+      room,
+      waitForStores,
+      EVICTION_TIMEOUT_MS
+    );
     if (
       !drainIsDurable(
         initialFailureGeneration,
@@ -758,11 +767,20 @@ const server = new Server<CollaborationContext>({
     }
     if (pending.size >= MAX_PENDING_CHECKPOINTS) return;
     pending.add(id);
-    if (SOURCE_ROOM_PATTERN.test(document.name)) await persistSource(document);
+    if (SOURCE_ROOM_PATTERN.test(document.name)) {
+      // storeSource already reports the failure and sends the client receipt.
+      // Hocuspocus does not await stateless callbacks.
+      await persistSource(document).catch(() => undefined);
+    }
   },
   async onStoreDocument({ document, documentName, lastContext }) {
+    if (roomEvictions.isDiscarding(documentName)) return;
     if (SOURCE_ROOM_PATTERN.test(documentName)) {
-      await persistSource(document);
+      try {
+        await persistSource(document);
+      } catch (error) {
+        if (!roomEvictions.isDiscarding(documentName)) throw error;
+      }
       return;
     }
     await observeServiceCommandStore(
@@ -895,17 +913,22 @@ function sourceReceipt(
   if (!pending?.size) pendingCheckpoints.delete(document.name);
 }
 
-const persistSource = roomSaveQueue(storeSource);
+const queueSourceSave = roomSaveQueue(storeSource);
+function persistSource(document: Document) {
+  // Register before queueing so eviction also waits for saves not yet started.
+  const finish = beginStore(document.name);
+  return queueSourceSave(document).finally(finish);
+}
 
 async function storeSource(document: Document) {
   const room = document.name;
-  const finish = beginStore(room);
+  // Awaited handoff callers must fail if their queued save was discarded.
+  assertRoomAvailable(room, true);
   const snapshot = new Y.Doc();
   const rawState = Y.encodeStateAsUpdate(document);
   Y.applyUpdate(snapshot, rawState);
   const claimed = [...(pendingCheckpoints.get(room) ?? [])];
   try {
-    assertRoomAvailable(room, true);
     const saved = await sources.store(
       room,
       snapshot,
@@ -949,7 +972,6 @@ async function storeSource(document: Document) {
     throw error;
   } finally {
     snapshot.destroy();
-    finish();
   }
 }
 

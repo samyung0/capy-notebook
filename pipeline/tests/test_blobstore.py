@@ -45,47 +45,6 @@ def test_cache_write_raises_after_three_attempts(monkeypatch) -> None:
     assert calls == 3
 
 
-def test_cache_file_write_reopens_the_file_for_each_of_three_attempts(
-    tmp_path, monkeypatch
-) -> None:
-    calls: list[bytes] = []
-    source = tmp_path / "bundle.zip"
-    source.write_bytes(b"verified bundle")
-
-    class Client:
-        def put_object(self, **kwargs) -> None:
-            calls.append(kwargs["Body"].read())
-            if len(calls) < 3:
-                raise OSError("temporary B2 failure")
-
-    monkeypatch.setattr(blobstore, "_client", Client())
-    monkeypatch.setattr(blobstore.time, "sleep", lambda _seconds: None)
-
-    blobstore.write_file("parse-bundles/fp.zip", str(source), "application/zip")
-
-    assert calls == [b"verified bundle"] * 3
-
-
-def test_cache_file_write_raises_after_three_attempts(tmp_path, monkeypatch) -> None:
-    calls = 0
-    source = tmp_path / "bundle.zip"
-    source.write_bytes(b"verified bundle")
-
-    class Client:
-        def put_object(self, **_kwargs) -> None:
-            nonlocal calls
-            calls += 1
-            raise OSError("B2 unavailable")
-
-    monkeypatch.setattr(blobstore, "_client", Client())
-    monkeypatch.setattr(blobstore.time, "sleep", lambda _seconds: None)
-
-    with pytest.raises(OSError, match="B2 unavailable"):
-        blobstore.write_file("parse-bundles/fp.zip", str(source), "application/zip")
-
-    assert calls == 3
-
-
 def test_cache_download_is_bounded_and_cleans_a_partial_file(
     tmp_path, monkeypatch
 ) -> None:
@@ -98,7 +57,7 @@ def test_cache_download_is_bounded_and_cleans_a_partial_file(
     monkeypatch.setattr(blobstore, "_client", Client())
 
     with pytest.raises(ValueError, match="configured byte limit"):
-        blobstore.download_file("parse-bundles/fp.zip", str(destination), 3)
+        blobstore.download_file("sources/document.pdf", str(destination), 3)
 
     assert not destination.exists()
 

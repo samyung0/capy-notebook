@@ -1266,21 +1266,8 @@ def _handoff_parsed_artifact(
 ) -> bool:
     """Finish the parse claim and enqueue its ingest continuation atomically."""
     attempt = int(job.get("attempts") or 1)
-    continuation_artifact = dict(artifact)
-    durable_key = str(continuation_artifact.get("durableKey") or "")
-    local_source = payload.get("localSource")
-    source_sha256 = (
-        str(local_source.get("sha256") or "") if isinstance(local_source, dict) else ""
-    )
-    if durable_key and not _touch_or_upsert_artifact(
-        object_path=durable_key,
-        kind="parse_bundle",
-        source_sha256=source_sha256,
-        size_bytes=max(0, int(continuation_artifact.get("size") or 0)),
-    ):
-        continuation_artifact.pop("durableKey", None)
     continuation_payload = dict(payload)
-    continuation_payload["parseArtifact"] = continuation_artifact
+    continuation_payload["parseArtifact"] = dict(artifact)
     continuation_payload["parseJobId"] = job["id"]
     continuation_id = f"{job['id']}_ingest"
     usage = obs.take_parse_usage()
@@ -1402,14 +1389,12 @@ async def _ensure_document_artifact(
     version = str(artifact.get("version") or "")
     if not artifact_key or not fingerprint or not version:
         raise RetryableError("parser returned an incomplete artifact descriptor")
-    durable_key = await asyncio.to_thread(
-        parser_client.publish_durable_artifact,
+    await asyncio.to_thread(
+        parser_client.validate_artifact,
         artifact,
         route=route,
         office=processing_plan.office,
     )
-    if durable_key:
-        artifact["durableKey"] = durable_key
     telemetry.record(artifact_bytes=max(0, int(artifact.get("size") or 0)))
     _set_stage("parse_handoff")
     await asyncio.to_thread(

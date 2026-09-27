@@ -5,6 +5,7 @@ import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 import {
   focusReopenedSubmenu,
+  guardMenuEvent,
   MenuOpenContext,
   useMenuOpenState,
 } from './menuOpenState';
@@ -77,6 +78,8 @@ function DropdownMenuContent({
         inert={!open}
         sideOffset={sideOffset}
         {...props}
+        onClickCapture={guardMenuEvent(open, props.onClickCapture)}
+        onKeyDownCapture={guardMenuEvent(open, props.onKeyDownCapture)}
       />
     </DropdownMenuPrimitive.Portal>
   );
@@ -233,6 +236,8 @@ function DropdownMenuSubContent({
         inert={!open}
         sideOffset={sideOffset}
         {...props}
+        onClickCapture={guardMenuEvent(open, props.onClickCapture)}
+        onKeyDownCapture={guardMenuEvent(open, props.onKeyDownCapture)}
       />
     </DropdownMenuPrimitive.Portal>
   );

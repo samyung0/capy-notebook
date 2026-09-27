@@ -1,0 +1,245 @@
+{
+  "localRevision": "75512bb3ea413ff5aa134502b7f491c471b52d65",
+  "uatRevision": "4c96071705c1590957ed4d7804d1ac088f18841a",
+  "betterofficeRevision": "04560dd6d7b52ee3436a631135e389d5054bde04",
+  "uat": {
+    "runId": "office-investigation-20260927-current",
+    "scenarios": [
+      {
+        "format": "docx",
+        "result": "passed",
+        "minutes": 3.4
+      },
+      {
+        "format": "xlsx",
+        "result": "passed",
+        "minutes": 3.8
+      },
+      {
+        "format": "pptx",
+        "result": "passed",
+        "minutes": 2.2
+      }
+    ],
+    "originalProcessExit": 1,
+    "originalTeardownFailure": "Clerk createdAt precedes local manifest start by 9049 ms; recovery permits only 5000 ms. Exact recorded ID, email and private run metadata match.",
+    "cleanupAfterExactOwnedActorRemoval": {
+      "failed": []
+    }
+  },
+  "nativeDocx": {
+    "sourceSHA256": "e9121aa3d1ca691be844d5ee6b4112c1e2fe756ef1e40a9d37cdd0dcc0940785",
+    "seedBytes": 295141,
+    "languageTags": {
+      "source": 6,
+      "uneditedExport": 0,
+      "seedContainsJaJP": false
+    },
+    "sections": {
+      "pgNumType": {
+        "source": 1,
+        "uneditedExport": 1
+      },
+      "cols": {
+        "source": 1,
+        "uneditedExport": 1
+      }
+    },
+    "edits": [
+      {
+        "id": "body:paragraph:0888F015",
+        "label": "body, paragraph 53",
+        "value": "主題：智能科技，精湛技術 Collaborator confirmed the July tour.",
+        "position": "body:52"
+      },
+      {
+        "id": "body:paragraph:086F036A",
+        "label": "body, paragraph 54",
+        "value": "人數：24人",
+        "position": "body:53"
+      }
+    ]
+  },
+  "pointerHook": {
+    "readyGeometrySelection": [
+      {
+        "anchor": 1,
+        "head": 1,
+        "story": "body"
+      }
+    ],
+    "selectionCallbacksForReadyNullClickReady": [],
+    "checksPassed": 2
+  },
+  "menu": {
+    "ciRun": "36305430178",
+    "failedInitialAndRetry": true,
+    "firstEnter": {
+      "executions": 1,
+      "submenuState": "closed",
+      "inert": true
+    },
+    "secondEnter": {
+      "executions": 2,
+      "submenuState": "closed",
+      "inert": true
+    },
+    "lateEventControl": {
+      "beforeLateEvent": 1,
+      "afterLateEvent": 2,
+      "afterGuardedLateEvent": 2,
+      "method": "Synthetic key delivered to the retained inert item; CI trace independently shows duplicate selection with real keyboard.press."
+    },
+    "slowerNativeInputControl": {
+      "executions": "1",
+      "enterEvents": [
+        {
+          "time": 3341.0999999996275,
+          "type": "keydown",
+          "key": "Enter",
+          "target": {
+            "tag": "DIV",
+            "slot": "dropdown-menu-item",
+            "text": "Nested action"
+          },
+          "active": {
+            "tag": "DIV",
+            "slot": "dropdown-menu-item",
+            "text": "Nested action"
+          }
+        },
+        {
+          "time": 3695,
+          "type": "keyup",
+          "key": "Enter",
+          "target": {
+            "tag": "DIV",
+            "slot": "dropdown-menu-item",
+            "text": "Nested action",
+            "inertParent": "dropdown-menu-sub-content"
+          },
+          "active": {
+            "tag": "DIV",
+            "slot": "dropdown-menu-item",
+            "text": "Nested action",
+            "inertParent": "dropdown-menu-sub-content"
+          }
+        },
+        {
+          "time": 3734.9000000003725,
+          "type": "keydown",
+          "key": "Enter",
+          "target": {
+            "tag": "BUTTON",
+            "slot": "dropdown-menu-trigger",
+            "text": "Nested actions",
+            "state": "closed"
+          },
+          "active": {
+            "tag": "BUTTON",
+            "slot": "dropdown-menu-trigger",
+            "text": "Nested actions",
+            "state": "closed"
+          }
+        },
+        {
+          "time": 3849,
+          "type": "keyup",
+          "key": "Enter",
+          "target": {
+            "tag": "DIV",
+            "slot": "dropdown-menu-sub-trigger",
+            "text": "More actions",
+            "state": "closed"
+          },
+          "active": {
+            "tag": "DIV",
+            "slot": "dropdown-menu-sub-trigger",
+            "text": "More actions",
+            "state": "closed"
+          }
+        }
+      ]
+    }
+  },
+  "focusedTests": {
+    "contributorsAndSourceDocuments": 24,
+    "runtimeHandoffAndRoots": 33,
+    "uatTypeScript": "passed"
+  },
+  "originalDocxHelperUatControl": {
+    "converged": false,
+    "checkpoint": 2,
+    "epoch": 1,
+    "diagnostics": [
+      {
+        "role": "owner",
+        "events": [
+          {
+            "event": "mousedown",
+            "x": 256,
+            "y": 331,
+            "paragraphs": [],
+            "cursor": "text"
+          },
+          {
+            "event": "focusin",
+            "tag": "TEXTAREA",
+            "label": "Document input"
+          }
+        ]
+      },
+      {
+        "role": "editor",
+        "events": [
+          {
+            "event": "focusin",
+            "tag": "TEXTAREA",
+            "label": "Document input"
+          },
+          {
+            "event": "mousedown",
+            "x": 332,
+            "y": 331,
+            "paragraphs": [],
+            "cursor": ""
+          },
+          {
+            "event": "focusin",
+            "tag": "TEXTAREA",
+            "label": "Document input"
+          },
+          {
+            "event": "focusin",
+            "tag": "TEXTAREA",
+            "label": "Document input"
+          }
+        ]
+      }
+    ],
+    "selectedParagraphs": [
+      "  2022 至 2023 年度 Collaborator confirmed the July tour.",
+      "主題：智能科技，精湛技術",
+      "人數：24人"
+    ],
+    "exportSha256": "0c1d7cc3d925576544ee490abf6b3a072f955722d93c268267ed4c7b2ff64462"
+  },
+  "pptxInputUatControl": {
+    "pasteEvents": [
+      "CLIPBOARD_INPUT_27"
+    ],
+    "beforeCheckpoint": 1,
+    "afterCheckpoint": 1,
+    "keyboardControlPresent": true,
+    "textInputPresent": false,
+    "clipboardPresent": false
+  },
+  "controlsCleanup": {
+    "runId": "office-investigation-20260927-controls",
+    "failed": [],
+    "finishedAt": "2026-09-27T08:50:53.239Z",
+    "actorsRemovedWith": "Existing cleanupClerkActor exact-ID, private run-tag and email checks",
+    "initialProcessExit": 1,
+    "initialTeardownFailureStage": "Recover Clerk registration"
+  }
+}

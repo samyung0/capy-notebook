@@ -380,19 +380,40 @@ test('only new notification IDs arriving in an open panel reveal', async ({
   await expect(page.locator('.motion-text-reveal')).toHaveCount(0);
 });
 
-test('closing command content becomes inert before another Enter can execute it', async ({
+test('closed command content rejects late events and its trigger can reopen it', async ({
   page,
 }) => {
+  await page.addStyleTag({
+    content:
+      '[role="menu"][data-state="closed"] { animation-play-state: paused !important; }',
+  });
   const trigger = page.getByRole('button', { exact: true, name: 'Actions' });
   await trigger.focus();
   await page.keyboard.press('ArrowDown');
-  await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeFocused();
+  const action = page.getByRole('menuitem', { name: 'Rename' });
+  await expect(action).toBeFocused();
+  const retained = await action.elementHandle();
   await page.keyboard.press('Enter');
   await expect(page.locator('[data-slot="menu"]')).toHaveAttribute('inert', '');
-  await page.keyboard.press('Enter');
+  await retained!.evaluate((node) => {
+    node.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Enter',
+      })
+    );
+    node.click();
+  });
   await expect(page.getByTestId('executions')).toHaveText('1');
+  await page.locator('[data-slot="menu"]').evaluate((node) => {
+    for (const animation of node.getAnimations()) animation.finish();
+  });
   await expect(page.locator('[data-slot="menu"]')).toHaveCount(0);
   await expect(trigger).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menu')).toBeVisible();
+  await expect(page.getByTestId('executions')).toHaveText('1');
 });
 
 test('cancelled and nested drawer swipes do not restart blur', async ({
@@ -432,6 +453,10 @@ for (const kind of ['dropdown', 'context'] as const) {
   test(`${kind} submenu restores keyboard focus after a rapid reopen`, async ({
     page,
   }) => {
+    await page.addStyleTag({
+      content:
+        '[role="menu"][data-state="closed"] { animation-play-state: paused !important; }',
+    });
     if (kind === 'dropdown') {
       await page
         .getByRole('button', { exact: true, name: 'Nested actions' })
@@ -454,8 +479,21 @@ for (const kind of ['dropdown', 'context'] as const) {
     await expect(more).toBeFocused();
     await page.keyboard.press('ArrowRight');
     await expect(action).toBeFocused();
+    const retained = await action.elementHandle();
     await page.keyboard.press('Enter');
-    await page.keyboard.press('Enter');
+    await expect(
+      page.locator(`[data-slot="${kind}-menu-sub-content"]`)
+    ).toHaveAttribute('inert', '');
+    await retained!.evaluate((node) => {
+      node.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Enter',
+        })
+      );
+      node.click();
+    });
     await expect(page.getByTestId('executions')).toHaveText('1');
   });
 }

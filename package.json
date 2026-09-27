@@ -150,7 +150,7 @@
     "e2e:uat": "playwright test --config=e2e/uat/playwright.uat.config.ts",
     "e2e:uat:journeys": "playwright test --config=e2e/uat/journeys/playwright.journeys.config.ts",
     "e2e:uat:cleanup": "tsx e2e/uat/journeys/cleanup.ts",
-    "test:uat:verifier": "tsx --test e2e/uat/journeys/runtime.test.ts && uv run --frozen python e2e/uat/journeys/test_verify.py",
+    "test:uat:verifier": "NODE_ENV=test tsx --test e2e/uat/journeys/runtime.test.ts && uv run --frozen python e2e/uat/journeys/test_verify.py",
     "e2e:install": "playwright install chromium",
     "email:build": "tsx scripts/build-emails.ts",
     "email:check": "pnpm run email:build && tsx scripts/check-emails.ts",

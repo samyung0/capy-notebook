@@ -74,13 +74,15 @@ dc() {
   CAPY_INGEST_UAT_ENV_FILE="$config/uat.queue.env" RELEASE_SHA="$sha" docker compose "${args[@]}" "$@"
 }
 verify() {
-  local sha="$1" service="$2" ids id actual running
-  ids="$(dc "$sha" ps -q "$service")" || die 'could not query Compose services'
+  local sha="$1" service="$2" state_check="${3:-running}" ids id actual running
+  local ps_args=(ps -q)
+  [[ "$state_check" != present ]] || ps_args+=(--all)
+  ids="$(dc "$sha" "${ps_args[@]}" "$service")" || die 'could not query Compose services'
   [[ -n "$ids" ]] || return 1
   while IFS= read -r id; do
     actual="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$id")"
     running="$(docker inspect --format '{{.State.Running}}' "$id")"
-    [[ "$actual" == "$sha" && "$running" == true ]] || return 1
+    [[ "$actual" == "$sha" && ( "$state_check" == present || "$running" == true ) ]] || return 1
   done <<<"$ids"
 }
 parser_ready() {
@@ -209,7 +211,9 @@ if [[ "$mode" == prepare || "$mode" == bootstrap-prepare ]]; then
   check_local_consumers
   if [[ "$previous" != none ]]; then
     verify "$previous" parser || die 'active parser SHA mismatch'
-    for service in "${consumers[@]}"; do verify "$previous" "$service" || die "active $service SHA mismatch"; done
+    # Schema changes may require old consumers to stop before app deployment.
+    # They must still exist at the recorded SHA; activation requires running.
+    for service in "${consumers[@]}"; do verify "$previous" "$service" present || die "active $service SHA mismatch"; done
   else
     [[ -z "$(docker ps -q --filter "label=com.docker.compose.project=$project")" ]] || die 'bootstrap found running containers; initialize their existing release state instead'
   fi

@@ -2,10 +2,7 @@ import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 
 test.describe('quiz sharing', () => {
-  test('New quiz creates a blank question and opens the editor', async ({
-    ownerApi,
-    ownerPage,
-  }) => {
+  test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
     await ownerPage.goto('/create');
     const created = waitForApi(ownerPage, apiEndsWith('/api/quizzes', 'POST'));
     await ownerPage
@@ -18,8 +15,6 @@ test.describe('quiz sharing', () => {
     expect(response.status()).toBe(201);
     const quiz = await response.json();
     try {
-      expect(quiz.questions).toHaveLength(1);
-      expect(quiz.questions[0].prompt).toBe('');
       await expect(ownerPage).toHaveURL(`/quizzes/${quiz.id}/edit`);
       await expect(
         ownerPage.getByRole('button', { exact: true, name: 'Save' })

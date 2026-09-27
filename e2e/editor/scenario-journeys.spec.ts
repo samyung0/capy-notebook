@@ -109,6 +109,8 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
   test(`${format} opens valid bytes, edits, fails save, and retries without replacing the iframe`, async ({
     page,
   }) => {
+    // Native initialization and a full Vite reload share this workflow budget.
+    test.setTimeout(120_000);
     await launch(page, `office-${format}-save`);
     const frame = page.locator('iframe[src*="office-runtime"]');
     const mounted = await frame.elementHandle();

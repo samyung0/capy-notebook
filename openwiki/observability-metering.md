@@ -428,7 +428,7 @@ input > 0; cached-read and output may be 0.
 | `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, numeric-only context composition, and optional ingest attempt/stage linkage |
 | `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page/OCR/chunk counts (the slice and caption columns stay at their zero defaults since the OpenDataLoader parser), and no source name or content |
 | `ingest_host_samples` / `ingest_host_sample_rollups` | shared parser-process, queue, spool, and physical-host samples; raw rows retain 30 days and one-minute rollups retain one year |
-| `ingest_worker_samples` / `ingest_worker_sample_rollups` | per-container parse/ingest worker cgroup samples; raw rows retain 30 days and one-minute rollups retain one year |
+| `ingest_worker_samples` / `ingest_worker_sample_rollups` | per-container import/parse/ingest worker cgroup samples; raw rows retain 30 days and one-minute rollups retain one year |
 
 Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
 row for the gate to lock, reconcile pass for drift.
@@ -793,9 +793,10 @@ are operational telemetry only. Page counts determine the charge.
 Host saturation is separate. `pipeline.ingest.host_sampler` reads host `/proc`,
 polls parser admission counts, reads the durable parse/ingest queues and spool,
 and writes compact typed rows every five seconds while any work is active or
-queued and every sixty seconds while idle. Each one-job coordinator/worker also
-writes its own cgroup CPU, memory, I/O, PID, and OOM counters at the same adaptive
-cadence. The recursive spool size/count is cached for sixty seconds so an active
+queued and every sixty seconds while idle. The import worker, parse coordinator and ingest worker each
+write their own cgroup CPU, memory, I/O, PID, and OOM counters at the same adaptive
+cadence. Raw samples and minute rollups accept all three roles; the Ops chart
+keeps each role separate. The recursive spool size/count is cached for sixty seconds so an active
 parser does not rescan the volume every five seconds. Raw rows retain 30 days; each writer refreshes the current one-minute
 rollup, retained for one year. The dashboard keeps parser-process memory and
 whole-host CPU/memory separate from per-worker cgroups and page billing.
@@ -932,6 +933,13 @@ money bound; these limits only stop abuse patterns.
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
 They authenticate by signature and both providers apply their own delivery rate.
+
+The secret-authenticated service routes `/api/internal/*` and
+`/internal/collaboration/*` also bypass the user/IP limiter. Collaboration
+bootstrap, access checks, saves, publication and note projection share a service
+IP and must not consume one anonymous caller's 60/minute allowance. Their
+service-secret checks, per-file authorization and ingest admission gates still
+apply. Public file session/token/process routes retain their normal user limits.
 
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone

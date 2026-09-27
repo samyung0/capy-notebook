@@ -254,31 +254,6 @@ def write_bytes(blob_path: str, data: bytes | bytearray, content_type: str) -> N
             time.sleep(0.1 * attempt)
 
 
-def write_file(blob_path: str, local_path: str, content_type: str) -> None:
-    """Upload a cache file with the same three-attempt policy as byte writes."""
-    for attempt in range(1, _WRITE_ATTEMPTS + 1):
-        try:
-            with open(local_path, "rb") as body:
-                _s3_client().put_object(
-                    Bucket=cfg.b2_bucket,
-                    Key=blob_path,
-                    Body=body,
-                    ContentType=content_type,
-                )
-            return
-        except Exception:
-            if attempt == _WRITE_ATTEMPTS:
-                raise
-            log.warning(
-                "B2 cache write failed for %s; retrying (%s/%s)",
-                blob_path,
-                attempt,
-                _WRITE_ATTEMPTS,
-                exc_info=True,
-            )
-            time.sleep(0.1 * attempt)
-
-
 def download_file(
     blob_path: str,
     local_path: str,

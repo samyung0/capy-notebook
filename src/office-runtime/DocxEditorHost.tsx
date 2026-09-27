@@ -17,6 +17,7 @@ export function DocxEditorHost({
   onExporter,
   onFlusher,
   onError,
+  onPendingChange,
   onSave,
 }: {
   bytes: Uint8Array;
@@ -24,6 +25,7 @@ export function DocxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onError: (error: Error) => void;
+  onPendingChange: (pending: boolean) => void;
   onSave: () => void;
 }) {
   const editorRef = useRef<DocxEditorRef>(null);
@@ -51,6 +53,7 @@ export function DocxEditorHost({
         disableFindReplaceShortcuts
         documentBuffer={bytes}
         onError={onError}
+        onPendingChange={onPendingChange}
         // File > Save and Ctrl/Cmd+S request the checkpoint; nothing serializes.
         onSaveRequest={() => {
           onSave();

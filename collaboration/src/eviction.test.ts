@@ -1,13 +1,94 @@
-import { describe, expect, it } from 'vitest';
+import { Document, Hocuspocus } from '@hocuspocus/server';
+import { describe, expect, it, vi } from 'vitest';
 import {
   drainIsDurable,
   evictMaterialRoomEpoch,
+  flushRoomStores,
   parseRoomEvictionMode,
   RoomEvictionCoordinator,
   RoomEvictionState,
   shouldCloseUserConnections,
   shouldPreserveMaterialConnections,
 } from './eviction.js';
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+it.each([false, true])(
+  'waits for the complete Hocuspocus store lifecycle, already running: %s',
+  async (alreadyRunning) => {
+    const before = deferred();
+    const beforeEntered = deferred();
+    const after = deferred();
+    const afterEntered = deferred();
+    const save = vi.fn(async () => undefined);
+    const host = new Hocuspocus({
+      async afterStoreDocument() {
+        afterEntered.resolve();
+        await after.promise;
+      },
+      debounce: 60_000,
+      extensions: [
+        {
+          async onStoreDocument() {
+            beforeEntered.resolve();
+            await before.promise;
+          },
+          priority: 1000,
+        },
+      ],
+      maxDebounce: 60_000,
+      onStoreDocument: save,
+      quiet: true,
+    });
+    const document = new Document('source:f_eviction:epoch:1');
+    document.isLoading = false;
+    host.documents.set(document.name, document);
+    let flushed = false;
+    let draining: Promise<void> | undefined;
+    try {
+      await host.storeDocumentHooks(document, {
+        clientsCount: 0,
+        document,
+        documentName: document.name,
+        instance: host,
+        lastContext: {},
+        lastTransactionOrigin: undefined,
+      });
+      if (alreadyRunning)
+        void host.debouncer.executeNow(`onStoreDocument-${document.name}`);
+      draining = flushRoomStores(
+        host,
+        document.name,
+        async () => undefined,
+        2000
+      ).then(() => {
+        flushed = true;
+      });
+      await beforeEntered.promise;
+      expect(flushed).toBe(false);
+      expect(save).not.toHaveBeenCalled();
+      before.resolve();
+      await afterEntered.promise;
+      expect(flushed).toBe(false);
+      expect(save).toHaveBeenCalledOnce();
+      after.resolve();
+      await draining;
+      await host.unloadDocument(document);
+      expect(host.documents.has(document.name)).toBe(false);
+    } finally {
+      before.resolve();
+      after.resolve();
+      await draining;
+      document.destroy();
+    }
+  }
+);
 
 describe('local room eviction coordination', () => {
   it('runs concurrent duplicate room evictions once', async () => {

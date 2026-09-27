@@ -400,6 +400,7 @@ function OfficeRuntime() {
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
+              onPendingChange={reportHostPending}
               onSave={save}
             />
           ) : file.format === 'xlsx' ? (
@@ -420,6 +421,7 @@ function OfficeRuntime() {
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
+              onPendingChange={reportHostPending}
               onSave={save}
             />
           )

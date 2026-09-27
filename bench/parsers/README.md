@@ -84,6 +84,21 @@ prompt is changed.
 `build_office_fixtures.py` creates deterministic DOCX, PPTX, and XLSX canaries
 whose marker strings must survive Office conversion and parsing.
 
+The [September 27 storage comparison](reports/2026-09-27-office-storage.md)
+measures the six application fixtures and twelve larger or specialized controls
+with the pinned Office engine and PostgreSQL TOAST. Run
+`OFFICE_STORAGE_DATABASE_URL=postgresql://... pnpm exec tsx bench/parsers/scripts/office_storage.ts OUTPUT_DIRECTORY`
+after `pnpm office:prepare`, against an isolated loopback database. It asserts
+that export and rebase preserve its edits and records quota separately from
+stored payloads. The optional
+`pnpm exec playwright test --config bench/parsers/scripts/office_storage_ingest.config.ts`
+uses the authorized UAT journey environment, fresh run ID, verifier tunnel and
+normal cleanup to measure real upload, editing and reparse/index storage.
+For paired releases, set `OFFICE_STORAGE_INPUT_DIR` to frozen marked copies in
+`basic/` and `rich-content/` subdirectories so both runs upload identical bytes.
+Current Office receipt checks verify real parsing and the absence of both cache
+rows and any exact-key B2 parse-bundle versions.
+
 The August 28 accuracy harness belonged to the previous parser stack. The
 September 8 OpenDataLoader comparison instead freezes source PDFs and evaluates
 native parser outputs plus Capy's actual chunker and figure selector.

@@ -13,8 +13,9 @@ The live route is OpenDataLoader with the reviewed native repairs and selective
 RapidOCR on pages without a text layer (``parser/odl``).
 
 Artifacts are addressed by a fingerprint over the source object, route, parser
-version, and artifact schema. A retry, re-upload, or workspace
-clone of the same document hits the cached zip instead of parsing again.
+version, and artifact schema. A matching local ZIP can be reused until its
+short spool TTL expires. Database donors can independently reuse indexed content;
+otherwise a missing local artifact requires parsing the retained source again.
 """
 
 from __future__ import annotations
@@ -22,9 +23,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import os
 import shutil
-import tempfile
 import time
 import zipfile
 from collections.abc import Mapping
@@ -35,7 +34,6 @@ import requests
 
 from .. import obs
 from ..config import cfg
-from ..store import blobstore
 
 log = logging.getLogger("capy.parse.client")
 
@@ -144,10 +142,6 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     return f"artifacts/{fingerprint}.zip", fingerprint
 
 
-def durable_artifact_key(fingerprint: str) -> str:
-    return f"parse-bundles/{fingerprint}.zip"
-
-
 def _shared_path(key: str) -> Path:
     relative = PurePosixPath(key)
     if relative.is_absolute() or not relative.parts or ".." in relative.parts:
@@ -221,67 +215,6 @@ def _local_artifact(
     )
 
 
-def _restore_durable_artifact(
-    key: str,
-    fingerprint: str,
-    version: str,
-    *,
-    office: bool,
-) -> dict[str, Any] | None:
-    """Restore a verified B2 cache entry into the atomic local handoff path."""
-    if not cfg.b2_bucket:
-        return None
-    durable_key = durable_artifact_key(fingerprint)
-    path = _shared_path(key)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{fingerprint}-", dir=path.parent)
-    os.close(fd)
-    try:
-        downloaded = blobstore.download_file(
-            durable_key, temporary_name, cfg.parse_artifact_max_bytes
-        )
-        if downloaded is None:
-            return None
-        size, digest = downloaded
-        temporary_path = Path(temporary_name)
-        artifact = {
-            "key": key,
-            "size": size,
-            "sha256": digest,
-            "fingerprint": fingerprint,
-            "cached": True,
-            "durableKey": durable_key,
-        }
-        _validate_artifact_path(
-            temporary_path,
-            artifact,
-            version,
-            office=office,
-        )
-        temporary_path.chmod(0o640)
-        temporary_path.replace(path)
-        log.info("restored durable parse bundle %s into %s", durable_key, key)
-        return artifact
-    except Exception:
-        log.warning(
-            "could not restore durable parse bundle %s; parsing locally",
-            durable_key,
-            exc_info=True,
-        )
-        return None
-    finally:
-        try:
-            Path(temporary_name).unlink()
-        except FileNotFoundError:
-            pass
-        except OSError:
-            log.debug(
-                "could not remove durable parse-bundle temp file %s",
-                temporary_name,
-                exc_info=True,
-            )
-
-
 def _local_quarantine(fingerprint: str) -> tuple[str, str] | None:
     path = _shared_path(f"quarantine/{fingerprint}.json")
     try:
@@ -331,14 +264,6 @@ def _request_artifact(
             "parse artifact cache hit key=%s bytes=%s", artifact_key, artifact["size"]
         )
         return artifact
-    durable = _restore_durable_artifact(
-        artifact_key,
-        fingerprint,
-        version,
-        office=Path(upload_name).suffix.lower() in OFFICE_SUFFIXES,
-    )
-    if durable is not None:
-        return durable
     if quarantine := _local_quarantine(fingerprint):
         _raise_quarantine(quarantine)
     endpoint = _endpoint()
@@ -621,14 +546,13 @@ def ensure_artifact(
     return artifact
 
 
-def publish_durable_artifact(
+def validate_artifact(
     artifact: Mapping[str, Any],
     *,
     route: str,
     office: bool,
-) -> str | None:
-    """Verify a local handoff, then cache it in B2 without gating ingest."""
-    fingerprint = str(artifact.get("fingerprint") or "")
+) -> None:
+    """Verify the local handoff before the parse claim can complete."""
     version = parser_version(route)
     if str(artifact.get("version") or "") != version:
         raise ParserClientError("parsed artifact handoff has an unexpected version")
@@ -649,21 +573,6 @@ def publish_durable_artifact(
         except ParserClientError:
             pass
         raise
-    if not cfg.b2_bucket:
-        return None
-    durable_key = durable_artifact_key(fingerprint)
-    if artifact.get("durableKey") == durable_key:
-        return durable_key
-    try:
-        blobstore.write_file(durable_key, str(local_path), "application/zip")
-    except Exception:
-        log.warning(
-            "could not cache verified parse bundle %s; current ingest will continue",
-            durable_key,
-            exc_info=True,
-        )
-        return None
-    return durable_key
 
 
 def extract_artifact(

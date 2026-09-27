@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 import {
   focusReopenedSubmenu,
+  guardMenuEvent,
   MenuOpenContext,
   useMenuOpenState,
 } from './menuOpenState';
@@ -44,6 +45,8 @@ function ContextMenuContent({
         data-slot="context-menu-content"
         inert={!open}
         {...props}
+        onClickCapture={guardMenuEvent(open, props.onClickCapture)}
+        onKeyDownCapture={guardMenuEvent(open, props.onKeyDownCapture)}
       />
     </ContextMenuPrimitive.Portal>
   );
@@ -153,6 +156,8 @@ function ContextMenuSubContent({
         data-slot="context-menu-sub-content"
         inert={!open}
         {...props}
+        onClickCapture={guardMenuEvent(open, props.onClickCapture)}
+        onKeyDownCapture={guardMenuEvent(open, props.onKeyDownCapture)}
       />
     </ContextMenuPrimitive.Portal>
   );

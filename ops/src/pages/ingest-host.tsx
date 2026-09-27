@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatBytes, formatCount, formatDateTime, percent } from '@/format';
+import { workerResourceRows } from '@/ingest-metrics';
 
 const GIB = 1024 ** 3;
 
@@ -113,36 +114,10 @@ export function IngestHostPage() {
       })),
     [environment?.samples]
   );
-  const workerRows = useMemo(() => {
-    const buckets = new Map<
-      string,
-      {
-        ingestCpu: number;
-        ingestMemoryGiB: number;
-        parseCpu: number;
-        parseMemoryGiB: number;
-        sampledAt: string;
-      }
-    >();
-    for (const sample of environment?.workerSamples ?? []) {
-      const row = buckets.get(sample.sampledAt) ?? {
-        ingestCpu: 0,
-        ingestMemoryGiB: 0,
-        parseCpu: 0,
-        parseMemoryGiB: 0,
-        sampledAt: sample.sampledAt,
-      };
-      if (sample.role === 'parse') {
-        row.parseCpu = sample.cpuCores;
-        row.parseMemoryGiB = sample.memoryBytes / GIB;
-      } else {
-        row.ingestCpu = sample.cpuCores;
-        row.ingestMemoryGiB = sample.memoryBytes / GIB;
-      }
-      buckets.set(sample.sampledAt, row);
-    }
-    return [...buckets.values()];
-  }, [environment?.workerSamples]);
+  const workerRows = useMemo(
+    () => workerResourceRows(environment?.workerSamples ?? []),
+    [environment?.workerSamples]
+  );
 
   if (isPending) {
     return <PageLoading label="Loading ingest telemetry" />;
@@ -323,8 +298,8 @@ export function IngestHostPage() {
           <CardHeader>
             <CardTitle>Worker resources</CardTitle>
             <CardDescription>
-              Per-container cgroup use, aggregated by parse coordinator and
-              ingest worker role.
+              Per-container cgroup use, aggregated by import, parse, and ingest
+              worker role.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -376,10 +351,25 @@ export function IngestHostPage() {
                       yAxisId="cpu"
                     />
                     <Line
+                      dataKey="importCpu"
+                      dot={false}
+                      name="Import CPU cores"
+                      stroke="var(--chart-5)"
+                      yAxisId="cpu"
+                    />
+                    <Line
                       dataKey="parseMemoryGiB"
                       dot={false}
                       name="Parse memory"
                       stroke="var(--chart-3)"
+                      yAxisId="memory"
+                    />
+                    <Line
+                      dataKey="importMemoryGiB"
+                      dot={false}
+                      name="Import memory"
+                      stroke="var(--chart-5)"
+                      strokeDasharray="5 5"
                       yAxisId="memory"
                     />
                     <Line

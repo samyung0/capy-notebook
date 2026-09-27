@@ -2,7 +2,7 @@
 
 Local copies of the 29 documents used in the September 9 agentic evaluation. The PDFs contain 663 pages. The two slide decks include both the original PowerPoint and the exact converted PDF used for source checking.
 
-All PDF and original-file SHA256 hashes match the frozen evaluation inventory. These local binary files are ignored by Git.
+All PDF and original-file SHA256 hashes match the frozen evaluation inventory. All 29 PDFs and both original PowerPoint files are committed to Git, despite this directory's historical `local` name.
 
 - [64 evaluation questions](C:/WEB/capy-notebook/bench/rag/fixtures/odl-agentic-questions.json)
 - [5 difficult-source questions](C:/WEB/capy-notebook/bench/rag/fixtures/odl-agentic-stress-questions.json)

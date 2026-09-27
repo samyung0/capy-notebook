@@ -89,9 +89,10 @@ owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
 elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
 dialog should enforce.
 
-Office parsing keeps no persistent preview PDF. The PDF-free structured parse
-cache remains a platform artifact and does not increase `files.size_bytes` or user
-storage usage. Migration 0016 removes the obsolete preview columns and cache kind.
+Office parsing keeps its structured handoff temporarily on the ingest host, with
+no durable B2 parse cache or preview PDF. Temporary parse output is a platform
+cost and does not increase `files.size_bytes` or user storage usage. Migration
+0016 removes the preview columns; migration 0038 releases the B2 parse caches.
 Native PDFs reuse `blob_path`.
 Google-native imports now store editable Office exports; those source bytes and
 saved editing state still count toward the owner's quota. Export sizes can differ

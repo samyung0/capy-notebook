@@ -9,3 +9,4 @@
 - Developer Epo requested (2026-09-16) critical-path coverage for a signed-out workspace invitation, sign-in return, browser acceptance and persisted membership. e2e/uat/journeys/invitations.spec.ts
 - Developer Epo approved (2026-09-16) a 30-second PDF error assertion timeout matching the editor-loading allowance after CI exceeded five seconds. e2e/editor/frontend-workspaces.spec.ts
 - Developer approved (2026-09-18) excluding design artifacts from Biome checks and updating the workspace clone E2E test to select the action from the workspace dropdown. biome.jsonc e2e/sharing/workspace-sharing.spec.ts
+- Developer Epo approved (2026-09-27) UAT cleanup accepting exact recorded actor ID, email and private run metadata despite cross-clock creation-time skew; unrecorded signup recovery keeps conservative ownership screening. e2e/uat/journeys/cleanup.ts e2e/uat/journeys/runtime.test.ts

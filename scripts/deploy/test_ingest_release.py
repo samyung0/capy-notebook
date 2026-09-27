@@ -39,11 +39,11 @@ if args[0]=='rmi':
  image,tag=args[1].rsplit(':',1);data['images'][image].remove(tag);save();sys.exit(0)
 if args[0]=='inspect':
  service=args[-1];fmt=args[2]
- if 'Labels' in fmt:print(data['running'][service])
+ if 'Labels' in fmt:print(data['running'].get(service,data.get('stopped',{}).get(service)))
  elif 'RestartCount' in fmt:print(data.get('restarts',0))
  elif 'ExitCode' in fmt:print(data.get('exit_code',0))
  elif 'Health' in fmt:print('healthy')
- else:print('true')
+ else:print('true' if service in data['running'] else 'false')
  sys.exit(0)
 if args[0]=='compose':
  env_file=pathlib.Path(args[args.index('--env-file')+1])
@@ -57,12 +57,14 @@ if args[0]=='compose':
  if 'ps' in args:
   if os.environ.get('CAPY_FAIL_COMPOSE_PS') and data['head']=='b'*40:sys.exit(1)
   service=args[-1]
-  if service in data['running']:print(service)
+  if service in data['running'] or ('--all' in args and service in data.get('stopped',{})):print(service)
  elif 'stop' in args:
-  for service in args[args.index('stop')+1:]:data['running'].pop(service,None)
+  for service in args[args.index('stop')+1:]:
+   if service in data['running']:data.setdefault('stopped',{})[service]=data['running'].pop(service)
  elif 'up' in args:
   for service in args[args.index('up')+1:]:
-   if not service.startswith('-'):data['running'][service]=os.environ['RELEASE_SHA']
+   if not service.startswith('-'):
+    data['running'][service]=os.environ['RELEASE_SHA'];data.get('stopped',{}).pop(service,None)
  save()
 """
 
@@ -154,6 +156,36 @@ class ReleaseTest(unittest.TestCase):
 
     def state_data(self):
         return json.loads((self.root / "mock.json").read_text())
+
+    def test_prepare_accepts_consumers_stopped_for_schema_migration(self):
+        data = self.state_data()
+        data["stopped"] = {
+            service: data["running"].pop(service)
+            for service in ("parse-coordinator-uat", "worker-uat")
+        }
+        (self.root / "mock.json").write_text(json.dumps(data))
+        self.run_phase("prepare")
+        self.assertEqual(self.state_data()["running"], {"parser": CANDIDATE})
+        self.run_phase("activate")
+        self.assertEqual(
+            self.state_data()["running"],
+            {service: CANDIDATE for service in ["parser", *self.consumers]},
+        )
+
+    def test_prepare_rejects_missing_or_wrong_revision_stopped_consumer(self):
+        for revision in (None, "c" * 40):
+            with self.subTest(revision=revision):
+                data = self.state_data()
+                data["running"].pop("parse-coordinator-uat", None)
+                data["stopped"] = (
+                    {} if revision is None else {"parse-coordinator-uat": revision}
+                )
+                (self.root / "mock.json").write_text(json.dumps(data))
+                result = self.run_phase("prepare", success=False)
+                self.assertIn(
+                    "active parse-coordinator-uat SHA mismatch", result.stderr
+                )
+                self.assertFalse((self.state / "pending").exists())
 
     def test_prepare_blocks_other_owners_then_activates_all_consumers(self):
         self.run_phase("prepare")

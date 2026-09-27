@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { request } from '@playwright/test';
 import { savedTokenStatus } from './accounts';
-import { cleanupRun, validateCleanupTarget } from './cleanup';
+import {
+  cleanupRun,
+  validateCleanupTarget,
+  validateRegistrationOwnership,
+} from './cleanup';
 import { loadEnvironment, type UatEnvironment } from './environment';
 import {
   type Manifest,
@@ -17,8 +21,81 @@ import {
   writeEvidence,
   writeManifest,
 } from './evidence';
-import { refresh } from './office';
+import { settledSpend } from './files';
+import { refresh, savedExport } from './office';
 import type { UatRun } from './runtime';
+
+test('settled ingest spend waits for an uncertain attempt to reach its receipt deadline', async () => {
+  let openCalls = 1;
+  const recorded: string[] = [];
+  const run = {
+    attach: async () => {},
+    poll: async <T>(
+      _label: string,
+      read: () => Promise<T>,
+      accept: (value: T) => boolean
+    ) => {
+      assert.equal(accept(await read()), false);
+      openCalls = 0;
+      const settled = await read();
+      assert.equal(accept(settled), true);
+      return settled;
+    },
+    query: async () => [
+      {
+        calls: 3,
+        id: 'session_fixture',
+        open_calls: openCalls,
+        receipts: 2,
+        settled_at: '2026-09-28T00:00:00Z',
+        status: 'settled',
+      },
+    ],
+    record: async (_kind: string, id: string) => {
+      recorded.push(id);
+    },
+  } as unknown as UatRun;
+  await settledSpend(run, 'file_fixture');
+  assert.deepEqual(recorded, ['session_fixture']);
+  openCalls = 1;
+  await assert.rejects(
+    settledSpend(run, 'file_fixture', true),
+    assert.AssertionError
+  );
+});
+
+test('saved export accepts an untouched store-only source but keeps checkpoint hash checks', async () => {
+  const bytes = Buffer.from('The original stored source.');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  const row = {
+    base_blob_path: 'sources/untouched',
+    base_source_sha256: '',
+    checkpoint: 0,
+    format: 'text',
+    state: null as string | null,
+  };
+  const run = {
+    blob: async () => ({ bodyBase64: bytes.toString('base64'), sha256: hash }),
+    query: async () => [row],
+  } as unknown as UatRun;
+  assert.deepEqual((await savedExport(run, 'file_fixture')).bytes, bytes);
+  row.checkpoint = 1;
+  await assert.rejects(
+    savedExport(run, 'file_fixture'),
+    /missing its source hash/
+  );
+  row.checkpoint = 0;
+  row.state = 'AA==';
+  await assert.rejects(
+    savedExport(run, 'file_fixture'),
+    /missing its source hash/
+  );
+  row.state = null;
+  row.base_source_sha256 = hash;
+  assert.deepEqual((await savedExport(run, 'file_fixture')).bytes, bytes);
+  row.base_source_sha256 = '0'.repeat(64);
+  await assert.rejects(savedExport(run, 'file_fixture'), assert.AssertionError);
+});
 
 test('Office publication stops on a terminal pipeline job while the old file stays ready', async () => {
   const recorded: string[] = [];
@@ -62,6 +139,55 @@ test('Office publication stops on a terminal pipeline job while the old file sta
     /source refresh file_fixture failed in job_ingest: source publication gateway returned 503/
   );
   assert(recorded.includes('job_ingest'));
+});
+
+test('recorded cleanup ownership tolerates clock skew but never an identity mismatch', () => {
+  const email = 'uat-owned+clerk_test@example.test';
+  const manifest: Manifest = {
+    appUrl: 'https://app.uat.capynotebook.com',
+    bucket: 'capy-uat',
+    id: 'owned-run',
+    resources: [
+      {
+        createdAt: '2026-09-27T08:27:27.772Z',
+        details: { email },
+        id: 'user_owned',
+        kind: 'actor',
+      },
+    ],
+    revision: 'a'.repeat(40),
+    startedAt: '2026-09-27T08:27:27.772Z',
+    version: 1,
+  };
+  const user = {
+    createdAt: Date.parse('2026-09-27T08:27:18.723Z'),
+    emailAddresses: [{ emailAddress: email }],
+    id: 'user_owned',
+    privateMetadata: { capyUatRunId: manifest.id },
+  };
+  validateRegistrationOwnership(manifest, email, user);
+  for (const patch of [
+    { id: 'user_other' },
+    { emailAddresses: [{ emailAddress: 'other@example.test' }] },
+    { privateMetadata: {} },
+    { privateMetadata: { capyUatRunId: 'another-run' } },
+  ]) {
+    assert.throws(
+      () =>
+        validateRegistrationOwnership(manifest, email, { ...user, ...patch }),
+      /mismatch/
+    );
+  }
+  const unrecorded = { ...manifest, resources: [] };
+  assert.throws(
+    () => validateRegistrationOwnership(unrecorded, email, user),
+    /ownership mismatch/
+  );
+  validateRegistrationOwnership(unrecorded, email, {
+    ...user,
+    createdAt: Date.parse(manifest.startedAt),
+    privateMetadata: {},
+  });
 });
 
 test('cleanup requires the original target and exact run-owned registration intent', () => {
@@ -201,7 +327,7 @@ test('failed pre-purge inventory preserves accounts and a resumable failure repo
     `#!/usr/bin/env node
 let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end',()=>{
  const request=JSON.parse(input);
- if(request.sql.includes('UNION SELECT source_blob_path')) {
+ if(request.sql.includes('SELECT blob_path AS key FROM files')) {
   process.stderr.write('UAT verifier failed (OfflineInventoryFailure)');process.exit(1);
  }
  process.stdout.write('[]');
@@ -255,8 +381,9 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
           },
         ],
       });
-    if (url.pathname === '/v1/users')
-      return Response.json({ data: [], total_count: 0 });
+    if (url.pathname === '/v1/users') return Response.json([]);
+    if (url.pathname === '/v1/users/count')
+      return Response.json({ object: 'total_count', total_count: 0 });
     if (url.pathname === '/v1/account')
       return Response.json({ id: 'acct_fixture' });
     if (url.hostname === 'sentry.io') return Response.json({ data: [] });
@@ -311,7 +438,12 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
     assert(
       result.cleanup?.failed.includes(
         'Capture owned storage and worker traces before account purge'
-      )
+      ),
+      JSON.stringify({
+        cleanup: result.cleanup,
+        nodeEnv: process.env.NODE_ENV,
+        paths,
+      })
     );
     assert(
       result.cleanup?.failed.some((failure) =>

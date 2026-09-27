@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { strFromU8, unzipSync, zipSync } from 'fflate';
+import { verify } from './evidence';
 import type { Actor, UatRun } from './runtime';
 
 export const fact = 'Wetland plants absorb carbon and protect the shoreline.';
@@ -320,14 +321,29 @@ export async function settledSpend(
   fileId: string,
   noCalls = false
 ) {
-  const sessions = await run.query(
-    `SELECT DISTINCT p.id,p.status,p.settled_at,
+  // A timed-out provider attempt can outlive its settled parent session.
+  // Ingest allows 120 s plus 5 min for its receipt, then a minutely sweep.
+  const sessions = await run.poll(
+    `settled provider calls ${fileId}`,
+    () =>
+      run.query(
+        `SELECT DISTINCT p.id,p.status,p.settled_at,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id AND c.status='open') AS open_calls,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id) AS calls,
     (SELECT count(*)::int FROM usage_events u WHERE u.reservation_id=p.id) AS receipts
     FROM provider_sessions p JOIN jobs j ON j.payload->>'reservationId'=p.id
     WHERE j.payload->>'fileId'=%s`,
-    [fileId]
+        [fileId]
+      ),
+    (rows) =>
+      rows.length > 0 &&
+      rows.every(
+        (row) =>
+          (row.status === 'settled' || row.status === 'released') &&
+          row.settled_at &&
+          row.open_calls === 0
+      ),
+    8 * 60_000
   );
   assert(sessions.length > 0, 'ingest must have a recorded spend reservation');
   for (const session of sessions) {
@@ -355,7 +371,7 @@ export async function noProviderCalls(run: UatRun, workspaceId: string) {
   assert.deepEqual(rows[0], { sessions: 0, usage: 0 });
 }
 
-export async function officeBundle(run: UatRun, fileId: string) {
+export async function officeParseReceipt(run: UatRun, fileId: string) {
   const row = await fileRow(run, fileId);
   // Successful ingest clears the file's diagnostic local-bundle reference.
   // The completed continuation retains the receipt for this exact source.
@@ -375,7 +391,10 @@ export async function officeBundle(run: UatRun, fileId: string) {
   const fingerprint = string(receipt.fingerprint);
   const version = string(receipt.version);
   assert.match(fingerprint, /^[a-f0-9]{64}$/);
-  assert(version.length > 0);
+  assert(version.endsWith(`+${run.env.expectedRevision}`));
+  assert.equal(receipt.key, `artifacts/${fingerprint}.zip`);
+  assert.match(string(receipt.sha256), /^[a-f0-9]{64}$/);
+  assert(Number(receipt.size) > 0);
   const format = string(row.name).split('.').at(-1);
   const attempts = await run.query(
     `SELECT a.source_format,a.release_sha,a.environment,a.parse_pages,a.donor_reused,
@@ -402,51 +421,17 @@ export async function officeBundle(run: UatRun, fileId: string) {
     'SELECT object_path,kind FROM artifact_cache WHERE source_sha256=%s',
     [row.source_sha256]
   );
-  assert(caches.every((cache) => cache.kind !== 'office_preview'));
-  const bundle = caches.find((cache) => cache.kind === 'parse_bundle');
-  // The required parser handoff is local. B2 bundle caching is optional.
-  if (!bundle) {
-    await run.attach(`${fileId}-bundle`, {
-      attempts,
-      receipt,
-      status: 'optional cache unavailable',
-    });
-    return;
-  }
-  const key = string(bundle.object_path);
-  await run.record('blob', key, {
-    cache: true,
-    fileId,
-    sourceSha256: row.source_sha256,
-  });
-  const stored = await run.blob(key);
-  assert.equal(stored.sha256, receipt.sha256);
-  assert.equal(stored.size, receipt.size);
-  const parts = unzipSync(Buffer.from(stored.bodyBase64, 'base64'));
-  assert(
-    Object.keys(parts).every((name) => !name.toLowerCase().endsWith('.pdf'))
+  assert.equal(
+    caches.length,
+    0,
+    'Office parsing must not create a durable cache'
   );
-  const manifest = object(JSON.parse(strFromU8(parts['manifest.json'])));
-  assert.equal(manifest.schema, 'capy-parser-bundle-v4');
-  assert.equal(manifest.source_fingerprint, fingerprint);
-  assert.equal(manifest.parser_version, version);
-  const blocks: unknown = JSON.parse(strFromU8(parts['content_list.json']));
-  assert(Array.isArray(blocks));
-  const refinement = object(JSON.parse(strFromU8(parts['refinement.json'])));
-  const evidence = object(refinement.page_evidence);
-  assert(Array.isArray(evidence.page_texts) && evidence.page_texts.length > 0);
-  assert(Array.isArray(evidence.visible_headings));
-  assert(
-    evidence.visible_headings.every(
-      (i) => Number.isInteger(i) && Number(i) >= 0 && Number(i) < blocks.length
-    )
-  );
-  await run.attach(`${fileId}-bundle`, {
-    entries: Object.keys(parts),
-    manifest,
-    pageCount: evidence.page_texts.length,
-    receipt,
+  const versions = await verify<unknown[]>({
+    key: `parse-bundles/${fingerprint}.zip`,
+    operation: 'versions',
   });
+  assert.deepEqual(versions, [], 'Office parsing wrote a retired B2 bundle');
+  await run.attach(`${fileId}-parse-receipt`, { attempts, receipt });
 }
 
 export async function trashRestorePurge(run: UatRun, fileId: string) {

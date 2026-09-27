@@ -57,6 +57,9 @@ var exemptPrefixes = []string{
 	"/readyz",
 	"/webhooks/",
 	"/api/internal/",
+	// Collaboration has no Clerk identity; all rooms share its service IP.
+	// Its handlers authenticate X-Collaboration-Secret themselves.
+	"/internal/collaboration/",
 	"/openapi.yaml",
 	"/docs",
 }

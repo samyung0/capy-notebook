@@ -53,7 +53,6 @@ flowchart LR
   Coordinator --> Download[One B2 download + trusted SHA]
   Download --> Parse[Netcup OpenDataLoader + RapidOCR]
   Parse --> Artifact[Immutable local artifact]
-  Artifact -. verified best-effort cache .-> ParseCache[(B2 parse bundle)]
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
@@ -649,20 +648,16 @@ file directly. That local atomic ZIP is the required parser-to-ingest handoff
 `document.md`, `refinement.json` with frozen furniture and Office page evidence,
 `parsed.pdf` only for repaired native PDF sources, and `images/`). Office bundles
 contain no PDF. The parser freezes page text and visible-heading proofs before
-discarding the temporary conversion, preserving downstream confidence/heading checks. A failed B2 cache write must never fail the
-current parse or ingest.
+discarding the temporary conversion, preserving downstream confidence/heading checks.
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
-manifest identity, content list, refinement, and Office evidence, it tries to copy
-the ZIP to `parse-bundles/{parse_fingerprint}.zip` in B2. The write gets exactly
-three total attempts and is best effort. Cache-row registration is best effort
-too. Only a confirmed write whose object still exists after registration stays
-in `artifact_cache`; otherwise the continuation drops `durableKey` and uses the
-required local ZIP. If the local fingerprint bundle is
-absent for a later identical source, the coordinator may download that B2 copy,
-verify the same contract, and atomically install it in the shared volume. A
-missing, unavailable, or invalid B2 copy falls through to the parser. It does not
-fail parsing.
+manifest identity, content list, refinement, and Office evidence, it atomically
+enqueues the ingest continuation with that local descriptor. No document parse
+output is uploaded to B2. Ready database donors reuse indexed chunks and
+compatible embeddings independently of the local artifact. When neither a usable
+donor nor a matching local artifact exists, the retained source is parsed again.
+Migration `0038` releases the retired B2 parse caches through the existing
+deletion outbox with its 15-minute reader grace, then removes that cache kind.
 
 The worker clears the file's diagnostic local parse-bundle reference after
 successful ingest. A job stores its checksum-verified local source descriptor
@@ -670,10 +665,8 @@ in its payload and retains that file across parser-capacity, external-provider,
 and retry requeues. This prevents another source-object download for the same
 job. It is deleted only after committed success or terminal cleanup. An idle
 sweep removes abandoned sources after two hours and local fingerprint bundles
-after six hours. Durable parse-bundle reuse copies use the same last-use B2
-cache TTL and deletion outbox as derived-text artifacts. If all
-three upload attempts fail, another upload of the same source cannot reuse that
-parse once the local bundle is gone and must run the parser again.
+after six hours, protecting artifacts named by pending or running jobs.
+Local cleanup runs on the ingest worker's idle five-minute sweep.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
 identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
@@ -799,14 +792,11 @@ progress. A vanished object loses its cache row and the current ingest keeps its
 in-memory result. Updating `files.caption_blob_path` is diagnostic and follows
 the same best-effort rule; a failed pointer write cannot fail chunking or
 indexing. Caption association ownership and live reuse authorization are
-described below. The
-document parse ZIP follows the same best-effort B2 reuse rule after verification,
-but its required parser-to-ingest handoff remains the atomic local file.
+described below. Document parsing uses only its validated local handoff.
 Derived-cache reads and donor `HEAD` checks are optional too: a B2 read failure
 is a cache miss and the worker runs the transformation from the required source
 instead. Source-object downloads remain strict. Office ingest and donor reuse
-require no preview publication. The PDF-free structured bundle keeps its existing
-best-effort durable-cache behavior.
+require no preview publication or B2 parse cache.
 If full validation rejects a fingerprint-addressed local parse bundle before
 handoff, only that exact bundle is discarded; the existing second parse attempt
 then asks the parser to rebuild it instead of failing on the same sticky cache file.

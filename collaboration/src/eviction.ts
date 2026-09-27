@@ -1,3 +1,33 @@
+import type { Hocuspocus } from '@hocuspocus/server';
+
+/** Waits for extension hooks and queued app saves, not just the database call. */
+export async function flushRoomStores(
+  host: Hocuspocus,
+  room: string,
+  waitForStores: (room: string) => Promise<void>,
+  timeoutMs: number
+) {
+  const key = `onStoreDocument-${room}`;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    await host.debouncer.executeNow(key);
+    await waitForStores(room);
+    const document = host.documents.get(room);
+    if (
+      !host.debouncer.isDebounced(key) &&
+      !host.debouncer.isCurrentlyExecuting(key) &&
+      !document?.saveMutex.isLocked()
+    ) {
+      return;
+    }
+    if (Date.now() >= deadline)
+      throw new Error(
+        'collaboration store hooks did not finish before eviction'
+      );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 /** Coordinates local room eviction without conflating separate later events. */
 export class RoomEvictionCoordinator {
   private readonly completionTtlMs: number;
