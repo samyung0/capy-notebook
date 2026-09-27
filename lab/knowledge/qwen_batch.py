@@ -104,6 +104,7 @@ def verify_inputs(directory: Path) -> dict:
 
 
 def client_for(directory: Path, env_file: Path | None) -> batch.BatchClient:
+    # Alibaba keys were revoked; ask the developer for a new key and base URL.
     config = dict(dotenv_values(env_file)) if env_file else {}
     config.update(
         {

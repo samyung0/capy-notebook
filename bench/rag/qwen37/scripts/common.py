@@ -53,6 +53,7 @@ DIM = 2560
 
 
 def load_env() -> dict[str, str]:
+    # Alibaba keys were revoked; ask the developer for a new Singapore key/base URL.
     env = {}
     for line in (REPO / ".env.local").read_text(encoding="utf-8").splitlines():
         if "=" in line and not line.lstrip().startswith("#"):

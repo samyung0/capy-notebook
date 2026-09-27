@@ -100,6 +100,7 @@ def render(
 
 
 async def ocr_transcribe(data_url: str, route: str) -> str:
+    # Alibaba keys were revoked; ask the developer for a new Beijing key before OCR.
     key = os.environ.get("ALIBABA_API_KEY")
     if not key:
         raise RuntimeError(

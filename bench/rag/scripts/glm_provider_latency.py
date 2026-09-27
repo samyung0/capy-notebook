@@ -41,6 +41,7 @@ BACKSTOP_S = 90.0
 
 
 def _env() -> dict[str, str]:
+    # TOKENHUB was revoked; ask the developer for a new key before live use.
     env = {}
     for line in (REPO / ".env.local").read_text(encoding="utf-8").splitlines():
         m = re.match(r"\s*([A-Z_]+)\s*=\s*(.*)", line)

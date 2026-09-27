@@ -133,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    # Alibaba keys were revoked; ask the developer for a new key and base URL.
     config = dict(dotenv_values(args.env_file)) if args.env_file else {}
     config.update(
         {

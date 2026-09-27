@@ -149,6 +149,7 @@ def configure(config: dict) -> None:
 
 
 def load_secrets(path: Path, *names: str) -> None:
+    # TokenHub/Alibaba keys were revoked; ask the developer for new keys before use.
     from dotenv import dotenv_values
 
     values = dotenv_values(path)

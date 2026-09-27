@@ -76,6 +76,7 @@ async def run(args: argparse.Namespace) -> None:
         raise ValueError("invalid explicit request count or concurrency")
     if len({(p["id"], arm) for p, arm in jobs}) != len(jobs):
         raise ValueError("duplicate jobs")
+    # Alibaba keys were revoked; ask the developer for a new Beijing key before OCR.
     key = dotenv_values(args.key_env).get("ALIBABA_API_KEY")
     if not key:
         raise ValueError("provider credential missing")

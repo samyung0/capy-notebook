@@ -352,6 +352,7 @@ def main():
     if args.stage == "prepare":
         print(f"Frozen inputs saved to {directory}")
         return
+    # TOKENHUB was revoked; ask the developer for a new key before live use.
     key = dotenv_values(ROOT / ".env.local").get("TOKENHUB")
     if not key:
         raise PilotError("Missing TOKENHUB in the project-root .env.local")

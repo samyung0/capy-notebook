@@ -137,6 +137,7 @@ async def run_case(case: tuple, live: bool) -> dict:
             if part.get("type") == "image_url"
         )
         if live:
+            # TOKENHUB was revoked; ask the developer for a new key before live use.
             key = dotenv_values(ROOT / ".env.local").get("TOKENHUB")
             if not key:
                 raise RuntimeError("TOKENHUB credential unavailable")

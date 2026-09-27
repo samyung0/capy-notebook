@@ -59,6 +59,7 @@ def image_part(jpeg: bytes) -> dict:
 
 
 def alibaba_base() -> str:
+    # Alibaba keys were revoked; ask the developer for a new key and base URL.
     url = os.environ.get("ALIBABA_BASE_URL")
     if not url or not os.environ.get("ALIBABA_API_KEY"):
         raise LLMError("ALIBABA_BASE_URL and ALIBABA_API_KEY are needed in .env.local")

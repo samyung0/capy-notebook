@@ -40,6 +40,7 @@ INGEST_S = 120.0  # CAPY_INGEST_PROVIDER_TIMEOUT_S default
 
 
 def _env() -> dict[str, str]:
+    # Alibaba keys were revoked; ask for new Beijing/Singapore keys and base URLs.
     env = {}
     for line in (REPO / ".env.local").read_text(encoding="utf-8").splitlines():
         m = re.match(r"\s*([A-Z_]+)\s*=\s*(.*)", line)

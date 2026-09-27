@@ -44,6 +44,7 @@ import common as q37  # noqa: E402
 
 
 def load_env() -> dict[str, str]:
+    # Alibaba keys were revoked; ask for new Beijing/Singapore keys and base URLs.
     env = {}
     for line in (REPO / ".env.local").read_text(encoding="utf-8").splitlines():
         if "=" in line and not line.lstrip().startswith("#"):
