@@ -464,6 +464,7 @@ export function CollaborationProvider({
       >
         <label className="mt-3 flex flex-col gap-1.5">
           <Textarea
+            aria-label={m.editor_comment()}
             onChange={(event) => setComment(event.target.value)}
             rows={4}
             value={comment}

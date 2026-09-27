@@ -1,11 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import {
   type APIRequestContext,
   type Browser,
   test as base,
   type Page,
 } from '@playwright/test';
-import type { Material } from '../../src/api/gen/model/material';
-import type { Workspace } from '../../src/api/gen/model/workspace';
+import type { Material, Workspace } from '../../src/api/types';
 import { e2eHeaders, seed, users } from './seed';
 
 type MaterialFactory = {
@@ -108,7 +108,8 @@ export const test = base.extend<ActorFixtures>({
                 ],
               },
               kind: 'note',
-              title,
+              // Trash retains names, so retries need a fresh fixture name.
+              title: `${title} ${randomUUID()}`,
             },
           }
         );
