@@ -102,6 +102,7 @@ export async function pasteRich(
     const box = await canvas.boundingBox();
     assert(box, 'slide canvas cannot receive a pointer action');
     await canvas.click({
+      clickCount: 2,
       position: { x: box.width * 0.25, y: box.height * 0.265 },
     });
     const input = frame.getByTestId('pptx-text-input');

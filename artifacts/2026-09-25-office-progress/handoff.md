@@ -34,7 +34,21 @@ HTTP package passes after removing it, and every other Go package passed.
 The previous main CI also asserted the removed legacy quiz prompt shape; its
 creation check now verifies the API-created draft, editor route and Save state.
 Local execution of that Docker-backed browser check was blocked by Docker Hub
-image metadata timeouts before any test started. CI will verify it after push.
+image metadata timeouts before any test started. CI run
+[36309921222](https://github.com/samyung0/capy-notebook/actions/runs/36309921222)
+then passed the Docker-backed browser suite, backend, frontend, pipeline and pin
+checks. Its editor suite passed all Office cases but found a stale workspace
+settings assertion: the dialog now closes after a successful Save, as recorded
+in `human/frontend/motion.md`, so the test cannot wait for its Save button to
+become enabled again. `15c0dbe0` removes that obsolete expectation and retains
+the close, reopen and persisted-description checks. That case and the workspace
+mode/new-tab case pass locally without retries.
+
+The same CI run recorded one flaky new-tab event wait. Its trace proves a second
+page loaded `/workspaces/ws_bio?file=f_1` with HTTP 200, fetched the PDF, and left
+the original material page unchanged. Playwright's context `page` event wait
+did not settle. The retry passed. The underlying missed-event cause is not
+established, so no speculative navigation-code change was made.
 
 Language preservation changes the four DOCX golden seeds. Migration
 `0036_docx_language_seed_reset.sql` uses the existing guarded DOCX-only reset.
@@ -116,3 +130,114 @@ substitute for that gate on a deployed revision. After green CI, use the existin
 UAT maintenance, deployment and full journey workflow when release work is
 requested. Rich PPTX now includes paste-driven export-only publication, and the
 DOCX preservation assertion no longer exempts language tags.
+
+## Independent Astra review and storage measurement
+
+The independent review was explicitly dispatched with `gpt-6-astra`, `xhigh`,
+and a fresh context. It found no actionable correctness, data-loss, integration
+or test-validity issue in Capy `50302c8e` and BetterOffice `99d5bcc4`. Independent
+checks passed: 85 native cases, 32 shared checkpoint/golden cases, six Chromium
+cases, nine offline UAT verifier cases, and byte-identical fresh seeds for all
+six app fixtures. [The review record](review-astra-xhigh-2026-09-27.md) also covers
+the later deployed findings and storage methodology. The detailed original
+report is retained at `/private/tmp/capy-office-astra-xhigh-review.md`. The child cannot independently
+introspect a runtime model ID; the model statement records the accepted spawn
+configuration.
+
+Current source/editing measurements for 18 committed sample files are in
+[the storage report](../../bench/parsers/reports/2026-09-27-office-storage.md).
+They cover seed, saved checkpoint, compressed database values, logical quota,
+export capture, later-edit rebase, quiet publication, browser drafts and
+parser/index lifecycle costs. Live UAT parse/index measurements now cover all six application fixtures, with
+verified cleanup and before/after release identities. Deployed gate results
+are recorded below.
+
+## Deployed monitoring findings, September 27
+
+CI [36311852988](https://github.com/samyung0/capy-notebook/actions/runs/36311852988)
+passed at `15c0dbe0`: 39 Docker browser cases and 77 editor cases, with one
+intentional skip and no retries. UAT app deployment
+[36312867296](https://github.com/samyung0/capy-notebook/actions/runs/36312867296)
+and UAT ingest deployment
+[36313798976](https://github.com/samyung0/capy-notebook/actions/runs/36313798976)
+succeeded at that revision. All four public release markers matched, migration
+0036 was applied, and Office editing was resumed. Production was untouched.
+
+The separate full UAT gate `36313946437` and a six-file live storage run then
+exposed three additional failure paths:
+
+- Collaboration uses `/internal/collaboration/`, while the rate limiter only
+  exempted `/api/internal/`. Every editor therefore consumed the same anonymous
+  60/minute service-IP budget. Logs correlate actual access/bootstrap 429s with
+  the PPTX storage case failing to save. A real Redis test reproduces all five
+  sampled internal-route refusals before the prefix fix and passes afterward.
+  Public rate limits and service-secret/actor/ingest checks remain enforced.
+- A normal text-source trash action raced a pending Hocuspocus save. Redis had
+  started acquiring the store lock, but the application store counter was still
+  empty. Both unload attempts refused pending work, then a delayed store reported
+  the intentional discard as a failed save. The fix waits for all native hook
+  work and queued application saves, and skips stores during intentional discard.
+  Drain still requires durable success. Astra reproduced the exact error ordering
+  with the pinned library and also verified the queue handoff timing gap.
+- Hocuspocus does not await stateless callbacks. A save failure was already
+  reported and sent to the client, then leaked as an unhandled rejection. The
+  checkpoint-request callback now contains that handled rejection while other
+  persistence callers continue to receive failures.
+
+The interrupted storage run `office-storage-20260927-15c0dbe0` completed all three
+phases for DOCX and XLSX. Its cleanup recorded `failed: []`, and before/after
+ingest identities matched. Those measurements are retained. The other four files subsequently completed
+on the corrected `2f54d84a` UAT revision, with verified cleanup and release
+identities. The production-code corrections received bounded Astra xhigh reviews.
+
+The full gate finished with eleven journeys passing. Rich XLSX then failed in
+the saved-export helper before its first real checkpoint; rich PPTX did not
+run. An untouched store-only source legitimately has checkpoint zero, NULL
+state and an empty base hash. The helper incorrectly asserted a populated hash
+for that state. Its correction permits only the untouched combination and
+still rejects missing or mismatched hashes after a save. The fresh Astra
+closing reviewer confirmed the contract and the focused verifier cases.
+The corrected rich-XLSX journey passed on unchanged UAT `15c0dbe0`; cleanup
+returned `failed: []` and both ingest identity checks passed. Release-scoped
+Sentry recorded no errors during that diagnostic.
+
+The reviewed service, eviction and helper fixes are pushed to `main` in
+`2f54d84a`. CI [36315657945](https://github.com/samyung0/capy-notebook/actions/runs/36315657945)
+passed with 39 Docker browser and 77 editor cases, one intentional skip and no
+retries. UAT app [36316927158](https://github.com/samyung0/capy-notebook/actions/runs/36316927158)
+and ingest [36317341036](https://github.com/samyung0/capy-notebook/actions/runs/36317341036)
+deployed that exact revision. All four public release markers matched and
+editing remained enabled.
+
+The full gate [36317423600](https://github.com/samyung0/capy-notebook/actions/runs/36317423600)
+passed all nine authenticated checks and 12 of 13 lifecycle journeys. The last
+PPTX case single-clicked a body shape after switching slides, then expected text
+focus. The editor uses the first click to select a shape and a double click to
+enter text. The helper now double-clicks the existing canvas target. Its strict
+focus, charge, export and publication checks remain. The corrected focused
+PPTX journey passed in 3.5 minutes on unchanged UAT `2f54d84a`. Gate cleanup recorded no failed
+resources, and both ingest identity checks passed. Sentry's only error for this
+release during that run matches the deliberately oversized CSV rejection by
+exact trace ID.
+
+## Pending input follow-up
+
+The storage probe exposed a separate measurement race: a billing read completed
+before the requested DOCX checkpoint began. The probe now waits for that edit's
+actual exported server content before the strict accounting comparison.
+
+Astra then independently reproduced a real save-status gap in DOCX's worker
+input queue and PPTX image decoding. Accepted work had not yet emitted its Yjs
+update, so the parent could show Saved and omit the close warning while Save
+itself correctly waited for the native flush. Both editors now report that
+pending work through the existing source-session path. Their native updates
+arrive before pending clears, and the checkpoint receipt still controls Saved.
+Failed DOCX input stays pending; stale completions cannot clear a new session.
+
+Both full-app before/after reproductions, a withheld-receipt check, 42 native
+tests and two additional stale-lifetime cases passed. The original Astra
+reviewer verified the fixes and a fresh Astra xhigh closing pass found no
+actionable issue. The BetterOffice change is reviewed and pushed to `capy-ci`
+at `64bbde820878c769e7b6678ac36880c618734b79`; it changes React pending callbacks,
+not native seed output or checkpoint encoding. The retained reviews and
+measurement provenance are summarized in [the review record](review-astra-xhigh-2026-09-27.md).

@@ -309,6 +309,10 @@ Run language metadata survives the native seed, Yjs projection and OOXML export.
 PPTX uses a native textarea for typing, clipboard paste and IME composition.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
+DOCX's accepted input queue and PPTX image decoding report pending work to the
+host immediately. That pending state keeps Saving and the close warning active
+until native updates reach the shared document, whose durable receipt then
+controls Saved. A failed DOCX input queue stays pending until the session ends.
 
 Each incoming source update is checked without copying the room: contributor
 markers against the decoded update, and size against an estimate kept from the

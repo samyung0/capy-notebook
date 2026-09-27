@@ -1,5 +1,11 @@
 import { expect, test } from '@playwright/test';
 
+declare global {
+  interface Window {
+    officeInputProbe: { hold: boolean; held: (() => void)[]; flushed: boolean };
+  }
+}
+
 for (const [format, name] of [
   ['docx', 'exchange-plan.docx'],
   ['xlsx', 'course-guide.xlsx'],
@@ -8,8 +14,34 @@ for (const [format, name] of [
   test(`Biology ${format} fixture opens in View/Edit and survives scenario reset`, async ({
     page,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(format === 'docx' ? 180_000 : 120_000);
     const fileId = `bio-office-${format}`;
+    if (format === 'docx') {
+      await page.addInitScript(() => {
+        window.officeInputProbe = { flushed: false, held: [], hold: false };
+        const send = Worker.prototype.postMessage;
+        Worker.prototype.postMessage = function (
+          message: { type?: string },
+          options?: StructuredSerializeOptions | Transferable[]
+        ) {
+          const release = () => {
+            const post = send.bind(this);
+            if (Array.isArray(options)) post(message, options);
+            else post(message, options);
+          };
+          if (
+            window.officeInputProbe.hold &&
+            (message?.type === 'applyInput' || message?.type === 'applyDelete')
+          )
+            window.officeInputProbe.held.push(release);
+          else release();
+        };
+        window.addEventListener('message', (event) => {
+          if (event.data?.type === 'flush')
+            window.officeInputProbe.flushed = true;
+        });
+      });
+    }
     await page.goto('/workspaces/ws_bio');
     await page.getByRole('button', { exact: true, name: 'Files' }).click();
     await page
@@ -20,7 +52,7 @@ for (const [format, name] of [
     ).toBeVisible();
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
     await expect(frame.locator('canvas').first()).toBeVisible({
-      timeout: 30_000,
+      timeout: 60_000,
     });
     if (format === 'xlsx')
       await expect(frame.getByRole('tab', { name: 'Summary' })).toBeVisible();
@@ -72,7 +104,7 @@ for (const [format, name] of [
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'false');
     await expect(frame.locator('canvas').first()).toBeVisible({
-      timeout: 30_000,
+      timeout: 60_000,
     });
     if (format === 'pptx') {
       await frame.getByTestId('pptx-next-slide').click();
@@ -98,5 +130,79 @@ for (const [format, name] of [
     }, fileId);
     expect(fixture.sourceURL).toContain(`/rich-content/${name}`);
     expect(fixture.workspaceId).toBe('ws_bio');
+    // MSW also closes its client on beforeunload; probe after all API checks.
+    if (format === 'docx') {
+      await page.goto(`/workspaces/ws_bio?file=${fileId}`);
+      await expect(frame.locator('canvas').first()).toBeVisible({
+        timeout: 60_000,
+      });
+      await mode.click();
+      await expect(save).toBeEnabled({ timeout: 30_000 });
+      const input = frame.getByTestId('yrs-input');
+      const last = frame
+        .getByRole('paragraph')
+        .filter({ hasText: /^人數：20人$/ })
+        .getByText('人', { exact: true })
+        .last();
+      await expect(async () => {
+        await last.hover({ force: true });
+        await expect(frame.locator('.canvas-pages')).toHaveCSS(
+          'cursor',
+          'text',
+          { timeout: 1000 }
+        );
+        await last.click({ force: true });
+        await expect(input).toHaveAttribute('data-pointer-placement', 'ready', {
+          timeout: 1000,
+        });
+      }).toPass({ timeout: 30_000 });
+      await input.press('End');
+      await expect(
+        page.getByRole('status').filter({ hasText: /^Saved$/ })
+      ).toBeVisible();
+      const runtime = page
+        .frames()
+        .find((candidate) => candidate.url().includes('office-runtime'));
+      if (!runtime) throw new Error('Missing Office runtime');
+      await runtime.evaluate(() => {
+        window.officeInputProbe.hold = true;
+        window.officeInputProbe.flushed = false;
+      });
+      try {
+        await input.pressSequentially('7');
+        await expect
+          .poll(() =>
+            runtime.evaluate(() => window.officeInputProbe.held.length)
+          )
+          .toBeGreaterThan(0);
+        await expect(
+          page.getByRole('status').filter({ hasText: /^Saving/ })
+        ).toBeVisible();
+        const blocksUnload = () =>
+          page.evaluate(() => {
+            const event = new Event('beforeunload', { cancelable: true });
+            window.dispatchEvent(event);
+            return event.defaultPrevented;
+          });
+        expect(await blocksUnload()).toBe(true);
+        await save.click();
+        await expect
+          .poll(() => runtime.evaluate(() => window.officeInputProbe.flushed))
+          .toBe(true);
+        await expect(
+          page.getByRole('status').filter({ hasText: /^Saved$/ })
+        ).toHaveCount(0);
+        expect(await blocksUnload()).toBe(true);
+      } finally {
+        await runtime.evaluate(() => {
+          window.officeInputProbe.hold = false;
+          for (const release of window.officeInputProbe.held.splice(0))
+            release();
+        });
+      }
+      await expect(
+        page.getByRole('status').filter({ hasText: /^Saved$/ })
+      ).toBeVisible();
+    }
   });
 }

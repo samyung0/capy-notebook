@@ -2528,7 +2528,7 @@ run against the environment's database:
 A maintenance export-only publication makes the saved state the file's bytes
 without a parser or provider call: the collaboration service exports and
 uploads the candidate as for any refresh, and finalizing it replaces the file's
-bytes, bumps the epoch, stores the seed of the export as the state, drops the
+bytes, bumps the epoch, returns the state to NULL so it derives from the export, drops the
 file's index and evicts the old room (editing is paused, so no writer needs a
 flush). Outside the window a store-only file's automatic export-only
 publication goes through the handoff like a refresh instead. Unless the file

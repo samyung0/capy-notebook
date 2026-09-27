@@ -15,6 +15,7 @@ export function PptxEditorHost({
   onFlusher,
   fileName,
   onError,
+  onPendingChange,
   onSave,
 }: {
   bytes: Uint8Array;
@@ -23,6 +24,7 @@ export function PptxEditorHost({
   onFlusher: (flusher: OfficeFlusher | null) => void;
   fileName: string;
   onError: (error: Error) => void;
+  onPendingChange: (pending: boolean) => void;
   onSave: () => void;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
@@ -98,6 +100,7 @@ export function PptxEditorHost({
         fileName={fileName}
         fonts={fonts}
         onError={onError}
+        onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;
         }}

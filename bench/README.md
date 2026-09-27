@@ -85,12 +85,12 @@ and has no fetch script.
 [`rag/fixtures/samples-manifest.json`](rag/fixtures/samples-manifest.json)
 records its checksums and which question set uses each file.
 
-The September 9 ODL agentic evaluation has a verified local inspection copy at
+The September 9 ODL agentic evaluation has a verified inspection copy at
 [`rag/fixtures/local/2026-09-09-odl-agentic/README.md`](rag/fixtures/local/2026-09-09-odl-agentic/README.md).
 It includes all 29 evaluation PDFs, the two original PowerPoint files, and an
 index mapping documents to questions. This covers the 16 legacy originals as
-well as the additional parser sources. The binary files are gitignored and are
-not included in a clean clone; preserve the VM corpus or this local copy.
+well as the additional parser sources. All 29 PDFs and both original PowerPoint
+files are committed, despite the directory's historical `local` name.
 
 The `expect` labels are `(file, chunk_idx)` pairs, so a `CHUNKER_VERSION` bump
 moves every index. That is expected and cheap to absorb: the labels were written
