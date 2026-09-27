@@ -440,7 +440,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 // seed(export) that the rebased state grew from.
 const rebasedSeedBytes = `CASE WHEN $3::bytea IS NULL THEN 0 ELSE (SELECT c.seed_bytes FROM source_refresh_candidates c WHERE c.file_id=d.file_id) END`
 
-// releaseArtifactCacheTx drops the parse cache of a replaced base once nothing
+// releaseArtifactCacheTx drops cached artifacts of a replaced base once nothing
 // names its bytes.
 func releaseArtifactCacheTx(ctx context.Context, tx pgx.Tx, oldSHA, newSHA string) error {
 	if oldSHA == "" || oldSHA == newSHA {

@@ -314,3 +314,54 @@ require another UAT deployment. The post-cleanup UAT soak from 14:07:55 through
 approximately 14:28 UTC recorded no application or ingest errors, warnings or
 Sentry events, with healthy containers, no restarts or OOM kills, and Office
 editing enabled.
+
+## Durable parse cache removed and measurements repeated
+
+Epo approved removing the durable B2 document parse bundles while keeping the
+validated temporary parser handoff and database donors. The removal is committed
+in `1e50b8a9`; `21a8f996` also corrects a premature UAT provider-receipt assertion.
+The parser no longer uploads, restores or registers document bundles. Migration
+0038 releases the old cache references and rejects the retired cache kind.
+Paid image-caption/audio-transcript caches and source objects are preserved.
+
+The [new storage comparison](../../bench/parsers/reports/2026-09-28-office-storage-no-parse-cache.md)
+contains all 18 native fixtures and six paired live files, using identical frozen
+uploads on both releases. All native export/rebase checks and all six live
+after-cases passed. Published active payload fell 28.44%, from 1,749,174 to
+1,251,716 bytes. Including retained B2 copies, the observed total fell 28.52%,
+from 3,488,561 to 2,493,600 bytes. DOCX/PPTX checkpoints still explain the native
+editing jumps; those persistence formats were not changed. Calculated overlap,
+user quota, local ZIPs and database overhead are identified separately.
+
+The reviewed removal release `21a8f996` passed
+[CI 36333573665](https://github.com/samyung0/capy-notebook/actions/runs/36333573665),
+[UAT deployment](https://github.com/samyung0/capy-notebook/actions/runs/36335068075)
+and [ingest deployment](https://github.com/samyung0/capy-notebook/actions/runs/36335505652).
+Old UAT parse/ingest consumers were stopped before migration and remained stopped
+until matching activation. All 82 registered bundles, 16,735,471 bytes, have no
+current B2 objects after the deletion grace/reaper. Hidden versions await the
+normal one-day lifecycle. A post-quality check also found no current object
+anywhere under the document parse-cache prefix.
+
+[UAT quality 36335617678](https://github.com/samyung0/capy-notebook/actions/runs/36335617678)
+passed smoke, nine authenticated browser cases and 13 lifecycle journeys.
+Cleanup finished at 17:35:30 UTC with `failed: []`, and all five ingest identities
+were unchanged. The subsequent observation through 17:46 UTC found no new app,
+ingest or Sentry errors, no container restarts/OOM kills, and Office editing
+enabled with no unpublished or in-flight work. The report explains the deliberate
+terminal-error test and other classified log records. Exact aggregate evidence
+is in [the rollout record](parse-cache-rollout-2026-09-28.json).
+
+The [Astra xhigh review record](review-parse-cache-astra-xhigh-2026-09-28.md)
+covers implementation, rollout corrections, receipt timing, independently
+recomputed measurements and the small follow-up CI fix. No actionable findings
+remain in those reviewed changes.
+
+The separate `d5d31d17` editor merge reached main while the paired UAT run was
+active. Its Docker browser failure came from the Add comment textarea losing its
+accessible name; the retained accessibility snapshot confirmed the unnamed
+textbox. Its retry then hit a name conflict because fixture cleanup soft-trashes
+materials. Follow-up `5416fcaa` restores the localized `Comment` accessible name and
+gives each test material a UUID-suffixed title. Existing test assertions and
+product title uniqueness remain intact. These main follow-ups do not change the
+measured UAT runtime, which remains `21a8f996`; production was untouched.

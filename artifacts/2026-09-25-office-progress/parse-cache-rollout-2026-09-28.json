@@ -1,0 +1,435 @@
+{
+  "target_environment": "uat",
+  "before_revision": "a71058954e48b7ac825faf2af16c47a61a388c05",
+  "deployed_revision": "21a8f996fc5650c1b22057229a522ec98ff687ba",
+  "database_observations": [
+    {
+      "database_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+      "compression": "pglz",
+      "migration_applied": false,
+      "active_jobs": [],
+      "cache_counts": [
+        {
+          "kind": "parse_bundle",
+          "count": 82,
+          "bytes": 16735471
+        }
+      ],
+      "pending_parse_deletions": 1,
+      "live_parse_references": 82,
+      "cache_kind_constraint": "CHECK ((kind = ANY (ARRAY['captions'::text, 'derived_text'::text, 'parse_bundle'::text])))"
+    },
+    {
+      "database_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+      "compression": "pglz",
+      "migration_applied": true,
+      "active_jobs": [],
+      "cache_counts": [],
+      "pending_parse_deletions": 82,
+      "live_parse_references": 0,
+      "cache_kind_constraint": "CHECK ((kind = ANY (ARRAY['captions'::text, 'derived_text'::text])))"
+    },
+    {
+      "checked_at": "2026-09-27T17:16:11.329628+00:00",
+      "database_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+      "compression": "pglz",
+      "migration_applied": true,
+      "active_jobs": [],
+      "cache_counts": [],
+      "pending_parse_deletions": 0,
+      "parse_deletion_due": {
+        "first": null,
+        "last": null
+      },
+      "live_parse_references": 0,
+      "cache_kind_constraint": "CHECK ((kind = ANY (ARRAY['captions'::text, 'derived_text'::text])))"
+    },
+    {
+      "checked_at": "2026-09-27T17:44:54.738784+00:00",
+      "database_version": "PostgreSQL 16.15 (Debian 16.15-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit",
+      "compression": "pglz",
+      "migration_applied": true,
+      "active_jobs": [],
+      "cache_counts": [],
+      "pending_parse_deletions": 0,
+      "parse_deletion_due": {
+        "first": null,
+        "last": null
+      },
+      "live_parse_references": 0,
+      "cache_kind_constraint": "CHECK ((kind = ANY (ARRAY['captions'::text, 'derived_text'::text])))"
+    }
+  ],
+  "b2_before": {
+    "checked_at": "2026-09-27T16:56:29.194347+00:00",
+    "registered_before": 82,
+    "registered_current_objects": 82,
+    "registered_current_bytes": 16735471,
+    "registered_retained_noncurrent_bytes": 1226,
+    "other_current_objects": 1,
+    "other_current_bytes": 373816,
+    "lifecycle": [
+      {
+        "Expiration": {
+          "Days": 1
+        },
+        "ID": "2c1ebf4e-86bc-418a-9c7e-8da9104075af",
+        "Filter": {
+          "Prefix": "incoming/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "2c1ebf4e-86bc-418a-9c7e-8da9104075af_marker",
+        "Filter": {
+          "Prefix": "incoming/"
+        },
+        "Status": "Enabled"
+      },
+      {
+        "Expiration": {
+          "Days": 1
+        },
+        "ID": "0dabe726-0a17-41ce-b502-798302017517",
+        "Filter": {
+          "Prefix": "editor-assets/incoming/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "0dabe726-0a17-41ce-b502-798302017517_marker",
+        "Filter": {
+          "Prefix": "editor-assets/incoming/"
+        },
+        "Status": "Enabled"
+      },
+      {
+        "ID": "e13cfbac-bc69-4427-9702-982821a0fe63",
+        "Filter": {
+          "Prefix": ""
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      }
+    ]
+  },
+  "b2_after_grace": {
+    "checked_at": "2026-09-27T17:16:41.017725+00:00",
+    "registered_before": 82,
+    "registered_current_objects": 0,
+    "registered_current_bytes": 0,
+    "registered_retained_noncurrent_bytes": 16736697,
+    "other_current_objects": 0,
+    "other_current_bytes": 0,
+    "lifecycle": [
+      {
+        "Expiration": {
+          "Days": 1
+        },
+        "ID": "2c1ebf4e-86bc-418a-9c7e-8da9104075af",
+        "Filter": {
+          "Prefix": "incoming/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "2c1ebf4e-86bc-418a-9c7e-8da9104075af_marker",
+        "Filter": {
+          "Prefix": "incoming/"
+        },
+        "Status": "Enabled"
+      },
+      {
+        "Expiration": {
+          "Days": 1
+        },
+        "ID": "0dabe726-0a17-41ce-b502-798302017517",
+        "Filter": {
+          "Prefix": "editor-assets/incoming/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "0dabe726-0a17-41ce-b502-798302017517_marker",
+        "Filter": {
+          "Prefix": "editor-assets/incoming/"
+        },
+        "Status": "Enabled"
+      },
+      {
+        "ID": "e13cfbac-bc69-4427-9702-982821a0fe63",
+        "Filter": {
+          "Prefix": ""
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      }
+    ]
+  },
+  "ci": "https://github.com/samyung0/capy-notebook/actions/runs/36333573665",
+  "app_deployment": "https://github.com/samyung0/capy-notebook/actions/runs/36335068075",
+  "ingest_deployment": "https://github.com/samyung0/capy-notebook/actions/runs/36335505652",
+  "quality_run": "https://github.com/samyung0/capy-notebook/actions/runs/36335617678",
+  "quality_result": {
+    "conclusion": "success",
+    "authenticated_browser_passes": 9,
+    "lifecycle_journey_passes": 13,
+    "cleanup_finished_at": "2026-09-27T17:35:30.342Z",
+    "cleanup_failed": [],
+    "retained_kinds": {
+      "account-ledgers": 1,
+      "b2": 25,
+      "sentry": 1,
+      "resend-email": 12,
+      "stripe-invoice": 1
+    },
+    "b2_retention_reasons": {
+      "Only hidden versions/delete markers remain under the B2 lifecycle policy.": 21,
+      "Deletion is scheduled after the recorded late-upload deadline.": 4
+    },
+    "ingest_identities_unchanged": 5,
+    "before_checked_at": "2026-09-27T17:07:46.999154+00:00",
+    "after_checked_at": "2026-09-27T17:35:32.551907+00:00"
+  },
+  "b2_after_quality": {
+    "checked_at": "2026-09-27T17:45:24.458962+00:00",
+    "registered_before": 82,
+    "registered_current_objects": 0,
+    "registered_current_bytes": 0,
+    "registered_retained_noncurrent_bytes": 16736697,
+    "other_current_objects": 0,
+    "other_current_bytes": 0,
+    "lifecycle": [
+      {
+        "Expiration": {
+          "Days": 1
+        },
+        "ID": "2c1ebf4e-86bc-418a-9c7e-8da9104075af",
+        "Filter": {
+          "Prefix": "incoming/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "2c1ebf4e-86bc-418a-9c7e-8da9104075af_marker",
+        "Filter": {
+          "Prefix": "incoming/"
+        },
+        "Status": "Enabled"
+      },
+      {
+        "Expiration": {
+          "Days": 1
+        },
+        "ID": "0dabe726-0a17-41ce-b502-798302017517",
+        "Filter": {
+          "Prefix": "editor-assets/incoming/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "0dabe726-0a17-41ce-b502-798302017517_marker",
+        "Filter": {
+          "Prefix": "editor-assets/incoming/"
+        },
+        "Status": "Enabled"
+      },
+      {
+        "ID": "e13cfbac-bc69-4427-9702-982821a0fe63",
+        "Filter": {
+          "Prefix": ""
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      }
+    ]
+  },
+  "release_error_audit": {
+    "since": "2026-09-27T17:04:00Z",
+    "expected_terminal_test_error": {
+      "timestamp": "2026-09-27T17:20:19+00:00",
+      "title": "TerminalError: delimited table exceeds the cell limit",
+      "trace_id": "9caa201f5dbfec293808c2cedc018085"
+    },
+    "client_aborted_http_requests": 4,
+    "collaboration_rejection": {
+      "at": "2026-09-27T17:18:47Z",
+      "status": 409,
+      "message": "Source epoch changed",
+      "explanation": "The unchanged-document receipt branch had no contributors and found no live matching file/epoch. Existing handling rejects the room. The log does not identify the specific file."
+    },
+    "parser_empty_text_detection_warnings": 2
+  },
+  "post_cleanup_soak": {
+    "since": "2026-09-27T17:35:40Z",
+    "app_checked_at": "2026-09-27T17:46:18.034355+00:00",
+    "ingest_checked_at": "2026-09-27T17:46:17.541598+00:00",
+    "app_containers": [
+      {
+        "container": "collaboration-9kx3durs3sxyfotgy20scemv-165957184539",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "retrieval-9kx3durs3sxyfotgy20scemv-165957197583",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "server-9kx3durs3sxyfotgy20scemv-165957145867",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "capy-redis-9kx3durs3sxyfotgy20scemv-165957126187",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "db-9kx3durs3sxyfotgy20scemv-165957110789",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "ops-bllospb7lnhxr274g3otxah7-133622156193",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "a71058954e48b7ac825faf2af16c47a61a388c05"
+      }
+    ],
+    "ingest_containers": [
+      {
+        "container": "capy-ingest-nonprod-worker-uat-1",
+        "status": "running",
+        "health": null,
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "capy-ingest-nonprod-parse-coordinator-uat-1",
+        "status": "running",
+        "health": null,
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "capy-ingest-nonprod-host-sampler-uat-1",
+        "status": "running",
+        "health": null,
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "capy-ingest-nonprod-import-worker-uat-1",
+        "status": "running",
+        "health": null,
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      },
+      {
+        "container": "capy-ingest-nonprod-parser-1",
+        "status": "running",
+        "health": "healthy",
+        "restarts": 0,
+        "oom_killed": false,
+        "release": "21a8f996fc5650c1b22057229a522ec98ff687ba"
+      }
+    ],
+    "app_error_lines": 0,
+    "ingest_warning_error_lines": 0,
+    "sentry_events": [],
+    "office_editing": "enabled",
+    "unpublished": 0,
+    "in_flight": 0
+  }
+}

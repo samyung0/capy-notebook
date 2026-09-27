@@ -99,6 +99,16 @@ For paired releases, set `OFFICE_STORAGE_INPUT_DIR` to frozen marked copies in
 Current Office receipt checks verify real parsing and the absence of both cache
 rows and any exact-key B2 parse-bundle versions.
 
+The [September 28 paired rerun](reports/2026-09-28-office-storage-no-parse-cache.md)
+measures the durable parse-cache removal with identical uploads before and after
+deployment. `compare_office_storage.py NATIVE_JSON INPUT_MANIFEST BEFORE_RUN_IDS
+AFTER_RUN_IDS OUTPUT_PREFIX` assembles the retained journey evidence. Run IDs are
+comma-separated when an arm spans runs; only complete per-file phase triples are
+accepted. It verifies input hashes, unchanged ingest images and successful cleanup,
+then writes exact JSON and numeric Markdown tables. Add the report's interpretation
+after generation. Local ZIP bytes and calculated overlap remain separate from
+persistent payloads.
+
 The August 28 accuracy harness belonged to the previous parser stack. The
 September 8 OpenDataLoader comparison instead freezes source PDFs and evaluates
 native parser outputs plus Capy's actual chunker and figure selector.
