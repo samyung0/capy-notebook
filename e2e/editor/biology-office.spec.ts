@@ -38,11 +38,49 @@ for (const [format, name] of [
     await expect(
       page.getByRole('status').filter({ hasText: /^Saved$/ })
     ).toBeVisible();
+    if (format === 'pptx') {
+      await frame.locator('aside button').nth(2).click();
+      const canvas = frame.getByTestId('pptx-slide-canvas');
+      const box = await canvas.boundingBox();
+      if (!box) throw new Error('Missing slide canvas');
+      await canvas.click({
+        clickCount: 3,
+        position: { x: box.width * 0.25, y: box.height * 0.265 },
+      });
+      const input = frame.getByTestId('pptx-text-input');
+      await expect(input).toBeFocused();
+      await page
+        .context()
+        .grantPermissions(['clipboard-read', 'clipboard-write']);
+      await page.evaluate(() =>
+        navigator.clipboard.writeText('Clipboard input 日本 😀')
+      );
+      await input.press('ControlOrMeta+V');
+      const cdp = await page.context().newCDPSession(page);
+      await cdp.send('Input.imeSetComposition', {
+        selectionEnd: 3,
+        selectionStart: 3,
+        text: '日本語',
+      });
+      await cdp.send('Input.insertText', { text: '日本語' });
+      await cdp.detach();
+      await save.click();
+      await expect(
+        page.getByRole('status').filter({ hasText: /^Saved$/ })
+      ).toBeVisible();
+    }
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'false');
     await expect(frame.locator('canvas').first()).toBeVisible({
       timeout: 30_000,
     });
+    if (format === 'pptx') {
+      await frame.getByTestId('pptx-next-slide').click();
+      await frame.getByTestId('pptx-next-slide').click();
+      await expect(frame.getByRole('region')).toContainText(
+        'Clipboard input 日本 😀日本語'
+      );
+    }
 
     const panel = page.getByTestId('mock-scenario-panel');
     await panel.evaluate((node: HTMLDetailsElement) => {

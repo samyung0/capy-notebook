@@ -6,7 +6,11 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { request } from '@playwright/test';
 import { savedTokenStatus } from './accounts';
-import { cleanupRun, validateCleanupTarget } from './cleanup';
+import {
+  cleanupRun,
+  validateCleanupTarget,
+  validateRegistrationOwnership,
+} from './cleanup';
 import { loadEnvironment, type UatEnvironment } from './environment';
 import {
   type Manifest,
@@ -62,6 +66,55 @@ test('Office publication stops on a terminal pipeline job while the old file sta
     /source refresh file_fixture failed in job_ingest: source publication gateway returned 503/
   );
   assert(recorded.includes('job_ingest'));
+});
+
+test('recorded cleanup ownership tolerates clock skew but never an identity mismatch', () => {
+  const email = 'uat-owned+clerk_test@example.test';
+  const manifest: Manifest = {
+    appUrl: 'https://app.uat.capynotebook.com',
+    bucket: 'capy-uat',
+    id: 'owned-run',
+    resources: [
+      {
+        createdAt: '2026-09-27T08:27:27.772Z',
+        details: { email },
+        id: 'user_owned',
+        kind: 'actor',
+      },
+    ],
+    revision: 'a'.repeat(40),
+    startedAt: '2026-09-27T08:27:27.772Z',
+    version: 1,
+  };
+  const user = {
+    createdAt: Date.parse('2026-09-27T08:27:18.723Z'),
+    emailAddresses: [{ emailAddress: email }],
+    id: 'user_owned',
+    privateMetadata: { capyUatRunId: manifest.id },
+  };
+  validateRegistrationOwnership(manifest, email, user);
+  for (const patch of [
+    { id: 'user_other' },
+    { emailAddresses: [{ emailAddress: 'other@example.test' }] },
+    { privateMetadata: {} },
+    { privateMetadata: { capyUatRunId: 'another-run' } },
+  ]) {
+    assert.throws(
+      () =>
+        validateRegistrationOwnership(manifest, email, { ...user, ...patch }),
+      /mismatch/
+    );
+  }
+  const unrecorded = { ...manifest, resources: [] };
+  assert.throws(
+    () => validateRegistrationOwnership(unrecorded, email, user),
+    /ownership mismatch/
+  );
+  validateRegistrationOwnership(unrecorded, email, {
+    ...user,
+    createdAt: Date.parse(manifest.startedAt),
+    privateMetadata: {},
+  });
 });
 
 test('cleanup requires the original target and exact run-owned registration intent', () => {
@@ -201,7 +254,7 @@ test('failed pre-purge inventory preserves accounts and a resumable failure repo
     `#!/usr/bin/env node
 let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end',()=>{
  const request=JSON.parse(input);
- if(request.sql.includes('UNION SELECT source_blob_path')) {
+ if(request.sql.includes('SELECT blob_path AS key FROM files')) {
   process.stderr.write('UAT verifier failed (OfflineInventoryFailure)');process.exit(1);
  }
  process.stdout.write('[]');
@@ -255,8 +308,9 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
           },
         ],
       });
-    if (url.pathname === '/v1/users')
-      return Response.json({ data: [], total_count: 0 });
+    if (url.pathname === '/v1/users') return Response.json([]);
+    if (url.pathname === '/v1/users/count')
+      return Response.json({ object: 'total_count', total_count: 0 });
     if (url.pathname === '/v1/account')
       return Response.json({ id: 'acct_fixture' });
     if (url.hostname === 'sentry.io') return Response.json({ data: [] });
@@ -311,7 +365,12 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
     assert(
       result.cleanup?.failed.includes(
         'Capture owned storage and worker traces before account purge'
-      )
+      ),
+      JSON.stringify({
+        cleanup: result.cleanup,
+        nodeEnv: process.env.NODE_ENV,
+        paths,
+      })
     );
     assert(
       result.cleanup?.failed.some((failure) =>

@@ -6,7 +6,42 @@ in [investigation-evidence-2026-09-27.json](investigation-evidence-2026-09-27.js
 It supersedes the pending verification and uncommitted-change statements in the
 earlier [docx-failure.md](docx-failure.md).
 
-## Verified state
+## Implementation, 2026-09-27
+
+The five fixes below are implemented. DOCX now blocks input after an unresolved
+pointer placement, lets previously accepted input drain at its original caret,
+exposes the accepted caret, and retains all three language
+slots through seed, projection and export. PPTX uses native textarea input for
+paste and IME, with composition included in its save flush. Read-only or invalid
+selection transitions settle active composition with an explicit flush failure. Closed menu content
+stops late key/click events before Radix handles them. Cleanup accepts an exact
+recorded actor ID, email and run tag across provider clock skew, while keeping
+the time guard for unrecorded registrations.
+
+Biology 101 includes the committed rich DOCX, XLSX and PPTX fixtures through the
+ordinary MSW file/session paths. Their native checkpoints are regenerated from
+the fixed engine. Slide navigation tests use `pptx-next-slide`, independent of
+the translated label. The browser check exercises real clipboard paste and
+Chromium IME composition, then verifies the saved viewer content and reset.
+
+Local verification includes 96 focused native editor and input-queue tests, 32 shared Office
+golden/checkpoint tests plus two Rust storage tests, 432 frontend tests,
+305 collaboration tests, the three Biology browser cases, four focused menu
+browser cases, and the UAT verifier's six TypeScript plus three Python tests.
+TypeScript, lint and Rust formatting checks pass. The full Go suite exposed an
+obsolete missing-levels assertion after levels became optional; the affected
+HTTP package passes after removing it, and every other Go package passed.
+The previous main CI also asserted the removed legacy quiz prompt shape; its
+creation check now verifies the API-created draft, editor route and Save state.
+Local execution of that Docker-backed browser check was blocked by Docker Hub
+image metadata timeouts before any test started. CI will verify it after push.
+
+Language preservation changes the four DOCX golden seeds. Migration
+`0036_docx_language_seed_reset.sql` uses the existing guarded DOCX-only reset.
+Deployments with existing DOCX state require the documented maintenance window
+on the old engine before applying it. No production backfill is needed.
+
+## Investigation evidence before implementation
 
 - Local baseline is `75512bb3`; the revised DOCX helper and failure attachments
   are already committed there. UAT app, collaboration, Office and ingest serve
@@ -45,7 +80,7 @@ earlier [docx-failure.md](docx-failure.md).
   UAT TypeScript check pass. The browser reproduction confirms that a shared
   closed-content event guard prevents duplicate selection.
 
-## Fixes to implement
+## Authorized fixes, now implemented
 
 1. Fix the DOCX pointer/selection handoff. Observe clicks during unavailable
    geometry and prevent typing at an old caret while placement is unresolved.
@@ -75,7 +110,9 @@ The earlier claim that rich XLSX had never run was wrong. Run
 reached it, passed saved-export checks, and then failed because `H5` was outside
 the virtualized viewport. The horizontal-scroll correction is already deployed.
 
-This investigation ran the three previously problematic or blocked rich-content
-scenarios, not a new complete 13-journey gate. Product fixes remain unimplemented.
-After those fixes and green CI, use the existing UAT deployment and full journey
-workflow when release work is requested.
+The investigation ran the three previously problematic or blocked rich-content
+scenarios, not a new complete 13-journey gate. Local implementation checks do not
+substitute for that gate on a deployed revision. After green CI, use the existing
+UAT maintenance, deployment and full journey workflow when release work is
+requested. Rich PPTX now includes paste-driven export-only publication, and the
+DOCX preservation assertion no longer exempts language tags.

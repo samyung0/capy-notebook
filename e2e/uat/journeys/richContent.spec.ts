@@ -32,13 +32,9 @@ import { test } from './runtime';
 
 // Store-only uploads: no parser, embedding or LLM call. The basic Office
 // journeys cover parsing and indexing; these cover editing, export fidelity,
-// publication under an open editor and the storage charge. PPTX does not
-// publish: its editor takes text only as single-key presses, too slow to
-// reach the automatic trigger, so the basic PPTX journey and the fork's
-// rebase tests cover its publication.
+// publication under an open editor and the storage charge.
 for (const format of ['docx', 'xlsx', 'pptx'] as const) {
-  const publishes = format !== 'pptx';
-  test(`rich-content ${format}: store-only, two editors, charge and preserved content${publishes ? ', export-only publication under an open editor' : ''}`, async ({
+  test(`rich-content ${format}: store-only, two editors, charge and preserved content, export-only publication under an open editor`, async ({
     run,
   }) => {
     test.setTimeout(1_200_000);
@@ -95,20 +91,6 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       assert(charged.pending_effects.length > 0);
       return charged;
     };
-    if (format === 'pptx') {
-      await editCharge();
-      // The viewer exports the saved state over the unpublished source.
-      await openFile(run, editor, workspaceId, fileId, 'view');
-      await expectRichContent(
-        editor.page.frameLocator('iframe[src*="office-runtime"]'),
-        format,
-        marker,
-        'view'
-      );
-      await noProviderCalls(run, workspaceId);
-      return;
-    }
-
     // The paste passes the automatic trigger; 60 s after this save the file
     // publishes export-only, so the charge check and the wait start now.
     const paste = richPaste(marker);

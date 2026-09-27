@@ -1,6 +1,25 @@
-import { createContext, type KeyboardEvent, useState } from 'react';
+import {
+  createContext,
+  type KeyboardEvent,
+  type SyntheticEvent,
+  useState,
+} from 'react';
 
 export const MenuOpenContext = createContext(false);
+
+export function guardMenuEvent<E extends SyntheticEvent>(
+  open: boolean,
+  handler?: (event: E) => void
+) {
+  return (event: E) => {
+    if (!open) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    handler?.(event);
+  };
+}
 
 /** Radix's synchronous reopen focus can run before React clears inert. */
 export function focusReopenedSubmenu(event: KeyboardEvent<HTMLElement>) {

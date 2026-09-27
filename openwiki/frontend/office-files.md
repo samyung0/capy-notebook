@@ -301,6 +301,15 @@ callers arriving while one is queued for the same document share it and
 receive its outcome, and a reloaded room's new document queues its own save.
 Credits gate parsing and AI work, independently of durable saving.
 
+DOCX blocks text input after a canvas click whose caret cannot yet be placed.
+Previously accepted input finishes at its old caret. A fresh click after that
+input drains and with available geometry must set a valid selection before typing
+resumes; the input exposes placement state and selection for browser checks.
+Run language metadata survives the native seed, Yjs projection and OOXML export.
+PPTX uses a native textarea for typing, clipboard paste and IME composition.
+Save waits for composition to commit, and refuses an unmounted presentation or
+an interrupted composition instead of claiming it was saved.
+
 Each incoming source update is checked without copying the room: contributor
 markers against the decoded update, and size against an estimate kept from the
 room's applied update bytes. Only when the estimate passes the 100 MB cap is the
@@ -476,6 +485,12 @@ stored baseline,
 empties pending effects and deletes refresh candidates, so rooms reseed on the
 new engine. A file that cannot publish keeps the pause on until an operator
 fixes it on the old engine, so no engine ever holds another engine's state.
+
+Migration `0036_docx_language_seed_reset.sql` applies this guarded reset to DOCX
+for language-preserving seeds. The four DOCX golden hashes change; XLSX and PPTX
+seeds remain unchanged. Run the maintenance window before deploying to an
+environment with existing DOCX editing state. An empty environment needs no
+backfill.
 
 ## Private PDF annotations
 

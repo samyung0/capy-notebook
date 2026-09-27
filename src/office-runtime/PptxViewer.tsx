@@ -240,6 +240,7 @@ export function PptxViewer({
             })}
           </span>
           <button
+            data-testid="pptx-next-slide"
             disabled={slideIndex === slideCount - 1}
             onClick={() => selectSlide(slideIndex + 1)}
             type="button"

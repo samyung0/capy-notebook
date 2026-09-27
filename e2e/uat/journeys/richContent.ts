@@ -80,13 +80,13 @@ export function richPaste(marker: string) {
 /**
  * The owner pastes `text` where the preserved-content checks do not look: a
  * new last DOCX paragraph, or `Summary!A8` of the XLSX (the first row past the
- * sheet's used range, as far as arrow keys go). The PPTX editor takes text
- * only as single-key presses, so it has no paste.
+ * sheet's used range, as far as arrow keys go), or a new paragraph in the
+ * PPTX slide 3 body. PPTX uses the real system clipboard and paste shortcut.
  */
 export async function pasteRich(
   page: Page,
   frame: FrameLocator,
-  format: 'docx' | 'xlsx',
+  format: OfficeFormat,
   text: string
 ) {
   if (format === 'docx') {
@@ -95,7 +95,28 @@ export async function pasteRich(
     await input.press('ControlOrMeta+End');
     await input.press('Enter');
     await page.keyboard.insertText(text);
-  } else await setCell(frame, 'Summary', 'A8', text);
+  } else if (format === 'xlsx') await setCell(frame, 'Summary', 'A8', text);
+  else {
+    await frame.locator('aside button').nth(2).click();
+    const canvas = frame.getByTestId('pptx-slide-canvas');
+    const box = await canvas.boundingBox();
+    assert(box, 'slide canvas cannot receive a pointer action');
+    await canvas.click({
+      position: { x: box.width * 0.25, y: box.height * 0.265 },
+    });
+    const input = frame.getByTestId('pptx-text-input');
+    await expect(input).toBeFocused();
+    await input.press('ControlOrMeta+End');
+    await input.press('Enter');
+    await page
+      .context()
+      .grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.evaluate(
+      async (value) => navigator.clipboard.writeText(value),
+      text
+    );
+    await input.press('ControlOrMeta+V');
+  }
   await page.getByRole('button', { exact: true, name: 'Save' }).click();
 }
 
@@ -114,6 +135,20 @@ async function focusParagraph(frame: FrameLocator, text: string) {
       timeout: 1000,
     });
     await last.click({ force: true, timeout: 5000 });
+    const input = frame.getByRole('textbox', { name: 'Document input' });
+    await expect(input).toHaveAttribute('data-pointer-placement', 'ready', {
+      timeout: 1000,
+    });
+    const range = await last.evaluate((node) => {
+      const paragraph = node.closest<HTMLElement>('[role="paragraph"]');
+      return {
+        end: Number(paragraph?.dataset.docEnd),
+        start: Number(paragraph?.dataset.docStart),
+      };
+    });
+    const head = Number(await input.getAttribute('data-selection-head'));
+    expect(head).toBeGreaterThanOrEqual(range.start);
+    expect(head).toBeLessThanOrEqual(range.end);
   }).toPass({ timeout: 60_000 });
 }
 
@@ -211,7 +246,7 @@ export async function expectRichContent(
       [18, PPTX_COLLABORATOR],
     ] as const) {
       for (; current < slide; current++) {
-        await frame.getByRole('button', { exact: true, name: 'Next' }).click();
+        await frame.getByTestId('pptx-next-slide').click();
         await expect(frame.getByRole('status')).toHaveText(
           `Slide ${current + 1} of 20`
         );
@@ -248,9 +283,7 @@ export function richEdited(format: OfficeFormat, bytes: Uint8Array) {
 
 /**
  * The README's preserved content, in bytes exported from the saved state or
- * published, with the pasted text when given. DOCX export drops the six
- * eastAsia language tags even without edits (the filed DOCX-properties task),
- * so they are not checked here.
+ * published, with the pasted text when given.
  */
 export function assertRichPreserved(
   format: OfficeFormat,
@@ -273,6 +306,8 @@ export function assertRichPreserved(
     for (const part of Object.keys(before))
       if (!/^ppt\/slides\/slide(3|18)\.xml$/.test(part)) same(part);
     assert(texts(after, 'ppt/slides/slide1.xml', 'a').includes(marker));
+    if (paste)
+      assert(texts(after, 'ppt/slides/slide3.xml', 'a').includes(paste));
     return;
   }
   if (format === 'docx') {
@@ -285,6 +320,7 @@ export function assertRichPreserved(
       );
     assert(!paragraphs.includes('人數：20人'));
     assert.equal(xml.match(/<w:tbl>/g)?.length, 6);
+    assert.equal(xml.match(/<w:lang\b[^>]*w:eastAsia="ja-JP"/g)?.length, 6);
     assert.equal(xml.match(/<w:br w:type="page"\/>/g)?.length, 5);
     const links = relationships(after, 'word/document.xml');
     const charts = [...xml.matchAll(/<c:chart\b[^>]*\br:id="([^"]+)"/g)].map(

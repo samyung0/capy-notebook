@@ -63,6 +63,35 @@ export function validateCleanupTarget(
   }
 }
 
+export function validateRegistrationOwnership(
+  manifest: Manifest,
+  email: string,
+  user: {
+    id: string;
+    createdAt: number;
+    privateMetadata: { capyUatRunId?: unknown };
+    emailAddresses: { emailAddress: string }[];
+  }
+) {
+  if (!user.emailAddresses.some((address) => address.emailAddress === email))
+    throw new Error('Registration email mismatch');
+  const recorded = manifest.resources.find(
+    (resource) => resource.kind === 'actor' && resource.details.email === email
+  );
+  const tag = user.privateMetadata.capyUatRunId;
+  if (recorded) {
+    if (recorded.id !== user.id || tag !== manifest.id)
+      throw new Error('Registration ownership mismatch');
+    return;
+  }
+  if (
+    !Number.isFinite(user.createdAt) ||
+    user.createdAt < Date.parse(manifest.startedAt) - 5000 ||
+    (tag && tag !== manifest.id)
+  )
+    throw new Error('Registration ownership mismatch');
+}
+
 export async function cleanupRun(id: string) {
   const directory = runDirectory(id);
   // No provider writes are possible before preflight creates the manifest.
@@ -119,18 +148,7 @@ export async function cleanupRun(id: string) {
         if (users.totalCount > 1)
           throw new Error('Ambiguous exact signup email');
         for (const user of users.data) {
-          if (
-            user.createdAt < Date.parse(manifest.startedAt) - 5000 ||
-            (user.privateMetadata.capyUatRunId &&
-              user.privateMetadata.capyUatRunId !== id)
-          )
-            throw new Error('Registration ownership mismatch');
-          if (
-            !user.emailAddresses.some(
-              (email) => email.emailAddress === intent.id
-            )
-          )
-            throw new Error('Registration email mismatch');
+          validateRegistrationOwnership(manifest, intent.id, user);
           if (user.privateMetadata.capyUatRunId !== id)
             await clerk.users.updateUserMetadata(user.id, {
               privateMetadata: { capyUatRunId: id },
