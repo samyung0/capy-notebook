@@ -64,6 +64,7 @@ export interface MenuProps extends VariantProps<typeof menuVariants> {
   alignWidthToTrigger?: boolean;
   className?: string;
   iconContainerClassName?: string;
+  itemClassName?: string;
   items: MenuItem[];
   /** Custom trigger. Defaults to the unified thick vertical 3-dot button. */
   trigger?: ReactNode;
@@ -78,6 +79,7 @@ export function Menu({
   iconContainerClassName,
   alignWidthToTrigger,
   className,
+  itemClassName,
 }: MenuProps) {
   const [morphOpen, setMorphOpen] = useState(false);
   const [morphClosing, setMorphClosing] = useState(false);
@@ -180,7 +182,10 @@ export function Menu({
         <div data-slot="menu-items">
           {items.map((it, i) => (
             <DropdownMenuItem
-              className={menuItemVariants({ danger: it.danger })}
+              className={cn(
+                menuItemVariants({ danger: it.danger }),
+                itemClassName
+              )}
               disabled={it.disabled}
               key={i}
               onSelect={(event) => {

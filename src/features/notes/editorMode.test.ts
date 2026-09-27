@@ -22,6 +22,9 @@ describe('noteEditorStatusLabel', () => {
     expect(noteEditorStatusLabel({ saveState: 'synced' })).toBe(
       m.editor_status_synced()
     );
+    expect(noteEditorStatusLabel({ saveState: 'syncing' })).toBe(
+      m.editor_status_syncing()
+    );
     expect(noteEditorStatusLabel({ saveState: 'offline' })).toBe(
       m.editor_status_offline()
     );

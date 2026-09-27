@@ -1,0 +1,65 @@
+{
+  "name": "graph-code-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "a",
+            "coords": [0, 0]
+          },
+          {
+            "type": "point",
+            "id": "b",
+            "coords": [1, 1]
+          },
+          {
+            "type": "line",
+            "id": "line",
+            "points": ["a", "b"]
+          },
+          {
+            "type": "functiongraph",
+            "id": "f",
+            "term": "x;alert(1)"
+          }
+        ],
+        "image": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+        },
+        "width": 320,
+        "height": 190,
+        "description": "A graph"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

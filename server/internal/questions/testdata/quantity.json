@@ -1,0 +1,34 @@
+{
+  "name": "quantity",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "unit": "m",
+          "accepted": ["-1.25", "2e3"]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

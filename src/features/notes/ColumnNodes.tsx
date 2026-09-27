@@ -13,11 +13,8 @@ import {
   useSelected,
 } from 'platejs/react';
 import type { CSSProperties } from 'react';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/components/ui/Popover';
+import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
+import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -52,7 +49,9 @@ function ColumnFloatingToolbar({ children }: { children: React.ReactElement }) {
   return (
     <Popover modal={false} open={open}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
-      {open && <ColumnFloatingToolbarContent />}
+      <FloatingBlockToolbar open={open}>
+        <ColumnFloatingToolbarContent />
+      </FloatingBlockToolbar>
     </Popover>
   );
 }
@@ -69,15 +68,7 @@ function ColumnFloatingToolbarContent() {
   };
 
   return (
-    <PopoverContent
-      align="center"
-      avoidCollisions={false}
-      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg p-1"
-      contentEditable={false}
-      onOpenAutoFocus={(event) => event.preventDefault()}
-      side="bottom"
-      sideOffset={8}
-    >
+    <>
       {COLUMN_LAYOUTS.map((layout) => (
         <FloatingActionButton
           active={
@@ -105,11 +96,14 @@ function ColumnFloatingToolbarContent() {
           />
         </FloatingActionButton>
       ))}
-      <div className="mx-0.5 h-4 w-px bg-divider" />
-      <FloatingActionButton label={m.editor_delete_table()} onClick={remove}>
+      <FloatingActionButton
+        label={m.editor_delete_table()}
+        onClick={remove}
+        variant="danger-light"
+      >
         <EditorIcon name="trash" />
       </FloatingActionButton>
-    </PopoverContent>
+    </>
   );
 }
 

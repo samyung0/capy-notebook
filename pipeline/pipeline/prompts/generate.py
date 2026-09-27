@@ -84,22 +84,51 @@ def diagram_instruction(diagram_type: str) -> str:
     )
 
 
-def quiz_instruction(*, count: int, types: list[str], levels: list[str]) -> str:
+QUESTION_CONTRACT = """Return canonical question objects only, with no legacy fields:
+{"stem": [Block], "parts": [{"blocks": [Block], "answer": Answer,
+"markscheme": ["one explicit marking item per mark"], "solution": [Block]}],
+"layout": "paper" or "split", "labels": "letters" or "numbers"}.
+The application assigns UUID ids to questions and parts; omit their ids.
+Every question has at least one part. Each part has nonempty blocks, a nonempty
+markscheme and a worked solution. A one-part question may have an empty stem.
+Block forms:
+- {"type":"text", "text":"plain text with $inline math$ or $$display math$$", "label":"optional paragraph label"}.
+- {"type":"table", "header":true, "rows":[["cell", "cell"]]}.
+- {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "unit", "xTitle", "yTitle", "gridlines":"normal|fine", "showValues":false}.
+Do not invent image URLs or SVGs. Use text, tables or charts for generated app quizzes.
+Answer is one of:
+- {"type":"mcq" or "multi", "options":["text option"], "correct":[0]} using zero-based indices; mcq has exactly one correct index.
+- {"type":"boolean", "correct":true}.
+- {"type":"short", "accepted":["value"], optional "unit":"authored fixed unit"}.
+- {"type":"matching", "options":["complete choice pool including unused distractors"], "pairs":[{"left":"prompt", "right":0}]} with zero-based option indices; reusable choices only when question instructions permit them.
+- {"type":"ordering", "items":["first", "second"]} stored in correct order.
+- {"type":"open", "accepted":["model answer"], "hints":["hint"]}.
+Strings are plain strings, never {value:...} wrappers. Put explanations in the
+part's solution blocks, not on options. Marks equal markscheme item count; do
+not emit points, rubrics, prompt, difficulty, explanation or top-level type.
+Open/essay answers must be NON-COMPUTATIONAL: only facts, definitions and
+explanations assessable from text. Calculations, numerical equivalence, algebraic
+or logical derivations and proofs must use deterministic answer types such as
+mcq, multi or short instead. Do not ask an open answer to check mathematical working.
+For quantities requiring units, author one required unit, state it in the question
+and short answer unit field, and write accepted VALUES ONLY in that unit. The UI
+fixes that unit; do not accept unit text or alternative-unit conversions. Text
+blanks and unitless quantities omit unit. Each marking item is explicit plain text.
+"""
+
+
+def quiz_instruction(
+    *, count: int, types: list[str], levels: list[str] | None = None
+) -> str:
+    level_rule = (
+        f'Tag each question with "level" chosen only from {levels}: {_LEVEL_GUIDE}. '
+        "Match the cognitive demand of each selected level. "
+        if levels
+        else 'Omit the optional "level" field. '
+    )
     return (
-        f"Create a {count}-question quiz from these sources using question types "
-        f'{types}. Tag each question with a cognitive "level" chosen from: '
-        f"{_LEVEL_GUIDE}. Aim for a mix across these levels: {levels}, and make "
-        "each question genuinely match the cognitive demand of its level. "
-        "Return ONLY a JSON array of question objects. Each object has: "
-        '"type" (one of mcq, multi, boolean, short, open, ordering, matching), '
-        '"level" (recall|application|analysis), "prompt", and the fields '
-        "appropriate to its type (mcq/multi: options[] + correct[] indices; "
-        "boolean: correct bool; short: accepted[]; open: accepted[] model "
-        "answer, hints[], rubrics[] marking-scheme strings, optional points; "
-        "ordering: items[] in order; matching: pairs[] of {left,right}). For "
-        "mcq and multi, each option MUST be an object "
-        '{"value": "...", "explanation": "..."} where the explanation says '
-        "why that option is correct or incorrect. For boolean, short, open, "
-        "ordering and matching, add a single "
-        '"explanation" field for the question.'
+        f"Create a {count}-question quiz from these sources using answer types {types}. "
+        + level_rule
+        + "Return ONLY a JSON array. "
+        + QUESTION_CONTRACT
     )

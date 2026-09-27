@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import {
   useQuiz,
@@ -17,8 +17,19 @@ import { m } from '@/i18n';
 export default function QuizEdit() {
   const params = useParams({ strict: false });
   const quizId = (params as { quizId: string }).quizId;
+  return <QuizEditor key={quizId} quizId={quizId} />;
+}
+
+function QuizEditor({ quizId }: { quizId: string }) {
   const navigate = useNavigate();
-  const { data: quiz, fetchStatus, isLoading } = useQuiz(quizId);
+  const { returnTo } = useSearch({ from: '/auth-shell/quizzes/$quizId/edit' });
+  const {
+    data: quiz,
+    fetchStatus,
+    isLoading,
+    isFetchedAfterMount,
+    isError,
+  } = useQuiz(quizId, { fresh: true });
   const { isPending: contentIsPending, mutateAsync: updateContent } =
     useUpdateQuizContent();
   const { isPending: metadataIsPending, mutateAsync: updateMetadata } =
@@ -28,23 +39,32 @@ export default function QuizEdit() {
   const [name, setName] = useState('');
   const [questions, setQuestions] = useState<Question[]>([]);
   const seeded = useRef(false);
+  const revision = useRef<number | null>(null);
 
   // Seed local editor state once the quiz loads (subsequent edits stay local).
   useEffect(() => {
-    if (quiz && !seeded.current) {
+    if (quiz && isFetchedAfterMount && !isError && !seeded.current) {
       setName(quiz.name);
       setQuestions(structuredClone(quiz.questions));
+      revision.current = quiz.revision;
       seeded.current = true;
     }
-  }, [quiz]);
+  }, [quiz, isFetchedAfterMount, isError]);
 
   function back() {
-    navigate({ to: '/create' });
+    void navigate({ href: returnTo ?? '/create' });
   }
 
   async function save() {
     try {
-      await updateContent({ id: quizId, questions });
+      if (revision.current === null || !quiz?.canEdit || updateIsPending)
+        return;
+      const saved = await updateContent({
+        expectedRevision: revision.current,
+        id: quizId,
+        questions,
+      });
+      revision.current = saved.revision;
       await updateMetadata({ id: quizId, name });
       back();
     } catch {
@@ -59,14 +79,14 @@ export default function QuizEdit() {
           <>
             <Button
               disabled={updateIsPending}
-              iconLeft="chevronLeft"
+              iconLeft="navigationBack"
               onClick={back}
               variant="ghost"
             >
               {m.action_back()}
             </Button>
             <Button
-              disabled={updateIsPending || !seeded.current}
+              disabled={updateIsPending || !seeded.current || !quiz?.canEdit}
               iconLeft="check"
               onClick={save}
             >
@@ -74,11 +94,15 @@ export default function QuizEdit() {
             </Button>
           </>
         }
+        className="flex-wrap gap-3 px-4 sm:gap-6 sm:px-6"
         title={name || m.quiz_edit()}
+        titleClassName="w-full sm:w-auto"
       />
-      <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-6">
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
+        ) : isError ? (
+          <p role="alert">{m.quiz_unable_load()}</p>
         ) : isLoading || !seeded.current ? (
           <Skeleton className="h-64 w-full" />
         ) : quiz?.canEdit ? (

@@ -1,0 +1,34 @@
+{
+  "name": "mcq",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": ["A", "B"],
+          "correct": [0]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

@@ -289,6 +289,86 @@ components:
         - pct
         - takenAt
       type: object
+    BankAssetOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankAssetOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        url:
+          type: string
+      required:
+        - url
+      type: object
+    BankCommentInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankCommentInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        text:
+          maxLength: 2000
+          minLength: 1
+          type: string
+      required:
+        - text
+      type: object
+    BankListBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankListBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          items:
+            $ref: "#/components/schemas/Row"
+          nullable: true
+          type: array
+      required:
+        - questions
+      type: object
+    BankReviewInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankReviewInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        reviewed:
+          type: boolean
+      required:
+        - reviewed
+      type: object
+    BankSaveInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankSaveInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        question:
+          additionalProperties: {}
+          type: object
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - question
+        - updatedAt
+      type: object
     BillingCheckoutReq:
       additionalProperties: false
       properties:
@@ -608,7 +688,7 @@ components:
           type: string
         answers:
           additionalProperties: {}
-          description: User answers keyed by question id
+          description: User answers keyed by stable part id
           type: object
         correct:
           format: double
@@ -663,11 +743,16 @@ components:
           maxLength: 4000
           minLength: 1
           type: string
+        expectedRevision:
+          format: int64
+          minimum: 1
+          type: integer
         front:
           maxLength: 4000
           minLength: 1
           type: string
       required:
+        - expectedRevision
         - front
         - back
       type: object
@@ -771,11 +856,6 @@ components:
             type: object
           nullable: true
           type: array
-        timeLimitMin:
-          format: int64
-          maximum: 180
-          minimum: 1
-          type: integer
       required:
         - kind
       type: object
@@ -888,11 +968,6 @@ components:
             type: object
           nullable: true
           type: array
-        timeLimitMin:
-          format: int64
-          maximum: 180
-          minimum: 1
-          type: integer
         workspaceId:
           type: string
       type: object
@@ -1022,6 +1097,63 @@ components:
         - workspacesToDestroy
         - storageUsedBytes
         - graceDays
+      type: object
+    Detail:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Detail.json
+          format: uri
+          readOnly: true
+          type: string
+        editor:
+          type: boolean
+        examLabel:
+          type: string
+        position:
+          format: int64
+          type: integer
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+        question:
+          additionalProperties: {}
+          type: object
+        reviewedAt:
+          format: date-time
+          nullable: true
+          type: string
+        reviewedBy:
+          type: string
+        reviewerName:
+          type: string
+        sources:
+          items:
+            $ref: "#/components/schemas/Source"
+          nullable: true
+          type: array
+        subjectLabel:
+          type: string
+        topicId:
+          type: string
+        topicLabel:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      required:
+        - question
+        - sources
+        - updatedAt
+        - reviewedAt
+        - reviewedBy
+        - reviewerName
+        - editor
+        - topicId
+        - position
+        - examLabel
+        - subjectLabel
+        - topicLabel
       type: object
     Discussion:
       additionalProperties: false
@@ -1184,6 +1316,23 @@ components:
         - end
         - labelIds
       type: object
+    Exam:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        subjects:
+          items:
+            $ref: "#/components/schemas/Subject"
+          nullable: true
+          type: array
+      required:
+        - id
+        - label
+        - subjects
+      type: object
     File:
       additionalProperties: false
       properties:
@@ -1316,15 +1465,36 @@ components:
           type: boolean
         materialId:
           type: string
+        revision:
+          format: int64
+          type: integer
         srs:
           $ref: "#/components/schemas/SrsState"
       required:
+        - revision
         - id
         - materialId
         - front
         - back
         - known
         - srs
+      type: object
+    FlashcardContentInput:
+      additionalProperties: false
+      properties:
+        back:
+          maxLength: 4000
+          minLength: 1
+          type: string
+        front:
+          maxLength: 4000
+          minLength: 1
+          type: string
+        id:
+          type: string
+      required:
+        - front
+        - back
       type: object
     FlashcardSet:
       additionalProperties: false
@@ -1358,11 +1528,15 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        revision:
+          format: int64
+          type: integer
         workspaceId:
           type: string
         workspaceName:
           type: string
       required:
+        - revision
         - id
         - name
         - workspaceId
@@ -1444,15 +1618,9 @@ components:
         levels:
           items:
             $ref: "#/components/schemas/CognitiveLevel"
-          minItems: 1
           type: array
         style:
           type: string
-        timeLimitMin:
-          format: int64
-          maximum: 180
-          minimum: 1
-          type: integer
         title:
           maxLength: 120
           minLength: 1
@@ -1467,7 +1635,6 @@ components:
       required:
         - kind
         - count
-        - levels
         - title
       type: object
     ImportSourcesAccepted:
@@ -1901,9 +2068,6 @@ components:
           format: int64
           type: integer
         sizeBytes:
-          format: int64
-          type: integer
-        timeLimitMin:
           format: int64
           type: integer
         title:
@@ -2515,6 +2679,9 @@ components:
           $ref: "#/components/schemas/Privacy"
         provenance:
           $ref: "#/components/schemas/Provenance"
+        revision:
+          format: int64
+          type: integer
         workspaceId:
           type: string
         workspaceName:
@@ -2522,6 +2689,7 @@ components:
       required:
         - author
         - clones
+        - revision
         - id
         - name
         - workspaceId
@@ -2566,7 +2734,7 @@ components:
             additionalProperties: {}
             type: object
           type: array
-        timeLimitMin:
+        revision:
           format: int64
           type: integer
         workspaceId:
@@ -2576,6 +2744,7 @@ components:
       required:
         - author
         - clones
+        - revision
         - id
         - name
         - workspaceId
@@ -2697,7 +2866,7 @@ components:
             additionalProperties: {}
             type: object
           type: array
-        timeLimitMin:
+        revision:
           format: int64
           type: integer
         workspaceId:
@@ -2705,6 +2874,7 @@ components:
         workspaceName:
           type: string
       required:
+        - revision
         - id
         - name
         - workspaceId
@@ -2908,6 +3078,42 @@ components:
         - kind
         - id
       type: object
+    Row:
+      additionalProperties: false
+      properties:
+        hasFigure:
+          type: boolean
+        hasTable:
+          type: boolean
+        id:
+          type: string
+        marks:
+          format: int64
+          type: integer
+        position:
+          format: int64
+          type: integer
+        preview:
+          type: string
+        reviewedAt:
+          format: date-time
+          nullable: true
+          type: string
+        reviewedBy:
+          type: string
+        reviewerName:
+          type: string
+      required:
+        - id
+        - position
+        - preview
+        - marks
+        - hasFigure
+        - hasTable
+        - reviewedAt
+        - reviewedBy
+        - reviewerName
+      type: object
     SaveCanvasReq:
       additionalProperties: false
       properties:
@@ -2990,6 +3196,21 @@ components:
         - captioning
         - rerank
       type: string
+    Source:
+      additionalProperties: false
+      properties:
+        bookId:
+          type: string
+        excerptId:
+          type: string
+        version:
+          format: int64
+          type: integer
+      required:
+        - excerptId
+        - bookId
+        - version
+      type: object
     SourceCandidateReadOutputBody:
       additionalProperties: false
       properties:
@@ -3640,6 +3861,23 @@ components:
         - lapses
         - state
       type: object
+    Subject:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        topics:
+          items:
+            $ref: "#/components/schemas/Topic"
+          nullable: true
+          type: array
+      required:
+        - id
+        - label
+        - topics
+      type: object
     SubscriptionBlocker:
       additionalProperties: false
       properties:
@@ -3661,6 +3899,29 @@ components:
         - canceled
         - trialing
       type: string
+    Syllabus:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Syllabus.json
+          format: uri
+          readOnly: true
+          type: string
+        assetsUrl:
+          type: string
+        editor:
+          type: boolean
+        exams:
+          items:
+            $ref: "#/components/schemas/Exam"
+          nullable: true
+          type: array
+      required:
+        - exams
+        - editor
+        - assetsUrl
+      type: object
     Tag:
       additionalProperties: false
       properties:
@@ -3722,6 +3983,25 @@ components:
       required:
         - code
         - message
+      type: object
+    Topic:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        reviewed:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - id
+        - label
+        - total
+        - reviewed
       type: object
     TransferWorkspaceReq:
       additionalProperties: false
@@ -3880,10 +4160,16 @@ components:
           maxLength: 4000
           minLength: 1
           type: string
+        expectedRevision:
+          format: int64
+          minimum: 1
+          type: integer
         front:
           maxLength: 4000
           minLength: 1
           type: string
+      required:
+        - expectedRevision
       type: object
     UpdateCardStudyStateReq:
       additionalProperties: false
@@ -3995,6 +4281,29 @@ components:
           minLength: 1
           type: string
       type: object
+    UpdateFlashcardContentReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateFlashcardContentReq.json
+          format: uri
+          readOnly: true
+          type: string
+        cards:
+          items:
+            $ref: "#/components/schemas/FlashcardContentInput"
+          minItems: 1
+          nullable: true
+          type: array
+        expectedRevision:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - expectedRevision
+        - cards
+      type: object
     UpdateFlashcardSetReq:
       additionalProperties: false
       properties:
@@ -4082,16 +4391,17 @@ components:
           format: uri
           readOnly: true
           type: string
+        expectedRevision:
+          format: int64
+          minimum: 1
+          type: integer
         questions:
           items:
             additionalProperties: {}
             type: object
           type: array
-        timeLimitMin:
-          format: int64
-          maximum: 180
-          minimum: 1
-          type: integer
+      required:
+        - expectedRevision
       type: object
     UpdateQuizMetadataReq:
       additionalProperties: false
@@ -4712,6 +5022,198 @@ paths:
       summary: Get an attempt's result breakdown
       tags:
         - Quizzes
+  /api/bank/assets:
+    post:
+      operationId: uploadBankAsset
+      requestBody:
+        content:
+          multipart/form-data:
+            encoding:
+              file:
+                contentType: application/octet-stream
+            schema:
+              properties:
+                file:
+                  format: binary
+                  type: string
+                  x-contentEncoding: binary
+                  x-contentMediaType: application/octet-stream
+              required:
+                - file
+              type: object
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankAssetOutputBody"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Upload a public question figure
+      tags:
+        - Question bank
+  /api/bank/questions/{id}:
+    get:
+      operationId: bankQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Detail"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read a bank question
+      tags:
+        - Question bank
+    put:
+      operationId: saveBankQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankSaveInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Detail"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Edit a bank question
+      tags:
+        - Question bank
+  /api/bank/questions/{id}/comments:
+    post:
+      operationId: commentBankQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankCommentInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Email a question comment
+      tags:
+        - Question bank
+  /api/bank/questions/{id}/review:
+    put:
+      operationId: reviewBankQuestion
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BankReviewInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Detail"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set the review marker
+      tags:
+        - Question bank
+  /api/bank/syllabus:
+    get:
+      operationId: bankSyllabus
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Syllabus"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read the exam syllabus
+      tags:
+        - Question bank
+  /api/bank/topics/{topicId}/questions:
+    get:
+      operationId: bankQuestions
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankListBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List topic questions
+      tags:
+        - Question bank
   /api/billing:
     get:
       operationId: getBilling
@@ -5620,6 +6122,14 @@ paths:
           required: true
           schema:
             type: string
+        - explode: false
+          in: query
+          name: expectedRevision
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
       responses:
         "204":
           description: No Content
@@ -5801,6 +6311,39 @@ paths:
       summary: Clone shared flashcards
       tags:
         - Sharing
+  /api/flashcards/{id}/content:
+    patch:
+      operationId: updateFlashcardContent
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFlashcardContentReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/Flashcard"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update flashcard content
+      tags:
+        - Flashcards
   /api/flashcards/{id}/metadata:
     patch:
       operationId: updateFlashcardSet

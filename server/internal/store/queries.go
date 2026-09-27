@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,9 +43,10 @@ type ChapterPatch struct {
 	Order *int    `json:"order"`
 }
 type QuizContentPatch struct {
-	Questions    *json.RawMessage `json:"questions"`
-	TimeLimitMin *int             `json:"timeLimitMin"`
-	UpdatedBy    string           `json:"-"`
+	ExpectedRevision int64
+	Questions        *json.RawMessage `json:"questions"`
+	TimeLimitMin     *int             `json:"timeLimitMin"`
+	UpdatedBy        string           `json:"-"`
 }
 type QuizMetadataPatch struct {
 	Name      *string   `json:"name"`
@@ -52,9 +54,10 @@ type QuizMetadataPatch struct {
 	UpdatedBy string    `json:"-"`
 }
 type CardContentPatch struct {
-	Front     *string `json:"front"`
-	Back      *string `json:"back"`
-	UpdatedBy string  `json:"-"`
+	ExpectedRevision int64
+	Front            *string `json:"front"`
+	Back             *string `json:"back"`
+	UpdatedBy        string  `json:"-"`
 }
 type CardStudyStatePatch struct {
 	Known     *bool            `json:"known"`
@@ -1478,14 +1481,15 @@ func (s *Store) GetMaterial(ctx context.Context, id string) (Material, error) {
 // written. Used for user-authored notes (title/content/scope edits) and filing
 // a material under a chapter.
 type MaterialPatch struct {
-	Title          *string
-	Color          *UserColor
-	Content        *string
-	ChapterID      **string // double pointer: nil = leave, &nil = unfile, &&v = set
-	ScopeChapters  *[]string
-	ScopeFileNames *[]string
-	Privacy        *Privacy
-	UpdatedBy      string
+	ExpectedRevision *int64
+	Title            *string
+	Color            *UserColor
+	Content          *string
+	ChapterID        **string // double pointer: nil = leave, &nil = unfile, &&v = set
+	ScopeChapters    *[]string
+	ScopeFileNames   *[]string
+	Privacy          *Privacy
+	UpdatedBy        string
 }
 
 func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) (Material, error) {
@@ -1520,8 +1524,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if err := materialdoc.ValidateKind(*p.Content, contentKind); err != nil {
 			return Material{}, err
 		}
+		if p.ExpectedRevision != nil && (*p.ExpectedRevision < 1 || contentBaseRevision != *p.ExpectedRevision) {
+			return Material{}, ErrConflict
+		}
 		handled, err := s.applyAuthoritativeContentCommand(
-			ctx, id, p.UpdatedBy, currentContent, *p.Content,
+			ctx, id, p.UpdatedBy, currentContent, *p.Content, p.ExpectedRevision,
 		)
 		if err != nil {
 			return Material{}, err
@@ -1804,7 +1811,8 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 		chapters = []string{}
 	}
 	return Quiz{
-		ID: mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
+		Revision: mt.Revision,
+		ID:       mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
 		Chapters: chapters, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
 		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance,
 		IsOwner: mt.IsOwner, CanEdit: mt.Capabilities.CanEdit,
@@ -1851,6 +1859,9 @@ func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentP
 	if mt.Kind != "quiz" {
 		return Quiz{}, ErrNotFound
 	}
+	if p.ExpectedRevision < 1 || p.ExpectedRevision != mt.Revision {
+		return Quiz{}, ErrConflict
+	}
 	cur, err := quizFromMaterial(mt)
 	if err != nil {
 		return Quiz{}, err
@@ -1867,7 +1878,7 @@ func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentP
 		return Quiz{}, err
 	}
 	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{
-		Content: &content, UpdatedBy: p.UpdatedBy,
+		Content: &content, UpdatedBy: p.UpdatedBy, ExpectedRevision: &p.ExpectedRevision,
 	}); err != nil {
 		return Quiz{}, err
 	}
@@ -1993,14 +2004,14 @@ const flashcardSetStatsExpr = `
 // flashcardSetCols is the shared column list every flashcard-set read starts
 // with; callers append their own request-scoped columns after it.
 const flashcardSetCols = `m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,` +
-	flashcardSetStatsExpr + `, m.provenance`
+	flashcardSetStatsExpr + `, m.provenance, m.revision`
 
 // scanFlashcardSetRow reads flashcardSetCols plus the caller's extra columns.
 func scanFlashcardSetRow(row pgx.Row, extra ...any) (FlashcardSet, error) {
 	var d FlashcardSet
 	var provenance []byte
 	dest := append([]any{&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color,
-		&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &provenance}, extra...)
+		&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &provenance, &d.Revision}, extra...)
 	err := row.Scan(dest...)
 	if err == nil {
 		d.Provenance, err = decodeProvenance(provenance)
@@ -2132,7 +2143,7 @@ func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashca
 		if !ok {
 			st = cardStat{srs: newSrsState()}
 		}
-		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Front: c.Front, Back: c.Back, Known: st.known, Srs: st.srs})
+		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Known: st.known, Srs: st.srs})
 	}
 	return out, nil
 }
@@ -2157,13 +2168,13 @@ func (s *Store) GetCard(ctx context.Context, id string) (Flashcard, error) {
 	}
 	for _, c := range cards {
 		if c.ID == id {
-			return Flashcard{ID: c.ID, MaterialID: materialID, Front: c.Front, Back: c.Back, Known: st.known, Srs: st.srs}, nil
+			return Flashcard{ID: c.ID, MaterialID: materialID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Known: st.known, Srs: st.srs}, nil
 		}
 	}
 	return Flashcard{}, ErrNotFound
 }
 
-func (s *Store) CreateCard(ctx context.Context, actorID, flashcardSetID, front, back string) (Flashcard, error) {
+func (s *Store) CreateCard(ctx context.Context, actorID, flashcardSetID, front, back string, expectedRevision int64) (Flashcard, error) {
 	mt, err := s.GetMaterial(ctx, flashcardSetID)
 	if err != nil {
 		return Flashcard{}, err
@@ -2179,7 +2190,7 @@ func (s *Store) CreateCard(ctx context.Context, actorID, flashcardSetID, front, 
 		return Flashcard{}, err
 	}
 	if _, err := s.UpdateMaterial(ctx, flashcardSetID, MaterialPatch{
-		Content: &content, UpdatedBy: actorID,
+		Content: &content, UpdatedBy: actorID, ExpectedRevision: &expectedRevision,
 	}); err != nil {
 		return Flashcard{}, err
 	}
@@ -2219,12 +2230,48 @@ func (s *Store) UpdateCardContent(ctx context.Context, id string, p CardContentP
 			return Flashcard{}, err
 		}
 		if _, err := s.UpdateMaterial(ctx, materialID, MaterialPatch{
-			Content: &content, UpdatedBy: p.UpdatedBy,
+			Content: &content, UpdatedBy: p.UpdatedBy, ExpectedRevision: &p.ExpectedRevision,
 		}); err != nil {
 			return Flashcard{}, err
 		}
 	}
 	return s.GetCard(ctx, id)
+}
+
+func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, expectedRevision int64, cards []materialdoc.Card) ([]Flashcard, error) {
+	mt, err := s.GetMaterial(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if mt.Kind != "flashcards" {
+		return nil, ErrNotFound
+	}
+	if expectedRevision < 1 || expectedRevision != mt.Revision {
+		return nil, ErrConflict
+	}
+	current, err := materialdoc.ExtractFlashcards(mt.Content)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string]bool, len(current))
+	for _, card := range current {
+		known[card.ID] = true
+	}
+	for i := range cards {
+		if cards[i].ID == "" {
+			cards[i].ID = uid("c")
+		} else if !known[cards[i].ID] {
+			return nil, ErrConflict
+		}
+	}
+	content, err := materialdoc.ReplaceFlashcards(mt.Content, cards)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{Content: &content, UpdatedBy: actorID, ExpectedRevision: &expectedRevision}); err != nil {
+		return nil, err
+	}
+	return s.ListCards(ctx, id)
 }
 
 func (s *Store) UpdateCardStudyState(ctx context.Context, id string, p CardStudyStatePatch) (Flashcard, error) {
@@ -2269,7 +2316,7 @@ func (s *Store) UpdateCardStudyState(ctx context.Context, id string, p CardStudy
 	return s.GetCard(ctx, id)
 }
 
-func (s *Store) DeleteCard(ctx context.Context, actorID, id string) error {
+func (s *Store) DeleteCard(ctx context.Context, actorID, id string, expectedRevision int64) error {
 	var materialID string
 	if err := s.pool.QueryRow(ctx, `SELECT material_id FROM card_stats WHERE card_id=$1`, id).Scan(&materialID); err != nil {
 		if isNoRows(err) {
@@ -2296,7 +2343,7 @@ func (s *Store) DeleteCard(ctx context.Context, actorID, id string) error {
 		return err
 	}
 	if _, err := s.UpdateMaterial(ctx, materialID, MaterialPatch{
-		Content: &content, UpdatedBy: actorID,
+		Content: &content, UpdatedBy: actorID, ExpectedRevision: &expectedRevision,
 	}); err != nil {
 		return err
 	}
@@ -2378,9 +2425,8 @@ func (s *Store) AddMistakes(ctx context.Context, userID string, wrong []json.Raw
 	return tx.Commit(ctx)
 }
 
-// ClearMistakesExcept drops every mistake for the user that is NOT still in
-// keepIDs — i.e. the ones just answered correctly in a review session.
-func (s *Store) ClearMistakesExcept(ctx context.Context, userID string, keepIDs []string) error {
+// ClearReviewedMistakes removes only the correctly answered questions in this batch.
+func (s *Store) ClearReviewedMistakes(ctx context.Context, userID string, attemptedIDs, keepIDs []string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -2390,7 +2436,7 @@ func (s *Store) ClearMistakesExcept(ctx context.Context, userID string, keepIDs 
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM mistakes
-		WHERE user_id=$1 AND NOT (question_id = ANY($2))`, userID, keepIDs); err != nil {
+		WHERE user_id=$1 AND question_id = ANY($2) AND NOT (question_id = ANY($3))`, userID, attemptedIDs, keepIDs); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -2398,18 +2444,39 @@ func (s *Store) ClearMistakesExcept(ctx context.Context, userID string, keepIDs 
 
 // MistakesQuiz assembles an ad-hoc quiz from the user's missed questions.
 func (s *Store) MistakesQuiz(ctx context.Context, userID string) (Quiz, error) {
-	rows, err := s.pool.Query(ctx, `SELECT question FROM mistakes WHERE user_id=$1 ORDER BY updated_at DESC`, userID)
+	rows, err := s.pool.Query(ctx, `SELECT question FROM mistakes WHERE user_id=$1 ORDER BY updated_at DESC, question_id LIMIT $2`, userID, fieldlimits.QuestionCount)
 	if err != nil {
 		return Quiz{}, err
 	}
 	defer rows.Close()
 	items := []json.RawMessage{}
+	size := 2
 	for rows.Next() {
 		var q json.RawMessage
 		if err := rows.Scan(&q); err != nil {
 			return Quiz{}, err
 		}
+		var question map[string]any
+		if err := json.Unmarshal(q, &question); err != nil {
+			return Quiz{}, err
+		}
+		// Source materials own their part IDs. Give the virtual aggregate its own namespace.
+		if parts, ok := question["parts"].([]any); ok {
+			for _, raw := range parts {
+				if part, ok := raw.(map[string]any); ok {
+					part["id"] = fmt.Sprintf("%x", sha256.Sum256([]byte(fmt.Sprint(question["id"])+"\x00"+fmt.Sprint(part["id"]))))
+				}
+			}
+		}
+		q, err = json.Marshal(question)
+		if err != nil {
+			return Quiz{}, err
+		}
+		if len(items) > 0 && size+len(q)+1 > materialdoc.MaxDocumentBytes {
+			break
+		}
 		items = append(items, q)
+		size += len(q) + 1
 	}
 	if err := rows.Err(); err != nil {
 		return Quiz{}, err

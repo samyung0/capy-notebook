@@ -104,6 +104,8 @@ export function ListToolbar<V extends string>({
           <div className="flex flex-wrap items-center gap-2">
             <Menu
               align="start"
+              alignWidthToTrigger
+              itemClassName="gap-2.5"
               items={sorts.map((option) => ({
                 closeOnSelect: false,
                 description: sortDirectionLabel(
@@ -120,7 +122,7 @@ export function ListToolbar<V extends string>({
               }))}
               trigger={
                 <Button
-                  className="h-fit px-1 py-1.5"
+                  className="flex h-fit flex-row items-start px-1 py-1.5"
                   iconRight="chevronDown"
                   size="md"
                   variant="ghost"
@@ -146,7 +148,7 @@ export function ListToolbar<V extends string>({
               </PopoverTrigger>
               <PopoverContent
                 align="start"
-                className="max-h-96 w-72 gap-0 border-0 bg-transparent p-0 shadow-none!"
+                className="max-h-96 gap-0 border-0 bg-transparent p-0 shadow-none!"
               >
                 <Card
                   border="solid"

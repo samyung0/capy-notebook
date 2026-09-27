@@ -26,12 +26,14 @@ function PopoverContent({
   align = 'center',
   sideOffset = 4,
   alignWidthToTrigger,
+  container,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content> & {
   alignWidthToTrigger?: boolean;
+  container?: React.ComponentProps<typeof PopoverPrimitive.Portal>['container'];
 }) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Content
         align={align}
         className={cn(

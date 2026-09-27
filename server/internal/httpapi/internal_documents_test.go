@@ -11,10 +11,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-// A curate turn writes a material in several edits, so the second edit's books
-// are appended to the record the creation stored rather than replacing it. The
-// gateway merges and revalidates, then hands the authority the record it
-// commits with the content.
 func TestInternalEditAppendsProvenance(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	var sent struct {
@@ -160,7 +156,7 @@ func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
 	cleanupMaterial(t, st, noteID)
 	quiz, err := st.CreateEmbeddedMaterial(context.Background(), "u_editor", noteID, store.EmbeddedDraft{
 		Kind:      "quiz",
-		Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`),
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)

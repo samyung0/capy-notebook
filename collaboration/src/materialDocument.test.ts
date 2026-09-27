@@ -12,20 +12,31 @@ function paragraph(index: number) {
   };
 }
 
-function quiz(timeLimitMin: number) {
+function quiz(_timeLimitMin: number) {
   return {
     children: [
       {
-        children: [{ children: [{ text: 'True?' }], type: 'quiz_prompt' }],
-        correctBoolean: true,
+        children: [{ text: '' }],
         id: 'question_1',
-        level: 'recall',
-        questionType: 'boolean',
+        question: {
+          id: 'question_1',
+          labels: 'letters',
+          layout: 'paper',
+          parts: [
+            {
+              answer: { correct: true, type: 'boolean' },
+              blocks: [{ text: 'True?', type: 'text' }],
+              id: 'part_1',
+              markscheme: ['Correct'],
+              solution: [],
+            },
+          ],
+          stem: [],
+        },
         type: 'quiz_question',
       },
     ],
     id: 'quiz_1',
-    timeLimitMin,
     type: 'quiz',
   };
 }
@@ -68,17 +79,6 @@ describe('canonical material document validation', () => {
     expect(() =>
       assertCanonicalMaterialValue(overNodeLimit, 'note')
     ).not.toThrow();
-  });
-
-  it('accepts only safe quiz time limits from 1 through 180', () => {
-    expect(() =>
-      assertCanonicalMaterialValue([quiz(180)], 'quiz')
-    ).not.toThrow();
-    for (const value of [0, 181, Number.MAX_SAFE_INTEGER + 1, 1e100]) {
-      expect(() => assertCanonicalMaterialValue([quiz(value)], 'quiz')).toThrow(
-        'timeLimitMin must be an integer from 1 to 180'
-      );
-    }
   });
 });
 

@@ -14,5 +14,6 @@ export interface Flashcard {
   id: string;
   known: boolean;
   materialId: string;
+  revision: number;
   srs: SrsState;
 }

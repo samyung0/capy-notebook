@@ -239,6 +239,10 @@ Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#
 - Materials keep no snapshot history. `materials.revision` counts content
   versions (collaboration projections and content patches); a title rename
   is last write wins, like a file rename, and carries no precondition.
+- Quiz and flashcard authored-content requests require the revision loaded with
+  the draft. Stale saves return 409 for standalone, workspace and embedded
+  materials, including two tabs belonging to the same owner. Flashcard study
+  state remains separate and carries no authored-content revision.
 
 Sources: [material handlers](../server/internal/httpapi/huma_materials.go#L41)
 and [material editor checks](../server/internal/store/share.go#L209).
@@ -590,6 +594,15 @@ Sources: [upload reservation and finalization](../server/internal/store/uploads.
 [expired-upload sweep](../server/internal/store/uploads.go#L202),
 [worker schedules](../server/cmd/api/main.go#L259), and
 [blob worker design](../server/cmd/api/blob_workers.go#L11).
+
+### File status and previews
+
+Workspace file status describes processing after upload finalization:
+`pending` is queued, `processing` is parsing or indexing, `ready` is finished
+(including store-only files with `indexed=false`), and `failed` means processing
+failed. These are separate from the upload session's own status. Once
+`hasBytes=true`, the workspace file list allows opening the original source
+while processing continues; the viewer shows progress above the preview.
 
 ### Temporary upload cleanup
 

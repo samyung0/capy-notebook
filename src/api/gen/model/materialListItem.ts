@@ -22,7 +22,6 @@ export interface MaterialListItem {
   privacy: Privacy;
   questionCount?: number;
   sizeBytes: number;
-  timeLimitMin?: number;
   title: string;
   updatedAt: string;
   workspaceId: string;

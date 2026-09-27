@@ -18,11 +18,13 @@ export function CardEditModal({
   flashcardSetId,
   card,
   open,
+  expectedRevision,
   onClose,
 }: {
   flashcardSetId: string;
   card?: Flashcard | null;
   open: boolean;
+  expectedRevision: number;
   onClose: () => void;
 }) {
   const { mutateAsync: createCard } = useCreateCard(flashcardSetId);
@@ -35,7 +37,7 @@ export function CardEditModal({
   } = useForm<CreateCardReq>({
     defaultValues: { back: card?.back ?? '', front: card?.front ?? '' },
     mode: 'onChange',
-    resolver: zodResolver(CreateCardBody),
+    resolver: zodResolver(CreateCardBody.omit({ expectedRevision: true })),
   });
 
   const submitDisabled = !isDirty || !isValid || isSubmitting;
@@ -44,9 +46,14 @@ export function CardEditModal({
     async (v: CreateCardReq) => {
       try {
         if (card) {
-          await updateCard({ back: v.back, front: v.front, id: card.id });
+          await updateCard({
+            back: v.back,
+            expectedRevision,
+            front: v.front,
+            id: card.id,
+          });
         } else {
-          await createCard(v);
+          await createCard({ ...v, expectedRevision });
         }
         onClose();
       } catch {
@@ -54,7 +61,7 @@ export function CardEditModal({
         // The global mutation handler shows the normalized failure.
       }
     },
-    [card, createCard, onClose, updateCard]
+    [card, createCard, onClose, updateCard, expectedRevision]
   );
 
   return (

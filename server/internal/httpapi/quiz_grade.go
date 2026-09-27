@@ -22,8 +22,8 @@ type quizGradeOutput struct {
 }
 
 func (a *api) registerQuizGrade(api huma.API) {
-	reg(api, http.MethodPost, "/api/quiz-grade", "gradeQuizAnswer", "Quizzes",
-		"Mark one open quiz answer against its marking scheme", http.StatusOK, a.gradeQuizAnswer)
+	regWithMaxBody(api, http.MethodPost, "/api/quiz-grade", "gradeQuizAnswer", "Quizzes",
+		"Mark one open quiz answer against its marking scheme", http.StatusOK, materialRequestMaxBytes, a.gradeQuizAnswer)
 }
 
 func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGradeOutput, error) {

@@ -14,6 +14,7 @@ import {
 } from '@platejs/link/react';
 import { useEditorPlugin, useEditorRef, usePluginOption } from 'platejs/react';
 import { useMemo, useState } from 'react';
+import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
@@ -95,7 +96,7 @@ export function LinkFloatingToolbar() {
               value={text}
             />
           </label>
-          <div className="flex items-center justify-end gap-0.5">
+          <div className="flex items-center justify-end gap-0">
             <FloatingActionButton label={m.editor_link_save()} type="submit">
               <EditorIcon name="check" />
             </FloatingActionButton>
@@ -113,11 +114,7 @@ export function LinkFloatingToolbar() {
           )}
         </form>
       ) : (
-        <div
-          aria-label={m.editor_link_actions()}
-          className="z-50 flex w-auto min-w-14 max-w-[90vw] items-center justify-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
-          role="toolbar"
-        >
+        <BlockToolbar aria-label={m.editor_link_actions()}>
           <FloatingActionButton
             label={m.editor_link_edit()}
             {...editButtonProps}
@@ -131,11 +128,12 @@ export function LinkFloatingToolbar() {
           </FloatingActionButton>
           <FloatingActionButton
             label={m.editor_link_remove()}
+            variant="danger-light"
             {...unlinkButtonProps}
           >
             <EditorIcon name="unlink" />
           </FloatingActionButton>
-        </div>
+        </BlockToolbar>
       )}
     </PopupMotion>
   );

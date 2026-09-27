@@ -4,36 +4,111 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
 
+func TestQuestionVoidIdentityAndEmptyQuiz(t *testing.T) {
+	empty, err := QuizDocument(json.RawMessage("[]"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, limit, err := ExtractQuiz(empty)
+	if err != nil || string(got) != "[]" || limit != nil {
+		t.Fatalf("empty quiz: %s %v", got, err)
+	}
+	raw, err := os.ReadFile("../questions/testdata/rich-blocks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	input, err := json.Marshal([]map[string]any{fixture.Question})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := QuizDocument(input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err = ExtractQuiz(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wantValue, gotValue any
+	if err := json.Unmarshal(input, &wantValue); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wantValue, gotValue) {
+		t.Fatal("rich blocks changed during round trip")
+	}
+	for _, corrupt := range []func(map[string]any){
+		func(node map[string]any) { node["id"] = "different" },
+		func(node map[string]any) { node["children"] = []any{textLeaf("editable text")} },
+		func(node map[string]any) { node["questionType"] = "short" },
+	} {
+		doc, err := Parse(encoded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		corrupt(find(doc.Value, "quiz_question"))
+		if err := Validate(doc); err == nil {
+			t.Fatal("invalid question wrapper accepted")
+		}
+	}
+}
+
+func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
+	raw, err := os.ReadFile("../questions/testdata/rich-blocks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct{ Question map[string]any }
+	if err := json.Unmarshal(raw, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	stem := fixture.Question["stem"].([]any)
+	graph := map[string]any{"type": "graph", "id": "graph1", "block": stem[1], "children": []any{textLeaf("")}}
+	chart := map[string]any{"type": "chart", "id": "chart1", "block": stem[2], "children": []any{textLeaf("")}}
+	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{graph, chart}}
+	encoded, err := Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(encoded, "note"); err != nil {
+		t.Fatal(err)
+	}
+	text, err := ExtractIndexText(encoded)
+	if err != nil || text != "A graph\n\nData" {
+		t.Fatalf("index = %q, error = %v", text, err)
+	}
+	doc.Value = []map[string]any{{"type": "callout", "id": "container", "children": []any{graph}}}
+	if err := Validate(doc); err == nil {
+		t.Fatal("nested graph accepted")
+	}
+}
+
 func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
-	questions := json.RawMessage(`[
-		{"id":"q1","type":"mcq","level":"recall","prompt":"Pick one","options":[{"value":"A","explanation":"yes"},{"value":"B","explanation":"no"}],"correct":[0]},
-		{"id":"q2","type":"multi","level":"application","prompt":"Pick many","options":[{"value":"A"},{"value":"B"},{"value":"C"}],"correct":[0,2]},
-		{"id":"q3","type":"boolean","level":"recall","prompt":"True?","correct":false,"explanation":"Because."},
-		{"id":"q4","type":"short","level":"application","prompt":"Answer","accepted":[{"value":"alpha"},{"value":"beta"}]},
-		{"id":"q5","type":"matching","level":"application","prompt":"Match","pairs":[{"left":"A","right":"1"},{"left":"B","right":"2"}]},
-		{"id":"q6","type":"ordering","level":"analysis","prompt":"Order","items":[{"value":"First"},{"value":"Second"}]},
-		{"id":"q7","type":"open","level":"application","prompt":"Explain","accepted":[{"value":"cristae"}],"hints":[{"value":"ATP"}],"rubrics":[{"value":"Mentions folds"}],"points":1}
-	]`)
-	limit := 20
-	raw, err := QuizDocument(questions, &limit)
+	questions := json.RawMessage(`[{"id": "q0", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p0", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0]}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q1", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p1", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "multi", "options": ["A", "B"], "correct": [0, 1]}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q2", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p2", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "boolean", "correct": false}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q3", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p3", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "short", "accepted": ["alpha"]}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q4", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p4", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "matching", "options": ["unused", "X", "Y"], "pairs": [{"left": "A", "right": 1}, {"left": "B", "right": 1}]}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q5", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p5", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "ordering", "items": ["A", "B"]}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q6", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p6", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "open", "accepted": ["explanation"], "hints": ["reason"]}, "markscheme": ["Correct answer"], "solution": []}], "layout": "paper", "labels": "letters"}]`)
+	raw, err := QuizDocument(questions, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(raw, `"questions"`) {
 		t.Fatalf("opaque questions property was persisted: %s", raw)
 	}
-	got, gotLimit, err := ExtractQuiz(raw)
+	got, _, err := ExtractQuiz(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotLimit == nil || *gotLimit != limit {
-		t.Fatalf("time limit = %v", gotLimit)
-	}
+
 	var wantValue, gotValue any
 	if err := json.Unmarshal(questions, &wantValue); err != nil {
 		t.Fatal(err)
@@ -48,7 +123,7 @@ func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 
 func TestStandaloneArtifactDocumentsContainOnlyTheirCustomBlock(t *testing.T) {
 	quiz, err := QuizDocument(json.RawMessage(
-		`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`,
+		`[{"id":"q1","stem":[{"type":"text","text":"Shared $x$ context."}],"parts":[{"id":"part-1","blocks":[{"type":"text","text":"Answer?"}],"answer":{"type":"short","accepted":["alpha"]},"markscheme":["Correct answer"],"solution":[]}],"layout":"paper","labels":"letters"}]`,
 	), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -83,65 +158,6 @@ func TestFillQuestionTypeIsRejected(t *testing.T) {
 	), nil)
 	if err == nil {
 		t.Fatal("fill type was accepted")
-	}
-}
-
-func TestQuizUsesTypedAnnotatableDescendants(t *testing.T) {
-	raw, err := QuizDocument(json.RawMessage(
-		`[{"id":"q1","type":"mcq","level":"recall","prompt":"Prompt","options":[{"value":"A"},{"value":"B"}],"correct":[1],"explanation":"Why"}]`,
-	), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, err := Parse(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	quiz := find(doc.Value, "quiz")
-	question := quiz["children"].([]any)[0].(map[string]any)
-	if question["type"] != "quiz_question" || question["questionType"] != "mcq" {
-		t.Fatalf("unexpected question node: %#v", question)
-	}
-	if firstChild(question, "quiz_prompt") == nil ||
-		len(childrenOfType(question, "quiz_option")) != 2 ||
-		firstChild(question, "quiz_explanation") == nil {
-		t.Fatalf("question descendants are incomplete: %#v", question["children"])
-	}
-	if got, _ := stringArray(question["correctOptionIds"]); !reflect.DeepEqual(got, []string{"q1:option:2"}) {
-		t.Fatalf("correct option IDs = %#v", got)
-	}
-}
-
-func TestReplacePreservesRichTextButNotRuntimeCommentMarks(t *testing.T) {
-	raw, err := QuizDocument(json.RawMessage(
-		`[{"id":"q1","type":"mcq","level":"recall","prompt":"Prompt","options":[{"value":"A"},{"value":"B"}],"correct":[0]}]`,
-	), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, _ := Parse(raw)
-	prompt := firstChild(find(doc.Value, "quiz_question"), "quiz_prompt")
-	prompt["children"] = []any{
-		map[string]any{"text": "Pro", "bold": true},
-		map[string]any{"text": "mpt", "comment": "disc_1"},
-	}
-	raw, err = Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	questions, _, err := ExtractQuiz(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	replaced, err := ReplaceQuiz(raw, questions, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	reparsed, _ := Parse(replaced)
-	leaves := firstChild(find(reparsed.Value, "quiz_question"), "quiz_prompt")["children"].([]any)
-	if len(leaves) != 2 || leaves[0].(map[string]any)["bold"] != true ||
-		leaves[1].(map[string]any)["comment"] != nil {
-		t.Fatalf("quiz marks were not normalized correctly: %#v", leaves)
 	}
 }
 
@@ -317,36 +333,6 @@ func TestValidateKindRequiresUniqueTopLevelBlockIDs(t *testing.T) {
 				t.Fatalf("expected invalid top-level block IDs, got %v", err)
 			}
 		})
-	}
-}
-
-func TestValidationAcceptsJSONDecodedTimeLimit(t *testing.T) {
-	var doc Envelope
-	if err := json.Unmarshal([]byte(`{"schemaVersion":1,"value":[{"type":"quiz","id":"quiz_1","timeLimitMin":15,"children":[{"type":"quiz_question","id":"q1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"True?"}]}]}]}]}`), &doc); err != nil {
-		t.Fatal(err)
-	}
-	if err := Validate(doc); err != nil {
-		t.Fatalf("JSON-decoded Plate document should validate: %v", err)
-	}
-}
-
-func TestValidationBoundsQuizTimeLimit(t *testing.T) {
-	valid := MaxQuizTimeLimit
-	if _, err := QuizDocument(json.RawMessage(
-		`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`,
-	), &valid); err != nil {
-		t.Fatalf("maximum quiz time limit was rejected: %v", err)
-	}
-
-	for _, value := range []string{"0", "181", "9007199254740992", "1e100"} {
-		var doc Envelope
-		raw := fmt.Sprintf(`{"schemaVersion":1,"value":[{"type":"quiz","id":"quiz_1","timeLimitMin":%s,"children":[{"type":"quiz_question","id":"q1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"True?"}]}]}]}]}`, value)
-		if err := json.Unmarshal([]byte(raw), &doc); err != nil {
-			t.Fatalf("decode time limit %s: %v", value, err)
-		}
-		if err := Validate(doc); !errors.Is(err, ErrInvalid) {
-			t.Fatalf("time limit %s accepted: %v", value, err)
-		}
 	}
 }
 
@@ -609,7 +595,7 @@ func TestSuggestionPropertiesAreRejected(t *testing.T) {
 }
 
 func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
-	quiz, err := QuizDocument(json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`), nil)
+	quiz, err := QuizDocument(json.RawMessage(`[{"id":"q1","stem":[{"type":"text","text":"Shared $x$ context."}],"parts":[{"id":"part-1","blocks":[{"type":"text","text":"Answer?"}],"answer":{"type":"short","accepted":["alpha"]},"markscheme":["Correct answer"],"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

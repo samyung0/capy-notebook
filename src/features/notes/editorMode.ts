@@ -2,6 +2,7 @@ import { m } from '@/i18n';
 
 export type NoteEditorSaveState =
   | 'connecting'
+  | 'syncing'
   | 'synced'
   | 'saved'
   | 'offline'
@@ -19,6 +20,8 @@ export function noteEditorStatusLabel(
   switch (status.saveState) {
     case 'connecting':
       return m.editor_connecting();
+    case 'syncing':
+      return m.editor_status_syncing();
     case 'synced':
       return m.editor_status_synced();
     case 'saved':

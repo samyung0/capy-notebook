@@ -114,6 +114,11 @@ func lockedMigrationConn(ctx context.Context, pool *pgxpool.Pool) (*pgxpool.Conn
 }
 
 func migrateWithFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) error {
+	return MigrateFS(ctx, pool, fsys)
+}
+
+// MigrateFS applies an independent database's embedded migration ledger.
+func MigrateFS(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS) error {
 	conn, release, err := lockedMigrationConn(ctx, pool)
 	if err != nil {
 		return err

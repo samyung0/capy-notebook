@@ -84,7 +84,7 @@ export function GhostText() {
   if (!isSuggested || !suggestionText) return null;
   return (
     <span
-      className="pointer-events-auto text-fg-muted/70 max-sm:hidden"
+      className="pointer-events-auto hidden text-fg-muted/70 sm:inline"
       contentEditable={false}
     >
       {suggestionText}

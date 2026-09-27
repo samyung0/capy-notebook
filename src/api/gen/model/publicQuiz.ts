@@ -20,7 +20,7 @@ export interface PublicQuiz {
   privacy: Privacy;
   provenance?: Provenance;
   questions: PublicQuizQuestionsItem[];
-  timeLimitMin?: number;
+  revision: number;
   workspaceId: string;
   workspaceName: string;
 }

@@ -114,7 +114,7 @@ func TestRequestBodyValidation(t *testing.T) {
 			name:   "create card empty front",
 			method: http.MethodPost,
 			path:   "/api/flashcards/dk_1/cards",
-			body:   `{"front":"","back":"answer"}`,
+			body:   `{"front":"","back":"answer","expectedRevision":1}`,
 		},
 		{
 			name:   "create event missing title",

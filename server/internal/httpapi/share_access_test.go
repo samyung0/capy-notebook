@@ -65,7 +65,7 @@ func stubRetrieval(t *testing.T) *pipeline.Client {
 		w.Header().Set("Content-Type", "application/json")
 		switch in.Kind {
 		case "quiz":
-			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","type":"boolean","level":"recall","prompt":"Q?","correct":true}]}`))
+			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 		case "flashcards":
 			_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
 		case "mindmap", "diagram":
@@ -403,19 +403,32 @@ func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
 
 func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *testing.T) {
 	h := openShareHTTP(t)
+	revision := func(id string) float64 {
+		rec := doReq(t, h, http.MethodGet, "/api/materials/"+id, "u_editor", nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("read revision = %d %s", rec.Code, rec.Body.String())
+		}
+		var material map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &material); err != nil {
+			t.Fatal(err)
+		}
+		return material["revision"].(float64)
+	}
 
 	quizQuestions := []map[string]any{{
-		"id": "q_mut_2", "type": "boolean", "level": "recall",
-		"prompt": "Updated workspace question?", "correct": true,
+		"id": "q_mut_2", "stem": []any{}, "layout": "paper", "labels": "letters",
+		"parts": []any{map[string]any{"id": "q_mut_2:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Updated workspace question?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "markscheme": []any{"Correct answer."}, "solution": []any{}}},
 	}}
 	rec := doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
-		"questions": quizQuestions, "timeLimitMin": 20,
+		"expectedRevision": revision("qz_e2e_private"),
+		"questions":        quizQuestions,
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("workspace quiz content update = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
-		"questions": quizQuestions, "privacy": "public",
+		"expectedRevision": revision("qz_e2e_private"),
+		"questions":        quizQuestions, "privacy": "public",
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("privacy on quiz content path = %d body=%s", rec.Code, rec.Body.String())
@@ -451,7 +464,8 @@ func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *te
 		t.Fatalf("workspace flashcard sharing update = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/cards/c_e2e_priv_1/content", "u_editor", map[string]any{
-		"front": "Updated front", "back": "Updated back", "known": true,
+		"expectedRevision": revision("dk_e2e_private"),
+		"front":            "Updated front", "back": "Updated back", "known": true,
 	})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("study state on card authoring path = %d body=%s", rec.Code, rec.Body.String())

@@ -1,3 +1,4 @@
+import { Navigate, useRouter } from '@tanstack/react-router';
 import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
@@ -6,18 +7,19 @@ import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
-  FileHeaderTarget,
-  FileModeContext,
-} from '@/features/files/FileModeControl';
-import {
   FileError,
   FileLoading,
   FileNotIndexedBanner,
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
+import {
+  FileHeaderTarget,
+  FileModeContext,
+} from '@/features/files/fileModeContext';
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
@@ -151,6 +153,7 @@ export function CenterContent({
                 materialId={item.id}
                 mode={materialMode}
                 onEditorStatusChange={setEditorStatus}
+                readOnly={readOnly}
                 workspaceId={workspaceId}
               />
             )}
@@ -185,12 +188,14 @@ function MaterialBody({
   mode,
   allowExternalAssets,
   onEditorStatusChange,
+  readOnly,
 }: {
   materialId: string;
   workspaceId: string;
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
+  readOnly: boolean;
 }) {
   const { data: materials, isPending } = useMaterials(workspaceId);
   const [choice, setChoice] = useState<HeavyMaterialChoice | null>(null);
@@ -215,7 +220,7 @@ function MaterialBody({
   return (
     <MaterialContent
       allowExternalAssets={allowExternalAssets}
-      forceReadOnly={choice === 'readOnly'}
+      forceReadOnly={readOnly || choice === 'readOnly'}
       materialId={materialId}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
@@ -259,6 +264,10 @@ export function MaterialContent({
   const policy = materialModePolicy(material.capabilities);
   const activeMode = forceReadOnly ? 'view' : resolveMaterialMode(mode, policy);
 
+  if (material.kind === 'quiz' && activeMode === 'edit') {
+    return <OpenQuizEditor quizId={materialId} />;
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
@@ -289,6 +298,18 @@ export function MaterialContent({
       </div>
       <MaterialAttributionFooter provenance={material.provenance} />
     </div>
+  );
+}
+
+function OpenQuizEditor({ quizId }: { quizId: string }) {
+  const router = useRouter();
+  return (
+    <Navigate
+      params={{ quizId }}
+      replace
+      search={quizEditSearch(router.state.location.href, true)}
+      to="/quizzes/$quizId/edit"
+    />
   );
 }
 

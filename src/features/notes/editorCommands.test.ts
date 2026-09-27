@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { m } from '@/i18n';
+import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import {
   columnGroupFromWidths,
   EDITOR_COMMANDS,
@@ -8,6 +8,37 @@ import {
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 
 describe('editor insertion command catalog', () => {
+  it.each(['chart', 'graph'])(
+    'inserts a %s only after its block dialog saves',
+    (kind) => {
+      const openVisual = vi.fn<NoteBlockDialogsApi['openVisual']>();
+      const editor = {
+        api: { block: () => undefined },
+        selection: null,
+        tf: { focus: vi.fn(), insertNodes: vi.fn() },
+      };
+      const command = EDITOR_COMMANDS.find((item) => item.id === kind)!;
+      command.run(editor, {
+        createEmbedded: vi.fn(),
+        insertEmbedded: vi.fn(),
+        noteId: 'note',
+        openFlashcards: vi.fn(),
+        openVisual,
+        openYouTube: vi.fn(),
+      });
+      expect(editor.tf.insertNodes).not.toHaveBeenCalled();
+      const [draft, save] = openVisual.mock.calls[0];
+      save(draft);
+      expect(editor.tf.insertNodes).toHaveBeenCalledWith(
+        expect.objectContaining({
+          block: draft,
+          children: [{ text: '' }],
+          type: kind,
+        }),
+        { select: true }
+      );
+    }
+  );
   it('covers every grouped insertion surface with an icon', () => {
     const groups = new Set(EDITOR_COMMANDS.map((command) => command.group));
     expect(groups).toEqual(
@@ -68,25 +99,18 @@ describe('editor insertion command catalog', () => {
       selection,
       tf: { focus: vi.fn(), insertNodes: vi.fn() },
     };
-    const promptForExpression = vi.fn(() => 'x^2 + 1');
-
-    insertInlineEquation(editor, promptForExpression);
-
-    expect(promptForExpression).toHaveBeenCalledWith(
-      m.editor_latex_prompt(),
-      'x^2'
-    );
+    insertInlineEquation(editor);
     expect(editor.tf.insertNodes).toHaveBeenCalledWith(
       {
         children: [{ text: '' }],
-        texExpression: 'x^2 + 1',
+        texExpression: 'x^2',
         type: 'inline_equation',
       },
       { at: selection, select: true }
     );
   });
 
-  it('leaves the selection untouched when equation entry is cancelled', () => {
+  it('inserts an empty equation at the caret for in-place editing', () => {
     const editor = {
       api: { isCollapsed: vi.fn(() => true), string: vi.fn() },
       selection: {
@@ -95,11 +119,10 @@ describe('editor insertion command catalog', () => {
       },
       tf: { focus: vi.fn(), insertNodes: vi.fn() },
     };
-    const promptForExpression = vi.fn(() => null);
-
-    insertInlineEquation(editor, promptForExpression);
-
-    expect(editor.tf.focus).not.toHaveBeenCalled();
-    expect(editor.tf.insertNodes).not.toHaveBeenCalled();
+    insertInlineEquation(editor);
+    expect(editor.tf.insertNodes).toHaveBeenCalledWith(
+      { children: [{ text: '' }], texExpression: '', type: 'inline_equation' },
+      { at: editor.selection, select: true }
+    );
   });
 });

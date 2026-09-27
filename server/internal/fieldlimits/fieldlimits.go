@@ -13,22 +13,64 @@ import (
 
 // Limits count runes, matching huma's maxLength and Postgres char_length.
 const (
-	WorkspaceName        = 80
-	WorkspaceDescription = 500
-	ChapterName          = 60
-	FileName             = 120
-	MaterialTitle        = FileName
-	ConversationTitle    = 60
-	ChatMessage          = 5_000
-	EventTitle           = 60
-	EventLocation        = 100
-	TaskTitle            = 80
-	LabelName            = 35
-	TagValue             = 35
-	Email                = 254
-	UserName             = 60
-	PDFAnnotationText    = 2_000
+	WorkspaceName          = 80
+	WorkspaceDescription   = 500
+	ChapterName            = 60
+	FileName               = 120
+	MaterialTitle          = FileName
+	ConversationTitle      = 60
+	ChatMessage            = 5_000
+	EventTitle             = 60
+	EventLocation          = 100
+	TaskTitle              = 80
+	LabelName              = 35
+	TagValue               = 35
+	Email                  = 254
+	UserName               = 60
+	PDFAnnotationText      = 2_000
+	QuestionCount          = 200
+	QuestionID             = 128
+	QuestionParts          = 26
+	QuestionBlocks         = 40
+	QuestionText           = 12_000
+	QuestionMetadata       = 1_000
+	QuestionAnswers        = 100
+	QuestionMarkscheme     = 20
+	QuestionMarkItem       = 1_000
+	QuestionUnit           = 100
+	QuestionTableRows      = 30
+	QuestionTableColumns   = 10
+	QuestionChartLabels    = 50
+	QuestionChartSeries    = 8
+	QuestionGraphElements  = 60
+	QuestionGraphTerm      = 200
+	QuestionSVGBytes       = 256 << 10
+	QuestionImageDimension = 10_000
+	QuestionAssetURL       = 4_096
 )
+
+// QuestionBounds is exported into frontend, sidecar and pipeline contracts.
+var QuestionBounds = map[string]int{
+	"QUESTION_COUNT_MAX":           QuestionCount,
+	"QUESTION_ID_MAX":              QuestionID,
+	"QUESTION_PARTS_MAX":           QuestionParts,
+	"QUESTION_BLOCKS_MAX":          QuestionBlocks,
+	"QUESTION_TEXT_MAX":            QuestionText,
+	"QUESTION_METADATA_MAX":        QuestionMetadata,
+	"QUESTION_ANSWERS_MAX":         QuestionAnswers,
+	"QUESTION_MARKSCHEME_MAX":      QuestionMarkscheme,
+	"QUESTION_MARK_ITEM_MAX":       QuestionMarkItem,
+	"QUESTION_UNIT_MAX":            QuestionUnit,
+	"QUESTION_TABLE_ROWS_MAX":      QuestionTableRows,
+	"QUESTION_TABLE_COLUMNS_MAX":   QuestionTableColumns,
+	"QUESTION_CHART_LABELS_MAX":    QuestionChartLabels,
+	"QUESTION_CHART_SERIES_MAX":    QuestionChartSeries,
+	"QUESTION_GRAPH_ELEMENTS_MAX":  QuestionGraphElements,
+	"QUESTION_GRAPH_TERM_MAX":      QuestionGraphTerm,
+	"QUESTION_SVG_BYTES_MAX":       QuestionSVGBytes,
+	"QUESTION_IMAGE_DIMENSION_MAX": QuestionImageDimension,
+	"QUESTION_ASSET_URL_MAX":       QuestionAssetURL,
+}
 
 // Columns lists every constrained column as "table.column" so the database
 // test can verify each CHECK against the constant it mirrors.

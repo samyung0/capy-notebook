@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import {
+  customBlockCode,
+  customBlockNode,
+} from '@/features/notes/blocks/shared';
+import { exampleQuestion } from '@/features/questions/questionFixtures';
 
 import {
   createMaterialDocument,
@@ -10,9 +15,45 @@ import {
   normalizeMaterialValueWithMetrics,
   parseMaterialDocument,
   parseMaterialDocumentWithMetrics,
+  quizNode,
 } from './document';
 
 describe('Universal Plate material documents', () => {
+  it('keeps figure data through the note JSON and Markdown fence boundaries', () => {
+    const node = customBlockNode(
+      'chart',
+      JSON.stringify({
+        kind: 'bar',
+        labels: ['A'],
+        series: [{ name: 'Total', values: [3] }],
+        title: 'Counts',
+        type: 'chart',
+      })
+    );
+    const document = createMaterialDocument([node]);
+    expect(parseMaterialDocument(JSON.stringify(document))).toEqual(document);
+    expect(customBlockCode(node)).toContain('"values":[3]');
+    expect(
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ ...node, type: 'graph' }],
+      })
+    ).toBe(false);
+  });
+  it('rejects shared part IDs across different quiz blocks', () => {
+    const first = exampleQuestion('one');
+    const second = exampleQuestion('two');
+    second.parts[0].id = first.parts[0].id;
+    expect(
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          quizNode({ questions: [first] }),
+          quizNode({ questions: [second] }),
+        ],
+      })
+    ).toBe(false);
+  });
   it('adds stable ids to every element while preserving existing ids', () => {
     const value = normalizeMaterialValue([
       {

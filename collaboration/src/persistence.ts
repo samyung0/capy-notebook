@@ -3,6 +3,10 @@ import type { Pool, PoolClient } from 'pg';
 import * as Y from 'yjs';
 import type { CollaborationAccess } from './auth.js';
 import {
+  applyCollaborationCommand,
+  type CollaborationCommand,
+} from './commands.js';
+import {
   type DocumentContributor,
   documentContributors,
   removeDocumentContributors,
@@ -734,6 +738,96 @@ export class YjsDocumentStore {
         state,
         version,
       };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      merged.destroy();
+      client.release();
+    }
+  }
+
+  /** Compare the loaded draft revision inside the transaction that commits its replacement. */
+  async replaceMaterialContent(
+    command: CollaborationCommand,
+    liveState?: Uint8Array
+  ) {
+    const materialId = materialIdFromRoom(command.room);
+    if (materialId !== command.materialId)
+      throw new Error('command material does not match room');
+    const roomSchema = roomSchemaFromRoom(command.room);
+    const client = await this.pool.connect();
+    const merged = new Y.Doc({ gc: true });
+    try {
+      await client.query('BEGIN');
+      await lockMaterial(client, materialId);
+      const boundary = await lockCollaborationBoundary(client, materialId, [
+        command.actorUserId,
+      ]);
+      await assertLiveCollaborationAccess(
+        client,
+        materialId,
+        command.actorUserId,
+        'write'
+      );
+      const material = await client.query<{ revision: string }>(
+        'SELECT revision FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE',
+        [materialId]
+      );
+      if (
+        !material.rowCount ||
+        Number(material.rows[0].revision) !== command.expectedRevision
+      ) {
+        throw new Error('material changed concurrently');
+      }
+      await this.bootstrapDurableState(client, materialId, roomSchema);
+      const existing = await client.query<{
+        state: Buffer;
+        room_schema: number;
+        stored_version: string;
+        projected_version: string;
+      }>(
+        'SELECT state, room_schema, stored_version, projected_version FROM material_yjs_documents WHERE material_id=$1 FOR UPDATE',
+        [materialId]
+      );
+      const row = existing.rows[0];
+      if (
+        Number(row.room_schema) !== roomSchema ||
+        row.stored_version !== row.projected_version
+      ) {
+        throw new Error('material changed concurrently');
+      }
+      applyStoredState(merged, row.state);
+      if (liveState) Y.applyUpdate(merged, liveState);
+      const previous = measureMaterialValue(plateValue(merged));
+      applyCollaborationCommand(merged, command);
+      const value = plateValue(merged);
+      assertCanonicalMaterialValue(value, boundary.materialKind);
+      const metrics = measureMaterialValue(value);
+      const limitCode = materialLimitCode(metrics);
+      if (limitCode && !recoversMaterialLimits(metrics, previous)) {
+        throw new MaterialDocumentLimitError(limitCode, metrics);
+      }
+      const lifecycle = boundary.accounts.get(boundary.ownerUserId);
+      if (
+        !lifecycle ||
+        lifecycle.deleted_at ||
+        lifecycle.deletion_requested_at ||
+        lifecycle.suspended_at
+      ) {
+        denyCollaboration('material owner account is locked');
+      }
+      if (lifecycle.over_quota && !recoversMaterialLimits(metrics, previous)) {
+        throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
+      }
+      const { state, update } = durableCommit(merged, liveState);
+      const version = Number(row.stored_version) + 1;
+      await client.query(
+        'UPDATE material_yjs_documents SET state=$2, stored_version=$3, projection_error=NULL, updated_at=now() WHERE material_id=$1',
+        [materialId, Buffer.from(state), version]
+      );
+      await client.query('COMMIT');
+      return { content: { schemaVersion: 1 as const, value }, update, version };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

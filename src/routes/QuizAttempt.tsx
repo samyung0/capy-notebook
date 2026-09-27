@@ -13,7 +13,6 @@ import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import {
   type Answer,
-  emptyAnswer,
   formatPoints,
   scoreQuestion,
 } from '@/features/quizzes/grade';
@@ -28,14 +27,20 @@ import { track } from '@/lib/observability';
 export default function QuizAttempt() {
   const params = useParams({ strict: false });
   const quizId = (params as { quizId: string }).quizId;
+  return <Attempt key={quizId} quizId={quizId} />;
+}
+
+function Attempt({ quizId }: { quizId: string }) {
   const {
     data: quiz,
     error,
     fetchStatus,
     isError,
     isLoading,
+    isFetchedAfterMount,
   } = useQuiz(quizId, {
     errorBoundary: false,
+    fresh: true,
   });
   const { isPending: submitIsPending, mutate: submit } = useSubmitAttempt({
     errorToast: false,
@@ -56,7 +61,7 @@ export default function QuizAttempt() {
   const liveScore = useMemo(() => {
     if (!quiz) return { awarded: 0, max: 0 };
     return quiz.questions
-      .map((q) => scoreQuestion(q, answers[q.id]))
+      .map((q) => scoreQuestion(q, answers))
       .reduce(
         (acc, s) => ({
           awarded: acc.awarded + s.awarded,
@@ -75,7 +80,7 @@ export default function QuizAttempt() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || (!isFetchedAfterMount && !isError)) {
     return (
       <PanelWithInvertedRadius>
         <div className="h-full p-6">
@@ -106,7 +111,7 @@ export default function QuizAttempt() {
           </span>
           <p className="t-large-card-title">{m.quiz_no_questions()}</p>
           <Link preload="intent" to="/create">
-            <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
+            <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
           </Link>
         </div>
       </PanelWithInvertedRadius>
@@ -114,7 +119,6 @@ export default function QuizAttempt() {
   }
 
   const q = quiz.questions[idx];
-  const answer = answers[q.id] ?? emptyAnswer(q);
 
   async function finish() {
     if (!quiz) return;
@@ -127,7 +131,7 @@ export default function QuizAttempt() {
       const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
       track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
       const wrong = result.questions.filter((qq) => {
-        const s = scoreQuestion(qq, answers[qq.id]);
+        const s = scoreQuestion(qq, answers);
         return s.awarded < s.max;
       });
       submit(
@@ -179,7 +183,7 @@ export default function QuizAttempt() {
     const pct = Math.round((score.awarded / Math.max(0.5, score.max)) * 100);
     return (
       <PanelWithInvertedRadius>
-        <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-5 px-6 text-center">
+        <div className="mx-auto flex h-full w-full max-w-2xl flex-col items-center gap-5 overflow-auto px-6 py-6 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-accent-1 text-tint-accent-1-fg">
             <Icon className="non-scaling-svg" name="quiz" size={30} />
           </span>
@@ -197,38 +201,21 @@ export default function QuizAttempt() {
               value={pct}
             />
           </div>
-          <div className="mt-4 flex w-full max-w-md flex-col gap-2 text-left">
-            {(graded?.questions ?? quiz.questions).map((qq, i) => {
-              const s = scoreQuestion(qq, answers[qq.id]);
-              const ok = s.awarded >= s.max && s.max > 0;
-              return (
-                <div
-                  className="flex items-start gap-2 rounded-card border border-line bg-surface px-3 py-2"
-                  key={qq.id}
-                >
-                  <Icon
-                    className={
-                      ok ? 'text-tint-success-fg' : 'text-tint-error-fg'
-                    }
-                    name={ok ? 'check' : 'x'}
-                    size={16}
-                  />
-                  <div className="flex-1">
-                    <p className="t-meta">
-                      {i + 1}. {qq.prompt}
-                    </p>
-                    {!ok && qq.explanation && (
-                      <p className="t-meta mt-1 text-fg-muted">
-                        {qq.explanation}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+          <div className="mt-4 w-full space-y-6 text-left">
+            {(graded?.questions ?? quiz.questions).map((question, i) => (
+              <div className="border-divider border-b pb-6" key={question.id}>
+                <QuestionRunner
+                  answers={answers}
+                  onChange={() => {}}
+                  question={question}
+                  questionNumber={i + 1}
+                  review
+                />
+              </div>
+            ))}
           </div>
           <Link preload="intent" to="/create">
-            <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
+            <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
           </Link>
         </div>
       </PanelWithInvertedRadius>
@@ -279,8 +266,8 @@ export default function QuizAttempt() {
 
         <div className="min-h-0 flex-1 overflow-auto py-4">
           <QuestionRunner
-            answer={answer}
-            onChange={(a) => setAnswers((s) => ({ ...s, [q.id]: a }))}
+            answers={answers}
+            onChange={(partId, a) => setAnswers((s) => ({ ...s, [partId]: a }))}
             question={q}
           />
         </div>
@@ -288,7 +275,7 @@ export default function QuizAttempt() {
         <div className="flex items-center justify-between border-divider border-t pt-4">
           <Button
             disabled={idx === 0}
-            iconLeft="chevronLeft"
+            iconLeft="navigationBack"
             onClick={() => setIdx((i) => i - 1)}
             variant="ghost"
           >
@@ -296,7 +283,7 @@ export default function QuizAttempt() {
           </Button>
           {idx < quiz.questions.length - 1 ? (
             <Button
-              iconRight="chevronRight"
+              iconRight="navigationForward"
               onClick={() => setIdx((i) => i + 1)}
             >
               {m.action_next()}

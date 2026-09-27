@@ -90,7 +90,6 @@ async function resolveMaterialRefs(
           const quiz = await queryClient.fetchQuery(quizQuery(node.materialId));
           return quizNode({
             questions: quiz.questions,
-            timeLimitMin: quiz.timeLimitMin,
           });
         }
         const cards = await queryClient.fetchQuery(cardsQuery(node.materialId));

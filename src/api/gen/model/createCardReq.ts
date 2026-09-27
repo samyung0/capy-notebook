@@ -13,6 +13,8 @@ export interface CreateCardReq {
      * @maxLength 4000
      */
   back: string;
+  /** @minimum 1 */
+  expectedRevision: number;
   /**
      * @minLength 1
      * @maxLength 4000

@@ -6,7 +6,7 @@ import { Icon, type IconName } from './Icon';
 export const BASE_BUTTON_STYLE =
   'inline-flex relative rounded-button min-w-0 text-sm cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 ease-out focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50';
 
-const buttonVariants = cva(BASE_BUTTON_STYLE, {
+export const buttonVariants = cva(BASE_BUTTON_STYLE, {
   defaultVariants: {
     size: 'md',
     variant: 'dark',
@@ -55,9 +55,17 @@ export interface ButtonProps
 /** Shared recovery action; navigation and draft actions supply their own icon. */
 export function ErrorAction({
   iconLeft = 'refresh',
+  className,
   ...props
 }: Omit<ButtonProps, 'variant'>) {
-  return <Button iconLeft={iconLeft} variant="ghost-hover" {...props} />;
+  return (
+    <Button
+      className={cn('font-bold', className)}
+      iconLeft={iconLeft}
+      variant="ghost-hover"
+      {...props}
+    />
+  );
 }
 
 const InlineIcon = ({

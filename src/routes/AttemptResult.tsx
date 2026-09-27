@@ -9,12 +9,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import {
-  type Answer,
-  emptyAnswer,
-  formatPoints,
-  scoreQuestion,
-} from '@/features/quizzes/grade';
+import { type Answer, formatPoints } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 
@@ -66,7 +61,7 @@ export default function AttemptResult() {
           action={
             <ErrorAction
               asChild
-              iconLeft="chevronLeft"
+              iconLeft="navigationBack"
               iconLeftClassName="me-1"
             >
               <Link preload="intent" to="/learning">
@@ -93,7 +88,7 @@ export default function AttemptResult() {
             preload="intent"
             to="/learning"
           >
-            <Icon name="chevronLeft" size={20} />
+            <Icon name="navigationBack" size={20} />
           </Link>
           <div className="flex-1">
             <h2 className="t-large-card-title">{attempt.quizName}</h2>
@@ -129,44 +124,17 @@ export default function AttemptResult() {
 
         {hasBreakdown ? (
           <div className="flex flex-col gap-4">
-            {attempt.questions.map((q, i) => {
-              const a = answers?.[q.id] ?? emptyAnswer(q);
-              const scored = scoreQuestion(q, a);
-              const ok = scored.awarded >= scored.max && scored.max > 0;
-              return (
-                <div
-                  className="rounded-card border border-line bg-surface p-4"
-                  key={q.id}
-                >
-                  <div className="mb-3 flex items-center gap-2">
-                    <span
-                      aria-label={ok ? 'correct' : 'incorrect'}
-                      className={cnBadge(ok)}
-                    >
-                      <Icon
-                        name={ok ? 'check' : 'x'}
-                        size={13}
-                        strokeWidth={2.5}
-                      />
-                    </span>
-                    <p className="t-meta text-fg-muted">
-                      {m.quiz_question_n({ n: i + 1 })}
-                    </p>
-                  </div>
-                  <QuestionRunner
-                    answer={a}
-                    onChange={() => {}}
-                    question={q}
-                    review
-                  />
-                  {q.explanation && (
-                    <p className="t-meta mt-3 border-divider border-t pt-3 text-fg-muted">
-                      {q.explanation}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+            {attempt.questions.map((question, i) => (
+              <div className="border-divider border-b pb-6" key={question.id}>
+                <QuestionRunner
+                  answers={answers}
+                  onChange={() => {}}
+                  question={question}
+                  questionNumber={i + 1}
+                  review
+                />
+              </div>
+            ))}
           </div>
         ) : (
           <p className="py-8 text-center text-fg-muted">
@@ -176,18 +144,11 @@ export default function AttemptResult() {
 
         <div className="mt-6">
           <Link preload="intent" to="/learning">
-            <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
+            <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
           </Link>
         </div>
         <MaterialAttributionFooter provenance={quiz?.provenance} />
       </div>
     </PanelWithInvertedRadius>
   );
-}
-
-function cnBadge(ok: boolean) {
-  return [
-    'flex h-6 w-6 items-center justify-center rounded-full text-white',
-    ok ? 'bg-solid-success' : 'bg-solid-error',
-  ].join(' ');
 }

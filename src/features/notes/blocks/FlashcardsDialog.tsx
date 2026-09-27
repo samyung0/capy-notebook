@@ -21,10 +21,11 @@ export function FlashcardsDialog({
 }: {
   open: boolean;
   initialCode?: string;
-  onSave: (code: string) => void;
+  onSave: (code: string) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [cards, setCards] = useState<FlashcardContent[]>([]);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -53,12 +54,21 @@ export function FlashcardsDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} size="lg" variant="ghost">
+          <Button disabled={saving} onClick={onClose} size="lg" variant="ghost">
             {m.action_cancel()}
           </Button>
           <Button
-            disabled={!canSave}
-            onClick={() => onSave(flashcardsFenceBody(clean))}
+            disabled={!canSave || saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await onSave(flashcardsFenceBody(clean));
+              } catch {
+                // Keep the draft; the mutation handler reports the error.
+              } finally {
+                setSaving(false);
+              }
+            }}
             size="lg"
             variant="accent"
           >
@@ -66,7 +76,9 @@ export function FlashcardsDialog({
           </Button>
         </>
       }
-      onClose={onClose}
+      onClose={() => {
+        if (!saving) onClose();
+      }}
       open={open}
       title={m.editor_flashcards()}
       width={620}
@@ -79,17 +91,20 @@ export function FlashcardsDialog({
           >
             <div className="grid flex-1 grid-cols-2 gap-2">
               <Input
+                disabled={saving}
                 onChange={(e) => update(i, { front: e.target.value })}
                 placeholder={m.editor_card_front()}
                 value={c.front}
               />
               <Input
+                disabled={saving}
                 onChange={(e) => update(i, { back: e.target.value })}
                 placeholder={m.editor_card_back()}
                 value={c.back}
               />
             </div>
             <IconButton
+              disabled={saving}
               icon="trash"
               label={m.editor_remove_card()}
               onClick={() => remove(i)}
@@ -100,6 +115,7 @@ export function FlashcardsDialog({
         ))}
         <Button
           className="self-start"
+          disabled={saving}
           onClick={add}
           size="sm"
           variant="outline"

@@ -1,11 +1,34 @@
 # Question bank implementation plan
 
-Status 2026-09-27: written for review, nothing implemented. Epo's decisions are
-recorded in `human/agentic-retrieval.md`, `human/authorization-permissions-lifecycles.md`,
-`human/frontend/plate-editor.md` and `human/miscellaneous.md` (the 2026-09-24 to
-2026-09-27 entries). The approved UI is `artifacts/2026-09-25-question-bank-mocks.html`
-(version 3). Deferred work is in `todo-question-bank.md`. The last section lists
-the calls this plan still needs from Epo; each has a recommendation.
+Status 2026-09-27: phases 1–7 are implemented in the working tree; a further
+UI comparison against the approved mocks has been rechecked after fixes. The shared bank
+database and separate public/private B2 buckets are provisioned. The pilot uses
+verified catalogs with 18 HKDSE and 11 IELTS topics, and fresh Astra medium
+subagents at every generation stage. Four topics have passed blind solving,
+visual review and copy checks, with 200 questions published. Another 150
+questions are rendered and Go-valid; the other 22 topics have admitted
+references/styles and frozen writer packets. Epo requested wrap-up after this
+round; all subagents and publication processes have finished. Resume details are
+in [question-bank-handoff.md](question-bank-handoff.md). Verification and
+operational setup are documented in `openwiki/question-bank.md` and the ignored
+pilot run records.
+Epo's decisions are recorded in `human/agentic-retrieval.md`,
+`human/authorization-permissions-lifecycles.md`, `human/frontend/plate-editor.md`
+and `human/miscellaneous.md`. Deferred product work remains in
+`todo-question-bank.md`.
+
+September 27 decisions: bank asset uploads use an authenticated API endpoint
+with environment credentials as well as the local publisher; editing retains
+review; stale content saves are rejected; embedded materials refetch on every
+view/edit open. Matching uses a separate choice pool. Quantity answers use an
+authored fixed unit and value-only entry, without unit conversion. Jev grades
+non-computational open answers, with its context and per-item scoring contract
+still under evaluation.
+The approved responsive layout is A throughout, with sequential navigation
+and no redundant exam/subject heading above the question. The
+[interactive preview](https://faflav2lddl1.postplan.dev) and
+`artifacts/2026-09-27-question-bank-responsive-mocks.html` include the bank,
+question dialog, text and graph editors.
 
 Reviewers: check the plan against the recorded decisions and the code, not
 against taste. A step that contradicts a decision in `human/` is a finding.
@@ -32,67 +55,36 @@ Tracked in `todo-question-bank.md` or decided as later work:
   learning plans, correct/incorrect list icons, the "2 correct · 2 to retry"
   line. The bank page ships read-only for learners until this is designed.
 - Per-answer-type control redesign, and whether seven types are too many.
-- Per-item LLM grading of marking schemes and the `bench/grading` rerun.
+- Production per-item Jev grading. The follow-up benchmark covers context,
+  partial credit and computational-question detection before rollout.
 - IELTS Listening (needs TTS), library-sourced subjects, GeoGebra, image or
   graph options in multiple choice.
 - A production tunnel. Nothing here writes to an app database from the PC.
 
-## Current state that shapes the plan
+## Implemented structure
 
-- **Quizzes are Plate documents, not JSON.** `materials.content` holds a
-  `quiz` element with `quiz_question` children built from `quiz_prompt`,
-  `quiz_option` and `quiz_explanation` nodes. Yjs is authoritative. API
-  question JSON is converted to nodes on write and back on read in three
-  places: `src/features/materials/document.ts` (`quizQuestionNode`,
-  `quizQuestionElementToQuestion`), `server/internal/materialdoc/document.go`
-  (`quizQuestionNode`, `ExtractQuiz`, `validateQuizQuestion`) and
-  `collaboration/src/materialDocument.ts`. All three require `level`.
-- **Seven question types**: mcq, multi, boolean, short, matching, ordering,
-  open (`src/api/types.ts` `QUESTION_TYPES`). Scoring in
-  `src/features/quizzes/grade.ts`: closed types all-or-nothing times `points`,
-  open answers one 0/0.5/1 judgment times `points`, where the judge prompt
-  already labels rubrics "Marking scheme" (`pipeline/pipeline/prompts/quiz.py`).
-- **Attempts and mistakes** store raw question JSON snapshots
-  (`attempts.questions`, `mistakes.question`); nothing re-grades on the server.
-- **Quiz editing** today: `QuizForm` on `/quizzes/$quizId/edit`
-  (`src/routes/QuizEdit.tsx`, with the app sidebar), `QuizDialog` for
-  embedded quizzes (`src/features/notes/blocks/QuizDialog.tsx`), and editable
-  prompt text inside the collaborative editor (`elements.tsx`
-  `QuizQuestionElement`).
-- **Generation**: `huma_generate.go` requires `levels` (min 1); the pipeline
-  writes question JSON from a free-text contract (`prompts/generate.py`) and
-  `workflows.py` `normalize_questions` defaults `level`. Agent tools
-  (`agenttools.go` create_material / replace_question) take the same JSON.
-- **Equations** in notes are `@platejs/math` `equation` and `inline_equation`
-  voids with `texExpression`, edited through `window.prompt`
-  (`nodeComponents.tsx` `BlockEquation`, `InlineEquation`;
-  `editorCommands.ts` `insertInlineEquation`). Mermaid is edited the same way
-  (`elements.tsx`, `BlockShell` with a label and grey border).
-- **Floating toolbars**: table and columns use copied Radix popover markup and
-  `FloatingActionButton` (circular import between `nodeComponents.tsx`,
-  `TableNodes.tsx` and `ColumnNodes.tsx`); the selection, link and study-block
-  toolbars each have their own container. Radius differs (`rounded-lg` vs
-  `rounded-card`).
-- **Editor assets reject SVG** (`server/internal/httpapi/editor_assets.go`
-  allowlist, test "rejects svg") and need a workspace, so standalone quizzes
-  have no upload path at all.
-- **Charts**: `ChatChart.tsx` drawing code is private to the module, takes
-  OpenUI parser elements and always wraps in the chat frame (values table,
-  citation footer).
-- **Library database** (`capy-library-db`, runbook §7.3): superuser owner
-  `capy_library`, read-only `capy_library_reader`, WireGuard 10.77.0.2:5433,
-  tunnel 15433 from the PC, nightly local `pg_dump` of `library` only.
-- **Migrations**: `store.migrateWithFS(ctx, pool, fsys)` already takes any pool
-  and FS (unexported); ledger `public.schema_migrations`; app migrations run to
-  `0034`.
-- **Precedents to copy**: the ops library pool (lazy connect, `MaxConns` 2,
-  404 `library_unconfigured`, 503 `library_unavailable`;
-  `server/internal/ops/library_store.go`), hand-granted `operators`, column
-  grants in `deploy/ops-roles.sql`, Playwright plus in-process Vite page
-  rendering in `bench/parsers/scripts/verify_native_viewers.ts`, headless
-  `claude -p` with structured output in
-  `bench/parsers/scripts/compare_claude_recovery.py`.
-- No MathLive, no JSXGraph, no Collapsible component, no learning plan concept.
+- Quiz materials remain Plate/Yjs documents. Each void `quiz_question` keeps
+  its canonical question in a validated `question` attribute and one empty leaf.
+  Go, the collaboration service and the browser enforce the same fixtures and
+  generated limits. Legacy question payloads are rejected.
+- All seven answer types use stem/parts. Parts own stable IDs, blocks, answer,
+  plain marking items and worked solution. Marks are the marking-item count.
+  Attempts retain their grading snapshot; mistakes retain authored fields only.
+- `QuestionDialog` supplies block/part editors and a learner preview. The quiz
+  edit page and bank share it. Notes use MathLive and the same chart/graph
+  editors, with a shared floating toolbar. The old embedded QuizDialog is gone.
+- Authored quiz and flashcard writes require the revision read when editing
+  began. The collaboration service checks revision and pending projections
+  under the material lock. Every view/edit open fetches current content.
+- Bank reads, editor saves/review/upload/comment, dedicated database roles,
+  source attribution, configuration and backup scripts are implemented. Pools
+  connect lazily; missing bank configuration does not stop the rest of the app.
+- `lab/questions` stages generation and review artifacts locally. The Go
+  publisher validates evidence, resolves historical source references, uploads
+  immutable assets and inserts without overwriting previously published items.
+- User quizzes and notes keep bounded static graph SVG in their documents.
+  Bank graphs/images use public content-hashed URLs written through the API or
+  publisher. No browser receives bucket credentials.
 
 ## Question format
 
@@ -136,8 +128,8 @@ type Block = TextBlock | ChartBlock | GraphBlock | TableBlock | ImageBlock;
 type Answer =
   | { type: 'mcq' | 'multi'; options: string[]; correct: number[] } // options: text with math only
   | { type: 'boolean'; correct: boolean }
-  | { type: 'short'; accepted: string[] }
-  | { type: 'matching'; pairs: { left: string; right: string }[] }
+  | { type: 'short'; accepted: string[]; unit?: string } // authored fixed unit; values only
+  | { type: 'matching'; options: string[]; pairs: { left: string; right: number }[] } // right: index in options
   | { type: 'ordering'; items: string[] } // stored in the correct order
   | { type: 'open'; accepted: string[]; hints: string[] };
 
@@ -167,6 +159,16 @@ What changes from today, with no backward compatibility:
 - Attempt `answers` are keyed by part id.
 - `sources` is not in the question; bank rows keep it in a column, and quiz
   materials keep using material `provenance`.
+- Matching stores the complete choice pool in `options`, including unused
+  distractors; each correct pair points to an option index. More than one
+  left item may point to the same choice when the exam permits reuse.
+  Shuffling preserves the original option identity. Learners receive the
+  left items and complete pool, never the correct pair indices.
+- Quantity short answers carry one required `unit` selected by the author.
+  The prompt and non-editable input suffix show that unit; learner input and
+  `accepted` contain values only, all expressed in that unit. Reject unit
+  text instead of stripping it, interpreting another unit or converting it.
+  Text blanks and unitless quantities omit the field.
 
 Validation, one implementation per runtime, all checked by shared fixtures:
 
@@ -174,13 +176,16 @@ Validation, one implementation per runtime, all checked by shared fixtures:
   bank policy requires image and graph URLs under `BANK_ASSETS_URL`, rejects
   inline SVG and requires a non-empty `solution` on every part. The quiz
   policy rejects image blocks and URL graphs, accepts inline SVG up to 256 KiB
-  starting with `<svg`, and allows an empty solution (see open call 3 and 7).
-- TypeScript `src/features/questions/validate.ts` for the editor and
+  passing the static SVG allowlist, and allows an empty solution.
+- TypeScript `src/features/questions/validation.ts` for the editor and
   `document.ts`; `collaboration/src/questions.ts` mirrors Go (same "keep in
   sync" note as `materialDocument.ts`).
 - Shared fixtures: `server/internal/questions/testdata/*.json` valid and
   invalid cases, loaded by the Go test, the frontend Vitest and the
   collaboration Vitest, so the three validators cannot drift silently.
+- Matching fixtures cover unused choices, reusable choices and invalid
+  correct indices. Fixed-unit fixtures cover the authored unit, value-only
+  accepted answers and rejection of learner-supplied units.
 - Limits: 40 blocks per stem, part and solution; 26 parts; text block 12,000
   characters (an IELTS passage fits in one paragraph block per letter); table
   30 rows by 10 columns; chart 50 labels by 8 series; graph 60 elements, term
@@ -222,7 +227,7 @@ JSXGraph.
 
 ## Storage of quiz questions in materials
 
-Recommended (open call 1): a `quiz_question` element becomes a void holding the
+Implemented: a `quiz_question` element is a void holding the
 question as one attribute:
 
 ```json
@@ -233,7 +238,7 @@ question as one attribute:
   conversion code go (`quizQuestionNode`, `questionOptions`,
   `quizQuestionElementToQuestion`, `ExtractQuiz` shrink to wrapping and
   unwrapping). Validators call the question validator on the attribute.
-- `quiz` keeps `id` and `timeLimitMin`.
+- The empty `quiz` sentinel keeps its `id`; `timeLimitMin` is removed.
 - Quiz questions stop being editable as Plate text in the collaborative editor;
   every quiz editing path goes through the question dialog, which 5A already
   requires. The static renderer and the collaborative editor both render
@@ -265,14 +270,17 @@ uses the same version as the browser editor.
   - The selected block gets the shared block toolbar above it in the preview:
     edit, replace, move, duplicate, delete.
   - Part rows show marks read-only from the scheme item count.
-  - Header shows exam · subject · topic for bank questions; footer "Question N
+  - Header shows topic context for bank questions; footer "Question N
     of M", Cancel, Save.
   - The question-level settings `layout` and `labels` sit in a ⋮ on the
-    outline header (open call 4; not in the mock).
+    outline header.
   - Clicking a row, or Edit on the toolbar, swaps the dialog body to that
     block's editor with a back link. A second dialog never opens.
   - The dialog takes `question` and `onSave(question)`. The quiz page's
     callback updates its draft; the bank page's callback PUTs the question.
+    Both retain the loaded content version and keep the draft on a rejected
+    stale save. A bank graph export or replacement image uploads through the
+    bank asset endpoint before the question stores its returned public URL.
 - Block editors (part 3), each with Remove block (danger-light) beside Save:
   - Text: a minimal Plate editor with only paragraphs and inline equations,
     serialised to and from the `$…$` text format. It shares the MathLive
@@ -290,7 +298,7 @@ uses the same version as the browser editor.
   - Table: flat toolbar (Header row, Row +/−, Column +/−), cells edited in
     place with the Text editor mounted only in the focused cell. No merged
     cells.
-  - Image (bank questions only, open call 3): Replace, Description,
+  - Image (bank questions only): Replace, Description,
     Attribution. No display options.
   - Part settings: Answer type dropdown, the answer for that type (reusing the
     current `QuizForm` controls per type until the per-type redesign),
@@ -322,15 +330,56 @@ Shared floating toolbar:
   command creates the embedded quiz with one blank question and inserts the
   card as today, without a dialog. `QuizDialog` and the quiz branches of
   `dialogContext.tsx` go; flashcards keep their dialog.
+- Every explicit open of an embedded material for viewing or editing issues
+  a fresh request for that material, even when its cached query is fresh.
+  This applies to quiz and flashcard views, dialogs and edit-page navigation.
+  Initialize the editing draft and its version from that response. A failed
+  refresh shows the existing error/retry UI and does not initialize an edit
+  from stale cache. Opening the parent note alone does not fetch every embed.
 - Standalone quizzes in the workspace render `QuestionView` in both modes;
   editing links to the quiz page.
 - `QuizAttempt` renders one question at a time (1A or 1C by `layout`, "3 / 10",
   Previous and Next without a divider) with the existing per-type inputs per
   part; `AttemptResult` renders `QuestionReview`.
-- `timeLimitMin` loses its only editor with `QuizDialog` (open call 8).
+- The unenforced `timeLimitMin` field and its editor are removed from the contract.
+- Reject stale quiz and flashcard authored-content saves in standalone,
+  workspace and embedded forms. Carry the version loaded with the draft to
+  the authoritative write boundary, retaining existing Yjs guards. Existing
+  server checks compare state read at save time and do not detect a browser
+  draft that went stale earlier. Flashcard study state stays separate.
 
 ## Grading until per-item grading
 
+- Epo's grading direction: open/essay answers are for non-computational
+  questions and use text-only Jev; computational questions use deterministic
+  answer types such as MCQ and fuzzy fill-in. Generation instructions apply
+  this rule. Benchmark a Jev computation check for bank review/editing before
+  choosing its admission behavior. Conceptual mathematics can be
+  non-computational; a text-only judge also needs enough text to assess each
+  marking item when the question contains a figure.
+- Computational fill-in uses the authored fixed unit and value-only entry;
+  neither Jev nor fuzzy matching performs unit conversion. It needs
+  sign-sensitive deterministic matching of the permitted value forms.
+  The current prose `fuzzyMatch` removes minus signs and other punctuation;
+  reusing it unchanged would treat some different numeric answers as equal.
+  Specify the accepted numeric/text forms before enabling this path.
+- JSON is a valid input format for Jev. The existing benchmark sends a JSON
+  `state` with text fields and a decision definition per marking point.
+  Compare marking scheme plus student answer against variants that also
+  include the question's text, shared stem and relevant part context. Images
+  and SVG bytes do not give a text-only model visual understanding.
+- Benchmark direct per-item 0/0.5/1 decisions against Epo's candidate
+  probability bands: below 0.35 gives 0, below 0.65 gives 0.5, otherwise 1.
+  The [September 27 screening](bench/grading/reports/2026-09-27-jev-partial-credit.md)
+  completed 288 calls with genuine item-level half-credit labels. Direct
+  grading matched 62/66 plain-item scores with context, versus 55/66 for
+  bands; the latter gave zero to 10 of 11 half-credit answers. A `noul`
+  probability measures support for a proposition, not the fraction of a
+  mark earned. Prefer direct decisions for the next design, pending Epo's
+  scoring-contract choice and held-out evaluation. Keep `markscheme` as
+  plain strings unless a separate decision adds stored partial criteria.
+- During the format migration, preserve the existing backend quiz-slot
+  grading until the Jev follow-up lands. This is temporary behavior:
 - `grade.ts`: part max = `markscheme.length`; closed types all-or-nothing per
   part as today; open parts one judge call each with `markscheme` passed as the
   marking scheme (the prompt text already says "Marking scheme"), award snapped
@@ -338,9 +387,10 @@ Shared floating toolbar:
   its parts.
 - `scoreAttempt.ts`, `cloudGrade.ts`, `/api/quiz-grade` (`quiz_grade.go`
   request field renamed from `rubrics` to `markscheme`), the pipeline
-  `build_grade_prompt` and `quiz_grade.golden.json` change field names only.
-  `bench/grading` keeps working because the judge input is unchanged in
-  meaning; its rerun belongs to the per-item follow-up.
+  `build_grade_prompt` and `quiz_grade.golden.json` need an explicit adapter
+  from shared stem and part blocks to the grading input. This is more than a
+  field rename. Preserve old benchmark runs and add new input-contract cases;
+  do not treat old whole-answer results as evidence for per-item scoring.
 - `mistakes`: a question is a mistake when any part lost marks.
 
 ## Bank storage
@@ -397,7 +447,10 @@ Buckets (runbook §4.2, new):
 - Public bank bucket: figures and graph SVGs at `<sha256>.<ext>`, fronted by a
   Cloudflare hostname (the value of `BANK_ASSETS_URL`) with
   `Cache-Control: public, max-age=31536000, immutable`. No CORS needed for
-  `<img>`. Key scoped to write from the PC only.
+  `<img>`. The local publisher and production API use environment-configured
+  upload credentials. Production bank editors upload through the API; B2
+  credentials never go to the browser. UAT and local app servers remain
+  read-only under the existing bank environment policy.
 - Private bank bucket: `references/`, `runs/` (style notes, prompts,
   receipts) and `backups/`. Key for the PC and a separate write-only key for
   the backup cron.
@@ -418,6 +471,10 @@ Config (`deploy/env-manifest.json`):
   `bank_read_only` and `editor` is false in the syllabus response.
 - `BANK_ASSETS_URL` (variable; `coolify`, `local`): public bucket base URL
   for the bank validation policy.
+- `BANK_PUBLIC_B2_*` (credentials secret; production `coolify`, and the local
+  publisher's `.env.local`): public bank object storage configuration. The
+  same variable names can carry separate deployment credentials; no PC-only
+  upload restriction. The app API does not need private-bucket credentials.
 - `BANK_COMMENT_EMAIL` (variable; `coolify`, `local`): comment recipient,
   samyung@stablestudio.org in production. Empty means 404 on the comment
   route.
@@ -449,13 +506,27 @@ other forbidden reads):
 | `GET /api/bank/syllabus` | signed in | exams, subjects, topics with `total` and `reviewed` counts, and `editor` |
 | `GET /api/bank/topics/{topicId}/questions` | signed in | rows: id, position, preview (first stem text, 160 characters), marks, hasFigure, hasTable, reviewedAt, reviewer name |
 | `GET /api/bank/questions/{id}` | signed in | editors get the full question, sources, `updatedAt` and review fields; everyone else gets the learner view |
+| `POST /api/bank/assets` | editor | validates a bounded supported image or graph SVG, writes a content-hash object to the public bank bucket, returns its public URL |
 | `PUT /api/bank/questions/{id}` | editor | body `{ question, updatedAt }`; bank-policy validation; `UPDATE … WHERE id = $1 AND updated_at = $2`, 409 `bank_conflict` on zero rows; sets `updated_by` |
 | `PUT /api/bank/questions/{id}/review` | editor | `{ reviewed: boolean }` sets or clears `reviewed_at` and `reviewed_by`; an edit leaves the review as it is |
 | `POST /api/bank/questions/{id}/comments` | editor | `{ text }` up to 2,000 characters; sends one email and returns 204 |
 
+- Bank validation means the shared question schema plus the bank-specific
+  rules, including required worked solutions and public asset URLs under the
+  parsed `BANK_ASSETS_URL` origin/base path. The URL is a reference to bytes
+  stored in B2, not an upload or a credential. Validate upload content and set
+  the correct Content-Type and immutable Cache-Control at object creation.
+- Question saves always store question content in Postgres. Text, formulas,
+  chart/table data, graph construction data, dimensions and attribution live
+  there. New or changed graph SVG/image bytes upload to B2 first; a metadata
+  or text-only edit reuses the existing asset URL. Rendering a data-driven
+  chart does not require an asset upload.
+- Review remains a manual marker after content edits. Epo assigns reviewer
+  scopes; Mark reviewed/Undo does not add a version-bound review protocol.
 - Learner view: stem and part blocks, answer type, marks, and only what a
   learner needs to read the part (mcq/multi options; matching left items and
-  shuffled right items; ordering items shuffled). No correct answers,
+  the complete shuffled choice pool; ordering items shuffled; required answer
+  units). No correct answers,
   accepted answers, hints, marking scheme or solution.
 - Reviewer names come from the app database `users` table by id; ids unknown
   to that environment (production ids in UAT) show no name.
@@ -479,7 +550,7 @@ in the notch:
   "7 marks · figure"; edit mode adds the reviewer and age, an All /
   Unreviewed filter with count, and the reviewed badge per row. View mode
   shows no status icons until the studying follow-up.
-- Right: breadcrumb (Question bank / exam / subject / topic) with the
+- Right: topic context without the redundant exam/subject heading, with the
   CenterContentHeader view/edit toggle for editors; `QuestionView` without
   inputs or Check answer in view mode; in edit mode each part adds Answer,
   Marking scheme and Worked solution, and the footer shows "Reviewed by N ·
@@ -487,10 +558,19 @@ in the notch:
 - Comment: `SimpleDialog` with a textarea, Cancel and Send; the text stays on
   failure.
 - Edit opens the question dialog; Save PUTs and refreshes the row; 409 shows
-  "changed since you opened it" and reloads.
+  "changed since you opened it" and preserves the draft. Reload/discard is
+  an explicit user action.
 - MSW handlers and seed data for the bank routes in `src/mocks/handlers.ts`
   and `src/mocks/db.ts`, including an editor and a non-editor scenario.
 - Messages in `messages/en.json` and `messages/zh.json`.
+- Responsive navigation uses approved A throughout: below `md`, show one
+  level at a time (topics, questions, question), with Back returning to the
+  previous level. At `md`, the question sits beside the list and Topics
+  replaces the list with the syllabus. At `xl`, show all three panes.
+  Keep the question dialog's Outline/Preview tabs below `md` and side-by-side
+  panes from `md`. Omit extra topic/question pickers. Use mobile-first
+  standard named minimum breakpoints only, without custom values or
+  max-width breakpoint variants.
 
 ## Notes
 
@@ -516,7 +596,7 @@ in the notch:
   mermaid `BlockShell` label, grey shell and inner border go the same way.
 - Selecting an embed shows the shared block toolbar: Edit, Copy, Delete. Edit
   opens the block editor in a dialog with Remove block and Save; mermaid Edit
-  opens a dialog with a source textarea and preview (open call 5).
+  opens a dialog with a source textarea and preview, as already approved.
 - Editing stays inside the Yjs `content` root with stable ids; no runtime state
   on nodes.
 
@@ -538,10 +618,11 @@ data/question-bank/<exam>/<subject>/<topic>/
   render/<id>.png  assets/<sha256>.svg  receipts/<stage>-<timestamp>.json
 ```
 
-Stages per topic, each a fresh headless `claude -p` process following
-`compare_claude_recovery.py` (subscription login with `ANTHROPIC_*` stripped,
-`--json-schema` structured output, `--no-session-persistence`, a frozen input
-manifest, a receipt with usage before and after each call, no retries):
+Stages per topic use fresh Codex GPT-6 Astra medium subagents with no inherited
+conversation, as Epo selected on September 27. The driver freezes input, prompt
+and JSON schema, binds the dispatched agent identity, then validates its output.
+Receipts record hashes and admission; token usage is explicitly unavailable from
+the subagent tool. There are no automatic retries:
 
 1. References: web tools allowed. Finds past and sample papers for the topic,
    saves them under `references/`, records source URLs. Never distributed.
@@ -549,7 +630,9 @@ manifest, a receipt with usage before and after each call, no retries):
    mark allocation, difficulty, what is tested, typical stems. No quoted text.
 3. Write (clean room): no tools; input is the topic, `style.md`, the question
    JSON schema and the graph element whitelist. Writes about 50 questions with
-   answers, marking schemes and worked solutions.
+   answers, marking schemes and worked solutions. Instructions restrict
+   computational tasks to deterministic answer types and open/essay tasks to
+   non-computational grading, with marking items explicit enough to assess.
 4. Solve (blind): no tools; input is each question's learner view. Returns
    answers. `compare.json` records per-part agreement (exact for closed types,
    a judge call for open).
@@ -569,6 +652,13 @@ choice as mcq or multi. Passages are original writing (library sources are for
 later subjects); the writer keeps facts general enough not to mislead, and the
 review pass checks them.
 
+Matching generation supplies the full `options` pool, including unused
+headings, plus the correct option index for each left item. Exam-specific
+instructions control whether choices may be reused. Quantity-answer
+instructions prescribe one unit, write accepted values in that unit and use
+the fixed-unit answer control. The broader answer-control redesign stays
+deferred.
+
 Publish is a Go command, `server/cmd/bank`, so it reuses the question
 validator, the migrator and the B2 client:
 
@@ -584,7 +674,7 @@ validator, the migrator and the B2 client:
   `BANK_PUBLIC_B2_*`, `BANK_PRIVATE_B2_*`, `BANK_ASSETS_URL`.
 - Operator deletes are `DELETE FROM questions WHERE id = …` as `capy_bank`.
 
-Models: see open call 6.
+Models: GPT-6 Astra, medium effort, for every generation stage.
 
 ## Phases
 
@@ -595,11 +685,12 @@ entries. Decision code references go into `human/` after each phase.
 1. **Format and views.** `src/features/questions` types, validator, fixtures,
    `TextView`, block views, `QuestionView`, `QuestionReview`; chart extraction
    from `ChatChart`; Go `server/internal/questions`; collaboration mirror;
-   limits. Tests: validator fixtures in all three runtimes, `parseMathText`,
+   limits, matching choice pool and fixed-unit answer metadata. Tests:
+   validator fixtures in all three runtimes, `parseMathText`,
    chart extraction keeps chat rendering identical (existing chat tests plus a
    render test).
-2. **Quizzes on the new format.** Storage per open call 1; converters and
-   validators in `document.ts`, `materialdoc`, collaboration; levels optional
+2. **Quizzes on the new format.** Void question-attribute storage; converters and
+    validators in `document.ts`, `materialdoc`, collaboration; levels optional
    in all three and in `GenerateFormDialog`, `GenerateReq` (`minItems` gone)
    and the pipeline (`service.py`, `generate.py`, `workflows.py`); the
    generator's contract rewritten for the new shape with a JSON schema;
@@ -608,19 +699,26 @@ entries. Decision code references go into `human/` after each phase.
    MSW fixtures, `dev_seed.sql`, `e2e/fixtures/seed.sql` and seed.ts; level
    badges and `src/lib/levels.ts` UI removed. Tests: Go materialdoc and
    httpapi quiz tests, store attempt tests, collaboration document tests,
-   pipeline generate and quiz-grade tests, `grade.test.ts`, the quiz sharing
-   e2e.
+    pipeline generate and quiz-grade tests, `grade.test.ts`, the quiz sharing
+    e2e, and stale authored-content saves for quiz/flashcard forms across
+    standalone, workspace and embedded materials; matching with unused and
+    reused choices; fixed-unit entry, rejection of typed units and numeric
+    sign preservation.
 3. **Question dialog and quiz page.** MathLive and JSXGraph dependencies;
    `QuestionDialog`, block editors, `BlockToolbar`; quiz page 5A without the
-   sidebar; `QuizDialog` removal; embedded quiz Edit navigation; `Collapsible`
+   sidebar; `QuizDialog` removal; embedded quiz Edit navigation and fresh
+   reads on every embedded-material open; `Collapsible`
    wrapper. Tests: text editor serialisation round trip, graph element
    whitelist and SVG export, dialog save and cancel, a Playwright spec that
-   builds a question with a formula, a chart and a graph and saves it.
+   builds a question with a formula, a chart and a graph and saves it;
+   reopen a cached embed after an external edit, check both view and edit
+   show the latest content/version, and verify failed refresh cannot seed a
+   stale editing draft.
 4. **Notes.** MathLive equations; chart and graph embeds; mermaid restyle and
    edit dialog; `BlockToolbar` in table, columns and embeds. Tests: editor
    e2e for formula editing and chart insert/edit (MSW editor suite),
    validation tests for the new nodes in all three runtimes, index-text test.
-   Run `pnpm bench:editor` and compare against the last run.
+   The CI `pnpm bench:editor` performance gate remains before rollout; compare on the same runner.
 5. **Bank infrastructure.** `server/bankmigrations`, `store.MigrateFS`,
    `server/cmd/bank migrate`, `deploy/bank-db.sql`, backup script, env
    manifest keys, runbook §4.2, §7.3 and §8. Applying `deploy/bank-db.sql` on
@@ -632,7 +730,9 @@ entries. Decision code references go into `human/` after each phase.
    routes, comment email, OpenAPI regeneration (`pnpm gen:api:full`), hooks,
    page, MSW. Tests: learner view strips every answer field for each type,
    editor gating with and without the editor pool, 409 on a stale update,
-   review set and clear, comment 404 without recipient and one email sent
+    review set and clear with review retained on edit, editor-only asset upload
+    and returned URL accepted by bank validation, stale-save draft retention,
+    comment 404 without recipient and one email sent
    (log sender), 503 when the pool is down; a Playwright MSW spec for view and
    edit mode.
 7. **Generation tooling.** `lab/questions` as above, `server/cmd/bank
@@ -674,29 +774,28 @@ editors) and `test-catalog.md`.
 - **Copyright.** References stay private; the clean-room writer never sees
   them; the copy check catches leaks.
 
-## Open calls for Epo
+## Remaining calls and operational work
 
-Each blocks the phase named; the first option is the recommendation.
+- Generation uses the selected Astra medium subagents. Verified catalogs in
+  `lab/questions/syllabi` cover 18 HKDSE units and 11 IELTS task types; the
+  browser examples remain mock fixtures, not published questions.
+- Bank roles, public/private buckets, local tunnel and Cloudflare asset hostname
+  are provisioned. Empty-bank backup and restore are verified, and a published
+  graph returned HTTP 200 with a Cloudflare cache hit. The handoff content backup
+  restored all 200 questions with matching complete-row fingerprints. Configure the production
+  editor connection and comment recipient for rollout. Coordinate the old-quiz
+  data cutover before deploying this incompatible shape.
+- Four local topics completed generation, blind solving, visual review,
+  copy checks and publication (200 questions). The user stopped at this round:
+  three more topics are written but need remaining admission checks, and 22
+  have reference/style evidence ready for writing. Resume from the handoff when
+  requested, then review the completed pilot in production after rollout.
 
-1. **Quiz storage (phase 2).** The question as one validated attribute on a
-   void `quiz_question` node, or a node type per block and part. The first
-   removes the node conversion code; the second keeps quiz text editable as
-   Plate nodes, which nothing needs once editing moves to the dialog.
-2. **Graph image in notes and user quizzes (phase 3).** Inline SVG in the
-   block, capped at 256 KiB and shown through `<img>`; or allow SVG as an
-   editor asset. Editor assets reject SVG today, need a workspace (standalone
-   quizzes have none) and would need clone and cleanup handling.
-3. **Image blocks (phase 3).** Bank questions only for now; or build an upload
-   path for standalone quizzes first.
-4. **Layout and labels (phase 1).** Two question fields, `layout` (exam paper
-   or split) and `labels` ((a) (b) or 1 2), set from a ⋮ on the outline header.
-   The mock shows both layouts but no control for choosing.
-5. **Mermaid Edit (phase 4).** A dialog with a source textarea and preview,
-   Remove block and Save; or keep the prompt for mermaid only.
-6. **Generation models (phase 7).** Claude Opus 5.5 at high effort for
-   writing, solving and fixing, and Sonnet 5 for references and style notes,
-   through the subscription CLI; or one model for every stage.
-7. **Worked solutions (phase 1).** Required on every part of a bank question,
-   optional in user quizzes; or required everywhere.
-8. **Quiz time limit (phase 3).** Drop the field, since `QuizAttempt` never
-   enforced it; or add it to the quiz page header.
+The implementation uses the plan's recommended void question attribute,
+inline SVG for user graphs, bank-only image blocks, layout/label fields,
+required bank solutions and removal of the unenforced quiz timer.
+
+Production Jev integration, per-item scoring, computational-question checks
+and studying directly from the bank remain deferred. The completed screening
+favors direct 0/0.5/1 decisions but does not establish production accuracy or an
+admission threshold. See `todo-question-bank.md` and the benchmark reports.

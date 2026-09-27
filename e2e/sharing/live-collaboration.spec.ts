@@ -62,9 +62,12 @@ test.describe('live Yjs collaboration', () => {
     // Durability is the client's 1s checkpoint debounce plus the sidecar's store
     // debounce, which stretches to COLLABORATION_MAX_DEBOUNCE_MS (10s) under
     // continuous updates. The default 10s expect budget cannot cover that.
-    await expect(editorPage.getByText('Saved', { exact: true })).toBeVisible({
-      timeout: 20_000,
-    });
+    await expect(editorPage.getByTestId('editor-save-state')).toHaveText(
+      'Saved',
+      {
+        timeout: 20_000,
+      }
+    );
 
     // Projection completion invalidates the material query before static mode.
     await expect

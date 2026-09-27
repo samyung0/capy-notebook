@@ -40,7 +40,7 @@ export function IconPicker({
       </DialogTrigger>
       <DialogContent
         aria-describedby={undefined}
-        cardScrollContainerClassName="min-h-0 overflow-hidden px-4 min-[30rem]:px-5 md:px-5.5"
+        cardScrollContainerClassName="min-h-0 overflow-hidden px-4 sm:px-5 md:px-5.5"
         className="max-w-[912px]"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
@@ -53,7 +53,7 @@ export function IconPicker({
       >
         <DialogTitle className="shrink-0 pr-8">{m.icon_choose()}</DialogTitle>
         <SectionGallery
-          className="h-[350px] min-[22.5rem]:h-[400px] min-[30rem]:h-[440px]"
+          className="h-[350px] sm:h-[440px]"
           initialSectionId={
             iconStyles.find((item) =>
               item.avatars.some((icon) => icon.id === value)
@@ -62,13 +62,13 @@ export function IconPicker({
           label={m.icon_style()}
           sections={iconStyles.map((item) => ({
             content: (
-              <div className="grid grid-cols-3 gap-1.5 min-[22.5rem]:grid-cols-4 min-[30rem]:grid-cols-6">
+              <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
                 {item.avatars.map((icon) => (
                   <button
                     aria-label={icon.id}
                     aria-pressed={draft === icon.id}
                     className={cn(
-                      'relative aspect-square rounded-card border-2 p-1 outline-none transition-colors hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg min-[30rem]:p-1.25',
+                      'relative aspect-square rounded-card border-2 p-1 outline-none transition-colors hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg sm:p-1.25',
                       draft === icon.id
                         ? 'border-solid-accent-1 bg-tint-accent-1 hover:bg-tint-accent-1'
                         : 'border-transparent'
@@ -110,7 +110,7 @@ export function IconPicker({
         />
         <DialogFooter className="shrink-0 flex-row">
           <Button
-            className="flex-1 min-[30rem]:flex-none"
+            className="flex-1 sm:flex-none"
             onClick={() => setOpen(false)}
             size="lg"
             type="button"
@@ -119,7 +119,7 @@ export function IconPicker({
             {m.action_cancel()}
           </Button>
           <Button
-            className="flex-1 min-[30rem]:flex-none"
+            className="flex-1 sm:flex-none"
             disabled={!draft}
             onClick={() => {
               if (draft) {

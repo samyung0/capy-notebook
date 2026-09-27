@@ -17,7 +17,7 @@ import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
-import { Button } from '@/components/ui/Button';
+import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
@@ -414,39 +414,38 @@ export default function WorkspaceOpen() {
           <TopInsetBar className="w-full" />
           <div className="relative min-h-0 flex-1">
             {viewer}
-            {!toolsOpen && (
-              <div className="absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 rounded-full border border-line bg-surface p-1 shadow-sm">
-                {panelTabs.map((t) => (
-                  <Button
-                    aria-label={tabLabel(t)}
-                    className="h-9 rounded-full px-3.5 max-sm:px-3"
-                    iconLeft={TAB_ICON[t]}
-                    key={t}
-                    onClick={() => showTab(t)}
-                    size="sm"
-                    variant="ghost-hover"
-                  >
-                    <span className="max-sm:hidden">{tabLabel(t)}</span>
-                  </Button>
-                ))}
-                {/* The workspace menu is hidden at this width, so settings
-                 * would otherwise be unreachable from an open workspace. */}
-                {rowProps.onOpenSettings && (
-                  <Button
-                    aria-label={m.workspace_settings()}
-                    className="h-9 rounded-full px-3.5 max-sm:px-3"
-                    iconLeft="settings"
-                    onClick={rowProps.onOpenSettings}
-                    size="sm"
-                    variant="ghost-hover"
-                  >
-                    <span className="max-sm:hidden">
-                      {m.workspace_settings_short()}
-                    </span>
-                  </Button>
-                )}
-              </div>
-            )}
+            <FloatingToolbar
+              aria-label={m.workspace_tools()}
+              className="p-1.5"
+              open={!toolsOpen}
+              positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+            >
+              {panelTabs.map((t) => (
+                <ToolbarButton
+                  className="size-10 gap-0 sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                  key={t}
+                  label={tabLabel(t)}
+                  onClick={() => showTab(t)}
+                  tooltipSide="top"
+                >
+                  <Icon name={TAB_ICON[t]} />
+                  <span className="hidden sm:inline">{tabLabel(t)}</span>
+                </ToolbarButton>
+              ))}
+              {rowProps.onOpenSettings && (
+                <ToolbarButton
+                  className="size-10 gap-0 sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                  label={m.workspace_settings()}
+                  onClick={rowProps.onOpenSettings}
+                  tooltipSide="top"
+                >
+                  <Icon name="settings" />
+                  <span className="hidden sm:inline">
+                    {m.workspace_settings_short()}
+                  </span>
+                </ToolbarButton>
+              )}
+            </FloatingToolbar>
           </div>
           <Drawer
             onOpenChange={setToolsOpen}

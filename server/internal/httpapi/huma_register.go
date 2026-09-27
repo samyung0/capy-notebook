@@ -340,6 +340,7 @@ type Empty struct{}
 // intentionally absent from the spec so Orval does not generate a browser
 // client for them.
 func registerRoutes(api huma.API, a *api) {
+	a.registerBank(api)
 	a.registerAccount(api)
 	a.registerModels(api)
 	a.registerAccountLifecycle(api)

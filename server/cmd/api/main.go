@@ -14,6 +14,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/mail"
@@ -378,7 +379,23 @@ func main() {
 	go runOverQuotaNoticeWorker(ctx, st)
 	go runCollaborationEvictionWorker(ctx, st, rdb)
 
+	bankStore := bank.New(env("BANK_DATABASE_URL", ""), env("BANK_EDITOR_DATABASE_URL", ""), env("BANK_ASSETS_URL", ""), env("LIBRARY_DATABASE_URL", ""))
+	defer bankStore.Close()
+	var bankAssets bank.AssetWriter
+	if bankStore.Editable() && env("BANK_PUBLIC_B2_BUCKET", "") != "" {
+		assets, err := blob.NewB2(blob.B2Config{Endpoint: env("BANK_PUBLIC_B2_ENDPOINT", ""), Region: env("BANK_PUBLIC_B2_REGION", ""), Bucket: env("BANK_PUBLIC_B2_BUCKET", ""), KeyID: env("BANK_PUBLIC_B2_KEY_ID", ""), AppKey: env("BANK_PUBLIC_B2_APP_KEY", "")})
+		if err != nil {
+			log.Printf("bank asset upload unavailable: %v", err)
+		} else {
+			bankAssets = assets
+		}
+	}
 	cfg := httpapi.Config{
+		Bank:                   bankStore,
+		BankAssets:             bankAssets,
+		BankAssetsURL:          env("BANK_ASSETS_URL", ""),
+		BankCommentEmail:       env("BANK_COMMENT_EMAIL", ""),
+		MailSender:             emailSender,
 		ReleaseSHA:             env("RELEASE_SHA", ""),
 		ClerkSecretKey:         clerkSecret,
 		ClerkWebhookSecret:     clerkWebhookSecret,

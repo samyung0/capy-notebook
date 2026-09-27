@@ -123,7 +123,7 @@ export default function Dashboard() {
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"
-          sectionClassName="min-h-0 flex-1 gap-2.5 px-2 py-5"
+          sectionClassName="scroll-fade-y min-h-0 flex-1 gap-2.5 px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
         >
           <RecentItemsCard />
         </Panel>

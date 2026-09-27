@@ -1,0 +1,12 @@
+{
+  "name": "legacy-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "old",
+    "type": "boolean",
+    "prompt": "old",
+    "correct": true,
+    "level": "recall"
+  }
+}

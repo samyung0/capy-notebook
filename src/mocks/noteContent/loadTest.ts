@@ -143,17 +143,26 @@ function featureSkeleton(): MaterialValue {
     embeddedQuiz('mat_note_bio_load_test', 'mat_embed_bio_load_quiz', {
       questions: [
         {
-          correct: [1],
-          explanation: 'Mitochondria produce most ATP.',
           id: 'bio_load_q1',
+          labels: 'letters',
+          layout: 'paper',
           level: 'recall',
-          options: [
-            { value: 'Nucleus' },
-            { value: 'Mitochondria' },
-            { value: 'Ribosome' },
+          parts: [
+            {
+              answer: {
+                correct: [1],
+                options: ['Nucleus', 'Mitochondria', 'Ribosome'],
+                type: 'mcq',
+              },
+              blocks: [{ text: 'Primary ATP organelle?', type: 'text' }],
+              id: 'bio_load_q1:part',
+              markscheme: ['Mitochondria produce most ATP.'],
+              solution: [
+                { text: 'Mitochondria produce most ATP.', type: 'text' },
+              ],
+            },
           ],
-          prompt: 'Primary ATP organelle?',
-          type: 'mcq',
+          stem: [],
         },
       ],
     }),

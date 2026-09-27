@@ -1,0 +1,36 @@
+{
+  "name": "snapshot-score",
+  "valid": true,
+  "policy": {
+    "snapshot": true
+  },
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": [],
+        "awarded": 0.5
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

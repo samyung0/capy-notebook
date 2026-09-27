@@ -63,6 +63,39 @@
       "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
+    "BANK_DATABASE_URL": { "kind": "secret", "targets": ["coolify", "local"] },
+    "BANK_EDITOR_DATABASE_URL": { "kind": "secret", "targets": ["coolify"] },
+    "BANK_OWNER_DATABASE_URL": { "kind": "secret", "targets": ["local"] },
+    "BANK_ASSETS_URL": { "kind": "variable", "targets": ["coolify", "local"] },
+    "BANK_COMMENT_EMAIL": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "BANK_PUBLIC_B2_ENDPOINT": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "BANK_PUBLIC_B2_REGION": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "BANK_PUBLIC_B2_BUCKET": {
+      "kind": "variable",
+      "targets": ["coolify", "local"]
+    },
+    "BANK_PUBLIC_B2_KEY_ID": {
+      "kind": "secret",
+      "targets": ["coolify", "local"]
+    },
+    "BANK_PUBLIC_B2_APP_KEY": {
+      "kind": "secret",
+      "targets": ["coolify", "local"]
+    },
+    "BANK_PRIVATE_B2_ENDPOINT": { "kind": "variable", "targets": ["local"] },
+    "BANK_PRIVATE_B2_REGION": { "kind": "variable", "targets": ["local"] },
+    "BANK_PRIVATE_B2_BUCKET": { "kind": "variable", "targets": ["local"] },
+    "BANK_PRIVATE_B2_KEY_ID": { "kind": "secret", "targets": ["local"] },
+    "BANK_PRIVATE_B2_APP_KEY": { "kind": "secret", "targets": ["local"] },
     "CAPY_AUDIO_MAX_DURATION_SECONDS": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]

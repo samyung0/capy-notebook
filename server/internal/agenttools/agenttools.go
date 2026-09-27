@@ -354,10 +354,10 @@ func editCommandSchema() map[string]any {
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
 			variant("replace_question", map[string]any{
 				"question_id": str(""),
-				"question":    map[string]any{"type": "object", "additionalProperties": true, "description": "Same shape as the quiz generator."},
+				"question":    map[string]any{"type": "object", "additionalProperties": true, "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores."},
 			}, "question_id", "question"),
 			variant("add_question", map[string]any{
-				"question":          map[string]any{"type": "object", "additionalProperties": true},
+				"question":          map[string]any{"type": "object", "additionalProperties": true, "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores."},
 				"after_question_id": map[string]any{"type": []string{"string", "null"}},
 			}, "question"),
 			variant("remove_question", map[string]any{"question_id": str("")}, "question_id"),
@@ -568,7 +568,7 @@ func Definitions() []Definition {
 				},
 				"questions": map[string]any{
 					"type":        "array",
-					"description": "quiz only; same shape as the quiz generator",
+					"description": "quiz only; Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores.",
 					// Deliberately open: Go's materialdoc validates each question.
 					"items": map[string]any{"type": "object", "additionalProperties": true},
 				},

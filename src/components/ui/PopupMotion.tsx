@@ -1,3 +1,4 @@
+import { Slot } from 'radix-ui';
 import {
   type ComponentProps,
   type Ref,
@@ -9,6 +10,7 @@ import { cn } from '@/lib/cn';
 
 /** Keeps a closing popup at its last anchor without animating its positioning transform. */
 export function PopupMotion({
+  asChild = false,
   open,
   children,
   style,
@@ -19,6 +21,7 @@ export function PopupMotion({
   ...props
 }: Omit<ComponentProps<'div'>, 'ref'> & {
   open: boolean;
+  asChild?: boolean;
   positionRef?: Ref<HTMLDivElement>;
   positionClassName?: string;
   onExited?: () => void;
@@ -56,6 +59,7 @@ export function PopupMotion({
   }, [open, present, onExited]);
 
   if (!open && !present) return null;
+  const Content = asChild ? Slot.Root : 'div';
   return (
     <div
       aria-hidden={!open || undefined}
@@ -64,7 +68,7 @@ export function PopupMotion({
       ref={positionRef}
       style={open ? style : lastOpen.style}
     >
-      <div
+      <Content
         {...props}
         className={cn(
           'motion-popup motion-blur-in data-[state=closed]:[animation-fill-mode:forwards]',
@@ -74,7 +78,7 @@ export function PopupMotion({
         ref={animationRef}
       >
         {open ? children : lastOpen.children}
-      </div>
+      </Content>
     </div>
   );
 }

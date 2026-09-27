@@ -150,7 +150,7 @@ export function SectionGallery({
         {sections.map((section, index) => (
           <section
             aria-labelledby={`${galleryId}-${section.id}-title`}
-            className="pb-6 last:pb-0 min-[30rem]:pb-7"
+            className="pb-6 last:pb-0 sm:pb-7"
             id={`${galleryId}-${section.id}`}
             key={section.id}
             ref={(node) => {
@@ -158,7 +158,7 @@ export function SectionGallery({
             }}
           >
             <h3
-              className="t-subtitle mx-0.5 mb-3 min-[30rem]:mb-3.5"
+              className="t-subtitle mx-0.5 mb-3 sm:mb-3.5"
               id={`${galleryId}-${section.id}-title`}
             >
               {section.label}

@@ -15,6 +15,7 @@ import (
 )
 
 type replaceBlockCommand struct {
+	ExpectedRevision *int64         `json:"expectedRevision,omitempty"`
 	Type             string         `json:"type"`
 	ActorUserID      string         `json:"actorUserId"`
 	MaterialID       string         `json:"materialId"`
@@ -72,6 +73,7 @@ func changedStableBlock(current, desired materialdoc.Envelope) (map[string]any, 
 func (s *Store) applyAuthoritativeContentCommand(
 	ctx context.Context,
 	materialID, actorUserID, currentRaw, desiredRaw string,
+	expectedRevision *int64,
 ) (bool, error) {
 	initialized, err := s.materialYjsInitialized(ctx, materialID)
 	if err != nil {
@@ -97,8 +99,14 @@ func (s *Store) applyAuthoritativeContentCommand(
 	if err != nil {
 		return true, err
 	}
-	if expectedBlock == nil {
+	if expectedBlock == nil && expectedRevision == nil {
 		return true, nil
+	}
+	if expectedBlock == nil {
+		if len(current.Value) != 1 {
+			return true, ErrConflict
+		}
+		expectedBlock, replacementBlock = current.Value[0], desired.Value[0]
 	}
 	if actorUserID == "" {
 		if err := s.pool.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1 AND trashed_at IS NULL`,
@@ -114,7 +122,8 @@ func (s *Store) applyAuthoritativeContentCommand(
 		return true, err
 	}
 	body, err := json.Marshal(replaceBlockCommand{
-		Type: "replace-block", MaterialID: materialID,
+		ExpectedRevision: expectedRevision,
+		Type:             "replace-block", MaterialID: materialID,
 		ActorUserID:   actorUserID,
 		Room:          roomForCommand,
 		ExpectedBlock: expectedBlock, ReplacementBlock: replacementBlock,

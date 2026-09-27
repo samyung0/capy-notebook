@@ -1,20 +1,11 @@
+import { QUESTION_COUNT_MAX } from './questionLimits.generated.js';
+import { questionBlockSchema, validateQuestion } from './questions.js';
 // IMPORTANT: Keep this validator in sync with
 // server/internal/materialdoc/document.go. The sidecar runs it before writing
 // authoritative Yjs state so Go can always project that state.
 
 export const MATERIAL_DOCUMENT_DEPTH_CEILING = 1024;
-const QUESTION_TYPES = new Set([
-  'mcq',
-  'multi',
-  'boolean',
-  'short',
-  'open',
-  'matching',
-  'ordering',
-]);
-const COGNITIVE_LEVELS = new Set(['recall', 'application', 'analysis']);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
-export const MAX_QUIZ_TIME_LIMIT_MIN = 180;
 
 type MaterialNode = Record<string, unknown>;
 
@@ -67,17 +58,16 @@ function validateTextElement(node: MaterialNode) {
   }
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) && value.every((item) => typeof item === 'string')
-  );
-}
-
 function validateQuiz(node: MaterialNode) {
   rejectOpaque(node);
   requireId(node);
+  const list = children(node);
+  const empty =
+    list.length === 1 &&
+    Object.keys(list[0]).length === 1 &&
+    list[0].text === '';
   const ids = new Set<string>();
-  for (const [index, question] of children(node).entries()) {
+  for (const [index, question] of (empty ? [] : list).entries()) {
     if (question.type !== 'quiz_question') {
       fail(`children[${index}] must be a quiz_question`);
     }
@@ -85,94 +75,40 @@ function validateQuiz(node: MaterialNode) {
     if (ids.has(id)) fail(`duplicate question id ${JSON.stringify(id)}`);
     ids.add(id);
   }
-  if (
-    hasOwn(node, 'timeLimitMin') &&
-    (!Number.isSafeInteger(node.timeLimitMin) ||
-      Number(node.timeLimitMin) < 1 ||
-      Number(node.timeLimitMin) > MAX_QUIZ_TIME_LIMIT_MIN)
-  ) {
-    fail(
-      `timeLimitMin must be an integer from 1 to ${MAX_QUIZ_TIME_LIMIT_MIN}`
-    );
-  }
+  if (hasOwn(node, 'timeLimitMin'))
+    fail('quiz time limits are no longer supported');
 }
 
 function validateQuizQuestion(node: MaterialNode) {
   rejectOpaque(node);
   requireId(node);
+  try {
+    validateQuestion(node.question);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'invalid question');
+  }
+  if (!isRecord(node.question) || node.id !== node.question.id)
+    fail('question id must match wrapper id');
+  for (const key of [
+    'questionType',
+    'level',
+    'points',
+    'rubrics',
+    'pairs',
+    'acceptedAnswers',
+    'hints',
+    'correctOptionIds',
+    'correctBoolean',
+  ]) {
+    if (hasOwn(node, key)) fail(`obsolete quiz property ${key}`);
+  }
+  const leaf = children(node);
   if (
-    typeof node.questionType !== 'string' ||
-    !QUESTION_TYPES.has(node.questionType)
-  ) {
-    fail('questionType is invalid');
-  }
-  if (typeof node.level !== 'string' || !COGNITIVE_LEVELS.has(node.level)) {
-    fail('level is invalid');
-  }
-
-  let prompts = 0;
-  const optionIds = new Set<string>();
-  for (const [index, child] of children(node).entries()) {
-    switch (child.type) {
-      case 'quiz_prompt':
-        prompts += 1;
-        break;
-      case 'quiz_option': {
-        const id = child.id as string;
-        if (optionIds.has(id))
-          fail(`duplicate option id ${JSON.stringify(id)}`);
-        optionIds.add(id);
-        break;
-      }
-      case 'quiz_explanation':
-        break;
-      default:
-        fail(`children[${index}] has invalid quiz child type`);
-    }
-  }
-  if (prompts === 0) fail('quiz_question requires a quiz_prompt');
-
-  if (hasOwn(node, 'correctOptionIds')) {
-    if (!isStringArray(node.correctOptionIds)) {
-      fail('correctOptionIds must be a string array');
-    }
-    for (const id of node.correctOptionIds) {
-      if (!optionIds.has(id)) {
-        fail(
-          `correctOptionIds references unknown option ${JSON.stringify(id)}`
-        );
-      }
-    }
-  }
-  if (
-    hasOwn(node, 'correctBoolean') &&
-    typeof node.correctBoolean !== 'boolean'
-  ) {
-    fail('correctBoolean must be a boolean');
-  }
-  for (const key of ['acceptedAnswers', 'hints', 'rubrics'] as const) {
-    if (hasOwn(node, key) && !isStringArray(node[key])) {
-      fail(`${key} must be a string array`);
-    }
-  }
-  if (
-    hasOwn(node, 'points') &&
-    (typeof node.points !== 'number' ||
-      !Number.isFinite(node.points) ||
-      node.points <= 0)
-  ) {
-    fail('points must be a positive number');
-  }
-  if (hasOwn(node, 'pairs')) {
-    if (!Array.isArray(node.pairs)) fail('pairs must be an array');
-    for (const [index, pair] of node.pairs.entries()) {
-      if (!isRecord(pair)) fail(`pairs[${index}] must be an object`);
-      if (typeof pair.left !== 'string')
-        fail(`pairs[${index}].left must be a string`);
-      if (typeof pair.right !== 'string')
-        fail(`pairs[${index}].right must be a string`);
-    }
-  }
+    leaf.length !== 1 ||
+    Object.keys(leaf[0]).length !== 1 ||
+    leaf[0].text !== ''
+  )
+    fail('quiz_question requires one void text child');
 }
 
 function validateFlashcards(node: MaterialNode) {
@@ -247,19 +183,47 @@ function validateNode(node: MaterialNode, depth: number) {
     case 'quiz':
       validateQuiz(node);
       break;
+    case 'chart':
+    case 'graph': {
+      if (depth !== 0) fail('chart and graph embeds must be top-level blocks');
+      requireId(node);
+      const leaf = children(node);
+      if (
+        leaf.length !== 1 ||
+        Object.keys(leaf[0]).length !== 1 ||
+        leaf[0].text !== ''
+      )
+        fail('chart and graph embeds require one empty text leaf');
+      const block = node.block;
+      if (!isRecord(block) || block.type !== node.type)
+        fail('embed block type must match node type');
+      if (
+        Object.keys(node).some(
+          (key) => !['id', 'type', 'block', 'children'].includes(key)
+        )
+      )
+        fail('unexpected embed field');
+      try {
+        const parsed = questionBlockSchema.parse(block);
+        if (parsed.type === 'graph' && 'url' in parsed.image)
+          fail('note graphs require inline SVG');
+      } catch (error) {
+        fail(error instanceof Error ? error.message : 'invalid embed');
+      }
+      break;
+    }
     case 'quiz_question':
       validateQuizQuestion(node);
       break;
-    case 'quiz_prompt':
-    case 'quiz_explanation':
     case 'flashcard_front':
     case 'flashcard_back':
     case 'mermaid_caption':
       validateTextElement(node);
       break;
+    case 'quiz_prompt':
     case 'quiz_option':
-      requireId(node);
-      validateTextElement(node);
+    case 'quiz_explanation':
+      fail('obsolete quiz child node');
       break;
     case 'flashcards':
       validateFlashcards(node);
@@ -344,6 +308,25 @@ export function assertCanonicalMaterialValue(value: unknown[], kind: string) {
     if (!isRecord(valueNode)) fail(`value[${index}] must be an object`);
     validateNode(valueNode, 0);
     nodes.push(valueNode);
+  }
+
+  const questions: MaterialNode[] = [];
+  const collect = (node: MaterialNode) => {
+    if (node.type === 'quiz_question' && isRecord(node.question))
+      questions.push(node.question);
+    for (const child of children(node)) collect(child);
+  };
+  nodes.forEach(collect);
+  if (questions.length > QUESTION_COUNT_MAX) fail('too many questions');
+  const questionIds = new Set<unknown>();
+  const partIds = new Set<unknown>();
+  for (const question of questions) {
+    if (questionIds.has(question.id)) fail('duplicate question id');
+    questionIds.add(question.id);
+    for (const part of question.parts as MaterialNode[]) {
+      if (partIds.has(part.id)) fail('duplicate part id');
+      partIds.add(part.id);
+    }
   }
 
   const topLevelIds = new Set<string>();

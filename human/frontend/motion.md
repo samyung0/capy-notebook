@@ -17,3 +17,5 @@
 
 - Developer Epo requested (2026-09-24) shared PopoverContent owns border border-line bg-surface shadow-pop; remove duplicate editor/PDF styles and preserve filters, notifications, tag autocomplete and floating Add menu appearance with caller overrides where needed. src/components/ui/Popover.tsx src/components/app/ListToolbar.tsx src/features/notification/NotificationBell.tsx src/components/ui/TagSelect.tsx
 - Developer Epo requested (2026-09-24) danger user toasts use motion-error-shake on appearance through the existing error variant. src/components/ui/Sonner.tsx
+- Developer Epo approved (2026-09-27) rendering tag autocomplete inside the enclosing dialog to allow wheel/touch scrolling while preserving the Files panel floating Add menu's modal outside-click dismissal without opening underlying files. src/components/ui/TagSelect.tsx src/components/ui/Popover.tsx src/components/ui/Menu.tsx
+- Developer Epo requested (2026-09-27) workspace settings closes automatically after a successful Save; failed saves retain the open dialog and draft. src/features/workspace/WorkspaceFormDialog.tsx

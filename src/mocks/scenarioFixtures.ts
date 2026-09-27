@@ -1,4 +1,4 @@
-import type { SourceFile, SourceSession } from '@/api/types';
+import type { Question, SourceFile, SourceSession } from '@/api/types';
 import {
   clearSourceDrafts,
   readSourceDrafts,
@@ -86,14 +86,25 @@ export function seedScenarioFixtures() {
       workspaceName: 'User scenarios',
     })
   );
-  const question = {
-    accepted: [{ value: 'The basic unit of life.' }],
-    hints: [],
+  const question: Question = {
     id: 'mock-scenario-question',
+    labels: 'letters',
+    layout: 'paper',
     level: 'recall' as const,
-    prompt: 'What is a cell?',
-    rubrics: [{ value: 'Identifies the basic unit of life.' }],
-    type: 'open' as const,
+    parts: [
+      {
+        answer: {
+          accepted: ['The basic unit of life.'],
+          hints: [],
+          type: 'open',
+        },
+        blocks: [{ text: 'What is a cell?', type: 'text' }],
+        id: 'mock-scenario-question:part',
+        markscheme: ['Identifies the basic unit of life.'],
+        solution: [],
+      },
+    ],
+    stem: [],
   };
   for (const [kind, id, content] of [
     [
@@ -102,7 +113,6 @@ export function seedScenarioFixtures() {
       quizNode(
         {
           questions: [{ ...question, id: 'mock-scenario-question' }],
-          timeLimitMin: 10,
         },
         scenarioQuiz
       ),

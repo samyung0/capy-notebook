@@ -1,0 +1,41 @@
+{
+  "name": "quiz-image-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "image",
+        "url": "https://bank.example/assets/a.png",
+        "width": 20,
+        "height": 20,
+        "description": "Diagram"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": [
+          {
+            "type": "text",
+            "text": "Because."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

@@ -43,7 +43,7 @@ export function TagSelect({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const anchorRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
   const listId = useId();
 
   const selected = value ?? [];
@@ -136,7 +136,7 @@ export function TagSelect({
             inputRef.current?.focus();
             setOpen(true);
           }}
-          ref={anchorRef}
+          ref={setAnchor}
         >
           {selected.map((t, i) => (
             <Badge key={`${t.id ?? 'new'}:${t.value}:${i}`} size="md">
@@ -193,14 +193,13 @@ export function TagSelect({
         aria-hidden={!showList || undefined}
         aria-label={m.common_tags()}
         className="max-h-(--tag-dropdown-height) overflow-auto p-1 shadow-lg!"
+        // Keep the list inside the modal's allowed scroll area.
+        container={anchor?.closest('[data-slot="dialog-content"]')}
         id={listId}
         inert={!showList}
         onCloseAutoFocus={(event) => event.preventDefault()}
         onInteractOutside={(event) => {
-          if (
-            event.target instanceof Node &&
-            anchorRef.current?.contains(event.target)
-          ) {
+          if (event.target instanceof Node && anchor?.contains(event.target)) {
             event.preventDefault();
           }
         }}

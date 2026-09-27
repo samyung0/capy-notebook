@@ -1,6 +1,5 @@
 import { Toggle } from 'radix-ui';
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -14,16 +13,11 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
-
-// File runtimes retain their save lifecycle while controls render in the header.
-export const FileHeaderTarget = createContext<HTMLElement | null>(null);
-
-type FileMode = 'view' | 'edit';
-
-export const FileModeContext = createContext<{
-  mode: FileMode;
-  onChange: (mode: FileMode) => void;
-} | null>(null);
+import {
+  FileHeaderTarget,
+  type FileMode,
+  FileModeContext,
+} from './fileModeContext';
 
 /** Keep each runtime's save lifecycle; commit the URL only when it accepts a mode. */
 export function useFileMode(canEdit: boolean, initialMode: FileMode) {

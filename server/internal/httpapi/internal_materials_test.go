@@ -338,8 +338,8 @@ func TestInternalGeneratedQuizAndFlashcardSetPersistResolvedScope(t *testing.T) 
 			kind: "quiz",
 			body: map[string]any{
 				"questions": []map[string]any{{
-					"id": "q_scope", "type": "boolean", "level": "recall",
-					"prompt": "Was this scope persisted?", "correct": true,
+					"id": "q_scope", "stem": []any{}, "layout": "paper", "labels": "letters",
+					"parts": []any{map[string]any{"id": "q_scope:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Was this scope persisted?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "markscheme": []any{"Correct answer."}, "solution": []any{}}},
 				}},
 			},
 		},

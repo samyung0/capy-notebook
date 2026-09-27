@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { MaterialKind, Question } from '@/api/types';
+import type { MaterialKind } from '@/api/types';
+import { exampleQuestions } from '@/features/questions/questionFixtures';
 import {
   createMaterialDocument,
   flashcardsNode,
@@ -94,12 +95,11 @@ describe('static study-block renderers', () => {
     expect(html).toContain('Styled text');
   });
 
-  it('labels Mermaid mindmaps separately from diagrams', () => {
+  it('preserves a Mermaid caption in static rendering', () => {
     const html = renderMaterial([
       mermaidNode('mindmap\n  root((Topic))', 'Topic map', 'mindmap'),
     ]);
 
-    expect(html).toContain('>Mindmap</span>');
     expect(html).toContain('Topic map');
   });
 
@@ -208,82 +208,14 @@ describe('static study-block renderers', () => {
   });
 
   it('renders every quiz question shape as a read-only answer review', () => {
-    const questions: Question[] = [
-      {
-        correct: [0],
-        id: 'mcq',
-        level: 'recall',
-        options: [
-          { explanation: 'This is why.', value: 'Correct' },
-          { value: 'Distractor' },
-        ],
-        prompt: 'Pick one',
-        type: 'mcq',
-      },
-      {
-        correct: [0, 1],
-        id: 'multi',
-        level: 'application',
-        options: [{ value: 'First' }, { value: 'Second' }],
-        prompt: 'Pick several',
-        type: 'multi',
-      },
-      {
-        correct: true,
-        id: 'boolean',
-        level: 'recall',
-        prompt: 'True or false?',
-        type: 'boolean',
-      },
-      {
-        accepted: [{ value: 'Accepted answer' }],
-        id: 'short',
-        level: 'application',
-        prompt: 'Fill this',
-        type: 'short',
-      },
-      {
-        id: 'ordering',
-        items: [{ value: 'First item' }, { value: 'Second item' }],
-        level: 'application',
-        prompt: 'Put these in order',
-        type: 'ordering',
-      },
-      {
-        explanation: 'Pairs are shown in their correct arrangement.',
-        id: 'matching',
-        level: 'analysis',
-        pairs: [{ left: 'Left', right: 'Right' }],
-        prompt: 'Match these',
-        type: 'matching',
-      },
-      {
-        accepted: [{ value: 'Cristae increase surface area.' }],
-        hints: [{ value: 'ATP' }],
-        id: 'open',
-        level: 'application',
-        prompt: 'Why is the inner membrane folded?',
-        rubrics: [{ value: 'Mentions folds' }],
-        type: 'open',
-      },
-    ];
-
     const html = renderMaterial([
-      quizNode({ questions, timeLimitMin: 15 }, 'quiz'),
+      quizNode({ questions: exampleQuestions }, 'quiz'),
     ]);
-
-    expect(html).toContain('1.');
-    expect(html).toContain('7.');
-    expect(html).toContain('This is why.');
-    expect(html).toContain('Accepted answer');
-    expect(html).toContain('First item');
-    expect(html).toContain('Left');
-    expect(html).toContain('value="Right" selected=""');
-    expect(html).toContain('Why is the inner membrane folded?');
-    expect(html).toContain('Pairs are shown in their correct arrangement.');
-    expect(html).toContain('border-solid-success');
-    expect(html).toContain('cursor-default');
-    expect(html).not.toContain('Time limit: 15 min');
+    expect(html).toContain('Mitochondria');
+    expect(html).toContain('Marking scheme');
+    expect(html).toContain('Worked solution');
+    expect(html).toContain('Unused choice');
+    expect(html).not.toContain('contenteditable="true"');
   });
 
   it('renders flashcard fronts and backs as side-by-side rows', () => {

@@ -11,7 +11,7 @@ import type { CreateAttemptReqWrongItem } from './createAttemptReqWrongItem.ts';
 export interface CreateAttemptReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** User answers keyed by question id */
+  /** User answers keyed by stable part id */
   answers?: CreateAttemptReqAnswers;
   /** @minimum 0 */
   correct: number;

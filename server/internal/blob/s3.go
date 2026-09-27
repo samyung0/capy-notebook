@@ -112,6 +112,15 @@ func (s *B2) Put(id string, r io.Reader) (string, int64, error) {
 	return id, cr.n, nil
 }
 
+// PutObject sets metadata when publishing immutable public assets.
+func (s *B2) PutObject(ctx context.Context, key string, body io.Reader, contentType, cacheControl string) error {
+	_, err := s.tm.UploadObject(ctx, &transfermanager.UploadObjectInput{
+		Bucket: aws.String(s.bucket), Key: aws.String(key), Body: body,
+		ContentType: aws.String(contentType), CacheControl: aws.String(cacheControl),
+	})
+	return err
+}
+
 // PresignGet mints a time-limited GET URL so the gateway can redirect the
 // browser straight to the bucket instead of streaming bytes through itself.
 func (s *B2) PresignGet(ctx context.Context, path string) (string, error) {

@@ -873,9 +873,15 @@ export function inspectMaterial(document: Y.Doc): InspectedBlock[] {
     if (block.type === 'quiz' || block.type === 'flashcards') {
       out.children = ((block.children as PlateNode[]) ?? []).map((child) => ({
         id: stableId(child),
-        text: Node.string(child as never),
+        text:
+          child.type === 'quiz_question'
+            ? JSON.stringify(child.question)
+            : Node.string(child as never),
         type: String(child.type ?? ''),
       }));
+    }
+    if (block.type === 'chart' || block.type === 'graph') {
+      out.properties = { block: JSON.stringify(block.block) };
     }
     if (block.type === 'mermaid' && typeof block.source === 'string') {
       out.properties = { source: block.source };

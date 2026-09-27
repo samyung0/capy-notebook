@@ -13,7 +13,7 @@ import {
   useEventEditorValue,
   usePluginOption,
 } from 'platejs/react';
-import { PopupMotion } from '@/components/ui/PopupMotion';
+import { FloatingToolbar as SharedFloatingToolbar } from '@/components/ui/BlockToolbar';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { features } from '@/lib/features';
@@ -80,29 +80,25 @@ function FloatingToolbarChrome({
 
   return (
     <div ref={clickOutsideRef}>
-      <PopupMotion
+      <SharedFloatingToolbar
         {...props}
         aria-label={m.editor_selection_actions()}
-        className="flex max-w-[90vw] items-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
         open={!hidden}
         positionClassName="absolute z-50"
         positionRef={ref}
         role="toolbar"
       >
         {showAi && (
-          <>
-            <ToolbarButton
-              className="w-auto px-2"
-              label={m.editor_ai_commands()}
-              onClick={() => openAiMenu(editor)}
-              shortcut={EDITOR_SHORTCUTS.ai}
-              tooltipSide="top"
-            >
-              <EditorIcon name="sparkles" />{' '}
-              <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
-            </ToolbarButton>
-            <Separator />
-          </>
+          <ToolbarButton
+            className="w-auto px-2"
+            label={m.editor_ai_commands()}
+            onClick={() => openAiMenu(editor)}
+            shortcut={EDITOR_SHORTCUTS.ai}
+            tooltipSide="top"
+          >
+            <EditorIcon name="sparkles" />{' '}
+            <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
+          </ToolbarButton>
         )}
         <MarkToolbarButton
           label={m.editor_bold()}
@@ -166,22 +162,15 @@ function FloatingToolbarChrome({
           <EditorIcon name="link" />
         </ToolbarButton>
         {canEdit && collaboration && (
-          <>
-            <Separator />
-            <ToolbarButton
-              label={m.editor_comment()}
-              onClick={collaboration.openComment}
-              tooltipSide="top"
-            >
-              <EditorIcon name="commentAdd" />
-            </ToolbarButton>
-          </>
+          <ToolbarButton
+            label={m.editor_comment()}
+            onClick={collaboration.openComment}
+            tooltipSide="top"
+          >
+            <EditorIcon name="commentAdd" />
+          </ToolbarButton>
         )}
-      </PopupMotion>
+      </SharedFloatingToolbar>
     </div>
   );
-}
-
-function Separator() {
-  return <span className="mx-1 h-5 w-px shrink-0 bg-divider" />;
 }

@@ -1,0 +1,773 @@
+// Package questions validates the shared authored question and attempt contract.
+package questions
+
+import (
+	"encoding/json"
+	"fmt"
+	"math"
+	"math/rand/v2"
+	"net/url"
+	"path"
+	"regexp"
+	"strings"
+	"unicode/utf8"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+)
+
+type Policy struct {
+	Bank          bool
+	BankAssetsURL string
+	Snapshot      bool
+}
+
+const MaxSVGBytes = fieldlimits.QuestionSVGBytes
+
+var termTokens = regexp.MustCompile(`(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|[A-Za-z]+|[+\-*/^(),]`)
+var whitespace = regexp.MustCompile(`\s`)
+var svgRoot = regexp.MustCompile(`^\s*<svg[\s>]`)
+var svgEnd = regexp.MustCompile(`</svg>\s*$`)
+var svgUnsafe = regexp.MustCompile(`(?i)<!|<\?|\bon\w+\s*=|javascript:|data:|<\s*/?\s*(?:script|foreignObject|style|image|use|a|animate\w*|set)\b`)
+var svgReference = regexp.MustCompile(`(?i)(?:[a-z]+:)?(?:href|src)\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)`)
+var svgLocalReference = regexp.MustCompile(`^["']#[A-Za-z0-9_-]+["']$`)
+var svgURL = regexp.MustCompile(`(?i)url\s*\([^)]*\)`)
+var svgLocalURL = regexp.MustCompile(`(?i)^url\s*\(\s*["']?#[A-Za-z0-9_-]+["']?\s*\)$`)
+var svgEscapedStyle = regexp.MustCompile(`(?i)style\s*=\s*(?:"[^"<>]*\\|'[^'<>]*\\)`)
+var svgTags = regexp.MustCompile(`<\/?([A-Za-z][\w:-]*)\b`)
+
+func validTerm(term string) bool {
+	tokens := termTokens.FindAllString(term, -1)
+	if len(tokens) == 0 || strings.Join(tokens, "") != whitespace.ReplaceAllString(term, "") {
+		return false
+	}
+	for _, token := range tokens {
+		if token[0] >= 'A' && token[0] <= 'Z' || token[0] >= 'a' && token[0] <= 'z' {
+			if !enum(token, "x pi e sin cos tan asin acos atan sqrt abs exp log ln floor ceil pow min max") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// ValidSVG permits the static subset rendered through an img, never active SVG.
+func ValidSVG(svg string) bool {
+	if len(svg) > MaxSVGBytes || !svgRoot.MatchString(svg) || !svgEnd.MatchString(svg) || svgUnsafe.MatchString(svg) || svgEscapedStyle.MatchString(svg) {
+		return false
+	}
+	for _, ref := range svgReference.FindAllStringSubmatch(svg, -1) {
+		if !svgLocalReference.MatchString(ref[1]) {
+			return false
+		}
+	}
+	for _, ref := range svgURL.FindAllString(svg, -1) {
+		if !svgLocalURL.MatchString(ref) {
+			return false
+		}
+	}
+	for _, tag := range svgTags.FindAllStringSubmatch(svg, -1) {
+		if !enum(tag[1], "svg g path rect circle ellipse line polyline polygon text tspan defs marker clipPath title desc") {
+			return false
+		}
+	}
+	return true
+}
+func tableCells(value any) bool {
+	cells, ok := array(value, 1, fieldlimits.QuestionTableColumns)
+	if !ok {
+		return false
+	}
+	for _, cell := range cells {
+		if !str(cell, fieldlimits.QuestionText, false) {
+			return false
+		}
+	}
+	return true
+}
+
+var quantityPattern = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:\s*/\s*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)?$`)
+
+func fail(message string) error { return fmt.Errorf("invalid question: %s", message) }
+func obj(value any) (map[string]any, error) {
+	m, ok := value.(map[string]any)
+	if !ok {
+		return nil, fail("expected object")
+	}
+	return m, nil
+}
+func keys(m map[string]any, required string, optional string) error {
+	allowed := map[string]bool{}
+	for _, key := range strings.Fields(required) {
+		allowed[key] = true
+		if _, ok := m[key]; !ok {
+			return fail("missing " + key)
+		}
+	}
+	for _, key := range strings.Fields(optional) {
+		allowed[key] = true
+	}
+	for key := range m {
+		if !allowed[key] {
+			return fail("unexpected field " + key)
+		}
+	}
+	return nil
+}
+func str(v any, max int, nonempty bool) bool {
+	s, ok := v.(string)
+	return ok && utf8.RuneCountInString(s) <= max && (!nonempty || strings.TrimSpace(s) != "")
+}
+func num(v any) (float64, bool) {
+	var n float64
+	switch x := v.(type) {
+	case float64:
+		n = x
+	case int:
+		n = float64(x)
+	case int64:
+		n = float64(x)
+	case json.Number:
+		var err error
+		n, err = x.Float64()
+		if err != nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+	return n, !math.IsNaN(n) && !math.IsInf(n, 0)
+}
+func array(v any, min, max int) ([]any, bool) {
+	a, ok := v.([]any)
+	return a, ok && len(a) >= min && len(a) <= max
+}
+func stringsArray(v any, min, max, length int) bool {
+	a, ok := array(v, min, max)
+	if !ok {
+		return false
+	}
+	for _, s := range a {
+		if !str(s, length, true) {
+			return false
+		}
+	}
+	return true
+}
+func enum(v any, choices string) bool {
+	s, ok := v.(string)
+	if !ok {
+		return false
+	}
+	for _, choice := range strings.Fields(choices) {
+		if s == choice {
+			return true
+		}
+	}
+	return false
+}
+func optionalString(m map[string]any, key string, max int) bool {
+	v, ok := m[key]
+	return !ok || str(v, max, false)
+}
+func optionalBool(m map[string]any, key string) bool {
+	v, ok := m[key]
+	if !ok {
+		return true
+	}
+	_, ok = v.(bool)
+	return ok
+}
+func tuple(v any, count int) ([]float64, bool) {
+	a, ok := array(v, count, count)
+	if !ok {
+		return nil, false
+	}
+	r := make([]float64, count)
+	for i, x := range a {
+		n, ok := num(x)
+		if !ok {
+			return nil, false
+		}
+		r[i] = n
+	}
+	return r, true
+}
+
+// Validate accepts decoded JSON maps; it never repairs or fills authored fields.
+func Validate(q map[string]any, policy Policy) error {
+	if err := keys(q, "id stem parts layout labels", "level"); err != nil {
+		return err
+	}
+	if !str(q["id"], fieldlimits.QuestionID, true) || !enum(q["layout"], "paper split") || !enum(q["labels"], "letters numbers") {
+		return fail("invalid identity or layout")
+	}
+	if level, ok := q["level"]; ok && !enum(level, "recall application analysis") {
+		return fail("invalid level")
+	}
+	if err := blocks(q["stem"], policy); err != nil {
+		return err
+	}
+	parts, ok := array(q["parts"], 1, fieldlimits.QuestionParts)
+	if !ok {
+		return fail(fmt.Sprintf("parts must contain 1 to %d parts", fieldlimits.QuestionParts))
+	}
+	ids := map[string]bool{}
+	for _, raw := range parts {
+		p, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		optional := ""
+		if policy.Snapshot {
+			optional = "awarded awardReason"
+		}
+		if err := keys(p, "id blocks answer markscheme solution", optional); err != nil {
+			return err
+		}
+		if !str(p["id"], fieldlimits.QuestionID, true) {
+			return fail("invalid part id")
+		}
+		id := p["id"].(string)
+		if ids[id] {
+			return fail("duplicate part id")
+		}
+		ids[id] = true
+		if err := blocks(p["blocks"], policy); err != nil {
+			return err
+		}
+		if len(p["blocks"].([]any)) == 0 {
+			return fail("part requires content")
+		}
+		if err := blocks(p["solution"], policy); err != nil {
+			return err
+		}
+		if policy.Bank && len(p["solution"].([]any)) == 0 {
+			return fail("bank part requires a solution")
+		}
+		if !stringsArray(p["markscheme"], 1, fieldlimits.QuestionMarkscheme, fieldlimits.QuestionMarkItem) {
+			return fail("invalid marking scheme")
+		}
+		if err := answer(p["answer"]); err != nil {
+			return err
+		}
+		if v, exists := p["awarded"]; exists {
+			n, ok := num(v)
+			if !ok || n < 0 || n > float64(len(p["markscheme"].([]any))) || n*2 != math.Trunc(n*2) {
+				return fail("invalid awarded marks")
+			}
+		}
+		if !optionalString(p, "awardReason", fieldlimits.QuestionMetadata) {
+			return fail("invalid award reason")
+		}
+	}
+	return nil
+}
+
+// ValidateAll also protects the flat part-id answer map across a whole quiz.
+func ValidateAll(qs []map[string]any, policy Policy) error {
+	if len(qs) > fieldlimits.QuestionCount {
+		return fail("too many questions")
+	}
+	ids, parts := map[string]bool{}, map[string]bool{}
+	for _, q := range qs {
+		if err := Validate(q, policy); err != nil {
+			return err
+		}
+		id := q["id"].(string)
+		if ids[id] {
+			return fail("duplicate question id")
+		}
+		ids[id] = true
+		for _, raw := range q["parts"].([]any) {
+			id := raw.(map[string]any)["id"].(string)
+			if parts[id] {
+				return fail("duplicate part id")
+			}
+			parts[id] = true
+		}
+	}
+	return nil
+}
+
+func blocks(value any, policy Policy) error {
+	a, ok := array(value, 0, fieldlimits.QuestionBlocks)
+	if !ok {
+		return fail(fmt.Sprintf("blocks must contain at most %d blocks", fieldlimits.QuestionBlocks))
+	}
+	for _, raw := range a {
+		b, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		if err := ValidateBlock(b, policy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ValidateBlock is shared by questions and standalone note chart/graph embeds.
+func ValidateBlock(b map[string]any, policy Policy) error {
+	switch b["type"] {
+	case "text":
+		if err := keys(b, "type text", "label"); err != nil {
+			return err
+		}
+		if !str(b["text"], fieldlimits.QuestionText, true) || !optionalString(b, "label", fieldlimits.QuestionMetadata) {
+			return fail("invalid text block")
+		}
+	case "table":
+		if err := keys(b, "type header rows", ""); err != nil {
+			return err
+		}
+		if _, ok := b["header"].(bool); !ok {
+			return fail("invalid table header")
+		}
+		rows, ok := array(b["rows"], 1, fieldlimits.QuestionTableRows)
+		if !ok {
+			return fail("invalid table rows")
+		}
+		width := -1
+		for _, row := range rows {
+			cells, ok := array(row, 1, fieldlimits.QuestionTableColumns)
+			if !ok || !tableCells(row) {
+				return fail("invalid table cells")
+			}
+			if width != -1 && len(cells) != width {
+				return fail("ragged table")
+			}
+			width = len(cells)
+		}
+	case "chart":
+		if err := keys(b, "type kind title labels series", "unit xTitle yTitle gridlines showValues"); err != nil {
+			return err
+		}
+		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) || !stringsArray(b["labels"], 1, fieldlimits.QuestionChartLabels, fieldlimits.QuestionText) {
+			return fail("invalid chart")
+		}
+		for _, key := range []string{"unit", "xTitle", "yTitle"} {
+			if !optionalString(b, key, fieldlimits.QuestionMetadata) {
+				return fail("invalid chart label")
+			}
+		}
+		if g, ok := b["gridlines"]; ok && !enum(g, "normal fine") {
+			return fail("invalid gridlines")
+		}
+		if !optionalBool(b, "showValues") {
+			return fail("invalid showValues")
+		}
+		series, ok := array(b["series"], 1, fieldlimits.QuestionChartSeries)
+		if !ok {
+			return fail("invalid chart series")
+		}
+		if (b["kind"] == "pie" || b["kind"] == "stacked") && len(series) != 1 {
+			return fail("pie and stacked require one series")
+		}
+		for _, raw := range series {
+			s, err := obj(raw)
+			if err != nil {
+				return err
+			}
+			if err := keys(s, "name values", ""); err != nil {
+				return err
+			}
+			if !str(s["name"], fieldlimits.QuestionMetadata, false) {
+				return fail("invalid series name")
+			}
+			values, ok := array(s["values"], len(b["labels"].([]any)), len(b["labels"].([]any)))
+			if !ok {
+				return fail("chart values must align with labels")
+			}
+			for _, v := range values {
+				n, ok := num(v)
+				if !ok || ((b["kind"] == "pie" || b["kind"] == "stacked") && n < 0) {
+					return fail("invalid chart value")
+				}
+			}
+		}
+		if b["kind"] == "pie" || b["kind"] == "stacked" {
+			positive := false
+			for _, raw := range series[0].(map[string]any)["values"].([]any) {
+				n, _ := num(raw)
+				positive = positive || n > 0
+			}
+			if !positive {
+				return fail("chart requires a positive total")
+			}
+		}
+	case "image":
+		if !policy.Bank {
+			return fail("image blocks require bank policy")
+		}
+		if err := keys(b, "type url width height description", "attribution"); err != nil {
+			return err
+		}
+		if err := imageFields(b); err != nil {
+			return err
+		}
+		if !assetURL(b["url"], policy.BankAssetsURL) {
+			return fail("invalid bank asset URL")
+		}
+	case "graph":
+		if err := keys(b, "type board elements image width height description", "attribution"); err != nil {
+			return err
+		}
+		if err := imageFields(b); err != nil {
+			return err
+		}
+		if err := graph(b); err != nil {
+			return err
+		}
+		im, err := obj(b["image"])
+		if err != nil {
+			return err
+		}
+		if policy.Bank {
+			if err := keys(im, "url", ""); err != nil {
+				return err
+			}
+			if !assetURL(im["url"], policy.BankAssetsURL) {
+				return fail("invalid bank graph URL")
+			}
+		} else {
+			if err := keys(im, "svg", ""); err != nil {
+				return err
+			}
+			svg, ok := im["svg"].(string)
+			if !ok || len(svg) > MaxSVGBytes || !ValidSVG(svg) {
+				return fail("invalid graph SVG")
+			}
+		}
+	default:
+		return fail("unsupported block type")
+	}
+	return nil
+}
+
+func imageFields(b map[string]any) error {
+	for _, key := range []string{"width", "height"} {
+		n, ok := num(b[key])
+		if !ok || n <= 0 || n > fieldlimits.QuestionImageDimension || n != math.Trunc(n) {
+			return fail("invalid image dimensions")
+		}
+	}
+	if !str(b["description"], fieldlimits.QuestionText, true) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
+		return fail("invalid image description")
+	}
+	return nil
+}
+func assetURL(value any, base string) bool {
+	s, ok := value.(string)
+	if !ok || len(s) > fieldlimits.QuestionAssetURL {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	root, err := url.Parse(base)
+	if err != nil || root.Scheme != "https" || root.Host == "" {
+		return false
+	}
+	return u.Scheme == root.Scheme && u.Host == root.Host && !strings.Contains(u.Path, "\\") && strings.HasPrefix(path.Clean(u.Path), strings.TrimRight(path.Clean("/"+root.Path), "/")+"/")
+}
+
+func graph(b map[string]any) error {
+	board, err := obj(b["board"])
+	if err != nil {
+		return err
+	}
+	if err := keys(board, "bbox axis grid", ""); err != nil {
+		return err
+	}
+	bbox, ok := tuple(board["bbox"], 4)
+	if !ok || bbox[0] >= bbox[2] || bbox[1] <= bbox[3] {
+		return fail("invalid graph bounding box")
+	}
+	for _, key := range []string{"axis", "grid"} {
+		if _, ok := board[key].(bool); !ok {
+			return fail("invalid board flag")
+		}
+	}
+	elems, ok := array(b["elements"], 0, fieldlimits.QuestionGraphElements)
+	if !ok {
+		return fail("invalid graph elements")
+	}
+	points, ids := map[string]bool{}, map[string]bool{}
+	for _, raw := range elems {
+		e, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		if !str(e["id"], fieldlimits.QuestionID, true) {
+			return fail("invalid graph element id")
+		}
+		id := e["id"].(string)
+		if ids[id] {
+			return fail("duplicate graph element id")
+		}
+		ids[id] = true
+		if e["type"] == "point" {
+			points[id] = true
+		}
+	}
+	for _, raw := range elems {
+		e := raw.(map[string]any)
+		required, optional := "type id", "hidden"
+		switch e["type"] {
+		case "functiongraph":
+			required += " term"
+			optional += " domain dash"
+		case "point":
+			required += " coords"
+			optional += " name"
+		case "line", "segment":
+			required += " points"
+			optional += " dash"
+		case "circle":
+			required += " center radius"
+			optional += " dash"
+		case "text":
+			required += " coords text"
+		default:
+			return fail("unsupported graph element")
+		}
+		if err := keys(e, required, optional); err != nil {
+			return err
+		}
+		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") {
+			return fail("invalid graph flag")
+		}
+		switch e["type"] {
+		case "functiongraph":
+			term, ok := e["term"].(string)
+			if !ok || len(term) > fieldlimits.QuestionGraphTerm || !validTerm(term) {
+				return fail("invalid function term")
+			}
+			if d, exists := e["domain"]; exists {
+				v, ok := tuple(d, 2)
+				if !ok || v[0] >= v[1] {
+					return fail("invalid function domain")
+				}
+			}
+		case "point", "text":
+			if _, ok := tuple(e["coords"], 2); !ok {
+				return fail("invalid coordinates")
+			}
+			if !optionalString(e, "name", fieldlimits.QuestionMetadata) {
+				return fail("invalid point name")
+			}
+			if e["type"] == "text" && !str(e["text"], fieldlimits.QuestionText, true) {
+				return fail("invalid graph text")
+			}
+		case "line", "segment":
+			refs, ok := array(e["points"], 2, 2)
+			if !ok {
+				return fail("invalid point references")
+			}
+			for _, ref := range refs {
+				id, ok := ref.(string)
+				if !ok || !points[id] {
+					return fail("unknown graph point")
+				}
+			}
+		case "circle":
+			center, ok := e["center"].(string)
+			radius, valid := num(e["radius"])
+			if !ok || !points[center] || !valid || radius <= 0 {
+				return fail("invalid circle")
+			}
+		}
+	}
+	return nil
+}
+
+func answer(value any) error {
+	a, err := obj(value)
+	if err != nil {
+		return err
+	}
+	required, optional := "type", ""
+	switch a["type"] {
+	case "mcq", "multi":
+		required += " options correct"
+	case "boolean":
+		required += " correct"
+	case "short":
+		required += " accepted"
+		optional = "unit"
+	case "matching":
+		required += " options pairs"
+	case "ordering":
+		required += " items"
+	case "open":
+		required += " accepted hints"
+	default:
+		return fail("invalid answer type")
+	}
+	if err := keys(a, required, optional); err != nil {
+		return err
+	}
+	switch a["type"] {
+	case "mcq", "multi", "matching":
+		if !stringsArray(a["options"], 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+			return fail("invalid options")
+		}
+		count := len(a["options"].([]any))
+		if a["type"] != "matching" && count < 2 {
+			return fail("choice answers require two options")
+		}
+		if a["type"] == "matching" {
+			pairs, ok := array(a["pairs"], 1, fieldlimits.QuestionAnswers)
+			if !ok {
+				return fail("invalid pairs")
+			}
+			seen := map[string]bool{}
+			for _, raw := range pairs {
+				p, err := obj(raw)
+				if err != nil {
+					return err
+				}
+				if err := keys(p, "left right", ""); err != nil {
+					return err
+				}
+				if !str(p["left"], fieldlimits.QuestionText, true) {
+					return fail("invalid matching left item")
+				}
+				left := p["left"].(string)
+				seen[left] = true
+				if !index(p["right"], count) {
+					return fail("invalid matching index")
+				}
+			}
+		} else {
+			max := count
+			if a["type"] == "mcq" {
+				max = 1
+			}
+			correct, ok := array(a["correct"], 1, max)
+			if !ok {
+				return fail("invalid correct indices")
+			}
+			seen := map[float64]bool{}
+			for _, raw := range correct {
+				n, _ := num(raw)
+				if !index(raw, count) || seen[n] {
+					return fail("invalid correct index")
+				}
+				seen[n] = true
+			}
+		}
+	case "boolean":
+		if _, ok := a["correct"].(bool); !ok {
+			return fail("invalid boolean answer")
+		}
+	case "short", "open":
+		if !stringsArray(a["accepted"], 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+			return fail("invalid accepted answers")
+		}
+		if a["type"] == "open" && !stringsArray(a["hints"], 0, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+			return fail("invalid hints")
+		}
+		if unit, exists := a["unit"]; exists {
+			if !str(unit, fieldlimits.QuestionUnit, true) {
+				return fail("invalid unit")
+			}
+			for _, v := range a["accepted"].([]any) {
+				value := strings.TrimSpace(v.(string))
+				valid := quantityPattern.MatchString(value)
+				if _, denominator, fraction := strings.Cut(value, "/"); fraction {
+					mantissa := strings.FieldsFunc(strings.TrimSpace(denominator), func(r rune) bool { return r == 'e' || r == 'E' })
+					valid = valid && len(mantissa) > 0 && strings.Trim(mantissa[0], "+-.0") != ""
+				}
+				if !valid {
+					return fail("quantity answers must contain values only")
+				}
+			}
+		}
+	case "ordering":
+		if !stringsArray(a["items"], 2, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+			return fail("invalid ordering items")
+		}
+	}
+	return nil
+}
+func index(v any, size int) bool {
+	n, ok := num(v)
+	return ok && n >= 0 && n < float64(size) && n == math.Trunc(n)
+}
+
+func Marks(q map[string]any) int {
+	total := 0
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		scheme, _ := p["markscheme"].([]any)
+		total += len(scheme)
+	}
+	return total
+}
+
+// Authored removes attempt-only scores without mutating the submitted snapshot.
+// Other nested content is shared; callers must treat both values as immutable.
+func Authored(q map[string]any) map[string]any {
+	out := make(map[string]any, len(q))
+	for key, value := range q {
+		out[key] = value
+	}
+	parts, _ := q["parts"].([]any)
+	clean := make([]any, 0, len(parts))
+	for _, raw := range parts {
+		part, _ := raw.(map[string]any)
+		copy := make(map[string]any, len(part))
+		for key, value := range part {
+			if key != "awarded" && key != "awardReason" {
+				copy[key] = value
+			}
+		}
+		clean = append(clean, copy)
+	}
+	out["parts"] = clean
+	return out
+}
+
+// LearnerView must be called only after validation. An allowlist prevents new
+// author-only fields from accidentally leaking through the learner endpoint.
+func LearnerView(q map[string]any) map[string]any {
+	out := map[string]any{}
+	for _, key := range []string{"id", "stem", "layout", "labels", "level"} {
+		if v, ok := q[key]; ok {
+			out[key] = v
+		}
+	}
+	parts := []any{}
+	for _, raw := range q["parts"].([]any) {
+		p := raw.(map[string]any)
+		a := p["answer"].(map[string]any)
+		learner := map[string]any{"type": a["type"]}
+		switch a["type"] {
+		case "mcq", "multi":
+			learner["options"] = a["options"]
+		case "short":
+			if unit, ok := a["unit"]; ok {
+				learner["unit"] = unit
+			}
+		case "matching":
+			options := append([]any{}, a["options"].([]any)...)
+			rand.Shuffle(len(options), func(i, j int) { options[i], options[j] = options[j], options[i] })
+			learner["options"] = options
+			left := []any{}
+			for _, pair := range a["pairs"].([]any) {
+				left = append(left, pair.(map[string]any)["left"])
+			}
+			learner["left"] = left
+		case "ordering":
+			items := append([]any{}, a["items"].([]any)...)
+			rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
+			learner["items"] = items
+		}
+		parts = append(parts, map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": len(p["markscheme"].([]any))})
+	}
+	out["parts"] = parts
+	return out
+}

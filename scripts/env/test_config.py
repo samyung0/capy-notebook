@@ -16,6 +16,21 @@ spec.loader.exec_module(config)
 
 
 class ConfigTest(unittest.TestCase):
+    def test_bank_configuration_keeps_owner_and_private_assets_off_the_api(self):
+        values = {key: "" for key in config.MANIFEST}
+        for key, rule in config.MANIFEST.items():
+            if rule.get("required_for"):
+                values[key] = "explicit"
+        result = config.target_values(values, "coolify")
+        self.assertEqual(result["BANK_DATABASE_URL"], "")
+        self.assertEqual(result["BANK_EDITOR_DATABASE_URL"], "")
+        self.assertNotIn("BANK_OWNER_DATABASE_URL", result)
+        self.assertNotIn("BANK_PRIVATE_B2_APP_KEY", result)
+        self.assertEqual(config.MANIFEST["BANK_PUBLIC_B2_APP_KEY"]["kind"], "secret")
+        self.assertNotIn(
+            "local", config.MANIFEST["BANK_EDITOR_DATABASE_URL"]["targets"]
+        )
+
     def test_literal_parser_classification_and_duplicate_rejection(self):
         value = "$(do-not-run) `${HOME}` #still-secret"
         parsed = config.parse_dotenv(

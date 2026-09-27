@@ -1,11 +1,9 @@
+import type { Question, QuestionBlock } from '@/api/types';
 import {
-  type ChoiceQuestion,
-  type CognitiveLevel,
-  type OrderingQuestion,
-  QUESTION_TYPES,
-  type Question,
-  type QuestionType,
-} from '@/api/types';
+  questionBlockSchema,
+  validateQuestion,
+  validateQuestions,
+} from '@/features/questions/validation';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { uid } from '@/lib/id';
 import {
@@ -39,42 +37,24 @@ export interface MaterialDocument {
   value: MaterialValue;
 }
 
-export interface QuizPromptElement extends MaterialElement {
-  children: MaterialText[];
-  type: 'quiz_prompt';
-}
-
-export interface QuizOptionElement extends MaterialElement {
-  children: MaterialText[];
-  id: string;
-  type: 'quiz_option';
-}
-
-export interface QuizExplanationElement extends MaterialElement {
-  children: MaterialText[];
-  type: 'quiz_explanation';
-}
-
 export interface QuizQuestionElement extends MaterialElement {
-  acceptedAnswers?: string[];
-  children: (QuizPromptElement | QuizOptionElement | QuizExplanationElement)[];
-  correctBoolean?: boolean;
-  correctOptionIds?: string[];
-  hints?: string[];
+  children: [MaterialText];
   id: string;
-  level: CognitiveLevel;
-  pairs?: { left: string; right: string }[];
-  points?: number;
-  questionType: QuestionType;
-  rubrics?: string[];
+  question: Question;
   type: 'quiz_question';
 }
 
 export interface QuizElement extends MaterialElement {
-  children: QuizQuestionElement[];
+  children: QuizQuestionElement[] | [MaterialText];
   id: string;
-  timeLimitMin?: number;
   type: 'quiz';
+}
+
+export interface QuestionFigureElement extends MaterialElement {
+  block: Extract<QuestionBlock, { type: 'chart' | 'graph' }>;
+  children: [MaterialText];
+  id: string;
+  type: 'chart' | 'graph';
 }
 
 export interface FlashcardFaceElement extends MaterialElement {
@@ -123,11 +103,9 @@ export interface MaterialRefElement extends MaterialElement {
 }
 
 export type CustomMaterialElement =
+  | QuestionFigureElement
   | QuizElement
   | QuizQuestionElement
-  | QuizPromptElement
-  | QuizOptionElement
-  | QuizExplanationElement
   | FlashcardsElement
   | FlashcardElement
   | FlashcardFaceElement
@@ -139,11 +117,13 @@ export const MATERIAL_REF_TYPE = 'material_ref';
 const MATERIAL_REF_KINDS = new Set<string>(['quiz', 'flashcards']);
 
 const CUSTOM_TYPES = new Set([
-  'quiz',
-  'quiz_question',
+  'chart',
+  'graph',
   'quiz_prompt',
   'quiz_option',
   'quiz_explanation',
+  'quiz',
+  'quiz_question',
   'flashcards',
   'flashcard',
   'flashcard_front',
@@ -154,13 +134,6 @@ const CUSTOM_TYPES = new Set([
 ]);
 const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
-const QUESTION_TYPE_SET = new Set<QuestionType>(QUESTION_TYPES);
-const COGNITIVE_LEVELS = new Set<CognitiveLevel>([
-  'recall',
-  'application',
-  'analysis',
-]);
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -193,37 +166,65 @@ function hasId(value: MaterialElement): boolean {
 
 function validateCustomElement(element: MaterialElement): boolean {
   switch (element.type) {
-    case 'quiz':
+    case 'chart':
+    case 'graph': {
+      if (
+        !hasId(element) ||
+        element.children.length !== 1 ||
+        !isTextNode(element.children[0]) ||
+        element.children[0].text !== ''
+      )
+        return false;
+      const result = questionBlockSchema.safeParse(element.block);
       return (
-        hasId(element) &&
-        (element.timeLimitMin == null ||
-          (typeof element.timeLimitMin === 'number' &&
-            element.timeLimitMin > 0)) &&
-        element.children.length > 0 &&
-        element.children.every(
-          (child) => isElementNode(child) && child.type === 'quiz_question'
-        )
-      );
-    case 'quiz_question': {
-      const question = element as QuizQuestionElement;
-      return (
-        hasId(element) &&
-        QUESTION_TYPE_SET.has(question.questionType) &&
-        COGNITIVE_LEVELS.has(question.level) &&
-        element.children.every(
-          (child) =>
-            isElementNode(child) &&
-            ['quiz_prompt', 'quiz_option', 'quiz_explanation'].includes(
-              child.type
-            )
-        ) &&
-        element.children.some(
-          (child) => isElementNode(child) && child.type === 'quiz_prompt'
-        )
+        result.success &&
+        result.data.type === element.type &&
+        (result.data.type !== 'graph' || 'svg' in result.data.image)
       );
     }
+    case 'quiz': {
+      if (!hasId(element)) return false;
+      if (
+        element.children.length === 1 &&
+        isTextNode(element.children[0]) &&
+        element.children[0].text === ''
+      )
+        return true;
+      try {
+        if (
+          !element.children.every(
+            (child) => isElementNode(child) && child.type === 'quiz_question'
+          )
+        )
+          return false;
+        validateQuestions(
+          element.children.map(
+            (child) => (child as QuizQuestionElement).question
+          )
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    }
+    case 'quiz_question': {
+      if (
+        !hasId(element) ||
+        element.children.length !== 1 ||
+        !isTextNode(element.children[0]) ||
+        element.children[0].text !== ''
+      )
+        return false;
+      try {
+        return validateQuestion(element.question).id === element.id;
+      } catch {
+        return false;
+      }
+    }
+    case 'quiz_prompt':
     case 'quiz_option':
-      return hasId(element) && element.children.every(isTextNode);
+    case 'quiz_explanation':
+      return false;
     case 'flashcard':
       return (
         hasId(element) &&
@@ -233,8 +234,6 @@ function validateCustomElement(element: MaterialElement): boolean {
         isElementNode(element.children[1]) &&
         element.children[1].type === 'flashcard_back'
       );
-    case 'quiz_prompt':
-    case 'quiz_explanation':
     case 'flashcard_front':
     case 'flashcard_back':
     case 'mermaid_caption':
@@ -307,12 +306,27 @@ export function isMaterialNode(value: unknown): value is MaterialNode {
 
 export function isMaterialDocument(value: unknown): value is MaterialDocument {
   if (!isRecord(value)) return false;
-  return (
-    value.schemaVersion === MATERIAL_SCHEMA_VERSION &&
-    Array.isArray(value.value) &&
-    value.value.length > 0 &&
-    value.value.every((node) => isElementNode(node) && isMaterialNode(node))
-  );
+  if (
+    !(
+      value.schemaVersion === MATERIAL_SCHEMA_VERSION &&
+      Array.isArray(value.value) &&
+      value.value.length > 0 &&
+      value.value.every((node) => isElementNode(node) && isMaterialNode(node))
+    )
+  )
+    return false;
+  const parts = new Set<string>();
+  const uniqueParts = (node: MaterialNode): boolean => {
+    if ('text' in node) return true;
+    if (node.type === 'quiz_question') {
+      for (const part of (node as QuizQuestionElement).question.parts) {
+        if (parts.has(part.id)) return false;
+        parts.add(part.id);
+      }
+    }
+    return node.children.every(uniqueParts);
+  };
+  return (value.value as MaterialValue).every(uniqueParts);
 }
 
 function parseMaterialDocumentInput(input: unknown): MaterialDocument | null {
@@ -458,124 +472,23 @@ function textElement<T extends string>(type: T, text: string): MaterialElement {
   return { children: [{ text }], type };
 }
 
-function optionId(questionId: string, index: number): string {
-  return `${questionId}:option:${index + 1}`;
-}
-
-function questionOptions(question: Question): {
-  options: QuizOptionElement[];
-  correctOptionIds?: string[];
-} {
-  if (question.type === 'mcq' || question.type === 'multi') {
-    const choice = question as ChoiceQuestion;
-    const options = choice.options.map((option, index) => ({
-      ...(textElement('quiz_option', option.value) as QuizOptionElement),
-      explanation: option.explanation,
-      id: optionId(question.id, index),
-    }));
-    return {
-      correctOptionIds: choice.correct
-        .map((index) => options[index]?.id)
-        .filter((id): id is string => Boolean(id)),
-      options,
-    };
-  }
-  if (question.type === 'boolean') {
-    const options = ['True', 'False'].map((text, index) => ({
-      ...(textElement('quiz_option', text) as QuizOptionElement),
-      id: optionId(question.id, index),
-    }));
-    return {
-      correctOptionIds: [options[question.correct ? 0 : 1].id],
-      options,
-    };
-  }
-  if (question.type === 'short' || question.type === 'open') {
-    return {
-      options: question.accepted.map((answer, index) => ({
-        ...(textElement('quiz_option', answer.value) as QuizOptionElement),
-        id: optionId(question.id, index),
-        role: 'accepted-answer',
-      })),
-    };
-  }
-  if (question.type === 'matching') {
-    return {
-      options: question.pairs.map((pair, index) => ({
-        ...(textElement(
-          'quiz_option',
-          `${pair.left} → ${pair.right}`
-        ) as QuizOptionElement),
-        id: optionId(question.id, index),
-        role: 'matching-pair',
-      })),
-    };
-  }
-  const ordering = question as OrderingQuestion;
-  return {
-    options: ordering.items.map((item, index) => ({
-      ...(textElement('quiz_option', item.value) as QuizOptionElement),
-      id: optionId(question.id, index),
-      role: 'ordering-item',
-    })),
-  };
-}
-
 export function quizQuestionNode(question: Question): QuizQuestionElement {
-  const { options, correctOptionIds } = questionOptions(question);
-  const children: QuizQuestionElement['children'] = [
-    textElement('quiz_prompt', question.prompt) as QuizPromptElement,
-    ...options,
-  ];
-  if (question.explanation) {
-    children.push(
-      textElement(
-        'quiz_explanation',
-        question.explanation
-      ) as QuizExplanationElement
-    );
-  }
-
-  const node: QuizQuestionElement = {
-    children,
-    id: question.id || uid('question'),
-    level: question.level,
-    questionType: question.type,
+  return {
+    children: [{ text: '' }],
+    id: question.id,
+    question: validateQuestion(question),
     type: 'quiz_question',
   };
-  if (correctOptionIds?.length) node.correctOptionIds = correctOptionIds;
-  if (question.type === 'boolean') node.correctBoolean = question.correct;
-  if (question.type === 'short' || question.type === 'open') {
-    node.acceptedAnswers = question.accepted.map((answer) => answer.value);
-  }
-  if (question.type === 'open') {
-    node.hints = question.hints.map((hint) => hint.value);
-    node.rubrics = question.rubrics.map((rubric) => rubric.value);
-  }
-  if (question.type === 'matching') node.pairs = question.pairs;
-  if (question.points != null) node.points = question.points;
-  return node;
 }
 
 export function quizNode(data: QuizBlock, id = uid('quiz')): QuizElement {
-  const questions = data.questions.map(quizQuestionNode);
-  if (!questions.length) {
-    questions.push(
-      quizQuestionNode({
-        correct: [0],
-        id: uid('question'),
-        level: 'recall',
-        options: [{ value: '' }],
-        prompt: '',
-        type: 'mcq',
-      })
-    );
-  }
+  validateQuestions(data.questions);
   return {
+    children: data.questions.length
+      ? data.questions.map(quizQuestionNode)
+      : [{ text: '' }],
     id,
     type: 'quiz',
-    ...(data.timeLimitMin == null ? {} : { timeLimitMin: data.timeLimitMin }),
-    children: questions,
   };
 }
 
@@ -659,84 +572,22 @@ function nodeText(node: MaterialNode): string {
 }
 
 export function quizQuestionElementToQuestion(
-  question: QuizQuestionElement
+  element: QuizQuestionElement
 ): Question {
-  const prompt =
-    question.children
-      .find((child) => child.type === 'quiz_prompt')
-      ?.children.map(nodeText)
-      .join('') ?? '';
-  const explanation = question.children
-    .find((child) => child.type === 'quiz_explanation')
-    ?.children.map(nodeText)
-    .join('');
-  const options = question.children.filter(
-    (child): child is QuizOptionElement => child.type === 'quiz_option'
-  );
-  const base = {
-    id: question.id,
-    level: question.level,
-    prompt,
-    ...(explanation ? { explanation } : {}),
-    ...(question.points == null ? {} : { points: question.points }),
-  };
-  switch (question.questionType) {
-    case 'boolean':
-      return {
-        ...base,
-        correct: question.correctBoolean ?? true,
-        type: 'boolean',
-      };
-    case 'short':
-      return {
-        ...base,
-        accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
-          (value) => ({ value })
-        ),
-        type: 'short',
-      };
-    case 'open':
-      return {
-        ...base,
-        accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
-          (value) => ({ value })
-        ),
-        hints: (question.hints ?? []).map((value) => ({ value })),
-        rubrics: (question.rubrics ?? []).map((value) => ({ value })),
-        type: 'open',
-      };
-    case 'matching':
-      return { ...base, pairs: question.pairs ?? [], type: 'matching' };
-    case 'ordering':
-      return {
-        ...base,
-        items: options.map((option) => ({ value: nodeText(option) })),
-        type: 'ordering',
-      };
-    default:
-      return {
-        ...base,
-        correct: (question.correctOptionIds ?? [])
-          .map((id) => options.findIndex((option) => option.id === id))
-          .filter((index) => index >= 0),
-        options: options.map((option) => ({
-          value: nodeText(option),
-          ...(typeof option.explanation === 'string'
-            ? { explanation: option.explanation }
-            : {}),
-        })),
-        type: question.questionType === 'multi' ? 'multi' : 'mcq',
-      };
-  }
+  const question = validateQuestion(element.question);
+  if (question.id !== element.id)
+    throw new Error('Question identity does not match its document node.');
+  return question;
 }
 
 export function quizElementToBlock(element: QuizElement): QuizBlock {
-  const questions = element.children.map(quizQuestionElementToQuestion);
   return {
-    questions,
-    ...(element.timeLimitMin == null
-      ? {}
-      : { timeLimitMin: element.timeLimitMin }),
+    questions: element.children
+      .filter(
+        (node): node is QuizQuestionElement =>
+          'type' in node && node.type === 'quiz_question'
+      )
+      .map(quizQuestionElementToQuestion),
   };
 }
 

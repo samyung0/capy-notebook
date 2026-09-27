@@ -1,5 +1,8 @@
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import {
   createContext,
+  lazy,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
@@ -17,12 +20,15 @@ import {
   type MaterialRefKind,
   materialRefNode,
 } from '@/features/materials/document';
+import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { insertEditorNode, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
 import { FlashcardsDialog } from './FlashcardsDialog';
-import { QuizDialog } from './QuizDialog';
+import type { NoteVisualBlock } from './VisualBlockDialog';
 
-type SaveFn = (code: string) => void;
+const VisualBlockDialog = lazy(() => import('./VisualBlockDialog'));
+
+type SaveFn = (code: string) => void | Promise<void>;
 type SaveYouTubeFn = (videoId: string) => void;
 
 export interface NoteBlockDialogsApi {
@@ -37,7 +43,10 @@ export interface NoteBlockDialogsApi {
   /** The note this editor is bound to; embedded materials are created under it. */
   noteId: string;
   openFlashcards: (initialCode: string | undefined, onSave: SaveFn) => void;
-  openQuiz: (initialCode: string | undefined, onSave: SaveFn) => void;
+  openVisual: (
+    block: NoteVisualBlock,
+    onSave: (block: NoteVisualBlock) => void | Promise<void>
+  ) => void;
   openYouTube: (initialUrl: string | undefined, onSave: SaveYouTubeFn) => void;
 }
 
@@ -48,9 +57,6 @@ export function embeddedDraftFromFence(kind: MaterialRefKind, code: string) {
     return {
       kind,
       questions: block.questions,
-      ...(block.timeLimitMin == null
-        ? {}
-        : { timeLimitMin: block.timeLimitMin }),
     };
   }
   return {
@@ -83,19 +89,17 @@ export function NoteBlockDialogsProvider({
   noteId: string;
 }) {
   const { mutateAsync: createEmbeddedMaterial } = useCreateEmbeddedMaterial();
-  const [quiz, setQuiz] = useState<{ code?: string } | null>(null);
+  const navigate = useNavigate();
+  const router = useRouter();
   const [flash, setFlash] = useState<{ code?: string } | null>(null);
+  const [visual, setVisual] = useState<{
+    block: NoteVisualBlock;
+    onSave: (block: NoteVisualBlock) => void | Promise<void>;
+  } | null>(null);
   const [youtube, setYouTube] = useState<{ url?: string } | null>(null);
   const saveRef = useRef<SaveFn>(() => {});
   const youtubeSaveRef = useRef<SaveYouTubeFn>(() => {});
 
-  const openQuiz = useCallback(
-    (initialCode: string | undefined, onSave: SaveFn) => {
-      saveRef.current = onSave;
-      setQuiz({ code: initialCode });
-    },
-    []
-  );
   const openFlashcards = useCallback(
     (initialCode: string | undefined, onSave: SaveFn) => {
       saveRef.current = onSave;
@@ -110,6 +114,13 @@ export function NoteBlockDialogsProvider({
     },
     []
   );
+  const openVisual = useCallback(
+    (
+      block: NoteVisualBlock,
+      onSave: (block: NoteVisualBlock) => void | Promise<void>
+    ) => setVisual({ block, onSave }),
+    []
+  );
 
   const createEmbedded = useCallback(
     (kind: MaterialRefKind, code: string) =>
@@ -120,8 +131,14 @@ export function NoteBlockDialogsProvider({
     async (editor: NoteEditorInstance, kind: MaterialRefKind, code: string) => {
       const material = await createEmbedded(kind, code);
       insertEditorNode(editor, materialRefNode(material.id, kind));
+      if (kind === 'quiz')
+        await navigate({
+          params: { quizId: material.id },
+          search: quizEditSearch(router.state.location.href),
+          to: '/quizzes/$quizId/edit',
+        });
     },
-    [createEmbedded]
+    [createEmbedded, navigate, router]
   );
 
   const api = useMemo<NoteBlockDialogsApi>(
@@ -130,7 +147,7 @@ export function NoteBlockDialogsProvider({
       insertEmbedded,
       noteId,
       openFlashcards,
-      openQuiz,
+      openVisual,
       openYouTube,
     }),
     [
@@ -138,7 +155,7 @@ export function NoteBlockDialogsProvider({
       insertEmbedded,
       noteId,
       openFlashcards,
-      openQuiz,
+      openVisual,
       openYouTube,
     ]
   );
@@ -153,20 +170,20 @@ export function NoteBlockDialogsProvider({
   return (
     <Ctx.Provider value={api}>
       {children}
-      <QuizDialog
-        initialCode={quiz?.code}
-        onClose={() => setQuiz(null)}
-        onSave={(code) => {
-          saveRef.current(code);
-          setQuiz(null);
-        }}
-        open={!!quiz}
-      />
+      {visual && (
+        <Suspense fallback={null}>
+          <VisualBlockDialog
+            block={visual.block}
+            onClose={() => setVisual(null)}
+            onSave={visual.onSave}
+          />
+        </Suspense>
+      )}
       <FlashcardsDialog
         initialCode={flash?.code}
         onClose={() => setFlash(null)}
-        onSave={(code) => {
-          saveRef.current(code);
+        onSave={async (code) => {
+          await saveRef.current(code);
           setFlash(null);
         }}
         open={!!flash}

@@ -39,7 +39,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	quiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
-		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`),
+		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,7 +56,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 	if cards.Title != "Lecture 4 · Flashcards" {
 		t.Fatalf("embedded flashcards title = %q", cards.Title)
 	}
-	if _, err := s.CreateEmbeddedMaterial(ctx, ownerID, quiz.ID, EmbeddedDraft{Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`)}); !errors.Is(err, ErrNotFound) {
+	if _, err := s.CreateEmbeddedMaterial(ctx, ownerID, quiz.ID, EmbeddedDraft{Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`)}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("embedding under a non-note should fail, got %v", err)
 	}
 
@@ -149,7 +149,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	quiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
-		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`),
+		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +222,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 		t.Fatal(err)
 	}
 	wsQuiz, err := s.CreateEmbeddedMaterial(ctx, ownerID, wsNote.ID, EmbeddedDraft{
-		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`),
+		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)

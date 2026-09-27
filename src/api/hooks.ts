@@ -1841,8 +1841,15 @@ export const quizQuery = (id: string) =>
     queryFn: () => api.get<Quiz>(`/quizzes/${id}`),
     queryKey: qk.quiz(id),
   });
-export const useQuiz = (id: string, options?: QueryUiOptions) =>
-  useQuery({ ...quizQuery(id), meta: queryMeta(options) });
+export const useQuiz = (
+  id: string,
+  options?: QueryUiOptions & { fresh?: boolean }
+) =>
+  useQuery({
+    ...quizQuery(id),
+    ...(options?.fresh ? { refetchOnMount: 'always' as const } : {}),
+    meta: queryMeta(options),
+  });
 
 export const attemptsQuery = () =>
   queryOptions({
@@ -1894,6 +1901,7 @@ export function useCreateQuiz() {
 function invalidateQuiz(qc: ReturnType<typeof useQueryClient>, id: string) {
   invalidateOwnedMaterials(qc);
   qc.invalidateQueries({ queryKey: qk.quiz(id) });
+  qc.invalidateQueries({ queryKey: qk.material(id) });
   invalidateAllMaterials(qc);
 }
 
@@ -1964,7 +1972,7 @@ export function useCreateFlashcardSet() {
 export function useCreateCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateCardReq) =>
+    mutationFn: (body: CreateCardReq & { expectedRevision: number }) =>
       api.post<Flashcard>(`/flashcards/${flashcardSetId}/cards`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
@@ -1975,7 +1983,16 @@ export function useCreateCard(flashcardSetId: string) {
 export function useDeleteCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<void>(`/flashcards/cards/${id}`),
+    mutationFn: ({
+      id,
+      expectedRevision,
+    }: {
+      id: string;
+      expectedRevision: number;
+    }) =>
+      api.del<void>(
+        `/flashcards/cards/${id}?expectedRevision=${expectedRevision}`
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(flashcardSetId) });
       qc.invalidateQueries({ queryKey: qk.flashcardSet(flashcardSetId) });
@@ -1989,8 +2006,29 @@ export const flashcardSetQuery = (id: string) =>
     queryFn: () => api.get<FlashcardSet>(`/flashcards/${id}`),
     queryKey: qk.flashcardSet(id),
   });
-export const useFlashcardSet = (id: string, options?: QueryUiOptions) =>
-  useQuery({ ...flashcardSetQuery(id), meta: queryMeta(options) });
+
+export function useUpdateFlashcardContent(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      expectedRevision: number;
+      cards: { id?: string; front: string; back: string }[];
+    }) => api.patch<Flashcard[]>(`/flashcards/${id}/content`, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.cards(id) });
+      qc.invalidateQueries({ queryKey: qk.flashcardSet(id) });
+    },
+  });
+}
+export const useFlashcardSet = (
+  id: string,
+  options?: QueryUiOptions & { fresh?: boolean }
+) =>
+  useQuery({
+    ...flashcardSetQuery(id),
+    ...(options?.fresh ? { refetchOnMount: 'always' as const } : {}),
+    meta: queryMeta(options),
+  });
 
 export const cardsQuery = (flashcardSetId: string) =>
   queryOptions({
@@ -1998,8 +2036,15 @@ export const cardsQuery = (flashcardSetId: string) =>
     queryFn: () => api.get<Flashcard[]>(`/flashcards/${flashcardSetId}/cards`),
     queryKey: qk.cards(flashcardSetId),
   });
-export const useCards = (flashcardSetId: string, options?: QueryUiOptions) =>
-  useQuery({ ...cardsQuery(flashcardSetId), meta: queryMeta(options) });
+export const useCards = (
+  flashcardSetId: string,
+  options?: QueryUiOptions & { fresh?: boolean }
+) =>
+  useQuery({
+    ...cardsQuery(flashcardSetId),
+    ...(options?.fresh ? { refetchOnMount: 'always' as const } : {}),
+    meta: queryMeta(options),
+  });
 export function useUpdateCard(flashcardSetId: string) {
   const qc = useQueryClient();
   return useMutation({

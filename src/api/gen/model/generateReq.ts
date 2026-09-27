@@ -25,14 +25,8 @@ export interface GenerateReq {
   format?: string;
   kind: GenerateKind;
   length?: string;
-  /** @minItems 1 */
-  levels: CognitiveLevel[];
+  levels?: CognitiveLevel[];
   style?: string;
-  /**
-     * @minimum 1
-     * @maximum 180
-     */
-  timeLimitMin?: number;
   /**
      * @minLength 1
      * @maxLength 120

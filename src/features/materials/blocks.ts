@@ -5,7 +5,6 @@
 
      ```quiz
      questions: [ ... ]
-     timeLimitMin: 20
      ```
 
      ```flashcards
@@ -19,10 +18,10 @@
    ============================================================ */
 import YAML from 'yaml';
 import type { Question } from '@/api/types';
+import { validateQuestions } from '@/features/questions/validation';
 
 export interface QuizBlock {
   questions: Question[];
-  timeLimitMin?: number;
 }
 export interface FlashcardContent {
   back: string;
@@ -50,21 +49,10 @@ export function extractFence(content: string, lang: string): string | null {
 }
 
 function parseQuizYaml(body: string): QuizBlock {
-  try {
-    const doc = (YAML.parse(body) ?? {}) as {
-      questions?: unknown;
-      timeLimitMin?: unknown;
-    };
-    return {
-      questions: Array.isArray(doc.questions)
-        ? (doc.questions as Question[])
-        : [],
-      timeLimitMin:
-        typeof doc.timeLimitMin === 'number' ? doc.timeLimitMin : undefined,
-    };
-  } catch {
-    return { questions: [] };
-  }
+  const doc: unknown = YAML.parse(body);
+  if (!doc || typeof doc !== 'object' || !('questions' in doc))
+    throw new Error('Quiz data needs a questions array.');
+  return { questions: validateQuestions(doc.questions) };
 }
 
 function parseFlashcardsYaml(body: string): FlashcardsBlock {
@@ -107,7 +95,6 @@ function fenceDoc(lang: string, payload: unknown): string {
 
 export function quizMarkdown(data: QuizBlock): string {
   const payload: Record<string, unknown> = { questions: data.questions ?? [] };
-  if (data.timeLimitMin != null) payload.timeLimitMin = data.timeLimitMin;
   return fenceDoc('quiz', payload);
 }
 

@@ -101,6 +101,10 @@ mention autocomplete rather than the document.
 
 ## Editor lifecycle
 
+File viewers portal their mode/save controls into the center header. The shared
+contexts live in `fileModeContext.ts`, separate from the hot-reloaded control
+component, so the header and lazy file viewers retain the same context identity.
+
 Materials opened from Create use the same `CenterContent` frame as workspace
 materials, using the same per-item mode preference. The `/materials/:id` route retains the app
 sidebar, uses only the navigation back icon before the title, and hides
@@ -128,6 +132,16 @@ scroll on the toolbar's own overflow ancestors; as a sibling of that box it
 stayed pinned while the selected block scrolled away. Its buttons are the same
 `ToolbarButton` the top row uses, so both rows share one icon colour, size and
 hover treatment; the Ask AI button only overrides the square width.
+
+`components/ui/BlockToolbar` owns the shared floating surface for selection,
+link and block actions, question-dialog blocks and the single-column workspace
+controls: full pill radius, border, surface, shadow, 4px padding and zero
+button gap, with no vertical dividers. Destructive actions use Button's shared
+`danger-light` variant. `FloatingToolbar` uses `PopupMotion` for the retained fade/scale/blur
+exit; anchored block popovers use the same CSS motion with Radix positioning and
+exit lifetime. Their controls become inert on close. The workspace overrides
+padding to 6px and buttons/icons to 40px/20px through className; other floating
+actions use 32px/16px.
 
 `NoteEditor` requests the room token only for Edit mode.
 `NoteEditorCore` owns one garbage-collected `Y.Doc`, configures remote cursor
@@ -193,7 +207,12 @@ row; markdown export resolves references back into inline blocks first and
 keeps an unresolvable one as a placeholder fence. Removing the reference
 trashes the row at the next projection and undo restores it (see
 [authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
-stay inline.
+stay inline. Mermaid, chart and graph embeds render view-only in every editor
+mode. Selecting one shows the shared floating Edit/Copy/Delete toolbar; Edit
+opens a dialog. Chart and graph nodes store their question block under `block`
+and a single empty text child; graphs export their SVG before saving. Inline
+and display equations edit in-place with MathLive and render with KaTeX outside
+editing. The math toolbar inserts formulas and common symbol templates.
 
 ## Persistence and save status
 
@@ -203,11 +222,19 @@ converged. It does not mean PostgreSQL durably stored the state.
 The editor reports:
 
 - `Connecting…`: opening or reconnecting;
-- `Synced`: provider convergence or a checkpoint awaiting durability;
+- `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
+- `Synced`: the initial room sync completed with no local work pending;
 - `Saved`: the sidecar confirmed that a state containing this client's work was
   committed;
 - `Offline`;
 - `Collaboration unavailable`.
+
+The header shows these as Hugeicons cloud icons beside the title: Sync for
+Connecting and Syncing, SavingDone01 for Synced, Check for Saved, Off for Offline, and Alert for
+Collaboration unavailable. Localized labels remain in keyboard-accessible
+tooltips and the live status text for screen readers; the error icon stays red.
+Pending work preserves Connecting, Offline and error indicators. An older
+checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
 
 On a value change, edit mode debounces a `checkpoint-request` stateless message
 carrying a random receipt ID. The sidecar keeps the room's outstanding IDs in
@@ -388,6 +415,16 @@ the current Y.Doc and replace one stable custom block through headless
 Slate-Yjs transforms with a stale-block precondition. They do not replace the
 whole document. If the authority is unavailable, Go returns 503 instead of
 falling back to SQL.
+
+Quiz and flashcard authoring sends `expectedRevision` from the loaded draft.
+The sidecar locks the material row and checks that revision and completed
+projection before committing a replacement; its block precondition also checks
+the live Yjs content. Rejected saves retain the local draft. The embedded
+flashcard dialog saves its entire card list atomically through
+`PATCH /api/flashcards/{id}/content`, preserving study state for retained IDs.
+Explicit quiz/flashcard study and edit opens fetch fresh content before seeding
+their view or draft; rendering references in a note does not force all their
+detail queries to refresh.
 
 ## Relational comments with Yjs anchors
 

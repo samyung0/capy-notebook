@@ -113,10 +113,10 @@ type OpenChoice = 'interactive' | 'readOnly';
 
 const saveState = (page: Page) => page.getByTestId('editor-save-state');
 
-/** The editor reports `Synced` once Yjs has the document and `Saved` once the
- * service acknowledges a checkpoint; either means the editor is live. */
+/** The editor is live while Synced, Syncing or Saved; pending checkpoints
+ * must not add persistence latency to the interactive-open measurement. */
 async function expectLive(page: Page): Promise<void> {
-  await expect(saveState(page)).toHaveText(/Synced|Saved/, {
+  await expect(saveState(page)).toHaveText(/^(Synced|Syncing…|Saved)$/, {
     timeout: 120_000,
   });
 }

@@ -1,0 +1,82 @@
+{
+  "exam": {
+    "id": "ielts",
+    "label": "IELTS",
+    "position": 2
+  },
+  "subjects": [
+    {
+      "id": "ielts-academic-reading",
+      "label": "Academic Reading",
+      "position": 1,
+      "topics": [
+        {
+          "id": "ielts-academic-reading-multiple-choice",
+          "label": "Selecting answers from choices",
+          "position": 1,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-identifying-information",
+          "label": "Checking factual statements against the passage",
+          "position": 2,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-identifying-writer-views",
+          "label": "Checking the writer's opinions and claims",
+          "position": 3,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-matching-information",
+          "label": "Locating details in paragraphs",
+          "position": 4,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-matching-headings",
+          "label": "Choosing paragraph headings",
+          "position": 5,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-matching-features",
+          "label": "Linking details to people or categories",
+          "position": 6,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-matching-sentence-endings",
+          "label": "Selecting endings for sentence beginnings",
+          "position": 7,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-sentence-completion",
+          "label": "Filling sentence gaps from the passage",
+          "position": 8,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-summary-note-table-flow-chart-completion",
+          "label": "Completing summaries, notes, tables and flow charts",
+          "position": 9,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-diagram-label-completion",
+          "label": "Supplying missing diagram labels",
+          "position": 10,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        },
+        {
+          "id": "ielts-academic-reading-short-answer",
+          "label": "Answering factual questions briefly",
+          "position": 11,
+          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ import * as Y from 'yjs';
 export interface ReplaceBlockCommand {
   actorUserId: string;
   expectedBlock: Record<string, unknown>;
+  expectedRevision?: number;
   materialId: string;
   replacementBlock: Record<string, unknown>;
   room: string;
@@ -60,6 +61,12 @@ export function applyCollaborationCommand(
     }).next().value;
     if (!entry) throw new Error('target block no longer exists');
     const [current, path] = entry;
+    if (
+      command.expectedRevision !== undefined &&
+      !isDeepStrictEqual(current, command.expectedBlock)
+    ) {
+      throw new Error('target block changed concurrently');
+    }
     if (isDeepStrictEqual(current, command.replacementBlock)) {
       return;
     }
@@ -85,6 +92,9 @@ export function isCollaborationCommand(
   const command = value as Partial<CollaborationCommand>;
   return (
     command.type === 'replace-block' &&
+    (command.expectedRevision === undefined ||
+      (Number.isSafeInteger(command.expectedRevision) &&
+        command.expectedRevision > 0)) &&
     typeof command.actorUserId === 'string' &&
     command.actorUserId.length > 0 &&
     typeof command.materialId === 'string' &&

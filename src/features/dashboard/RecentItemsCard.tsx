@@ -129,7 +129,7 @@ export function RecentItemsCard() {
                     : toMaterialActionTarget(item.material)
                 }
                 display="hover"
-                hoverClassName="mt-1 mr-1.5"
+                hoverClassName="mt-2 mr-1.5"
                 readOnly={!item.canEdit}
                 showMove={false}
                 workspaceId={item.workspaceId}

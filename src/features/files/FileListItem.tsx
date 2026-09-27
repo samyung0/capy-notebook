@@ -37,6 +37,7 @@ export function FileListItem({
   readOnly?: boolean;
 }) {
   const ingesting = fileIsIngesting(file.status);
+  const waitingForBytes = ingesting && !file.hasBytes;
   const failed = file.status === 'failed';
 
   return (
@@ -51,11 +52,11 @@ export function FileListItem({
           className={cn(
             'flex w-full items-center gap-1.5 rounded-button py-1.5 text-left',
             active && 'font-bold',
-            ingesting && 'cursor-default'
+            waitingForBytes && 'cursor-default'
           )}
-          disabled={ingesting}
+          disabled={waitingForBytes}
           draggable={false}
-          onClick={ingesting ? undefined : onOpen}
+          onClick={waitingForBytes ? undefined : onOpen}
           params={{ workspaceId }}
           replace
           search={{ file: file.id }}

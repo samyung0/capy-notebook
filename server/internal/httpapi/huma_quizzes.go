@@ -10,6 +10,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/copytext"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -57,14 +58,14 @@ type attemptDetailOutput struct {
 
 func (a *api) registerQuizzes(api huma.API) {
 	const tag = "Quizzes"
-	reg(api, http.MethodPost, "/api/quizzes", "createQuiz", tag, "Create a quiz", http.StatusCreated, a.createQuiz)
+	regWithMaxBody(api, http.MethodPost, "/api/quizzes", "createQuiz", tag, "Create a quiz", http.StatusCreated, materialRequestMaxBytes, a.createQuiz)
 	reg(api, http.MethodGet, "/api/mistakes", "getMistakes", tag, "Review-mistakes quiz", http.StatusOK, a.getMistakes)
 	reg(api, http.MethodGet, "/api/quizzes/{id}", "getQuiz", tag, "Get a quiz", http.StatusOK, a.getQuiz)
-	reg(api, http.MethodPatch, "/api/quizzes/{id}/content", "updateQuizContent", tag, "Update quiz content", http.StatusOK, a.updateQuizContent)
+	regWithMaxBody(api, http.MethodPatch, "/api/quizzes/{id}/content", "updateQuizContent", tag, "Update quiz content", http.StatusOK, materialRequestMaxBytes, a.updateQuizContent)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
-	reg(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Record a quiz attempt", http.StatusCreated, a.createAttempt)
+	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Record a quiz attempt", http.StatusCreated, 8<<20, a.createAttempt)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
 	a.registerQuizGrade(api)
@@ -126,7 +127,7 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 	}
 	res, err := a.s.CreateQuiz(ctx, store.Quiz{
 		UserID: userID(ctx), Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: b.Chapters,
-		Questions: apimodel.EncodeQuestions(b.Questions), Privacy: privacy, TimeLimitMin: b.TimeLimitMin,
+		Questions: apimodel.EncodeQuestions(b.Questions), Privacy: privacy, TimeLimitMin: nil,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -140,7 +141,8 @@ func (a *api) updateQuizContent(ctx context.Context, in *updateQuizContentInput)
 		return nil, hErr(err)
 	}
 	p := store.QuizContentPatch{
-		TimeLimitMin: in.Body.TimeLimitMin, UpdatedBy: userID(ctx),
+		ExpectedRevision: in.Body.ExpectedRevision,
+		TimeLimitMin:     nil, UpdatedBy: userID(ctx),
 	}
 	if in.Body.Questions != nil {
 		raw := apimodel.EncodeQuestions(*in.Body.Questions)
@@ -233,22 +235,32 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 	if in.Body.Correct > in.Body.Total {
 		return nil, huma.Error422UnprocessableEntity("correct cannot exceed total")
 	}
+	if err := questions.ValidateAll(in.Body.Questions, questions.Policy{Snapshot: true}); err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid question snapshot: " + err.Error())
+	}
+	if err := questions.ValidateAll(in.Body.Wrong, questions.Policy{Snapshot: true}); err != nil {
+		return nil, huma.Error422UnprocessableEntity("invalid missed questions: " + err.Error())
+	}
 	wrong := make([]json.RawMessage, 0, len(in.Body.Wrong))
 	ids := make([]string, 0, len(in.Body.Wrong))
 	for _, q := range in.Body.Wrong {
-		wrong = append(wrong, apimodel.EncodeRaw(q))
+		wrong = append(wrong, apimodel.EncodeRaw(questions.Authored(q)))
 		if id, ok := q["id"].(string); ok && id != "" {
 			ids = append(ids, id)
 		}
 	}
-	if len(wrong) > 0 {
+	if len(wrong) > 0 && in.ID != store.ReviewMistakesQuizID {
 		if err := a.s.AddMistakes(ctx, userID(ctx), wrong); err != nil {
 			return nil, hErr(err)
 		}
 	}
 	// A review-mistakes attempt prunes everything answered correctly this round.
 	if in.ID == "review_mistakes" {
-		if err := a.s.ClearMistakesExcept(ctx, userID(ctx), ids); err != nil {
+		attempted := make([]string, 0, len(in.Body.Questions))
+		for _, q := range in.Body.Questions {
+			attempted = append(attempted, q["id"].(string))
+		}
+		if err := a.s.ClearReviewedMistakes(ctx, userID(ctx), attempted, ids); err != nil {
 			return nil, hErr(err)
 		}
 	}

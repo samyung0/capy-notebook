@@ -17,10 +17,5 @@ export interface CreateQuizReq {
   privacy?: Privacy;
   /** @nullable */
   questions?: CreateQuizReqQuestionsItem[] | null;
-  /**
-     * @minimum 1
-     * @maximum 180
-     */
-  timeLimitMin?: number;
   workspaceId?: string;
 }

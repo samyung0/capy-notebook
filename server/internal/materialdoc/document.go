@@ -13,6 +13,9 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 const (
@@ -20,7 +23,6 @@ const (
 	MaxDocumentBytes = 2 << 20
 	MaxDepth         = 16
 	MaxNodes         = 10000
-	MaxQuizTimeLimit = 180
 	// depthCeiling bounds recursion while decoding untrusted JSON. It is not a
 	// product limit: MaxDepth gates writes only, so a document seeded outside
 	// the write paths or predating a limit change stays readable.
@@ -36,9 +38,7 @@ var (
 )
 
 var (
-	questionTypes   = set("mcq", "multi", "boolean", "short", "open", "matching", "ordering")
-	cognitiveLevels = set("recall", "application", "analysis")
-	youtubeVideoID  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
+	youtubeVideoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 )
 
 // Envelope is the generic versioned JSON value persisted in materials.content.
@@ -240,6 +240,38 @@ func Validate(doc Envelope) error {
 			return fmt.Errorf("%w: value[%d]: %v", ErrInvalid, i, err)
 		}
 	}
+	var all []map[string]any
+	var collect func(map[string]any)
+	collect = func(node map[string]any) {
+		if node["type"] == "quiz_question" {
+			all = append(all, node["question"].(map[string]any))
+		}
+		for _, child := range children(node) {
+			collect(child)
+		}
+	}
+	for _, node := range doc.Value {
+		collect(node)
+	}
+	if len(all) > fieldlimits.QuestionCount {
+		return fmt.Errorf("%w: too many questions", ErrInvalid)
+	}
+	questionIDs, partIDs := map[string]bool{}, map[string]bool{}
+	for _, q := range all {
+		id := q["id"].(string)
+		if questionIDs[id] {
+			return fmt.Errorf("%w: duplicate question id", ErrInvalid)
+		}
+		questionIDs[id] = true
+		for _, raw := range q["parts"].([]any) {
+			id := raw.(map[string]any)["id"].(string)
+			if partIDs[id] {
+				return fmt.Errorf("%w: duplicate part id", ErrInvalid)
+			}
+			partIDs[id] = true
+		}
+	}
+
 	return nil
 }
 
@@ -437,13 +469,32 @@ func validateNode(node map[string]any, depth int) error {
 		return validateQuiz(node)
 	case "quiz_question":
 		return validateQuizQuestion(node)
-	case "quiz_prompt", "quiz_explanation", "flashcard_front", "flashcard_back", "mermaid_caption":
-		return validateTextElement(node)
-	case "quiz_option":
+	case "chart", "graph":
+		if depth != 0 {
+			return errors.New("chart and graph embeds must be top-level blocks")
+		}
 		if err := requireID(node); err != nil {
 			return err
 		}
+		leaf := children[0].(map[string]any)
+		if len(children) != 1 || len(leaf) != 1 || leaf["text"] != "" {
+			return errors.New("chart and graph embeds require one empty text leaf")
+		}
+		block, ok := node["block"].(map[string]any)
+		if !ok || block["type"] != typ {
+			return errors.New("embed block type must match node type")
+		}
+		for key := range node {
+			if key != "type" && key != "id" && key != "block" && key != "children" {
+				return fmt.Errorf("unexpected embed field %s", key)
+			}
+		}
+		return questions.ValidateBlock(block, questions.Policy{})
+
+	case "flashcard_front", "flashcard_back", "mermaid_caption":
 		return validateTextElement(node)
+	case "quiz_prompt", "quiz_option", "quiz_explanation":
+		return errors.New("obsolete quiz child node")
 	case "flashcards":
 		return validateFlashcards(node)
 	case "flashcard":
@@ -482,6 +533,15 @@ func validateQuiz(node map[string]any) error {
 		return err
 	}
 	children := node["children"].([]any)
+	if _, ok := node["timeLimitMin"]; ok {
+		return errors.New("quiz time limits are no longer supported")
+	}
+	if len(children) == 1 {
+		child := children[0].(map[string]any)
+		if len(child) == 1 && child["text"] == "" {
+			return nil
+		}
+	}
 	ids := map[string]bool{}
 	for i, value := range children {
 		q := value.(map[string]any)
@@ -494,12 +554,7 @@ func validateQuiz(node map[string]any) error {
 		}
 		ids[id] = true
 	}
-	if value, ok := node["timeLimitMin"]; ok {
-		v, ok := integer(value)
-		if !ok || v < 1 || v > MaxQuizTimeLimit {
-			return fmt.Errorf("timeLimitMin must be an integer from 1 to %d", MaxQuizTimeLimit)
-		}
-	}
+
 	return nil
 }
 
@@ -510,89 +565,28 @@ func validateQuizQuestion(node map[string]any) error {
 	if err := requireID(node); err != nil {
 		return err
 	}
-	questionType, ok := node["questionType"].(string)
-	if !ok || !questionTypes[questionType] {
-		return errors.New("questionType is invalid")
+	q, ok := node["question"].(map[string]any)
+	if !ok {
+		return errors.New("quiz_question requires question")
 	}
-	level, ok := node["level"].(string)
-	if !ok || !cognitiveLevels[level] {
-		return errors.New("level is invalid")
+	if err := questions.Validate(q, questions.Policy{}); err != nil {
+		return err
 	}
-	prompts := 0
-	optionIDs := map[string]bool{}
-	for i, value := range node["children"].([]any) {
-		child := value.(map[string]any)
-		switch child["type"] {
-		case "quiz_prompt":
-			prompts++
-		case "quiz_option":
-			id := child["id"].(string)
-			if optionIDs[id] {
-				return fmt.Errorf("duplicate option id %q", id)
-			}
-			optionIDs[id] = true
-		case "quiz_explanation":
-		default:
-			return fmt.Errorf("children[%d] has invalid quiz child type", i)
+	if node["id"] != q["id"] {
+		return errors.New("question id must match wrapper id")
+	}
+	for _, key := range []string{"questionType", "level", "points", "rubrics", "pairs", "acceptedAnswers", "hints", "correctOptionIds", "correctBoolean"} {
+		if _, exists := node[key]; exists {
+			return fmt.Errorf("obsolete quiz property %s", key)
 		}
 	}
-	if prompts == 0 {
-		return errors.New("quiz_question requires a quiz_prompt")
+	children := node["children"].([]any)
+	if len(children) != 1 {
+		return errors.New("quiz_question requires one void text child")
 	}
-	if value, ok := node["correctOptionIds"]; ok {
-		ids, ok := stringArray(value)
-		if !ok {
-			return errors.New("correctOptionIds must be a string array")
-		}
-		for _, id := range ids {
-			if !optionIDs[id] {
-				return fmt.Errorf("correctOptionIds references unknown option %q", id)
-			}
-		}
-	}
-	if value, ok := node["correctBoolean"]; ok {
-		if _, ok := value.(bool); !ok {
-			return errors.New("correctBoolean must be a boolean")
-		}
-	}
-	if value, ok := node["acceptedAnswers"]; ok {
-		if _, ok := stringArray(value); !ok {
-			return errors.New("acceptedAnswers must be a string array")
-		}
-	}
-	if value, ok := node["hints"]; ok {
-		if _, ok := stringArray(value); !ok {
-			return errors.New("hints must be a string array")
-		}
-	}
-	if value, ok := node["rubrics"]; ok {
-		if _, ok := stringArray(value); !ok {
-			return errors.New("rubrics must be a string array")
-		}
-	}
-	if value, ok := node["points"]; ok {
-		n, ok := number(value)
-		if !ok || n <= 0 {
-			return errors.New("points must be a positive number")
-		}
-	}
-	if value, ok := node["pairs"]; ok {
-		pairs, ok := value.([]any)
-		if !ok {
-			return errors.New("pairs must be an array")
-		}
-		for i, raw := range pairs {
-			pair, ok := raw.(map[string]any)
-			if !ok {
-				return fmt.Errorf("pairs[%d] must be an object", i)
-			}
-			if _, ok := pair["left"].(string); !ok {
-				return fmt.Errorf("pairs[%d].left must be a string", i)
-			}
-			if _, ok := pair["right"].(string); !ok {
-				return fmt.Errorf("pairs[%d].right must be a string", i)
-			}
-		}
+	child := children[0].(map[string]any)
+	if len(child) != 1 || child["text"] != "" {
+		return errors.New("quiz_question requires one void text child")
 	}
 	return nil
 }
@@ -696,68 +690,6 @@ func number(value any) (float64, bool) {
 	}
 }
 
-func applyAcceptedAnswers(question map[string]any, id string, children *[]any, node map[string]any) error {
-	accepted, err := objectArray(question["accepted"], "accepted")
-	if err != nil {
-		return err
-	}
-	answers := make([]any, len(accepted))
-	for i, answer := range accepted {
-		value, ok := answer["value"].(string)
-		if !ok {
-			return fmt.Errorf("accepted[%d].value must be a string", i)
-		}
-		answers[i] = value
-		child := textElement("quiz_option", value)
-		child["id"] = fmt.Sprintf("%s:option:%d", id, i+1)
-		child["role"] = "accepted-answer"
-		*children = append(*children, child)
-	}
-	node["acceptedAnswers"] = answers
-	return nil
-}
-
-func optionalStringValues(field any, name string) ([]any, error) {
-	if field == nil {
-		return []any{}, nil
-	}
-	objs, err := objectArray(field, name)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]any, len(objs))
-	for i, obj := range objs {
-		value, ok := obj["value"].(string)
-		if !ok {
-			return nil, fmt.Errorf("%s[%d].value must be a string", name, i)
-		}
-		out[i] = value
-	}
-	return out, nil
-}
-
-func wrapStringValues(ss []string) []any {
-	if ss == nil {
-		ss = []string{}
-	}
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = map[string]any{"value": s}
-	}
-	return out
-}
-
-func extractAccepted(question map[string]any, options []map[string]any) []any {
-	answers, ok := stringArray(question["acceptedAnswers"])
-	if !ok {
-		answers = make([]string, len(options))
-		for i, option := range options {
-			answers[i] = nodeText(option)
-		}
-	}
-	return wrapStringValues(answers)
-}
-
 func integer(value any) (int64, bool) {
 	switch value := value.(type) {
 	case json.Number:
@@ -792,162 +724,22 @@ func QuizDocument(questions json.RawMessage, timeLimit *int) (string, error) {
 		}
 	}
 	if len(children) == 0 {
-		return "", fmt.Errorf("%w: quiz requires at least one question", ErrInvalid)
+		children = []any{textLeaf("")}
 	}
 	node := map[string]any{
 		"type":     "quiz",
 		"id":       newID("quiz"),
 		"children": children,
 	}
-	if timeLimit != nil {
-		node["timeLimitMin"] = *timeLimit
-	}
+
 	return Marshal(artifactDocument(node))
 }
 
 func quizQuestionNode(question map[string]any) (map[string]any, error) {
-	id, ok := question["id"].(string)
-	if !ok || strings.TrimSpace(id) == "" {
-		return nil, errors.New("id is required")
+	if err := questions.Validate(question, questions.Policy{}); err != nil {
+		return nil, err
 	}
-	questionType, ok := question["type"].(string)
-	if !ok || !questionTypes[questionType] {
-		return nil, errors.New("type is invalid")
-	}
-	level, ok := question["level"].(string)
-	if !ok || !cognitiveLevels[level] {
-		return nil, errors.New("level is invalid")
-	}
-	prompt, ok := question["prompt"].(string)
-	if !ok {
-		return nil, errors.New("prompt must be a string")
-	}
-	children := []any{textElement("quiz_prompt", prompt)}
-	node := map[string]any{
-		"type":         "quiz_question",
-		"id":           id,
-		"questionType": questionType,
-		"level":        level,
-	}
-	switch questionType {
-	case "mcq", "multi":
-		options, err := objectArray(question["options"], "options")
-		if err != nil {
-			return nil, err
-		}
-		optionIDs := make([]string, len(options))
-		for i, option := range options {
-			value, ok := option["value"].(string)
-			if !ok {
-				return nil, fmt.Errorf("options[%d].value must be a string", i)
-			}
-			optionID := fmt.Sprintf("%s:option:%d", id, i+1)
-			optionIDs[i] = optionID
-			child := textElement("quiz_option", value)
-			child["id"] = optionID
-			if explanation, ok := option["explanation"].(string); ok {
-				child["explanation"] = explanation
-			}
-			children = append(children, child)
-		}
-		correct, err := indexArray(question["correct"])
-		if err != nil {
-			return nil, err
-		}
-		correctIDs := make([]any, 0, len(correct))
-		for _, index := range correct {
-			if index < 0 || index >= len(optionIDs) {
-				return nil, errors.New("correct index is out of range")
-			}
-			correctIDs = append(correctIDs, optionIDs[index])
-		}
-		if len(correctIDs) > 0 {
-			node["correctOptionIds"] = correctIDs
-		}
-	case "boolean":
-		correct, ok := question["correct"].(bool)
-		if !ok {
-			return nil, errors.New("correct must be a boolean")
-		}
-		for i, value := range []string{"True", "False"} {
-			child := textElement("quiz_option", value)
-			child["id"] = fmt.Sprintf("%s:option:%d", id, i+1)
-			children = append(children, child)
-		}
-		node["correctBoolean"] = correct
-		if correct {
-			node["correctOptionIds"] = []any{fmt.Sprintf("%s:option:1", id)}
-		} else {
-			node["correctOptionIds"] = []any{fmt.Sprintf("%s:option:2", id)}
-		}
-	case "short":
-		if err := applyAcceptedAnswers(question, id, &children, node); err != nil {
-			return nil, err
-		}
-	case "open":
-		if err := applyAcceptedAnswers(question, id, &children, node); err != nil {
-			return nil, err
-		}
-		hints, err := optionalStringValues(question["hints"], "hints")
-		if err != nil {
-			return nil, err
-		}
-		rubrics, err := optionalStringValues(question["rubrics"], "rubrics")
-		if err != nil {
-			return nil, err
-		}
-		if len(rubrics) == 0 {
-			return nil, errors.New("rubrics is required")
-		}
-		node["hints"] = hints
-		node["rubrics"] = rubrics
-	case "matching":
-		pairs, err := objectArray(question["pairs"], "pairs")
-		if err != nil {
-			return nil, err
-		}
-		values := make([]any, len(pairs))
-		for i, pair := range pairs {
-			left, leftOK := pair["left"].(string)
-			right, rightOK := pair["right"].(string)
-			if !leftOK || !rightOK {
-				return nil, fmt.Errorf("pairs[%d] requires string left and right", i)
-			}
-			values[i] = map[string]any{"left": left, "right": right}
-			child := textElement("quiz_option", left+" → "+right)
-			child["id"] = fmt.Sprintf("%s:option:%d", id, i+1)
-			child["role"] = "matching-pair"
-			children = append(children, child)
-		}
-		node["pairs"] = values
-	case "ordering":
-		items, err := objectArray(question["items"], "items")
-		if err != nil {
-			return nil, err
-		}
-		for i, item := range items {
-			value, ok := item["value"].(string)
-			if !ok {
-				return nil, fmt.Errorf("items[%d].value must be a string", i)
-			}
-			child := textElement("quiz_option", value)
-			child["id"] = fmt.Sprintf("%s:option:%d", id, i+1)
-			child["role"] = "ordering-item"
-			children = append(children, child)
-		}
-	}
-	if explanation, ok := question["explanation"].(string); ok && explanation != "" {
-		children = append(children, textElement("quiz_explanation", explanation))
-	}
-	if raw, ok := question["points"]; ok {
-		n, ok := number(raw)
-		if !ok || n <= 0 {
-			return nil, errors.New("points must be a positive number")
-		}
-		node["points"] = n
-	}
-	node["children"] = children
-	return node, nil
+	return map[string]any{"type": "quiz_question", "id": question["id"], "question": question, "children": []any{textLeaf("")}}, nil
 }
 
 func FlashcardsDocument(cards []Card) (string, error) {
@@ -1010,80 +802,15 @@ func ExtractQuiz(raw string) (json.RawMessage, *int, error) {
 	}
 	values := make([]any, 0, len(node["children"].([]any)))
 	for _, value := range node["children"].([]any) {
-		question := value.(map[string]any)
-		item := map[string]any{
-			"id":     question["id"],
-			"type":   question["questionType"],
-			"level":  question["level"],
-			"prompt": nodeText(firstChild(question, "quiz_prompt")),
+		if q, ok := value.(map[string]any)["question"]; ok {
+			values = append(values, q)
 		}
-		if explanation := firstChild(question, "quiz_explanation"); explanation != nil {
-			if text := nodeText(explanation); text != "" {
-				item["explanation"] = text
-			}
-		}
-		if n, ok := number(question["points"]); ok && n > 0 {
-			item["points"] = n
-		}
-		options := childrenOfType(question, "quiz_option")
-		switch question["questionType"] {
-		case "mcq", "multi":
-			values := make([]any, len(options))
-			indices := map[string]int{}
-			for i, option := range options {
-				entry := map[string]any{"value": nodeText(option)}
-				if explanation, ok := option["explanation"].(string); ok {
-					entry["explanation"] = explanation
-				}
-				values[i] = entry
-				indices[option["id"].(string)] = i
-			}
-			correct := []any{}
-			if ids, ok := stringArray(question["correctOptionIds"]); ok {
-				for _, id := range ids {
-					if index, found := indices[id]; found {
-						correct = append(correct, index)
-					}
-				}
-			}
-			item["options"] = values
-			item["correct"] = correct
-		case "boolean":
-			correct, _ := question["correctBoolean"].(bool)
-			item["correct"] = correct
-		case "short":
-			item["accepted"] = extractAccepted(question, options)
-		case "open":
-			item["accepted"] = extractAccepted(question, options)
-			hints, _ := stringArray(question["hints"])
-			rubrics, _ := stringArray(question["rubrics"])
-			item["hints"] = wrapStringValues(hints)
-			item["rubrics"] = wrapStringValues(rubrics)
-		case "matching":
-			pairs, _ := question["pairs"].([]any)
-			if pairs == nil {
-				pairs = []any{}
-			}
-			item["pairs"] = pairs
-		case "ordering":
-			items := make([]any, len(options))
-			for i, option := range options {
-				items[i] = map[string]any{"value": nodeText(option)}
-			}
-			item["items"] = items
-		}
-		values = append(values, item)
 	}
 	b, err := json.Marshal(values)
 	if err != nil {
 		return nil, nil, err
 	}
-	var limit *int
-	if n, ok := integer(node["timeLimitMin"]); ok {
-		value := int(n)
-		limit = &value
-	}
-	return b, limit, nil
+	return b, nil, nil
 }
 
 func ExtractFlashcards(raw string) ([]Card, error) {
@@ -1145,6 +872,16 @@ var (
 func writeIndexBlock(node map[string]any, out *[]string) {
 	typ, _ := node["type"].(string)
 	switch {
+	case typ == "chart" || typ == "graph":
+		key := "title"
+		if typ == "graph" {
+			key = "description"
+		}
+		block, _ := node["block"].(map[string]any)
+		if text, ok := block[key].(string); ok && strings.TrimSpace(text) != "" {
+			*out = append(*out, text)
+		}
+		return
 	case indexSkipped[typ]:
 		return
 	case indexContainers[typ]:
@@ -1239,7 +976,7 @@ func ReplaceQuiz(raw string, questions json.RawMessage, timeLimit *int) (string,
 	if err != nil {
 		return "", err
 	}
-	return replaceCustom(raw, replacement, "quiz", preserveQuizText)
+	return replaceCustom(raw, replacement, "quiz", func(map[string]any, map[string]any) {})
 }
 
 func ReplaceFlashcards(raw string, cards []Card) (string, error) {
@@ -1413,25 +1150,6 @@ func replaceCustom(raw, replacement, typ string, preserve func(map[string]any, m
 	return Marshal(doc)
 }
 
-func preserveQuizText(current, replacement map[string]any) {
-	oldQuestions := byID(current["children"].([]any))
-	for _, raw := range replacement["children"].([]any) {
-		question := raw.(map[string]any)
-		old := oldQuestions[question["id"].(string)]
-		if old == nil {
-			continue
-		}
-		preserveMatchingText(old, question, "quiz_prompt")
-		preserveMatchingText(old, question, "quiz_explanation")
-		oldOptions := byID(childrenAnyOfType(old, "quiz_option"))
-		for _, option := range childrenOfType(question, "quiz_option") {
-			if previous := oldOptions[option["id"].(string)]; previous != nil && nodeText(previous) == nodeText(option) {
-				option["children"] = previous["children"]
-			}
-		}
-	}
-}
-
 func preserveFlashcardText(current, replacement map[string]any) {
 	oldCards := byID(current["children"].([]any))
 	for _, raw := range replacement["children"].([]any) {
@@ -1559,38 +1277,6 @@ func decodeArray(raw json.RawMessage) ([]any, error) {
 	}
 	if values == nil {
 		values = []any{}
-	}
-	return values, nil
-}
-
-func objectArray(value any, name string) ([]map[string]any, error) {
-	raw, ok := value.([]any)
-	if !ok {
-		return nil, fmt.Errorf("%s must be an array", name)
-	}
-	values := make([]map[string]any, len(raw))
-	for i, item := range raw {
-		object, ok := item.(map[string]any)
-		if !ok {
-			return nil, fmt.Errorf("%s[%d] must be an object", name, i)
-		}
-		values[i] = object
-	}
-	return values, nil
-}
-
-func indexArray(value any) ([]int, error) {
-	raw, ok := value.([]any)
-	if !ok {
-		return nil, errors.New("correct must be an array")
-	}
-	values := make([]int, len(raw))
-	for i, item := range raw {
-		number, ok := integer(item)
-		if !ok {
-			return nil, fmt.Errorf("correct[%d] must be an integer", i)
-		}
-		values[i] = int(number)
 	}
 	return values, nil
 }

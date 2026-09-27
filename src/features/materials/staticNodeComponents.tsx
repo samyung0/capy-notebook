@@ -13,7 +13,6 @@ import {
 import type { CSSProperties, MouseEvent } from 'react';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import {
-  BLOCK_SHELL_CLASS,
   BLOCKQUOTE_CLASS,
   BOLD_MARK_CLASS,
   CALLOUT_CLASS,
@@ -36,8 +35,6 @@ import {
   MERMAID_CAPTION_CLASS,
   OL_CLASS,
   PARAGRAPH_CLASS,
-  QUIZ_EXPLANATION_CLASS,
-  QUIZ_REVIEW_PROMPT_CLASS,
   QUIZ_REVIEW_QUESTION_CLASS,
   STUDY_BLOCK_LIST_CLASS,
   TABLE_CLASS,
@@ -57,22 +54,17 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
-import { answerKey } from '@/features/quizzes/grade';
 import {
-  QuestionRunner,
-  QuizOptionView,
-} from '@/features/quizzes/QuestionRunner';
-import {
-  type QuizOptionRole,
-  quizOptionClassName,
-} from '@/features/quizzes/quizOptionStyles';
+  QuestionBlockView,
+  QuestionView,
+} from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type {
   FlashcardElement as FlashcardNode,
   MaterialRefElement as MaterialRefNode,
   MermaidElement as MermaidNode,
-  QuizOptionElement as QuizOptionNode,
+  QuestionFigureElement,
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
 import { quizQuestionElementToQuestion } from './document';
@@ -81,7 +73,6 @@ import { MaterialRefCard } from './MaterialRefCard';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
 import { Mermaid } from './Mermaid';
-import { mermaidBlockLabel } from './MermaidBlockLabel';
 import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
 
 /* ------------------------------------------------------------- helpers */
@@ -346,29 +337,6 @@ function YouTubeElement(props: SlateElementProps) {
 
 /* ------------------------------------------------------------- study blocks */
 
-function BlockShell({
-  props,
-  label,
-  title,
-  children,
-}: {
-  props: SlateElementProps;
-  label: string;
-  title?: React.ReactNode;
-  children?: React.ReactNode;
-}) {
-  return (
-    <SlateElement {...props} className={BLOCK_SHELL_CLASS}>
-      {title}
-      <div className="mb-1 flex items-center justify-between">
-        <span className="t-label text-fg-muted">{label}</span>
-      </div>
-      {children}
-      {props.children}
-    </SlateElement>
-  );
-}
-
 function QuizElement(props: SlateElementProps) {
   return (
     <SlateElement {...props} className={STUDY_BLOCK_LIST_CLASS}>
@@ -403,85 +371,34 @@ function MaterialRefElement(props: SlateElementProps) {
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   return (
-    <BlockShell
-      label={mermaidBlockLabel(element.source)}
-      props={props}
-      title={<StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />}
-    >
+    <SlateElement {...props} className="my-3 border border-transparent">
+      <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
       <Mermaid code={element.source} />
-    </BlockShell>
+      {props.children}
+    </SlateElement>
+  );
+}
+
+function QuestionFigure(props: SlateElementProps) {
+  const element = props.element as unknown as QuestionFigureElement;
+  return (
+    <SlateElement {...props} className="my-3 border border-transparent">
+      <QuestionBlockView block={element.block} />
+    </SlateElement>
   );
 }
 
 function QuizQuestionElement(props: SlateElementProps) {
-  const element = props.element as unknown as QuizQuestionNode;
+  const node = props.element as unknown as QuizQuestionNode;
   const path = (props as { path?: Path }).path;
-  const pathIndex = path?.[path.length - 1];
-  const questionNumber =
-    typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
-  const question = quizQuestionElementToQuestion(element);
+  const index = path?.[path.length - 1];
   return (
     <SlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
-      <QuestionRunner
-        answer={answerKey(question)}
-        onChange={() => undefined}
-        question={question}
-        questionNumber={questionNumber}
+      <QuestionView
+        question={quizQuestionElementToQuestion(node)}
+        questionNumber={index == null ? undefined : index + 1}
         review
-        showExplanation
       />
-    </SlateElement>
-  );
-}
-
-function QuizPromptElement(props: SlateElementProps) {
-  return (
-    <SlateElement {...props} as="p" className={QUIZ_REVIEW_PROMPT_CLASS}>
-      {props.children}
-    </SlateElement>
-  );
-}
-
-function QuizOptionElement(props: SlateElementProps) {
-  const element = props.element as unknown as QuizOptionNode & {
-    explanation?: string;
-    role?: QuizOptionRole;
-  };
-  const path = (props as { path?: Path }).path;
-  const parent = path?.length
-    ? NodeApi.get(props.editor, path.slice(0, -1))
-    : undefined;
-  const question =
-    parent?.type === 'quiz_question' ? (parent as QuizQuestionNode) : undefined;
-  const correct = question?.correctOptionIds?.includes(element.id);
-  const pathIndex = path?.[path.length - 1];
-  const optionNumber = typeof pathIndex === 'number' ? pathIndex : undefined;
-
-  return (
-    <SlateElement
-      {...props}
-      className={quizOptionClassName(Boolean(correct), element.role)}
-    >
-      <QuizOptionView
-        correct={Boolean(correct)}
-        explanation={element.explanation}
-        optionNumber={optionNumber}
-        role={element.role}
-      >
-        {props.children}
-      </QuizOptionView>
-    </SlateElement>
-  );
-}
-
-function QuizExplanationElement(props: SlateElementProps) {
-  return (
-    <SlateElement
-      {...props}
-      as="p"
-      className={cn('col-span-2', QUIZ_EXPLANATION_CLASS)}
-    >
-      {props.children}
     </SlateElement>
   );
 }
@@ -508,6 +425,7 @@ export const staticNoteComponents = {
   /* marks */
   bold: mark('strong', BOLD_MARK_CLASS),
   callout: Callout,
+  chart: QuestionFigure,
   code: mark('code', CODE_MARK_CLASS),
   code_block: CodeBlock,
   code_line: element(undefined),
@@ -520,6 +438,7 @@ export const staticNoteComponents = {
   flashcard_back: element('p', FLASHCARD_BACK_CLASS),
   flashcard_front: element('p', FLASHCARD_FRONT_CLASS),
   flashcards: FlashcardsElement,
+  graph: QuestionFigure,
   h1: element('h1', HEADING_CLASS.h1),
   h2: element('h2', HEADING_CLASS.h2),
   h3: element('h3', HEADING_CLASS.h3),
@@ -544,9 +463,6 @@ export const staticNoteComponents = {
   p: element('div', PARAGRAPH_CLASS),
   /* study blocks */
   quiz: QuizElement,
-  quiz_explanation: QuizExplanationElement,
-  quiz_option: QuizOptionElement,
-  quiz_prompt: QuizPromptElement,
   quiz_question: QuizQuestionElement,
   strikethrough: mark('s'),
   subscript: mark('sub'),

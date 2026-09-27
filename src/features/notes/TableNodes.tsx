@@ -24,11 +24,8 @@ import {
   useSelected,
 } from 'platejs/react';
 import { useMemo, useRef } from 'react';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/components/ui/Popover';
+import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
+import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -122,9 +119,9 @@ function TableFloatingToolbar({ children }: { children: React.ReactElement }) {
   return (
     <Popover modal={false} open={open}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
-      {open && (
+      <FloatingBlockToolbar className="empty:hidden" open={open}>
         <TableFloatingToolbarContent multiCell={selectedCellCount > 1} />
-      )}
+      </FloatingBlockToolbar>
     </Popover>
   );
 }
@@ -140,15 +137,7 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
   if (multiCell && !canMerge && !canSplit) return null;
 
   return (
-    <PopoverContent
-      align="center"
-      avoidCollisions={false}
-      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg p-1"
-      contentEditable={false}
-      onOpenAutoFocus={(event) => event.preventDefault()}
-      side="bottom"
-      sideOffset={8}
-    >
+    <>
       {canMerge && (
         <FloatingActionButton
           label={m.editor_merge_cells()}
@@ -165,10 +154,8 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
           <EditorIcon name="ungroup" />
         </FloatingActionButton>
       )}
-
       {!multiCell && (
         <>
-          {(canMerge || canSplit) && <TableActionSeparator />}
           <FloatingActionButton
             label={m.editor_insert_row_before()}
             onClick={() => action(() => tf.insert.tableRow({ before: true }))}
@@ -184,10 +171,10 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
           <FloatingActionButton
             label={m.editor_delete_row()}
             onClick={() => action(() => tf.remove.tableRow())}
+            variant="danger-light"
           >
             <EditorIcon name="x" />
           </FloatingActionButton>
-          <TableActionSeparator />
           <FloatingActionButton
             label={m.editor_insert_col_before()}
             onClick={() =>
@@ -205,24 +192,21 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
           <FloatingActionButton
             label={m.editor_delete_col()}
             onClick={() => action(() => tf.remove.tableColumn())}
+            variant="danger-light"
           >
             <EditorIcon name="x" />
           </FloatingActionButton>
-          <TableActionSeparator />
           <FloatingActionButton
             label={m.editor_delete_table()}
             onClick={() => action(() => tf.remove.table())}
+            variant="danger-light"
           >
             <EditorIcon name="trash" />
           </FloatingActionButton>
         </>
       )}
-    </PopoverContent>
+    </>
   );
-}
-
-function TableActionSeparator() {
-  return <span className="mx-1 h-5 w-px shrink-0 bg-divider" />;
 }
 
 export function TableRowElement({ children, ...props }: PlateElementProps) {

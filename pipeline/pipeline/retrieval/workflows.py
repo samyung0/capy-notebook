@@ -232,38 +232,59 @@ async def produce(
     )
 
 
-def _wrap_values(raw: Any) -> list[dict[str, str]]:
-    out: list[dict[str, str]] = []
-    for item in raw or []:
-        if isinstance(item, dict):
-            out.append({"value": str(item.get("value") or "")})
-        elif isinstance(item, str):
-            out.append({"value": item})
-    return out
-
-
 def normalize_questions(data: Any) -> list[dict[str, Any]]:
-    """Coerce the model's quiz JSON into the shape the frontend runner expects."""
-    import secrets
+    """Assign fresh UUIDs to canonical generated questions; reject legacy shapes.
 
-    questions: list[dict[str, Any]] = []
-    for item in data or []:
-        if not isinstance(item, dict):
-            continue
-        item.setdefault("id", f"q_{secrets.token_hex(5)}")
-        item.pop("difficulty", None)
-        item.setdefault("level", "application")
-        if item.get("type") in ("mcq", "multi") and isinstance(
-            item.get("options"), list
+    The gateway's shared question validator checks block and answer constraints
+    before persistence. This boundary never repairs malformed or legacy content.
+    """
+    import copy
+    import uuid
+
+    if not isinstance(data, list) or not data:
+        raise GenerateEmpty("quiz")
+    questions = copy.deepcopy(data)
+    for question in questions:
+        if (
+            not isinstance(question, dict)
+            or set(question) - {"id", "stem", "parts", "layout", "labels", "level"}
+            or not isinstance(question.get("stem"), list)
+            or not isinstance(question.get("parts"), list)
+            or not question["parts"]
+            or question.get("layout") not in ("paper", "split")
+            or question.get("labels") not in ("letters", "numbers")
+            or (
+                "level" in question
+                and question["level"] not in ("recall", "application", "analysis")
+            )
         ):
-            item["options"] = [
-                opt if isinstance(opt, dict) else {"value": str(opt), "explanation": ""}
-                for opt in item["options"]
-            ]
-        if item.get("type") in ("short", "open"):
-            item["accepted"] = _wrap_values(item.get("accepted"))
-        if item.get("type") == "open":
-            item["hints"] = _wrap_values(item.get("hints"))
-            item["rubrics"] = _wrap_values(item.get("rubrics"))
-        questions.append(item)
+            raise GenerateEmpty("quiz")
+        question["id"] = str(uuid.uuid4())
+        for part in question["parts"]:
+            if (
+                not isinstance(part, dict)
+                or set(part) - {"id", "blocks", "answer", "markscheme", "solution"}
+                or not isinstance(part.get("blocks"), list)
+                or not part["blocks"]
+                or not isinstance(part.get("solution"), list)
+                or not isinstance(part.get("markscheme"), list)
+                or not part["markscheme"]
+                or not all(
+                    isinstance(mark, str) and mark.strip()
+                    for mark in part["markscheme"]
+                )
+                or not isinstance(part.get("answer"), dict)
+                or part["answer"].get("type")
+                not in (
+                    "mcq",
+                    "multi",
+                    "boolean",
+                    "short",
+                    "matching",
+                    "ordering",
+                    "open",
+                )
+            ):
+                raise GenerateEmpty("quiz")
+            part["id"] = str(uuid.uuid4())
     return questions

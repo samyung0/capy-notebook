@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+func TestEmptyQuizListingHasZeroQuestions(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_empty_quiz_listing")
+	if _, err := s.CreateQuiz(ctx, Quiz{UserID: ownerID, Name: "Empty quiz", Questions: json.RawMessage(`[]`)}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Kinds: []string{"quiz"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].QuestionCount == nil || *result.Items[0].QuestionCount != 0 {
+		t.Fatalf("empty quiz listing = %+v", result.Items)
+	}
+}
+
 func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -27,7 +43,7 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	embedded, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
-		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"True?","correct":true}]`),
+		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)

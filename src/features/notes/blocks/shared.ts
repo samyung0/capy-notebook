@@ -10,9 +10,12 @@ import {
   type MermaidElement,
   materialRefNode,
   mermaidNode,
+  type QuestionFigureElement,
   type QuizElement,
   quizElementToBlock,
 } from '@/features/materials/document';
+import { questionBlockSchema } from '@/features/questions/validation';
+import { uid } from '@/lib/id';
 
 export const QUIZ_KEY = 'quiz';
 export const FLASHCARDS_KEY = 'flashcards';
@@ -23,6 +26,8 @@ export const CUSTOM_BLOCK_LANGS = [
   QUIZ_KEY,
   FLASHCARDS_KEY,
   MERMAID_KEY,
+  'chart',
+  'graph',
 ] as const;
 export type CustomBlockLang = (typeof CUSTOM_BLOCK_LANGS)[number];
 
@@ -35,6 +40,7 @@ export function isCustomBlockLang(lang: unknown): lang is CustomBlockLang {
 
 export type CustomBlockElement =
   | QuizElement
+  | QuestionFigureElement
   | FlashcardsElement
   | MermaidElement
   | MaterialRefElement;
@@ -54,10 +60,18 @@ export function customBlockNode(
         : 'cards: []';
     return materialRefNode('', type, body);
   }
+  if (type === 'chart' || type === 'graph') {
+    const block = questionBlockSchema.parse(JSON.parse(code));
+    if (block.type !== type || (block.type === 'graph' && 'url' in block.image))
+      throw new Error('Invalid figure block.');
+    return { block, children: [{ text: '' }], id: uid('block'), type };
+  }
   return mermaidNode(code);
 }
 
 export function customBlockCode(element: CustomMaterialElement): string {
+  if (element.type === 'chart' || element.type === 'graph')
+    return JSON.stringify(element.block);
   if (element.type === QUIZ_KEY)
     return quizFenceBody(quizElementToBlock(element));
   if (element.type === FLASHCARDS_KEY) {
@@ -71,7 +85,6 @@ export function customBlockCode(element: CustomMaterialElement): string {
 /** Serialize quiz form data to a ```quiz fence body (YAML). */
 export function quizFenceBody(data: QuizBlock): string {
   const payload: Record<string, unknown> = { questions: data.questions ?? [] };
-  if (data.timeLimitMin != null) payload.timeLimitMin = data.timeLimitMin;
   return YAML.stringify(payload);
 }
 

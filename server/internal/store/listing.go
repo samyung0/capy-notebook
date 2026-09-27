@@ -150,7 +150,6 @@ type MaterialListItem struct {
 	UpdatedAt        time.Time    `json:"updatedAt"`
 	SizeBytes        int64        `json:"sizeBytes"`
 	QuestionCount    *int         `json:"questionCount,omitempty"`
-	TimeLimitMin     *int         `json:"timeLimitMin,omitempty"`
 	CardCount        *int         `json:"cardCount,omitempty"`
 	KnownPct         *int         `json:"knownPct,omitempty"`
 	DueCount         *int         `json:"dueCount,omitempty"`
@@ -207,9 +206,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, COALESCE(m.workspace_id,''), m.workspace_name,
 			m.chapter_id, COALESCE(c.name,''), COALESCE(m.parent_material_id,''), COALESCE(p.title,''),
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
-			CASE WHEN m.kind='quiz' THEN (SELECT jsonb_array_length(elem->'children')
-				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
-			CASE WHEN m.kind='quiz' THEN (SELECT (elem->>'timeLimitMin')::int
+			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM card_stats cs WHERE cs.material_id=m.id) END,
 			CASE WHEN m.kind='flashcards' THEN COALESCE((SELECT round(100.0*count(*) FILTER (WHERE cs.known)/NULLIF(count(*),0))::int
@@ -231,7 +228,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
 			&item.ChapterID, &item.ChapterName, &item.ParentMaterialID, &item.ParentTitle,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
-			&item.QuestionCount, &item.TimeLimitMin, &item.CardCount, &item.KnownPct, &item.DueCount); err != nil {
+			&item.QuestionCount, &item.CardCount, &item.KnownPct, &item.DueCount); err != nil {
 			return MaterialPage{}, err
 		}
 		page.Items = append(page.Items, item)

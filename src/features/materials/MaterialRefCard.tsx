@@ -120,14 +120,7 @@ function QuizRefBody({
   });
   if (isError) return <Unavailable refKind="quiz" />;
   if (isPending || !data) return <Loading />;
-  const meta = [
-    m.material_ref_questions({ count: data.questions.length }),
-    data.timeLimitMin
-      ? m.material_ref_minutes({ count: data.timeLimitMin })
-      : '',
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const meta = m.material_ref_questions({ count: data.questions.length });
   return (
     <RefBody
       action={

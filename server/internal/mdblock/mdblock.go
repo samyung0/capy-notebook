@@ -7,7 +7,6 @@
 //
 //	```quiz
 //	questions: [ ... ]
-//	timeLimitMin: 20
 //	```
 //
 //	```flashcards
@@ -56,15 +55,14 @@ func ExtractFence(content, lang string) (string, bool) {
 }
 
 // ParseQuiz extracts the quiz fence and returns the questions as JSON (the shape
-// the frontend Question union expects) plus the optional time limit.
+// the frontend Question union expects). The reserved time-limit return is nil.
 func ParseQuiz(content string) (json.RawMessage, *int, error) {
 	body, ok := ExtractFence(content, "quiz")
 	if !ok {
 		return json.RawMessage("[]"), nil, nil
 	}
 	var doc struct {
-		TimeLimitMin *int        `yaml:"timeLimitMin"`
-		Questions    interface{} `yaml:"questions"`
+		Questions interface{} `yaml:"questions"`
 	}
 	if err := yaml.Unmarshal([]byte(body), &doc); err != nil {
 		return nil, nil, fmt.Errorf("parse quiz block: %w", err)
@@ -76,7 +74,7 @@ func ParseQuiz(content string) (json.RawMessage, *int, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return json.RawMessage(b), doc.TimeLimitMin, nil
+	return json.RawMessage(b), nil, nil
 }
 
 // ParseFlashcards extracts the flashcards fence and returns the authored cards.

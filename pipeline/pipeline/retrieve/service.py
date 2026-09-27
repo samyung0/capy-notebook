@@ -272,7 +272,7 @@ class GenerateReq(LLMPin):
     workspaceId: str
     kind: str  # flashcards | quiz | mindmap | diagram
     count: int = Field(ge=1, le=50)
-    levels: list[str] = Field(min_length=1)
+    levels: list[str] | None = None
     types: list[str] = Field(min_length=1)
     detail: str
     diagramType: str
@@ -281,7 +281,6 @@ class GenerateReq(LLMPin):
     style: str | None = None
     chapters: list[str] | None = None
     fileIds: list[str] | None = None
-    timeLimitMin: int | None = None
     locale: str | None = None
     spendSessionId: str = ""
 
@@ -291,7 +290,7 @@ _VALID_LEVELS = {"recall", "application", "analysis"}
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:
     if not req.levels:
-        raise ValueError("levels is required")
+        return []
     invalid = [lvl for lvl in req.levels if lvl not in _VALID_LEVELS]
     if invalid:
         raise ValueError(f"invalid levels: {invalid}")
@@ -609,5 +608,4 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         "name": "Workspace quiz",
         "chapters": chapters,
         "questions": questions,
-        "timeLimitMin": req.timeLimitMin,
     }

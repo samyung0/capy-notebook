@@ -64,6 +64,18 @@ for (const mode of ['create', 'edit'] as const) {
     await input.click();
     const popup = page.locator('[data-slot="popover-content"]');
     await expect(input).toBeFocused();
+    // Force overflow even when the mock catalog has only a few remaining tags.
+    await popup.evaluate((node) => {
+      node.style.maxHeight = '90px';
+    });
+    await popup.hover();
+    await page.mouse.wheel(0, 120);
+    await expect
+      .poll(() => popup.evaluate((node) => node.scrollTop))
+      .toBeGreaterThan(0);
+    await page.mouse.wheel(0, -500);
+    await expect.poll(() => popup.evaluate((node) => node.scrollTop)).toBe(0);
+    await expect(input).toBeFocused();
     await page.getByRole('option', { exact: true, name: '# Essays' }).click();
     await expect(
       dialog.getByRole('button', { name: 'Remove Essays' })
@@ -111,6 +123,10 @@ for (const mode of ['create', 'edit'] as const) {
     ]);
     expect(opacity).toBe('0');
     await expect(popup).toHaveCount(0);
+    if (mode === 'edit') {
+      await dialog.getByRole('button', { exact: true, name: 'Save' }).click();
+      await expect(dialog).toHaveCount(0);
+    }
   });
 }
 

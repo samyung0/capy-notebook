@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { summaryVitePlugin } from './src/summary/vite';
 import { llmRuntimePlugin } from './vite-llm-runtime';
+import { mathliveFonts } from './vite-mathlive';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
@@ -63,6 +64,11 @@ export default defineConfig(({ mode }) => {
       },
       sourcemap: uploadSourceMaps ? 'hidden' : false,
     },
+    // Keep the seeded test server from invalidating a running developer server.
+    cacheDir:
+      env.VITE_E2E_EDITOR_SEED === 'true'
+        ? 'node_modules/.vite-editor-e2e'
+        : undefined,
     envDir: ENV_DIR,
     optimizeDeps: {
       // '@betteroffice/docx-react' stays scanned: it imports
@@ -86,6 +92,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       react(),
+      mathliveFonts(),
       tailwindcss(),
       llmRuntimePlugin(),
       summaryVitePlugin(

@@ -43,7 +43,6 @@ import {
   MaterialCard,
   materialKindLabel,
 } from '@/features/materials/MaterialListCard';
-import { createBlankQuestion } from '@/features/quizzes/QuizForm';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
@@ -214,7 +213,7 @@ export default function Create() {
       label: m.editor_quiz(),
       onClick: () =>
         createQuiz(
-          { name: m.quiz_untitled(), questions: [createBlankQuestion()] },
+          { name: m.quiz_untitled(), questions: [] },
           {
             onSuccess: (quiz) =>
               navigate({

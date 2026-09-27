@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
   type Chapter,
-  type CognitiveLevel,
   type DiagramType,
   type GenerateOptions,
   QUESTION_TYPES,
@@ -19,7 +18,6 @@ import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { LEVELS, levelLabel } from '@/lib/levels';
 import {
   GENERATE_TITLE_MAX,
   nextGenerateTitle,
@@ -193,10 +191,6 @@ export function GenerateFormDialog({
   const [count, setCount] = useState(10);
   const [style, setStyle] = useState<'term-def' | 'qa' | 'cloze'>('term-def');
   const [types, setTypes] = useState<QuestionType[]>(['mcq', 'boolean']);
-  const [levels, setLevels] = useState<CognitiveLevel[]>([
-    'recall',
-    'application',
-  ]);
   const [detail, setDetail] = useState<'brief' | 'standard' | 'detailed'>(
     'standard'
   );
@@ -209,13 +203,12 @@ export function GenerateFormDialog({
   );
 
   async function run() {
-    if (titleError || !levels.length) return;
+    if (titleError) return;
     if (mode === 'quiz' && !types.length) return;
     const scope = {
       chapters: chapterScope,
       count,
       fileIds: fileScope,
-      levels,
       title: title.trim(),
     };
     let opts: GenerateOptions;
@@ -338,28 +331,6 @@ export function GenerateFormDialog({
                   ))}
                 </div>
               </div>
-              <div className="flex flex-col gap-1.5">
-                <p className="t-label text-fg-muted">
-                  {m.generate_cognitive_level()}
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {LEVELS.map((lvl) => (
-                    <Chip
-                      active={levels.includes(lvl)}
-                      key={lvl}
-                      onClick={() =>
-                        setLevels((s) =>
-                          s.includes(lvl)
-                            ? s.filter((x) => x !== lvl)
-                            : [...s, lvl]
-                        )
-                      }
-                    >
-                      {levelLabel(lvl)}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
             </>
           )}
           {mode === 'mindmap' && (
@@ -401,10 +372,7 @@ export function GenerateFormDialog({
           </Button>
           <Button
             disabled={
-              pending ||
-              !!titleError ||
-              !levels.length ||
-              (mode === 'quiz' && !types.length)
+              pending || !!titleError || (mode === 'quiz' && !types.length)
             }
             iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}

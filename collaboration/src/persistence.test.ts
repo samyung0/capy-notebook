@@ -39,6 +39,125 @@ function documentStore(row: ReturnType<typeof liveRow>) {
   return new YjsDocumentStore({ query } as unknown as Pool);
 }
 
+describe('authored content revision preconditions', () => {
+  it.each(['revision', 'projection', 'live', 'current'] as const)(
+    'checks %s at the durable write',
+    async (scenario) => {
+      const block = {
+        children: [{ text: 'original' }],
+        id: 'block_1',
+        type: 'p',
+      };
+      const document = new Y.Doc();
+      document
+        .get('content', Y.XmlText)
+        .applyDelta(slateNodesToInsertDelta([block]));
+      const state = Buffer.from(Y.encodeStateAsUpdate(document));
+      const live = new Y.Doc();
+      Y.applyUpdate(live, state);
+      if (scenario === 'live') {
+        const { applyCollaborationCommand } = await import('./commands.js');
+        applyCollaborationCommand(live, {
+          actorUserId: 'u_owner',
+          expectedBlock: block,
+          materialId: 'mat_1',
+          replacementBlock: { ...block, children: [{ text: 'concurrent' }] },
+          room: 'material:mat_1:schema:1',
+          type: 'replace-block',
+        });
+      }
+      const query = vi.fn(async (sql: string) => {
+        if (sql.includes('SELECT revision'))
+          return {
+            rowCount: 1,
+            rows: [{ revision: scenario === 'revision' ? '2' : '1' }],
+          };
+        if (sql.includes('FROM material_yjs_documents'))
+          return {
+            rowCount: 1,
+            rows: [
+              {
+                projected_version: '1',
+                room_schema: 1,
+                state,
+                stored_version: scenario === 'projection' ? '2' : '1',
+              },
+            ],
+          };
+        if (sql.includes('SELECT content FROM materials'))
+          return {
+            rowCount: 1,
+            rows: [{ content: { schemaVersion: 1, value: [block] } }],
+          };
+        if (sql.includes('FROM users u'))
+          return {
+            rowCount: 1,
+            rows: [
+              {
+                deleted_at: null,
+                deletion_requested_at: null,
+                id: 'u_owner',
+                over_quota: false,
+                suspended_at: null,
+              },
+            ],
+          };
+        if (sql.includes('SELECT owner_user_id, workspace_id, kind'))
+          return {
+            rowCount: 1,
+            rows: [
+              { kind: 'note', owner_user_id: 'u_owner', workspace_id: null },
+            ],
+          };
+        return {
+          rowCount: 1,
+          rows: [liveRow({ material_owner_id: 'u_owner', workspace_id: null })],
+        };
+      });
+      const client = { query, release: vi.fn() };
+      const store = new YjsDocumentStore({
+        connect: vi.fn().mockResolvedValue(client),
+      } as unknown as Pool);
+      const command = {
+        actorUserId: 'u_owner',
+        expectedBlock: block,
+        expectedRevision: 1,
+        materialId: 'mat_1',
+        replacementBlock: { ...block, children: [{ text: 'saved' }] },
+        room: 'material:mat_1:schema:1',
+        type: 'replace-block' as const,
+      };
+      try {
+        const result = store.replaceMaterialContent(
+          command,
+          Y.encodeStateAsUpdate(live)
+        );
+        if (scenario === 'current') {
+          await expect(result).resolves.toMatchObject({ version: 2 });
+          expect(query).toHaveBeenCalledWith('COMMIT');
+        } else {
+          await expect(result).rejects.toThrow('concurrently');
+          expect(query).toHaveBeenCalledWith('ROLLBACK');
+          expect(
+            query.mock.calls.some(([sql]) =>
+              sql.startsWith('UPDATE material_yjs_documents')
+            )
+          ).toBe(false);
+        }
+        expect(
+          query.mock.calls.some(
+            ([sql]) =>
+              sql.includes('SELECT revision') && sql.endsWith('FOR UPDATE')
+          )
+        ).toBe(true);
+      } finally {
+        document.destroy();
+        live.destroy();
+      }
+    }
+  );
+});
+
 describe('live collaboration authorization', () => {
   it('records projection errors only while that version remains unprojected', async () => {
     const query = vi.fn().mockResolvedValue({ rowCount: 1, rows: [] });

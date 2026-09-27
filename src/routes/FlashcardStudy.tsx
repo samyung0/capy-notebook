@@ -1,7 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
 import {
+  cardsQuery,
+  flashcardSetQuery,
   useCards,
   useCloneFlashcardSet,
   useDeleteCard,
@@ -9,6 +12,7 @@ import {
   useReviewCard,
   useUpdateFlashcardSetSharing,
 } from '@/api/hooks';
+import { showErrorToast } from '@/api/queryClient';
 import type { Flashcard } from '@/api/types';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -56,18 +60,21 @@ export default function FlashcardStudy() {
     data: flashcardSet,
     fetchStatus: flashcardSetFetchStatus,
     isLoading: flashcardSetLoading,
+    isFetchedAfterMount: setFetched,
     isError: flashcardSetError,
     error: flashcardSetErr,
-  } = useFlashcardSet(flashcardSetId, { errorBoundary: false });
+  } = useFlashcardSet(flashcardSetId, { errorBoundary: false, fresh: true });
   const {
     data: cards,
     fetchStatus: cardsFetchStatus,
     isLoading,
+    isFetchedAfterMount: cardsFetched,
     isError: cardsError,
     error: cardsErr,
-  } = useCards(flashcardSetId, { errorBoundary: false });
+  } = useCards(flashcardSetId, { errorBoundary: false, fresh: true });
   const { mutate: reviewCard } = useReviewCard(flashcardSetId);
-  const { mutate: deleteCard } = useDeleteCard(flashcardSetId);
+  const { mutateAsync: deleteCard } = useDeleteCard(flashcardSetId);
+  const queryClient = useQueryClient();
   const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
     useCloneFlashcardSet({
       errorToast: false,
@@ -86,6 +93,27 @@ export default function FlashcardStudy() {
   const [flipped, setFlipped] = useState(false);
   const [editing, setEditing] = useState<Flashcard | 'new' | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [editRevision, setEditRevision] = useState<number>();
+
+  async function openEdit(card: Flashcard | 'new') {
+    if (card === 'new') {
+      const latest = await queryClient.fetchQuery({
+        ...flashcardSetQuery(flashcardSetId),
+        staleTime: 0,
+      });
+      setEditRevision(latest.revision);
+      setEditing('new');
+    } else {
+      const latest = await queryClient.fetchQuery({
+        ...cardsQuery(flashcardSetId),
+        staleTime: 0,
+      });
+      const found = latest.find((item) => item.id === card.id);
+      if (!found) return;
+      setEditRevision(found.revision);
+      setEditing(found);
+    }
+  }
 
   const dueIds = useMemo(
     () => (cards ? cards.filter((c) => isDue(c.srs)).map((c) => c.id) : []),
@@ -94,11 +122,11 @@ export default function FlashcardStudy() {
 
   // Seed the session queue once, from the currently-due cards.
   useEffect(() => {
-    if (cards && queue === null) {
+    if (cards && cardsFetched && !cardsError && queue === null) {
       setQueue(dueIds);
       setSessionTotal(dueIds.length);
     }
-  }, [cards, queue, dueIds]);
+  }, [cards, queue, dueIds, cardsFetched, cardsError]);
 
   function startSession(ids: string[]) {
     studyFinished.current = false;
@@ -126,6 +154,10 @@ export default function FlashcardStudy() {
   }
 
   if (
+    !setFetched ||
+    !cardsFetched ||
+    flashcardSetError ||
+    cardsError ||
     flashcardSetLoading ||
     isLoading ||
     !flashcardSet ||
@@ -172,9 +204,13 @@ export default function FlashcardStudy() {
     });
   }
 
-  function removeCurrent() {
+  async function removeCurrent() {
     if (!card) return;
-    deleteCard(card.id);
+    try {
+      await deleteCard({ expectedRevision: card.revision, id: card.id });
+    } catch {
+      return;
+    }
     setFlipped(false);
     setQueue((q) => (q ? q.filter((id) => id !== card.id) : q));
   }
@@ -203,7 +239,7 @@ export default function FlashcardStudy() {
           <IconButton
             icon="plus"
             label={m.flashcards_add_card()}
-            onClick={() => setEditing('new')}
+            onClick={() => void openEdit('new').catch(showErrorToast)}
             size="sm"
             variant="outline"
           />
@@ -258,7 +294,7 @@ export default function FlashcardStudy() {
               {canEdit && (
                 <Button
                   iconLeft="plus"
-                  onClick={() => setEditing('new')}
+                  onClick={() => void openEdit('new').catch(showErrorToast)}
                   variant="outline"
                 >
                   {m.flashcards_add_card()}
@@ -276,9 +312,10 @@ export default function FlashcardStudy() {
             </div>
           </div>
         </div>
-        {canEdit && editing !== null && (
+        {canEdit && editing !== null && editRevision !== undefined && (
           <CardEditModal
             card={editing === 'new' ? null : editing}
+            expectedRevision={editRevision}
             flashcardSetId={flashcardSetId}
             key={editing === 'new' ? 'new' : editing.id}
             onClose={() => setEditing(null)}
@@ -326,7 +363,7 @@ export default function FlashcardStudy() {
           <div className="mt-3 flex items-center justify-center gap-4">
             <button
               className="flex items-center gap-1 text-fg-muted text-xs hover:text-fg"
-              onClick={() => setEditing(card)}
+              onClick={() => void openEdit(card).catch(showErrorToast)}
               type="button"
             >
               <Icon name="write" size={13} /> {m.action_edit()}
@@ -370,9 +407,10 @@ export default function FlashcardStudy() {
         <MaterialAttributionFooter provenance={flashcardSet?.provenance} />
       </div>
 
-      {canEdit && editing !== null && (
+      {canEdit && editing !== null && editRevision !== undefined && (
         <CardEditModal
           card={editing === 'new' ? null : editing}
+          expectedRevision={editRevision}
           flashcardSetId={flashcardSetId}
           key={editing === 'new' ? 'new' : editing.id}
           onClose={() => setEditing(null)}

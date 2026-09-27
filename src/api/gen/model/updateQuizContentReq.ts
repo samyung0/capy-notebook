@@ -9,10 +9,7 @@ import type { UpdateQuizContentReqQuestionsItem } from './updateQuizContentReqQu
 export interface UpdateQuizContentReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** @minimum 1 */
+  expectedRevision: number;
   questions?: UpdateQuizContentReqQuestionsItem[];
-  /**
-     * @minimum 1
-     * @maximum 180
-     */
-  timeLimitMin?: number;
 }

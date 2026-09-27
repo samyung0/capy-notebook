@@ -160,6 +160,219 @@ export const GetAttemptResponse = zod.object({
 
 
 /**
+ * @summary Upload a public question figure
+ */
+export const UploadBankAssetBody = zod.object({
+  "file": zod.instanceof(File)
+})
+
+export const UploadBankAssetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Read a bank question
+ */
+export const BankQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const BankQuestionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "editor": zod.boolean(),
+  "examLabel": zod.string(),
+  "position": zod.int(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "reviewedBy": zod.string(),
+  "reviewerName": zod.string(),
+  "sources": zod.array(zod.object({
+  "bookId": zod.string(),
+  "excerptId": zod.string(),
+  "version": zod.int()
+})).nullable(),
+  "subjectLabel": zod.string(),
+  "topicId": zod.string(),
+  "topicLabel": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Edit a bank question
+ */
+export const SaveBankQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const SaveBankQuestionBody = zod.object({
+  "question": zod.record(zod.string(), zod.unknown()),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+export const SaveBankQuestionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "editor": zod.boolean(),
+  "examLabel": zod.string(),
+  "position": zod.int(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "reviewedBy": zod.string(),
+  "reviewerName": zod.string(),
+  "sources": zod.array(zod.object({
+  "bookId": zod.string(),
+  "excerptId": zod.string(),
+  "version": zod.int()
+})).nullable(),
+  "subjectLabel": zod.string(),
+  "topicId": zod.string(),
+  "topicLabel": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Email a question comment
+ */
+export const CommentBankQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const commentBankQuestionBodyTextMax = 2000;
+
+
+
+export const CommentBankQuestionBody = zod.object({
+  "text": zod.string().min(1).max(commentBankQuestionBodyTextMax)
+})
+
+export const CommentBankQuestionResponse = zod.void()
+
+
+/**
+ * @summary Set the review marker
+ */
+export const ReviewBankQuestionParams = zod.object({
+  "id": zod.string()
+})
+
+export const ReviewBankQuestionBody = zod.object({
+  "reviewed": zod.boolean()
+})
+
+export const ReviewBankQuestionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "editor": zod.boolean(),
+  "examLabel": zod.string(),
+  "position": zod.int(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "reviewedBy": zod.string(),
+  "reviewerName": zod.string(),
+  "sources": zod.array(zod.object({
+  "bookId": zod.string(),
+  "excerptId": zod.string(),
+  "version": zod.int()
+})).nullable(),
+  "subjectLabel": zod.string(),
+  "topicId": zod.string(),
+  "topicLabel": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Read the exam syllabus
+ */
+export const BankSyllabusResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "assetsUrl": zod.string(),
+  "editor": zod.boolean(),
+  "exams": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "subjects": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "topics": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "reviewed": zod.int(),
+  "total": zod.int()
+})).nullable()
+})).nullable()
+})).nullable()
+})
+
+
+/**
+ * @summary List topic questions
+ */
+export const BankQuestionsParams = zod.object({
+  "topicId": zod.string()
+})
+
+export const BankQuestionsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "questions": zod.array(zod.object({
+  "hasFigure": zod.boolean(),
+  "hasTable": zod.boolean(),
+  "id": zod.string(),
+  "marks": zod.int(),
+  "position": zod.int(),
+  "preview": zod.string(),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "reviewedBy": zod.string(),
+  "reviewerName": zod.string()
+})).nullable()
+})
+
+
+/**
  * @summary Billing info
  */
 export const GetBillingResponse = zod.object({
@@ -591,6 +804,7 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
 })),
   "license": zod.string().optional()
 }).optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -625,7 +839,7 @@ export const ExploreQuizzesResponseItem = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1150,6 +1364,7 @@ export const CreateFlashcardSetResponse = zod.object({
 })),
   "license": zod.string().optional()
 }).optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1160,6 +1375,13 @@ export const CreateFlashcardSetResponse = zod.object({
  */
 export const DeleteCardParams = zod.object({
   "id": zod.string()
+})
+
+
+
+
+export const DeleteCardQueryParams = zod.object({
+  "expectedRevision": zod.int().min(1)
 })
 
 export const DeleteCardResponse = zod.void()
@@ -1174,12 +1396,14 @@ export const UpdateCardParams = zod.object({
 
 export const updateCardBodyBackMax = 4000;
 
+
 export const updateCardBodyFrontMax = 4000;
 
 
 
 export const UpdateCardBody = zod.object({
   "back": zod.string().min(1).max(updateCardBodyBackMax).optional(),
+  "expectedRevision": zod.int().min(1),
   "front": zod.string().min(1).max(updateCardBodyFrontMax).optional()
 })
 
@@ -1190,6 +1414,7 @@ export const UpdateCardResponse = zod.object({
   "id": zod.string(),
   "known": zod.boolean(),
   "materialId": zod.string(),
+  "revision": zod.int(),
   "srs": zod.object({
   "difficulty": zod.number(),
   "due": zod.string(),
@@ -1235,6 +1460,7 @@ export const UpdateCardStudyStateResponse = zod.object({
   "id": zod.string(),
   "known": zod.boolean(),
   "materialId": zod.string(),
+  "revision": zod.int(),
   "srs": zod.object({
   "difficulty": zod.number(),
   "due": zod.string(),
@@ -1282,6 +1508,7 @@ export const GetFlashcardSetResponse = zod.object({
 })),
   "license": zod.string().optional()
 }).optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1301,6 +1528,7 @@ export const ListCardsResponseItem = zod.object({
   "id": zod.string(),
   "known": zod.boolean(),
   "materialId": zod.string(),
+  "revision": zod.int(),
   "srs": zod.object({
   "difficulty": zod.number(),
   "due": zod.string(),
@@ -1326,12 +1554,14 @@ export const CreateCardParams = zod.object({
 
 export const createCardBodyBackMax = 4000;
 
+
 export const createCardBodyFrontMax = 4000;
 
 
 
 export const CreateCardBody = zod.object({
   "back": zod.string().min(1).max(createCardBodyBackMax),
+  "expectedRevision": zod.int().min(1),
   "front": zod.string().min(1).max(createCardBodyFrontMax)
 })
 
@@ -1342,6 +1572,7 @@ export const CreateCardResponse = zod.object({
   "id": zod.string(),
   "known": zod.boolean(),
   "materialId": zod.string(),
+  "revision": zod.int(),
   "srs": zod.object({
   "difficulty": zod.number(),
   "due": zod.string(),
@@ -1389,9 +1620,58 @@ export const CloneFlashcardSetResponse = zod.object({
 })),
   "license": zod.string().optional()
 }).optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
+
+
+/**
+ * @summary Update flashcard content
+ */
+export const UpdateFlashcardContentParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateFlashcardContentBodyCardsItemBackMax = 4000;
+
+export const updateFlashcardContentBodyCardsItemFrontMax = 4000;
+
+
+
+
+
+export const UpdateFlashcardContentBody = zod.object({
+  "cards": zod.array(zod.object({
+  "back": zod.string().min(1).max(updateFlashcardContentBodyCardsItemBackMax),
+  "front": zod.string().min(1).max(updateFlashcardContentBodyCardsItemFrontMax),
+  "id": zod.string().optional()
+})).min(1).nullable(),
+  "expectedRevision": zod.int().min(1)
+})
+
+export const UpdateFlashcardContentResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string(),
+  "known": zod.boolean(),
+  "materialId": zod.string(),
+  "revision": zod.int(),
+  "srs": zod.object({
+  "difficulty": zod.number(),
+  "due": zod.string(),
+  "elapsed_days": zod.int(),
+  "lapses": zod.int(),
+  "last_review": zod.string().optional(),
+  "learning_steps": zod.int().optional(),
+  "reps": zod.int(),
+  "scheduled_days": zod.int(),
+  "stability": zod.number(),
+  "state": zod.int()
+})
+})
+export const UpdateFlashcardContentResponse = zod.array(UpdateFlashcardContentResponseItem)
 
 
 /**
@@ -1435,6 +1715,7 @@ export const UpdateFlashcardSetResponse = zod.object({
 })),
   "license": zod.string().optional()
 }).optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1476,6 +1757,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
 })),
   "license": zod.string().optional()
 }).optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1607,7 +1889,6 @@ export const ListOwnedMaterialsResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "questionCount": zod.int().optional(),
   "sizeBytes": zod.int(),
-  "timeLimitMin": zod.int().optional(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
@@ -1937,18 +2218,13 @@ export const CreateEmbeddedMaterialParams = zod.object({
   "id": zod.string()
 })
 
-export const createEmbeddedMaterialBodyTimeLimitMinMax = 180;
-
-
-
 export const CreateEmbeddedMaterialBody = zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string(),
   "front": zod.string()
 })).nullish(),
   "kind": zod.enum(['quiz', 'flashcards']),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
-  "timeLimitMin": zod.int().min(1).max(createEmbeddedMaterialBodyTimeLimitMinMax).optional()
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish()
 })
 
 export const CreateEmbeddedMaterialResponse = zod.object({
@@ -2292,7 +2568,7 @@ export const GetMistakesResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2485,8 +2761,6 @@ export const GradeQuizAnswerResponse = zod.object({
  */
 export const createQuizBodyNameMax = 120;
 
-export const createQuizBodyTimeLimitMinMax = 180;
-
 
 
 export const CreateQuizBody = zod.object({
@@ -2494,7 +2768,6 @@ export const CreateQuizBody = zod.object({
   "name": zod.string().max(createQuizBodyNameMax).optional(),
   "privacy": zod.enum(['private', 'public', 'link']).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
-  "timeLimitMin": zod.int().min(1).max(createQuizBodyTimeLimitMinMax).optional(),
   "workspaceId": zod.string().optional()
 })
 
@@ -2522,7 +2795,7 @@ export const CreateQuizResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2577,7 +2850,7 @@ export const GetQuizResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2597,7 +2870,7 @@ export const createAttemptBodyTotalExclusiveMin = 0;
 
 
 export const CreateAttemptBody = zod.object({
-  "answers": zod.record(zod.string(), zod.unknown()).optional().describe('User answers keyed by question id'),
+  "answers": zod.record(zod.string(), zod.unknown()).optional().describe('User answers keyed by stable part id'),
   "correct": zod.number().min(createAttemptBodyCorrectMin),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Question snapshot taken at submit time'),
   "total": zod.number().gt(createAttemptBodyTotalExclusiveMin),
@@ -2649,7 +2922,7 @@ export const CloneQuizResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2662,13 +2935,12 @@ export const UpdateQuizContentParams = zod.object({
   "id": zod.string()
 })
 
-export const updateQuizContentBodyTimeLimitMinMax = 180;
 
 
 
 export const UpdateQuizContentBody = zod.object({
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
-  "timeLimitMin": zod.int().min(1).max(updateQuizContentBodyTimeLimitMinMax).optional()
+  "expectedRevision": zod.int().min(1),
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional()
 })
 
 export const UpdateQuizContentResponse = zod.object({
@@ -2695,7 +2967,7 @@ export const UpdateQuizContentResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2741,7 +3013,7 @@ export const UpdateQuizMetadataResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2782,7 +3054,7 @@ export const UpdateQuizSharingResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "timeLimitMin": zod.int().optional(),
+  "revision": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -3636,8 +3908,6 @@ export const generateBodyCountMax = 50;
 
 export const generateBodyDetailDefault = `standard`;
 export const generateBodyDiagramTypeDefault = `auto`;
-export const generateBodyTimeLimitMinMax = 180;
-
 export const generateBodyTitleMax = 120;
 
 
@@ -3652,9 +3922,8 @@ export const GenerateBody = zod.object({
   "format": zod.string().optional(),
   "kind": zod.enum(['flashcards', 'quiz', 'mindmap', 'diagram']),
   "length": zod.string().optional(),
-  "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).min(1),
+  "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
   "style": zod.string().optional(),
-  "timeLimitMin": zod.int().min(1).max(generateBodyTimeLimitMinMax).optional(),
   "title": zod.string().min(1).max(generateBodyTitleMax),
   "types": zod.array(zod.enum(['mcq', 'multi', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
 })

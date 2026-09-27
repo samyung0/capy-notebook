@@ -109,7 +109,7 @@ function DocumentStatsFooter({
   return (
     <div
       aria-label={m.editor_doc_stats()}
-      className="mx-auto mb-20 flex w-full max-w-3xl gap-3 px-10 pb-4 text-fg-muted text-xs max-sm:px-5"
+      className="mx-auto mb-20 flex w-full max-w-3xl gap-3 px-5 pb-4 text-fg-muted text-xs sm:px-10"
     >
       <span
         className={cn(
@@ -227,7 +227,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
     <PlateContainer className="relative [&_.slate-selection-area]:z-50 [&_.slate-selection-area]:border [&_.slate-selection-area]:border-action-accent/25 [&_.slate-selection-area]:bg-action-accent/15">
       <PlateContent
         className={cn(
-          'note-editor mx-auto min-h-75 max-w-3xl px-10 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! max-sm:px-5',
+          'note-editor mx-auto min-h-75 max-w-3xl px-5 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! sm:px-10',
           shouldShowStats && 'pb-16'
         )}
         decorate={decorate}
@@ -306,6 +306,16 @@ export function NoteEditorCore({
     [onEditorStatusChange]
   );
 
+  const markSyncing = useCallback(() => {
+    // Pending work must not hide connection failures or finish the handshake.
+    if (
+      reportedStatus.current === 'synced' ||
+      reportedStatus.current === 'saved'
+    ) {
+      setStatus('syncing');
+    }
+  }, [setStatus]);
+
   // Plugin options are captured before the editor exists, so the handlers they
   // fire are reached through refs instead of becoming plugin dependencies.
   const saveNow = useRef(() => {});
@@ -342,7 +352,12 @@ export function NoteEditorCore({
         for (const id of event.checkpointIds) {
           if (pendingCheckpoints.current.delete(id)) acknowledged = true;
         }
-        if (acknowledged && pendingCheckpoints.current.size === 0) {
+        if (
+          acknowledged &&
+          pendingCheckpoints.current.size === 0 &&
+          !unsavedChanges.current &&
+          reportedStatus.current === 'syncing'
+        ) {
           setStatus('saved');
         }
         return;
@@ -425,8 +440,12 @@ export function NoteEditorCore({
             setStatus('error');
           },
           onSyncChange: ({ isSynced }) => {
-            if (!isSynced) return;
-            setStatus('synced');
+            if (!isSynced || rejected.current) return;
+            setStatus(
+              unsavedChanges.current || pendingCheckpoints.current.size > 0
+                ? 'syncing'
+                : 'synced'
+            );
             // Receipts requested while offline never reached the service.
             resendCheckpoints.current();
           },
@@ -550,18 +569,20 @@ export function NoteEditorCore({
     // Enter the pending state before dispatching: a provider that answers
     // synchronously — the mock one does — would otherwise have its `saved`
     // acknowledgement overwritten by this line.
-    setStatus('synced');
+    markSyncing();
     sendCheckpointRequest(editor, id);
-  }, [editor, setStatus]);
+  }, [editor, markSyncing]);
 
   const scheduleCheckpoint = useCallback(() => {
+    if (rejected.current) return;
     unsavedChanges.current = true;
+    markSyncing();
     if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
     checkpointTimer.current = setTimeout(
       requestCheckpoint,
       CHECKPOINT_DEBOUNCE_MS
     );
-  }, [requestCheckpoint]);
+  }, [markSyncing, requestCheckpoint]);
 
   // `mod+s` stays registered so the browser's own save dialog never opens, and
   // it flushes the debounce rather than running a second checkpoint path.

@@ -98,22 +98,41 @@ export const engNotes: SeedNote[] = [
       embeddedQuiz('mat_note_eng_gatsby', 'mat_embed_eng_gatsby_quiz', {
         questions: [
           {
-            correct: [2],
-            explanation:
-              'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',
             id: 'eng_gatsby_q1',
+            labels: 'letters',
+            layout: 'paper',
             level: 'analysis',
-            options: [
-              { value: 'Gatsby is rich and throws parties.' },
-              { value: 'Daisy lives in East Egg.' },
+            parts: [
               {
-                value:
-                  'Nick’s claim of honesty is undermined by selective narration that romanticizes Gatsby.',
+                answer: {
+                  correct: [2],
+                  options: [
+                    'Gatsby is rich and throws parties.',
+                    'Daisy lives in East Egg.',
+                    'Nick’s claim of honesty is undermined by selective narration that romanticizes Gatsby.',
+                    'The novel is set in the 1920s.',
+                  ],
+                  type: 'mcq',
+                },
+                blocks: [
+                  {
+                    text: 'Which thesis is most analytically useful?',
+                    type: 'text',
+                  },
+                ],
+                id: 'eng_gatsby_q1:part',
+                markscheme: [
+                  'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',
+                ],
+                solution: [
+                  {
+                    text: 'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',
+                    type: 'text',
+                  },
+                ],
               },
-              { value: 'The novel is set in the 1920s.' },
             ],
-            prompt: 'Which thesis is most analytically useful?',
-            type: 'mcq',
+            stem: [],
           },
         ],
       }),

@@ -447,7 +447,7 @@
             "type": "string"
           },
           "questions": {
-            "description": "quiz only; same shape as the quiz generator",
+            "description": "quiz only; Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores.",
             "items": {
               "additionalProperties": true,
               "type": "object"
@@ -790,7 +790,7 @@
                   "properties": {
                     "question": {
                       "additionalProperties": true,
-                      "description": "Same shape as the quiz generator.",
+                      "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores.",
                       "type": "object"
                     },
                     "question_id": {
@@ -819,6 +819,7 @@
                     },
                     "question": {
                       "additionalProperties": true,
+                      "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores.",
                       "type": "object"
                     },
                     "type": {

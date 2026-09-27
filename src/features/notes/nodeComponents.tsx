@@ -10,6 +10,7 @@ import {
   type PlateLeafProps,
   useEditorRef,
   useReadOnly,
+  useSelected,
 } from 'platejs/react';
 import {
   type FocusEvent,
@@ -30,6 +31,7 @@ import {
 import { Katex } from '@/features/materials/Katex';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { EditorIcon } from '@/features/notes/EditorIcon';
+import { MathField } from '@/features/questions/MathField';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Column, ColumnGroup } from './ColumnNodes';
@@ -480,46 +482,77 @@ function Mention(props: PlateElementProps) {
   );
 }
 
-/* math (KaTeX, lazily loaded). Click to edit the TeX via prompt. */
-function BlockEquation(props: PlateElementProps) {
+function EquationBody({
+  props,
+  displayMode,
+}: {
+  props: PlateElementProps;
+  displayMode: boolean;
+}) {
   const editor = useEditorRef();
+  const readOnly = useReadOnly();
+  const selected = useSelected();
   const tex = String(
     (props.element as { texExpression?: string }).texExpression ?? ''
   );
-  function edit() {
-    const next = window.prompt(m.editor_latex_prompt(), tex);
-    if (next == null) return;
-    const at = editor.api.findPath(props.element);
-    if (at) editor.tf.setNodes({ texExpression: next } as object, { at });
+  const [editing, setEditing] = useState(selected && !readOnly);
+  const [draft, setDraft] = useState(tex);
+  function commit(value: string) {
+    if (!readOnly) {
+      const at = editor.api.findPath(props.element);
+      if (at) editor.tf.setNodes({ texExpression: value }, { at });
+    }
+    setEditing(false);
   }
+  if (editing && !readOnly) {
+    return (
+      <MathField
+        displayMode={displayMode}
+        onCancel={() => setEditing(false)}
+        onChange={setDraft}
+        onCommit={commit}
+        value={draft}
+      />
+    );
+  }
+  if (readOnly) return <Katex displayMode={displayMode} tex={tex} />;
+  return (
+    <button
+      aria-label={m.editor_equation()}
+      className={cn(
+        'max-w-full cursor-text text-inherit',
+        displayMode && 'w-full'
+      )}
+      onClick={() => {
+        setDraft(tex);
+        setEditing(true);
+      }}
+      type="button"
+    >
+      {tex ? (
+        <Katex displayMode={displayMode} tex={tex} />
+      ) : (
+        <span className="text-fg-muted">{m.editor_equation()}</span>
+      )}
+    </button>
+  );
+}
+
+function BlockEquation(props: PlateElementProps) {
   return (
     <PlateElement {...props}>
-      <div
-        className={`cursor-pointer ${EQUATION_BLOCK_CLASS}`}
-        contentEditable={false}
-        onClick={edit}
-      >
-        <Katex displayMode tex={tex} />
+      <div className={EQUATION_BLOCK_CLASS} contentEditable={false}>
+        <EquationBody displayMode props={props} />
       </div>
       {props.children}
     </PlateElement>
   );
 }
 function InlineEquation(props: PlateElementProps) {
-  const editor = useEditorRef();
-  const tex = String(
-    (props.element as { texExpression?: string }).texExpression ?? ''
-  );
-  function edit() {
-    const next = window.prompt(m.editor_latex_prompt(), tex);
-    if (next == null) return;
-    const at = editor.api.findPath(props.element);
-    if (at) editor.tf.setNodes({ texExpression: next } as object, { at });
-  }
   return (
     <PlateElement {...props} as="span">
-      <span className="cursor-pointer" contentEditable={false} onClick={edit}>
-        <Katex displayMode={false} tex={tex} />
+      <span contentEditable={false}>
+        <EquationBody displayMode={false} props={props} />
       </span>
       {props.children}
     </PlateElement>

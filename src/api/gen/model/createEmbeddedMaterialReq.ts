@@ -16,9 +16,4 @@ export interface CreateEmbeddedMaterialReq {
   kind: MaterialKind;
   /** @nullable */
   questions?: CreateEmbeddedMaterialReqQuestionsItem[] | null;
-  /**
-     * @minimum 1
-     * @maximum 180
-     */
-  timeLimitMin?: number;
 }

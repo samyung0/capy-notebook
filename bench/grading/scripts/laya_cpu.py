@@ -248,6 +248,19 @@ def run(args):
     torch.set_num_interop_threads(1)
     os.environ["LAYA_CPU_AMP"] = "bf16" if args.dtype == "bf16" else "off"
     jobs = select(read_rows(args.dataset), args.suite, args.pilot, args.limit)
+    if args.opaque_labels:
+        jobs = [
+            {
+                **job,
+                "questions": {
+                    key: {**question, "labels": {"false": "B", "true": "A"}}
+                    if question["type"] == "noul"
+                    else question
+                    for key, question in job["questions"].items()
+                },
+            }
+            for job in jobs
+        ]
     if not jobs:
         raise ValueError("No requests selected")
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -258,6 +271,7 @@ def run(args):
             "revision": args.revision,
             "threads": args.threads,
             "dtype": args.dtype,
+            "opaque_labels": args.opaque_labels,
             "planned": len(jobs),
             "dataset_sha256": digest(args.dataset),
             "script_sha256": digest(Path(__file__)),
@@ -374,7 +388,7 @@ def metrics(pairs, threshold, source):
     }
 
 
-def report(dataset, path):
+def report(dataset, path, candidate_label="laya"):
     jobs = {j["id"]: j for j in read_rows(dataset)}
     records = read_rows(path)
     meta = records[0]
@@ -410,7 +424,7 @@ def report(dataset, path):
             source: {
                 str(t): metrics(group, t, source) for t in (0.3, 0.5, 0.6, 0.65, 0.7)
             }
-            for source in ("jev", "laya")
+            for source in ("jev", candidate_label)
         }
         valid = [r for _, r in group if "error" not in r]
         latency = sorted(r["latency_s"] for r in valid)
@@ -420,7 +434,7 @@ def report(dataset, path):
             if latency
             else None,
             "cpu_s_per_request": statistics.mean(r["cpu_s"] for r in valid)
-            if valid
+            if valid and all("cpu_s" in r for r in valid)
             else None,
             "truncated_requests": sum(
                 any(
@@ -430,7 +444,9 @@ def report(dataset, path):
                     for t in r["tokens"]
                 )
                 for _, r in group
-            ),
+            )
+            if all("tokens" in r for _, r in group)
+            else None,
         }
     summary["final_memory"] = records[-1].get("memory")
     target = path.with_suffix(".summary.json")
@@ -459,6 +475,7 @@ def main():
         "--suite", choices=("rubric", "route", "math", "equiv", "units", "algebra")
     )
     runner.add_argument("--pilot", action="store_true")
+    runner.add_argument("--opaque-labels", action="store_true")
     runner.add_argument("--limit", type=int)
     scorer = commands.add_parser("report")
     scorer.add_argument("--dataset", type=Path, required=True)

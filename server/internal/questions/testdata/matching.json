@@ -1,0 +1,43 @@
+{
+  "name": "matching",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "matching",
+          "options": ["unused", "X", "Y"],
+          "pairs": [
+            {
+              "left": "A",
+              "right": 1
+            },
+            {
+              "left": "B",
+              "right": 1
+            }
+          ]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

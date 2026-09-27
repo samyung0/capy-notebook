@@ -53,6 +53,7 @@ import {
   parseDocumentModeSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
 import { parseSettingsSearch } from '@/features/settings/settingsSearch';
 import { features } from '@/lib/features';
 
@@ -88,12 +89,14 @@ const authShellRoute = createRoute({
 const page = <const T extends string>(
   path: T,
   importer: () => Promise<{ default: React.ComponentType }>,
-  loader?: Loader
+  loader?: Loader,
+  hideSidebar = false
 ) =>
   createRoute({
     component: lazyRouteComponent(importer),
     getParentRoute: () => authShellRoute,
     path,
+    staticData: { hideSidebar },
     // Discard whatever the loader returns: an expression-bodied
     // `() => qc.prefetchQuery(...)` hands back the prefetch promise, and the
     // router would then hold the whole branch, shell included, until it settles.
@@ -154,6 +157,17 @@ const publicRoutes = [
     path: '/sso-callback',
   }),
 ];
+
+const bankPage = <const T extends string>(path: T) =>
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
+    getParentRoute: () => authShellRoute,
+    path,
+    staticData: { hideSidebar: true },
+    validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } => ({
+      mode: search.mode === 'edit' ? 'edit' : undefined,
+    }),
+  });
 
 const appRoutes = [
   createRoute({
@@ -231,18 +245,25 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/quizzes',
   }),
+  bankPage('/bank'),
+  bankPage('/bank/$topicId'),
+  bankPage('/bank/$topicId/$questionId'),
   page(
     '/quizzes/$quizId/attempt',
     () => import('@/routes/QuizAttempt'),
     ({ context: { queryClient: qc }, params }) =>
       qc.prefetchQuery(quizQuery(params.quizId))
   ),
-  page(
-    '/quizzes/$quizId/edit',
-    () => import('@/routes/QuizEdit'),
-    ({ context: { queryClient: qc }, params }) =>
-      qc.prefetchQuery(quizQuery(params.quizId))
-  ),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/QuizEdit')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc }, params }) => {
+      void qc.prefetchQuery(quizQuery(params.quizId));
+    },
+    path: '/quizzes/$quizId/edit',
+    staticData: { hideSidebar: true },
+    validateSearch: parseQuizEditSearch,
+  }),
   page(
     '/quizzes/attempts/$attemptId',
     () => import('@/routes/AttemptResult'),

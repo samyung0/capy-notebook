@@ -1050,15 +1050,41 @@ async function handleHttpRequest(
       request,
       response,
       config.secret,
-      (command) =>
-        executeServiceCommand(command, {
+      async (command) => {
+        if (command.expectedRevision !== undefined) {
+          assertRoomAvailable(command.room);
+          if (await isRoomEvicting(command.room))
+            throw new Error('material changed concurrently');
+          const live = server.hocuspocus.documents.get(command.room);
+          const result = await store.replaceMaterialContent(
+            command,
+            live ? Y.encodeStateAsUpdate(live) : undefined
+          );
+          if (live) Y.applyUpdate(live, result.update, 'service-edit');
+          await projections.projectAndRecord(
+            command.materialId,
+            result.version,
+            result.content,
+            'service_edit_projection'
+          );
+          live?.broadcastStateless(
+            JSON.stringify({
+              materialId: command.materialId,
+              type: 'projection-updated',
+              yjsVersion: result.version,
+            })
+          );
+          return;
+        }
+        return executeServiceCommand(command, {
           assertRoomAvailable,
           commandConnectionAccess: (room, actorUserId) =>
             store.commandConnectionAccess(room, actorUserId),
           completions: serviceCommandCompletions,
           hocuspocus: instance,
           isRoomEvicting,
-        })
+        });
+      }
     );
     return;
   }

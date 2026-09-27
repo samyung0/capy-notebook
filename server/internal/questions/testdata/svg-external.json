@@ -1,0 +1,86 @@
+{
+  "name": "svg-external",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      },
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "a",
+            "coords": [0, 0]
+          },
+          {
+            "type": "point",
+            "id": "b",
+            "coords": [1, 1]
+          },
+          {
+            "type": "line",
+            "id": "line",
+            "points": ["a", "b"]
+          },
+          {
+            "type": "functiongraph",
+            "id": "f",
+            "term": "sin(x)+0.5"
+          }
+        ],
+        "image": {
+          "svg": "<svg><image href=\"https://evil.example/image\"/></svg>"
+        },
+        "width": 320,
+        "height": 190,
+        "description": "A graph"
+      },
+      {
+        "type": "chart",
+        "kind": "line",
+        "title": "Data",
+        "labels": ["a", "b"],
+        "series": [
+          {
+            "name": "S",
+            "values": [1, 2]
+          }
+        ]
+      },
+      {
+        "type": "table",
+        "header": true,
+        "rows": [["x", "y"], ["1", "2"]]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "markscheme": ["Correct answer"],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
@@ -65,5 +66,17 @@ func TestQuizGradeUsesSlotDefault(t *testing.T) {
 	if body["providerSlug"] != "deepseek" || body["modelSlug"] != "quiz-default-test" ||
 		body["configVersion"] != float64(1) || body["paidBy"] != "platform" || body["thinking"] != "high" {
 		t.Fatalf("wrong quiz pin: %#v", body)
+	}
+	// A valid authored answer can exceed Huma's default 1 MiB request cap.
+	large := strings.Repeat("a", 1200000)
+	rec = doReq(t, h, http.MethodPost, "/api/quiz-grade", "u_editor", map[string]any{
+		"prompt": "Explain the evidence.", "modelAnswer": large, "userAnswer": "Evidence",
+		"hints": []string{}, "rubrics": []string{"Identifies the evidence."},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rich grade: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := (<-forwarded)["modelAnswer"]; got != large {
+		t.Fatal("rich grading context was truncated")
 	}
 }

@@ -9,6 +9,7 @@ import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { qk } from '@/api/client';
 import type { AppNotification } from '@/api/types';
+import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import {
@@ -49,7 +50,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/Popover';
-import { PopupMotion } from '@/components/ui/PopupMotion';
 import {
   Select,
   SelectContent,
@@ -57,6 +57,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { Tabs } from '@/components/ui/Tabs';
 import {
   Tooltip,
   TooltipContent,
@@ -96,6 +97,7 @@ function MotionChecks() {
   const [action, setAction] = useState('none');
   const [executions, setExecutions] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState('First tab');
   const revealRef = useLoadingReveal(loading);
 
   return (
@@ -135,8 +137,7 @@ function MotionChecks() {
         Toggle tool
       </Button>
       <Button onClick={() => setMoved(true)}>Move anchor</Button>
-      <PopupMotion
-        className="rounded-card bg-surface p-4 shadow-pop"
+      <FloatingToolbar
         data-testid="tool"
         open={open}
         positionClassName="fixed z-50"
@@ -147,7 +148,7 @@ function MotionChecks() {
         }}
       >
         <button type="button">{moved ? 'Moved content' : 'Tool action'}</button>
-      </PopupMotion>
+      </FloatingToolbar>
       <Button onClick={() => setCopy(!copy)}>Change copy</Button>
       <ContentSwap contentKey={String(copy)}>
         {copy ? 'Copied' : 'Copy'}
@@ -271,6 +272,17 @@ function MotionChecks() {
           <div data-testid="loaded-row">Loaded row</div>
         </div>
       )}
+      <div
+        data-testid="wheel-tabs"
+        style={{ height: 128, overflowY: 'auto', width: 256 }}
+      >
+        <Tabs
+          onChange={setTab}
+          tabs={['First tab', 'Second tab', 'Third tab', 'Fourth tab']}
+          value={tab}
+        />
+        <div style={{ height: 384 }} />
+      </div>
     </main>
   );
 }

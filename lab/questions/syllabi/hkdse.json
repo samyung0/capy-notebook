@@ -1,0 +1,124 @@
+{
+  "exam": {
+    "id": "hkdse",
+    "label": "HKDSE",
+    "position": 1
+  },
+  "subjects": [
+    {
+      "id": "hkdse-mathematics-compulsory",
+      "label": "Mathematics Compulsory Part",
+      "position": 1,
+      "topics": [
+        {
+          "id": "hkdse-math-compulsory-quadratic-equations",
+          "label": "Solving single-variable quadratics",
+          "position": 1,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=6"
+        },
+        {
+          "id": "hkdse-math-compulsory-functions-and-graphs",
+          "label": "Functions and their graphs",
+          "position": 2,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=9"
+        },
+        {
+          "id": "hkdse-math-compulsory-exponentials-and-logarithms",
+          "label": "Exponential functions and logarithms",
+          "position": 3,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=12"
+        },
+        {
+          "id": "hkdse-math-compulsory-polynomials",
+          "label": "Polynomial operations and theorems",
+          "position": 4,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=15"
+        },
+        {
+          "id": "hkdse-math-compulsory-equations",
+          "label": "Further equation-solving methods",
+          "position": 5,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=17"
+        },
+        {
+          "id": "hkdse-math-compulsory-variations",
+          "label": "Direct, inverse and joint variation",
+          "position": 6,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=19"
+        },
+        {
+          "id": "hkdse-math-compulsory-sequences-and-series",
+          "label": "Arithmetic/geometric sequences and sums",
+          "position": 7,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=20"
+        },
+        {
+          "id": "hkdse-math-compulsory-inequalities-and-linear-programming",
+          "label": "Solving inequalities and linear optimisation",
+          "position": 8,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=22"
+        },
+        {
+          "id": "hkdse-math-compulsory-graphs-of-functions",
+          "label": "Transforming and comparing function graphs",
+          "position": 9,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=24"
+        },
+        {
+          "id": "hkdse-math-compulsory-straight-lines",
+          "label": "Straight-line coordinate equations",
+          "position": 10,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=26"
+        },
+        {
+          "id": "hkdse-math-compulsory-circle-properties",
+          "label": "Circle geometry and theorems",
+          "position": 11,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=28"
+        },
+        {
+          "id": "hkdse-math-compulsory-loci",
+          "label": "Geometric loci",
+          "position": 12,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=31"
+        },
+        {
+          "id": "hkdse-math-compulsory-circle-equations",
+          "label": "Circle equations in coordinates",
+          "position": 13,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=32"
+        },
+        {
+          "id": "hkdse-math-compulsory-trigonometry",
+          "label": "Trigonometric relationships and applications",
+          "position": 14,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=33"
+        },
+        {
+          "id": "hkdse-math-compulsory-permutations-and-combinations",
+          "label": "Counting arrangements and selections",
+          "position": 15,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=35"
+        },
+        {
+          "id": "hkdse-math-compulsory-probability",
+          "label": "Combined events and probability",
+          "position": 16,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=37"
+        },
+        {
+          "id": "hkdse-math-compulsory-dispersion",
+          "label": "Quantifying spread in data",
+          "position": 17,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=39"
+        },
+        {
+          "id": "hkdse-math-compulsory-uses-and-abuses-of-statistics",
+          "label": "Evaluating statistical methods and claims",
+          "position": 18,
+          "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=41"
+        }
+      ]
+    }
+  ]
+}

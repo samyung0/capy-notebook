@@ -1,5 +1,4 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Toggle } from 'radix-ui';
 import type { ReactNode } from 'react';
 import {
   useFile,
@@ -20,8 +19,13 @@ import type {
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import {
   clampImageZoom,
   IMAGE_MAX_ZOOM,
@@ -30,6 +34,7 @@ import {
   isImageFile,
 } from '@/features/files/fileUtils';
 import {
+  type NoteEditorSaveState,
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
@@ -42,9 +47,18 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { MATERIALMODE_ICON } from './materialIconMappings';
+import { MaterialModeToggle } from './MaterialModeToggle';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
+
+const STATUS_ICON = {
+  connecting: 'cloudSync',
+  error: 'cloudAlert',
+  offline: 'cloudOff',
+  saved: 'cloudCheck',
+  synced: 'cloudSavingDone',
+  syncing: 'cloudSync',
+} satisfies Record<NoteEditorSaveState, IconName>;
 
 function useHeader(
   item: OpenItem,
@@ -161,11 +175,7 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
   });
   const navigate = useNavigate();
   const summary = quizData
-    ? `${quizData.questions.length} question${quizData.questions.length === 1 ? '' : 's'}${
-        quizData.timeLimitMin == null
-          ? ''
-          : ` · Time limit: ${quizData.timeLimitMin} min`
-      }`
+    ? `${quizData.questions.length} question${quizData.questions.length === 1 ? '' : 's'}`
     : quizIsLoading
       ? 'Loading quiz details…'
       : 'Quiz';
@@ -254,8 +264,11 @@ export function Header({
     modes,
     defaultMode,
   } = useHeader(item, workspaceId, standalone);
-  const activeMode =
-    materialMode && modes?.includes(materialMode) ? materialMode : defaultMode;
+  const activeMode = readOnly
+    ? 'view'
+    : materialMode && modes?.includes(materialMode)
+      ? materialMode
+      : defaultMode;
   const statusLabel = noteEditorStatusLabel(editorStatus);
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
@@ -275,17 +288,22 @@ export function Header({
         >
           {title ?? '--'}
         </h2>
-        {statusLabel && (
-          <span
-            className={cn(
-              't-meta px-1 text-fg-muted leading-(--subtitle-line-height)',
-              editorStatus?.saveState === 'error' && 'text-solid-error'
-            )}
-            data-testid="editor-save-state"
-            role="status"
-          >
-            {statusLabel}
-          </span>
+        {editorStatus && statusLabel && (
+          <Tooltip>
+            <TooltipTrigger
+              className={cn(
+                'inline-flex shrink-0 items-center rounded-sm px-1 text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                editorStatus.saveState === 'error' && 'text-solid-error'
+              )}
+              data-testid="editor-save-state"
+              render={<span role="status" />}
+              tabIndex={0}
+            >
+              <Icon name={STATUS_ICON[editorStatus.saveState]} size={16} />
+              <span className="sr-only">{statusLabel}</span>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{statusLabel}</TooltipContent>
+          </Tooltip>
         )}
       </div>
       <div className="ml-auto flex items-center gap-0">
@@ -293,25 +311,11 @@ export function Header({
         {item.kind === 'material' && activeMode === 'view' && materialKind && (
           <MaterialViewActions kind={materialKind} materialId={item.id} />
         )}
-        {modes && modes.length > 1 && activeMode && (
-          <Toggle.Root
-            asChild
-            onPressedChange={(pressed) =>
-              onMaterialModeChange(pressed ? 'edit' : 'view')
-            }
-            pressed={activeMode === 'edit'}
-          >
-            <ToolbarButton
-              aria-label={m.material_mode()}
-              label={
-                activeMode === 'edit'
-                  ? m.material_mode_edit()
-                  : m.material_mode_view()
-              }
-            >
-              <Icon name={MATERIALMODE_ICON[activeMode]} />
-            </ToolbarButton>
-          </Toggle.Root>
+        {!readOnly && modes && modes.length > 1 && activeMode && (
+          <MaterialModeToggle
+            mode={activeMode}
+            onChange={onMaterialModeChange}
+          />
         )}
         {showImageZoom && (
           <>

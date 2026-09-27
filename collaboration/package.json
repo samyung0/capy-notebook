@@ -21,7 +21,8 @@
     "ioredis": "5.6.1",
     "pg": "^8.22.0",
     "slate": "0.124.1",
-    "yjs": "13.6.31"
+    "yjs": "13.6.31",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@hocuspocus/provider": "3.4.4",

@@ -69,25 +69,25 @@ INSERT INTO materials (
   (
     'qz_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'quiz',
     'E2E Private Quiz',
-    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_private:quiz","timeLimitMin":15,"children":[{"type":"quiz_question","id":"q_priv_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Private quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_private:quiz","children":[{"type":"quiz_question","id":"q_priv_1","question":{"id":"q_priv_1","stem":[],"parts":[{"id":"q_priv_1:part:1","blocks":[{"type":"text","text":"Private quiz prompt?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}]}'::jsonb,
     'ch_e2e_private', '{Private chapter}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_link', 'u_owner', NULL, '', 'quiz',
     'E2E Link Quiz',
-    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_link:quiz","children":[{"type":"quiz_question","id":"q_link_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Link quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_link:quiz","children":[{"type":"quiz_question","id":"q_link_1","question":{"id":"q_link_1","stem":[],"parts":[{"id":"q_link_1:part:1","blocks":[{"type":"text","text":"Link quiz prompt?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'link', 'purple', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_public', 'u_owner', NULL, '', 'quiz',
     'E2E Public Quiz',
-    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_public:quiz","children":[{"type":"quiz_question","id":"q_pub_1","questionType":"boolean","level":"recall","correctBoolean":false,"children":[{"type":"quiz_prompt","children":[{"text":"Public quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_public:quiz","children":[{"type":"quiz_question","id":"q_pub_1","question":{"id":"q_pub_1","stem":[],"parts":[{"id":"q_pub_1:part:1","blocks":[{"type":"text","text":"Public quiz prompt?"}],"answer":{"type":"boolean","correct":false},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'public', 'blue', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_mutate', 'u_owner', NULL, '', 'quiz',
     'E2E Mutate Quiz',
-    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_mutate:quiz","children":[{"type":"quiz_question","id":"q_mut_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Mutate quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_mutate:quiz","children":[{"type":"quiz_question","id":"q_mut_1","question":{"id":"q_mut_1","stem":[],"parts":[{"id":"q_mut_1:part:1","blocks":[{"type":"text","text":"Mutate quiz prompt?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'private', 'amber', now(), now(), 1, 'u_owner'
   ),
   (

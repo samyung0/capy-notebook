@@ -93,19 +93,18 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 }
 
 type generateOpts struct {
-	Kind         store.MaterialKind
-	Length       string
-	Format       string
-	Count        int
-	Style        string
-	Types        []string
-	Levels       []string
-	Chapters     []string
-	FileIds      []string
-	Detail       string
-	DiagramType  string
-	TimeLimitMin *int
-	Title        string
+	Kind        store.MaterialKind
+	Length      string
+	Format      string
+	Count       int
+	Style       string
+	Types       []string
+	Levels      []string
+	Chapters    []string
+	FileIds     []string
+	Detail      string
+	DiagramType string
+	Title       string
 	// AllowUnindexed skips the indexed-content requirement for a material whose
 	// grounding is outside the workspace (the knowledge library).
 	AllowUnindexed bool
@@ -121,19 +120,18 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 		levels[i] = string(lvl)
 	}
 	return generateOpts{
-		Kind:         req.Kind.MaterialKind(),
-		Length:       req.Length,
-		Format:       req.Format,
-		Count:        req.Count,
-		Style:        req.Style,
-		Types:        types,
-		Levels:       levels,
-		Chapters:     req.Chapters,
-		FileIds:      req.FileIds,
-		Detail:       string(req.Detail),
-		DiagramType:  string(req.DiagramType),
-		TimeLimitMin: req.TimeLimitMin,
-		Title:        title,
+		Kind:        req.Kind.MaterialKind(),
+		Length:      req.Length,
+		Format:      req.Format,
+		Count:       req.Count,
+		Style:       req.Style,
+		Types:       types,
+		Levels:      levels,
+		Chapters:    req.Chapters,
+		FileIds:     req.FileIds,
+		Detail:      string(req.Detail),
+		DiagramType: string(req.DiagramType),
+		Title:       title,
 	}
 }
 
@@ -237,7 +235,7 @@ func (a *api) generateViaPipe(
 		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
 		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.Levels,
 		"chapters": chapterNames, "fileIds": fileIDs,
-		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
+		"detail": opts.Detail, "diagramType": opts.DiagramType,
 		"locale":         a.userLocale(ctx, userID),
 		"spendSessionId": spendSessionID,
 	}
@@ -263,9 +261,8 @@ func (a *api) generateViaPipe(
 	switch head.Kind {
 	case "quiz":
 		var qp struct {
-			Name         string          `json:"name"`
-			Questions    json.RawMessage `json:"questions"`
-			TimeLimitMin *int            `json:"timeLimitMin"`
+			Name      string          `json:"name"`
+			Questions json.RawMessage `json:"questions"`
 		}
 		_ = json.Unmarshal(raw, &qp)
 		name := opts.Title
@@ -275,7 +272,7 @@ func (a *api) generateViaPipe(
 		}
 		mt, err := a.s.CreateMaterialDraft(ctx, store.MaterialDraft{
 			ActorUserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "quiz", Title: name,
-			Questions: qp.Questions, TimeLimitMin: qp.TimeLimitMin,
+			Questions:     qp.Questions,
 			ScopeChapters: chapterNames, ScopeFileNames: fileNames,
 		})
 		if err != nil {

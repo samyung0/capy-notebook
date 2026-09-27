@@ -484,6 +484,9 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage) ([]json.RawMe
 			if kind != "quiz" {
 				return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to quizzes", c.Type)
 			}
+			if c.Type != "add_question" && strings.TrimSpace(c.QuestionID) == "" {
+				return nil, refusal(agenttools.ErrInvalidInput, "%s needs question_id", c.Type)
+			}
 			switch c.Type {
 			case "remove_question":
 				normalized = map[string]any{"type": "remove_child", "parentType": "quiz", "nodeId": c.QuestionID}

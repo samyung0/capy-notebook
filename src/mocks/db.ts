@@ -83,7 +83,6 @@ export function refreshMaterialContentBytes(material: Material): void {
 }
 
 /** Wrap bare strings as {value} rows (matches useFieldArray-friendly shapes). */
-const wv = (...ss: string[]) => ss.map((value) => ({ value }));
 
 /**
  * Mock tag catalog (mirrors the backend `tags` table: per-user, per-kind, id +
@@ -135,7 +134,7 @@ function seedCard(
   known: boolean
 ): Flashcard {
   const srs = seedSrs(known);
-  return { back, front, id, known: isKnown(srs), materialId, srs };
+  return { back, front, id, known: isKnown(srs), materialId, revision: 1, srs };
 }
 
 const now = Date.now();
@@ -545,110 +544,263 @@ const seedQuizzes: Quiz[] = [
     privacy: 'private',
     questions: [
       {
-        correct: [1],
-        explanation: 'Mitochondria produce ATP through cellular respiration.',
         id: 'q1',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        options: [
+        parts: [
           {
-            explanation: 'The nucleus stores DNA; it does not make ATP.',
-            value: 'Nucleus',
-          },
-          {
-            explanation:
-              'Correct — mitochondria produce ATP via cellular respiration.',
-            value: 'Mitochondria',
-          },
-          {
-            explanation: 'Ribosomes build proteins, not energy.',
-            value: 'Ribosome',
-          },
-          {
-            explanation: 'The Golgi packages and ships proteins.',
-            value: 'Golgi apparatus',
+            answer: {
+              correct: [1],
+              options: [
+                'Nucleus',
+                'Mitochondria',
+                'Ribosome',
+                'Golgi apparatus',
+              ],
+              type: 'mcq',
+            },
+            blocks: [
+              {
+                text: 'Which organelle is the powerhouse of the cell?',
+                type: 'text',
+              },
+            ],
+            id: 'q1:part',
+            markscheme: [
+              'Mitochondria produce ATP through cellular respiration.',
+            ],
+            solution: [
+              {
+                text: 'Mitochondria produce ATP through cellular respiration.',
+                type: 'text',
+              },
+            ],
           },
         ],
-        prompt: 'Which organelle is the powerhouse of the cell?',
-        type: 'mcq',
+        stem: [],
       },
       {
-        correct: true,
         id: 'q2',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'The cell membrane is a phospholipid bilayer.',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: true, type: 'boolean' },
+            blocks: [
+              {
+                text: 'The cell membrane is a phospholipid bilayer.',
+                type: 'text',
+              },
+            ],
+            id: 'q2:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [1, 2],
         id: 'q3',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv('Ribosome', 'Nucleus', 'Mitochondria', 'Cytosol'),
-        prompt: 'Select all that are membrane-bound organelles.',
-        type: 'multi',
+        parts: [
+          {
+            answer: {
+              correct: [1, 2],
+              options: ['Ribosome', 'Nucleus', 'Mitochondria', 'Cytosol'],
+              type: 'multi',
+            },
+            blocks: [
+              {
+                text: 'Select all that are membrane-bound organelles.',
+                type: 'text',
+              },
+            ],
+            id: 'q3:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('osmosis'),
         id: 'q4',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        prompt: 'The diffusion of water across a membrane is called ____.',
-        type: 'short',
+        parts: [
+          {
+            answer: { accepted: ['osmosis'], type: 'short' },
+            blocks: [
+              {
+                text: 'The diffusion of water across a membrane is called ____.',
+                type: 'text',
+              },
+            ],
+            id: 'q4:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
         id: 'q5',
-        items: wv(
-          'Ribosome',
-          'Rough ER',
-          'Golgi apparatus',
-          'Vesicle',
-          'Cell membrane'
-        ),
+        labels: 'letters',
+        layout: 'paper',
         level: 'analysis',
-        prompt: 'Order the path of protein secretion.',
-        type: 'ordering',
+        parts: [
+          {
+            answer: {
+              items: [
+                'Ribosome',
+                'Rough ER',
+                'Golgi apparatus',
+                'Vesicle',
+                'Cell membrane',
+              ],
+              type: 'ordering',
+            },
+            blocks: [
+              { text: 'Order the path of protein secretion.', type: 'text' },
+            ],
+            id: 'q5:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
         id: 'q6',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        pairs: [
-          { left: 'Nucleus', right: 'Stores DNA' },
-          { left: 'Mitochondria', right: 'Makes ATP' },
-          { left: 'Ribosome', right: 'Builds proteins' },
+        parts: [
+          {
+            answer: {
+              options: ['Stores DNA', 'Makes ATP', 'Builds proteins'],
+              pairs: [
+                { left: 'Nucleus', right: 0 },
+                { left: 'Mitochondria', right: 1 },
+                { left: 'Ribosome', right: 2 },
+              ],
+              type: 'matching',
+            },
+            blocks: [
+              { text: 'Match the organelle to its function.', type: 'text' },
+            ],
+            id: 'q6:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
         ],
-        prompt: 'Match the organelle to its function.',
-        type: 'matching',
+        stem: [],
       },
       {
-        correct: [1],
         id: 'q11',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        options: wv('Cell wall', 'Cell membrane', 'Nucleolus', 'Vacuole'),
-        prompt: 'Which structure controls what enters and leaves the cell?',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [1],
+              options: ['Cell wall', 'Cell membrane', 'Nucleolus', 'Vacuole'],
+              type: 'mcq',
+            },
+            blocks: [
+              {
+                text: 'Which structure controls what enters and leaves the cell?',
+                type: 'text',
+              },
+            ],
+            id: 'q11:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: false,
-        explanation: 'Ribosomes are not enclosed by a membrane.',
         id: 'q12',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'Ribosomes are membrane-bound organelles.',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: false, type: 'boolean' },
+            blocks: [
+              {
+                text: 'Ribosomes are membrane-bound organelles.',
+                type: 'text',
+              },
+            ],
+            id: 'q12:part',
+            markscheme: ['Ribosomes are not enclosed by a membrane.'],
+            solution: [
+              {
+                text: 'Ribosomes are not enclosed by a membrane.',
+                type: 'text',
+              },
+            ],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('mitochondria', 'mitochondrion'),
         id: 'q13',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        prompt:
-          'The organelle that produces most of the cell’s ATP is the ____.',
-        type: 'short',
+        parts: [
+          {
+            answer: {
+              accepted: ['mitochondria', 'mitochondrion'],
+              type: 'short',
+            },
+            blocks: [
+              {
+                text: 'The organelle that produces most of the cell’s ATP is the ____.',
+                type: 'text',
+              },
+            ],
+            id: 'q13:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('cellular respiration', 'aerobic respiration'),
         id: 'q14',
+        labels: 'letters',
+        layout: 'paper',
         level: 'analysis',
-        prompt: 'Name the process cells use to convert glucose into ATP.',
-        type: 'short',
+        parts: [
+          {
+            answer: {
+              accepted: ['cellular respiration', 'aerobic respiration'],
+              type: 'short',
+            },
+            blocks: [
+              {
+                text: 'Name the process cells use to convert glucose into ATP.',
+                type: 'text',
+              },
+            ],
+            id: 'q14:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
     ],
+    revision: 1,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
@@ -662,91 +814,242 @@ const seedQuizzes: Quiz[] = [
     privacy: 'private',
     questions: [
       {
-        correct: [0],
         id: 'q7',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv('1:2:1', '3:1', '1:1', '9:3:3:1'),
-        prompt: 'A cross between Aa × Aa gives what genotype ratio?',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: ['1:2:1', '3:1', '1:1', '9:3:3:1'],
+              type: 'mcq',
+            },
+            blocks: [
+              {
+                text: 'A cross between Aa × Aa gives what genotype ratio?',
+                type: 'text',
+              },
+            ],
+            id: 'q7:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv(
-          'an allele expressed in the phenotype even when only one copy is present'
-        ),
         id: 'q8',
+        labels: 'letters',
+        layout: 'paper',
         level: 'analysis',
-        prompt: 'Define a dominant allele in one sentence.',
-        type: 'short',
+        parts: [
+          {
+            answer: {
+              accepted: [
+                'an allele expressed in the phenotype even when only one copy is present',
+              ],
+              type: 'short',
+            },
+            blocks: [
+              {
+                text: 'Define a dominant allele in one sentence.',
+                type: 'text',
+              },
+            ],
+            id: 'q8:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [0],
         id: 'q15',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        options: wv(
-          'Homozygous dominant',
-          'Heterozygous',
-          'Homozygous recessive',
-          'Hemizygous'
-        ),
-        prompt: 'The genotype AA is described as…',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: [
+                'Homozygous dominant',
+                'Heterozygous',
+                'Homozygous recessive',
+                'Hemizygous',
+              ],
+              type: 'mcq',
+            },
+            blocks: [
+              { text: 'The genotype AA is described as…', type: 'text' },
+            ],
+            id: 'q15:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: false,
-        explanation:
-          'That describes phenotype; genotype is the genetic makeup.',
         id: 'q16',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'Genotype refers to an organism’s observable physical traits.',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: false, type: 'boolean' },
+            blocks: [
+              {
+                text: 'Genotype refers to an organism’s observable physical traits.',
+                type: 'text',
+              },
+            ],
+            id: 'q16:part',
+            markscheme: [
+              'That describes phenotype; genotype is the genetic makeup.',
+            ],
+            solution: [
+              {
+                text: 'That describes phenotype; genotype is the genetic makeup.',
+                type: 'text',
+              },
+            ],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [0, 2],
         id: 'q17',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv('AA', 'Aa', 'aa', 'Bb'),
-        prompt: 'Select all homozygous genotypes.',
-        type: 'multi',
+        parts: [
+          {
+            answer: {
+              correct: [0, 2],
+              options: ['AA', 'Aa', 'aa', 'Bb'],
+              type: 'multi',
+            },
+            blocks: [
+              { text: 'Select all homozygous genotypes.', type: 'text' },
+            ],
+            id: 'q17:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('Punnett'),
         id: 'q18',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        prompt:
-          'A diagram used to predict offspring genotypes is a ____ square.',
-        type: 'short',
+        parts: [
+          {
+            answer: { accepted: ['Punnett'], type: 'short' },
+            blocks: [
+              {
+                text: 'A diagram used to predict offspring genotypes is a ____ square.',
+                type: 'text',
+              },
+            ],
+            id: 'q18:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: true,
         id: 'q19',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'Alleles are alternative forms of the same gene.',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: true, type: 'boolean' },
+            blocks: [
+              {
+                text: 'Alleles are alternative forms of the same gene.',
+                type: 'text',
+              },
+            ],
+            id: 'q19:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [0],
         id: 'q20',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv('1:1', '3:1', '1:2:1', 'All dominant'),
-        prompt:
-          'A cross Aa × aa gives what phenotype ratio (dominant:recessive)?',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: ['1:1', '3:1', '1:2:1', 'All dominant'],
+              type: 'mcq',
+            },
+            blocks: [
+              {
+                text: 'A cross Aa × aa gives what phenotype ratio (dominant:recessive)?',
+                type: 'text',
+              },
+            ],
+            id: 'q20:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
         id: 'q21',
-        items: wv('Prophase', 'Metaphase', 'Anaphase', 'Telophase'),
+        labels: 'letters',
+        layout: 'paper',
         level: 'analysis',
-        prompt: 'Order the phases of mitosis.',
-        type: 'ordering',
+        parts: [
+          {
+            answer: {
+              items: ['Prophase', 'Metaphase', 'Anaphase', 'Telophase'],
+              type: 'ordering',
+            },
+            blocks: [{ text: 'Order the phases of mitosis.', type: 'text' }],
+            id: 'q21:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('the observable characteristics of an organism'),
         id: 'q22',
+        labels: 'letters',
+        layout: 'paper',
         level: 'analysis',
-        prompt: 'Define phenotype in one sentence.',
-        type: 'short',
+        parts: [
+          {
+            answer: {
+              accepted: ['the observable characteristics of an organism'],
+              type: 'short',
+            },
+            blocks: [
+              { text: 'Define phenotype in one sentence.', type: 'text' },
+            ],
+            id: 'q22:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
     ],
+    revision: 1,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
@@ -760,95 +1063,221 @@ const seedQuizzes: Quiz[] = [
     privacy: 'private',
     questions: [
       {
-        correct: [1],
         id: 'q9',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv(
-          'Substitution',
-          'Integration by parts',
-          'Partial fractions',
-          'Trig substitution'
-        ),
-        prompt: '∫ x·eˣ dx is best solved by…',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [1],
+              options: [
+                'Substitution',
+                'Integration by parts',
+                'Partial fractions',
+                'Trig substitution',
+              ],
+              type: 'mcq',
+            },
+            blocks: [{ text: '∫ x·eˣ dx is best solved by…', type: 'text' }],
+            id: 'q9:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: true,
         id: 'q10',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: '∫ 1/x dx = ln|x| + C',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: true, type: 'boolean' },
+            blocks: [{ text: '∫ 1/x dx = ln|x| + C', type: 'text' }],
+            id: 'q10:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [0],
         id: 'q23',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv('sin x + C', '-sin x + C', 'cos x + C', '-cos x + C'),
-        prompt: '∫ cos x dx = ?',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: ['sin x + C', '-sin x + C', 'cos x + C', '-cos x + C'],
+              type: 'mcq',
+            },
+            blocks: [{ text: '∫ cos x dx = ?', type: 'text' }],
+            id: 'q23:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: true,
         id: 'q24',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'The integral of a sum equals the sum of the integrals.',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: true, type: 'boolean' },
+            blocks: [
+              {
+                text: 'The integral of a sum equals the sum of the integrals.',
+                type: 'text',
+              },
+            ],
+            id: 'q24:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('C'),
         id: 'q25',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        prompt: '∫ 2x dx = x² + ____.',
-        type: 'short',
+        parts: [
+          {
+            answer: { accepted: ['C'], type: 'short' },
+            blocks: [{ text: '∫ 2x dx = x² + ____.', type: 'text' }],
+            id: 'q25:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [0],
         id: 'q26',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv('arctan x + C', 'ln|x| + C', 'arcsin x + C', '1/x + C'),
-        prompt: '∫ 1/(1 + x²) dx = ?',
-        type: 'mcq',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: ['arctan x + C', 'ln|x| + C', 'arcsin x + C', '1/x + C'],
+              type: 'mcq',
+            },
+            blocks: [{ text: '∫ 1/(1 + x²) dx = ?', type: 'text' }],
+            id: 'q26:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: true,
         id: 'q27',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'd/dx of ∫ f(x) dx returns f(x).',
-        type: 'boolean',
+        parts: [
+          {
+            answer: { correct: true, type: 'boolean' },
+            blocks: [{ text: 'd/dx of ∫ f(x) dx returns f(x).', type: 'text' }],
+            id: 'q27:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        correct: [0, 1],
         id: 'q28',
+        labels: 'letters',
+        layout: 'paper',
         level: 'application',
-        options: wv(
-          'Partial fractions',
-          'Polynomial long division',
-          'Integration by parts',
-          'Trig substitution'
-        ),
-        prompt: 'Which techniques help integrate rational functions?',
-        type: 'multi',
+        parts: [
+          {
+            answer: {
+              correct: [0, 1],
+              options: [
+                'Partial fractions',
+                'Polynomial long division',
+                'Integration by parts',
+                'Trig substitution',
+              ],
+              type: 'multi',
+            },
+            blocks: [
+              {
+                text: 'Which techniques help integrate rational functions?',
+                type: 'text',
+              },
+            ],
+            id: 'q28:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
         id: 'q29',
-        items: wv(
-          'Choose u and dv',
-          'Differentiate u',
-          'Integrate dv',
-          'Apply the formula'
-        ),
+        labels: 'letters',
+        layout: 'paper',
         level: 'analysis',
-        prompt: 'Order the steps of integration by parts.',
-        type: 'ordering',
+        parts: [
+          {
+            answer: {
+              items: [
+                'Choose u and dv',
+                'Differentiate u',
+                'Integrate dv',
+                'Apply the formula',
+              ],
+              type: 'ordering',
+            },
+            blocks: [
+              {
+                text: 'Order the steps of integration by parts.',
+                type: 'text',
+              },
+            ],
+            id: 'q29:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
       {
-        accepted: wv('constant of integration'),
         id: 'q30',
+        labels: 'letters',
+        layout: 'paper',
         level: 'recall',
-        prompt: 'Name the constant added to every indefinite integral.',
-        type: 'short',
+        parts: [
+          {
+            answer: { accepted: ['constant of integration'], type: 'short' },
+            blocks: [
+              {
+                text: 'Name the constant added to every indefinite integral.',
+                type: 'text',
+              },
+            ],
+            id: 'q30:part',
+            markscheme: ['The answer identifies the correct response.'],
+            solution: [],
+          },
+        ],
+        stem: [],
       },
     ],
+    revision: 1,
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
   },
@@ -959,6 +1388,7 @@ const seedFlashcardSets: FlashcardSet[] = [
     knownPct: 80,
     name: 'Cell organelles',
     privacy: 'private',
+    revision: 1,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
@@ -972,6 +1402,7 @@ const seedFlashcardSets: FlashcardSet[] = [
     knownPct: 55,
     name: 'Integration rules',
     privacy: 'private',
+    revision: 1,
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
   },
@@ -985,6 +1416,7 @@ const seedFlashcardSets: FlashcardSet[] = [
     knownPct: 30,
     name: 'History dates',
     privacy: 'private',
+    revision: 1,
     workspaceId: 'ws_hist',
     workspaceName: 'World History',
   },
@@ -1615,10 +2047,7 @@ seedQuizzes.forEach((q) => {
       capabilities: ownerCapabilities,
       chapterId: null,
       content: createMaterialDocument([
-        quizNode(
-          { questions: q.questions, timeLimitMin: q.timeLimitMin },
-          q.id
-        ),
+        quizNode({ questions: q.questions }, q.id),
       ]),
       createdAt: q.createdAt,
       id: q.id,
@@ -1748,7 +2177,7 @@ for (const seed of embeddedSeeds) {
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): Quiz {
-  const { questions, timeLimitMin } =
+  const { questions } =
     typeof mt.content === 'string'
       ? parseQuizBlock(mt.content)
       : quizElementToBlock(
@@ -1763,7 +2192,7 @@ export function quizFromMaterial(mt: Material): Quiz {
     name: mt.title,
     privacy: mt.privacy,
     questions,
-    timeLimitMin,
+    revision: mt.revision,
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
   };
@@ -1788,6 +2217,7 @@ export function cardsFromMaterial(mt: Material): Flashcard[] {
       id: c.id,
       known: st?.known ?? false,
       materialId: mt.id,
+      revision: mt.revision,
       srs,
     };
   });
@@ -1807,6 +2237,7 @@ export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
     knownPct: cs.length ? Math.round((100 * known) / cs.length) : 0,
     name: mt.title,
     privacy: mt.privacy,
+    revision: mt.revision,
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
   };
@@ -1837,7 +2268,6 @@ export function materialListItem(mt: Material): MaterialListItem {
     ...(quiz
       ? {
           questionCount: quiz.questions.length,
-          timeLimitMin: quiz.timeLimitMin,
         }
       : {}),
     ...(set

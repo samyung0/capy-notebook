@@ -21,6 +21,7 @@ import (
 	"github.com/stripe/stripe-go/v82"
 
 	"github.com/samyung0/capy-notebook/server/internal/auth"
+	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/mail"
@@ -78,7 +79,12 @@ type Config struct {
 	PipelineSecret string
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
-	MailRecorder mail.Recorder
+	MailRecorder     mail.Recorder
+	MailSender       mail.Sender
+	Bank             *bank.Store
+	BankAssets       bank.AssetWriter
+	BankAssetsURL    string
+	BankCommentEmail string
 }
 
 type api struct {

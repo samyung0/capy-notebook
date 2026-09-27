@@ -8,10 +8,8 @@ import {
   MermaidCaptionElement,
   MermaidElement,
   QuizElement,
-  QuizExplanationElement,
-  QuizOptionElement,
-  QuizPromptElement,
   QuizQuestionElement,
+  VisualBlockElement,
 } from './elements';
 import {
   FLASHCARDS_KEY,
@@ -27,23 +25,8 @@ export const QuizElementPlugin = createPlatePlugin({
 
 export const QuizQuestionPlugin = createPlatePlugin({
   key: 'quiz_question',
-  node: { isElement: true, type: 'quiz_question' },
+  node: { isElement: true, isVoid: true, type: 'quiz_question' },
 }).withComponent(QuizQuestionElement);
-
-export const QuizPromptPlugin = createPlatePlugin({
-  key: 'quiz_prompt',
-  node: { isElement: true, type: 'quiz_prompt' },
-}).withComponent(QuizPromptElement);
-
-export const QuizOptionPlugin = createPlatePlugin({
-  key: 'quiz_option',
-  node: { isElement: true, type: 'quiz_option' },
-}).withComponent(QuizOptionElement);
-
-export const QuizExplanationPlugin = createPlatePlugin({
-  key: 'quiz_explanation',
-  node: { isElement: true, type: 'quiz_explanation' },
-}).withComponent(QuizExplanationElement);
 
 export const FlashcardsElementPlugin = createPlatePlugin({
   key: FLASHCARDS_KEY,
@@ -67,7 +50,7 @@ export const FlashcardBackPlugin = createPlatePlugin({
 
 export const MermaidElementPlugin = createPlatePlugin({
   key: MERMAID_KEY,
-  node: { isElement: true, type: MERMAID_KEY },
+  node: { isElement: true, isVoid: true, type: MERMAID_KEY },
 }).withComponent(MermaidElement);
 
 export const MermaidCaptionPlugin = createPlatePlugin({
@@ -99,12 +82,27 @@ export const MaterialRefPlugin = createPlatePlugin({
   .withComponent(MaterialRefElement);
 
 export const customBlockPlugins = [
+  ...(['chart', 'graph'] as const).map((key) =>
+    createPlatePlugin({
+      key,
+      node: { isElement: true, isVoid: true, type: key },
+    })
+      .overrideEditor(({ editor, tf: { normalizeNode } }) => ({
+        transforms: {
+          normalizeNode([node, path]) {
+            if ('type' in node && node.type === key && path.length > 1) {
+              editor.tf.liftNodes({ at: path });
+              return;
+            }
+            normalizeNode([node, path]);
+          },
+        },
+      }))
+      .withComponent(VisualBlockElement)
+  ),
   MaterialRefPlugin,
   QuizElementPlugin,
   QuizQuestionPlugin,
-  QuizPromptPlugin,
-  QuizOptionPlugin,
-  QuizExplanationPlugin,
   FlashcardsElementPlugin,
   FlashcardPlugin,
   FlashcardFrontPlugin,

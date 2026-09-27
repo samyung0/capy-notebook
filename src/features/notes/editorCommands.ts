@@ -1,9 +1,12 @@
 import { ListStyleType, toggleList } from '@platejs/list';
+import type { MathfieldElement } from 'mathlive';
 import { KEYS } from 'platejs';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
+import { uid } from '@/lib/id';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import { customBlockNode } from './blocks/shared';
+import type { NoteVisualBlock } from './blocks/VisualBlockDialog';
 import { toggleEditorBlock } from './editorTransforms';
 import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 import { insertMediaPlaceholder } from './insertMediaPlaceholder';
@@ -35,6 +38,26 @@ export function emptyParagraph() {
   return { children: [{ text: '' }], type: 'p' };
 }
 
+function newVisualBlock(type: 'chart' | 'graph'): NoteVisualBlock {
+  return type === 'chart'
+    ? {
+        kind: 'bar',
+        labels: [''],
+        series: [{ name: '', values: [0] }],
+        title: '',
+        type,
+      }
+    : {
+        board: { axis: true, bbox: [-5, 5, 5, -5], grid: false },
+        description: '',
+        elements: [],
+        height: 400,
+        image: { svg: '<svg xmlns="http://www.w3.org/2000/svg"></svg>' },
+        type,
+        width: 600,
+      };
+}
+
 export function columnGroupFromWidths(widths: readonly string[]) {
   return {
     children: widths.map((width) => ({
@@ -48,33 +71,31 @@ export function columnGroupFromWidths(widths: readonly string[]) {
 
 export function insertInlineEquation(
   editor: NoteEditorInstance,
-  promptForExpression: (
-    message: string,
-    defaultValue: string
-  ) => string | null = (message, defaultValue) =>
-    window.prompt(message, defaultValue)
+  expression?: string
 ) {
   const selection = editor.selection;
-  const initialExpression =
-    selection && !editor.api.isCollapsed(selection)
+  const texExpression =
+    expression ??
+    (selection && !editor.api.isCollapsed(selection)
       ? editor.api.string(selection)
-      : '';
-  const texExpression = promptForExpression(
-    m.editor_latex_prompt(),
-    initialExpression
-  );
-
-  if (texExpression == null) return;
-
+      : '');
   editor.tf.focus();
   editor.tf.insertNodes(
-    {
-      children: [{ text: '' }],
-      texExpression,
-      type: KEYS.inlineEquation,
-    },
+    { children: [{ text: '' }], texExpression, type: KEYS.inlineEquation },
     selection ? { at: selection, select: true } : { select: true }
   );
+}
+
+export function insertMathTemplate(
+  editor: NoteEditorInstance,
+  expression: string
+) {
+  const active = document.activeElement;
+  if (active?.tagName.toLowerCase() === 'math-field') {
+    (active as MathfieldElement).insert(expression);
+    return;
+  }
+  insertInlineEquation(editor, expression);
 }
 
 function blockCommand(
@@ -452,9 +473,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     run: (editor, dialogs) => {
       if (insideContainer(editor)) return;
-      dialogs?.openQuiz(undefined, (code) => {
-        void dialogs.insertEmbedded(editor, 'quiz', code);
-      });
+      if (dialogs) void dialogs.insertEmbedded(editor, 'quiz', 'questions: []');
     },
     widget: 'quiz',
   },
@@ -497,6 +516,33 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'mermaid',
   },
 ];
+
+EDITOR_COMMANDS.push(
+  ...(['chart', 'graph'] as const).map(
+    (type): EditorCommand => ({
+      get description() {
+        return type === 'chart' ? m.editor_chart() : m.editor_graph();
+      },
+      group: 'blockElements',
+      icon: 'chart',
+      id: type,
+      get label() {
+        return type === 'chart' ? m.editor_chart() : m.editor_graph();
+      },
+      run: (editor, dialogs) => {
+        if (insideContainer(editor)) return;
+        dialogs?.openVisual(newVisualBlock(type), (block) => {
+          insertEditorNode(editor, {
+            block,
+            children: [{ text: '' }],
+            id: uid(block.type),
+            type: block.type,
+          });
+        });
+      },
+    })
+  )
+);
 
 /** Study blocks and diagrams live at the top level only. With the caret
  * inside a callout, column, table or other container the insert commands do

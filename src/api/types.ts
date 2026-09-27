@@ -335,80 +335,22 @@ export interface ChatMessage {
   status: ChatStatus;
 }
 
-/* ---------------- Quizzes: the polymorphic Question union ----------------
-   The backend stores questions opaquely; the frontend owns this shape. */
-export const QUESTION_TYPES = [
-  'mcq', // single correct
-  'multi', // multiple correct
-  'boolean',
-  'short',
-  'matching',
-  'ordering',
-  'open',
-] as const;
-export type QuestionType = (typeof QUESTION_TYPES)[number];
+export type {
+  CognitiveLevel,
+  Question,
+  QuestionAnswer,
+  QuestionBlock,
+  QuestionPart,
+  QuestionType,
+} from '@/features/questions/types';
+/* Shared authored question contract. The wire stores it as opaque JSON. */
+export { QUESTION_TYPES } from '@/features/questions/types';
 
-/**
- * Cognitive level of a question (a light Depth-of-Knowledge style tag). Replaces
- * the old easy/medium/hard difficulty so students see *what kind* of thinking a
- * question demands. Ordered from lowest to highest cognitive load.
- */
-export type CognitiveLevel = 'recall' | 'application' | 'analysis';
-
-interface BaseQuestion {
-  /** Snapshot-only: points awarded when this attempt was graded. */
-  awarded?: number;
-  awardReason?: string;
-  explanation?: string;
-  id: string;
-  level: CognitiveLevel;
-  /** Question value. Defaults to 1. Open questions may award half. */
-  points?: number;
-  prompt: string;
-  type: QuestionType;
-}
-export interface ChoiceQuestion extends BaseQuestion {
-  /** indices into `options` */
-  correct: number[];
-  /** Object-wrapped so react-hook-form useFieldArray can bind each row. Each
-   * option can carry its own explanation (why it is right or wrong), surfaced
-   * during review. Question-level `explanation` still applies to non-choice
-   * types. */
-  options: { value: string; explanation?: string }[];
-  type: 'mcq' | 'multi';
-}
-export interface BooleanQuestion extends BaseQuestion {
-  correct: boolean;
-  type: 'boolean';
-}
-export interface TextQuestion extends BaseQuestion {
-  /** accepted answers (case-insensitive), object-wrapped for useFieldArray */
-  accepted: { value: string }[];
-  type: 'short';
-}
-export interface MatchingQuestion extends BaseQuestion {
-  pairs: { left: string; right: string }[];
-  type: 'matching';
-}
-export interface OrderingQuestion extends BaseQuestion {
-  /** items in their correct order, object-wrapped for useFieldArray */
-  items: { value: string }[];
-  type: 'ordering';
-}
-export interface OpenQuestion extends BaseQuestion {
-  /** Model answer the judge compares against. */
-  accepted: { value: string }[];
-  hints: { value: string }[];
-  rubrics: { value: string }[];
-  type: 'open';
-}
-export type Question =
-  | ChoiceQuestion
-  | BooleanQuestion
-  | TextQuestion
-  | MatchingQuestion
-  | OrderingQuestion
-  | OpenQuestion;
+import type {
+  CognitiveLevel,
+  Question,
+  QuestionType,
+} from '@/features/questions/types';
 
 /* ---------------- Generate (request options, not wire response types) ----------------
    Every generation is scoped: `chapters` (ids) and/or `fileIds` narrow the
@@ -421,7 +363,7 @@ export interface GenerateScope {
   chapters: string[]; // chapter ids
   count: number;
   fileIds: string[]; // file ids
-  levels: CognitiveLevel[];
+  levels?: CognitiveLevel[];
   title: string;
 }
 export interface GenerateFlashcardsOptions extends GenerateScope {
@@ -430,7 +372,6 @@ export interface GenerateFlashcardsOptions extends GenerateScope {
 }
 export interface GenerateQuizOptions extends GenerateScope {
   kind: 'quiz';
-  timeLimitMin?: number;
   types: QuestionType[];
 }
 export type DiagramType =

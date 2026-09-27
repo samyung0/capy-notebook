@@ -68,7 +68,7 @@ function Toast(props: ToastProps) {
       </ContentSwap>
       {button && (
         <Button
-          className="wrap-anywhere -mt-1.25 h-auto min-h-7.5 max-w-[130px] shrink-0 whitespace-normal px-2 py-1.5 text-left font-bold leading-4.5 max-[420px]:max-w-[94px] max-[420px]:px-1.5 md:mx-2"
+          className="wrap-anywhere -mt-1.25 h-auto min-h-7.5 max-w-[94px] shrink-0 whitespace-normal px-1.5 py-1.5 text-left font-bold leading-4.5 sm:max-w-[130px] sm:px-2 md:mx-2"
           onClick={() => {
             button.onClick();
             sonnerToast.dismiss(id);

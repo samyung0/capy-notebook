@@ -19,7 +19,7 @@ func TestSuspendedUserCannotWriteAttemptHistory(t *testing.T) {
 	if err := s.AddMistakes(ctx, userID, wrong); err == nil {
 		t.Fatal("suspended user added a mistake")
 	}
-	if err := s.ClearMistakesExcept(ctx, userID, []string{"q_1"}); err == nil {
+	if err := s.ClearReviewedMistakes(ctx, userID, []string{"q_1"}, nil); err == nil {
 		t.Fatal("suspended user cleared mistakes")
 	}
 	if _, err := s.CreateAttempt(

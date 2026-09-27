@@ -345,7 +345,7 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 	}
 	mt, err := a.s.CreateEmbeddedMaterial(ctx, userID(ctx), in.ID, store.EmbeddedDraft{
 		Kind: in.Body.Kind, Questions: apimodel.EncodeQuestions(in.Body.Questions),
-		TimeLimitMin: in.Body.TimeLimitMin, Cards: cards,
+		Cards: cards,
 	})
 	if err != nil {
 		return nil, hErr(err)

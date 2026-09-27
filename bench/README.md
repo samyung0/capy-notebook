@@ -56,6 +56,12 @@ math step checking, final-answer and unit equivalence, algebraic form, and per-r
 grading across subjects (essays plus the English seeds) and routing of
 computational questions, findings in
 [2026-09-19-typesafe-jev-judge.md](grading/reports/2026-09-19-typesafe-jev-judge.md).
+The [Laya CPU comparison](grading/reports/2026-09-27-laya-cpu.md) replays those
+archived requests on the ingest VM with `grading/scripts/laya_cpu.py`, measuring
+marking-point agreement, latency, memory and input truncation.
+The [Alibaba decision-model comparison](grading/reports/2026-09-27-alibaba-decision.md)
+uses the same requests through the hosted System One API, with separate
+format controls and server/client latency records.
 
 ### rag
 

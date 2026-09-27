@@ -322,7 +322,7 @@ func TestWorkspaceDeleteTakesCloneFenceBeforeAccountLock(t *testing.T) {
 func TestUninitializedContentCommandBootstrapsThroughCollaboration(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	current, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","type":"boolean","level":"recall","prompt":"Before","correct":true}]`), nil)
+	current, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Before"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,7 +347,7 @@ func TestUninitializedContentCommandBootstrapsThroughCollaboration(t *testing.T)
 	s.ConfigureCollaboration(sidecar.URL, "command-secret")
 
 	handled, err := s.applyAuthoritativeContentCommand(
-		ctx, material.ID, "u_owner", current, desired,
+		ctx, material.ID, "u_owner", current, desired, nil,
 	)
 	if err != nil {
 		t.Fatal(err)

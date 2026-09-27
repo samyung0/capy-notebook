@@ -65,7 +65,7 @@ menu uses DropdownMenu with its separate morph styling.
 
 The workspace tag picker uses the shared Popover anchored to its input container.
 Focus stays in the combobox input while its listbox handles pointer selection;
-Radix owns positioning, outside dismissal and exit lifetime.
+Radix owns positioning, outside dismissal and exit lifetime. Inside a dialog, the tag list portals into the dialog content so its scroll lock permits wheel and touch scrolling. The Files panel floating Add menu remains a modal DropdownMenu, consuming outside clicks without opening underlying files.
 
 The workspace creation form stays mounted to preserve dismissal motion. It resets
 on a closed-to-open transition, independently of autofocus; failed submissions

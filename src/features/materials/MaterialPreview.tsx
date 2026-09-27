@@ -71,7 +71,7 @@ export function MaterialPreview({
       <MaterialRenderProvider value={renderContext}>
         <PlateStatic
           className={cn(
-            'note-editor mx-auto min-h-75 w-full max-w-3xl px-10 pt-4 pb-36 text-base outline-none max-sm:px-5',
+            'note-editor mx-auto min-h-75 w-full max-w-3xl px-5 pt-4 pb-36 text-base outline-none sm:px-10',
             className
           )}
           editor={editor}

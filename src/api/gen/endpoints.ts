@@ -11,6 +11,11 @@ import type {
   AgentOperation,
   Attempt,
   AttemptDetail,
+  BankAssetOutputBody,
+  BankCommentInputBody,
+  BankListBody,
+  BankReviewInputBody,
+  BankSaveInputBody,
   BillingCheckoutReq,
   BillingInfo,
   BootstrapSourceDocumentParams,
@@ -36,10 +41,12 @@ import type {
   CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
+  DeleteCardParams,
   DeleteFileParams,
   DeleteMaterialParams,
   DeleteQuizParams,
   DeletionPreflight,
+  Detail,
   Discussion,
   ErrorModel,
   Event,
@@ -112,6 +119,7 @@ import type {
   SourceSession,
   SourceUploadPolicy,
   SourceUploadReservation,
+  Syllabus,
   Tag,
   Task,
   TransferWorkspaceReq,
@@ -126,6 +134,7 @@ import type {
   UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
+  UpdateFlashcardContentReq,
   UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
@@ -137,6 +146,7 @@ import type {
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
+  UploadBankAssetBody,
   UploadSourceBody,
   UpsertLLMCredentialReq,
   UsageReport,
@@ -378,6 +388,363 @@ export const getAttempt = async (id: string, options?: RequestInit): Promise<get
 
   const data: getAttemptResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getAttemptResponse
+}
+
+
+
+export type uploadBankAssetResponse201 = {
+  data: BankAssetOutputBody
+  status: 201
+}
+
+export type uploadBankAssetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type uploadBankAssetResponseSuccess = (uploadBankAssetResponse201) & {
+  headers: Headers;
+};
+export type uploadBankAssetResponseError = (uploadBankAssetResponseDefault) & {
+  headers: Headers;
+};
+
+export type uploadBankAssetResponse = (uploadBankAssetResponseSuccess | uploadBankAssetResponseError)
+
+export const getUploadBankAssetUrl = () => {
+
+
+
+
+  return `/api/bank/assets`
+}
+
+/**
+ * @summary Upload a public question figure
+ */
+export const uploadBankAsset = async (uploadBankAssetBody?: UploadBankAssetBody, options?: RequestInit): Promise<uploadBankAssetResponse> => {
+    const formData = new FormData();
+if(uploadBankAssetBody?.file !== undefined) {
+ formData.append(`file`, uploadBankAssetBody.file);
+ }
+
+  const res = await fetch(getUploadBankAssetUrl(),
+  {
+    ...options,
+    method: 'POST'
+    ,
+    body: formData
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: uploadBankAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as uploadBankAssetResponse
+}
+
+
+
+export type bankQuestionResponse200 = {
+  data: Detail
+  status: 200
+}
+
+export type bankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankQuestionResponseSuccess = (bankQuestionResponse200) & {
+  headers: Headers;
+};
+export type bankQuestionResponseError = (bankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankQuestionResponse = (bankQuestionResponseSuccess | bankQuestionResponseError)
+
+export const getBankQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/bank/questions/${id}`
+}
+
+/**
+ * @summary Read a bank question
+ */
+export const bankQuestion = async (id: string, options?: RequestInit): Promise<bankQuestionResponse> => {
+
+  const res = await fetch(getBankQuestionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankQuestionResponse
+}
+
+
+
+export type saveBankQuestionResponse200 = {
+  data: Detail
+  status: 200
+}
+
+export type saveBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type saveBankQuestionResponseSuccess = (saveBankQuestionResponse200) & {
+  headers: Headers;
+};
+export type saveBankQuestionResponseError = (saveBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type saveBankQuestionResponse = (saveBankQuestionResponseSuccess | saveBankQuestionResponseError)
+
+export const getSaveBankQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/bank/questions/${id}`
+}
+
+/**
+ * @summary Edit a bank question
+ */
+export const saveBankQuestion = async (id: string,
+    bankSaveInputBody: NonReadonly<BankSaveInputBody>, options?: RequestInit): Promise<saveBankQuestionResponse> => {
+
+  const res = await fetch(getSaveBankQuestionUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bankSaveInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: saveBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as saveBankQuestionResponse
+}
+
+
+
+export type commentBankQuestionResponse204 = {
+  data: void
+  status: 204
+}
+
+export type commentBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type commentBankQuestionResponseSuccess = (commentBankQuestionResponse204) & {
+  headers: Headers;
+};
+export type commentBankQuestionResponseError = (commentBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type commentBankQuestionResponse = (commentBankQuestionResponseSuccess | commentBankQuestionResponseError)
+
+export const getCommentBankQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/bank/questions/${id}/comments`
+}
+
+/**
+ * @summary Email a question comment
+ */
+export const commentBankQuestion = async (id: string,
+    bankCommentInputBody: NonReadonly<BankCommentInputBody>, options?: RequestInit): Promise<commentBankQuestionResponse> => {
+
+  const res = await fetch(getCommentBankQuestionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bankCommentInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: commentBankQuestionResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as commentBankQuestionResponse
+}
+
+
+
+export type reviewBankQuestionResponse200 = {
+  data: Detail
+  status: 200
+}
+
+export type reviewBankQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type reviewBankQuestionResponseSuccess = (reviewBankQuestionResponse200) & {
+  headers: Headers;
+};
+export type reviewBankQuestionResponseError = (reviewBankQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type reviewBankQuestionResponse = (reviewBankQuestionResponseSuccess | reviewBankQuestionResponseError)
+
+export const getReviewBankQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/bank/questions/${id}/review`
+}
+
+/**
+ * @summary Set the review marker
+ */
+export const reviewBankQuestion = async (id: string,
+    bankReviewInputBody: NonReadonly<BankReviewInputBody>, options?: RequestInit): Promise<reviewBankQuestionResponse> => {
+
+  const res = await fetch(getReviewBankQuestionUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(bankReviewInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: reviewBankQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reviewBankQuestionResponse
+}
+
+
+
+export type bankSyllabusResponse200 = {
+  data: Syllabus
+  status: 200
+}
+
+export type bankSyllabusResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankSyllabusResponseSuccess = (bankSyllabusResponse200) & {
+  headers: Headers;
+};
+export type bankSyllabusResponseError = (bankSyllabusResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankSyllabusResponse = (bankSyllabusResponseSuccess | bankSyllabusResponseError)
+
+export const getBankSyllabusUrl = () => {
+
+
+
+
+  return `/api/bank/syllabus`
+}
+
+/**
+ * @summary Read the exam syllabus
+ */
+export const bankSyllabus = async ( options?: RequestInit): Promise<bankSyllabusResponse> => {
+
+  const res = await fetch(getBankSyllabusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankSyllabusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankSyllabusResponse
+}
+
+
+
+export type bankQuestionsResponse200 = {
+  data: BankListBody
+  status: 200
+}
+
+export type bankQuestionsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type bankQuestionsResponseSuccess = (bankQuestionsResponse200) & {
+  headers: Headers;
+};
+export type bankQuestionsResponseError = (bankQuestionsResponseDefault) & {
+  headers: Headers;
+};
+
+export type bankQuestionsResponse = (bankQuestionsResponseSuccess | bankQuestionsResponseError)
+
+export const getBankQuestionsUrl = (topicId: string,) => {
+
+
+
+
+  return `/api/bank/topics/${topicId}/questions`
+}
+
+/**
+ * @summary List topic questions
+ */
+export const bankQuestions = async (topicId: string, options?: RequestInit): Promise<bankQuestionsResponse> => {
+
+  const res = await fetch(getBankQuestionsUrl(topicId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: bankQuestionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as bankQuestionsResponse
 }
 
 
@@ -2089,20 +2456,29 @@ export type deleteCardResponseError = (deleteCardResponseDefault) & {
 
 export type deleteCardResponse = (deleteCardResponseSuccess | deleteCardResponseError)
 
-export const getDeleteCardUrl = (id: string,) => {
+export const getDeleteCardUrl = (id: string,
+    params: DeleteCardParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/flashcards/cards/${id}`
+  return stringifiedParams.length > 0 ? `/api/flashcards/cards/${id}?${stringifiedParams}` : `/api/flashcards/cards/${id}`
 }
 
 /**
  * @summary Delete a card
  */
-export const deleteCard = async (id: string, options?: RequestInit): Promise<deleteCardResponse> => {
+export const deleteCard = async (id: string,
+    params: DeleteCardParams, options?: RequestInit): Promise<deleteCardResponse> => {
 
-  const res = await fetch(getDeleteCardUrl(id),
+  const res = await fetch(getDeleteCardUrl(id,params),
   {
     ...options,
     method: 'DELETE'
@@ -2419,6 +2795,57 @@ export const cloneFlashcardSet = async (id: string, options?: RequestInit): Prom
 
   const data: cloneFlashcardSetResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as cloneFlashcardSetResponse
+}
+
+
+
+export type updateFlashcardContentResponse200 = {
+  data: Flashcard[]
+  status: 200
+}
+
+export type updateFlashcardContentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateFlashcardContentResponseSuccess = (updateFlashcardContentResponse200) & {
+  headers: Headers;
+};
+export type updateFlashcardContentResponseError = (updateFlashcardContentResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateFlashcardContentResponse = (updateFlashcardContentResponseSuccess | updateFlashcardContentResponseError)
+
+export const getUpdateFlashcardContentUrl = (id: string,) => {
+
+
+
+
+  return `/api/flashcards/${id}/content`
+}
+
+/**
+ * @summary Update flashcard content
+ */
+export const updateFlashcardContent = async (id: string,
+    updateFlashcardContentReq: NonReadonly<UpdateFlashcardContentReq>, options?: RequestInit): Promise<updateFlashcardContentResponse> => {
+
+  const res = await fetch(getUpdateFlashcardContentUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateFlashcardContentReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateFlashcardContentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateFlashcardContentResponse
 }
 
 

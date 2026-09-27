@@ -67,7 +67,7 @@ export function WorkspaceFormDialog({
   const submit = handleSubmit(async (values) => {
     try {
       await onSubmit(values);
-      if (!embedded) setOpen(false);
+      setOpen(false);
     } catch {
       // Preserve the draft; the global mutation handler reports the failure.
     }

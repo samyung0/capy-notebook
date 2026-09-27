@@ -99,7 +99,7 @@ export function SearchDialog({
             {fetchStatus === 'paused' ? (
               <QueryPausedState />
             ) : isFetching ? (
-              <SkeletonList count={5} rowHeight={48} />
+              <SkeletonList className="px-1" count={5} rowHeight={48} />
             ) : query ? (
               results?.length ? (
                 results.map((r) => {

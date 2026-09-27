@@ -65,6 +65,7 @@ Mandatory to read when the task touches that domain. Prefer the listed file over
 | Manual setup outside this repo: DNS, Cloudflare rules (including Coolify tunnels), origin lockdown, B2 bucket/CORS/lifecycle, Sentry, PostHog, ingest host, operator grants | `[deployment-runbook.md](openwiki/deployment-runbook.md)`                                     |
 | What to verify after a UAT deploy: stack health, Clerk/Stripe webhooks, the per-developer dev hostname, quota and bucket sanity, error reporting                       | `[uat-activation-checklist.md](openwiki/uat-activation-checklist.md)`                          |
 | Editor Playwright budgets, the manual `Editor perf` workflow, snapshot compare vs last successful run                                                                 | `[editor-perf.md](openwiki/editor-perf.md)`                                                   |
+| Shared question format, bank editing/assets/roles, quiz grading, local question generation and publication                                                            | `[question-bank.md](openwiki/question-bank.md)`                                              |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                                          | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 | Repository-wide adversarial review, source/UAT workflows, gates, artifacts, Strix, and the `$review-repository` skill                                                  | `[review-automation.md](openwiki/review-automation.md)`                                       |
 
@@ -138,6 +139,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - Normally we should use useFieldArray for array values, e.g. in TagSelect. However sometimes we don't want to display individual error fields for each rendered element if they are too clustered, like in tagSelect, so we use standard control and dedup and format the error correctly before passing to InputError
 - Sometimes its ok to use arbitary values instead of canonical values for tailwind, e.g. w-[200px] instead of w-50, in order to prevent element size changing when switching themes.
 - DO NOT use template strings NOR variables just to hold classNames for tailwind, use `cn()` to inject conditional themes
+- DO NOT use chevron icon for navigational links icon, use navigationback and navigationForward
 
 ## Final Remarks
 

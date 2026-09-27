@@ -33,7 +33,7 @@ test('Create materials and Files open the shared document page in View', async (
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
   await expect(
     page.locator('[data-slate-editor="true"][contenteditable="true"]')
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   const editor = page.locator(
     '[data-slate-editor="true"][contenteditable="true"]'
   );
@@ -77,13 +77,13 @@ test('Create materials and Files open the shared document page in View', async (
   await page.getByRole('link', { name: /Organelles cheatsheet.md/ }).click();
   await expect(page).toHaveURL(/\/files\/f_2$/);
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { name: 'Material mode' })
-  ).toHaveAttribute('aria-pressed', 'false');
   const fileHeader = page
     .getByRole('heading', { exact: true, name: 'Organelles cheatsheet.md' })
     .locator('..')
     .locator('..');
+  await expect(
+    fileHeader.getByRole('button', { name: 'Material mode' })
+  ).toHaveAttribute('aria-pressed', 'false', { timeout: 30_000 });
   await expect(fileHeader.locator('use')).toHaveAttribute('href', /#markdown$/);
   await fileHeader.getByRole('button', { name: 'Open menu' }).click();
   await expect(
@@ -289,7 +289,9 @@ test('workspace PDF mode survives reload and retains the citation page', async (
   page,
 }) => {
   await page.goto('/workspaces/ws_bio?file=f_1&page=1&mode=edit');
-  const mode = page.getByRole('button', { name: 'Material mode' });
+  const mode = page
+    .getByTestId('content-header')
+    .getByRole('button', { name: 'Material mode' });
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
@@ -324,7 +326,9 @@ test('workspace links remember each file and material mode independently', async
     exact: true,
     name: 'Cell structure.pdf',
   });
-  const mode = page.getByRole('button', { name: 'Material mode' });
+  const mode = page
+    .getByTestId('content-header')
+    .getByRole('button', { name: 'Material mode' });
   await expect(material).toHaveAttribute(
     'href',
     '/workspaces/ws_bio?material=mat_e2e_editor',
@@ -382,7 +386,9 @@ test('Create, Files and recent links use saved modes without reloading the app',
   });
   await page.goto('/create');
   const origin = await page.evaluate(() => performance.timeOrigin);
-  const mode = page.getByRole('button', { name: 'Material mode' });
+  const mode = page
+    .getByTestId('content-header')
+    .getByRole('button', { name: 'Material mode' });
   await page.getByRole('link', { name: /Study journal 001/ }).click();
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,

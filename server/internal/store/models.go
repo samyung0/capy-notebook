@@ -128,6 +128,7 @@ type File struct {
 }
 
 type Quiz struct {
+	Revision       int64           `json:"revision"`
 	ID             string          `json:"id"`
 	UserID         string          `json:"-"`
 	Name           string          `json:"name"`
@@ -173,6 +174,7 @@ type AttemptDetail struct {
 }
 
 type FlashcardSet struct {
+	Revision      int64     `json:"revision"`
 	ID            string    `json:"id"`
 	Name          string    `json:"name"`
 	WorkspaceID   string    `json:"workspaceId"`
@@ -194,6 +196,7 @@ type FlashcardSet struct {
 // Srs is the FSRS scheduling state persisted as jsonb; the shape mirrors
 // SrsState in src/api/types.ts (the frontend owns the algorithm).
 type Flashcard struct {
+	Revision   int64    `json:"revision"`
 	ID         string   `json:"id"`
 	MaterialID string   `json:"materialId"`
 	Front      string   `json:"front"`

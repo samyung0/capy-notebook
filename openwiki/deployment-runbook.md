@@ -1343,7 +1343,8 @@ stays retained behind it. Nothing is pinned per environment.
    Read the passwords from the host's `.env`; they are never stored in the
    repository or in chat.
 5. Backups. `/etc/cron.d/capy-library-db` runs `library-db-backup.sh` at
-   03:15 UTC: a custom-format `pg_dump` into `/opt/capy-library-db/backups`,
+   03:15 Europe/Berlin (01:15 UTC during summer, 02:15 UTC during winter): a
+   custom-format `pg_dump` into `/opt/capy-library-db/backups`,
    kept seven days. The library is rebuildable from its PDFs and builder
    receipts, so local dumps are enough until it is not; add a B2 upload then.
 6. Sizing. The host has 15 GiB and the parser is capped at 6 GiB; the
@@ -1374,6 +1375,64 @@ stays retained behind it. Nothing is pinned per environment.
    means dropping the `library` database, running `schema` again and
    republishing every book. That costs one loader run and no model calls,
    because the builder's output is on the developer PC.
+
+#### Question bank database and backups
+
+The `bank` database shares `capy-library-db`; it has its own numbered
+`server/bankmigrations` ledger. The local publisher owns `capy_bank`, while
+production's API uses `capy_bank_editor`, restricted to updating question content
+and review columns. UAT and local API use only `capy_library_reader`. Keep bank
+schema and question-format changes readable by production before publishing new
+content. Never point the ordinary app migrator at `bank`.
+
+1. Run `deploy/bank-db.sql` as `capy_library` with `bank_password` and
+   `bank_editor_password` psql variables. It creates the database and roles.
+   Through the existing 15433 tunnel, set `BANK_OWNER_DATABASE_URL` in the
+   publisher's ignored `.env.local` and run `go run ./cmd/bank migrate` from
+   `server`. Re-run `bank-db.sql` after migration to apply the column grants.
+2. Set `BANK_DATABASE_URL` to the reader URL in each environment. Configure
+   `BANK_EDITOR_DATABASE_URL` only in production. Hand-grant editor accounts
+   in the production app database with `INSERT INTO bank_editors(user_id,note)
+   VALUES ('production-user-id','review scope');`. Delete the row to revoke.
+   Suspended, deleted and deletion-pending users cannot edit.
+   The existing `LIBRARY_DATABASE_URL` reader resolves source book/version
+   attribution for bank questions that have sources. Source-free pilot questions
+   do not open that connection; unresolved credits fail explicitly.
+3. Create two distinct bank B2 buckets. Public figures use content-hash names
+   and a Cloudflare hostname supplied as `BANK_ASSETS_URL`. Configure the
+   `BANK_PUBLIC_B2_ENDPOINT`, `REGION`, `BUCKET`, `KEY_ID`, and `APP_KEY` names
+   with the full `BANK_PUBLIC_B2_` prefix in production and the local publisher.
+   The API uploads on behalf of editors; credentials never reach browsers.
+   Private references, run records and dumps use a separate bucket and keys;
+   no private-bucket credentials belong in the API environment.
+
+   The September 2026 setup uses `capy-notebook-question-bank-public` and
+   `capy-notebook-question-bank-private` in `eu-central-003`, with S3 endpoint
+   `https://s3.eu-central-003.backblazeb2.com`. `BANK_ASSETS_URL` is
+   `https://bank-assets.capynotebook.com`. Its proxied CNAME targets
+   `f003.backblazeb2.com`. A Cloudflare URL Rewrite Rule matching only that
+   hostname rewrites the path with
+   `concat("/file/capy-notebook-question-bank-public", http.request.uri.path)`
+   and preserves the query. A Configuration Rule for the same hostname sets
+   origin SSL to Full (strict). Stored asset URLs use the hostname root plus
+   the content-hash filename. Verify a published object in a browser: HTTP 200,
+   the expected image content type, immutable cache headers and a Cloudflare
+   cache hit after warming.
+4. Production comments require `BANK_COMMENT_EMAIL` and the existing email
+   backend, sender identity and `APP_URL`. Sending is direct and user-retryable.
+5. Install the updated `library-db-backup.sh` only after the bank exists. Add
+   the `BANK_PRIVATE_B2_*` entries from `deploy/library-db.env.example` to the
+   host's mode-0600 `.env`. Use a bucket-scoped write-only backup key. The script
+   runs rclone in a container and writes `backups/bank-<UTC>.dump`. Apply a
+   **backups-prefix-only** lifecycle rule retaining 30 days; keep references
+   and run records. Verify one dump upload and restore it to a disposable
+   database with `pg_restore` before relying on the cron.
+
+Question deletion is an owner SQL operation. It removes the question row;
+shared public assets and private run records remain. Backups are the recovery
+path for production edits. Restore roles with `bank-db.sql`, then restore a
+selected dump as owner; restoring a dump replaces bank content with that
+snapshot and requires an operator maintenance window.
 
 ### 7.4 Parser egress and LibreOffice conversion
 

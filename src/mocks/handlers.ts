@@ -41,6 +41,10 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import {
+  exampleAnswers,
+  exampleQuestion,
+} from '@/features/questions/questionFixtures';
+import {
   modelRefValue,
   optionRef,
   sameModel,
@@ -51,6 +55,7 @@ import { mockChatStream } from './chatStream';
 import { sourceRoom, sourceRoomName, sourceRoomState } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
+import { questionBankHandlers } from './questionBank';
 import { scenarioSourceSession } from './scenarioFixtures';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
@@ -289,11 +294,8 @@ const materialCards = (material: Material) =>
         ) as FlashcardsElement
       );
 
-const quizDocument = (
-  questions: Question[],
-  timeLimitMin?: number,
-  id = uid('quiz')
-) => createMaterialDocument([quizNode({ questions, timeLimitMin }, id)]);
+const quizDocument = (questions: Question[], id = uid('quiz')) =>
+  createMaterialDocument([quizNode({ questions }, id)]);
 
 const flashcardsDocument = (
   cards: { id: string; front: string; back: string }[],
@@ -464,6 +466,7 @@ export function resetScenarioHandlerState(workspaceId: string) {
 }
 
 export const handlers = [
+  ...questionBankHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
       ? new HttpResponse(null, { status: 503 })
@@ -1715,7 +1718,6 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as {
       kind?: 'quiz' | 'flashcards';
       questions?: Question[];
-      timeLimitMin?: number;
       cards?: { front: string; back: string }[];
     };
     if (body.kind !== 'quiz' && body.kind !== 'flashcards') {
@@ -1728,7 +1730,6 @@ export const handlers = [
       body.kind === 'quiz'
         ? quizNode({
             questions: body.questions ?? [],
-            timeLimitMin: body.timeLimitMin,
           })
         : flashcardsNode(
             (body.cards ?? []).map((card) => ({ ...card, id: uid('c') }))
@@ -2210,7 +2211,7 @@ export const handlers = [
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    if (!opts.kind || !opts.count || opts.count < 1 || !opts.levels?.length) {
+    if (!opts.kind || !opts.count || opts.count < 1) {
       return HttpResponse.json(
         { message: 'kind, count, and levels are required' },
         { status: 400 }
@@ -2354,97 +2355,21 @@ export const handlers = [
 
     // quiz
     const qs: Question[] = Array.from({ length: opts.count }, (_, i) => {
-      const type = opts.types[i % opts.types.length] ?? 'mcq';
-      const level = opts.levels[i % opts.levels.length] ?? 'application';
-      const base = {
-        id: uid('q'),
-        level,
-        prompt: `Generated ${type} question ${i + 1}?`,
-      };
-      switch (type) {
-        case 'boolean':
-          return {
-            ...base,
-            correct: true,
-            explanation: 'This statement is true based on your sources.',
-            type: 'boolean',
-          } as Question;
-        case 'short':
-          return {
-            ...base,
-            accepted: [{ value: 'answer' }],
-            explanation:
-              'The accepted answer follows from the source material.',
-            type: 'short',
-          } as Question;
-        case 'open':
-          return {
-            ...base,
-            accepted: [{ value: 'A full-mark answer covers the key idea.' }],
-            explanation: 'Marked against the rubric, not a keyword match.',
-            hints: [{ value: 'Look at the source explanation.' }],
-            rubrics: [
-              { value: 'Names the key mechanism' },
-              { value: 'Links it to the outcome' },
-            ],
-            type: 'open',
-          } as Question;
-        case 'ordering':
-          return {
-            ...base,
-            items: [
-              { value: 'First' },
-              { value: 'Second' },
-              { value: 'Third' },
-            ],
-            type: 'ordering',
-          } as Question;
-        case 'matching':
-          return {
-            ...base,
-            pairs: [
-              { left: 'A', right: '1' },
-              { left: 'B', right: '2' },
-            ],
-            type: 'matching',
-          } as Question;
-        case 'multi':
-          return {
-            ...base,
-            correct: [0, 2],
-            options: [
-              {
-                explanation: 'Correct — supported by the material.',
-                value: 'A',
-              },
-              { explanation: 'Incorrect for this question.', value: 'B' },
-              { explanation: 'Correct — also supported.', value: 'C' },
-              { explanation: 'Incorrect for this question.', value: 'D' },
-            ],
-            type: 'multi',
-          } as Question;
-        default:
-          return {
-            ...base,
-            correct: [0],
-            options: [
-              {
-                explanation: 'Correct — this is the best answer.',
-                value: 'A',
-              },
-              { explanation: 'Incorrect — a common distractor.', value: 'B' },
-              { explanation: 'Incorrect for this question.', value: 'C' },
-              { explanation: 'Incorrect for this question.', value: 'D' },
-            ],
-            type: 'mcq',
-          } as Question;
-      }
+      const type = opts.types[i % opts.types.length];
+      const answer = structuredClone(
+        exampleAnswers.find((answer) => answer.type === type)!
+      );
+      const question = exampleQuestion(crypto.randomUUID(), answer);
+      question.parts[0].blocks = [
+        { text: `Generated ${type} question ${i + 1}?`, type: 'text' },
+      ];
+      return question;
     });
     const name = title;
     const quizMat = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
-      content: quizDocument(qs, opts.timeLimitMin),
+      content: quizDocument(qs),
       createdAt: new Date().toISOString(),
       id: uid('qz'),
       kind: 'quiz',
@@ -2469,7 +2394,7 @@ export const handlers = [
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
-      content: quizDocument(body.questions ?? [], body.timeLimitMin),
+      content: quizDocument(body.questions ?? []),
       createdAt: new Date().toISOString(),
       id: uid('qz'),
       kind: 'quiz',
@@ -2494,6 +2419,7 @@ export const handlers = [
       name: 'Review mistakes',
       privacy: 'private',
       questions: db.mistakes,
+      revision: 1,
       workspaceId: '',
       workspaceName: 'From your missed questions',
     };
@@ -2510,6 +2436,7 @@ export const handlers = [
         name: 'Review mistakes',
         privacy: 'private',
         questions: db.mistakes,
+        revision: 1,
         workspaceId: '',
         workspaceName: 'From your missed questions',
       } satisfies Quiz);
@@ -2526,11 +2453,15 @@ export const handlers = [
       (x) => x.id === params.id && x.kind === 'quiz'
     );
     if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<Quiz>;
+    const body = (await request.json()) as Partial<Quiz> & {
+      expectedRevision: number;
+    };
+    if (body.expectedRevision !== mt.revision)
+      return new HttpResponse(null, { status: 409 });
     const cur = db.quizFromMaterial(mt);
     const questions = body.questions ?? cur.questions;
-    const timeLimitMin = body.timeLimitMin ?? cur.timeLimitMin;
-    mt.content = quizDocument(questions, timeLimitMin, mt.id);
+    mt.content = quizDocument(questions, mt.id);
+    mt.revision += 1;
     db.refreshMaterialContentBytes(mt);
     return HttpResponse.json(db.quizFromMaterial(mt));
   }),
@@ -2571,7 +2502,7 @@ export const handlers = [
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
-      content: quizDocument(source.questions, source.timeLimitMin),
+      content: quizDocument(source.questions),
       createdAt: new Date().toISOString(),
       id: uid('qz'),
       isOwner: true,
@@ -2615,7 +2546,7 @@ export const handlers = [
     );
     const quiz = quizMt ? db.quizFromMaterial(quizMt) : undefined;
     // Fold any missed questions into the review-mistakes pool (deduped by id).
-    if (body.wrong?.length) {
+    if (body.wrong?.length && params.id !== 'review_mistakes') {
       for (const q of body.wrong) {
         const i = db.mistakes.findIndex((m) => m.id === q.id);
         if (i >= 0) db.mistakes[i] = q;
@@ -2625,8 +2556,13 @@ export const handlers = [
     // Correctly answered review-mistakes questions leave the pool.
     if (params.id === 'review_mistakes') {
       const wrongIds = new Set((body.wrong ?? []).map((q) => q.id));
+      const attemptedIds = new Set((body.questions ?? []).map((q) => q.id));
       for (let i = db.mistakes.length - 1; i >= 0; i--) {
-        if (!wrongIds.has(db.mistakes[i].id)) db.mistakes.splice(i, 1);
+        if (
+          attemptedIds.has(db.mistakes[i].id) &&
+          !wrongIds.has(db.mistakes[i].id)
+        )
+          db.mistakes.splice(i, 1);
       }
     }
     const at = {
@@ -2679,6 +2615,44 @@ export const handlers = [
     return mt
       ? HttpResponse.json(db.flashcardSetFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
+  }),
+  http.patch('/api/flashcards/:id/content', async ({ params, request }) => {
+    const mt = db.materials.find(
+      (item) => item.id === params.id && item.kind === 'flashcards'
+    );
+    if (!mt) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as {
+      expectedRevision: number;
+      cards: { id?: string; front: string; back: string }[];
+    };
+    if (body.expectedRevision !== mt.revision)
+      return new HttpResponse(null, { status: 409 });
+    const current = materialCards(mt);
+    if (
+      body.cards.some(
+        (card) =>
+          card.id && !current.some((existing) => existing.id === card.id)
+      )
+    )
+      return new HttpResponse(null, { status: 409 });
+    const cards = body.cards.map((card) => ({
+      ...card,
+      id: card.id || uid('c'),
+    }));
+    mt.content = flashcardsDocument(cards, mt.id);
+    mt.revision += 1;
+    db.refreshMaterialContentBytes(mt);
+    for (const card of current)
+      if (!cards.some((next) => next.id === card.id))
+        delete db.cardStats[card.id];
+    for (const card of cards)
+      if (!db.cardStats[card.id])
+        db.cardStats[card.id] = {
+          known: false,
+          materialId: mt.id,
+          srs: newSrsState(),
+        };
+    return HttpResponse.json(db.cardsFromMaterial(mt));
   }),
   http.patch('/api/flashcards/:id/metadata', async ({ params, request }) => {
     const material = db.materials.find(
@@ -2756,11 +2730,18 @@ export const handlers = [
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
     if (!mt) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as { front: string; back: string };
+    const body = (await request.json()) as {
+      front: string;
+      back: string;
+      expectedRevision: number;
+    };
+    if (body.expectedRevision !== mt.revision)
+      return new HttpResponse(null, { status: 409 });
     const id = uid('c');
     const cards = materialCards(mt);
     cards.push({ back: body.back ?? '', front: body.front ?? '', id });
     mt.content = flashcardsDocument(cards, mt.id);
+    mt.revision += 1;
     db.refreshMaterialContentBytes(mt);
     db.cardStats[id] = { known: false, materialId: mt.id, srs: newSrsState() };
     return HttpResponse.json(
@@ -2779,7 +2760,9 @@ export const handlers = [
       if (!mt) return new HttpResponse(null, { status: 404 });
       const body = (await request.json()) as Partial<
         Pick<Flashcard, 'front' | 'back'>
-      >;
+      > & { expectedRevision: number };
+      if (body.expectedRevision !== mt.revision)
+        return new HttpResponse(null, { status: 409 });
       if (body.front !== undefined || body.back !== undefined) {
         const cards = materialCards(mt);
         const card = cards.find((c) => c.id === params.id);
@@ -2787,6 +2770,7 @@ export const handlers = [
           if (body.front !== undefined) card.front = body.front;
           if (body.back !== undefined) card.back = body.back;
           mt.content = flashcardsDocument(cards, mt.id);
+          mt.revision += 1;
           db.refreshMaterialContentBytes(mt);
         }
       }
@@ -2820,15 +2804,21 @@ export const handlers = [
         : new HttpResponse(null, { status: 404 });
     }
   ),
-  http.delete('/api/flashcards/cards/:id', async ({ params }) => {
+  http.delete('/api/flashcards/cards/:id', async ({ params, request }) => {
     const stat = db.cardStats[String(params.id)];
     if (!stat) return new HttpResponse(null, { status: 404 });
     const mt = db.materials.find(
       (x) => x.id === stat.materialId && x.kind === 'flashcards'
     );
     if (!mt) return new HttpResponse(null, { status: 404 });
+    if (
+      Number(new URL(request.url).searchParams.get('expectedRevision')) !==
+      mt.revision
+    )
+      return new HttpResponse(null, { status: 409 });
     const kept = materialCards(mt).filter((c) => c.id !== params.id);
     mt.content = flashcardsDocument(kept, mt.id);
+    mt.revision += 1;
     db.refreshMaterialContentBytes(mt);
     delete db.cardStats[String(params.id)];
     return new HttpResponse(null, { status: 204 });

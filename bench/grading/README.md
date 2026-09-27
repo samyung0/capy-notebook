@@ -34,9 +34,82 @@ show subject/language results, and report how much of the planned set ran.
 No hosted judge API is required. An AI-reviewed comparison does not establish
 human grading accuracy or performance on weaker student devices.
 
+## Laya CPU replay against Jev
+
+[`scripts/laya_cpu.py`](scripts/laya_cpu.py) reconstructs requests from the
+archived `data/grading-benchmark/runs/typesafe-*.jsonl` responses and the original
+math fixture. It reuses `typesafe_math.py`'s questions unchanged. This compares
+decision models using one boolean probability per marking point, rather than
+the generative app prompt. The six archived files are required and are not
+included in a clean clone.
+
+```sh
+python bench/grading/scripts/laya_cpu.py prepare --baseline data/grading-benchmark/runs --output data/grading-benchmark/laya-20260927/requests.jsonl
+python -m unittest discover -s bench/grading/scripts -p test_laya_cpu.py
+```
+
+The `download` command takes an explicit Hugging Face revision and records file
+sizes and SHA-256 hashes. `run` requires explicit checkpoint, revision label,
+CPU thread count and precision. Use one fresh Linux process and output file
+per configuration. It records model load and first-inference time separately,
+per-request wall and CPU time, truncated input counts, RSS and cgroup memory
+peaks. Failed requests remain failures. `--pilot` selects all 96 essays and
+the first two seed question families per domain, without splitting their answer
+variants. `report --dataset <requests.jsonl> <run.jsonl>` scores the saved results
+without loading a model. Threshold sweeps describe these fixtures; they are
+not held-out calibration results. `--opaque-labels` is a separate prompt
+experiment that changes only the model-facing `noul` labels to false=B,
+true=A; the manifest records it. See the
+[ingest VM evaluation](reports/2026-09-27-laya-cpu.md) for pinned versions,
+coverage, accuracy and resource measurements.
+
+[`scripts/alibaba_decision.py`](scripts/alibaba_decision.py) reuses the prepared
+requests and scorer for Alibaba's hosted `decision-model-preview`. It takes
+explicit environment-file variable names, uses one persistent HTTPS connection
+per worker, and makes no retries. Keys are kept out of saved requests and logs.
+For the September 27 account, `ALIBABA_BEIJING_URL` actually names a Singapore
+workspace; the configured URL determines the region. The
+[Alibaba report](reports/2026-09-27-alibaba-decision.md) records the tested
+request format, control cases, coverage and results.
+
+```sh
+python bench/grading/scripts/alibaba_decision.py --dataset data/grading-benchmark/laya-20260927/requests.jsonl --output data/grading-benchmark/alibaba-reproduction/pilot.jsonl --env .env.local --key-var ALIBABA_BEIJING_KEY --url-var ALIBABA_BEIJING_URL --parallel 8 --suite rubric --pilot
+```
+
 ## Reproduce a run
 
-Python uses only the standard library for the runners. Install wllama 3.6.0
+The bounded Jev context comparison in
+[`scripts/jev_context.py`](scripts/jev_context.py) runs the 96 saved essay
+answers twice, preserving marking definitions and removing only the question
+field in the second arm. It uses a fresh output directory, at most four
+workers, 60-second request timeouts and no retries. Credentials come from
+stdin or `TYPESAFE_API_KEY` and are excluded from artifacts. The input is the
+prepared Laya replay dataset above. See the
+[question-bank input report](reports/2026-09-27-jev-question-bank.md).
+
+```powershell
+python bench/grading/scripts/jev_context.py --check
+python bench/grading/scripts/jev_context.py --key-stdin --output data/grading-benchmark/jev-context-reproduction
+```
+
+[`scripts/jev_partial_credit.py`](scripts/jev_partial_credit.py) compares direct
+0/0.5/1 choices with Boolean-probability bands on 72 synthetic answers, with
+and without question context. Each mode runs 144 requests, asking both outputs
+together. `explicit` supplies per-item grade criteria; `plain` sends only the
+marking-item string with generic grading rules. Gold labels remain offline;
+missing evidence has unknown gold and is excluded from accuracy. The first
+request validates authentication/schema before the rest run. See the
+[partial-credit report](reports/2026-09-27-jev-partial-credit.md) for results,
+limitations and the fixed-unit policy, which keeps unit conversion out of Jev.
+
+```powershell
+python bench/grading/scripts/jev_partial_credit.py --check
+python bench/grading/scripts/jev_partial_credit.py --scheme-mode plain --dry-run
+python bench/grading/scripts/jev_partial_credit.py --scheme-mode plain --key-stdin --output data/grading-benchmark/jev-partial-credit-reproduction
+```
+
+The generative model runners use only the Python standard library. The Laya
+replay above uses its separately installed SDK. Install wllama 3.6.0
 in `data/grading-benchmark/browser-runtime` for the browser page. Downloaded
 model files and the llama.cpp b10809 Windows CUDA runtime must occupy the
 paths in `benchmark.py`. `prepare.py` downloads pinned Hugging Face files or

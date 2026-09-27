@@ -1,86 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import type { ChoiceQuestion, Question } from '@/api/types';
 import { parseQuizFenceBody } from '@/features/materials/blocks';
+import {
+  createMaterialDocument,
+  quizElementToBlock,
+  quizNode,
+} from '@/features/materials/document';
 import { quizFenceBody } from '@/features/notes/blocks/shared';
+import { exampleQuestions } from '@/features/questions/questionFixtures';
 import { createBlankQuestion, isCompleteQuestion } from './QuizForm';
 
-const questions: Question[] = [
-  {
-    correct: [0],
-    id: 'mcq',
-    level: 'recall',
-    options: [
-      { explanation: 'Because it is.', value: 'Correct' },
-      { explanation: 'Because it is not.', value: 'Wrong' },
-    ],
-    prompt: 'Pick one',
-    type: 'mcq',
-  },
-  {
-    correct: [0, 1],
-    id: 'multi',
-    level: 'application',
-    options: [{ value: 'First' }, { value: 'Second' }],
-    prompt: 'Pick several',
-    type: 'multi',
-  },
-  {
-    correct: false,
-    id: 'boolean',
-    level: 'recall',
-    prompt: 'True or false?',
-    type: 'boolean',
-  },
-  {
-    accepted: [{ value: 'Accepted' }],
-    id: 'short',
-    level: 'application',
-    prompt: 'Fill this',
-    type: 'short',
-  },
-  {
-    id: 'ordering',
-    items: [{ value: 'First' }, { value: 'Second' }],
-    level: 'application',
-    prompt: 'Order these',
-    type: 'ordering',
-  },
-  {
-    id: 'matching',
-    level: 'analysis',
-    pairs: [
-      { left: 'A', right: 'One' },
-      { left: 'B', right: 'Two' },
-    ],
-    prompt: 'Match these',
-    type: 'matching',
-  },
-  {
-    accepted: [{ value: 'Cristae increase surface area.' }],
-    hints: [{ value: 'ATP' }],
-    id: 'open',
-    level: 'application',
-    prompt: 'Why folded?',
-    rubrics: [{ value: 'Mentions folds' }],
-    type: 'open',
-  },
-];
-
-describe('QuizForm question helpers', () => {
-  it('validates complete questions for every supported type', () => {
-    const incompleteChoice = structuredClone(questions[0]) as ChoiceQuestion;
-    incompleteChoice.correct = [];
-
-    expect(questions.every(isCompleteQuestion)).toBe(true);
-    expect(isCompleteQuestion(createBlankQuestion('mcq'))).toBe(false);
-    expect(isCompleteQuestion(incompleteChoice)).toBe(false);
-  });
-
-  it('round-trips every question type without losing typed fields', () => {
-    const parsed = parseQuizFenceBody(
-      quizFenceBody({ questions, timeLimitMin: 20 })
-    );
-
-    expect(parsed).toEqual({ questions, timeLimitMin: 20 });
+describe('shared question editing', () => {
+  it('round-trips every answer through both document and markdown boundaries', () => {
+    expect(exampleQuestions.every(isCompleteQuestion)).toBe(true);
+    expect(isCompleteQuestion(createBlankQuestion())).toBe(false);
+    const node = quizNode({ questions: exampleQuestions }, 'quiz');
+    createMaterialDocument([node]);
+    expect(quizElementToBlock(node).questions).toEqual(exampleQuestions);
+    expect(
+      parseQuizFenceBody(quizFenceBody({ questions: exampleQuestions }))
+    ).toEqual({ questions: exampleQuestions });
+    expect(parseQuizFenceBody('questions: []')).toEqual({ questions: [] });
+    expect(() =>
+      parseQuizFenceBody('questions: [{id: old, prompt: Old, type: short}]')
+    ).toThrow();
   });
 });

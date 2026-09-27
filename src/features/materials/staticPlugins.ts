@@ -66,11 +66,10 @@ const listTargets = [...KEYS.heading, KEYS.p, KEYS.blockquote, KEYS.img];
 
 /** Persisted custom study-block node types (quiz / flashcards / mermaid trees). */
 const CUSTOM_BLOCK_TYPES = [
+  'chart',
+  'graph',
   'quiz',
   'quiz_question',
-  'quiz_prompt',
-  'quiz_option',
-  'quiz_explanation',
   'flashcards',
   'flashcard',
   'flashcard_front',
@@ -81,7 +80,15 @@ const CUSTOM_BLOCK_TYPES = [
 
 const staticCustomBlockPlugins = [
   ...CUSTOM_BLOCK_TYPES.map((type) =>
-    createSlatePlugin({ key: type, node: { isElement: true, type } })
+    createSlatePlugin({
+      key: type,
+      node: {
+        isElement: true,
+        isVoid:
+          type === 'quiz_question' || type === 'chart' || type === 'graph',
+        type,
+      },
+    })
   ),
   createSlatePlugin({
     key: 'material_ref',

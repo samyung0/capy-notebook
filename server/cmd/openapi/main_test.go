@@ -13,6 +13,7 @@ func TestGeneratedFieldLimitsAreCurrent(t *testing.T) {
 		want []byte
 	}{
 		{"src/api/limits.generated.ts", renderTypeScriptLimits()},
+		{"collaboration/src/questionLimits.generated.ts", renderQuestionTypeScriptLimits()},
 		{"pipeline/pipeline/generated/limits.py", renderPythonLimits()},
 	} {
 		t.Run(tc.path, func(t *testing.T) {

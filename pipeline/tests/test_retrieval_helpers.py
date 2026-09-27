@@ -1061,32 +1061,41 @@ def test_require_helpers_reject_empty_model_output():
             raise AssertionError(f"{fn.__name__}{args} should have failed")
 
 
-def test_normalize_questions_fills_ids_and_drops_legacy_difficulty():
-    questions = workflows.normalize_questions(
-        [
-            {"type": "mcq", "prompt": "?", "options": ["a", "b"], "difficulty": "easy"},
-            {"id": "q_keep", "type": "short", "prompt": "?"},
-            {
-                "type": "open",
-                "prompt": "Explain",
-                "accepted": ["cristae"],
-                "hints": ["ATP"],
-                "rubrics": ["Mentions folds"],
-            },
-        ],
-    )
+def test_normalize_questions_canonical_ids_and_optional_level():
+    from uuid import UUID
 
-    assert questions[0]["level"] == "application" and "difficulty" not in questions[0]
-    assert questions[0]["options"][0] == {"value": "a", "explanation": ""}
-    assert questions[0]["id"].startswith("q_")
-    assert questions[1]["id"] == "q_keep" and questions[1]["level"] == "application"
-    assert questions[2]["accepted"] == [{"value": "cristae"}]
-    assert questions[2]["hints"] == [{"value": "ATP"}]
-    assert questions[2]["rubrics"] == [{"value": "Mentions folds"}]
+    from pipeline.prompts.generate import quiz_instruction
+
+    source = [
+        {
+            "stem": [],
+            "parts": [
+                {
+                    "blocks": [{"type": "text", "text": "Explain"}],
+                    "answer": {"type": "open", "accepted": ["Because"], "hints": []},
+                    "markscheme": ["States the cause"],
+                    "solution": [],
+                }
+            ],
+            "layout": "paper",
+            "labels": "letters",
+        }
+    ]
+    questions = workflows.normalize_questions(source)
+    assert UUID(questions[0]["id"]).version == 4
+    assert UUID(questions[0]["parts"][0]["id"]).version == 4
+    assert "id" not in source[0] and "level" not in questions[0]
+    assert questions[0]["parts"][0]["answer"]["accepted"] == ["Because"]
+    assert 'Omit the optional "level"' in quiz_instruction(count=1, types=["open"])
+    assert "NON-COMPUTATIONAL" in quiz_instruction(count=1, types=["open"])
 
 
-def test_normalize_questions_skips_non_objects():
-    assert workflows.normalize_questions(["nope", None]) == []
+def test_normalize_questions_rejects_legacy_or_partial_output():
+    import pytest
+
+    for data in ([{"type": "short", "prompt": "?"}], ["nope", None], []):
+        with pytest.raises(workflows.GenerateEmpty):
+            workflows.normalize_questions(data)
 
 
 def test_scope_label_names_both_axes():
@@ -1126,6 +1135,10 @@ async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
         detail="standard",
         diagramType="auto",
     )
+    without_levels = service.GenerateReq.model_validate(
+        req.model_dump(exclude={"levels"})
+    )
+    assert service._cognitive_levels(without_levels) == []
 
     async def _gather(**_kwargs):
         return "", []

@@ -388,6 +388,7 @@ func FromPublicWorkspaces(ws []store.PublicWorkspace) []PublicWorkspace {
 // Quiz is the response contract. Questions stay opaque (the frontend owns the
 // polymorphic Question union) so we surface them as a free-form array.
 type Quiz struct {
+	Revision      int64            `json:"revision"`
 	ID            string           `json:"id"`
 	Name          string           `json:"name"`
 	WorkspaceID   string           `json:"workspaceId"`
@@ -396,7 +397,6 @@ type Quiz struct {
 	Questions     []map[string]any `json:"questions" nullable:"false"`
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
-	TimeLimitMin  *int             `json:"timeLimitMin,omitempty"`
 	// Provenance credits the library books the quiz was written from.
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped. Explicit workspace editors can
@@ -407,9 +407,10 @@ type Quiz struct {
 
 func FromQuiz(q store.Quiz) Quiz {
 	out := Quiz{
-		ID: q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
+		Revision: q.Revision,
+		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, TimeLimitMin: q.TimeLimitMin, Provenance: q.Provenance,
+		Privacy: q.Privacy, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit,
 	}
 	if out.Chapters == nil {

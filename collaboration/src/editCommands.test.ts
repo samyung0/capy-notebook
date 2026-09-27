@@ -36,6 +36,68 @@ const paragraph = (id: string, text: string) => ({
 });
 
 describe('material edit commands', () => {
+  it('inspects and replaces a void question without losing its guarded Undo', () => {
+    const question = {
+      id: 'q1',
+      labels: 'letters',
+      layout: 'paper',
+      parts: [
+        {
+          answer: { correct: true, type: 'boolean' },
+          blocks: [{ text: 'True?', type: 'text' }],
+          id: 'p1',
+          markscheme: ['Correct'],
+          solution: [],
+        },
+      ],
+      stem: [{ text: 'Shared context', type: 'text' }],
+    };
+    const node = {
+      children: [{ text: '' }],
+      id: 'q1',
+      question,
+      type: 'quiz_question',
+    };
+    const document = material([
+      { children: [node], id: 'quiz1', type: 'quiz' },
+    ]);
+    expect(
+      JSON.parse(inspectMaterial(document)[0].children?.[0].text ?? '{}')
+    ).toEqual(question);
+    const replacement = {
+      ...node,
+      question: {
+        ...question,
+        stem: [{ text: 'Changed context', type: 'text' }],
+      },
+    };
+    const result = applyMaterialCommands(document, [
+      {
+        node: replacement,
+        nodeId: 'q1',
+        parentType: 'quiz',
+        type: 'replace_child',
+      },
+    ]);
+    verifyMaterialGuards(document, result.guards);
+    applyMaterialCommands(document, result.inverse);
+    expect(
+      JSON.parse(inspectMaterial(document)[0].children?.[0].text ?? '{}')
+    ).toEqual(question);
+    const chart = {
+      kind: 'line',
+      labels: ['A'],
+      series: [{ name: 'S', values: [1] }],
+      title: 'Trend',
+      type: 'chart',
+    };
+    const notes = material([
+      { block: chart, children: [{ text: '' }], id: 'chart1', type: 'chart' },
+    ]);
+    expect(
+      JSON.parse(inspectMaterial(notes)[0].properties?.block ?? '{}')
+    ).toEqual(chart);
+  });
   it('replaces text, records the inverse and undoes through it', () => {
     const document = material([
       paragraph('b1', 'alpha beta'),

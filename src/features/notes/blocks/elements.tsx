@@ -7,31 +7,24 @@ import {
   useVirtualFloating,
 } from '@platejs/floating';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useRouter } from '@tanstack/react-router';
+import { NodeApi } from 'platejs';
 import {
   PlateElement,
   type PlateElementProps,
   useEditorRef,
   useEditorSelector,
   useReadOnly,
+  useSelected,
 } from 'platejs/react';
-import { useEffect, useRef, useState } from 'react';
-import {
-  cardsQuery,
-  quizQuery,
-  useCreateCard,
-  useDeleteCard,
-  useUpdateCard,
-  useUpdateQuizContent,
-} from '@/api/hooks';
-import type { Flashcard } from '@/api/types';
-import { Button } from '@/components/ui/Button';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { materialQuery, useUpdateFlashcardContent } from '@/api/hooks';
+import { showErrorToast } from '@/api/queryClient';
+import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
+import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
-import {
-  type FlashcardContent,
-  parseFlashcardsFenceBody,
-  parseQuizFenceBody,
-} from '@/features/materials/blocks';
+import { parseFlashcardsFenceBody } from '@/features/materials/blocks';
 import {
   type FlashcardElement as FlashcardNode,
   type FlashcardsElement as FlashcardsNode,
@@ -42,44 +35,33 @@ import {
   type MaterialRefElement as MaterialRefNode,
   type MermaidElement as MermaidNode,
   normalizeMaterialValue,
-  type QuizElement as QuizNode,
-  type QuizOptionElement as QuizOptionNode,
   type QuizQuestionElement as QuizQuestionNode,
-  quizElementToBlock,
-  quizNodeFromFence,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
 import { MaterialRefCard } from '@/features/materials/MaterialRefCard';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
 import { Mermaid } from '@/features/materials/Mermaid';
-import { mermaidBlockLabel } from '@/features/materials/MermaidBlockLabel';
 import { EditorIcon } from '@/features/notes/EditorIcon';
-import { answerKey } from '@/features/quizzes/grade';
 import {
-  QuestionRunner,
-  QuizOptionView,
-  QuizQuestionHeader,
-} from '@/features/quizzes/QuestionRunner';
-import {
-  type QuizOptionRole,
-  quizOptionClassName,
-} from '@/features/quizzes/quizOptionStyles';
+  QuestionBlockView,
+  QuestionView,
+} from '@/features/questions/QuestionView';
+import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { uid } from '@/lib/id';
 import {
-  BLOCK_SHELL_CLASS,
   FLASHCARD_BACK_CLASS,
   FLASHCARD_CLASS,
   FLASHCARD_FRONT_CLASS,
   MERMAID_CAPTION_CLASS,
-  QUIZ_EXPLANATION_CLASS,
-  QUIZ_REVIEW_PROMPT_CLASS,
   QUIZ_REVIEW_QUESTION_CLASS,
   STUDY_BLOCK_LIST_CLASS,
 } from '../nodeStyles';
+import { ToolbarButton } from '../toolbar/ToolbarButton';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
-import { flashcardsFenceBody, quizFenceBody } from './shared';
+import { flashcardsFenceBody } from './shared';
+import type { NoteVisualBlock } from './VisualBlockDialog';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
@@ -338,96 +320,25 @@ function findCurrentStudyItem(
   return [node as MaterialElement, itemPath];
 }
 
-/** Deep-clone a question/card with fresh ids, remapping correctOptionIds by option index. */
+/** Duplicates get new question and part identities. */
 function cloneStudyItem(element: MaterialElement): MaterialElement {
-  const oldOptionIds =
-    element.type === 'quiz_question'
-      ? (element as QuizQuestionNode).children
-          .filter(
-            (child): child is QuizOptionNode => child.type === 'quiz_option'
-          )
-          .map((child) => child.id)
-      : undefined;
-  const oldCorrectIds =
-    element.type === 'quiz_question'
-      ? [...((element as QuizQuestionNode).correctOptionIds ?? [])]
-      : undefined;
-
-  const [clone] = normalizeMaterialValue([
-    stripElementIds(structuredClone(element)) as MaterialElement,
-  ]);
-
-  if (clone.type === 'quiz_question' && oldOptionIds && oldCorrectIds?.length) {
-    const newOptions = (clone as QuizQuestionNode).children.filter(
-      (child): child is QuizOptionNode => child.type === 'quiz_option'
-    );
-    const remapped = oldCorrectIds
-      .map((id) => {
-        const index = oldOptionIds.indexOf(id);
-        return index >= 0 ? newOptions[index]?.id : undefined;
-      })
-      .filter((id): id is string => Boolean(id));
-    if (remapped.length)
-      (clone as QuizQuestionNode).correctOptionIds = remapped;
-    else delete (clone as QuizQuestionNode).correctOptionIds;
+  if (element.type === 'quiz_question') {
+    const clone = structuredClone(element) as QuizQuestionNode;
+    clone.id = crypto.randomUUID();
+    clone.question.id = clone.id;
+    clone.question.parts.forEach((part) => {
+      part.id = crypto.randomUUID();
+    });
+    return clone;
   }
-
-  return clone;
-}
-
-function BlockShell({
-  props,
-  onEdit,
-  label,
-  title,
-  children,
-}: {
-  props: PlateElementProps;
-  onEdit?: () => void;
-  label: string;
-  title?: React.ReactNode;
-  children?: React.ReactNode;
-}) {
-  const readOnly = useReadOnly();
-  return (
-    <PlateElement {...props} className={BLOCK_SHELL_CLASS}>
-      {title}
-      <div contentEditable={false}>
-        <div className="mb-1 flex items-center justify-between">
-          <span className="t-label text-fg-muted">{label}</span>
-          {!readOnly && onEdit && (
-            <Button
-              className="opacity-70 hover:opacity-100"
-              onClick={onEdit}
-              size="sm"
-              variant="ghost"
-            >
-              {m.action_edit()}
-            </Button>
-          )}
-        </div>
-      </div>
-      {children}
-      {props.children}
-    </PlateElement>
-  );
+  return normalizeMaterialValue([
+    stripElementIds(structuredClone(element)) as MaterialElement,
+  ])[0];
 }
 
 export function QuizElement(props: PlateElementProps) {
-  const editor = useEditorRef();
-  const dialogs = useOptionalNoteBlockDialogs();
-  const element = props.element as unknown as QuizNode;
-  function edit() {
-    dialogs?.openQuiz(quizFenceBody(quizElementToBlock(element)), (code) => {
-      replaceElement(
-        editor,
-        props.element,
-        quizNodeFromFence(code, element.id)
-      );
-    });
-  }
   return (
-    <StudyBlockRoot onEdit={dialogs ? edit : undefined} props={props}>
+    <StudyBlockRoot props={props}>
       <StandaloneMaterialTitle kinds="quiz" />
     </StudyBlockRoot>
   );
@@ -470,10 +381,10 @@ export function MaterialRefElement(props: PlateElementProps) {
   const queryClient = useQueryClient();
   const element = props.element as unknown as MaterialRefNode;
   const { materialId, refKind, pending } = element;
-  const { mutateAsync: updateQuizContent } = useUpdateQuizContent();
-  const { mutateAsync: createCard } = useCreateCard(materialId);
-  const { mutateAsync: updateCard } = useUpdateCard(materialId);
-  const { mutateAsync: deleteCard } = useDeleteCard(materialId);
+  const navigate = useNavigate();
+  const router = useRouter();
+  const { mutateAsync: updateFlashcardContent } =
+    useUpdateFlashcardContent(materialId);
   const resolving = useRef(false);
 
   // A fence imported as markdown lands here without a row. Every client with
@@ -518,56 +429,41 @@ export function MaterialRefElement(props: PlateElementProps) {
     refKind,
   ]);
 
-  async function editQuiz() {
-    const quiz = await queryClient.fetchQuery(quizQuery(materialId));
-    dialogs?.openQuiz(
-      quizFenceBody({
-        questions: quiz.questions,
-        timeLimitMin: quiz.timeLimitMin,
-      }),
-      (code) => {
-        const block = parseQuizFenceBody(code);
-        void updateQuizContent({
-          id: materialId,
-          questions: block.questions,
-          ...(block.timeLimitMin == null
-            ? {}
-            : { timeLimitMin: block.timeLimitMin }),
-        });
-      }
-    );
+  function editQuiz() {
+    void navigate({
+      params: { quizId: materialId },
+      search: quizEditSearch(router.state.location.href),
+      to: '/quizzes/$quizId/edit',
+    });
   }
 
   async function editFlashcards() {
-    const current = await queryClient.fetchQuery(cardsQuery(materialId));
+    const latest = await queryClient.fetchQuery({
+      ...materialQuery(materialId),
+      staleTime: 0,
+    });
+    const block = latest.content.value.find(
+      (node): node is FlashcardsNode => node.type === 'flashcards'
+    );
+    if (!block) throw new Error('Flashcard content is unavailable');
+    const current = flashcardsElementToCards(block);
     dialogs?.openFlashcards(
       flashcardsFenceBody(
-        current.map((card) => ({
-          back: card.back,
-          front: card.front,
-          id: card.id,
-        }))
+        current.map(({ id, front, back }) => ({ back, front, id }))
       ),
-      (code) => {
-        void syncCards(current, parseFlashcardsFenceBody(code).cards);
+      async (code) => {
+        await updateFlashcardContent({
+          cards: parseFlashcardsFenceBody(code).cards.map((card) => ({
+            back: card.back,
+            front: card.front,
+            ...(current.some((item) => item.id === card.id)
+              ? { id: card.id }
+              : {}),
+          })),
+          expectedRevision: latest.revision,
+        });
       }
     );
-  }
-
-  /** Apply the dialog's card list through the per-card content endpoints. */
-  async function syncCards(current: Flashcard[], next: FlashcardContent[]) {
-    const kept = new Set(next.map((card) => card.id));
-    for (const card of current) {
-      if (!kept.has(card.id)) await deleteCard(card.id);
-    }
-    for (const card of next) {
-      const existing = current.find((item) => item.id === card.id);
-      if (!existing) {
-        await createCard({ back: card.back, front: card.front });
-      } else if (existing.front !== card.front || existing.back !== card.back) {
-        await updateCard({ back: card.back, front: card.front, id: card.id });
-      }
-    }
   }
 
   const canEdit = !readOnly && !!dialogs && !!materialId;
@@ -579,7 +475,7 @@ export function MaterialRefElement(props: PlateElementProps) {
           canEdit
             ? refKind === 'quiz'
               ? () => void editQuiz()
-              : () => void editFlashcards()
+              : () => void editFlashcards().catch(showErrorToast)
             : undefined
         }
         refKind={refKind}
@@ -589,131 +485,159 @@ export function MaterialRefElement(props: PlateElementProps) {
   );
 }
 
-export function MermaidElement(props: PlateElementProps) {
+const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
+
+function EmbedShell({
+  props,
+  onEdit,
+  children,
+}: {
+  props: PlateElementProps;
+  onEdit: () => void;
+  children: React.ReactNode;
+}) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
-  const element = props.element as unknown as MermaidNode;
-  function edit() {
-    const next = window.prompt(m.editor_mermaid_source(), element.source);
-    if (next == null) return;
-    const at = editor.api.findPath(props.element);
-    if (at)
-      editor.tf.setNodes({ source: next } as Partial<MermaidNode>, { at });
+  const selected = useSelected();
+  const collapsed = useEditorSelector(
+    (current) => current.api.isCollapsed(),
+    []
+  );
+  const active = selected && collapsed && !readOnly;
+  const locate = () => editor.api.findPath(props.element);
+  async function copy() {
+    const at = locate();
+    if (!at) return;
+    editor.tf.select(editor.api.range(at));
+    editor.tf.focus();
+    const data = new DataTransfer();
+    editor.tf.setFragmentData(data, 'copy');
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([data.getData('text/html')], {
+          type: 'text/html',
+        }),
+        'text/plain': new Blob([data.getData('text/plain')], {
+          type: 'text/plain',
+        }),
+      }),
+    ]);
   }
   return (
-    <BlockShell
-      label={
-        mermaidBlockLabel(element.source) === 'Mindmap'
-          ? m.editor_mindmap()
-          : m.editor_diagram()
-      }
-      onEdit={readOnly ? undefined : edit}
-      props={props}
-      title={<StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />}
-    >
-      <div contentEditable={false}>
+    <Popover modal={false} open={active}>
+      <PopoverAnchor asChild>
+        <PlateElement
+          {...props}
+          className={cn(
+            'relative my-4 rounded-md border border-transparent p-2',
+            active && 'border-action-accent ring-2 ring-action-accent/20'
+          )}
+        >
+          <div
+            contentEditable={false}
+            onMouseDown={(event) => {
+              if (readOnly) return;
+              event.preventDefault();
+              const at = locate();
+              if (at) {
+                editor.tf.select(editor.api.start(at));
+                editor.tf.focus();
+              }
+            }}
+          >
+            {children}
+          </div>
+          <span className="hidden">{props.children}</span>
+        </PlateElement>
+      </PopoverAnchor>
+      <FloatingBlockToolbar aria-label={m.editor_study_actions()} open={active}>
+        <ToolbarButton label={m.action_edit()} onClick={onEdit}>
+          <EditorIcon name="pencil" />
+        </ToolbarButton>
+        <ToolbarButton
+          label={m.action_copy()}
+          onClick={() => void copy().catch(showErrorToast)}
+        >
+          <EditorIcon name="copy" />
+        </ToolbarButton>
+        <ToolbarButton
+          label={m.action_delete()}
+          onClick={() => {
+            const at = locate();
+            if (at) editor.tf.removeNodes({ at });
+          }}
+          variant="danger-light"
+        >
+          <EditorIcon name="trash" />
+        </ToolbarButton>
+      </FloatingBlockToolbar>
+    </Popover>
+  );
+}
+
+export function VisualBlockElement(props: PlateElementProps) {
+  const editor = useEditorRef();
+  const dialogs = useOptionalNoteBlockDialogs();
+  const element = props.element as unknown as { block: NoteVisualBlock };
+  function edit() {
+    dialogs?.openVisual(element.block, (block) => {
+      const at = editor.api.findPath(props.element);
+      if (at) editor.tf.setNodes({ block }, { at });
+    });
+  }
+  return (
+    <EmbedShell onEdit={edit} props={props}>
+      <QuestionBlockView block={element.block} />
+    </EmbedShell>
+  );
+}
+
+export function MermaidElement(props: PlateElementProps) {
+  const editor = useEditorRef();
+  const element = props.element as unknown as MermaidNode;
+  const [editing, setEditing] = useState(false);
+  return (
+    <>
+      <EmbedShell onEdit={() => setEditing(true)} props={props}>
+        <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
         <Mermaid code={element.source} />
-      </div>
-    </BlockShell>
+        {NodeApi.string(props.element).trim() && (
+          <p className={MERMAID_CAPTION_CLASS}>
+            {NodeApi.string(props.element)}
+          </p>
+        )}
+      </EmbedShell>
+      {editing && (
+        <Suspense fallback={null}>
+          <MermaidSourceDialog
+            onClose={() => setEditing(false)}
+            onSave={(source) => {
+              const at = editor.api.findPath(props.element);
+              if (at) editor.tf.setNodes({ source }, { at });
+            }}
+            source={element.source}
+          />
+        </Suspense>
+      )}
+    </>
   );
 }
 
 export function QuizQuestionElement(props: PlateElementProps) {
   const editor = useEditorRef();
-  const readOnly = useReadOnly();
   const element = props.element as unknown as QuizQuestionNode;
   const path = editor.api.findPath(props.element);
-  const pathIndex = path?.[path.length - 1];
-  const questionNumber =
-    typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
-  if (readOnly) {
-    const question = quizQuestionElementToQuestion(element);
-    return (
-      <PlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
-        <div contentEditable={false}>
-          <QuestionRunner
-            answer={answerKey(question)}
-            onChange={() => undefined}
-            question={question}
-            questionNumber={questionNumber}
-            review
-            showExplanation
-          />
-        </div>
-        <div aria-hidden="true" className="hidden">
-          {props.children}
-        </div>
-      </PlateElement>
-    );
-  }
+  const index = path?.[path.length - 1];
   return (
     <PlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
-      <QuizQuestionHeader
-        level={element.level}
-        questionNumber={questionNumber}
-        questionType={element.questionType}
-      />
-      {props.children}
-    </PlateElement>
-  );
-}
-
-export function QuizPromptElement(props: PlateElementProps) {
-  return (
-    <PlateElement {...props} as="p" className={QUIZ_REVIEW_PROMPT_CLASS}>
-      {props.children}
-    </PlateElement>
-  );
-}
-
-export function QuizOptionElement(props: PlateElementProps) {
-  const editor = useEditorRef();
-  const element = props.element as unknown as QuizOptionNode & {
-    explanation?: string;
-    role?: QuizOptionRole;
-  };
-  const question = editorParentQuestion(editor, props.element);
-  const correct = question?.correctOptionIds?.includes(element.id);
-  const path = editor.api.findPath(props.element);
-  const pathIndex = path?.[path.length - 1];
-  const optionNumber = typeof pathIndex === 'number' ? pathIndex : undefined;
-  return (
-    <PlateElement
-      {...props}
-      className={quizOptionClassName(Boolean(correct), element.role)}
-    >
-      <QuizOptionView
-        correct={Boolean(correct)}
-        explanation={element.explanation}
-        optionNumber={optionNumber}
-        role={element.role}
-      >
-        {props.children}
-      </QuizOptionView>
-    </PlateElement>
-  );
-}
-
-function editorParentQuestion(
-  editor: AnyEditor,
-  element: object
-): QuizQuestionNode | undefined {
-  const path = editor.api.findPath(element);
-  if (!path || path.length < 1) return;
-  const parent = editor.api.node(path.slice(0, -1))?.[0];
-  return parent?.type === 'quiz_question'
-    ? (parent as QuizQuestionNode)
-    : undefined;
-}
-
-export function QuizExplanationElement(props: PlateElementProps) {
-  return (
-    <PlateElement
-      {...props}
-      as="p"
-      className={cn('col-span-2', QUIZ_EXPLANATION_CLASS)}
-    >
-      {props.children}
+      <div contentEditable={false}>
+        <QuestionView
+          question={quizQuestionElementToQuestion(element)}
+          questionNumber={index == null ? undefined : index + 1}
+          review
+        />
+      </div>
+      <span className="hidden">{props.children}</span>
     </PlateElement>
   );
 }

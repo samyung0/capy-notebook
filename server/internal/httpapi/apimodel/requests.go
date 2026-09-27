@@ -98,10 +98,9 @@ type CreateMaterialReq struct {
 // a quiz or flashcard set authored inside the note {id}. The note title gives
 // the default title; the caller inserts the returned id as a reference block.
 type CreateEmbeddedMaterialReq struct {
-	Kind         store.MaterialKind `json:"kind" enum:"quiz,flashcards"`
-	Questions    []map[string]any   `json:"questions,omitempty"`
-	TimeLimitMin *int               `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
-	Cards        []CardContent      `json:"cards,omitempty"`
+	Kind      store.MaterialKind `json:"kind" enum:"quiz,flashcards"`
+	Questions []map[string]any   `json:"questions,omitempty"`
+	Cards     []CardContent      `json:"cards,omitempty"`
 }
 
 // CardContent is one authored flashcard face pair.
@@ -166,17 +165,16 @@ type UpdateCommentReq struct {
 }
 
 type CreateQuizReq struct {
-	Name         MaterialTitle    `json:"name,omitempty"`
-	WorkspaceID  string           `json:"workspaceId,omitempty"`
-	Chapters     []string         `json:"chapters,omitempty"`
-	Questions    []map[string]any `json:"questions,omitempty"`
-	Privacy      store.Privacy    `json:"privacy,omitempty"`
-	TimeLimitMin *int             `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
+	Name        MaterialTitle    `json:"name,omitempty"`
+	WorkspaceID string           `json:"workspaceId,omitempty"`
+	Chapters    []string         `json:"chapters,omitempty"`
+	Questions   []map[string]any `json:"questions,omitempty"`
+	Privacy     store.Privacy    `json:"privacy,omitempty"`
 }
 
 type UpdateQuizContentReq struct {
-	Questions    *[]map[string]any `json:"questions,omitempty"`
-	TimeLimitMin *int              `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
+	ExpectedRevision int64             `json:"expectedRevision" minimum:"1"`
+	Questions        *[]map[string]any `json:"questions,omitempty"`
 }
 
 type UpdateQuizMetadataReq struct {
@@ -188,7 +186,7 @@ type CreateAttemptReq struct {
 	Correct   float64          `json:"correct" minimum:"0"`
 	Total     float64          `json:"total" exclusiveMinimum:"0"`
 	Wrong     []map[string]any `json:"wrong,omitempty" doc:"Questions answered incorrectly"`
-	Answers   map[string]any   `json:"answers,omitempty" doc:"User answers keyed by question id"`
+	Answers   map[string]any   `json:"answers,omitempty" doc:"User answers keyed by stable part id"`
 	Questions []map[string]any `json:"questions,omitempty" doc:"Question snapshot taken at submit time"`
 }
 
@@ -199,23 +197,22 @@ type CreateFlashcardSetReq struct {
 }
 
 // GenerateReq is the body for POST /api/workspaces/{id}/generate.
-// kind, count, and levels are required. detail, diagramType, and types have
+// kind and count are required; levels is optional. detail, diagramType, and types have
 // explicit defaults so OpenAPI/orval capture them; the handler does not invent
 // values after the gate.
 type GenerateReq struct {
-	Kind         store.GenerateKind           `json:"kind"`
-	Count        int                          `json:"count" minimum:"1" maximum:"50"`
-	Levels       []store.CognitiveLevel       `json:"levels" minItems:"1" nullable:"false"`
-	Types        []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
-	Detail       store.GenerateDetail         `json:"detail,omitempty" default:"standard"`
-	DiagramType  store.GenerateDiagramType    `json:"diagramType,omitempty" default:"auto"`
-	Length       string                       `json:"length,omitempty"`
-	Format       string                       `json:"format,omitempty"`
-	Style        string                       `json:"style,omitempty"`
-	Chapters     []string                     `json:"chapters,omitempty" nullable:"false"`
-	FileIds      []string                     `json:"fileIds,omitempty" nullable:"false"`
-	TimeLimitMin *int                         `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
-	Title        MaterialTitle                `json:"title" minLength:"1"`
+	Kind        store.GenerateKind           `json:"kind"`
+	Count       int                          `json:"count" minimum:"1" maximum:"50"`
+	Levels      []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
+	Types       []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
+	Detail      store.GenerateDetail         `json:"detail,omitempty" default:"standard"`
+	DiagramType store.GenerateDiagramType    `json:"diagramType,omitempty" default:"auto"`
+	Length      string                       `json:"length,omitempty"`
+	Format      string                       `json:"format,omitempty"`
+	Style       string                       `json:"style,omitempty"`
+	Chapters    []string                     `json:"chapters,omitempty" nullable:"false"`
+	FileIds     []string                     `json:"fileIds,omitempty" nullable:"false"`
+	Title       MaterialTitle                `json:"title" minLength:"1"`
 }
 
 // CreateSourceUploadReq reserves a direct-to-blob PUT. Empty kind and parseMode
@@ -284,14 +281,27 @@ type UpdateFlashcardSetReq struct {
 	Color *store.UserColor `json:"color,omitempty"`
 }
 
-type CreateCardReq struct {
+type FlashcardContentInput struct {
+	ID    string `json:"id,omitempty"`
 	Front string `json:"front" minLength:"1" maxLength:"4000"`
 	Back  string `json:"back" minLength:"1" maxLength:"4000"`
 }
 
+type UpdateFlashcardContentReq struct {
+	ExpectedRevision int64                   `json:"expectedRevision" minimum:"1"`
+	Cards            []FlashcardContentInput `json:"cards" minItems:"1"`
+}
+
+type CreateCardReq struct {
+	ExpectedRevision int64  `json:"expectedRevision" minimum:"1"`
+	Front            string `json:"front" minLength:"1" maxLength:"4000"`
+	Back             string `json:"back" minLength:"1" maxLength:"4000"`
+}
+
 type UpdateCardReq struct {
-	Front *string `json:"front,omitempty" minLength:"1" maxLength:"4000"`
-	Back  *string `json:"back,omitempty" minLength:"1" maxLength:"4000"`
+	ExpectedRevision int64   `json:"expectedRevision" minimum:"1"`
+	Front            *string `json:"front,omitempty" minLength:"1" maxLength:"4000"`
+	Back             *string `json:"back,omitempty" minLength:"1" maxLength:"4000"`
 }
 
 type UpdateCardStudyStateReq struct {
