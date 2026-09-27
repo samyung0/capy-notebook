@@ -57,10 +57,6 @@ test('workspace creation and editing share icon and description fields', async (
     .getByRole('textbox', { exact: true, name: 'Description' })
     .fill('Updated study description');
   await edit.getByRole('button', { exact: true, name: 'Save' }).click();
-  await expect(
-    edit.getByRole('button', { exact: true, name: 'Save' })
-  ).toBeEnabled();
-  await page.keyboard.press('Escape');
   await expect(edit).toHaveCount(0);
   await card.getByRole('button', { name: 'Open menu' }).click();
   await page.getByRole('menuitem', { name: 'Workspace settings' }).click();
