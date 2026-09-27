@@ -7,9 +7,23 @@ tags: [testing, vitest, go, python, playwright, e2e, perf]
 
 # Test catalog
 
+Question bank backend additions:
+
+- `src/features/quizzes/quizNavigation.test.ts`: quiz-editor return destinations stay inside supported app pages; material previews return in View mode and parent notes retain their editing mode.
+- `server/internal/bank/bank_test.go`: independent migration ledger, syllabus/list queries, optimistic saves, review retained on edit, review undo, editor column grants, missing config and unreachable pool.
+- `server/internal/bank/assets_test.go`: immutable content-hash publication metadata and rejection of active, external-resource and oversized SVG assets.
+- `server/internal/httpapi/bank_test.go`: authenticated learner redaction, editor/read-only/suspended gates, stale saves, public SVG upload, historical source attribution with ShareAlike licensing and direct captured comment email.
+- `scripts/env/test_config.py`: bank owner/private-bucket secrets excluded from the API target and optional bank configuration.
+
 One-line descriptions of every automated test file in the repo (excluding build
 artifacts under `collaboration/dist` and vendored packages). Run commands are
 at the top of each section.
+
+Responsive styling changes also need a manual viewport check below and above
+`sm` (640px): IconPicker uses three/six columns and 350px/440px gallery heights;
+SectionGallery spacing and toast action sizing increase at `sm`; workspace
+labels, note AI suggestions and editor padding use small-screen base styles.
+These visual checks are not covered by the automated suites below.
 
 | Suite                            | Command                                                          |
 | -------------------------------- | ---------------------------------------------------------------- |
@@ -26,6 +40,9 @@ at the top of each section.
 | Review automation contracts      | `pnpm review:validate-boundaries` / `pnpm review:validate-scanners` |
 | Deployment and dev tunnel        | `pnpm test:deployment` |
 | Local grading comparison         | `python -m unittest discover -s bench/grading/scripts -p test_benchmark.py` |
+| Paired Laya/Jev grading scores    | `python -m unittest discover -s bench/grading/scripts -p test_laya_cpu.py` |
+| Jev question-context comparison | `python bench/grading/scripts/jev_context.py --check` |
+| Jev partial credit and context | `python bench/grading/scripts/jev_partial_credit.py --check` |
 | Browser grading failure lifecycle | `node bench/grading/scripts/test_browser.mjs` |
 | Agent playground self-checks     | `python lab/playground/scripts/{capture.py, chunk_quality.py --check, playground.py --check}`; `node lab/playground/scripts/check_ui.mjs` checks prompt Apply/Reset, draft preservation across delayed previews, follow-up evidence/ledger payloads, saved-run history/checkpoint restoration without config changes, material-dialog content for restored notes and live quizzes/flashcards, and conversation clearing. Python checks include description overrides, unchanged argument schemas, live catalog preservation, invalid override rejection, missing model pins returning HTTP errors before streaming, one capture_page schema in previews and live turns, local source-list dispatch without a gateway, and forwarding stored ledger/evidence/checkpoints through the turn endpoint. |
 
@@ -46,6 +63,13 @@ elevation command construction and argument quoting, hosts paths, idempotent
 edits, backup preservation, line endings, aliases and conflicting mappings.
 
 The local grading checks in [`bench/grading/scripts/test_benchmark.py`](../bench/grading/scripts/test_benchmark.py) cover invalid-score handling, family split integrity, interrupted result recovery, separation of run configurations and changed coverage, exclusion of anchors/ambiguous labels from primary matched/native metrics, complete hash-matched comparison with invalid paired scores, and native/browser pairing restricted to identical cases, model hashes and explicit decoding controls. [`test_browser.mjs`](../bench/grading/scripts/test_browser.mjs) checks that a runtime exception saves bounded diagnostic logs, stops requests to the failed worker, releases it, permits the next model to run and visibly reports the failure. Model evaluations are opt-in experiments described in [`bench/grading/README.md`](../bench/grading/README.md), with artifacts under ignored `data/grading-benchmark/`.
+
+[`test_laya_cpu.py`](../bench/grading/scripts/test_laya_cpu.py) checks that partial-award agreement does not hide marking-point errors, and that an inference failure counts as a failure while preserving the archived Jev baseline. `laya_cpu.py prepare` also verifies the archived 1,688-request rubric corpus reproduces Jev's published seed and essay award counts before writing the replay requests.
+The opt-in [`alibaba_decision.py`](../bench/grading/scripts/alibaba_decision.py) replay uses the same scoring checks, validates returned question ids and finite probabilities, and records hosted API failures without retries. It requires explicitly selected credentials and an Alibaba workspace endpoint; it is not a CI test.
+
+[`jev_context.py --check`](../bench/grading/scripts/jev_context.py) verifies that the paired 192-call essay comparison removes only question context, preserves inputs and marking definitions, keeps aggregate all/some/none scoring distinct from item-level partial credit, and records failures without converting them to grades. Live runs require an explicit fresh output directory and a Jev credential; they are opt-in benchmarks, not CI tests.
+
+[`jev_partial_credit.py --check`](../bench/grading/scripts/jev_partial_credit.py) checks explicit/plain scheme isolation, paired context, 0.35/0.65 boundaries, malformed/non-finite decision output, failure accounting and exclusion of unknown gold. Its 144-call-per-mode live comparison asks direct three-way and Boolean decisions together; a first-request format/auth gate stops a bad batch without retrying. Synthetic labels and missing-evidence diagnostics are documented in the grading report; this is not a CI test.
 
 ---
 
@@ -108,8 +132,8 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 | [`src/features/notes/Collaboration.test.ts`](../src/features/notes/Collaboration.test.ts)         | Relative comment decorations stay on the selected text after concurrent inserts.                                               |
 | [`src/mocks/collaboration.test.ts`](../src/mocks/collaboration.test.ts) | Mock room update origins and awareness teardown, pending note persistence on close, Yjs identity/version retention across reopening, MSW draft isolation, asynchronous source receipts, peer-only source saves, and idle peer replacement after a room closes. |
 | [`src/features/notes/documentStats.test.ts`](../src/features/notes/documentStats.test.ts)         | Document-stats UI visibility thresholds and saved-size kilobyte formatting.                                                    |
-| [`src/features/notes/editorCommands.test.ts`](../src/features/notes/editorCommands.test.ts)       | Insertion command catalog covers headings, lists, columns, and inline equations.                                               |
-| [`src/features/notes/editorMode.test.ts`](../src/features/notes/editorMode.test.ts)               | Editor asset permission gates and collaboration status labels.                                                    |
+| [`src/features/notes/editorCommands.test.ts`](../src/features/notes/editorCommands.test.ts)       | Insertion commands cover headings, lists, columns, selected-text and empty inline equations; chart/graph insertion waits for dialog Save. |
+| [`src/features/notes/editorMode.test.ts`](../src/features/notes/editorMode.test.ts)               | Editor asset permission gates and collaboration status labels, including distinct Syncing and Synced.                                                    |
 | [`src/features/notes/editorTransforms.test.ts`](../src/features/notes/editorTransforms.test.ts)   | Code-block toggle/paste/highlight behavior and clear-formatting mark stripping.                                                |
 | [`src/features/notes/insertEditorNode.test.ts`](../src/features/notes/insertEditorNode.test.ts)   | Inline vs block insert preserves or replaces the current paragraph correctly.                                                  |
 | [`src/features/notes/linkEditor.test.ts`](../src/features/notes/linkEditor.test.ts)               | Link upsert restores the captured selection range before applying the link.                                                    |
@@ -131,7 +155,7 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 | File                                                                                                    | About                                                                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`src/features/quizzes/QuizForm.test.ts`](../src/features/quizzes/QuizForm.test.ts)                     | Quiz question validation and round-trip for every supported question type, including open.                                                                                                                                                                                                                     |
-| [`src/features/quizzes/grade.test.ts`](../src/features/quizzes/grade.test.ts)                           | Points default to 1, half-points snap, closed questions are all-or-nothing, open awards scale by question points.                                                                                                                                                                                              |
+| [`src/features/quizzes/grade.test.ts`](../src/features/quizzes/grade.test.ts)                           | Part-ID scoring and marking-item totals; matching pools retain unused/reused choices; fixed-unit quantities compare exactly across decimals/fractions/exponents, reject typed units, and preserve signs; rich grading context retains figures/tables/charts.                                                                                                                                                                                              |
 | [`src/features/quizzes/judge.test.ts`](../src/features/quizzes/judge.test.ts)                           | Open-answer judge prompt includes rubrics and matches the shared golden the Python judge asserts; parse snaps 0 / 0.5 / 1; blank answers skip the model.                                                                                                                                                                                                              |
 | [`src/features/files/fileUtils.test.ts`](../src/features/files/fileUtils.test.ts)                       | `fileIsIngesting` treats pending and processing as in-flight, ready/failed as idle.                                                                                                                                                                                                                            |
 | [`src/features/files/citationRegions.test.ts`](../src/features/files/citationRegions.test.ts)           | Validates and clamps 1-based `page-1000-topleft` citation boxes before they reach the PDF overlay.                                                                                                                                                                                                             |
@@ -294,7 +318,7 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 
 | File                                                                                              | About                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`server/internal/materialdoc/document_test.go`](../server/internal/materialdoc/document_test.go) | Quiz/flashcard round-trips including open questions and points, quiz time limits from 1 through 180, custom-only standalone documents without metadata headings, ID rewrite, JSON escaping, runtime comment-mark normalization, exact deep-document metrics, validation (including rejection of `fill`), YouTube/diagram, clone-time editor-asset rewrite/removal with a valid empty fallback, write limits, no-cap projection serialization for recovery, generator replay comparing extracted note/mermaid payload rather than reminted block ids, note reference rules with reference extraction and clone-time id rewrite, and markdown-like index text extraction. |
+| [`server/internal/materialdoc/document_test.go`](../server/internal/materialdoc/document_test.go) | Canonical void-question/flashcard round-trips, optional levels, legacy/timer rejection, custom-only standalone documents without metadata headings, ID rewrite, JSON escaping, runtime comment-mark normalization, exact deep-document metrics, validation (including rejection of `fill`), YouTube/diagram, clone-time editor-asset rewrite/removal with a valid empty fallback, write limits, no-cap projection serialization for recovery, generator replay comparing extracted note/mermaid payload rather than reminted block ids, note reference rules with reference extraction and clone-time id rewrite, and markdown-like index text extraction. |
 
 ### Store
 
@@ -430,7 +454,7 @@ material-mode specs fail even though the flows complete. Use `pnpm e2e:slow`
 | [`e2e/errors/source-failures.spec.ts`](../e2e/errors/source-failures.spec.ts) | Mocked upload reservation/PUT failures permit explicit resubmission; terminal ingest failure releases the next queued upload. Assertions inspect requests and bytes. |
 | [`e2e/errors/error-surfaces.spec.ts`](../e2e/errors/error-surfaces.spec.ts)               | Primary workspace failure, identical private/missing SSR summary errors with legacy redirects and no-store/noindex headers, and browser-offline status surfaces.                                                    |
 | [`e2e/sharing/flashcards-sharing.spec.ts`](../e2e/sharing/flashcards-sharing.spec.ts)     | Anonymous full-read/clone/mutation 401, signed-in public/link reading and cloning, private non-member 404, Explore visibility, and non-owner controls.                                                           |
-| [`e2e/sharing/live-collaboration.spec.ts`](../e2e/sharing/live-collaboration.spec.ts)     | Two live editors converge, show remote selections, and project to static view.                                                                              |
+| [`e2e/sharing/live-collaboration.spec.ts`](../e2e/sharing/live-collaboration.spec.ts)     | Two live editors converge, show remote selections, wait for durable Saved in the accessible icon status, and project to static view; shared editor readiness accepts Synced, Syncing and Saved.                                                                              |
 | [`e2e/sharing/material-modes.spec.ts`](../e2e/sharing/material-modes.spec.ts)             | Static viewer rendering, share-editor comments in Edit and the View/Edit toggle, anonymous summary-only access, room tokens, and comment APIs.                                                        |
 | [`e2e/sharing/quiz-sharing.spec.ts`](../e2e/sharing/quiz-sharing.spec.ts)                 | New quiz creates a blank question through the real API and opens the editor; anonymous full-read/clone/attempt 401, signed-in public/link reading and cloning, private non-member 404, and Explore visibility.                                                                                           |
 | [`e2e/sharing/workspace-membership.spec.ts`](../e2e/sharing/workspace-membership.spec.ts) | Private exact-identifier workspace invite is visible only to its recipient; roster carries no email.                                                        |
@@ -481,6 +505,12 @@ reports are retained for 30 days.
 | `scripts/uat/test_journey_workflows.py` | Offline promotion/cleanup wiring, blank quality SHA resolution from the live backend with explicit-target and lookup-failure checks, shared revision across quality jobs, pinned DB tunnel validation and actual ingest image mismatch rejection. Included in `pnpm test:deployment`. |
 
 Supporting helper (not a test): [`e2e/uat/support.ts`](../e2e/uat/support.ts)
+
+The rich-content DOCX journey waits for the collaborator to render the owner's
+edit and for the target's text cursor before clicking and typing, since remote
+layout updates briefly gate hit testing while the accessibility mirror remains.
+Failed rich-content convergence retains the last saved text, checkpoint and
+epoch in the run's sanitized evidence instead of relying on truncated ZIP bytes.
 creates short-lived synthetic Clerk sessions and authenticated API calls shared
 by the authorization and UI-quality suites.
 
@@ -496,9 +526,11 @@ MSW + Vite only (`pnpm e2e:msw:editor`); no Docker.
 | [`e2e/editor/block-interactions.spec.ts`](../e2e/editor/block-interactions.spec.ts) | Context menu duplicate/delete/turn-into and drag reorder verified by document text order.                                              |
 | [`e2e/editor/formatting.spec.ts`](../e2e/editor/formatting.spec.ts)                 | Bold apply/clear and stacked marks; shared top/floating active tint, selection preservation, caret-driven marks/list/table/column states, column layout changes, alignment selection, link active state and floating edit/remove actions, toolbar icon/button sizing, and narrow-screen scrolling with settings-controlled group visibility.                                                                           |
 | [`e2e/editor/insertions.spec.ts`](../e2e/editor/insertions.spec.ts)                 | Mentions in heading/paragraph, slash-insert table, keyboard table insertion through nested popovers with editor focus restoration, and table of contents following a retitle. |
-| [`e2e/editor/document-pages.spec.ts`](../e2e/editor/document-pages.spec.ts) | SPA links across workspace rows, Create, Files and dashboard recents; per-item cached modes, fresh View defaults, explicit URL priority and modified-click new tabs; icon-only View/Edit toggling by mouse and keyboard, mode URLs and reloads for materials/PDFs with citation-page retention, comments in Edit only, with shared headers and distinct note/Markdown icons; PDF pen/text/shape/color controls, cleared-selection highlighting, precise pen erasing, undo/redo ID restoration, durable private marks with session-only history, shared Plate-sized buttons, chevron-free Draw/Shape popovers and active tool states, and responsive toolbar scrolling with unclipped popovers. |
+| [`e2e/editor/document-pages.spec.ts`](../e2e/editor/document-pages.spec.ts) | SPA links across workspace rows, Create, Files and dashboard recents; per-item cached modes, fresh View defaults, explicit URL priority and modified-click new tabs; icon-only View/Edit toggling by mouse and keyboard, mode URLs and reloads for materials/PDFs with citation-page retention, comments in Edit only, with mode controls inside the shared header across file/material switches and reloads, and distinct note/Markdown icons; PDF pen/text/shape/color controls, cleared-selection highlighting, precise pen erasing, undo/redo ID restoration, durable private marks with session-only history, shared Plate-sized buttons, chevron-free Draw/Shape popovers and active tool states, and responsive toolbar scrolling with unclipped popovers. |
 
-| [`e2e/editor/ui-motion.spec.ts`](../e2e/editor/ui-motion.spec.ts) | Real-component popup exit/reopen and anchor retention, create/edit workspace tag autocomplete selection, focus, keyboard dismissal and exits staying transparent through removal, stable dropdown positioning and trigger-width matching during button press scaling, matching dropdown/popover entry motion and quieter exits, single-execution keyboard menus and submenu refocus, All blocks toggling and chevron-free toolbar popover triggers with paragraph styles retaining menu semantics, cancelled drawer swipes, palette search focus, fresh workspace forms and stable previewed default-icon persistence, workspace settings tab overflow at desktop/mobile widths and whole-pixel dialog positioning with simulated unsupported-round() centering fallback, notification arrival/copy/read-state motion, primitive timing, and reduced-motion cleanup; feature-gated AI input refocus runs with `VITE_FEATURE_EDITOR_AI=true`; fixture in `e2e/fixtures/ui-motion.*`. |
+| [`e2e/editor/ui-motion.spec.ts`](../e2e/editor/ui-motion.spec.ts) | Shared floating-toolbar composition through PopupMotion, exit/reopen and anchor retention, create/edit workspace tag autocomplete wheel scrolling inside modal dialogs, selection, focus, closing settings after a successful save, keyboard dismissal and exits staying transparent through removal, stable dropdown positioning and trigger-width matching during button press scaling, matching dropdown/popover entry motion and quieter exits, single-execution keyboard menus and submenu refocus, All blocks toggling and chevron-free toolbar popover triggers with paragraph styles retaining menu semantics, cancelled drawer swipes, palette search focus, fresh workspace forms and stable previewed default-icon persistence, workspace settings tab overflow at desktop/mobile widths and whole-pixel dialog positioning with simulated unsupported-round() centering fallback, notification arrival/copy/read-state motion, primitive timing, and reduced-motion cleanup; feature-gated AI input refocus runs with `VITE_FEATURE_EDITOR_AI=true`; fixture in `e2e/fixtures/ui-motion.*`. |
+
+[`e2e/editor/tabs.spec.ts`](../e2e/editor/tabs.spec.ts) checks native vertical-wheel scrolling in shared Tabs, parent scrolling at the edge, native horizontal gestures, hidden scrollbars, modifier passthrough, pixel/line/page units, and resizing between fitting and overflowing content.
 
 The UI motion suite also checks the shared icon chooser's style jumps and scroll tracking, cancelled drafts, mobile confirmation, reopening at the saved selection, and keyboard dismissal.
 
@@ -553,6 +585,11 @@ five seconds to check its refresh, and verify tab focus alone does not refetch i
 Workspace-list cache check: in MSW, reload `/workspaces` and verify one
 `GET /api/workspaces?sort=accessed` request. The route loader and page use
 `{ sort: 'accessed', tag: [] }` to share the prefetched cache entry.
+
+Workspace source-preview check: in MSW Biology 101, click `Biology notes - pending.md`
+and `Biology notes - processing.md` in the file list. Both should open their
+Markdown content while retaining the processing progress banner. These fixtures
+have uploaded bytes but are not indexed yet.
 
 | File                                                                                                | About                                                                                                                       |
 | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -766,6 +803,7 @@ commands; scorers require the retained local artifacts and fresh output paths.
 
 ### Frontend workspace and signup flows
 
+- Static validation (2026-09-27): dashboard Recent Items applies the existing `scroll-fade-y` utility to Panel's overflow container with its `py-5` bottom-padding offset; `pnpm run fmt`, `pnpm run fix`, and scoped `git diff --check` passed. No browser visual check was run.
 - Manual Chromium CSS check (2026-09-17): shared textarea sizing at 14px/20px and 16px/24px font/line-height fits five lines without scrolling and scrolls at six and ten lines; height stays capped including padding and borders. Isolated CSS check, not a full app test.
 - `e2e/editor/frontend-workspaces.spec.ts`: MSW browser checks for workspace sort direction labels, persistent dropdown selection and mouse/keyboard order reversal, shared create/edit icon and description fields and mobile create layout, signup resend cooldown and failed-send retry, workspace card settings/statistics, Biology PDF/empty file states, standalone invitations, and the single ownership-transfer confirmation. The PDF error assertion allows 30 seconds for viewer initialization. Run `pnpm run e2e:msw:editor --workers=1 frontend-workspaces.spec.ts`.
 
@@ -803,3 +841,30 @@ Chat reasoning and response guards (2026-09-22):
 - `e2e/editor/scenario-journeys.spec.ts`: one-click source save failure, cancelled file-link navigation with unsaved changes, and retry without remounting, source replacement/recovered draft download and IndexedDB persistence across reload followed by discard, Office checkpoint failure after editing valid files, accepted View/Edit URL transitions, Office Edit reloads, and rejected-export URL retention, scenario reset, page/form retries, pending auth cancellation, pending import polling/reset, permanent state reload/reset, Office export failure with draft download, and note permission loss through the parent guard. Run `pnpm run e2e:msw:editor --workers=1 scenario-journeys.spec.ts`.
 
 Popover appearance ownership is documented in [frontend/motion.md](frontend/motion.md). The shared border/background/shadow consolidation adds no new test cases; filter and notification content retain transparent, borderless, shadowless wrappers, and tag autocomplete retains `shadow-lg`.
+
+- `server/internal/store/authored_revision_test.go`: a saved flashcard edit advances its revision; stale edit, create, delete and bulk-list mutations and missing revision reject without changing the saved card.
+- `collaboration/src/persistence.test.ts`: authored replacement compares the draft revision under the material row lock, rejects pending projections and changed live blocks, and commits a current draft.
+
+
+### Question bank and shared question format
+
+- `e2e/editor/question-formula.spec.ts`: real MathLive inside the question Plate editor accepts a physical digit and retains it after commit/reopen, guarding against Slate canceling MathLive input. Run `pnpm run e2e:slow --config=e2e/editor/playwright.editor.config.ts question-formula.spec.ts`.
+- `server/internal/questions/questions_test.go`, `collaboration/src/questions.test.ts`, `src/features/questions/validation.test.ts`: shared valid/invalid fixtures for seven answer types, bank asset policy, graph references/static SVG, quantity units/zero denominator, Unicode bounds and attempt-only awards.
+- `src/features/questions/parseMathText.test.ts`, `TextEditor.test.ts`, `graph.test.ts`, `src/components/charts/CategoryChart.test.tsx`: math-token boundaries and editor serialization, safe graph expressions/export recipe, shared chart rendering.
+- `src/features/quizzes/QuizForm.test.ts`, `src/features/materials/document.test.ts`: canonical question round-trips through Plate/JSON/YAML, legacy rejection, note chart fences and part IDs unique across a material.
+- `src/features/quizzes/QuestionRunner.test.tsx`: submitted review renders part scores, scheme-before-answer, fixed units and collapsed solutions; open parts retain partial credit without fabricated item scores, and unanswered ordering does not display a shuffled answer.
+- `server/internal/store/mistakes_test.go`: count/byte-bounded review batches preserve unattempted questions and source part IDs while virtual part IDs remain unique.
+- `server/internal/store/listing_test.go`: `TestEmptyQuizListingHasZeroQuestions` covers the empty quiz sentinel.
+- `server/internal/httpapi/quiz_grade_test.go`: the configured quiz slot receives the full rich grading request, including a 1.2 MB model answer, without truncation.
+- `server/internal/bank/bank_test.go`, `server/internal/httpapi/bank_test.go`: migrations, lazy pools, roles, learner answer stripping, stale saves, persistent review, source attribution, public asset validation/upload and one comment delivery through a test sender.
+- `server/cmd/bank/main_test.go`: insert-only publication retains reviewed edits, starts question numbering at one, and checks exact source reference shape.
+- `server/cmd/openapi/main_test.go`: Go question limits regenerate matching browser, collaboration and Python constants.
+- `pipeline/tests/test_retrieval_helpers.py`: `test_normalize_questions_canonical_ids_and_optional_level` and `test_normalize_questions_rejects_legacy_or_partial_output` cover generated question identity and schema admission.
+- `uv run --project pipeline python lab/questions/run.py check`: blind projection, fixed-unit answers, copy checks, frozen Codex packet binding/immutability and correction of schema-valid wrong-count/wrong-part output before admission; no model or publisher calls.
+
+- `e2e/editor/editor-status.spec.ts`: header cloud icons and keyboard tooltips, initial Synced, immediate Syncing during edits and checkpoint waits, Saved after acknowledgment, older receipts preserving newer pending edits, Offline retained through edits and late acknowledgments, reconnect resending pending checkpoints, and status removal in View mode.
+
+Seeded editor runs use `node_modules/.vite-editor-e2e` for Vite's dependency cache,
+separate from a running developer server's cache.
+Editor benchmark readiness accepts Synced, Syncing and Saved; durability and
+save-cycle measurements still wait specifically for Saved.

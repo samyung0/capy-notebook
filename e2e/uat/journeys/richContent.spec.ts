@@ -62,12 +62,26 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     const editorFrame = await openEditor(run, editor, workspaceId, fileId);
     await editRich(run.owner.page, ownerFrame, format, false);
     await editRich(editor.page, editorFrame, format, true);
-    const edited = await run.poll(
-      `saved ${format} edits`,
-      () => savedExport(run, fileId),
-      (result) => richEdited(format, result.bytes),
-      180_000
-    );
+    let latest: Awaited<ReturnType<typeof savedExport>> | undefined;
+    const edited = await run
+      .poll(
+        `saved ${format} edits`,
+        async () => {
+          latest = await savedExport(run, fileId);
+          return latest;
+        },
+        (result) => richEdited(format, result.bytes),
+        180_000
+      )
+      .catch(async (error: unknown) => {
+        if (latest)
+          await run.attach(`${fileId}-failed-saved-content`, {
+            checkpoint: latest.row.checkpoint,
+            epoch: latest.row.epoch,
+            text: latest.text,
+          });
+        throw error;
+      });
     assertRichPreserved(format, bytes, edited.bytes, marker);
     // The owner's editor shows the collaborator's edit as well as its own.
     await expectRichContent(ownerFrame, format, marker, 'edit');

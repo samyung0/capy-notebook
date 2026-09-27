@@ -2,7 +2,8 @@
 
 ## State
 
-- `main` and `origin/main` are at `4c960717`. CI is green there.
+- The released Office baseline is `4c960717`, whose CI was green. Local main has
+  since advanced through unrelated work; the test changes below are uncommitted.
 - UAT and its ingest lane run `4c960717`. Migrations 0029–0034 are applied.
 - The maintenance window is done and Office editing has resumed. UAT had no `source_documents` rows to publish.
 - `vendor/betteroffice` is pinned to `capy-ci` at `04560dd6`.
@@ -10,20 +11,34 @@
   - Rich-content DOCX fails intermittently: 1 pass (run 36277362542, at `17698255`) and 2 failures (runs 36281542884 and 36282937259, at `4c960717`). The DOCX code path is the same in all three.
   - Rich-content XLSX and PPTX have not run on UAT yet, because the suite stops at the DOCX failure.
 
-## Open item: rich-content DOCX two-editor convergence
+## Investigated: rich-content DOCX two-editor convergence
 
 - **Failure:** `richContent.spec.ts:65` reports "saved docx edits did not converge". The journey polls the saved export for 180 s and waits for both edits:
   - the owner's edit changes `人數：20人` to `24人`
   - the collaborator's edit appends ` Collaborator confirmed the July tour.` after `主題：智能科技，精湛技術`
-- **Investigation so far:** it was stopped before it wrote a report, so there are no findings yet. The investigator was building a local two-editor repro harness, `rich.mts`, in the session scratchpad; the harness is not in the repo.
-- **Candidate causes, not yet ranked:**
-  - a. Journey timing: the caret or keystrokes land before the editor is ready. This would be test-side.
-  - b. An edit reaches the room but is never saved. Possible reasons: the save is skipped, a flush race, or the unchanged-save check misreads a real change. That check is `storeSnapshot` in `collaboration/src/sourceDocuments.ts` plus its helper in `contributors.ts`, added in `df08f63e`.
-  - c. A merge loss: `replicaCatchUp`, or a remote update that arrives during input.
-  - d. The save is just slower than 180 s on UAT.
-- **Where to look first:** the failed run's Playwright trace and the saved export. They show which edit is missing. Also check the UAT collaboration logs around the failure time. Everything else rests on that answer.
-- **If it's a product bug** (b or c), it is data loss: fix it in the collaboration service and add a focused test. **If it's test-side** (a or d), fix the journey in `e2e/uat/journeys/richContent.ts`.
-- Reproduce locally with one worker only (`pnpm e2e:slow` or `--workers=1`).
+- **Findings:** see [docx-failure.md](docx-failure.md). A local two-editor control
+  against the deployed Office runtime reproduces the original helper's failure:
+  the owner count survives, but the collaborator's entire sentence lands in the
+  first heading. This is an input-targeting failure, not a missing sentence in
+  the combined export. `applyContentUpdate` recognizes the reproduced change.
+- **Cause:** the mirror remains mounted while remote layout temporarily gates
+  hit testing. Dispatching a click, or checking focus, does not confirm caret
+  placement. The input can focus itself or be focused by Playwright before typing.
+- **Changes:** the DOCX journey waits for the peer's count edit and the target's
+  text cursor before clicking. Failed convergence now attaches saved text,
+  checkpoint and epoch. No product code changed and the persistence timeout is
+  still 180 s.
+- **Verification:** three consecutive local attempts contain both edits in the
+  right paragraphs and pass the existing DOCX preservation assertions. The final
+  original-helper control fails again. These use a local Yjs relay and native
+  export, not UAT database persistence or publication. The full UAT gate is pending.
+  The 24 focused contributor/source-store tests, UAT TypeScript check and targeted
+  Biome check also pass.
+- **Historical evidence correction:** traces were disabled, and the old artifact
+  contains neither a final export nor its readable text. Its truncated ZIP error
+  cannot establish which edit was misplaced in that particular CI run.
+- All local tests must use one worker (`pnpm e2e:slow` or `--workers=1`). The local
+  reproduction scripts and raw output are under the locally ignored `local/`.
 
 ## Ship after the fix
 

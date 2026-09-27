@@ -42,11 +42,14 @@ export async function editRich(
   if (format === 'docx') {
     const input = frame.getByRole('textbox', { name: 'Document input' });
     if (collaborator) {
-      await caretAfter(page, frame, DOCX_TOPIC);
+      await expect(
+        frame.getByRole('paragraph').filter({ hasText: /^人數：24人$/ })
+      ).toBeAttached({ timeout: 60_000 });
+      await focusParagraph(frame, DOCX_TOPIC);
       await input.press('End');
       await input.pressSequentially(DOCX_APPENDED);
     } else {
-      await caretAfter(page, frame, '人數：20人');
+      await focusParagraph(frame, '人數：20人');
       await input.press('End');
       await input.press('ArrowLeft');
       await input.press('Backspace');
@@ -96,22 +99,21 @@ export async function pasteRich(
   await page.getByRole('button', { exact: true, name: 'Save' }).click();
 }
 
-// The page mirror draws one span per character; clicking the right half of
-// the paragraph's last character puts the caret after it. The mirror is
-// rebuilt after each edit, so a detached span is retried. Clicks move the
-// caret at once while typed keys apply later, so each editor clicks only
-// before it types (both actors never share one editor).
-async function caretAfter(page: Page, frame: FrameLocator, text: string) {
+// The mirror ignores pointer events, so force routes the click to the canvas.
+// During a remote layout the mirror remains mounted but clicks are gated.
+// The text cursor confirms hit testing is ready before we place the caret.
+async function focusParagraph(frame: FrameLocator, text: string) {
   const last = frame
     .getByRole('paragraph')
     .filter({ hasText: new RegExp(`^${text}$`) })
     .getByText(text.at(-1) ?? '', { exact: true })
     .last();
   await expect(async () => {
-    await last.scrollIntoViewIfNeeded({ timeout: 5000 });
-    const box = await last.boundingBox();
-    assert(box, `paragraph ${text} is not painted`);
-    await page.mouse.click(box.x + box.width - 1, box.y + box.height / 2);
+    await last.hover({ force: true, timeout: 5000 });
+    await expect(frame.locator('.canvas-pages')).toHaveCSS('cursor', 'text', {
+      timeout: 1000,
+    });
+    await last.click({ force: true, timeout: 5000 });
   }).toPass({ timeout: 60_000 });
 }
 
