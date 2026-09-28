@@ -144,17 +144,18 @@ changed, over the fingerprinted source that every open requires:
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
   comment's reference mark only when the range goes on past it), and the
-  export writes range and bookmark boundaries at those story units. A page
-  or column break the editor puts in a cell or header is one unit until the
-  export seeds it, as it seeds every break from the file there, as none: it is
-  written, carries no effects entry, and its paragraph keeps it through later
-  publications. Where a range cannot be written exactly it settles after one
-  publication:
+  export writes range and bookmark boundaries at those story units. In a cell
+  or header, a page or column break the editor inserts counts as one unit;
+  once exported it seeds as zero units, like every break the file already had
+  there. The export writes it, it carries no effects entry, and its paragraph
+  keeps it through later publications. Where a range cannot be written exactly
+  it settles after one publication:
   - Markers Word nests in a hyperlink, tracked insertion or deletion, inline
     content control, simple field or complex field result move to that
-    container's edges at seed (start before, end after); inside a field result,
-    to the field's edges. An editor boundary inside a hyperlink or field moves to its
-    edge the same way, so the comment widens to hold it whole.
+    container's edges at seed (start before, end after). Inside a field
+    result they move to the field's edges. An editor boundary inside a
+    hyperlink or field moves to its edge the same way, so the comment widens
+    to hold it whole.
   - A range crossing into or out of a table or block content control covers
     only the story it opened in and closes at that story's end. It keeps a
     single reference mark: the export generates one only for a comment with
