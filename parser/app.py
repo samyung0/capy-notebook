@@ -555,7 +555,7 @@ class _ParseWorkerProcess(_Child):
         PDF the child wrote to ``ocr_path``."""
         if not self.alive:
             raise ParserRuntimeFailure(f"{self._name} is not running")
-        source_path = await asyncio.to_thread(_temporary_file, ".source")
+        source_path = _temporary_file(".source")  # sync: see _run_slot
         try:
             await asyncio.to_thread(source_path.write_bytes, document.data)
             await self.send(
@@ -805,8 +805,10 @@ class ParserRuntime:
         loop = asyncio.get_running_loop()
         while True:
             # Made before taking a document, so documents start in FIFO order.
-            result_path = await asyncio.to_thread(_temporary_file, ".result")
-            ocr_path = await asyncio.to_thread(_temporary_file, ".pdf")
+            # Synchronous on purpose: a cancel landing on a to_thread await
+            # would leave the thread's file behind with no path to unlink.
+            result_path = _temporary_file(".result")
+            ocr_path = _temporary_file(".pdf")
             try:
                 work = await self._next()
                 while work.future.done():

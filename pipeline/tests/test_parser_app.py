@@ -320,7 +320,7 @@ async def test_hard_deadline_quarantines_and_replaces_only_that_slot(
     fingerprint is quarantined, its child replaced, and the other slot and
     the queue keep running."""
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "PARSE_DOCUMENT_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(parser_app, "PARSE_DOCUMENT_TIMEOUT_S", 1.0)
     monkeypatch.setattr(
         parser_app, "_schedule_restart_backstop", lambda: pytest.fail("restart")
     )
@@ -338,7 +338,8 @@ async def test_hard_deadline_quarantines_and_replaces_only_that_slot(
         slow = asyncio.create_task(
             runtime.parse(parser_app.Document(b"", "slow.pdf", "slow-fp"))
         )
-        await asyncio.sleep(0.1)  # other's deadline falls after slow's
+        # other's deadline falls 0.5 s after slow's, room for a slow CI runner
+        await asyncio.sleep(0.5)
         other = asyncio.create_task(
             runtime.parse(parser_app.Document(b"", "other.pdf", "other-fp"))
         )
