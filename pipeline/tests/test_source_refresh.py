@@ -66,9 +66,7 @@ async def test_candidate_stages_parse_and_index_without_replacing_published(
             db.require_current_file_source(cur, file_id, 1, "etag-b")
             db.set_file_status(cur, file_id, "processing")
             db.set_file_indexed(cur, file_id, False)
-            db.set_file_parse_artifact(
-                cur, file_id, "parse/b", "fingerprint-b", "parser-v1"
-            )
+            db.set_file_source_sha256(cur, file_id, "b" * 64)
         new = await store.attach_file_content(
             workspace_id=workspace.id,
             file_id=file_id,
@@ -90,9 +88,9 @@ async def test_candidate_stages_parse_and_index_without_replacing_published(
                 == old["content_id"]
             )
             assert conn.execute(
-                "SELECT parse_artifact_key,content_id FROM source_refresh_candidates WHERE file_id=%s",
+                "SELECT source_sha256,content_id FROM source_refresh_candidates WHERE file_id=%s",
                 (file_id,),
-            ).fetchone() == ("parse/b", new["content_id"])
+            ).fetchone() == ("b" * 64, new["content_id"])
             with conn.transaction(), conn.cursor() as cur:
                 db.discard_source_candidate(
                     cur, job["payload"], job["id"], "parse failed", stale=False
@@ -354,21 +352,8 @@ async def test_publication_retry_requires_completed_candidate_and_keeps_parsed_w
                 "UPDATE jobs SET payload=payload||'{\"sourcePublicationReady\":true}'::jsonb WHERE id=%s",
                 (job["id"],),
             )
-            conn.execute(
-                "UPDATE source_refresh_candidates SET parse_artifact_key='parse/b',parse_artifact_fingerprint='fingerprint-b',parse_artifact_version='parser-v1' WHERE file_id=%s",
-                (file_id,),
-            )
         assert worker._resume_source_publication(job) is True
-        assert publications == [
-            (
-                file_id,
-                job["id"],
-                "completed-hash",
-                "parse/b",
-                "fingerprint-b",
-                "parser-v1",
-            )
-        ]
+        assert publications == [(file_id, job["id"], "completed-hash")]
     finally:
         db.reset_source_refresh(token)
 

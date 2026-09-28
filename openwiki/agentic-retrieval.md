@@ -333,8 +333,9 @@ Parser v7 (decision 2026-09-24; evidence in
 - **Picture triage** (`pictures.classify`, right after adaptation). An image
   block with a side under 1 pt, or a short side under 1% of its long side, is
   dropped: rules and spacer pixels drawn as images. The same rendered picture
-  on 5 or more pages becomes `discarded` furniture, and its image file stays in
-  the bundle. Other pictures, formula pictures included, stay images.
+  on 5 or more pages becomes `discarded` furniture. Other pictures, formula
+  pictures included, stay image blocks. Triage reads ODL's image files in the
+  parse work directory; no image bytes leave it.
 
 Parser v8 (decision 2026-09-24; gate in
 `bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
@@ -619,11 +620,6 @@ Cancelling an executing caller leaves the runtime-owned future, admission slot
 and deadline active. Cancelling waiting work removes it from the queue. The
 persistent loops release the previous document and result between executions.
 
-Byte-identical extracted images share one bundle file, with every image block
-and Markdown image destination referring to that canonical file. Occurrence
-page/geometry and literal bytes are preserved; distinct images remain separate.
-The existing bundle entry and byte limits still apply after deduplication.
-
 If the cgroup records an OOM kill while a document is active, the API writes a `parse_oom` quarantine marker
 for that fingerprint, marks `/healthz` failed, and exits. A completed artifact
 takes precedence over a late marker. Files that were only queued when the OOM
@@ -644,10 +640,13 @@ trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
 file directly. That local atomic ZIP is the required parser-to-ingest handoff
-(`capy-parser-bundle-v4`: `manifest.json` with the receipt, `content_list.json`,
-`document.md`, `refinement.json` with frozen furniture and Office page evidence,
-`parsed.pdf` only for repaired native PDF sources, and `images/`). Office bundles
-contain no PDF. The parser freezes page text and visible-heading proofs before
+(`capy-parser-bundle-v5`: `manifest.json` with the receipt, `content_list.json`,
+`refinement.json` with frozen furniture and Office page evidence, and
+`parsed.pdf` only for repaired native PDF sources). The bundle carries only what
+ingest reads: no image files, no ODL Markdown, and image blocks keep their
+geometry and caption but no `img_path`, since figures are reached at question
+time by rendering the source page (`capture_page`). The worker rejects any
+other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before
 discarding the temporary conversion, preserving downstream confidence/heading checks.
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
@@ -659,14 +658,28 @@ donor nor a matching local artifact exists, the retained source is parsed again.
 Migration `0038` releases the retired B2 parse caches through the existing
 deletion outbox with its 15-minute reader grace, then removes that cache kind.
 
-The worker clears the file's diagnostic local parse-bundle reference after
-successful ingest. A job stores its checksum-verified local source descriptor
+The bundle exists only for the handoff. It stays on disk through the ingest
+continuation's retries and provider or capacity waits, and the continuation
+deletes it once its job row is terminal: after committed success (indexing,
+identical-content reuse, donor reuse or source publication), terminal failure,
+supersession, or final lease reaping. Before that, a retry of the creating
+parse job finds it and recovers its receipt, and a concurrent job for identical
+bytes reuses it without one. Because the key is fingerprint-addressed, the
+deletion skips a bundle another pending or running job still names; that job
+deletes it when it finishes. A bundle deleted under a concurrent job anyway
+takes the one-time return to parsing above.
+
+Only the ingest job's payload names the bundle (`parseArtifact`); files and
+refresh candidates keep no parse reference (migration `0041` dropped
+`files.parsed_*` and `source_refresh_candidates.parse_artifact_*`). Between the
+parser's publication and the handoff commit nothing names it, which the sweep's
+age check covers. A job stores its checksum-verified local source descriptor
 in its payload and retains that file across parser-capacity, external-provider,
 and retry requeues. This prevents another source-object download for the same
-job. It is deleted only after committed success or terminal cleanup. An idle
-sweep removes abandoned sources after two hours and local fingerprint bundles
-after six hours, protecting artifacts named by pending or running jobs.
-Local cleanup runs on the ingest worker's idle five-minute sweep.
+job. It is deleted only after committed success or terminal cleanup. The ingest
+worker's idle five-minute sweep is the backstop for both: it removes sources
+and bundles older than `CAPY_PARSE_SPOOL_TTL_HOURS` (two hours) that no pending
+or running job names, such as a bundle whose parse job ended before handoff.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
 identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
@@ -1134,8 +1147,8 @@ mid-queue), so nobody's choice is being overridden — but an operator who swaps
 either model and wants the prose regenerated has only the blunt lever below.
 
 A parser or chunker version bump invalidates every donor and re-parses.
-Delete-and-re-upload with identical parse params can reuse a local bundle while
-its short TTL remains; after that it re-parses if there is no donor row.
+Delete-and-re-upload with identical parse params re-parses unless a donor row
+exists; the local bundle is gone once the first ingest finished.
 
 ### Indexing one file
 

@@ -90,7 +90,7 @@ def test_source_schema_and_release_all_participate_in_identity(monkeypatch):
     _, other_source = parser_client.artifact_identity(
         _descriptor(source_sha256="bb" * 32)
     )
-    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v5")
+    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v6")
     _, other_schema = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
     _, other_release = parser_client.artifact_identity(_descriptor())
@@ -515,7 +515,7 @@ def test_invalid_local_bundle_is_removed_before_the_next_parse_attempt(
 
 def test_extract_writes_and_validates_the_bundle(tmp_path: Path, monkeypatch):
     artifact = _install_artifact(
-        monkeypatch, tmp_path, extra={"images/fig1.png": "not-really-a-png"}
+        monkeypatch, tmp_path, extra={"parsed.pdf": b"%PDF-1.7 repaired"}
     )
     raw = tmp_path / "raw"
     raw.mkdir()
@@ -523,7 +523,7 @@ def test_extract_writes_and_validates_the_bundle(tmp_path: Path, monkeypatch):
     parser_client._extract(artifact, raw, FAST_VERSION)
 
     assert json.loads((raw / "content_list.json").read_text())[0]["text"] == "Hello"
-    assert (raw / "images" / "fig1.png").is_file()
+    assert (raw / "parsed.pdf").read_bytes() == b"%PDF-1.7 repaired"
 
 
 def test_office_bundle_requires_evidence_and_rejects_pdfs(tmp_path: Path, monkeypatch):
@@ -542,15 +542,14 @@ def test_office_bundle_requires_evidence_and_rejects_pdfs(tmp_path: Path, monkey
         monkeypatch, tmp_path, fingerprint="valid", extra={"refinement.json": evidence}
     )
     parser_client._extract(artifact, raw, FAST_VERSION, office=True)
-    for name in ("preview.pdf", "parsed.pdf"):
-        artifact = _install_artifact(
-            monkeypatch,
-            tmp_path,
-            fingerprint=name,
-            extra={"refinement.json": evidence, name: b"%PDF-1.7"},
-        )
-        with pytest.raises(parser_client.ParserClientError, match="PDF"):
-            parser_client._extract(artifact, raw, FAST_VERSION, office=True)
+    artifact = _install_artifact(
+        monkeypatch,
+        tmp_path,
+        fingerprint="with-pdf",
+        extra={"refinement.json": evidence, "parsed.pdf": b"%PDF-1.7"},
+    )
+    with pytest.raises(parser_client.ParserClientError, match="PDF"):
+        parser_client._extract(artifact, raw, FAST_VERSION, office=True)
 
 
 def test_extract_requires_the_frozen_furniture_entry(tmp_path: Path, monkeypatch):
@@ -587,15 +586,18 @@ def test_extract_bounds_the_refinement_entry(tmp_path: Path, monkeypatch):
     )
 
 
-def test_extract_rejects_path_traversal(tmp_path: Path, monkeypatch):
-    artifact = _install_artifact(
-        monkeypatch, tmp_path, extra={"../outside.txt": "owned"}
-    )
+def test_extract_rejects_entries_outside_the_v5_contract(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
-    with pytest.raises(parser_client.ParserClientError, match="unsafe path"):
-        parser_client._extract(artifact, raw, FAST_VERSION)
+    names = ("../outside.txt", "images/fig1.png", "document.md", "preview.pdf")
+    for index, name in enumerate(names):
+        artifact = _install_artifact(
+            monkeypatch, tmp_path, fingerprint=f"fp-{index}", extra={name: "x"}
+        )
+        with pytest.raises(parser_client.ParserClientError, match="unexpected"):
+            parser_client._extract(artifact, raw, FAST_VERSION)
     assert not (tmp_path / "outside.txt").exists()
+    assert list(raw.iterdir()) == []
 
 
 def test_extract_rejects_checksum_size_and_expansion_mismatches(
@@ -616,7 +618,7 @@ def test_extract_rejects_checksum_size_and_expansion_mismatches(
         monkeypatch,
         tmp_path,
         fingerprint="fp-large",
-        extra={"document.md": "x" * 17},
+        extra={"parsed.pdf": "x" * 17},
     )
     with pytest.raises(parser_client.ParserClientError, match="entry exceeds"):
         parser_client._extract(artifact, raw, FAST_VERSION)
@@ -740,31 +742,32 @@ def test_handoff_extraction_classifies_a_broken_zip_for_repair(
         )
 
 
-def test_local_spool_sweep_uses_separate_source_and_artifact_ttls(
+def test_local_spool_sweep_removes_abandoned_files_after_the_ttl(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
-    monkeypatch.setattr(parser_client.cfg, "parse_source_ttl_hours", 2)
-    monkeypatch.setattr(parser_client.cfg, "parse_zip_ttl_hours", 6)
+    monkeypatch.setattr(parser_client.cfg, "parse_spool_ttl_hours", 2)
     source = tmp_path / "sources" / "source-old"
     artifact = tmp_path / "artifacts" / "artifact-old.zip"
+    fresh = tmp_path / "artifacts" / "artifact-just-published.zip"
     source.parent.mkdir(parents=True)
     artifact.parent.mkdir(parents=True)
     source.write_bytes(b"source")
     artifact.write_bytes(b"artifact")
-    old = time.time() - 7 * 60 * 60
+    fresh.write_bytes(b"artifact")
+    old = time.time() - 3 * 60 * 60
     os.utime(source, (old, old))
     os.utime(artifact, (old, old))
 
     assert parser_client.sweep_local_spool() == {"sources": 1, "artifacts": 1}
+    assert fresh.exists()
 
 
 def test_local_spool_sweep_keeps_keys_referenced_by_active_jobs(
     tmp_path: Path, monkeypatch
 ):
     monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
-    monkeypatch.setattr(parser_client.cfg, "parse_source_ttl_hours", 2)
-    monkeypatch.setattr(parser_client.cfg, "parse_zip_ttl_hours", 6)
+    monkeypatch.setattr(parser_client.cfg, "parse_spool_ttl_hours", 2)
     source = tmp_path / "sources" / "source-active"
     artifact = tmp_path / "artifacts" / "artifact-active.zip"
     source.parent.mkdir(parents=True)

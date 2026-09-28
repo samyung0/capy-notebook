@@ -346,9 +346,6 @@ def _finish_source_refresh(
     file_id: str,
     job_id: str,
     content_hash: str | None,
-    artifact_key: str | None,
-    fingerprint: str | None,
-    version: str | None,
 ) -> bool:
     payload = db.source_refresh_for(file_id)
     if payload is None:
@@ -359,10 +356,6 @@ def _finish_source_refresh(
     with db.connect() as conn, conn.cursor() as cur:
         if _lost_claim(cur, job_id, payload["_attempt"], payload):
             return False
-        if artifact_key:
-            db.set_file_parse_artifact(
-                cur, file_id, artifact_key, fingerprint or "", version or ""
-            )
         cur.execute(
             "SELECT content_id,content_hash FROM source_refresh_candidates WHERE file_id=%s AND job_id=%s AND lease_token=%s",
             (file_id, job_id, payload["sourceLeaseToken"]),
@@ -435,7 +428,7 @@ def _resume_source_publication(job: dict) -> bool:
             payload["sourceETag"],
         )
         cur.execute(
-            """SELECT c.content_hash,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version
+            """SELECT c.content_hash
             FROM source_refresh_candidates c JOIN rag_contents r ON r.id=c.content_id
             JOIN jobs j ON j.id=c.job_id
             WHERE c.file_id=%s AND c.job_id=%s AND c.lease_token=%s
@@ -456,9 +449,6 @@ def _finish_ok(
     name: str,
     job_id: str,
     content_hash: str | None = None,
-    artifact_key: str | None = None,
-    artifact_fingerprint: str | None = None,
-    artifact_version: str | None = None,
     notification_code: str = "source_ready",
     indexed: bool = True,
     attempt: int | None = None,
@@ -471,14 +461,7 @@ def _finish_ok(
 ) -> bool:
     refresh = db.source_refresh_for(file_id)
     if refresh is not None:
-        return _finish_source_refresh(
-            file_id,
-            job_id,
-            content_hash,
-            artifact_key,
-            artifact_fingerprint,
-            artifact_version,
-        )
+        return _finish_source_refresh(file_id, job_id, content_hash)
     notification = None
     usage = obs.take_parse_usage()
     try:
@@ -523,14 +506,6 @@ def _finish_ok(
                     r"UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL AND (kind='pdf' OR lower(name) ~ '\.(docx|xlsx|pptx)$') AND parse_mode='fast'",
                     (file_id,),
                 )
-                if artifact_key:
-                    db.set_file_parse_artifact(
-                        cur,
-                        file_id,
-                        artifact_key,
-                        artifact_fingerprint or "",
-                        artifact_version or "",
-                    )
                 db.set_job(cur, job_id, "done")
                 db.finish_job_attempt(
                     cur,
@@ -815,25 +790,6 @@ def _read_text(path: str) -> str:
         return fh.read()
 
 
-def _record_parse_artifact(
-    file_id: str,
-    key: str,
-    fingerprint: str,
-    version: str,
-    source_revision: int,
-    source_etag: str,
-    actor_user_id: str,
-) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        if not db.ingest_accounts_active(cur, file_id, actor_user_id):
-            raise TerminalError(
-                "ingest stopped because an account is suspended or deleting"
-            )
-        db.require_current_file_source(cur, file_id, source_revision, source_etag)
-        db.set_file_parse_artifact(cur, file_id, key, fingerprint, version)
-        conn.commit()
-
-
 def _record_caption_blob(
     file_id: str,
     key: str,
@@ -911,12 +867,32 @@ def _remember_local_source(
 
 
 def _cleanup_payload_source(payload: dict) -> None:
+    """Remove a finished job's local source and parse bundle."""
     descriptor = payload.get("localSource")
-    if not isinstance(descriptor, dict):
+    if isinstance(descriptor, dict):
+        blobstore.cleanup_local_source(
+            str(descriptor.get("key") or ""), cfg.parse_shared_dir
+        )
+    _release_parse_artifact(payload)
+
+
+def _release_parse_artifact(payload: dict) -> None:
+    """Delete a continuation's local parse bundle once its job row is terminal.
+
+    Bundles are fingerprint-addressed, so one another pending or running job
+    still names stays for that job. Post-commit and best effort: the idle spool
+    sweep removes anything left behind.
+    """
+    artifact = payload.get("parseArtifact")
+    if not isinstance(artifact, dict):
         return
-    blobstore.cleanup_local_source(
-        str(descriptor.get("key") or ""), cfg.parse_shared_dir
-    )
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            in_use = db.active_local_spool_keys(cur)
+        if str(artifact.get("key") or "") not in in_use:
+            parser_client.discard_artifact(artifact)
+    except Exception:
+        log.warning("could not delete local parse bundle", exc_info=True)
 
 
 def _acquire_local_source(
@@ -1004,26 +980,6 @@ def _touch_or_upsert_artifact(
         raise RetryableError(f"required cache object {object_path} is missing")
     log.warning("cache object %s vanished before registration completed", object_path)
     return False
-
-
-def _clear_parse_artifact_reference(
-    object_path: str | None,
-    file_id: str | None = None,
-    source_revision: int | None = None,
-    source_etag: str = "",
-) -> None:
-    if not object_path:
-        return
-    if file_id and db.source_refresh_for(file_id) is not None:
-        return
-    with db.connect() as conn, conn.cursor() as cur:
-        if file_id:
-            if source_revision is not None:
-                db.require_current_file_source(
-                    cur, file_id, source_revision, source_etag
-                )
-            db.clear_file_parse_artifact(cur, file_id)
-        conn.commit()
 
 
 def _set_file_status(
@@ -1323,7 +1279,6 @@ def _handoff_for_artifact_repair(
     with db.connect() as conn, conn.cursor() as cur:
         if _lost_claim(cur, job["id"], attempt, payload):
             return False
-        db.clear_file_parse_artifact(cur, file_id)
         db.enqueue_job(cur, repair_id, "parse", repair_payload)
         db.transfer_source_candidate(cur, payload, job["id"], repair_id)
         db.set_job(cur, job["id"], "done")
@@ -1384,10 +1339,7 @@ async def _ensure_document_artifact(
         # spending an attempt.
         raise CapacityWait(route) from exc
 
-    artifact_key = str(artifact.get("key") or "")
-    fingerprint = str(artifact.get("fingerprint") or "")
-    version = str(artifact.get("version") or "")
-    if not artifact_key or not fingerprint or not version:
+    if not all(artifact.get(field) for field in ("key", "fingerprint", "version")):
         raise RetryableError("parser returned an incomplete artifact descriptor")
     await asyncio.to_thread(
         parser_client.validate_artifact,
@@ -1397,16 +1349,6 @@ async def _ensure_document_artifact(
     )
     telemetry.record(artifact_bytes=max(0, int(artifact.get("size") or 0)))
     _set_stage("parse_handoff")
-    await asyncio.to_thread(
-        _record_parse_artifact,
-        file_id,
-        artifact_key,
-        fingerprint,
-        version,
-        int(payload["sourceRevision"]),
-        str(payload.get("sourceETag") or ""),
-        str(payload.get("actorUserId") or ""),
-    )
     return artifact
 
 
@@ -1424,8 +1366,8 @@ async def _chunks_for(
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
-) -> tuple[list[Chunk], str | None, str | None, str | None]:
-    """Parse one source into chunks, plus its parse-artifact identity if any."""
+) -> list[Chunk]:
+    """Parse one source into chunks."""
     blob_path = payload.get("blobPath")
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
@@ -1445,7 +1387,7 @@ async def _chunks_for(
         _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
         _publish_progress(ws, file_id, "indexing", 40, status="processing")
-        return chunk_markdown(text), None, None, None
+        return chunk_markdown(text)
 
     direct = {
         ingest_plan.IMAGE_CAPTION: "image",
@@ -1531,7 +1473,7 @@ async def _chunks_for(
                     str(payload.get("actorUserId") or ""),
                 )
         _publish_progress(ws, file_id, "indexing", 50, status="processing")
-        return chunk_markdown(text), None, None, None
+        return chunk_markdown(text)
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:
         raise TerminalError(f"unsupported processing route {processing_plan.route!r}")
@@ -1549,27 +1491,13 @@ async def _chunks_for(
             route=route,
             office=processing_plan.office,
         )
-        artifact_key = str(artifact.get("key") or "")
-        fingerprint = str(artifact.get("fingerprint") or "")
-        artifact_version = str(artifact.get("version") or "")
-        if artifact_key:
-            await asyncio.to_thread(
-                _record_parse_artifact,
-                file_id,
-                artifact_key,
-                fingerprint,
-                artifact_version,
-                source_revision,
-                source_etag,
-                str(payload.get("actorUserId") or ""),
-            )
         _publish_progress(ws, file_id, "indexing", 45)
         _set_stage("chunking")
         chunks = await asyncio.to_thread(
             _page_chunks, content_list, raw_dir, Path(local_path or "")
         )
         _publish_progress(ws, file_id, "indexing", 55)
-        return chunks, artifact_key, fingerprint, artifact_version
+        return chunks
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)
 
@@ -1675,6 +1603,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
         raise TerminalError("ingest payload is missing resource rate snapshots")
 
     if await asyncio.to_thread(_resume_source_publication, job):
+        await asyncio.to_thread(_release_parse_artifact, payload)
         return
 
     try:
@@ -2011,9 +1940,6 @@ async def _reuse_donor(
             name,
             job["id"],
             donor["content_hash"],
-            None,
-            None,
-            None,
             "source_duplicate",
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
@@ -2072,9 +1998,6 @@ async def _reuse_donor(
         name,
         job["id"],
         donor["content_hash"],
-        None,
-        None,
-        None,
         "source_duplicate",
         attempt=attempt,
         actor_user_id=payload.get("actorUserId") or "",
@@ -2238,6 +2161,7 @@ async def _process_ingest_job(
         )
         if reused:
             await asyncio.to_thread(cleanup_source)
+            await asyncio.to_thread(_release_parse_artifact, payload)
             return
 
     if job_type == "parse":
@@ -2282,7 +2206,7 @@ async def _process_ingest_job(
             "ingest stopped because an account is suspended or deleting"
         )
     try:
-        chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
+        chunks = await _chunks_for(
             payload=payload,
             name=name,
             processing_plan=processing_plan,
@@ -2363,9 +2287,6 @@ async def _process_ingest_job(
             name,
             job["id"],
             digest,
-            artifact_key,
-            fingerprint,
-            artifact_version,
             "source_duplicate",
             attempt=attempt,
             actor_user_id=payload.get("actorUserId") or "",
@@ -2380,14 +2301,8 @@ async def _process_ingest_job(
         _publish_progress(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
-        await asyncio.to_thread(
-            _clear_parse_artifact_reference,
-            artifact_key,
-            file_id,
-            source_revision,
-            source_etag,
-        )
         await asyncio.to_thread(cleanup_source)
+        await asyncio.to_thread(_release_parse_artifact, payload)
         return
 
     _set_stage("indexing")
@@ -2420,9 +2335,6 @@ async def _process_ingest_job(
         name,
         job["id"],
         digest,
-        artifact_key,
-        fingerprint,
-        artifact_version,
         attempt=attempt,
         actor_user_id=payload.get("actorUserId") or "",
         workspace_id=ws,
@@ -2434,13 +2346,7 @@ async def _process_ingest_job(
     if not committed:
         return
     await asyncio.to_thread(cleanup_source)
-    await asyncio.to_thread(
-        _clear_parse_artifact_reference,
-        artifact_key,
-        file_id,
-        source_revision,
-        source_etag,
-    )
+    await asyncio.to_thread(_release_parse_artifact, payload)
     _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
 
@@ -2696,13 +2602,13 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
         await asyncio.to_thread(import_stage.report, job, exc, retry)
     if isinstance(exc, db.SourceSupersededError):
         log.info("ingest job %s was superseded", job["id"])
-        await asyncio.to_thread(_cleanup_payload_source, payload)
         await asyncio.to_thread(
             _finish_superseded,
             job["id"],
             attempts,
             _reservation_id(payload),
         )
+        await asyncio.to_thread(_cleanup_payload_source, payload)
         return
     if retry:
         log.warning("%s job %s failed; retrying: %s", job_type, job["id"], exc)
@@ -2732,7 +2638,6 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             )
         log.info("job %s requeued (%s)", job["id"], outcome)
         return
-    await asyncio.to_thread(_cleanup_payload_source, payload)
     log.exception("%s job %s failed", job_type, job["id"])
     obs.capture_error(exc, stage=f"{job_type}_terminal")
     try:
@@ -2756,6 +2661,8 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
         )
     except Exception:
         log.exception("failed to record job failure")
+    # After the terminal transition, so this job no longer protects its bundle.
+    await asyncio.to_thread(_cleanup_payload_source, payload)
 
 
 def main(job_type: str = "ingest") -> None:

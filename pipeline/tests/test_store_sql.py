@@ -2523,8 +2523,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
     workspace.scalar(
         """
         UPDATE files SET revision=2, source_etag='etag-b', status='pending',
-          indexed=false, source_sha256=NULL, content_hash=NULL,
-          parsed_blob_path=NULL
+          indexed=false, source_sha256=NULL, content_hash=NULL
         WHERE id=%s RETURNING id
         """,
         (file_id,),
@@ -2566,7 +2565,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         cur.execute(
             """
             SELECT revision, source_etag, status, indexed, source_sha256,
-                   content_hash, parsed_blob_path
+                   content_hash
             FROM files WHERE id=%s
             """,
             (file_id,),
@@ -2583,7 +2582,7 @@ async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
         )
         reservation_status = cur.fetchone()[0]
 
-    assert state == (2, "etag-b", "pending", False, None, None, None)
+    assert state == (2, "etag-b", "pending", False, None, None)
     assert associations == 0
     assert job_status == "failed"
     assert reservation_status == "released"

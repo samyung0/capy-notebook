@@ -75,11 +75,11 @@ gateway, collaboration, Office worker and the nonproduction ingest project.
 Ingest deployment remains a separate manual operation. The suite verifies
 app/Office release metadata, gateway/collaboration release headers, migration
 0016, actual ingest image revisions and job attempt environment/revision.
-Office uses native state and parser bundle v4; no retained PDF preview is
+Office uses native state and parser bundle v5; no retained PDF preview is
 expected. Parse identity comes from the completed ingest job's receipt for the
-current source hash, since successful ingestion clears the file's diagnostic
-parse reference. Optional B2 parse caches are inspected when present, including
-their bytes against that receipt.
+current source hash, since files keep no parse reference (migration 0041) and
+successful ingestion deletes the local bundle. The journey also asserts that no
+retired B2 parse bundle exists for that fingerprint.
 
 Configure these GitHub **uat environment** values. Full mappings are in
 `deploy/env-manifest.json`; never paste secret values into run artifacts.

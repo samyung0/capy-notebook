@@ -32,45 +32,11 @@ from odl import (
     ocr,
     order,
     pictures,
-    refine,
     source_text,
     tables,
 )
 from odl.adapter import node_text, odl_content_list
 from odl.table_html import Table, table_html
-
-
-def test_image_dedup_keeps_every_occurrence_and_distinct_bytes(tmp_path):
-    for name, data in (
-        ("first.png", b"abcd"),
-        ("copy.png", b"abcd"),
-        ("other.png", b"abce"),
-    ):
-        (tmp_path / name).write_bytes(data)
-    blocks = [
-        {"type": "image", "img_path": name, "page_idx": page, "bbox": [1, 2, 3, 4]}
-        for page, name in enumerate(("first.png", "copy.png", "other.png", "copy.png"))
-    ]
-    original = copy.deepcopy(blocks)
-    images, paths = refine._check_images(blocks, tmp_path)
-    assert images == {"first.png": b"abcd", "other.png": b"abce"}
-    assert [b["img_path"] for b in blocks] == [
-        "first.png",
-        "first.png",
-        "other.png",
-        "first.png",
-    ]
-    assert [{k: v for k, v in b.items() if k != "img_path"} for b in blocks] == [
-        {k: v for k, v in b.items() if k != "img_path"} for b in original
-    ]
-    for before, after in zip(original, blocks):
-        assert images[after["img_path"]] == (tmp_path / before["img_path"]).read_bytes()
-    markdown = "![](<copy.png>)\n![plot](<other.png>)\nA literal copy.png."
-    assert refine._image_markdown(markdown, paths) == (
-        "![](<images/first.png>)\n![plot](<images/other.png>)\nA literal copy.png."
-    )
-    with pytest.raises(ValueError, match="missing image"):
-        refine._check_images([{"img_path": "missing.png"}], tmp_path)
 
 
 def _pdf(tmp_path: Path, draw) -> Path:

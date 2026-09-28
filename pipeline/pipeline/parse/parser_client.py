@@ -2,20 +2,22 @@
 
 The worker downloads each source from B2 once. This client gives the parser a
 relative key in their shared local spool, and the parser publishes its bundle
-back to that volume atomically. The zip contains ``content_list.json``
-(one entry per layout block, with page index and bounding box),
-``refinement.json`` (frozen furniture and Office page-text/heading evidence),
-plus extracted images. Only native PDF sources may include a repaired
-``parsed.pdf``; Office bundles contain no PDF. Native Office highlights resolve
+back to that volume atomically. The zip holds only what ingest reads:
+``manifest.json`` (identity and receipt), ``content_list.json`` (one entry per
+layout block, with page index and bounding box) and ``refinement.json`` (frozen
+furniture and Office page-text/heading evidence). Only native PDF sources may
+include a repaired ``parsed.pdf``; Office bundles contain no PDF. Native Office highlights resolve
 quoted text against the viewer, and page captures convert the source temporarily.
 
 The live route is OpenDataLoader with the reviewed native repairs and selective
 RapidOCR on pages without a text layer (``parser/odl``).
 
 Artifacts are addressed by a fingerprint over the source object, route, parser
-version, and artifact schema. A matching local ZIP can be reused until its
-short spool TTL expires. Database donors can independently reuse indexed content;
-otherwise a missing local artifact requires parsing the retained source again.
+version, and artifact schema. A ZIP lives from publication until the ingest
+continuation that consumed it finishes; meanwhile a retry of the creating job
+recovers it with its receipt, and a concurrent job for identical bytes reuses
+it without one. Database donors independently reuse indexed content; otherwise
+the retained source is parsed again.
 """
 
 from __future__ import annotations
@@ -38,7 +40,7 @@ from ..config import cfg
 log = logging.getLogger("capy.parse.client")
 
 SOURCE_DESCRIPTOR_SCHEMA = "capy-local-source-v1"
-ARTIFACT_SCHEMA = "capy-parser-bundle-v4"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
 
 ROUTE_FAST = "fast"
 
@@ -366,33 +368,29 @@ def _entry_limit(info: zipfile.ZipInfo) -> int:
         return min(cfg.parse_artifact_max_entry_bytes, 64 << 10)
     if info.filename == "refinement.json":
         return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_content_max_bytes)
-    if info.filename.startswith("images/"):
-        return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_image_max_bytes)
     return cfg.parse_artifact_max_entry_bytes
+
+
+_REQUIRED_ENTRIES = frozenset({"manifest.json", "content_list.json", "refinement.json"})
+_ENTRIES = _REQUIRED_ENTRIES | {"parsed.pdf"}
 
 
 def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     infos = archive.infolist()
-    if len(infos) > cfg.parse_artifact_max_entries:
-        raise ParserClientError("parsed artifact contains too many entries")
     names = [info.filename for info in infos]
     if len(names) != len(set(names)):
         raise ParserClientError("parsed artifact contains duplicate entries")
-    if {"manifest.json", "content_list.json", "refinement.json"} - set(names):
+    if set(names) - _ENTRIES:
+        raise ParserClientError("parsed artifact contains unexpected entries")
+    if _REQUIRED_ENTRIES - set(names):
         raise ParserClientError(
             "parsed artifact is missing its manifest, content list or refinement"
         )
 
     expanded = 0
-    image_bytes = 0
     for info in infos:
-        path = PurePosixPath(info.filename)
-        if path.is_absolute() or ".." in path.parts:
-            raise ParserClientError("unsafe path in parsed artifact")
         if info.flag_bits & 0x1:
             raise ParserClientError("encrypted parsed artifact entries are unsupported")
-        if info.is_dir():
-            continue
         if info.file_size < 0 or info.file_size > _entry_limit(info):
             raise ParserClientError(
                 "parsed artifact entry exceeds configured byte limit"
@@ -402,12 +400,6 @@ def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
             raise ParserClientError(
                 "parsed artifact expands beyond configured byte limit"
             )
-        if info.filename.startswith("images/"):
-            image_bytes += info.file_size
-            if image_bytes > cfg.parse_images_max_bytes:
-                raise ParserClientError(
-                    "parsed artifact images exceed configured byte limit"
-                )
     return infos
 
 
@@ -461,8 +453,8 @@ def _validate_artifact_path(
         ):
             raise ParserClientError("invalid parser refinement")
         if office:
-            if any(name.lower().endswith(".pdf") for name in archive.namelist()):
-                raise ParserClientError("Office parse cache must not contain PDFs")
+            if "parsed.pdf" in archive.namelist():
+                raise ParserClientError("Office parse artifact must not contain a PDF")
             evidence = refinement.get("page_evidence")
             if (
                 not isinstance(evidence, dict)
@@ -525,13 +517,8 @@ def _extract(
         if fingerprint and manifest.get("source_fingerprint") != fingerprint:
             raise ParserClientError("parsed artifact source mismatch")
         for info in infos:
-            if info.is_dir():
-                continue
-            path = PurePosixPath(info.filename)
-            destination = raw_dir.joinpath(*path.parts)
-            if destination == raw_dir / "manifest.json":
-                continue
-            _read_entry(archive, info, destination)
+            if info.filename != "manifest.json":
+                _read_entry(archive, info, raw_dir / info.filename)
 
 
 def ensure_artifact(
@@ -610,12 +597,12 @@ def extract_artifact(
 
 
 def discard_artifact(artifact: Mapping[str, Any]) -> None:
-    """Remove one invalid handed-off artifact from the shared spool.
+    """Remove one handed-off artifact from the shared spool.
 
-    The descriptor came from a durable job payload, so constrain deletion to
-    the exact fingerprint-addressed artifact shape before touching the file.
-    A later parse job can then rebuild it instead of repeatedly consuming the
-    same corrupt cache entry.
+    Used for an invalid bundle before it returns to parsing, and for a bundle
+    whose ingest continuation has finished. The descriptor came from a durable
+    job payload, so constrain deletion to the exact fingerprint-addressed
+    artifact shape before touching the file.
     """
     fingerprint = str(artifact.get("fingerprint") or "")
     key = str(artifact.get("key") or "")
@@ -688,16 +675,18 @@ def parse_to_bundle(
 
 
 def sweep_local_spool(protected_keys: set[str] | None = None) -> dict[str, int]:
-    """Delete abandoned sources and expired local parse bundles."""
+    """Delete abandoned sources and bundles that no active job names.
+
+    Finished jobs delete their own files; this is the backstop for crashes and
+    handoffs that never happened. The age check covers the moment between a
+    parser publication and the job that records it.
+    """
     now = time.time()
+    ttl_s = cfg.parse_spool_ttl_hours * 60 * 60
     removed = {"sources": 0, "artifacts": 0}
-    policies = (
-        ("sources", cfg.parse_source_ttl_hours * 60 * 60),
-        ("artifacts", cfg.parse_zip_ttl_hours * 60 * 60),
-    )
     root = Path(cfg.parse_shared_dir).resolve()
     protected = protected_keys or set()
-    for directory_name, ttl_s in policies:
+    for directory_name in removed:
         directory = root / directory_name
         try:
             entries = tuple(directory.iterdir())

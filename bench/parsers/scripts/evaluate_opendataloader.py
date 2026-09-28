@@ -221,13 +221,8 @@ def evaluate(
     ]
     image_bytes = sum(p.stat().st_size for p in image_files)
     content_bytes = (directory / "content_list.json").stat().st_size
+    # Bundle v5 carries no images, so only the content list is bounded.
     artifact_flags = []
-    if len(image_files) + 2 > cfg.parse_artifact_max_entries:
-        artifact_flags.append("too_many_entries")
-    if image_bytes > cfg.parse_images_max_bytes:
-        artifact_flags.append("images_total_too_large")
-    if any(p.stat().st_size > cfg.parse_image_max_bytes for p in image_files):
-        artifact_flags.append("individual_image_too_large")
     if (
         content_bytes > cfg.parse_content_max_bytes
         or len(blocks) > cfg.parse_content_max_blocks

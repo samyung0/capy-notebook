@@ -190,7 +190,6 @@ export async function cleanupRun(id: string) {
           const keys = await query<{ key: string }>(
             `
           SELECT blob_path AS key FROM files WHERE user_id=ANY(%s::text[])
-          UNION SELECT parsed_blob_path FROM files WHERE user_id=ANY(%s::text[])
           UNION SELECT caption_blob_path FROM files WHERE user_id=ANY(%s::text[])
           UNION SELECT base_blob_path FROM source_documents WHERE user_id=ANY(%s::text[])
           UNION SELECT c.source_blob_path FROM source_refresh_candidates c JOIN files f ON f.id=c.file_id WHERE f.user_id=ANY(%s::text[])
@@ -198,7 +197,7 @@ export async function cleanupRun(id: string) {
           UNION SELECT final_path FROM upload_sessions WHERE user_id=ANY(%s::text[])
           UNION SELECT object_path FROM editor_assets WHERE user_id=ANY(%s::text[])
           UNION SELECT a.caption_blob_path FROM image_caption_associations a JOIN files f ON f.id=a.file_id WHERE f.user_id=ANY(%s::text[])`,
-            Array.from({ length: 9 }, () => actorIds)
+            Array.from({ length: 8 }, () => actorIds)
           );
           for (const row of keys) if (row.key) record('blob', row.key);
           const attempts = await query<{ trace_id: string; job_id: string }>(

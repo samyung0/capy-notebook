@@ -902,13 +902,14 @@ nonproduction parser still applies. If deployment fails after migration 0038
 commits, keep old consumers stopped while recovering the new release.
 
 The required parse ZIP handoff stays in the parser/worker shared local volume.
-`CAPY_PARSE_ZIP_TTL_HOURS` controls those local fingerprint bundles, and
-`CAPY_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
-worker sweeps both on a 5-minute timer while the queue is idle and protects
-artifacts still needed by active jobs. The coordinator validates the local ZIP
-before handing it to ingest and never copies it to B2. A job retains its
-verified source across capacity waits and retries, then deletes it after
-committed success or terminal failure.
+The coordinator validates the local ZIP before handing it to ingest and never
+copies it to B2. A job retains its verified source, and the ingest continuation
+its bundle, across capacity waits and retries, then deletes them after
+committed success or terminal failure. The worker's 5-minute idle sweep removes
+leftovers older than `CAPY_PARSE_SPOOL_TTL_HOURS` (default 2) that no pending or
+running job names. This release replaces `CAPY_PARSE_ZIP_TTL_HOURS` and
+`CAPY_PARSE_SOURCE_TTL_HOURS`; delete either from GitHub environment variables
+or host env files if it was ever set.
 
 ### 4.1 Knowledge-base bucket
 
@@ -962,7 +963,7 @@ Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
 ceiling. Embedding and summary calls are sequential inside each job; their
 host-wide concurrency is at most four. PDF jobs open the source or repaired PDF
 with PyMuPDF for heading retention and extraction confidence. Office jobs use
-the page evidence frozen in the PDF-free v4 bundle. These are limits, not reserved
+the page evidence frozen in the PDF-free v5 bundle. These are limits, not reserved
 capacity; idle containers use little CPU or memory. The legacy app-host
 debugging profile still defaults to one worker.
 
@@ -2498,8 +2499,9 @@ Migration 0016 only removes the obsolete preview columns and updates their
 triggers, cache-kind constraint and account-deletion function. The retained
 numbered migrations still create the earlier schema before applying this change.
 
-Parser bundle v4 and processing plan v2 are the current contracts. Office bundles
-contain parsed text and metadata without PDF bytes. Google Docs, Sheets and
+Parser bundle v5 and processing plan v2 are the current contracts. Bundles
+carry parsed blocks, refinement evidence and the receipt, with no image files
+or Markdown; Office bundles also carry no PDF bytes. Google Docs, Sheets and
 Slides import as DOCX, XLSX and PPTX; Drawings export PDF.
 
 Set `PARSER_URL` and `PARSER_TOKEN` on retrieval for temporary Office captures.

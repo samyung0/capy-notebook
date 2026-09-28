@@ -276,10 +276,6 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
-    "CAPY_PARSE_ARTIFACT_MAX_ENTRIES": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -320,14 +316,6 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
-    "CAPY_PARSE_IMAGES_MAX_BYTES": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_PARSE_IMAGE_MAX_BYTES": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_PARSE_JOB_TIMEOUT": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
@@ -340,11 +328,7 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "CAPY_PARSE_SOURCE_TTL_HOURS": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_PARSE_ZIP_TTL_HOURS": {
+    "CAPY_PARSE_SPOOL_TTL_HOURS": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
