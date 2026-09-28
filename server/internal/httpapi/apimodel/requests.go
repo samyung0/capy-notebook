@@ -151,13 +151,8 @@ type CreateDiscussionReq struct {
 	ContentRich   []map[string]any `json:"contentRich" minItems:"1"`
 }
 
-type UpdateDiscussionReq struct {
-	IsResolved bool `json:"isResolved"`
-}
-
 type CreateCommentReq struct {
-	ParentCommentID *string          `json:"parentCommentId,omitempty"`
-	ContentRich     []map[string]any `json:"contentRich" minItems:"1"`
+	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
 }
 
 type UpdateCommentReq struct {

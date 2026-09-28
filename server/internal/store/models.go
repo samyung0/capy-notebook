@@ -350,7 +350,6 @@ type Discussion struct {
 	CreatedBy       string    `json:"userId"`
 	AuthorName      string    `json:"authorName"`
 	AuthorAvatarURL string    `json:"authorAvatarUrl,omitempty"`
-	IsResolved      bool      `json:"isResolved"`
 	IsDeleted       bool      `json:"isDeleted"`
 	CreatedAt       time.Time `json:"createdAt"`
 	UpdatedAt       time.Time `json:"updatedAt"`
@@ -360,7 +359,6 @@ type Discussion struct {
 type Comment struct {
 	ID              string          `json:"id"`
 	DiscussionID    string          `json:"discussionId"`
-	ParentCommentID *string         `json:"parentCommentId,omitempty"`
 	UserID          string          `json:"userId"`
 	AuthorName      string          `json:"authorName"`
 	AuthorAvatarURL string          `json:"authorAvatarUrl,omitempty"`
@@ -369,7 +367,6 @@ type Comment struct {
 	IsDeleted       bool            `json:"isDeleted"`
 	CreatedAt       time.Time       `json:"createdAt"`
 	UpdatedAt       time.Time       `json:"updatedAt"`
-	Replies         []Comment       `json:"replies" nullable:"false"`
 }
 
 // MaterialRef is one row in the unified left-panel materials list, aggregating

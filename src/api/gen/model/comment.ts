@@ -16,8 +16,6 @@ export interface Comment {
   id: string;
   isDeleted: boolean;
   isEdited: boolean;
-  parentCommentId?: string;
-  replies: Comment[];
   updatedAt: string;
   userId: string;
 }

@@ -131,7 +131,6 @@ import type {
   UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateCommentReq,
-  UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardContentReq,
@@ -1302,57 +1301,6 @@ export const deleteMaterialDiscussion = async (id: string, options?: RequestInit
 
 
 
-export type updateMaterialDiscussionResponse204 = {
-  data: void
-  status: 204
-}
-
-export type updateMaterialDiscussionResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type updateMaterialDiscussionResponseSuccess = (updateMaterialDiscussionResponse204) & {
-  headers: Headers;
-};
-export type updateMaterialDiscussionResponseError = (updateMaterialDiscussionResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateMaterialDiscussionResponse = (updateMaterialDiscussionResponseSuccess | updateMaterialDiscussionResponseError)
-
-export const getUpdateMaterialDiscussionUrl = (id: string,) => {
-
-
-
-
-  return `/api/discussions/${id}`
-}
-
-/**
- * @summary Resolve or reopen a comment discussion
- */
-export const updateMaterialDiscussion = async (id: string,
-    updateDiscussionReq: NonReadonly<UpdateDiscussionReq>, options?: RequestInit): Promise<updateMaterialDiscussionResponse> => {
-
-  const res = await fetch(getUpdateMaterialDiscussionUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateDiscussionReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateMaterialDiscussionResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as updateMaterialDiscussionResponse
-}
-
-
-
 export type createMaterialCommentResponse201 = {
   data: Comment
   status: 201
@@ -1381,7 +1329,7 @@ export const getCreateMaterialCommentUrl = (id: string,) => {
 }
 
 /**
- * @summary Add a comment or one-level reply
+ * @summary Add a comment to a discussion
  */
 export const createMaterialComment = async (id: string,
     createCommentReq: NonReadonly<CreateCommentReq>, options?: RequestInit): Promise<createMaterialCommentResponse> => {

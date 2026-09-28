@@ -562,6 +562,12 @@ Plate's All blocks, media upload, import/export and table controls use Popover
 with icon-only triggers. PDF Draw and Shape also use Popover. Paragraph/block
 styles also use Popover, with a current-choice check and no chevron. Table groups open nested popovers
 on click or keyboard activation. Popover actions are buttons navigated with Tab;
+The block's comment count opens a popover (`BlockDiscussionThreads`) listing
+its threads, divided by rules. A thread is a flat list of comments in creation
+order; the reply row at the bottom adds a comment to it. Each comment's ⋮ menu offers Edit on your own comment and Delete
+(own, or any for the workspace owner); on a thread's first comment Delete
+removes the thread.
+
 the table size grid retains arrow-key selection. Command popovers become inert
 on close and preserve focus handed to the editor or a command's dialog.
 All blocks groups Subscript and Superscript with Inline elements, using shared

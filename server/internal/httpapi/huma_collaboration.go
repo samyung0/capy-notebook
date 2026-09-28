@@ -31,11 +31,6 @@ type discussionIDInput struct {
 	ID string `path:"id"`
 }
 
-type updateDiscussionInput struct {
-	ID   string `path:"id"`
-	Body apimodel.UpdateDiscussionReq
-}
-
 type createCommentInput struct {
 	ID   string `path:"id"`
 	Body apimodel.CreateCommentReq
@@ -84,9 +79,8 @@ func (a *api) registerCollaboration(api huma.API) {
 	const tag = "Material collaboration"
 	reg(api, http.MethodGet, "/api/materials/{id}/discussions", "listMaterialDiscussions", tag, "List nested material comment discussions", http.StatusOK, a.listMaterialDiscussions)
 	reg(api, http.MethodPost, "/api/materials/{id}/discussions", "createMaterialDiscussion", tag, "Create a comment discussion", http.StatusCreated, a.createMaterialDiscussion)
-	reg(api, http.MethodPatch, "/api/discussions/{id}", "updateMaterialDiscussion", tag, "Resolve or reopen a comment discussion", http.StatusNoContent, a.updateMaterialDiscussion)
 	reg(api, http.MethodDelete, "/api/discussions/{id}", "deleteMaterialDiscussion", tag, "Soft-delete a comment discussion", http.StatusNoContent, a.deleteMaterialDiscussion)
-	reg(api, http.MethodPost, "/api/discussions/{id}/comments", "createMaterialComment", tag, "Add a comment or one-level reply", http.StatusCreated, a.createMaterialComment)
+	reg(api, http.MethodPost, "/api/discussions/{id}/comments", "createMaterialComment", tag, "Add a comment to a discussion", http.StatusCreated, a.createMaterialComment)
 	reg(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, a.updateMaterialComment)
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
 	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
@@ -231,23 +225,6 @@ func (a *api) createMaterialDiscussion(ctx context.Context, in *createDiscussion
 	return &discussionOutput{Body: discussion}, nil
 }
 
-func (a *api) updateMaterialDiscussion(ctx context.Context, in *updateDiscussionInput) (*Empty, error) {
-	resource, err := a.s.DiscussionResource(ctx, in.ID)
-	if err != nil {
-		return nil, collaborationError(err)
-	}
-	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
-		return nil, collaborationError(err)
-	}
-	if err := a.s.SetCollaborationDiscussionResolved(
-		ctx, in.ID, userID(ctx), in.Body.IsResolved,
-	); err != nil {
-		return nil, collaborationError(err)
-	}
-	a.publishCommentInvalidation(ctx, resource.MaterialID)
-	return &Empty{}, nil
-}
-
 func (a *api) deleteMaterialDiscussion(ctx context.Context, in *discussionIDInput) (*Empty, error) {
 	resource, err := a.s.DiscussionResource(ctx, in.ID)
 	if err != nil {
@@ -275,9 +252,8 @@ func (a *api) createMaterialComment(ctx context.Context, in *createCommentInput)
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), resource.MaterialID); err != nil {
 		return nil, collaborationError(err)
 	}
-	comment, err := a.s.AddNestedComment(
-		ctx, in.ID, userID(ctx), in.Body.ParentCommentID,
-		apimodel.EncodeRaw(in.Body.ContentRich),
+	comment, err := a.s.AddComment(
+		ctx, in.ID, userID(ctx), apimodel.EncodeRaw(in.Body.ContentRich),
 	)
 	if err != nil {
 		return nil, collaborationError(err)

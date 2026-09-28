@@ -80,6 +80,30 @@ export const BlockDraggable: RenderNodeWrapper = (props) => {
   return (nextProps) => <DraggableBlock {...nextProps} />;
 };
 
+/**
+ * Distance from `container`'s top to the middle of the block's first line. The
+ * drag handle and the comment trigger both center on it.
+ */
+export function firstLineMiddle(
+  editor: PlateEditor,
+  element: TElement,
+  container: HTMLElement
+) {
+  const block = editor.api.toDOMNode(element);
+  if (!block) return null;
+  const containerTop = container.getBoundingClientRect().top;
+  // List wrappers add their own spacing inside the Plate element.
+  const listLine = element.listStyleType
+    ? block.querySelector('[data-slate-leaf]')?.getClientRects()[0]
+    : undefined;
+  if (listLine) return listLine.top - containerTop + listLine.height / 2;
+  // Headings wrap and vary in size; other blocks use a fixed first-line middle.
+  const middle = isType(editor, element, KEYS.heading)
+    ? Number.parseFloat(window.getComputedStyle(block).lineHeight) / 2
+    : 15;
+  return block.getBoundingClientRect().top - containerTop + middle;
+}
+
 function DraggableBlock(props: PlateElementProps) {
   const { children, editor, element, path } = props;
   const blockSelectionApi = editor.getApi(BlockSelectionPlugin).blockSelection;
@@ -130,29 +154,9 @@ function DraggableBlock(props: PlateElementProps) {
       data-slot="block-wrapper"
       onMouseEnter={(event) => {
         if (isDragging) return;
-        const block = editor.api.toDOMNode(element);
-        if (!block) return;
-        // List wrappers add their own spacing inside the Plate element.
-        const listLine = element.listStyleType
-          ? block.querySelector('[data-slate-leaf]')?.getClientRects()[0]
-          : undefined;
-        if (listLine) {
-          setHandleTop(
-            listLine.top -
-              event.currentTarget.getBoundingClientRect().top +
-              (listLine.height - 24) / 2
-          );
-          return;
-        }
-        const style = window.getComputedStyle(block);
-        const marginTop = Number.parseFloat(style.marginTop) || 0;
-        // Center the 24px handle on the first line, including wrapped headings.
-        setHandleTop(
-          marginTop +
-            (isType(editor, element, KEYS.heading)
-              ? (Number.parseFloat(style.lineHeight) - 24) / 2
-              : 3)
-        );
+        const middle = firstLineMiddle(editor, element, event.currentTarget);
+        // Center the 24px handle on the first line.
+        if (middle !== null) setHandleTop(middle - 12);
       }}
     >
       {!isInTable && (

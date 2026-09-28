@@ -28,7 +28,6 @@ func scanRevisionComment(row pgx.Row) (Comment, error) {
 	err := row.Scan(
 		&comment.ID,
 		&comment.DiscussionID,
-		&comment.ParentCommentID,
 		&comment.UserID,
 		&comment.AuthorName,
 		&comment.AuthorAvatarURL,
@@ -43,7 +42,6 @@ func scanRevisionComment(row pgx.Row) (Comment, error) {
 	} else {
 		comment.ContentRich = json.RawMessage(content)
 	}
-	comment.Replies = []Comment{}
 	return comment, err
 }
 
@@ -74,12 +72,12 @@ func validateRelativeAnchor(start, end []byte, version int, quote string) error 
 	return nil
 }
 
-// ListCollaborationDiscussions returns active comment threads with one-level
-// replies nested under each root comment.
+// ListCollaborationDiscussions returns active comment threads, each a flat list
+// of comments in creation order.
 func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID string) ([]Discussion, error) {
 	rows, err := s.pool.Query(ctx, `SELECT d.id, d.material_id, d.block_id, d.anchor_start,
 		d.anchor_end, d.anchor_version, d.anchor_quote, d.created_by,
-		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), d.is_resolved, false,
+		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), false,
 		d.created_at, d.updated_at
 		FROM material_discussions d
 		LEFT JOIN users u ON u.id=d.created_by
@@ -104,7 +102,6 @@ func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID str
 			&discussion.CreatedBy,
 			&discussion.AuthorName,
 			&discussion.AuthorAvatarURL,
-			&discussion.IsResolved,
 			&discussion.IsDeleted,
 			&discussion.CreatedAt,
 			&discussion.UpdatedAt,
@@ -121,7 +118,7 @@ func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID str
 }
 
 func (s *Store) listDiscussionComments(ctx context.Context, discussionID string) ([]Comment, error) {
-	rows, err := s.pool.Query(ctx, `SELECT c.id, c.discussion_id, c.parent_comment_id, c.user_id,
+	rows, err := s.pool.Query(ctx, `SELECT c.id, c.discussion_id, c.user_id,
 		COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), c.content_rich, c.is_edited,
 		(c.deleted_at IS NOT NULL), c.created_at, c.updated_at
 		FROM material_comments c
@@ -132,29 +129,15 @@ func (s *Store) listDiscussionComments(ctx context.Context, discussionID string)
 		return nil, err
 	}
 	defer rows.Close()
-	roots := []Comment{}
-	replies := map[string][]Comment{}
+	comments := []Comment{}
 	for rows.Next() {
 		comment, err := scanRevisionComment(rows)
 		if err != nil {
 			return nil, err
 		}
-		if comment.ParentCommentID == nil {
-			roots = append(roots, comment)
-		} else {
-			replies[*comment.ParentCommentID] = append(replies[*comment.ParentCommentID], comment)
-		}
+		comments = append(comments, comment)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for i := range roots {
-		roots[i].Replies = replies[roots[i].ID]
-		if roots[i].Replies == nil {
-			roots[i].Replies = []Comment{}
-		}
-	}
-	return roots, nil
+	return comments, rows.Err()
 }
 
 func (s *Store) DiscussionResource(ctx context.Context, id string) (CollaborationResource, error) {
@@ -379,10 +362,9 @@ func nullBytes(value []byte) any {
 	return value
 }
 
-func (s *Store) AddNestedComment(
+func (s *Store) AddComment(
 	ctx context.Context,
 	discussionID, actorID string,
-	parentCommentID *string,
 	content json.RawMessage,
 ) (Comment, error) {
 	if err := validateRichContent(content); err != nil {
@@ -404,35 +386,20 @@ func (s *Store) AddNestedComment(
 	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
 		return Comment{}, err
 	}
-	if parentCommentID != nil {
-		var parentParent *string
-		err := tx.QueryRow(ctx, `SELECT parent_comment_id FROM material_comments
-			WHERE id=$1 AND discussion_id=$2 AND deleted_at IS NULL`,
-			*parentCommentID, discussionID).Scan(&parentParent)
-		if isNoRows(err) {
-			return Comment{}, ErrNotFound
-		}
-		if err != nil {
-			return Comment{}, err
-		}
-		if parentParent != nil {
-			return Comment{}, fmt.Errorf("%w: replies may only be nested one level", materialdoc.ErrInvalid)
-		}
-	}
 	id := uid("com")
 	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH added AS (
 			INSERT INTO material_comments
-			(id, discussion_id, parent_comment_id, user_id, content_rich)
-			SELECT $1,$2,$3,$4,$5 FROM material_discussions
+			(id, discussion_id, user_id, content_rich)
+			SELECT $1,$2,$3,$4 FROM material_discussions
 			WHERE id=$2 AND deleted_at IS NULL
-			RETURNING id, discussion_id, parent_comment_id, user_id, content_rich,
+			RETURNING id, discussion_id, user_id, content_rich,
 			          is_edited, created_at, updated_at
 		)
-		SELECT a.id, a.discussion_id, a.parent_comment_id, a.user_id,
+		SELECT a.id, a.discussion_id, a.user_id,
 			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), a.content_rich,
 			a.is_edited, false, a.created_at, a.updated_at
 		FROM added a LEFT JOIN users u ON u.id=a.user_id`,
-		id, discussionID, parentCommentID, actorID, content))
+		id, discussionID, actorID, content))
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
 	}
@@ -475,10 +442,10 @@ func (s *Store) EditOwnComment(
 			UPDATE material_comments
 			SET content_rich=$3, is_edited=true, updated_at=now()
 			WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
-			RETURNING id, discussion_id, parent_comment_id, user_id, content_rich,
+			RETURNING id, discussion_id, user_id, content_rich,
 			          is_edited, created_at, updated_at
 		)
-		SELECT e.id, e.discussion_id, e.parent_comment_id, e.user_id,
+		SELECT e.id, e.discussion_id, e.user_id,
 			COALESCE(u.name,''), COALESCE('/icons/' || NULLIF(u.avatar_icon_id,'') || '.svg', u.avatar_url,''), e.content_rich,
 			e.is_edited, false, e.created_at, e.updated_at
 		FROM edited e LEFT JOIN users u ON u.id=e.user_id`, id, actorID, content))
@@ -530,35 +497,6 @@ func (s *Store) SoftDeleteComment(ctx context.Context, id, actorID string) error
 	return tx.Commit(ctx)
 }
 
-func (s *Store) SetCollaborationDiscussionResolved(ctx context.Context, id, actorID string, resolved bool) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	var materialID string
-	if err := tx.QueryRow(ctx, `SELECT material_id FROM material_discussions
-		WHERE id=$1 AND deleted_at IS NULL`, id).Scan(&materialID); err != nil {
-		if isNoRows(err) {
-			return ErrNotFound
-		}
-		return err
-	}
-	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
-		return err
-	}
-	ct, err := tx.Exec(ctx, `UPDATE material_discussions
-		SET is_resolved=$2, updated_at=now()
-		WHERE id=$1 AND deleted_at IS NULL`, id, resolved)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return ErrNotFound
-	}
-	return tx.Commit(ctx)
-}
-
 func (s *Store) SoftDeleteDiscussion(ctx context.Context, id, actorID string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -582,7 +520,7 @@ func (s *Store) SoftDeleteDiscussion(ctx context.Context, id, actorID string) er
 		return ErrForbidden
 	}
 	ct, err := tx.Exec(ctx, `UPDATE material_discussions
-		SET deleted_at=now(), deleted_by=$2, is_resolved=true, updated_at=now()
+		SET deleted_at=now(), deleted_by=$2, updated_at=now()
 		WHERE id=$1 AND deleted_at IS NULL`, id, actorID)
 	if err != nil {
 		return err

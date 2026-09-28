@@ -14,5 +14,4 @@ export interface CreateCommentReq {
      * @nullable
      */
   contentRich: CreateCommentReqContentRichItem[] | null;
-  parentCommentId?: string;
 }

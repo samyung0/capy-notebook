@@ -3,7 +3,7 @@ import {
   slateRangeToRelativeRange,
   type YjsEditor,
 } from '@slate-yjs/core';
-import { NodeApi, type Path, RangeApi } from 'platejs';
+import { NodeApi, type Path, RangeApi, type TElement } from 'platejs';
 import {
   createPlatePlugin,
   type PlateElementProps,
@@ -11,19 +11,30 @@ import {
   type PlateLeafProps,
   useEditorRef,
 } from 'platejs/react';
-import { createContext, useContext, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  Fragment,
+  useContext,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import * as Y from 'yjs';
 import {
   useCreateMaterialComment,
   useCreateMaterialDiscussion,
   useDeleteMaterialComment,
   useDeleteMaterialDiscussion,
-  useResolveMaterialDiscussion,
+  useMe,
   useUpdateMaterialComment,
 } from '@/api/hooks';
 import type { MaterialComment, MaterialDiscussion } from '@/api/types';
+import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { IconButton } from '@/components/ui/IconButton';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import {
   Popover,
   PopoverContent,
@@ -31,10 +42,11 @@ import {
 } from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
 import type { MaterialValue } from '@/features/materials/document';
+import { relativeTime } from '@/features/materials/MaterialListCard';
 import { EditorIcon } from '@/features/notes/EditorIcon';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { canReplyAtDepth } from './canReplyAtDepth';
+import { firstLineMiddle } from './BlockInteractions';
 import { useEditorRuntime } from './EditorRuntime';
 
 const COMMENT_DECORATION_KEY = 'capy_comment_highlight';
@@ -46,11 +58,6 @@ export interface EditorCollaborationOptions {
 
 export interface CollaborationActions {
   addComment: (discussionId: string, text: string) => Promise<void>;
-  addReply: (
-    discussionId: string,
-    parentCommentId: string,
-    text: string
-  ) => Promise<void>;
   canEdit: boolean;
   collaborationError: string | null;
   currentUserId: string | null;
@@ -61,7 +68,6 @@ export interface CollaborationActions {
   isOwner: boolean;
   mutationPending: boolean;
   openComment: () => void;
-  resolve: (discussion: MaterialDiscussion) => void;
   updateComment: (commentId: string, text: string) => Promise<void>;
 }
 
@@ -180,7 +186,7 @@ function BlockDiscussionContent({
   if (!threads?.length) return <div className="w-full">{children}</div>;
 
   return (
-    <BlockDiscussionThreads threads={threads}>
+    <BlockDiscussionThreads element={element} threads={threads}>
       {children}
     </BlockDiscussionThreads>
   );
@@ -190,48 +196,50 @@ function BlockDiscussionContent({
  * is free to subscribe to the full action bag. */
 function BlockDiscussionThreads({
   children,
+  element,
   threads: discussions,
 }: {
   children: React.ReactNode;
+  element: TElement;
   threads: MaterialDiscussion[];
 }) {
   const actions = useCollaborationActions();
+  const editor = useEditorRef();
   const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const [triggerTop, setTriggerTop] = useState(4);
+  // Center the 28px trigger on the first line, like the drag handle.
+  useLayoutEffect(() => {
+    const middle = rowRef.current
+      ? firstLineMiddle(editor, element, rowRef.current)
+      : null;
+    if (middle !== null) setTriggerTop(middle - 14);
+  }, [editor, element]);
   if (!actions) return <div className="w-full">{children}</div>;
 
   return (
-    <div className="flex w-full justify-between">
+    <div className="flex w-full justify-between" ref={rowRef}>
       <Popover onOpenChange={setOpen} open={open}>
         <div className="min-w-0 flex-1">{children}</div>
         <PopoverContent
           align="start"
-          className="max-h-[min(60dvh,var(--radix-popper-available-height))] w-95 max-w-[calc(100vw-24px)] gap-0 overflow-y-auto p-0"
+          className="max-h-[min(60dvh,var(--radix-popper-available-height))] w-90 max-w-[calc(100vw-24px)] gap-0 overflow-y-auto px-1 py-1.5 shadow-card"
           contentEditable={false}
           onCloseAutoFocus={(event) => event.preventDefault()}
           onOpenAutoFocus={(event) => event.preventDefault()}
           side="left"
           sideOffset={8}
         >
-          <div className="sticky top-0 z-10 flex items-center justify-between border-divider border-b bg-surface px-3 py-2">
-            <p className="font-semibold text-fg-muted text-xs">
-              {m.editor_comments()}
-            </p>
-            <Button
-              aria-label={m.editor_close_comments()}
-              onClick={() => setOpen(false)}
-              size="sm"
-              variant="ghost"
-            >
-              <EditorIcon className="size-4" name="x" />
-            </Button>
-          </div>
-          <div className="flex flex-col gap-2 p-2">
-            {discussions.map((discussion) => (
-              <DiscussionThread discussion={discussion} key={discussion.id} />
-            ))}
-          </div>
+          {discussions.map((discussion, index) => (
+            <Fragment key={discussion.id}>
+              {index > 0 && (
+                <div className="-mx-1 my-1.5 border-divider border-t" />
+              )}
+              <DiscussionThread discussion={discussion} />
+            </Fragment>
+          ))}
           {actions.collaborationError && (
-            <p className="border-divider border-t px-3 py-2 text-sm text-solid-error">
+            <p className="px-2 py-1.5 text-sm text-solid-error">
               {actions.collaborationError}
             </p>
           )}
@@ -248,9 +256,10 @@ function BlockDiscussionThreads({
                       count: String(discussions.length),
                     })
               }
-              className="mt-1 ml-1 h-7 min-w-7 gap-1 rounded-button px-1.5 py-0 text-fg-muted data-[state=open]:bg-surface-hover-bg"
+              className="ml-0.5 h-7 min-w-7 gap-1 rounded-button px-1.5 py-0 text-fg-muted data-[state=open]:bg-surface-hover-bg"
               contentEditable={false}
               size="sm"
+              style={{ marginTop: triggerTop }}
               variant="ghost-hover"
             >
               <EditorIcon className="size-4 shrink-0" name="comment" />
@@ -301,8 +310,6 @@ export function CollaborationProvider({
     useUpdateMaterialComment(materialId);
   const { isPending: deleteCommentIsPending, mutate: deleteComment } =
     useDeleteMaterialComment(materialId);
-  const { isPending: resolveDiscussionIsPending, mutate: resolveDiscussion } =
-    useResolveMaterialDiscussion(materialId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -315,8 +322,7 @@ export function CollaborationProvider({
     createDiscussionIsPending ||
     addCommentIsPending ||
     updateCommentIsPending ||
-    deleteCommentIsPending ||
-    resolveDiscussionIsPending;
+    deleteCommentIsPending;
 
   const fail = (cause: unknown, fallback: string) =>
     setError(cause instanceof Error ? cause.message : fallback);
@@ -361,13 +367,6 @@ export function CollaborationProvider({
           discussionId,
         });
       },
-      addReply: async (discussionId, parentCommentId, text) => {
-        await addComment({
-          contentRich: richComment(text),
-          discussionId,
-          parentCommentId,
-        });
-      },
       canEdit,
       collaborationError: error,
       currentUserId,
@@ -406,11 +405,6 @@ export function CollaborationProvider({
         setError(null);
         setDialogOpen(true);
       },
-      resolve: (discussion) =>
-        resolveDiscussion({
-          discussionId: discussion.id,
-          isResolved: !discussion.isResolved,
-        }),
       updateComment: async (commentId, text) => {
         await updateComment({
           commentId,
@@ -428,7 +422,6 @@ export function CollaborationProvider({
       editor,
       error,
       mutationPending,
-      resolveDiscussion,
       role,
       updateComment,
     ]
@@ -493,101 +486,68 @@ function authorName(entry: { authorName?: string }) {
   return entry.authorName?.trim() || m.editor_unknown_user();
 }
 
-export function DiscussionThread({
-  discussion,
-}: {
-  discussion: MaterialDiscussion;
-}) {
+function DiscussionThread({ discussion }: { discussion: MaterialDiscussion }) {
   const actions = useCollaborationActions();
-  if (!actions) return null;
-  const canDeleteThread =
-    discussion.userId === actions.currentUserId || actions.isOwner;
-  return (
-    <section
-      className={cn(
-        'rounded-card border border-line p-3',
-        discussion.isResolved && 'opacity-65'
-      )}
-    >
-      {discussion.anchorQuote && (
-        <p className="mb-2 line-clamp-2 border-action-accent border-l-2 pl-2 text-fg-muted text-xs">
-          {discussion.anchorQuote}
-        </p>
-      )}
-      <DiscussionComments discussion={discussion} />
-      <div className="mt-2 flex flex-wrap gap-1">
-        {actions.canEdit && (
-          <Button
-            onClick={() => actions.resolve(discussion)}
-            size="sm"
-            variant="ghost"
-          >
-            {discussion.isResolved ? m.editor_reopen() : m.editor_resolve()}
-          </Button>
-        )}
-        {canDeleteThread && (
-          <Button
-            onClick={() => actions.deleteDiscussion(discussion)}
-            size="sm"
-            variant="ghost"
-          >
-            {m.editor_delete_thread()}
-          </Button>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DiscussionComments({
-  discussion,
-}: {
-  discussion: MaterialDiscussion;
-}) {
-  const [replyTo, setReplyTo] = useState<string | null>(null);
   const [reply, setReply] = useState('');
-  const [comment, setComment] = useState('');
-  const actions = useCollaborationActions();
-
+  const { data: me } = useMe({ errorBoundary: false });
+  if (!actions) return null;
+  const send = () => {
+    const text = reply.trim();
+    if (!text || actions.mutationPending) return;
+    // Keep anything typed while the request was in flight.
+    void actions
+      .addComment(discussion.id, text)
+      .then(() =>
+        setReply((current) => (current.trim() === text ? '' : current))
+      );
+  };
   return (
-    <div className="flex flex-col gap-2">
-      {discussion.comments.map((entry) => (
+    <section>
+      {discussion.comments.map((entry, index) => (
         <CommentEntry
-          depth={0}
-          discussionId={discussion.id}
+          discussion={discussion}
           entry={entry}
+          isFirst={index === 0}
           key={entry.id}
-          reply={reply}
-          replyTo={replyTo}
-          setReply={setReply}
-          setReplyTo={setReplyTo}
         />
       ))}
-      {actions?.canEdit && (
-        <div className="flex gap-2">
-          <Textarea
-            aria-label={m.editor_add_comment()}
-            className="min-h-14 flex-1"
-            onChange={(event) => setComment(event.target.value)}
-            placeholder={m.editor_comment_placeholder()}
-            rows={2}
-            value={comment}
+      {actions.canEdit && (
+        <div className="flex items-center gap-2 px-2 py-1.5">
+          <Avatar
+            className="size-6 text-[10px]"
+            name={me?.name}
+            src={me?.avatarUrl}
           />
-          <Button
-            disabled={!comment.trim()}
-            onClick={() =>
-              void actions
-                .addComment(discussion.id, comment.trim())
-                .then(() => setComment(''))
-            }
+          <Textarea
+            aria-label={m.editor_reply()}
+            className="min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-0.5 focus:border-0"
+            onChange={(event) => setReply(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            placeholder={m.editor_reply_placeholder()}
+            rows={1}
+            value={reply}
+          />
+          <IconButton
+            className="size-7 p-0"
+            disabled={!reply.trim() || actions.mutationPending}
+            icon="arrowRight"
+            label={m.editor_reply()}
+            onClick={send}
             size="sm"
-            variant="outline"
-          >
-            {m.editor_comment()}
-          </Button>
+            variant="ghost-hover"
+          />
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -602,142 +562,146 @@ function commentContentText(contentRich: unknown): string {
     .join('\n');
 }
 
+const DAY_MS = 86_400_000;
+
+/** Relative within a day ("10 minutes ago"), a short date after that. */
+function commentTime(iso: string) {
+  const date = new Date(iso);
+  if (Date.now() - date.getTime() < DAY_MS) return relativeTime(iso);
+  return date.toLocaleDateString(getLocale(), {
+    day: 'numeric',
+    month: 'short',
+    year:
+      date.getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+  });
+}
+
 function CommentEntry({
+  discussion,
   entry,
-  discussionId,
-  depth,
-  replyTo,
-  reply,
-  setReplyTo,
-  setReply,
+  isFirst,
 }: {
+  discussion: MaterialDiscussion;
   entry: MaterialComment;
-  discussionId: string;
-  depth: 0 | 1;
-  replyTo: string | null;
-  reply: string;
-  setReplyTo: (id: string | null) => void;
-  setReply: (text: string) => void;
+  isFirst: boolean;
 }) {
   const actions = useCollaborationActions()!;
   const [editing, setEditing] = useState(false);
-  const [editText, setEditText] = useState(() =>
-    entry.isDeleted ? '' : commentContentText(entry.contentRich)
-  );
-  const text = entry.isDeleted
-    ? m.editor_deleted_comment()
-    : commentContentText(entry.contentRich);
+  const [editText, setEditText] = useState('');
   const own = entry.userId === actions.currentUserId;
-  const canDelete = own || actions.isOwner;
+  const menu: MenuItem[] = [];
+  if (!entry.isDeleted && own && actions.canEdit) {
+    menu.push({
+      icon: 'pencil',
+      label: m.action_edit(),
+      onClick: () => {
+        setEditText(commentContentText(entry.contentRich));
+        setEditing(true);
+      },
+    });
+  }
+  // The first comment stands for the thread, so deleting it removes the thread.
+  if (
+    isFirst &&
+    (discussion.userId === actions.currentUserId || actions.isOwner)
+  ) {
+    menu.push({
+      danger: true,
+      icon: 'trash',
+      label: m.editor_delete_thread(),
+      onClick: () => actions.deleteDiscussion(discussion),
+    });
+  } else if (!(isFirst || entry.isDeleted) && (own || actions.isOwner)) {
+    menu.push({
+      danger: true,
+      icon: 'trash',
+      label: m.action_delete(),
+      onClick: () => actions.deleteComment(entry),
+    });
+  }
   return (
-    <div
-      className={cn(
-        'rounded-button bg-surface-hover-bg px-3 py-2',
-        depth === 1 && 'ml-5'
-      )}
-    >
-      <p className="font-medium text-fg-muted text-xs">{authorName(entry)}</p>
-      {editing ? (
-        <div className="mt-1 flex flex-col gap-1">
-          <Textarea
-            onChange={(event) => setEditText(event.target.value)}
-            rows={2}
-            value={editText}
-          />
-          <div className="flex gap-1">
-            <Button
-              onClick={() =>
-                void actions
-                  .updateComment(entry.id, editText.trim())
-                  .then(() => setEditing(false))
-              }
-              size="sm"
-            >
-              {m.action_save()}
-            </Button>
-            <Button onClick={() => setEditing(false)} size="sm" variant="ghost">
-              {m.action_cancel()}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <p
-          className={cn(
-            'text-fg text-sm',
-            entry.isDeleted && 'text-fg-muted italic'
-          )}
-        >
-          {text}
-        </p>
-      )}
-      {!entry.isDeleted && (
-        <div className="mt-1 flex gap-1">
-          {canReplyAtDepth(depth, actions.canEdit) && (
-            <Button
-              onClick={() => {
-                setReplyTo(entry.id);
-                setReply('');
-              }}
-              size="sm"
-              variant="ghost"
-            >
-              {m.editor_reply()}
-            </Button>
-          )}
-          {own && (
-            <Button onClick={() => setEditing(true)} size="sm" variant="ghost">
-              {m.action_edit()}
-            </Button>
-          )}
-          {canDelete && (
-            <Button
-              onClick={() => actions.deleteComment(entry)}
-              size="sm"
-              variant="ghost"
-            >
-              {m.action_delete()}
-            </Button>
-          )}
-        </div>
-      )}
-      {replyTo === entry.id && depth === 0 && (
-        <div className="mt-2 flex gap-2">
-          <Textarea
-            aria-label={m.editor_reply()}
-            className="min-h-14 flex-1"
-            onChange={(event) => setReply(event.target.value)}
-            rows={2}
-            value={reply}
-          />
-          <Button
-            disabled={!reply.trim()}
-            onClick={() =>
-              void actions
-                .addReply(discussionId, entry.id, reply.trim())
-                .then(() => {
-                  setReply('');
-                  setReplyTo(null);
-                })
-            }
-            size="sm"
-            variant="outline"
-          >
-            {m.editor_reply()}
-          </Button>
-        </div>
-      )}
-      {entry.replies.map((child) => (
-        <CommentEntry
-          depth={1}
-          discussionId={discussionId}
-          entry={child}
-          key={child.id}
-          reply={reply}
-          replyTo={replyTo}
-          setReply={setReply}
-          setReplyTo={setReplyTo}
+    <div className="group/comment rounded-lg px-2 py-1.5 hover:bg-surface-hover-bg has-data-[state=open]:bg-surface-hover-bg">
+      <div className="flex min-h-6 items-center gap-2">
+        <Avatar
+          className="size-6 text-[10px]"
+          name={authorName(entry)}
+          src={entry.authorAvatarUrl}
         />
-      ))}
+        <span className="min-w-0 truncate font-bold">{authorName(entry)}</span>
+        <time
+          className="mr-auto shrink-0 text-fg-muted text-xs"
+          dateTime={entry.createdAt}
+          title={new Date(entry.createdAt).toLocaleString(getLocale())}
+        >
+          {commentTime(entry.createdAt)}
+        </time>
+        {menu.length > 0 && (
+          <Menu
+            className="min-w-36"
+            items={menu}
+            trigger={
+              <IconButton
+                className="size-6 p-0 opacity-0 focus-visible:opacity-100 group-hover/comment:opacity-100 data-[state=open]:opacity-100"
+                icon="moreVertical"
+                label={m.a11y_open_menu()}
+                size="sm"
+                variant="ghost-hover"
+              />
+            }
+          />
+        )}
+      </div>
+      <div className="pl-8">
+        {isFirst && discussion.anchorQuote && (
+          <p className="mt-0.5 mb-1 line-clamp-1 border-action-accent border-l-2 pl-2 text-[13px] text-fg-muted">
+            {discussion.anchorQuote}
+          </p>
+        )}
+        {editing ? (
+          <div className="mt-1 flex flex-col gap-1.5">
+            <Textarea
+              aria-label={m.editor_comment()}
+              autoFocus
+              className="min-h-13 resize-none rounded-lg px-2 py-1.5"
+              onChange={(event) => setEditText(event.target.value)}
+              value={editText}
+            />
+            <div className="flex justify-end gap-1">
+              <Button
+                onClick={() => setEditing(false)}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.action_cancel()}
+              </Button>
+              <Button
+                disabled={!editText.trim()}
+                onClick={() =>
+                  void actions
+                    .updateComment(entry.id, editText.trim())
+                    .then(() => setEditing(false))
+                }
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.action_save()}
+              </Button>
+            </div>
+          </div>
+        ) : entry.isDeleted ? (
+          <p className="text-fg-muted italic">{m.editor_deleted_comment()}</p>
+        ) : (
+          <p className="whitespace-pre-wrap break-words">
+            {commentContentText(entry.contentRich)}
+            {entry.isEdited && (
+              <span className="text-fg-muted text-xs">
+                {' '}
+                {m.editor_edited()}
+              </span>
+            )}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

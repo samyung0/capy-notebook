@@ -98,7 +98,6 @@ import type {
   UpdateCardStudyStateReq,
   UpdateChapterReq,
   UpdateCommentReq,
-  UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,
@@ -1724,19 +1723,6 @@ export function useCreateMaterialComment(materialId: string) {
       ...body
     }: CreateCommentReq & { discussionId: string }) =>
       api.post<MaterialComment>(`/discussions/${discussionId}/comments`, body),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
-  });
-}
-
-export function useResolveMaterialDiscussion(materialId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      discussionId,
-      ...body
-    }: UpdateDiscussionReq & { discussionId: string }) =>
-      api.patch<void>(`/discussions/${discussionId}`, body),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });

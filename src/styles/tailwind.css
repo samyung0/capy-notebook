@@ -404,10 +404,15 @@
 }
 
 @layer components {
-  /* Paint-contained chunks must include the block drag-handle gutter. */
+  /* Paint-contained chunks must include the drag-handle gutter on the left and
+     the comment trigger in the editor's right padding (px-5 sm:px-10). */
   .note-editor [data-slate-chunk] {
-    margin-inline: -24px;
-    padding-inline: 24px;
+    margin-inline: -24px -20px;
+    padding-inline: 24px 20px;
+    @variant sm {
+      margin-right: -40px;
+      padding-right: 40px;
+    }
   }
 
   .note-editor .slate-selectable:has(> [data-slot="block-selection"]) {

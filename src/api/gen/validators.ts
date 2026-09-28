@@ -532,8 +532,6 @@ export const UpdateMaterialCommentResponse = zod.object({
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -636,21 +634,7 @@ export const DeleteMaterialDiscussionResponse = zod.void()
 
 
 /**
- * @summary Resolve or reopen a comment discussion
- */
-export const UpdateMaterialDiscussionParams = zod.object({
-  "id": zod.string()
-})
-
-export const UpdateMaterialDiscussionBody = zod.object({
-  "isResolved": zod.boolean()
-})
-
-export const UpdateMaterialDiscussionResponse = zod.void()
-
-
-/**
- * @summary Add a comment or one-level reply
+ * @summary Add a comment to a discussion
  */
 export const CreateMaterialCommentParams = zod.object({
   "id": zod.string()
@@ -660,8 +644,7 @@ export const CreateMaterialCommentParams = zod.object({
 
 
 export const CreateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable(),
-  "parentCommentId": zod.string().optional()
+  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
 
 export const CreateMaterialCommentResponse = zod.object({
@@ -674,8 +657,6 @@ export const CreateMaterialCommentResponse = zod.object({
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -2136,15 +2117,12 @@ export const ListMaterialDiscussionsResponseItem = zod.object({
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
-  "isResolved": zod.boolean(),
   "materialId": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
@@ -2197,15 +2175,12 @@ export const CreateMaterialDiscussionResponse = zod.object({
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "isDeleted": zod.boolean(),
-  "isResolved": zod.boolean(),
   "materialId": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
