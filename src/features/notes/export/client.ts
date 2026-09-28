@@ -16,6 +16,7 @@ export function exportLabels(): ExportLabels {
       danger: m.editor_export_danger(),
       info: m.editor_export_info(),
       success: m.editor_export_success(),
+      tip: m.editor_export_tip(),
       warning: m.editor_export_warning(),
     },
     card: m.editor_export_card(),

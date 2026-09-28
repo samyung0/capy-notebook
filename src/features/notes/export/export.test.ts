@@ -30,7 +30,7 @@ const render = async (
     flattenStudyBlocks(value, labels),
     format,
     labels,
-    {},
+    { asset_mock_cell_diagram: image.data },
     'https://capy.test/materials/note',
     async () => image
   );
@@ -72,6 +72,7 @@ describe('readable note exports', () => {
     );
     const { content } = await render(value);
     expect(content).toContain('https://www.youtube.com/watch?v=URUJD5NEXC8');
+    expect(content).toContain('Animal cell: nucleus, mitochondria');
     expect(content).toContain('```mermaid');
     expect(content).toContain('Quiz answer key');
     expect(content.indexOf('Quiz answer key')).toBeGreaterThan(

@@ -9,6 +9,7 @@ import {
   equation,
   heading,
   hr,
+  image,
   inlineEquation,
   link,
   mention,
@@ -239,7 +240,7 @@ export const bioNotes: SeedNote[] = [
       heading(1, 'Editor feature matrix'),
       toc(),
       p(
-        'This note intentionally exercises every Plate feature except uploaded media nodes (img / audio / file).'
+        'This note intentionally exercises every Plate feature except uploaded audio and file nodes.'
       ),
 
       heading(2, 'Headings'),
@@ -318,6 +319,7 @@ export const bioNotes: SeedNote[] = [
 
       heading(2, 'Callout variants'),
       callout('Info callout — background reading is linked above.', 'info'),
+      callout('Tip callout — sketch the particles before explaining.', 'tip'),
       callout(
         'Success callout — you covered every non-media block.',
         'success'
@@ -371,6 +373,13 @@ export const bioNotes: SeedNote[] = [
       heading(2, 'Block equation'),
       equation(
         '\\mathrm{C_6H_{12}O_6} + 6\\,\\mathrm{O_2} \\rightarrow 6\\,\\mathrm{CO_2} + 6\\,\\mathrm{H_2O} + \\text{ATP}'
+      ),
+
+      heading(2, 'Image'),
+      image(
+        'asset_mock_cell_diagram',
+        'animal-cell.svg',
+        'Animal cell: nucleus, mitochondria and ribosomes'
       ),
 
       heading(2, 'YouTube embed'),
@@ -523,8 +532,6 @@ export const bioNotes: SeedNote[] = [
 
       p([
         text('End of matrix. Media uploads ('),
-        text('img', { code: true }),
-        text(' / '),
         text('audio', { code: true }),
         text(' / '),
         text('file', { code: true }),

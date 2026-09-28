@@ -92,8 +92,7 @@ Resetting a boundary also resets TanStack Query's error state before retrying.
 
 ## Shared-resource security
 
-Public workspace summaries at `/w/:id`, including redirects from
-`/share/workspaces/:id`, render on the server. Upstream HTTP 401, 403, and 404
+Public workspace summaries at `/w/:id` render on the server. Upstream HTTP 401, 403, and 404
 all produce the same “private or unavailable” HTML with HTTP 404, `no-store`,
 and `noindex, nofollow`. They do not use the React error components. Do not
 include resource names, server details, or different actions that disclose

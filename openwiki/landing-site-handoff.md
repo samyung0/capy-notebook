@@ -103,7 +103,7 @@ Keep public site origin, the selected app destination and contact details in one
 | `www.capynotebook.com` | Recommended edge redirect to the apex, preserving path/query. This canonical choice still needs approval. |
 | `app.capynotebook.com` | Future production dashboard, including `/sign-in`, `/sign-up`, `/forgot-password` and `/sso-callback`. |
 | `app.uat.capynotebook.com` | UAT dashboard, for testing rather than a public signup destination. |
-| App `/w/{workspaceId}` and `/share/workspaces/{id}` | Stay with the existing app Worker and its visibility-aware summary rendering. Never export user workspaces into the static website. |
+| App `/w/{workspaceId}` | Stays with the existing app Worker and its visibility-aware summary rendering. Never export user workspaces into the static website. |
 | App `/api/*` | Existing app/backend routing. The public site neither proxies it nor needs CORS access to it. |
 
 No broad `*.capynotebook.com/*` Worker route or catch-all apex-to-app redirect. Public-site deployment must not replace app, API, Clerk, Office, collaboration, ops or mail records. Do not reuse `uat.capynotebook.com` as a website preview; it remains Clerk's UAT primary domain and now redirects old app visits.

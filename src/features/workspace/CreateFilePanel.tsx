@@ -13,6 +13,7 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import type { OpenItem } from '@/features/materials/openItem';
+import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import { nextGenerateTitle } from './generateTitle';
@@ -85,7 +86,10 @@ const SECTIONS: {
 // content and blank file bytes; their tiles show but cannot create yet.
 const STARTERS = {
   // Same starter as the editor's diagram block.
-  diagram: () => mermaidNode('flowchart LR\n  A --> B'),
+  diagram: () => ({
+    ...mermaidNode('flowchart LR\n  A --> B'),
+    theme: useNoteEditorPrefs.getState().mermaidTheme,
+  }),
   flashcards: () => flashcardsNode([]),
   quiz: () => quizNode({ questions: [] }),
 };

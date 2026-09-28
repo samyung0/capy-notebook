@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Callout Redesign Mocks</title>
+<style>
+:root{
+  --page:#f4f6f5; --card:#ffffff; --fg:#222222; --fg2:#4b4b4b; --muted:#6b6b6b; --line:#d6d6d6; --divider:#e6e6e6;
+  --accent:#5b4aa8;
+  --info-bg:#e4ecf8; --info-fg:#2e6bb0; --info-solid:#8ec9f9;
+  --success-bg:#e7f6ee; --success-fg:#2f7d56; --success-solid:#7bd9ab;
+  --warning-bg:#f7f0e5; --warning-fg:#a9772a; --warning-solid:#ffcc61;
+  --error-bg:#fdeaec; --error-fg:#b8475a; --error-solid:#f35a71;
+  --accent-1-bg:#ece6f6; --accent-1-fg:#5b4aa8; --accent-1-solid:#8c7bd9;
+  --mark:#fff1a8;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --page:#141715; --card:#1c201e; --fg:#f1f3f0; --fg2:#b4b8b3; --muted:#888d88; --line:#2c302d; --divider:#262b28;
+    --accent:#b3a6ea;
+    --info-bg:#142634; --info-fg:#9bcdf6; --info-solid:#8ec9f9;
+    --success-bg:#16301f; --success-fg:#8fe3b9; --success-solid:#7bd9ab;
+    --warning-bg:#2f2611; --warning-fg:#f4c878; --warning-solid:#ffcc61;
+    --error-bg:#321a1f; --error-fg:#f49aa8; --error-solid:#f98e9e;
+    --accent-1-bg:#322a5c; --accent-1-fg:#cfc4f2; --accent-1-solid:#9d8ee0;
+    --mark:#5a4a12; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --page:#141715; --card:#1c201e; --fg:#f1f3f0; --fg2:#b4b8b3; --muted:#888d88; --line:#2c302d; --divider:#262b28;
+  --accent:#b3a6ea;
+  --info-bg:#142634; --info-fg:#9bcdf6; --info-solid:#8ec9f9;
+  --success-bg:#16301f; --success-fg:#8fe3b9; --success-solid:#7bd9ab;
+  --warning-bg:#2f2611; --warning-fg:#f4c878; --warning-solid:#ffcc61;
+  --error-bg:#321a1f; --error-fg:#f49aa8; --error-solid:#f98e9e;
+  --accent-1-bg:#322a5c; --accent-1-fg:#cfc4f2; --accent-1-solid:#9d8ee0;
+  --mark:#5a4a12; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--fg);font:500 14px/1.45 "Fustat",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:24px;font-weight:800;margin:0 0 6px;letter-spacing:-.02rem}
+h2{font-size:18px;font-weight:800;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+.lede{color:var(--fg2);margin:0 0 16px;max-width:760px}
+.key{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;background:var(--fg);color:var(--page);font-size:15px}
+section{margin-top:36px;padding-top:20px;border-top:1px solid var(--divider)}
+.pts{margin:0 0 14px;padding-left:18px;color:var(--fg2)}
+.pts li{margin:2px 0}
+.bar{display:flex;gap:8px;align-items:center;margin:0 0 8px;flex-wrap:wrap}
+.bar button{font:inherit;padding:5px 12px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+table{border-collapse:collapse;width:100%;max-width:820px;margin:8px 0 0;font-size:13px}
+th,td{text-align:left;padding:6px 10px;border-bottom:1px solid var(--divider);vertical-align:top}
+th{color:var(--muted);font-weight:700}
+.wrap{overflow-x:auto}
+.pair{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:16px}
+@media (max-width:820px){.pair{grid-template-columns:minmax(0,1fr)}}
+.pane{background:var(--card);border-radius:12px;padding:16px 20px}
+.pane-h{font-size:11px;font-weight:700;letter-spacing:.06rem;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.note{font-size:16px}
+.para{margin:0 0 4px;line-height:1.625;padding:4px 0}
+.chat{font-size:13px}
+.chat-p{margin:0 0 6px}
+.ic{flex:none;display:block}
+mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
+.cite{display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;border-radius:4px;font-size:10px;font-weight:700;background:color-mix(in srgb,currentColor 14%,transparent);vertical-align:1px}
+.new{position:absolute;top:-8px;right:10px;font-size:10px;font-weight:700;letter-spacing:.04rem;text-transform:uppercase;background:var(--fg);color:var(--page);border-radius:4px;padding:1px 6px}
+.missing{color:var(--muted);font-size:13px;margin:8px 0 0}
+
+/* variant colour hooks */
+.v-info{--bg:var(--info-bg);--tf:var(--info-fg);--solid:var(--info-solid)}
+.v-success{--bg:var(--success-bg);--tf:var(--success-fg);--solid:var(--success-solid)}
+.v-warning{--bg:var(--warning-bg);--tf:var(--warning-fg);--solid:var(--warning-solid)}
+.v-error{--bg:var(--error-bg);--tf:var(--error-fg);--solid:var(--error-solid)}
+.v-accent-1{--bg:var(--accent-1-bg);--tf:var(--accent-1-fg);--solid:var(--accent-1-solid)}
+
+/* editor callouts */
+.co{position:relative;display:flex;align-items:flex-start;gap:12px;margin:8px 0;padding:12px 16px;line-height:1.625;background:var(--bg)}
+.co p{margin:0;padding:4px 0;color:var(--fg)}
+.co .gut{color:var(--tf);margin-top:calc((1lh - 20px)/2 + 4px);transform:translateY(-1px)}
+.co .body{min-width:0;flex:1}
+.co-now{border-radius:4px;border-left:4px solid var(--solid)}
+.co-A{border-radius:8px;padding:10px 14px;gap:10px}
+.co-B{border-radius:8px;padding:10px 14px;display:block}
+.co-B p{color:var(--tf)}
+.co-B .inl{display:inline-block;vertical-align:-3px;margin-right:8px}
+.co-C{border-radius:8px;padding:10px 14px;gap:10px;border:1px solid color-mix(in srgb,var(--solid) 45%,transparent)}
+
+/* chat callouts */
+.cc{margin:12px 0;background:var(--bg);color:var(--tf)}
+.cc p{margin:0}
+.cc .ttl{font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.cc .txt{font-size:13px}
+.cc-now{border-radius:18px;padding:10px 12px}
+.cc-B{border-radius:8px;padding:10px 12px}
+.cc-A,.cc-C{display:flex;gap:8px;align-items:flex-start;border-radius:8px;padding:10px 12px}
+.cc-A .gut,.cc-C .gut{margin-top:1px}
+.cc-A .ttl,.cc-C .ttl{margin-bottom:2px}
+.cc-A .txt,.cc-C .txt{color:var(--fg)}
+.cc-C{border:1px solid color-mix(in srgb,var(--solid) 45%,transparent)}
+.decide ol{padding-left:20px;color:var(--fg2)}
+.decide li{margin:6px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>Callouts: editor and chat, one style</h1>
+<p class="lede">Every option shows all five variants (info, tip, warning, success, danger) in a note and in a chat answer, using the classroom latte and mocha tokens. Fonts fall back to system-ui if Fustat isn't installed.</p>
+<div class="bar"><span style="color:var(--muted)">Theme</span><button type="button" data-set-theme="light">Light</button><button type="button" data-set-theme="dark">Dark</button></div>
+<div class="wrap"><table>
+<tr><th></th><th>Editor now</th><th>Chat now</th></tr>
+<tr><td>Radius</td><td>4px</td><td>18px (rounded-card)</td></tr>
+<tr><td>Accent</td><td>4px left bar</td><td>none</td></tr>
+<tr><td>Title</td><td>none, free-form blocks</td><td>bold title row</td></tr>
+<tr><td>Text colour</td><td>normal text</td><td>tint colour</td></tr>
+<tr><td>Variants</td><td>info, success, warning, danger</td><td>info, tip, warning, success, danger</td></tr>
+</table></div>
+
+<section id="opt-now">
+  <h2>Now</h2>
+  <ul class="pts"><li>Editor: 4px radius with a 4px coloured bar on the left. Body text stays the normal text colour. Four variants, no tip.</li><li>Chat: <code>rounded-card</code>, which is 18px in classroom. Small icon + bold title row, text tinted. Danger reuses the warning triangle.</li></ul>
+  
+<div class="pair">
+  <div class="pane note"><div class="pane-h">Note editor</div>
+    <p class="para">Cells move particles across the membrane in two ways. Passive transport needs no energy.</p>
+    <div class="co co-now v-info"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg></span><div class="body"><p>Background reading for this chapter is linked in the syllabus. Skim it before Thursday's lab.</p></div></div><div class="co co-now v-success"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg></span><div class="body"><p>Lab report 2 is submitted and graded. Feedback is in the margin comments.</p></div></div><div class="co co-now v-warning"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg></span><div class="body"><p>Exam tip: <mark>mitochondria</mark> come up on nearly every quiz. Know the ATP yield and where the Krebs cycle happens.</p></div></div><div class="co co-now v-error"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg></span><div class="body"><p>Never mix bleach and ammonia when cleaning the bench. The fumes are toxic.</p></div></div><p class="missing">No tip variant in the editor today.</p>
+  </div>
+  <div class="pane chat"><div class="pane-h">Chat answer</div>
+    <p class="chat-p">Here is how the two kinds of transport differ.</p>
+    <div class="cc cc-now v-info"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg>Definition</p><p class="txt">Diffusion is net movement down a concentration gradient. <span class="cite">2</span></p></div><div class="cc cc-now v-accent-1"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg>Try this</p><p class="txt">Draw the particles before writing your explanation. <span class="cite">1</span></p></div><div class="cc cc-now v-warning"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg>Common mix-up</p><p class="txt">Osmosis describes the movement of <strong>water</strong>, not solutes. <span class="cite">3</span></p></div><div class="cc cc-now v-success"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg>You've got it</p><p class="txt">Active transport needs energy because it moves particles against the gradient. <span class="cite">2</span></p></div><div class="cc cc-now v-error"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg>Safety</p><p class="txt">Never mix bleach and ammonia when cleaning the bench. <span class="cite">4</span></p></div>
+  </div>
+</div>
+</section>
+<section id="opt-A">
+  <h2><span class="key">A</span>Chat card, icon in a gutter</h2>
+  <ul class="pts"><li>No left bar. 8px radius in both places, tint background only.</li><li>Icon sits in its own column, lined up with the first line, like the editor today. Chat title and text sit in the column beside it.</li><li>Icon and chat title use the tint colour; body text stays the normal text colour so long notes stay readable.</li></ul>
+  
+<div class="pair">
+  <div class="pane note"><div class="pane-h">Note editor</div>
+    <p class="para">Cells move particles across the membrane in two ways. Passive transport needs no energy.</p>
+    <div class="co co-A v-info"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg></span><div class="body"><p>Background reading for this chapter is linked in the syllabus. Skim it before Thursday's lab.</p></div></div><div class="co co-A v-accent-1"><span class="new">new in editor</span><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg></span><div class="body"><p>Draw the particles before writing your explanation. The picture usually tells you which way they move.</p></div></div><div class="co co-A v-warning"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg></span><div class="body"><p>Exam tip: <mark>mitochondria</mark> come up on nearly every quiz. Know the ATP yield and where the Krebs cycle happens.</p></div></div><div class="co co-A v-success"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg></span><div class="body"><p>Lab report 2 is submitted and graded. Feedback is in the margin comments.</p></div></div><div class="co co-A v-error"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg></span><div class="body"><p>Never mix bleach and ammonia when cleaning the bench. The fumes are toxic.</p></div></div>
+  </div>
+  <div class="pane chat"><div class="pane-h">Chat answer</div>
+    <p class="chat-p">Here is how the two kinds of transport differ.</p>
+    <div class="cc cc-A v-info"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg></span><div><p class="ttl">Definition</p><p class="txt">Diffusion is net movement down a concentration gradient. <span class="cite">2</span></p></div></div><div class="cc cc-A v-accent-1"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg></span><div><p class="ttl">Try this</p><p class="txt">Draw the particles before writing your explanation. <span class="cite">1</span></p></div></div><div class="cc cc-A v-warning"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg></span><div><p class="ttl">Common mix-up</p><p class="txt">Osmosis describes the movement of <strong>water</strong>, not solutes. <span class="cite">3</span></p></div></div><div class="cc cc-A v-success"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg></span><div><p class="ttl">You've got it</p><p class="txt">Active transport needs energy because it moves particles against the gradient. <span class="cite">2</span></p></div></div><div class="cc cc-A v-error"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg></span><div><p class="ttl">Safety</p><p class="txt">Never mix bleach and ammonia when cleaning the bench. <span class="cite">4</span></p></div></div>
+  </div>
+</div>
+</section>
+<section id="opt-B">
+  <h2><span class="key">B</span>Chat as it is, corners tightened</h2>
+  <ul class="pts"><li>Closest to the chat callout you like: tinted text, 8px radius, no bar.</li><li>Chat keeps the icon + title row. The editor has no title, so its icon runs inline before the first word.</li><li>The whole editor block reads in the tint colour, including your own writing.</li></ul>
+  
+<div class="pair">
+  <div class="pane note"><div class="pane-h">Note editor</div>
+    <p class="para">Cells move particles across the membrane in two ways. Passive transport needs no energy.</p>
+    <div class="co co-B v-info"><p><span class="inl"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg></span>Background reading for this chapter is linked in the syllabus. Skim it before Thursday's lab.</p></div><div class="co co-B v-accent-1"><span class="new">new in editor</span><p><span class="inl"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg></span>Draw the particles before writing your explanation. The picture usually tells you which way they move.</p></div><div class="co co-B v-warning"><p><span class="inl"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg></span>Exam tip: <mark>mitochondria</mark> come up on nearly every quiz. Know the ATP yield and where the Krebs cycle happens.</p></div><div class="co co-B v-success"><p><span class="inl"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg></span>Lab report 2 is submitted and graded. Feedback is in the margin comments.</p></div><div class="co co-B v-error"><p><span class="inl"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg></span>Never mix bleach and ammonia when cleaning the bench. The fumes are toxic.</p></div>
+  </div>
+  <div class="pane chat"><div class="pane-h">Chat answer</div>
+    <p class="chat-p">Here is how the two kinds of transport differ.</p>
+    <div class="cc cc-B v-info"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg>Definition</p><p class="txt">Diffusion is net movement down a concentration gradient. <span class="cite">2</span></p></div><div class="cc cc-B v-accent-1"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg>Try this</p><p class="txt">Draw the particles before writing your explanation. <span class="cite">1</span></p></div><div class="cc cc-B v-warning"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg>Common mix-up</p><p class="txt">Osmosis describes the movement of <strong>water</strong>, not solutes. <span class="cite">3</span></p></div><div class="cc cc-B v-success"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg>You've got it</p><p class="txt">Active transport needs energy because it moves particles against the gradient. <span class="cite">2</span></p></div><div class="cc cc-B v-error"><p class="ttl"><svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg>Safety</p><p class="txt">Never mix bleach and ammonia when cleaning the bench. <span class="cite">4</span></p></div>
+  </div>
+</div>
+</section>
+<section id="opt-C">
+  <h2><span class="key">C</span>A, plus a thin outline</h2>
+  <ul class="pts"><li>Same layout as A, with a 1px border in the variant colour at 45% so callouts hold their shape on dark themes.</li></ul>
+  
+<div class="pair">
+  <div class="pane note"><div class="pane-h">Note editor</div>
+    <p class="para">Cells move particles across the membrane in two ways. Passive transport needs no energy.</p>
+    <div class="co co-C v-info"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg></span><div class="body"><p>Background reading for this chapter is linked in the syllabus. Skim it before Thursday's lab.</p></div></div><div class="co co-C v-accent-1"><span class="new">new in editor</span><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg></span><div class="body"><p>Draw the particles before writing your explanation. The picture usually tells you which way they move.</p></div></div><div class="co co-C v-warning"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg></span><div class="body"><p>Exam tip: <mark>mitochondria</mark> come up on nearly every quiz. Know the ATP yield and where the Krebs cycle happens.</p></div></div><div class="co co-C v-success"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg></span><div class="body"><p>Lab report 2 is submitted and graded. Feedback is in the margin comments.</p></div></div><div class="co co-C v-error"><span class="gut"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg></span><div class="body"><p>Never mix bleach and ammonia when cleaning the bench. The fumes are toxic.</p></div></div>
+  </div>
+  <div class="pane chat"><div class="pane-h">Chat answer</div>
+    <p class="chat-p">Here is how the two kinds of transport differ.</p>
+    <div class="cc cc-C v-info"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16V12"/><path d="M12.125 8.25H12M12.25 8.25C12.25 8.11193 12.1381 8 12 8C11.8619 8 11.75 8.11193 11.75 8.25C11.75 8.38807 11.8619 8.5 12 8.5C12.1381 8.5 12.25 8.38807 12.25 8.25Z"/></svg></span><div><p class="ttl">Definition</p><p class="txt">Diffusion is net movement down a concentration gradient. <span class="cite">2</span></p></div></div><div class="cc cc-C v-accent-1"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2L15.5387 4.39157C15.9957 6.42015 17.5798 8.00431 19.6084 8.46127L22 9L19.6084 9.53873C17.5798 9.99569 15.9957 11.5798 15.5387 13.6084L15 16L14.4613 13.6084C14.0043 11.5798 12.4202 9.99569 10.3916 9.53873L8 9L10.3916 8.46127C12.4201 8.00431 14.0043 6.42015 14.4613 4.39158L15 2Z"/><path d="M7 12L7.38481 13.7083C7.71121 15.1572 8.84275 16.2888 10.2917 16.6152L12 17L10.2917 17.3848C8.84275 17.7112 7.71121 18.8427 7.38481 20.2917L7 22L6.61519 20.2917C6.28879 18.8427 5.15725 17.7112 3.70827 17.3848L2 17L3.70827 16.6152C5.15725 16.2888 6.28879 15.1573 6.61519 13.7083L7 12Z"/></svg></span><div><p class="ttl">Try this</p><p class="txt">Draw the particles before writing your explanation. <span class="cite">1</span></p></div></div><div class="cc cc-C v-warning"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.9248 21H10.0752C5.44476 21 3.12955 21 2.27636 19.4939C1.42317 17.9879 2.60736 15.9914 4.97574 11.9985L6.90057 8.75333C9.17559 4.91778 10.3131 3 12 3C13.6869 3 14.8244 4.91777 17.0994 8.75332L19.0243 11.9985C21.3926 15.9914 22.5768 17.9879 21.7236 19.4939C20.8704 21 18.5552 21 13.9248 21Z"/><path d="M12 9V13"/><path d="M12.125 16.75H12M12.25 16.75C12.25 16.8881 12.1381 17 12 17C11.8619 17 11.75 16.8881 11.75 16.75C11.75 16.6119 11.8619 16.5 12 16.5C12.1381 16.5 12.25 16.6119 12.25 16.75Z"/></svg></span><div><p class="ttl">Common mix-up</p><p class="txt">Osmosis describes the movement of <strong>water</strong>, not solutes. <span class="cite">3</span></p></div></div><div class="cc cc-C v-success"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M8 12.5L10.5 15L16 9"/></svg></span><div><p class="ttl">You've got it</p><p class="txt">Active transport needs energy because it moves particles against the gradient. <span class="cite">2</span></p></div></div><div class="cc cc-C v-error"><span class="gut"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12Z"/><path d="M14.9994 15L9 9M9.00064 15L15 9"/></svg></span><div><p class="ttl">Safety</p><p class="txt">Never mix bleach and ammonia when cleaning the bench. <span class="cite">4</span></p></div></div>
+  </div>
+</div>
+</section>
+
+<section class="decide">
+  <h2>What I need from you</h2>
+  <ol>
+    <li>Pick A, B or C (or mix, e.g. B's colours with A's layout).</li>
+    <li>Add <strong>tip</strong> to the editor so both places share the same five variants? Chat already has it.</li>
+    <li>Radius: I used a fixed 8px. <code>rounded-button</code> is the other option: 12px in classroom, 4px in notion.</li>
+    <li>Danger icon: the editor uses the crossed circle, chat uses the triangle (same as warning). The options use the crossed circle everywhere.</li>
+  </ol>
+  <p class="lede">Once picked, both renderers read one shared variant map (colours + icon) and one container class, so they cannot drift again.</p>
+</section>
+</main>
+
+<script>
+(function(){
+  var r=document.documentElement;
+  document.querySelectorAll('[data-set-theme]').forEach(function(b){
+    b.addEventListener('click',function(){r.setAttribute('data-theme',b.getAttribute('data-set-theme'));});
+  });
+})();
+</script>
+</body>
+</html>

@@ -842,6 +842,11 @@ pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. A purged account and the 30-day deleted
 data cannot be restored.
 
+Deletion requests, support cancellation, purge, Clerk `user.deleted` handling
+and Stripe compensation serialize per account on one session advisory lock and
+run their queries on the connection holding it, so a burst of lifecycle events
+never waits on the pool for a second connection.
+
 For a user with a mapped Stripe customer, Checkout first asks Stripe for the
 complete paginated set of active, trialing, and past-due subscriptions. Any
 live entitlement returns 409. A failed provider read returns 503, so a stale

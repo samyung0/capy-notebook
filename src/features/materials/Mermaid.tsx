@@ -1,45 +1,105 @@
 import { useEffect, useRef, useState } from 'react';
-import { getLocale, m } from '@/i18n';
-import { THEMES } from '@/theme/theme';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import type { MermaidFont } from './mermaidPresets';
+import {
+  MERMAID_THEME_SWATCH,
+  type MermaidTheme,
+  mermaidTheme,
+} from './mermaidThemes';
 
-/** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
- * when a diagram is actually rendered. */
-let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
-export async function getMermaid() {
-  if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((mod) => {
-      const mermaid = mod.default;
-      const dark = THEMES.filter((theme) => theme.isDark).some((theme) =>
-        document.documentElement.classList.contains(theme.value)
-      );
-      mermaid.initialize({
-        fontFamily: 'inherit',
-        securityLevel: 'strict',
-        startOnLoad: false,
-        theme: dark ? 'dark' : 'default',
+const fonts = new Map<string, Promise<void>>();
+
+function loadFont({ family, url, weight = '400' }: MermaidFont) {
+  const key = `${family}|${weight}`;
+  let loading = fonts.get(key);
+  if (!loading) {
+    loading = new FontFace(family, `url(${url})`, { weight })
+      .load()
+      .then((face) => {
+        document.fonts.add(face);
+      })
+      // The diagram still draws in the theme's fallback font; retry next time.
+      .catch(() => {
+        fonts.delete(key);
       });
-      return mermaid;
-    });
+    fonts.set(key, loading);
   }
-  return mermaidPromise;
+  return loading;
 }
 
-let idSeq = 0;
+const SVG_OPEN = /<svg[^>]*>/;
 
-/** Renders a mermaid code block to inline SVG. Falls back to the raw source in
- * a <pre> if the diagram fails to parse. */
-export function Mermaid({ code }: { code: string }) {
-  const [svg, setSvg] = useState<string | null>(null);
+let queue: Promise<unknown> = Promise.resolve();
+let renderSeq = 0;
+
+/**
+ * Renders one diagram in a theme. mermaid.initialize is global, so renders run
+ * one at a time and each sets its own preset; the output CSS is scoped to the
+ * SVG's id, so blocks with different themes coexist on a page.
+ */
+export function renderMermaid(
+  code: string,
+  theme?: MermaidTheme,
+  container?: Element
+) {
+  const run = queue.then(async () => {
+    const [{ default: mermaid }, { MERMAID_PRESETS, roughenFilters }] =
+      await Promise.all([import('mermaid'), import('./mermaidPresets')]);
+    const preset = MERMAID_PRESETS[mermaidTheme(theme)];
+    await Promise.all((preset.fonts ?? []).map(loadFont));
+    mermaid.initialize({
+      securityLevel: 'strict',
+      startOnLoad: false,
+      ...preset.config,
+    });
+    // A fresh id each time: mermaid removes any element that already has it.
+    const id = `mmd-${++renderSeq}`;
+    let { svg } = await mermaid.render(id, code.trim(), container);
+    if (preset.roughen) {
+      svg = svg
+        .replaceAll('url(#roughen', `url(#${id}-roughen`)
+        .replace(SVG_OPEN, (open) => open + roughenFilters(`${id}-`));
+    }
+    return {
+      background: String(preset.config.themeVariables?.background),
+      svg,
+    };
+  });
+  queue = run.catch(() => undefined);
+  return run;
+}
+
+/**
+ * Renders a mermaid code block to inline SVG on its theme's background. With
+ * `onError` the last good diagram stays up and the parent shows the error;
+ * without it a failed parse shows the message and the raw source.
+ */
+export function Mermaid({
+  code,
+  theme,
+  onError,
+}: {
+  code: string;
+  theme?: MermaidTheme;
+  onError?: (message: string | null) => void;
+}) {
+  const [result, setResult] = useState<{
+    background: string;
+    svg: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const idRef = useRef(`mmd-${++idSeq}`);
   const containerRef = useRef<HTMLDivElement>(null);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     let cancelled = false;
-    let rendering = false;
     const container = containerRef.current;
     if (!container) return;
+    // Same text styles as the display box, so measured labels fit when shown.
     const renderHost = document.createElement('div');
+    renderHost.className = MERMAID_TEXT_CLASS;
     Object.assign(renderHost.style, {
       height: '0',
       left: '0',
@@ -50,39 +110,30 @@ export function Mermaid({ code }: { code: string }) {
       width: `${container.clientWidth || window.innerWidth}px`,
     });
     document.body.append(renderHost);
-    setError(null);
 
-    void (async () => {
-      try {
-        const mermaid = await getMermaid();
+    renderMermaid(code, theme, renderHost)
+      .then((next) => {
         if (cancelled) return;
-        rendering = true;
-        const result = await mermaid.render(
-          idRef.current,
-          code.trim(),
-          renderHost
-        );
-        if (!cancelled) setSvg(result.svg);
-      } catch (e: unknown) {
-        if (!cancelled) setError(e instanceof Error ? e.message : '');
-      } finally {
-        renderHost.remove();
-      }
-    })();
+        setResult(next);
+        setError(null);
+        onErrorRef.current?.(null);
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const message = e instanceof Error ? e.message : '';
+        setError(message);
+        onErrorRef.current?.(message);
+      })
+      .finally(() => renderHost.remove());
 
     return () => {
       cancelled = true;
-      if (!rendering) renderHost.remove();
     };
-    // getLocale is referenced so a locale change (and its theme) re-renders.
-  }, [code, getLocale?.()]);
+  }, [code, theme]);
 
-  if (error != null) {
+  if (error != null && !onError) {
     return (
-      <div
-        className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3"
-        ref={containerRef}
-      >
+      <div ref={containerRef}>
         <p className="mb-2 font-medium text-solid-error text-xs">
           {m.mermaid_failed()}
           {error ? `: ${error}` : ''}
@@ -91,10 +142,10 @@ export function Mermaid({ code }: { code: string }) {
       </div>
     );
   }
-  if (!svg) {
+  if (!result) {
     return (
       <div
-        className="my-3 grid h-40 place-items-center rounded-card border border-line bg-surface text-fg-muted"
+        className="grid h-40 place-items-center text-fg-muted"
         ref={containerRef}
       >
         <span className="text-xs">{m.mermaid_rendering()}</span>
@@ -103,10 +154,32 @@ export function Mermaid({ code }: { code: string }) {
   }
   return (
     <div
-      className="mermaid-render my-3 flex justify-center overflow-auto rounded-card border border-line bg-surface p-4"
+      className={cn(
+        'mermaid-render flex justify-center overflow-auto rounded-lg p-3',
+        MERMAID_TEXT_CLASS
+      )}
       // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)
-      dangerouslySetInnerHTML={{ __html: svg }}
+      dangerouslySetInnerHTML={{ __html: result.svg }}
       ref={containerRef}
+      style={{ background: result.background }}
     />
+  );
+}
+
+const MERMAID_TEXT_CLASS = 'font-normal leading-normal';
+
+/** A theme's panel with one node in its fill and border, for theme menus. */
+export function MermaidSwatch({ theme }: { theme: MermaidTheme }) {
+  const [panel, fill, border] = MERMAID_THEME_SWATCH[theme];
+  return (
+    <span
+      className="grid size-4 shrink-0 place-items-center rounded-sm ring-1 ring-black/15"
+      style={{ background: panel }}
+    >
+      <span
+        className="h-1.5 w-2.5 rounded-[2px] border"
+        style={{ background: fill, borderColor: border }}
+      />
+    </span>
   );
 }

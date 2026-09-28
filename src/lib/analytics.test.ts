@@ -97,7 +97,7 @@ describe('analytics helpers', () => {
   });
 
   it('classifies clone source from the path', () => {
-    expect(cloneSourceFromPath('/share/workspaces/ws_1')).toBe('share');
+    expect(cloneSourceFromPath('/share/quizzes/q_1')).toBe('share');
     expect(cloneSourceFromPath('/explore')).toBe('explore');
     expect(cloneSourceFromPath('/quizzes')).toBe('app');
     expect(cloneSourceFromPath('/quizzes/q_1/attempt')).toBe('app');

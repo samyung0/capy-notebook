@@ -164,13 +164,6 @@ describe('public workspace SSR', () => {
       upstream()
     );
     expect(await chinese.text()).toContain('打开工作区');
-    const redirect = await handleSiteRequest(
-      request('/share/workspaces/ws_0123456789?redirect=https://evil.test'),
-      env,
-      upstream()
-    );
-    expect(redirect.status).toBe(301);
-    expect(redirect.headers.get('Location')).toBe('/w/ws_0123456789');
   });
 });
 

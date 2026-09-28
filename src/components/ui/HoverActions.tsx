@@ -11,8 +11,8 @@ export interface HoverActionsProps {
 
 /**
  * Action menu that stays hidden until the nearest `group` ancestor is hovered
- * (or something inside receives focus). Lifted from the dashboard task row so
- * the reveal behaviour is shared.
+ * (or something inside receives keyboard focus). Lifted from the dashboard task
+ * row so the reveal behaviour is shared.
  */
 export function HoverActions({
   items,
@@ -23,7 +23,7 @@ export function HoverActions({
   return (
     <div
       className={cn(
-        'opacity-0 transition-opacity ease-(--motion-ease-smooth-out) focus-within:opacity-100 group-hover:opacity-100',
+        'opacity-0 transition-opacity ease-(--motion-ease-smooth-out) group-hover:opacity-100 has-focus-visible:opacity-100',
         // keep the trigger visible while its popover/menu is open
         'has-data-[state=open]:opacity-100',
         'scroll-fade-x animate-none! bg-surface pl-2 [--scroll-fade-start:8px] group-hover:bg-surface-hover-bg',

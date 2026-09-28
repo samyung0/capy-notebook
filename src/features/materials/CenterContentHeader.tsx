@@ -295,7 +295,7 @@ export function Header({
           <Tooltip>
             <TooltipTrigger
               className={cn(
-                'inline-flex shrink-0 items-center rounded-sm px-1 text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-focus',
+                'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus',
                 editorStatus.saveState === 'error' && 'text-solid-error'
               )}
               data-testid="editor-save-state"

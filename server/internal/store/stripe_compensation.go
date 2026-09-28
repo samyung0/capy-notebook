@@ -150,12 +150,12 @@ func (s *Store) RecordStripeCheckoutSession(
 	// The delayed recovery worker holds this same lock across its idempotent
 	// Stripe replay and expiration. Serializing the bind prevents it from
 	// expiring a session just as the request records and returns that session.
-	release, err := s.lockAccountLifecycle(ctx, userID)
+	conn, release, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return AccountStatus{}, err
 	}
 	defer release()
-	tx, err := s.pool.Begin(ctx)
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return AccountStatus{}, err
 	}
@@ -228,12 +228,12 @@ func (s *Store) RecordStripeCheckoutSessionExpired(
 	ctx context.Context,
 	reservationID, userID, customerID, sessionID string,
 ) error {
-	release, err := s.lockAccountLifecycle(ctx, userID)
+	conn, release, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return err
 	}
 	defer release()
-	tx, err := s.pool.Begin(ctx)
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -374,12 +374,12 @@ func (s *Store) RecordStripeCheckoutCompleted(
 	ctx context.Context,
 	sessionID, reservationID, userID, customerID, subscriptionID string,
 ) (bool, error) {
-	release, err := s.lockAccountLifecycle(ctx, userID)
+	conn, release, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return false, err
 	}
 	defer release()
-	tx, err := s.pool.Begin(ctx)
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -541,12 +541,12 @@ func (s *Store) BeginStripeCompensation(
 	ctx context.Context,
 	job StripeCompensation,
 ) (func(), bool, error) {
-	release, err := s.lockAccountLifecycle(ctx, job.UserID)
+	conn, release, err := s.lockAccountLifecycle(ctx, job.UserID)
 	if err != nil {
 		return nil, false, err
 	}
 	var status string
-	if err := s.pool.QueryRow(ctx, `SELECT status FROM stripe_compensations
+	if err := conn.QueryRow(ctx, `SELECT status FROM stripe_compensations
 		WHERE id=$1 AND lease_token=$2`, job.ID, job.LeaseToken).Scan(&status); err != nil {
 		release()
 		if isNoRows(err) {
@@ -561,7 +561,7 @@ func (s *Store) BeginStripeCompensation(
 	if job.Action == StripeRecoverCheckout || job.Action == StripeRefundPayment || job.Action == StripeRefundCharge {
 		return release, true, nil
 	}
-	account, err := s.AccountAccess(ctx, job.UserID)
+	account, err := s.accountAccess(ctx, conn, job.UserID)
 	if err != nil {
 		release()
 		return nil, false, err
@@ -569,7 +569,7 @@ func (s *Store) BeginStripeCompensation(
 	if account.State == AccountDeletionPending || account.State == AccountDeleted || account.State == AccountSuspended {
 		return release, true, nil
 	}
-	tag, err := s.pool.Exec(ctx, `UPDATE stripe_compensations SET
+	tag, err := conn.Exec(ctx, `UPDATE stripe_compensations SET
 		status='suppressed',lease_token=NULL,lease_expires_at=NULL,
 		last_error='account lifecycle restored',updated_at=now()
 		WHERE id=$1 AND status='running' AND lease_token=$2`, job.ID, job.LeaseToken)

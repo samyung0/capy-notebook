@@ -11,11 +11,7 @@ export function summaryVitePlugin(
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split('?')[0] ?? '';
-        if (
-          !pathname.startsWith('/w/') &&
-          !pathname.startsWith('/share/workspaces/')
-        )
-          return next();
+        if (!pathname.startsWith('/w/')) return next();
         try {
           const { handleSiteRequest } = await server.ssrLoadModule(
             '/workers/site/handler.ts'

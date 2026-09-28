@@ -1,10 +1,11 @@
 import { codeBlockToDecorations } from '@platejs/code-block';
 import { CodeBlockPlugin } from '@platejs/code-block/react';
 import { common, createLowlight } from 'lowlight';
-import { KEYS } from 'platejs';
+import { createSlatePlugin, KEYS } from 'platejs';
 import { createPlateEditor } from 'platejs/react';
 import { describe, expect, it } from 'vitest';
 import { clearEditorFormatting, toggleEditorBlock } from './editorTransforms';
+import { VoidBlockBreakPlugin } from './voidBlockBreak';
 
 function createCodeEditor(text = 'console.log()') {
   const lowlight = createLowlight(common);
@@ -121,5 +122,34 @@ describe('clearEditorFormatting', () => {
     ).children;
     expect(leaves[0]).toEqual({ bold: true, text: 'keep' });
     expect(leaves[1]).toEqual({ text: ' drop' });
+  });
+});
+
+describe('VoidBlockBreakPlugin', () => {
+  it('opens a paragraph below a selected embed instead of copying it', () => {
+    const video = {
+      children: [{ text: '' }],
+      type: 'video',
+      videoId: 'URUJD5NEXC8',
+    };
+    const editor = createPlateEditor({
+      plugins: [
+        createSlatePlugin({
+          key: 'video',
+          node: { isElement: true, isVoid: true, type: 'video' },
+        }),
+        VoidBlockBreakPlugin,
+      ],
+      value: [video],
+    });
+    editor.tf.select({ offset: 0, path: [0, 0] });
+
+    editor.tf.insertBreak();
+
+    expect(editor.children).toEqual([
+      video,
+      { children: [{ text: '' }], type: KEYS.p },
+    ]);
+    expect(editor.selection?.anchor.path).toEqual([1, 0]);
   });
 });

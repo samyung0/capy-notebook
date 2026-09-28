@@ -143,13 +143,8 @@ test.describe('workspace sharing', () => {
     otherPage,
     seed,
   }) => {
-    const publicRes = await anonymousPage.goto(
-      `/share/workspaces/${seed.publicWorkspace.id}`
-    );
+    const publicRes = await anonymousPage.goto(`/w/${seed.publicWorkspace.id}`);
     expect(publicRes?.status()).toBe(200);
-    await expect(anonymousPage).toHaveURL(
-      new RegExp(`/w/${seed.publicWorkspace.id}$`)
-    );
     await expect(
       anonymousPage.getByRole('heading', { name: seed.publicWorkspace.name })
     ).toBeVisible();

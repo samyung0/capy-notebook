@@ -27,20 +27,20 @@ import { Button } from '@/components/ui/Button';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { MathPreview } from '@/features/materials/MathPreview';
-import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MathField } from '@/features/questions/MathField';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CalloutIcon } from './CalloutIcon';
 import { Column, ColumnGroup } from './ColumnNodes';
-import { MediaAssetElement } from './MediaNodes';
+import { MediaAssetElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import {
   BLOCKQUOTE_CLASS,
   BOLD_MARK_CLASS,
   CALLOUT_CLASS,
   CODE_BLOCK_CLASS,
+  CODE_LINE_CLASS,
   CODE_MARK_CLASS,
   EQUATION_BLOCK_CLASS,
   HEADING_CLASS,
@@ -60,6 +60,7 @@ import {
   UL_CLASS,
 } from './nodeStyles';
 import {
+  CALLOUT_CONTAINER_CLASS,
   CALLOUT_VARIANT_CLASS,
   CALLOUT_VARIANTS,
   CODE_BLOCK_LANGUAGES,
@@ -280,7 +281,11 @@ function CodeBlock(props: PlateElementProps) {
   );
 }
 function CodeLine(props: PlateElementProps) {
-  return <PlateElement {...props}>{props.children}</PlateElement>;
+  return (
+    <PlateElement {...props} className={CODE_LINE_CLASS}>
+      {props.children}
+    </PlateElement>
+  );
 }
 
 function LinkElement(props: PlateElementProps) {
@@ -367,6 +372,7 @@ function Callout(props: PlateElementProps) {
       {...props}
       className={cn(
         CALLOUT_CLASS,
+        CALLOUT_CONTAINER_CLASS,
         CALLOUT_VARIANT_CLASS[variant],
         !readOnly && 'pr-20'
       )}

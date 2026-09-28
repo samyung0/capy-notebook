@@ -5,6 +5,16 @@
   --highlight-text: transparent;
   --text-highlight-background-color: transparent;
   --text-font-family: KaTeX_Main, "Times New Roman", serif;
+  /* MathLive swaps to a dark palette on OS dark mode regardless of the app
+     theme; its fallbacks paint a dark grey group highlight and white fences. */
+  --contains-highlight-background-color: color-mix(
+    in srgb,
+    var(--tint-accent-1-bg) 50%,
+    transparent
+  );
+  --contains-highlight-color: var(--text-primary);
+  --smart-fence-color: currentColor;
+  --smart-fence-opacity: 0.5;
 }
 
 /* MathLive 0.110 exposes caret color, but no caret-height variable or part. */

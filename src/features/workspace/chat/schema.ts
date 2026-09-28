@@ -152,7 +152,7 @@ export function buildLibrary(render: Renderers) {
   const Md = defineComponent({
     component: render.Md,
     description:
-      'A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). passages: the shown passage numbers that ground it.',
+      'A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). No Mermaid or other diagram code: chat shows it as raw text. passages: the shown passage numbers that ground it.',
     name: 'Md',
     props: mdProps,
   });

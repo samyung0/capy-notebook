@@ -55,6 +55,7 @@ import { mockChatStream } from './chatStream';
 import { sourceRoom, sourceRoomName, sourceRoomState } from './collaboration';
 import * as db from './db';
 import { uid } from './db';
+import { editorAssetHandlers } from './editorAssets';
 import { questionBankHandlers } from './questionBank';
 import { scenarioSourceSession } from './scenarioFixtures';
 
@@ -467,6 +468,7 @@ export function resetScenarioHandlerState(workspaceId: string) {
 
 export const handlers = [
   ...questionBankHandlers,
+  ...editorAssetHandlers,
   http.get('/api/files/:id/annotations', ({ params }) =>
     params.id === 'mock-preview-annotations'
       ? new HttpResponse(null, { status: 503 })
