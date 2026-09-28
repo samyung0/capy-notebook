@@ -902,13 +902,14 @@ nonproduction parser still applies. If deployment fails after migration 0038
 commits, keep old consumers stopped while recovering the new release.
 
 The required parse ZIP handoff stays in the parser/worker shared local volume.
-`CAPY_PARSE_ZIP_TTL_HOURS` controls those local fingerprint bundles, and
-`CAPY_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
-worker sweeps both on a 5-minute timer while the queue is idle and protects
-artifacts still needed by active jobs. The coordinator validates the local ZIP
-before handing it to ingest and never copies it to B2. A job retains its
-verified source across capacity waits and retries, then deletes it after
-committed success or terminal failure.
+The coordinator validates the local ZIP before handing it to ingest and never
+copies it to B2. A job retains its verified source, and the ingest continuation
+its bundle, across capacity waits and retries, then deletes them after
+committed success or terminal failure. The worker's 5-minute idle sweep removes
+leftovers older than `CAPY_PARSE_SPOOL_TTL_HOURS` (default 2) that no pending or
+running job names. This release replaces `CAPY_PARSE_ZIP_TTL_HOURS` and
+`CAPY_PARSE_SOURCE_TTL_HOURS`; delete either from GitHub environment variables
+or host env files if it was ever set.
 
 ### 4.1 Knowledge-base bucket
 
@@ -962,7 +963,7 @@ Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
 ceiling. Embedding and summary calls are sequential inside each job; their
 host-wide concurrency is at most four. PDF jobs open the source or repaired PDF
 with PyMuPDF for heading retention and extraction confidence. Office jobs use
-the page evidence frozen in the PDF-free v4 bundle. These are limits, not reserved
+the page evidence frozen in the PDF-free v5 bundle. These are limits, not reserved
 capacity; idle containers use little CPU or memory. The legacy app-host
 debugging profile still defaults to one worker.
 
@@ -2498,8 +2499,9 @@ Migration 0016 only removes the obsolete preview columns and updates their
 triggers, cache-kind constraint and account-deletion function. The retained
 numbered migrations still create the earlier schema before applying this change.
 
-Parser bundle v4 and processing plan v2 are the current contracts. Office bundles
-contain parsed text and metadata without PDF bytes. Google Docs, Sheets and
+Parser bundle v5 and processing plan v2 are the current contracts. Bundles
+carry parsed blocks, refinement evidence and the receipt, with no image files
+or Markdown; Office bundles also carry no PDF bytes. Google Docs, Sheets and
 Slides import as DOCX, XLSX and PPTX; Drawings export PDF.
 
 Set `PARSER_URL` and `PARSER_TOKEN` on retrieval for temporary Office captures.
@@ -2510,8 +2512,8 @@ forward. The environment manifest includes these app-host values.
 
 ## Office maintenance window
 
-An Office engine upgrade that changes seed output (the fork's golden seed tests
-decide, per format) ships in a maintenance window: editing pauses, every file
+An Office engine upgrade that changes seed output (the seed check below and the
+fork's golden seed tests decide, per format) ships in a maintenance window: editing pauses, every file
 with unpublished edits publishes on the old engine at platform cost, and the
 deploy resets the saved states so rooms reseed on the new engine (decision in
 `human/frontend/office-files.md`). An upgrade that keeps seeds only bumps
@@ -2536,6 +2538,18 @@ run against the environment's database:
 | `publish-all` | Requests a publication for every Office source with unpublished edits (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. Prints one line per file and the number refused. |
 | `status` | Prints whether editing is paused, every Office source still unpublished (with its running job and `refresh_error`) and the Office publication and reprocess work in flight: `source_refresh` jobs, the `parse` or `ingest` jobs they became, and system-paid reprocess jobs. Other uploads and text refreshes are not counted. Exits 1 until editing is paused and both lists are empty. |
 | `resume` | Deletes the pause row. |
+| `seed-manifest` | Prints one JSON line per base a stored Office change was taken over: format, base SHA, the seed's SHA-256, the number of files, and a signed base link (lifetime `B2_LINK_TTL` seconds, default 300; pass `-e B2_LINK_TTL=3600` to `docker exec` for a slow copy). Reads only. |
+
+**Seed check, before every BetterOffice pin bump.** Stored Office changes are
+kept as their change over seed(base), so a pin that seeds any stored base
+differently cannot read them (the service refuses them, it never misapplies
+them). Before deploying a pin to an environment, run
+`docker exec server-<resource-uuid> /app/office-maintenance seed-manifest > seeds.jsonl`
+there, copy the file to a checkout of the new pin, run `pnpm office:prepare`,
+then `pnpm office:seed-check seeds.jsonl`. It prints `same` or `changed` per
+base and exits 1 when any seed changed: that pin then ships through the
+window below, and its reset covers the formats listed as changed (plus any
+golden seed changes). An empty manifest passes.
 
 A maintenance export-only publication makes the saved state the file's bytes
 without a parser or provider call: the collaboration service exports and
@@ -2584,4 +2598,5 @@ Steps:
    recovery or the banner. Editing needs the pause off, so the check comes
    after this step.
 6. Check: open one file of each format in Edit, make an edit, publish it, and
-   confirm quota and the `source_documents` rows.
+   confirm quota and the `source_documents` rows (an Office edit stores a small
+   `state` with `state_seed_sha256` set).

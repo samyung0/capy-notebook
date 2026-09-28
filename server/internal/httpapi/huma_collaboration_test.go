@@ -25,7 +25,6 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"/api/discussions/{id}/comments:",
 		"/internal/collaboration/materials/{id}/projection:",
 		"/api/source-upload-policy:",
-		"parentCommentId:",
 		"anchorStart:",
 		"anchorEnd:",
 		"shareRole:",

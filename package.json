@@ -178,6 +178,7 @@
     "fix": "ultracite fix",
     "prepare": "husky",
     "office:prepare": "node scripts/prepare-betteroffice.mjs",
+    "office:seed-check": "tsx collaboration/src/seedCheck.ts",
     "test:deployment": "python3 scripts/env/test_config.py && python3 scripts/uat/test_journey_workflows.py && python3 scripts/deploy/test_ingest_release.py && python3 scripts/dev/test_tunnel.py && node --test scripts/dev/hosts.test.mjs",
     "env:check": "python3 scripts/env/config.py check",
     "env:push": "python3 scripts/env/config.py push",

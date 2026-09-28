@@ -37,7 +37,7 @@ validation instead of being remapped.
 | ------------------------------------------------------------------------------------------- | ----- | ------------- | ------------------ | ------------- | ------------------ | ------------ |
 | Read materials and files, download sources, use workspace chat                              | Yes   | Yes           | Yes                | Yes           | Yes                | Summary only |
 | Edit material document content (collaboration `write`)                                      | Yes   | Yes           | Yes                | No            | No                 | No           |
-| Create, resolve, and edit comments; delete **own** comments                                 | Yes   | Yes           | Yes                | No            | No                 | No           |
+| Create and edit comments; delete **own** comments                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Delete **another user's** comment or discussion                                             | Yes   | No            | No                 | No            | No                 | No           |
 | Chapters, upload/rename/move/delete files, material metadata and delete, generate materials | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Workspace name, description, tags, privacy, `shareRole`, statistics                  | Yes   | Yes           | No                 | No            | No                 | No           |
@@ -249,9 +249,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
 
 ### Comments and live collaboration
 
-- Owner and effective editors can list discussions, create a discussion,
-  reply, and resolve or reopen a discussion in Edit mode. View mode has no
-  comment controls. There is no commenter role or separate Comment mode.
+- Owner and effective editors can list discussions, create a discussion and
+  reply in Edit mode. A thread is a flat list of comments with no nesting and
+  no resolved state; threads are only deleted.
+  View mode has no comment controls. There is no commenter role or separate Comment mode.
 - A user can edit only their own comment.
 - A user can delete their own comment or discussion. Only the workspace owner
   can delete another user's comment or discussion.
@@ -296,7 +297,7 @@ and [material editor checks](../server/internal/store/share.go#L209).
   so an event enqueued beside compaction cannot acknowledge only an obsolete
   room. A failed discard keeps the room blocked until a later retry verifies
   that unload succeeded.
-- Comment creation, replies, edits, resolution, and deletion also lock the
+- Comment creation, replies, edits, and deletion also lock the
   workspace and re-evaluate actor lifecycle and effective role in the database
   transaction that writes the row.
 

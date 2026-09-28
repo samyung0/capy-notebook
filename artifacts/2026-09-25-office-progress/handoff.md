@@ -387,3 +387,81 @@ These are test-only corrections. The focused three-case run passed, followed by
 nine repetitions with one worker and no retries. Formatting/lint passed. An
 explicit Astra xhigh reviewer found no actionable issue in the bounded changes;
 full Linux CI remains the final check after pushing this follow-up.
+
+### Comment capture and development-server reload
+
+[CI 36341111503](https://github.com/samyung0/capy-notebook/actions/runs/36341111503)
+passed all three corrected cases on their first attempts, all 39 Docker browser
+cases and the four other jobs. It exposed a selected-text comment failure and a
+CSV preview retry in the editor suite, which had 103 passes, one failure, one
+flaky case and one skip.
+
+The Linux trace showed the correct text visibly selected before Comment opened,
+but the saved discussion had no anchors. Comment captured `editor.selection`
+before Slate's throttled native-selection sync. A focused same-task selection
+and Comment click reproduced the missing anchors before the application fix.
+The shared Comment action now converts the current native range when its
+endpoints belong to the editor, preserving stored selection for commands opened
+outside it. Portable mouse selection also replaces the tests' platform-dependent
+Home/End setup. All five comment cases passed without retries, including the
+immediate-click regression and command-palette selection. Root formatting, lint
+and TypeScript checks passed.
+
+The CSV test lost its execution context during a Vite reload triggered by the
+parallel Word-export test. A cold-cache reproduction logged late discovery of
+the export worker's existing `buffer` and `katex` dependencies, then a reload.
+Both cases happened to pass in that reproduction. Explicitly prebundling those
+dependencies removed the reload in the same cold-cache parallel run, with both
+cases passing without retries. CSV assertions and retries were unchanged.
+
+The initial Astra xhigh reviewer identified the real capture race and confirmed
+the fix. A fresh Astra xhigh closing review found no actionable issue. Full Linux
+CI is checked after pushing this follow-up. The requested pull from `origin/main`
+found no incoming changes at `5fd64dd2` and preserved these local fixes.
+
+### Table-of-contents retitle flake
+
+[CI 36368412155](https://github.com/samyung0/capy-notebook/actions/runs/36368412155)
+passed every job at `31941850`. The comment-capture and prebundle fixes held.
+One editor case flaked: the table-of-contents retitle typed `updated` mid-word
+(`Editor matrix headinupdatedg`). The trace shows the h1 click landing at its
+centre, the space landing at the end after `End`, then the TOC re-render
+restoring Slate's stale click caret before the remaining text. This is the
+throttled-selectionchange race already documented in `live-collaboration.spec.ts`.
+
+The insertions tests now use `clickTextEnd`, which clicks the text's last pixel
+instead of relying on `End`, so a stale restore lands at the same place. The
+slash test's inline workaround moved into that helper. Test-only; 25 serial runs
+and 40 runs with four workers at load average 22 passed without retries.
+
+No storage-relevant runtime changed after `21a8f996` (one comment in
+`source_refresh.go`; same BetterOffice pin), so the September 28 storage report
+remains the current measurement.
+
+## Office save cost, 2026-09-28
+
+Epo asked why every DOCX/PPTX save rewrote a full snapshot. Two Opus
+investigations ([write path](save-write-path-2026-09-28.md),
+[state representation](state-representation-2026-09-28.md)) led to four
+recorded decisions (`human/frontend/office-files.md`,
+`human/backend-storage-quota.md`, 2026-09-28):
+
+- Source rooms debounce 5 s / 30 s; the browser's idle request only registers
+  its receipt, explicit saves `flush`. Saved still means a database commit.
+- Office states are stored as their Yjs change over seed(base) with
+  `state_seed_sha256` (migration 0039), rebuilt and checked on every write and
+  read; text and DOCX/PPTX states rebased by a publication stay whole. Office
+  rows are charged as stored, text keeps `seed_bytes`.
+- Write path: blob-reference triggers fire only on path changes, saves start
+  from the instance's durable copy, the base is downloaded once, and access is
+  rechecked at most every 5 s per connection.
+- Pin bumps run `office-maintenance seed-manifest` and
+  `pnpm office:seed-check` first (runbook). No legacy Office editing data
+  exists anywhere, so nothing converts old rows.
+
+One saved edit across the 18 native fixtures now stores 4.7 KB of state
+instead of 559 KB ([report](../../bench/parsers/reports/2026-09-28-office-state-diffs.md)).
+An Opus review found a critical rebuild-check bug (non-canonical merged
+encodings refused valid saves permanently) and a text-publication fast-path
+bug; both are fixed with regression tests, and an Opus recheck plus the
+reviewers' fuzzers (0 refusals in about 30k saves) closed the loop.

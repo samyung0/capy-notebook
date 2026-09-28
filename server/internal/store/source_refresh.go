@@ -17,14 +17,16 @@ type SourceRefreshCandidate struct {
 	Epoch      int64  `json:"epoch"`
 	Checkpoint int64  `json:"checkpoint"`
 	LeaseToken string `json:"leaseToken"`
-	// Null when the captured state is seed(base).
-	State            []byte `json:"state" nullable:"true"`
-	SourceBlobPath   string `json:"sourceBlobPath"`
-	Format           string `json:"format"`
-	BaseSourceURL    string `json:"baseSourceURL"`
-	BaseSourceSHA256 string `json:"baseSourceSHA256"`
-	BaseRevision     int64  `json:"baseRevision"`
-	BaseBlobPath     string `json:"-"`
+	// Null when the captured state is seed(base). With StateSeedSHA256 it is
+	// the change over seed(base), as in SourceSession.
+	State            []byte  `json:"state" nullable:"true"`
+	StateSeedSHA256  *string `json:"stateSeedSHA256" nullable:"true"`
+	SourceBlobPath   string  `json:"sourceBlobPath"`
+	Format           string  `json:"format"`
+	BaseSourceURL    string  `json:"baseSourceURL"`
+	BaseSourceSHA256 string  `json:"baseSourceSHA256"`
+	BaseRevision     int64   `json:"baseRevision"`
+	BaseBlobPath     string  `json:"-"`
 }
 
 type SourceRefreshFinalize struct {
@@ -35,9 +37,6 @@ type SourceRefreshFinalize struct {
 	SourceSHA256 string `json:"sourceSHA256"`
 	SizeBytes    int64  `json:"sizeBytes"`
 	SourceETag   string `json:"sourceETag"`
-	// Size of seed(export); a publication that rebases later edits records it
-	// as the new state's seed size. Required for Office sources.
-	SeedBytes int64 `json:"seedBytes" minimum:"0"`
 }
 
 type SourceRefreshPublish struct {
@@ -55,8 +54,11 @@ type SourceRefreshPublish struct {
 	// onto the export: the rebased state, and for DOCX and PPTX its baseline.
 	// Without them the state returns to seed(export) and the baseline is
 	// derived from the export.
-	IndexedBaseline          []byte `json:"indexedBaseline,omitempty"`
-	RebasedState             []byte `json:"rebasedState,omitempty"`
+	IndexedBaseline []byte `json:"indexedBaseline,omitempty"`
+	RebasedState    []byte `json:"rebasedState,omitempty"`
+	// An XLSX rebased state lands on seed(export) and is stored as its change
+	// over that seed, whose SHA-256 this is; a DOCX or PPTX one stays complete.
+	RebasedStateSeedSHA256   string `json:"rebasedStateSeedSHA256,omitempty"`
 	ExpectedLatestCheckpoint int64  `json:"expectedLatestCheckpoint"`
 }
 
@@ -120,7 +122,7 @@ func (s *Store) ClaimSourceRefresh(ctx context.Context, fileID, jobID string) (S
 	var attempts int
 	// Copy-on-write: while no save has landed since the capture, the captured
 	// state is the row's own (NULL for both: seed(base)).
-	err = tx.QueryRow(ctx, `SELECT c.epoch,c.checkpoint,CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,d.format,d.base_blob_path,d.base_source_sha256,d.base_revision,j.attempts FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND d.running_job_id=j.id AND d.epoch=c.epoch AND j.type='source_refresh' AND(j.status='pending' OR(j.status='running' AND j.lease_expires_at<now())) FOR UPDATE OF c,d,j`, fileID, jobID).Scan(&out.Epoch, &out.Checkpoint, &out.State, &out.Format, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.BaseRevision, &attempts)
+	err = tx.QueryRow(ctx, `SELECT c.epoch,c.checkpoint,CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,d.format,d.base_blob_path,d.base_source_sha256,d.base_revision,j.attempts FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN jobs j ON j.id=c.job_id WHERE c.file_id=$1 AND c.job_id=$2 AND d.running_job_id=j.id AND d.epoch=c.epoch AND j.type='source_refresh' AND(j.status='pending' OR(j.status='running' AND j.lease_expires_at<now())) FOR UPDATE OF c,d,j`, fileID, jobID).Scan(&out.Epoch, &out.Checkpoint, &out.State, &out.StateSeedSHA256, &out.Format, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.BaseRevision, &attempts)
 	if err != nil {
 		if isNoRows(err) {
 			err = ErrConflict
@@ -213,9 +215,6 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 			}
 		}
 	}
-	if format != "text" && in.SeedBytes <= 0 {
-		return ErrConflict
-	}
 	if job.exportOnly && job.system {
 		// Maintenance, with editing paused: publish in this transaction.
 		published, err := s.publishExportTx(ctx, tx, fileID, sourcePath, in)
@@ -234,7 +233,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7,seed_bytes=$8 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes, in.SeedBytes); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates SET source_sha256=$6,size_bytes=$7 WHERE file_id=$1 AND job_id=$2 AND epoch=$3 AND checkpoint=$4 AND lease_token=$5`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, in.SourceSHA256, in.SizeBytes); err != nil {
 		return err
 	}
 	planBytes, err := json.Marshal(plan)
@@ -297,14 +296,13 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return doc, err
 	}
 	var source, sha string
-	var parseKey, parseFingerprint, parseVersion *string
 	var size int64
 	if job.exportOnly {
 		// An export-only publication through the handoff: no parse, index or
 		// ingest attempt, only the finalized export.
-		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.type='source_refresh' AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.seed_bytes IS NOT NULL FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag).Scan(&source, &sha, &size)
+		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.type='source_refresh' AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.source_sha256 IS NOT NULL FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag).Scan(&source, &sha, &size)
 	} else {
-		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes,c.parse_artifact_key,c.parse_artifact_fingerprint,c.parse_artifact_version FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash).Scan(&source, &sha, &size, &parseKey, &parseFingerprint, &parseVersion)
+		err = tx.QueryRow(ctx, `SELECT c.source_blob_path,c.source_sha256,c.size_bytes FROM source_refresh_candidates c JOIN jobs j ON j.id=c.job_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.epoch=$3 AND c.checkpoint=$4 AND c.lease_token=$5 AND f.revision=$6 AND f.trashed_at IS NULL AND j.status='running' AND j.lease_expires_at>now() AND j.payload->>'sourceETag'=$7 AND c.content_id=$9 AND c.content_hash=$10 AND EXISTS(SELECT 1 FROM ingest_job_attempts a WHERE a.id=$8 AND a.job_id=j.id AND a.status='running' AND a.attempt=j.attempts AND a.id=(SELECT max(latest.id) FROM ingest_job_attempts latest WHERE latest.job_id=j.id)) FOR UPDATE OF c,j,f`, fileID, in.JobID, in.Epoch, in.Checkpoint, in.LeaseToken, doc.BaseRevision, in.SourceETag, in.AttemptID, in.ContentID, in.ContentHash).Scan(&source, &sha, &size)
 	}
 	if err != nil {
 		if isNoRows(err) {
@@ -333,17 +331,19 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	// A rebased state exists only when saves landed after the capture, and a
 	// rebased DOCX or PPTX state needs its baseline (its identities are not the
-	// export's); XLSX keeps none, and text never stores either.
+	// export's) and stays complete; XLSX keeps no baseline and stores its
+	// change over seed(export). Text never stores either.
+	stateSeed := in.RebasedStateSeedSHA256
 	switch {
 	case doc.Format == "text":
-		if state != nil || baseline != nil {
+		if state != nil || baseline != nil || stateSeed != "" {
 			return doc, ErrConflict
 		}
 	case state == nil:
-		if baseline != nil || doc.Checkpoint != in.Checkpoint || len(parsed) != 0 {
+		if baseline != nil || stateSeed != "" || doc.Checkpoint != in.Checkpoint || len(parsed) != 0 {
 			return doc, ErrConflict
 		}
-	case len(state) > 100<<20 || doc.Checkpoint == in.Checkpoint || (doc.Format == "xlsx") == (baseline != nil):
+	case len(state) > 100<<20 || doc.Checkpoint == in.Checkpoint || (doc.Format == "xlsx") == (baseline != nil) || (doc.Format == "xlsx") != sha256Hex(stateSeed) || (doc.Format != "xlsx" && stateSeed != ""):
 		return doc, ErrConflict
 	}
 	if baseline != nil && !validSourceBaseline(baseline, doc.Format) {
@@ -362,11 +362,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 			return doc, ErrConflict
 		}
 	}
-	// The file's new bytes plus its storage_bytes afterwards (migration 0033's
-	// rule: a text state keeps its seed size, a rebased state grew from
-	// seed(export)) minus before.
+	// The file's new bytes plus its storage_bytes afterwards (migration 0039's
+	// rule: a text state keeps its seed size, an Office state is charged as
+	// stored) minus before.
 	var growth int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+COALESCE(octet_length($4::bytea),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-d.seed_bytes) ELSE GREATEST(0,COALESCE(octet_length($5::bytea),0)-COALESCE(c.seed_bytes,0)) END-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id JOIN source_refresh_candidates c ON c.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, state).Scan(&growth); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+COALESCE(octet_length($4::bytea),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-d.seed_bytes) ELSE COALESCE(octet_length($5::bytea),0) END-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, state).Scan(&growth); err != nil {
 		return doc, err
 	}
 	if growth > 0 && !job.system {
@@ -375,7 +375,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 	}
 	if job.exportOnly {
-		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, baseline: baseline, effects: effects, netTokens: netTokens}); err != nil {
+		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, stateSeed: stateSeed, baseline: baseline, effects: effects, netTokens: netTokens}); err != nil {
 			return doc, err
 		}
 		out, err := readSourceSession(ctx, tx, fileID, ws)
@@ -387,7 +387,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
 	}
-	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,parsed_blob_path=$8,parsed_fingerprint=$9,parsed_parser_version=$10,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text", parseKey, parseFingerprint, parseVersion)
+	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text")
 	if err != nil {
 		return doc, err
 	}
@@ -409,7 +409,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_baseline=NULL,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens)
 	} else {
 		// Indexed now, so an export-only publication's reprocess mark is done.
-		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,indexed_baseline=$6,state=$3,seed_bytes=`+rebasedSeedBytes+`,reprocess_at=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, baseline, effects, netTokens)
+		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,indexed_baseline=$6,state=$3,state_seed_sha256=NULLIF($9,''),reprocess_at=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, baseline, effects, netTokens, stateSeed)
 		if err == nil {
 			// Rebase can change native identities. Release AI edit guards and
 			// their Undo with the old editing epoch.
@@ -434,11 +434,6 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	return out, tx.Commit(ctx)
 }
-
-// rebasedSeedBytes is the seed size of a published Office state ($3): 0 for
-// NULL, which is seed(export) itself, else the size of the candidate's
-// seed(export) that the rebased state grew from.
-const rebasedSeedBytes = `CASE WHEN $3::bytea IS NULL THEN 0 ELSE (SELECT c.seed_bytes FROM source_refresh_candidates c WHERE c.file_id=d.file_id) END`
 
 // releaseArtifactCacheTx drops cached artifacts of a replaced base once nothing
 // names its bytes.

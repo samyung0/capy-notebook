@@ -4,6 +4,7 @@ import {
   hoverBlockHandle,
   openBlockContextMenu,
   openEditorNote,
+  selectEditorLine,
 } from './helpers';
 
 test.describe('block editing', () => {
@@ -146,20 +147,7 @@ test.describe('block editing', () => {
     expect(
       await todo.evaluate((element) => element.getBoundingClientRect().left)
     ).toBeCloseTo(bulletLeft, 0);
-    await todo.scrollIntoViewIfNeeded();
-    const bounds = (await todo.boundingBox())!;
-    const centerY = bounds.y + bounds.height / 2;
-    await page.mouse.move(bounds.x + bounds.width - 1, centerY);
-    await page.mouse.down();
-    await page.mouse.move(bounds.x + 1, centerY, { steps: 8 });
-    await page.mouse.up();
-    await expect
-      .poll(() => page.evaluate(() => window.getSelection()?.toString()))
-      .toBe(todoText);
-    // Slate's selection toolbar confirms the range is ready for Backspace.
-    await expect(
-      page.getByRole('toolbar', { name: 'Selection actions' })
-    ).toBeVisible();
+    await selectEditorLine(page, todo);
     await page.keyboard.press('Backspace');
     const empty = editor.locator('.slate-p[placeholder]');
     await expect(empty).toHaveCount(1);

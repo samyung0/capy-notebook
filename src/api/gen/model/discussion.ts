@@ -20,7 +20,6 @@ export interface Discussion {
   createdAt: string;
   id: string;
   isDeleted: boolean;
-  isResolved: boolean;
   materialId: string;
   updatedAt: string;
   userId: string;

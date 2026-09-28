@@ -17,7 +17,10 @@ import (
 // SourceSession: browser reads send null indexedBaseline and pendingEffects
 // (server-side only), and the viewer read sends null state unless a checkpoint
 // is ahead of the indexed one. A null state is seed(base) until the first save,
-// and a null indexedBaseline is derived from the base.
+// and a null indexedBaseline is derived from the base. With stateSeedSHA256 the
+// state is its change over seed(base), whose SHA-256 that is; without it a
+// stored state is complete (text, or a DOCX or PPTX state a publication
+// rebased).
 type SourceSession struct {
 	FileID            string          `json:"fileId"`
 	WorkspaceID       string          `json:"workspaceId"`
@@ -31,6 +34,7 @@ type SourceSession struct {
 	BaseSourceSHA256  string          `json:"baseSourceSHA256"`
 	SourceURL         string          `json:"sourceURL"`
 	State             []byte          `json:"state" nullable:"true"`
+	StateSeedSHA256   *string         `json:"stateSeedSHA256" nullable:"true"`
 	IndexedBaseline   []byte          `json:"indexedBaseline" nullable:"true"`
 	PendingEffects    json.RawMessage `json:"pendingEffects"`
 	NetTokens         int64           `json:"netTokens"`
@@ -45,9 +49,14 @@ type SourceCheckpoint struct {
 	State              []byte          `json:"state"`
 	PendingEffects     json.RawMessage `json:"pendingEffects"`
 	NetTokens          int64           `json:"netTokens" minimum:"0"`
-	// The first save over a null state (seed(base)) records the seed's size,
-	// and binds the SHA the service computed from the source bytes when the
-	// file has none yet (a store-only upload).
+	// Required for an Office state that grew from seed(base) (every Office
+	// state but a DOCX or PPTX one a publication rebased): State is then its
+	// change over that seed, and this is the seed's SHA-256.
+	StateSeedSHA256 string `json:"stateSeedSHA256,omitempty"`
+	// The first save over a null state (seed(base)) binds the SHA the service
+	// computed from the source bytes when the file has none yet (a store-only
+	// upload); a text source also records its seed's size, which its charge
+	// is measured from.
 	SeedBytes        int64  `json:"seedBytes,omitempty" minimum:"0"`
 	BaseSourceSHA256 string `json:"baseSourceSHA256,omitempty"`
 	// A direct AI edit or its Undo commits its receipt (and inverse) with the
@@ -200,7 +209,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, Access: "read"}
 	var name, kind string
-	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State)
+	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state_seed_sha256 END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256)
 	if isNoRows(err) {
 		return out, ErrNotFound
 	}
@@ -239,10 +248,23 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,indexed_baseline,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.IndexedBaseline, &out.PendingEffects, &out.NetTokens)
+	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,state_seed_sha256,indexed_baseline,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.IndexedBaseline, &out.PendingEffects, &out.NetTokens)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err
+}
+
+// sha256Hex reports whether s is a lowercase hex SHA-256 digest.
+func sha256Hex(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // SourceCheckpointSaved is the checkpoint receipt: the collaboration service
@@ -309,27 +331,43 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if revision != baseRevision {
 		return out, ErrConflict
 	}
-	// The first save over seed(base) records the seed's size and binds the
-	// source SHA once; later saves carry neither.
-	if seeded != (in.SeedBytes > 0) || (!seeded && in.BaseSourceSHA256 != "") {
+	// The first save over seed(base) binds the source SHA once, and a text
+	// source records its seed's size then; later saves carry neither, and
+	// Office sources never carry a seed size.
+	text := format == "text"
+	if (seeded && text) != (in.SeedBytes > 0) || (!seeded && in.BaseSourceSHA256 != "") {
 		return out, ErrConflict
 	}
 	if seeded {
 		if len(in.BaseSourceSHA256) != 64 || (sha != "" && sha != in.BaseSourceSHA256) {
 			return out, ErrConflict
 		}
-		seedBytes, sha = in.SeedBytes, in.BaseSourceSHA256
+		sha = in.BaseSourceSHA256
+		if text {
+			seedBytes = in.SeedBytes
+		}
 		if _, err = tx.Exec(ctx, `UPDATE files SET source_sha256=$2 WHERE id=$1 AND source_sha256 IS NULL`, fileID, sha); err != nil {
 			return out, err
 		}
+	}
+	// An Office state is stored as its change over seed(base), except a DOCX
+	// or PPTX state a publication rebased: that one keeps its stored baseline
+	// and stays complete. Text is always complete.
+	if diff := !text && baselineBytes == 0; diff != (in.StateSeedSHA256 != "") || (diff && !sha256Hex(in.StateSeedSHA256)) {
+		return out, ErrConflict
 	}
 	var effectsBytes int64
 	// An empty list costs nothing (migration 0033's rule).
 	if err = tx.QueryRow(ctx, `SELECT COALESCE(octet_length(NULLIF($1::jsonb,'[]'::jsonb)::text),0)`, in.PendingEffects).Scan(&effectsBytes); err != nil {
 		return out, err
 	}
-	// storage_bytes after this save (migration 0033's rule) minus before.
-	growth := effectsBytes + max(0, int64(len(in.State))-seedBytes) + baselineBytes - storageBytes
+	// storage_bytes after this save (migration 0039's rule) minus before: an
+	// Office state is charged as stored, a text state beyond its seed.
+	stateBytes := int64(len(in.State))
+	if text {
+		stateBytes = max(0, stateBytes-seedBytes)
+	}
+	growth := effectsBytes + stateBytes + baselineBytes - storageBytes
 	if in.Operation != nil {
 		// The retained inverse is owner storage too: admit state and inverse
 		// growth together.
@@ -342,10 +380,10 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	}
 	// A refresh that captured the state being replaced keeps its own copy from
 	// now on; until a save lands, its NULL state reads this row's.
-	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates c SET state=d.state FROM source_documents d WHERE c.file_id=$1 AND d.file_id=c.file_id AND c.epoch=d.epoch AND c.checkpoint=d.checkpoint`, fileID); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_refresh_candidates c SET state=d.state,state_seed_sha256=d.state_seed_sha256 FROM source_documents d WHERE c.file_id=$1 AND d.file_id=c.file_id AND c.epoch=d.epoch AND c.checkpoint=d.checkpoint`, fileID); err != nil {
 		return out, err
 	}
-	err = tx.QueryRow(ctx, `UPDATE source_documents SET state=$2,seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, in.State, in.PendingEffects, in.NetTokens, seedBytes, sha).Scan(&out.Checkpoint)
+	err = tx.QueryRow(ctx, `UPDATE source_documents SET state=$2,state_seed_sha256=NULLIF($7,''),seed_bytes=$5,base_source_sha256=$6,pending_effects=$3,net_tokens=$4,checkpoint=checkpoint+1,last_edited_at=now(),updated_at=now(),desired_checkpoint=CASE WHEN desired_manual THEN checkpoint+1 ELSE NULL END,refresh_error=NULL WHERE file_id=$1 RETURNING checkpoint`, fileID, in.State, in.PendingEffects, in.NetTokens, seedBytes, sha, in.StateSeedSHA256).Scan(&out.Checkpoint)
 	if err != nil {
 		return out, err
 	}

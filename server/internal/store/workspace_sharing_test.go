@@ -773,54 +773,6 @@ func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
 	}
 }
 
-func TestCommentsAllowExactlyOneReplyLevel(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx, ws := createSharingTestWorkspace(t, s, ShareViewer)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members
-		(workspace_id, user_id, role) VALUES
-		($1,'u_editor','editor')`, ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	content, _ := materialdoc.Marshal(materialdoc.Empty())
-	material, err := s.CreateMaterial(ctx, Material{
-		WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note",
-		Title: "Reply depth", Content: content, Privacy: PrivacyPrivate,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rich := json.RawMessage(`[{"type":"p","children":[{"text":"root"}]}]`)
-	discussion, err := s.CreateCommentDiscussion(
-		ctx, material.ID, "u_editor", nil, nil, nil, 1, "", rich,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	root := discussion.Comments[0]
-	reply, err := s.AddNestedComment(ctx, discussion.ID, "u_editor", &root.ID,
-		json.RawMessage(`[{"type":"p","children":[{"text":"reply"}]}]`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reply.ParentCommentID == nil || *reply.ParentCommentID != root.ID {
-		t.Fatalf("reply parent link = %#v", reply)
-	}
-	if _, err := s.AddNestedComment(ctx, discussion.ID, "u_owner", &reply.ID, rich); err == nil ||
-		!errors.Is(err, materialdoc.ErrInvalid) {
-		t.Fatalf("second-level reply error = %v, want invalid", err)
-	}
-	listed, err := s.ListCollaborationDiscussions(ctx, material.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 1 || len(listed[0].Comments) != 1 ||
-		len(listed[0].Comments[0].Replies) != 1 ||
-		listed[0].Comments[0].Replies[0].ID != reply.ID ||
-		len(listed[0].Comments[0].Replies[0].Replies) != 0 {
-		t.Fatalf("reply tree is not one level: %#v", listed)
-	}
-}
-
 func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -857,7 +809,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE id=$1`, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddNestedComment(ctx, discussion.ID, editorID, nil, rich); err == nil {
+	if _, err := s.AddComment(ctx, discussion.ID, editorID, rich); err == nil {
 		t.Fatal("suspended editor added a comment")
 	} else {
 		var locked *AccountLockedError
@@ -874,10 +826,8 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetCollaborationDiscussionResolved(
-		ctx, discussion.ID, editorID, true,
-	); !errors.Is(err, ErrForbidden) {
-		t.Fatalf("viewer resolve error = %v, want forbidden", err)
+	if _, err := s.AddComment(ctx, discussion.ID, editorID, rich); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("viewer comment error = %v, want forbidden", err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='editor'
 		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, editorID); err != nil {
@@ -888,7 +838,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 		WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AddNestedComment(ctx, discussion.ID, editorID, nil, rich); !errors.Is(err, ErrNotFound) {
+	if _, err := s.AddComment(ctx, discussion.ID, editorID, rich); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deleting-owner comment error = %v, want not found", err)
 	}
 }

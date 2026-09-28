@@ -197,7 +197,7 @@ func TestExportOnlyPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b", SeedBytes: int64(len("fresh-seed"))}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b"}
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	baseline := sourceTestBaseline("docx", "D")
-	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d", SeedBytes: int64(len("seed-d"))}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d"}); err != nil {
 		t.Fatal(err)
 	}
 	// The handoff that follows gets a fresh lease.
@@ -339,7 +339,7 @@ func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("f", 64), SizeBytes: size + 5000, SourceETag: "etag-f", SeedBytes: int64(len("seed-f"))}
+	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("f", 64), SizeBytes: size + 5000, SourceETag: "etag-f"}
 	var quota *QuotaExceededError
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); !errors.As(err, &quota) {
 		t.Fatalf("finalize of an export that cannot fit: %v", err)
@@ -393,7 +393,7 @@ func TestProcessDuringExportOnlyIsKept(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return file, candidate, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("e", 64), SizeBytes: 90, SourceETag: "etag-e", SeedBytes: int64(len("seed-e"))}
+		return file, candidate, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("e", 64), SizeBytes: 90, SourceETag: "etag-e"}
 	}
 	job := func(id string) (jobType string, exportOnly bool, paidBy, reservation string, fee bool) {
 		t.Helper()
@@ -485,7 +485,7 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 5 << 20, SourceETag: "etag-b", SeedBytes: int64(len("seed-b"))}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 5 << 20, SourceETag: "etag-b"}); err != nil {
 		t.Fatal(err)
 	}
 	content := uid("rc")
@@ -775,5 +775,65 @@ func TestSourceEffectTokensSkipMoves(t *testing.T) {
 	}
 	if got, err := sourceEffectTokens(effects); err != nil || got != 3 {
 		t.Fatalf("tokens %d %v, want 3", got, err)
+	}
+}
+
+// OfficeSeeds names each (format, base, seed hash) a stored Office change was
+// taken over once, counting its files, including a refresh candidate's copy;
+// text and complete states name none. The claim hands the copy's kind over.
+func TestOfficeSeeds(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "office_seeds")
+	_, first := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	_, second := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	_, text := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, first.ID), "first")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, second.ID), "second")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, text.ID), "text")
+	job, err := s.RequestSourceRefresh(ctx, owner, first.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A save after the capture copies the captured change into the candidate;
+	// give that copy an older seed.
+	sourceTestEdit(t, s, owner, doc, "later")
+	older := strings.Repeat("d", 64)
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET state_seed_sha256=$2 WHERE file_id=$1`, first.ID, older); err != nil {
+		t.Fatal(err)
+	}
+	// A base of this test's own: the store holds other tests' rows.
+	base := uid("base")
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET base_source_sha256=$3 WHERE file_id IN ($1,$2)`, first.ID, second.ID, base); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := s.ClaimSourceRefresh(ctx, first.ID, job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(candidate.State) != "first" || candidate.StateSeedSHA256 == nil || *candidate.StateSeedSHA256 != older {
+		t.Fatalf("claimed copy: %q %v", candidate.State, candidate.StateSeedSHA256)
+	}
+	seeds, err := s.OfficeSeeds(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int{}
+	for _, seed := range seeds {
+		if seed.BaseSourceSHA256 != base {
+			continue
+		}
+		if seed.Format != "docx" || seed.BaseBlobPath == "" {
+			t.Fatalf("unexpected seed: %+v", seed)
+		}
+		got[seed.StateSeedSHA256] = seed.Files
+	}
+	if len(got) != 2 || got[sourceTestStateSeed] != 2 || got[older] != 1 {
+		t.Fatalf("seeds: %+v", seeds)
 	}
 }

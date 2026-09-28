@@ -14,6 +14,9 @@ export interface CollaborationConfig {
   port: number;
   redisUrl: string;
   secret: string;
+  /** Debounce of source (Office and text) room saves; material rooms use debounceMs. */
+  sourceDebounceMs: number;
+  sourceMaxDebounceMs: number;
 }
 
 const TRAILING_SLASH = /\/$/;
@@ -116,5 +119,15 @@ export function loadConfig(
     port: positiveInteger(env, 'PORT', 1234),
     redisUrl: optional(env, 'REDIS_URL', DEV_DEFAULTS.redisUrl),
     secret: optional(env, 'COLLABORATION_SECRET', DEV_DEFAULTS.secret),
+    sourceDebounceMs: positiveInteger(
+      env,
+      'COLLABORATION_SOURCE_DEBOUNCE_MS',
+      5000
+    ),
+    sourceMaxDebounceMs: positiveInteger(
+      env,
+      'COLLABORATION_SOURCE_MAX_DEBOUNCE_MS',
+      30_000
+    ),
   };
 }

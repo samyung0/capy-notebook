@@ -13,7 +13,6 @@ fingerprint and the process exits so Docker replaces it.
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import hmac
 import io
@@ -43,7 +42,7 @@ from fastapi.responses import JSONResponse
 from odl.java import JavaTimeout
 from starlette.background import BackgroundTask
 
-ARTIFACT_SCHEMA = "capy-parser-bundle-v4"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
 PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v11"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
@@ -76,7 +75,6 @@ MAX_SOURCE_BYTES = int(os.environ.get("CAPY_MAX_SOURCE_BYTES", str(100 << 20)))
 MAX_ARTIFACT_BYTES = int(
     os.environ.get("CAPY_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20))
 )
-MAX_ARTIFACT_ENTRIES = int(os.environ.get("CAPY_PARSE_ARTIFACT_MAX_ENTRIES", "4096"))
 MAX_ARTIFACT_ENTRY_BYTES = int(
     os.environ.get("CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES", str(128 << 20))
 )
@@ -85,8 +83,6 @@ MAX_ARTIFACT_EXPANDED_BYTES = int(
 )
 MAX_CONTENT_BYTES = int(os.environ.get("CAPY_PARSE_CONTENT_MAX_BYTES", str(128 << 20)))
 MAX_CONTENT_BLOCKS = int(os.environ.get("CAPY_PARSE_CONTENT_MAX_BLOCKS", "250000"))
-MAX_IMAGE_BYTES = int(os.environ.get("CAPY_PARSE_IMAGE_MAX_BYTES", str(32 << 20)))
-MAX_IMAGES_BYTES = int(os.environ.get("CAPY_PARSE_IMAGES_MAX_BYTES", str(256 << 20)))
 # Documents waiting plus the one executing. Matches the four parse coordinator
 # processes an ingest host runs; a fifth request is answered 429.
 QUEUE_DEPTH = int(os.environ.get("CAPY_PARSE_QUEUE_DEPTH", "4"))
@@ -109,13 +105,10 @@ if any(
     for value in (
         MAX_SOURCE_BYTES,
         MAX_ARTIFACT_BYTES,
-        MAX_ARTIFACT_ENTRIES,
         MAX_ARTIFACT_ENTRY_BYTES,
         MAX_ARTIFACT_EXPANDED_BYTES,
         MAX_CONTENT_BYTES,
         MAX_CONTENT_BLOCKS,
-        MAX_IMAGE_BYTES,
-        MAX_IMAGES_BYTES,
     )
 ):
     raise RuntimeError("parser byte/count limits must be positive")
@@ -202,11 +195,6 @@ def run_document(document: Document) -> dict[str, Any]:
         shutil.rmtree(work, ignore_errors=True)
     result: dict[str, Any] = {
         "content_list": output.content_list,
-        "md": output.markdown,
-        "images": {
-            name: base64.b64encode(body).decode("ascii")
-            for name, body in output.images.items()
-        },
         "_ocr_pages": output.ocr_pages,
         "_page_count": output.page_count,
         "_source_format": normalized.source_format,
@@ -809,22 +797,22 @@ def _bundle_bytes(
     request_id: str,
     measurements: dict[str, Any],
 ) -> bytes:
+    """Only what ingest reads: the receipt, blocks, refinement and a repaired PDF.
+
+    Figures are reached at question time by rendering the source page, so image
+    files and the ODL Markdown stay in the parse work directory.
+    """
     content_list = result.get("content_list") or []
-    images = result.get("images") or {}
     if not isinstance(content_list, list):
         raise TypeError("parser content list is invalid")
     if len(content_list) > MAX_CONTENT_BLOCKS:
         raise ValueError("parser content list contains too many blocks")
-    if not isinstance(images, dict):
-        raise TypeError("parser image map is invalid")
-    if len(images) + 6 > MAX_ARTIFACT_ENTRIES:
-        raise ValueError("parse artifact contains too many entries")
-    written = {os.path.basename(name) for name in images if os.path.basename(name)}
-    for item in content_list:
-        if isinstance(item, dict) and item.get("type") == "image":
-            basename = os.path.basename(str(item.get("img_path") or ""))
-            if basename in written:
-                item["img_path"] = f"images/{basename}"
+    content_list = [
+        {k: v for k, v in item.items() if k != "img_path"}
+        if isinstance(item, dict)
+        else item
+        for item in content_list
+    ]
     manifest = json.dumps(
         {
             "schema": ARTIFACT_SCHEMA,
@@ -844,9 +832,6 @@ def _bundle_bytes(
     ).encode("utf-8")
     if len(content) > min(MAX_CONTENT_BYTES, MAX_ARTIFACT_ENTRY_BYTES):
         raise ValueError("parser content list exceeds configured byte limit")
-    markdown = _bounded_utf8(
-        result.get("md"), MAX_ARTIFACT_ENTRY_BYTES, "parser markdown"
-    )
     furniture = result.get("_furniture") or []
     if not isinstance(furniture, list) or not all(
         isinstance(t, str) for t in furniture
@@ -861,23 +846,6 @@ def _bundle_bytes(
         MAX_ARTIFACT_ENTRY_BYTES,
         "parser refinement",
     )
-    decoded_images: list[tuple[str, bytes]] = []
-    image_bytes = 0
-    for name, encoded in images.items():
-        safe = os.path.basename(name)
-        if not safe:
-            continue
-        if not isinstance(encoded, (str, bytes)):
-            raise TypeError("parser image payload is invalid")
-        if len(encoded) > ((MAX_IMAGE_BYTES + 2) // 3) * 4 + 4:
-            raise ValueError("parser image exceeds configured byte limit")
-        decoded = base64.b64decode(encoded, validate=True)
-        if len(decoded) > min(MAX_IMAGE_BYTES, MAX_ARTIFACT_ENTRY_BYTES):
-            raise ValueError("parser image exceeds configured byte limit")
-        image_bytes += len(decoded)
-        if image_bytes > MAX_IMAGES_BYTES:
-            raise ValueError("parser images exceed configured byte limit")
-        decoded_images.append((safe, decoded))
 
     parsed_pdf = result.get("_parsed_pdf")
     parsed_size = 0
@@ -885,14 +853,7 @@ def _bundle_bytes(
         parsed_size = len(parsed_pdf)
         if parsed_size > MAX_ARTIFACT_ENTRY_BYTES:
             raise ValueError("repaired PDF exceeds configured byte limit")
-    expanded_size = (
-        len(manifest)
-        + len(content)
-        + len(markdown)
-        + len(refinement)
-        + parsed_size
-        + image_bytes
-    )
+    expanded_size = len(manifest) + len(content) + len(refinement) + parsed_size
     if expanded_size > MAX_ARTIFACT_EXPANDED_BYTES:
         raise ValueError("parse artifact expands beyond configured byte limit")
 
@@ -900,12 +861,9 @@ def _bundle_bytes(
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("manifest.json", manifest)
         archive.writestr("content_list.json", content)
-        archive.writestr("document.md", markdown)
         archive.writestr("refinement.json", refinement)
         if parsed_size:
             archive.writestr("parsed.pdf", parsed_pdf)
-        for safe, decoded in decoded_images:
-            archive.writestr(f"images/{safe}", decoded)
     return output.getvalue()
 
 

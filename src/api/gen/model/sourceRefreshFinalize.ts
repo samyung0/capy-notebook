@@ -12,8 +12,6 @@ export interface SourceRefreshFinalize {
   epoch: number;
   jobId: string;
   leaseToken: string;
-  /** @minimum 0 */
-  seedBytes: number;
   sizeBytes: number;
   sourceETag: string;
   sourceSHA256: string;

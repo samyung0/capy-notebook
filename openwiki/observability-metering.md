@@ -731,7 +731,7 @@ would only update the thread's copy and bill nothing. The parser embeds a creato
 atomically published local bundle. `parse-receipt:{fingerprint}:{job id}` is
 the idempotency key for that work, so a lost HTTP response can be recovered from
 the bundle without charging again, while a later job that really re-parses the
-same bytes (after the caches were swept) is billed on its own row. Concurrent waiters receive the artifact but not
+same bytes (after the bundle was deleted) is billed on its own row. Concurrent waiters receive the artifact but not
 the creator's receipt. Legacy responses without a receipt retain
 `parse:{job id}:{attempt}` as their compatibility key. Cache and donor hits do
 not create parse events because they did not run the parser.
@@ -1179,8 +1179,8 @@ Worth knowing before trusting a dashboard:
   It is not in `usage_events` and has no ops page yet; query it directly.
 - **Ingest retries.** Each published parse fingerprint has one idempotent page
   charge, including work followed by later-stage failure. The creating job can
-  recover the receipt from the local bundle; another job reusing that bundle is
-  not billed for the parse. Caption-cache hits likewise avoid a second vision
+  recover the receipt from the local bundle; a concurrent job reusing that
+  bundle before its ingest finishes is not billed for the parse. Caption-cache hits likewise avoid a second vision
   charge; a retry that re-embeds is still billed for that new provider call.
   A stream of lease-reclaimed jobs after a worker crash can still over-count
   if the original process was alive and writing. Heartbeat + a lease well

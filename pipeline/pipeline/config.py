@@ -73,8 +73,8 @@ class Config:
     db_async_pool_max_size: int = int(_env("CAPY_DB_ASYNC_POOL_MAX_SIZE", "8"))
     # Durable captions/transcripts expire independently of local parse handoffs.
     caption_cache_ttl_days: int = int(_env("CAPY_CAPTION_CACHE_TTL_DAYS", "90"))
-    parse_zip_ttl_hours: int = int(_env("CAPY_PARSE_ZIP_TTL_HOURS", "6"))
-    parse_source_ttl_hours: int = int(_env("CAPY_PARSE_SOURCE_TTL_HOURS", "2"))
+    # Age after which the idle sweep removes spool files no active job names.
+    parse_spool_ttl_hours: int = int(_env("CAPY_PARSE_SPOOL_TTL_HOURS", "2"))
     # Interactive calls should fail while the browser request is still useful.
     # For a stream this is an idle bound that restarts on every provider event;
     # a non-streaming interactive call (embeddings) gets it as a whole-call
@@ -120,20 +120,18 @@ class Config:
     # starts, so this bound is the depth (4) times the deadline plus a margin.
     parser_timeout: int = int(_env("PARSER_TIMEOUT", "2520"))
     # The parser and ingest worker mount this directory on the Netcup ingest host.
-    # Sources are job-scoped; parse bundles are fingerprint-addressed caches.
+    # Sources are job-scoped; parse bundles are fingerprint-addressed handoffs
+    # deleted once their ingest continuation finishes.
     parse_shared_dir: str = _env("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
     # The parse job must outlive one parser call; the continuation has its own
     # smaller budget for embeddings and final bookkeeping.
     parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "2700"))
     ingest_timeout: int = int(_env("CAPY_INGEST_TIMEOUT", "1200"))
     # Parser artifacts cross a container boundary and may contain highly
-    # compressed text and images. Keep both the
-    # local zip and its extracted form bounded independently of source bytes.
+    # compressed text. Keep both the local zip and its extracted form bounded
+    # independently of source bytes.
     parse_artifact_max_bytes: int = int(
         _env("CAPY_PARSE_ARTIFACT_MAX_BYTES", str(256 << 20))
-    )
-    parse_artifact_max_entries: int = int(
-        _env("CAPY_PARSE_ARTIFACT_MAX_ENTRIES", "4096")
     )
     parse_artifact_max_entry_bytes: int = int(
         _env("CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES", str(128 << 20))
@@ -145,10 +143,6 @@ class Config:
         _env("CAPY_PARSE_CONTENT_MAX_BYTES", str(128 << 20))
     )
     parse_content_max_blocks: int = int(_env("CAPY_PARSE_CONTENT_MAX_BLOCKS", "250000"))
-    parse_image_max_bytes: int = int(_env("CAPY_PARSE_IMAGE_MAX_BYTES", str(32 << 20)))
-    parse_images_max_bytes: int = int(
-        _env("CAPY_PARSE_IMAGES_MAX_BYTES", str(256 << 20))
-    )
 
     # ---- chunking ---------------------------------------------------------
     # Target size in estimated tokens (chunking.estimate_tokens: ~4 Latin
@@ -267,13 +261,10 @@ require_all_or_none(
 
 for key, value in (
     ("CAPY_PARSE_ARTIFACT_MAX_BYTES", cfg.parse_artifact_max_bytes),
-    ("CAPY_PARSE_ARTIFACT_MAX_ENTRIES", cfg.parse_artifact_max_entries),
     ("CAPY_PARSE_ARTIFACT_MAX_ENTRY_BYTES", cfg.parse_artifact_max_entry_bytes),
     ("CAPY_PARSE_ARTIFACT_MAX_EXPANDED_BYTES", cfg.parse_artifact_max_expanded_bytes),
     ("CAPY_PARSE_CONTENT_MAX_BYTES", cfg.parse_content_max_bytes),
     ("CAPY_PARSE_CONTENT_MAX_BLOCKS", cfg.parse_content_max_blocks),
-    ("CAPY_PARSE_IMAGE_MAX_BYTES", cfg.parse_image_max_bytes),
-    ("CAPY_PARSE_IMAGES_MAX_BYTES", cfg.parse_images_max_bytes),
 ):
     if value <= 0:
         raise ValueError(f"{key} must be positive")
@@ -298,8 +289,8 @@ if cfg.interactive_stream_max_s <= cfg.interactive_provider_timeout_s:
         "CAPY_INTERACTIVE_STREAM_MAX_S must exceed CAPY_INTERACTIVE_PROVIDER_TIMEOUT_S"
     )
 
-if cfg.parse_zip_ttl_hours <= 0 or cfg.parse_source_ttl_hours <= 0:
-    raise ValueError("local parse spool TTLs must be positive")
+if cfg.parse_spool_ttl_hours <= 0:
+    raise ValueError("CAPY_PARSE_SPOOL_TTL_HOURS must be positive")
 
 if cfg.caption_cache_ttl_days <= 0:
     raise ValueError("CAPY_CAPTION_CACHE_TTL_DAYS must be positive")

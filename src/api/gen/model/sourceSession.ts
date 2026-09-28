@@ -27,5 +27,7 @@ export interface SourceSession {
   sourceURL: string;
   /** @nullable */
   state: string | null;
+  /** @nullable */
+  stateSeedSHA256: string | null;
   workspaceId: string;
 }

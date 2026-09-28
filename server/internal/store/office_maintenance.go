@@ -176,6 +176,38 @@ func (r OfficeReadiness) Ready() bool {
 	return r.Paused && len(r.Unpublished) == 0 && len(r.InFlight) == 0
 }
 
+// OfficeSeed is one base whose seed a stored Office change was taken over:
+// every source row, or refresh candidate copy, holding a change over
+// seed(base) names one. A pin bump re-seeds each with the new engine.
+type OfficeSeed struct {
+	Format           string `json:"format"`
+	BaseBlobPath     string `json:"-"`
+	BaseSourceSHA256 string `json:"baseSourceSHA256"`
+	StateSeedSHA256  string `json:"stateSeedSHA256"`
+	Files            int    `json:"files"`
+}
+
+// OfficeSeeds lists the distinct (format, base, seed hash) of every stored
+// Office change, for the pin bump's seed check.
+func (s *Store) OfficeSeeds(ctx context.Context) ([]OfficeSeed, error) {
+	rows, err := s.pool.Query(ctx, `SELECT d.format,min(d.base_blob_path),d.base_source_sha256,x.seed,count(DISTINCT d.file_id)::int FROM source_documents d
+		CROSS JOIN LATERAL (SELECT d.state_seed_sha256 UNION SELECT c.state_seed_sha256 FROM source_refresh_candidates c WHERE c.file_id=d.file_id) x(seed)
+		WHERE x.seed IS NOT NULL GROUP BY d.format,d.base_source_sha256,x.seed ORDER BY d.format,d.base_source_sha256`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []OfficeSeed{}
+	for rows.Next() {
+		var seed OfficeSeed
+		if err = rows.Scan(&seed.Format, &seed.BaseBlobPath, &seed.BaseSourceSHA256, &seed.StateSeedSHA256, &seed.Files); err != nil {
+			return nil, err
+		}
+		out = append(out, seed)
+	}
+	return out, rows.Err()
+}
+
 // OfficeReadiness reads the pause, the Office sources with unpublished edits
 // and the Office publication and reprocess work in flight. Other uploads and
 // text refreshes do not touch what the reset drops, so they are not counted.
@@ -219,10 +251,10 @@ func (s *Store) OfficeReadiness(ctx context.Context) (OfficeReadiness, error) {
 // the file's bytes, with the state, baseline and effects that go with it (nil
 // state and baseline: seed(export) and its derived baseline).
 type exportPublication struct {
-	jobID, sourcePath, sha, etag           string
-	size, checkpoint, attemptID, netTokens int64
-	state, baseline                        []byte
-	effects                                json.RawMessage
+	jobID, sourcePath, sha, etag, stateSeed string
+	size, checkpoint, attemptID, netTokens  int64
+	state, baseline                         []byte
+	effects                                 json.RawMessage
 }
 
 // publishExportTx is a maintenance export-only publication (system payer,
@@ -268,10 +300,10 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 	if _, err := tx.Exec(ctx, `DELETE FROM image_caption_associations a WHERE file_id=$1 AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements($2::jsonb) e WHERE e->>'imageSHA256'=a.image_sha256 AND e->>'operation'<>'remove')`, fileID, p.effects); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,parsed_blob_path=NULL,parsed_fingerprint=NULL,parsed_parser_version=NULL,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,seed_bytes=`+rebasedSeedBytes+`,indexed_baseline=$4,base_revision=d.base_revision+1,base_blob_path=$5,base_source_sha256=$6,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.baseline, p.sourcePath, p.sha, p.effects, p.netTokens); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($9,''),indexed_baseline=$4,base_revision=d.base_revision+1,base_blob_path=$5,base_source_sha256=$6,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.baseline, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
 		return err
 	}
 	if err := invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
@@ -340,7 +372,7 @@ func (s *Store) reprocessTx(ctx context.Context, tx pgx.Tx, result SourceProcess
 // It reports false for any other running job.
 func (s *Store) upgradeExportTx(ctx context.Context, tx pgx.Tx, jobID, actor, ws, name, kind, mode string, ever bool) (bool, error) {
 	var exportOnly, finalized bool
-	err := tx.QueryRow(ctx, `SELECT COALESCE((j.payload->>'exportOnly')::boolean,false),c.seed_bytes IS NOT NULL FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.id=$1 AND j.type='source_refresh' AND j.status IN ('pending','running') FOR UPDATE OF j,c`, jobID).Scan(&exportOnly, &finalized)
+	err := tx.QueryRow(ctx, `SELECT COALESCE((j.payload->>'exportOnly')::boolean,false),c.source_sha256 IS NOT NULL FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.id=$1 AND j.type='source_refresh' AND j.status IN ('pending','running') FOR UPDATE OF j,c`, jobID).Scan(&exportOnly, &finalized)
 	if isNoRows(err) || (err == nil && !exportOnly) {
 		return false, nil
 	}

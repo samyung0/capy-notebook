@@ -18,6 +18,7 @@ import {
 } from '../../../collaboration/src/contributors';
 import {
   encodeBaseline,
+  seedChange,
   trimEffect,
 } from '../../../collaboration/src/sourceDocuments';
 import type {
@@ -79,6 +80,13 @@ const files = requested.length
     ];
 const hash = (bytes: Uint8Array) =>
   createHash('sha256').update(bytes).digest('hex');
+/**
+ * What the service stores for an Office state that grew from `seed`: its
+ * change over the seed, checked to rebuild the state exactly (migration 0039).
+ */
+function changeOver(seed: Uint8Array, state: Uint8Array) {
+  return seedChange(seed, state);
+}
 const records = [];
 const identity = {
   capy_revision: execFileSync('git', ['rev-parse', 'HEAD'], {
@@ -214,9 +222,14 @@ try {
         Object.entries(row).map(([key, value]) => [key, Number(value)])
       );
     }
-    const unopened = await measure(null, [], seed.state.length);
+    // Stored and charged as the service does since migration 0039 (a change
+    // over the seed, charged as stored); *_full_state keeps the earlier full
+    // state with its growth-over-seed charge for comparison.
+    const unopened = await measure(null, [], 0);
     await edit(' Capy storage probe.');
-    const one = await measure(stored, await effects(stored), seed.state.length);
+    const oneEffects = await effects(stored);
+    const one = await measure(changeOver(seed.state, stored), oneEffects, 0);
+    const oneFull = await measure(stored, oneEffects, seed.state.length);
     const captured: OfficeCheckpoint = { ...seed, state: stored.slice() };
     const exported = await office.exportOffice(bytes, captured, {
       seed: hash(captured.state),
@@ -230,9 +243,15 @@ try {
       `Export lost the measured edit in ${file}`
     );
     await edit(' Later saved edit.');
+    const laterEffects = await effects(stored);
     const duringRefresh = await measure(
+      changeOver(seed.state, stored),
+      laterEffects,
+      0
+    );
+    const duringRefreshFull = await measure(
       stored,
-      await effects(stored),
+      laterEffects,
       seed.state.length
     );
     const rebase = await office.rebaseOffice(
@@ -248,7 +267,17 @@ try {
             encodeBaseline({ entries: rebase.baseline, format, version: 1 }),
             'base64'
           );
+    // XLSX rebases onto seed(export) and stores its change; a DOCX or PPTX
+    // rebase keeps its lineage and baseline and is stored whole.
     const rebased = await measure(
+      format === 'xlsx'
+        ? changeOver(exportedSeed.state, rebase.state)
+        : rebase.state,
+      rebase.effects.map(trimEffect),
+      0,
+      rebaseBaseline
+    );
+    const rebasedFull = await measure(
       rebase.state,
       rebase.effects.map(trimEffect),
       exportedSeed.state.length,
@@ -281,12 +310,15 @@ try {
       derived_baseline_bytes: derivedBaseline,
       unopened,
       one_edit: one,
+      one_edit_full_state: oneFull,
       exported_bytes: exported.length,
       exported_seed_bytes: exportedSeed.state.length,
       during_refresh: duringRefresh,
+      during_refresh_full_state: duringRefreshFull,
       captured_state_bytes: captured.state.length,
       captured_state_stored: one.state_stored,
       rebased_with_later_edit: rebased,
+      rebased_with_later_edit_full_state: rebasedFull,
       milliseconds: Math.round(performance.now() - started),
     };
     room.destroy();

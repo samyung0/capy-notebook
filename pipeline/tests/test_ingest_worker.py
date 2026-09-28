@@ -199,7 +199,6 @@ def parse_stub(monkeypatch):
 
     monkeypatch.setattr(worker.parser_client, "extract_artifact", _extract)
     monkeypatch.setattr(worker, "_page_chunks", _chunk)
-    monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_record_caption_blob", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **k: None)
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
@@ -430,7 +429,6 @@ def test_invalid_artifact_returns_to_parse_only_once(monkeypatch):
     monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
     monkeypatch.setattr(worker.db, "require_current_file_source", lambda *_a: None)
-    monkeypatch.setattr(worker.db, "clear_file_parse_artifact", lambda *_a: None)
     monkeypatch.setattr(worker.db, "set_file_status", lambda *_a: None)
     monkeypatch.setattr(
         worker.db,
@@ -483,6 +481,29 @@ def test_reaped_superseded_final_attempt_only_runs_best_effort_cleanup(monkeypat
     assert published == []
 
 
+def test_finished_continuation_deletes_a_bundle_no_other_job_names(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(worker.cfg, "parse_shared_dir", str(tmp_path))
+    fingerprint = "a" * 64
+    key = f"artifacts/{fingerprint}.zip"
+    bundle = tmp_path / key
+    bundle.parent.mkdir(parents=True)
+    bundle.write_bytes(b"bundle")
+    payload = {"parseArtifact": {"key": key, "fingerprint": fingerprint}}
+    active = {key}
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker.db, "active_local_spool_keys", lambda _cur: active)
+
+    # A concurrent job for identical bytes still names the same bundle.
+    worker._release_parse_artifact(payload)
+    assert bundle.exists()
+
+    active.clear()
+    worker._release_parse_artifact(payload)
+    assert not bundle.exists()
+
+
 def test_optional_cache_registration_drops_a_row_for_a_reaped_object(monkeypatch):
     events: list[tuple] = []
     monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
@@ -507,10 +528,9 @@ def test_optional_cache_registration_drops_a_row_for_a_reaped_object(monkeypatch
 
 
 async def test_the_processing_plan_selects_the_route(parse_stub):
-    _, _, _, version = await _run()
+    await _run()
 
     assert parse_stub["route"] == parser_client.ROUTE_FAST
-    assert version == parser_client.parser_version(parser_client.ROUTE_FAST)
 
 
 @pytest.mark.parametrize("parser_route", ["accurate", "advanced", "bogus"])
@@ -732,7 +752,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
     monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
-    chunks, artifact_key, fingerprint, version = await worker._chunks_for(
+    chunks = await worker._chunks_for(
         payload={"blobPath": "sources/notes.md"},
         name="notes.md",
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
@@ -744,7 +764,6 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
     )
 
     assert chunks == ["# Notes"]
-    assert (artifact_key, fingerprint, version) == (None, None, None)
     assert parse_stub["descriptor"] is None
     assert parse_stub["chunked"] is None
 
@@ -753,7 +772,7 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     monkeypatch.setattr(worker, "_read_text", lambda _p: '{"topic": "osmosis"}')
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
-    chunks, artifact_key, fingerprint, version = await worker._chunks_for(
+    chunks = await worker._chunks_for(
         payload={"blobPath": "sources/data.json"},
         name="data.json",
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="json"),
@@ -765,7 +784,6 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     )
 
     assert chunks == ['{"topic": "osmosis"}']
-    assert (artifact_key, fingerprint, version) == (None, None, None)
     assert parse_stub["descriptor"] is None
     assert parse_stub["chunked"] is None
 
@@ -1113,6 +1131,7 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
         raise parser_client.ParserCapacityError("parser document queue is full")
 
     monkeypatch.setattr(worker.parser_client, "ensure_artifact", _full)
+    monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
     monkeypatch.setattr(
         worker, "_yield_for_capacity", lambda job, *_a, **_k: yielded.append(job["id"])
     )
@@ -1356,6 +1375,7 @@ async def test_post_parse_resource_failure_retries_without_parse_quarantine(
 
 async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatch):
     events: list[tuple[str, str]] = []
+    monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
     monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
     monkeypatch.setattr(worker.obs, "capture_error", lambda *_a, **_k: None)
     monkeypatch.setattr(
@@ -1506,6 +1526,7 @@ async def test_replacement_between_failure_check_and_job_write_closes_job(
     }
     monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
     monkeypatch.setattr(worker, "_record_parse_attempt", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
     monkeypatch.setattr(
         worker,
         "_finish_superseded",
@@ -1597,6 +1618,7 @@ async def test_completed_source_publication_retry_skips_providers_and_processing
     monkeypatch.setattr(
         worker, "_resume_source_publication", lambda received: received is job
     )
+    monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
 
     async def no_processing(*args, **kwargs):
         pytest.fail("publication retry must not resolve providers or repeat ingest")

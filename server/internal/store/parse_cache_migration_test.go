@@ -17,8 +17,10 @@ func TestParseCacheRemovalQueuesOnlyRetiredCopies(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	// Reconstruct the prior cache kinds without changing the applied migrations.
-	if _, err := tx.Exec(ctx, `ALTER TABLE artifact_cache DROP CONSTRAINT artifact_cache_kind_check;
+	// Reconstruct the prior cache kinds, and the column 0038 comments on that
+	// 0041 dropped, without changing the applied migrations.
+	if _, err := tx.Exec(ctx, `ALTER TABLE files ADD COLUMN parsed_blob_path text;
+		ALTER TABLE artifact_cache DROP CONSTRAINT artifact_cache_kind_check;
 		INSERT INTO artifact_cache (object_path,kind,source_sha256,size_bytes) VALUES
 		('parse-bundles/migration-retired.zip','parse_bundle','migration-source',123),
 		('derived-text/migration-kept.json','derived_text','migration-source',456),

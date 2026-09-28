@@ -173,22 +173,13 @@ def main() -> None:
                 assert manifest["parse_receipt"]["request_id"] == request["request_id"]
                 assert result["body"]["_page_count"] == pages
                 assert blocks and "refinement.json" in archive.namelist()
-                image_names = {n for n in archive.namelist() if n.startswith("images/")}
-                references = [b["img_path"] for b in blocks if b.get("img_path")]
-                assert all(name in image_names for name in references)
+                # Bundle v5: no image files and no references to any.
+                assert not any(b.get("img_path") for b in blocks)
                 bundle_audits.append(
                     {
                         "request_id": request["request_id"],
                         "entries": len(archive.namelist()),
                         "blocks": len(blocks),
-                        "image_references": len(references),
-                        "image_entries": len(image_names),
-                        "distinct_image_hashes": len(
-                            {
-                                hashlib.sha256(archive.read(n)).hexdigest()
-                                for n in image_names
-                            }
-                        ),
                         "artifact_bytes": (args.spool / request["output_key"])
                         .stat()
                         .st_size,

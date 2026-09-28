@@ -224,6 +224,7 @@ async function mockSourceSession(
     sourceIdentity: `mock-${fileId}`,
     sourceURL: link.url,
     state: sourceRoomState(room),
+    stateSeedSHA256: null,
     workspaceId: file.workspaceId,
   };
 }
@@ -1862,7 +1863,6 @@ export const handlers = [
           id: uid('comment'),
           isDeleted: false,
           isEdited: false,
-          replies: [],
           updatedAt: now,
           userId: db.user.id,
         },
@@ -1870,7 +1870,6 @@ export const handlers = [
       createdAt: now,
       id: uid('discussion'),
       isDeleted: false,
-      isResolved: false,
       materialId: String(params.id),
       updatedAt: now,
       userId: db.user.id,
@@ -1885,7 +1884,6 @@ export const handlers = [
     if (!discussion) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as {
       contentRich: MaterialDiscussion['comments'][number]['contentRich'];
-      parentCommentId?: string;
     };
     const now = new Date().toISOString();
     const comment: MaterialDiscussion['comments'][number] = {
@@ -1896,27 +1894,13 @@ export const handlers = [
       id: uid('comment'),
       isDeleted: false,
       isEdited: false,
-      parentCommentId: body.parentCommentId,
-      replies: [],
       updatedAt: now,
       userId: db.user.id,
     };
-    const parent = body.parentCommentId
-      ? discussion.comments.find((entry) => entry.id === body.parentCommentId)
-      : undefined;
-    if (parent) parent.replies.push(comment);
-    else discussion.comments.push(comment);
+    discussion.comments.push(comment);
     discussion.updatedAt = now;
     await persistEditorState(discussion.materialId);
     return HttpResponse.json(comment, { status: 201 });
-  }),
-  http.patch('/api/discussions/:id', async ({ params, request }) => {
-    const discussion = mockDiscussions.find((item) => item.id === params.id);
-    if (!discussion) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as { isResolved: boolean };
-    discussion.isResolved = body.isResolved;
-    discussion.updatedAt = new Date().toISOString();
-    return new HttpResponse(null, { status: 204 });
   }),
   http.delete('/api/discussions/:id', async ({ params }) => {
     const discussion = mockDiscussions.find((item) => item.id === params.id);
@@ -1930,11 +1914,9 @@ export const handlers = [
       contentRich: MaterialDiscussion['comments'][number]['contentRich'];
     };
     for (const discussion of mockDiscussions) {
-      const entries = discussion.comments.flatMap((entry) => [
-        entry,
-        ...entry.replies,
-      ]);
-      const comment = entries.find((entry) => entry.id === params.id);
+      const comment = discussion.comments.find(
+        (entry) => entry.id === params.id
+      );
       if (!comment) continue;
       comment.contentRich = body.contentRich;
       comment.isEdited = true;
@@ -1945,9 +1927,9 @@ export const handlers = [
   }),
   http.delete('/api/comments/:id', async ({ params }) => {
     for (const discussion of mockDiscussions) {
-      const entry = discussion.comments
-        .flatMap((comment) => [comment, ...comment.replies])
-        .find((comment) => comment.id === params.id);
+      const entry = discussion.comments.find(
+        (comment) => comment.id === params.id
+      );
       if (!entry) continue;
       entry.isDeleted = true;
       entry.contentRich = null;

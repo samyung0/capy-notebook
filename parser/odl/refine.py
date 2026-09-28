@@ -11,7 +11,6 @@ RapidOCR lines for pages without a text layer.
 from __future__ import annotations
 
 import json
-import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,8 +42,8 @@ from .adapter import odl_content_list
 @dataclass
 class ParseOutput:
     content_list: list[dict]
+    # OpenDataLoader's own Markdown, for bench inspection; ingest never reads it.
     markdown: str
-    images: dict[str, bytes]
     ocr_pages: list[int]
     page_count: int
     phases: dict[str, float] = field(default_factory=dict)
@@ -56,44 +55,6 @@ class ParseOutput:
     # so the ingest worker's heading retention and confidence read the same
     # text layer the parser did instead of the CJK-decoded original.
     parsed_pdf: bytes | None = None
-
-
-def _check_images(
-    blocks: list[dict], native_dir: Path
-) -> tuple[dict[str, bytes], dict[str, str]]:
-    images: dict[str, bytes] = {}
-    names_by_content: dict[bytes, str] = {}
-    names_by_path: dict[str, str] = {}
-    for block in blocks:
-        path = block.get("img_path")
-        if not path:
-            continue
-        if path in names_by_path:
-            block["img_path"] = names_by_path[path]
-            continue
-        file = native_dir / path
-        if not file.is_file():
-            raise ValueError(f"OpenDataLoader referenced a missing image {path}")
-        content = file.read_bytes()
-        name = names_by_content.get(content)
-        if name is None:
-            name = file.name
-            if name in images:
-                raise ValueError(f"OpenDataLoader reused an image basename {name}")
-            images[name] = content
-            names_by_content[content] = name
-        names_by_path[path] = name
-        block["img_path"] = name
-    return images, names_by_path
-
-
-def _image_markdown(markdown: str, names_by_path: dict[str, str]) -> str:
-    # OpenDataLoader emits angle-bracket destinations for external images.
-    def replace(match: re.Match) -> str:
-        name = names_by_path.get(match[2])
-        return f"{match[1]}<images/{name}>{match[3]}" if name else match[0]
-
-    return re.sub(r"(!\[[^\]\n]*\]\()<([^>\n]+)>(\))", replace, markdown)
 
 
 def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOutput:
@@ -146,8 +107,9 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
             native,
             [{"width": p.rect.width, "height": p.rect.height} for p in document],
         )
+        # Picture triage reads ODL's image files from the work directory; the
+        # files themselves never leave it.
         blocks = pictures.classify(blocks, document, native_dir)
-        images, image_paths = _check_images(blocks, native_dir)
         blocks, reordered = order.repair(blocks)
         blocks = order.move_rotated_labels(blocks, reordered, pdf)
         blocks = order.split_continuations(blocks, reordered, pdf)
@@ -191,8 +153,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
     )
     return ParseOutput(
         content_list=blocks,
-        markdown=_image_markdown(markdown, image_paths),
-        images=images,
+        markdown=markdown,
         ocr_pages=ocr_pages,
         page_count=page_count,
         phases=phases,

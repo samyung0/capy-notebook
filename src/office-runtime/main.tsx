@@ -200,7 +200,8 @@ function OfficeRuntime() {
             ? await exportCheckpoint(
                 message.format,
                 message.bytes,
-                message.checkpoint
+                message.checkpoint,
+                message.checkpointSeedSHA256
               )
             : new Uint8Array(message.bytes);
         setFile({

@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises';
 import type { Pool } from 'pg';
 import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
-import { attachDocumentContributorTracker } from './contributors.js';
+import {
+  attachDocumentContributorTracker,
+  documentContributors,
+  removeDocumentContributors,
+} from './contributors.js';
 import {
   EditError,
   officeError,
@@ -20,7 +24,9 @@ import {
 } from './officeRuntime.js';
 import {
   effectTokens,
+  rebuildState,
   SourceDocumentStore,
+  SourceSeedChangedError,
   type SourceSession,
   trimEffect,
 } from './sourceDocuments.js';
@@ -373,9 +379,16 @@ test.each([
       'fetch',
       vi.fn(async () => new Response(bytes))
     );
-    const store = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+    // The row still names checkpoint 0 until the edit is stored.
+    const pool = {
+      query: vi.fn(async () => ({
+        rows: [{ base_revision: '1', checkpoint: '0', pending_effects: [] }],
+      })),
+    } as unknown as Pool;
+    const store = new SourceDocumentStore(pool, 'http://api', 'secret');
     const session = {
       access: 'write',
+      baseRevision: 1,
       baseSourceSHA256: seed.baseSha256,
       checkpoint: 0,
       epoch: 1,
@@ -411,11 +424,44 @@ test.each([
     ]);
     Y.applyUpdate(room, edited.state, writer);
     await store.store(session.room, room);
-    expect(request).toHaveBeenCalledWith(
-      'f_1',
-      'checkpoint',
-      expect.objectContaining({ seedBytes: seed.state.byteLength })
-    );
+    // The first edit binds the base and stores only its change over the seed,
+    // which a store holding nothing else rebuilds into the saved document.
+    const body = request.mock.calls[0][2] as {
+      baseSourceSHA256: string;
+      seedBytes?: number;
+      state: string;
+      stateSeedSHA256: string;
+    };
+    const seedSHA256 = createHash('sha256').update(seed.state).digest('hex');
+    expect(body).toMatchObject({
+      baseSourceSHA256: seed.baseSha256,
+      stateSeedSHA256: seedSHA256,
+    });
+    expect(body).not.toHaveProperty('seedBytes');
+    const change = Buffer.from(body.state, 'base64');
+    expect(change.byteLength).toBeLessThan(seed.state.byteLength / 10);
+    const saved = new Y.Doc();
+    Y.applyUpdate(saved, Y.encodeStateAsUpdate(room));
+    removeDocumentContributors(saved, documentContributors(saved));
+    const fresh = new SourceDocumentStore(pool, 'http://api', 'secret');
+    expect(
+      Buffer.from(
+        await fresh.stateOf({
+          ...session,
+          state: body.state,
+          stateSeedSHA256: seedSHA256,
+        })
+      ).equals(Buffer.from(Y.encodeStateAsUpdate(saved)))
+    ).toBe(true);
+    // A change taken over another seed is refused, never applied.
+    await expect(
+      fresh.stateOf({
+        ...session,
+        state: body.state,
+        stateSeedSHA256: '0'.repeat(64),
+      })
+    ).rejects.toBeInstanceOf(SourceSeedChangedError);
+    saved.destroy();
     room.destroy();
   },
   60_000
@@ -450,4 +496,101 @@ test('XLSX pending effects come from its overrides with no stored baseline', asy
   expect(await store.effects(session, edited.state)).toMatchObject([
     { kind: 'text', label: target.label, operation: 'replace' },
   ]);
+}, 60_000);
+
+test('an XLSX publication rebase is stored as its change over seed(export)', async () => {
+  const bytes = await readFile(
+    new URL(
+      '../../vendor/betteroffice/apps/demo/public/sample.xlsx',
+      import.meta.url
+    )
+  );
+  const sha256 = (value: Uint8Array) =>
+    createHash('sha256').update(value).digest('hex');
+  const seed = await runOffice('seedOffice', 'xlsx', bytes);
+  const [first, second] = (
+    await runOffice('inspectOffice', bytes, seed)
+  ).filter((entry) => entry.value.length > 0);
+  const captured = await runOffice('applyOfficeCommands', bytes, seed, [
+    setText('xlsx', first, 'Captured'),
+  ]);
+  const latest = await runOffice(
+    'applyOfficeCommands',
+    bytes,
+    { ...seed, state: captured.state },
+    [setText('xlsx', second, 'Later')]
+  );
+  const exported = await runOffice(
+    'exportOffice',
+    bytes,
+    { ...seed, state: captured.state },
+    { now: '2000-01-01T00:00:00.000Z', seed: sha256(bytes) }
+  );
+  // Both saved states are stored as their change over seed(base).
+  const change = (state: Uint8Array) => {
+    const document = new Y.Doc();
+    Y.applyUpdate(document, state);
+    const out = Buffer.from(
+      Y.encodeStateAsUpdate(document, Y.encodeStateVectorFromUpdate(seed.state))
+    );
+    document.destroy();
+    return out;
+  };
+  const pool = {
+    query: vi.fn(async () => ({
+      rows: [
+        {
+          source_sha256: sha256(exported),
+          state: change(captured.state),
+          state_seed_sha256: sha256(seed.state),
+        },
+      ],
+    })),
+  } as unknown as Pool;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === 'http://base' ? bytes : Buffer.from(exported))
+    )
+  );
+  const sources = new SourceDocumentStore(pool, 'http://api', 'secret');
+  vi.spyOn(sources, 'request').mockResolvedValue({
+    sourceURL: 'http://export',
+  });
+  const session = {
+    baseSourceSHA256: seed.baseSha256,
+    checkpoint: 11,
+    epoch: 1,
+    fileId: 'f',
+    format: 'xlsx',
+    indexedBaseline: null,
+    pendingEffects: [],
+    sourceURL: 'http://base',
+    state: change(latest.state).toString('base64'),
+    stateSeedSHA256: sha256(seed.state),
+  } as unknown as SourceSession;
+  const result = await sources.rebasePublication(session, {
+    checkpoint: 10,
+    epoch: 1,
+    jobId: 'job',
+    leaseToken: 'lease',
+  });
+  const exportSeed = await runOffice('seedOffice', 'xlsx', exported);
+  expect(result).not.toHaveProperty('indexedBaseline');
+  expect(result).toMatchObject({
+    rebasedStateSeedSHA256: sha256(exportSeed.state),
+  });
+  // Over seed(export), the stored change holds both edits.
+  const rebuilt = rebuildState(
+    exportSeed.state,
+    Buffer.from(result.rebasedState as string, 'base64')
+  );
+  const values = (
+    await runOffice('inspectOffice', exported, {
+      ...exportSeed,
+      state: rebuilt,
+    })
+  ).map((entry) => entry.value);
+  expect(values).toEqual(expect.arrayContaining(['Captured', 'Later']));
 }, 60_000);

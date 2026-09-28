@@ -11,9 +11,12 @@ import * as officeRuntime from './officeRuntime.js';
 import {
   effectTokens,
   encodeBaseline,
+  rebuildState,
   SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
+  SourceStateRebuildError,
+  seedChange,
   textEffects,
   textSeed,
   textState,
@@ -175,6 +178,7 @@ test('a delayed source store merges a newer durable replica before saving', asyn
     room: 'source:f_1:epoch:1',
     sourceURL: 'https://unused',
     state: Buffer.from(Y.encodeStateAsUpdate(right)).toString('base64'),
+    stateSeedSHA256: null,
     workspaceId: 'ws',
   };
   const store = new SourceDocumentStore({} as Pool, 'http://unused', 'secret');
@@ -226,6 +230,7 @@ test.each([204, 409])(
             leaseToken: 'lease',
             sourceBlobPath: 'candidate',
             state,
+            stateSeedSHA256: null,
             uploadHeaders: {},
             uploadURL: 'http://upload',
           });
@@ -253,9 +258,9 @@ test.each([204, 409])(
           checkpoint: 2,
           epoch: 1,
           leaseToken: 'lease',
-          seedBytes: Buffer.from(state, 'base64').byteLength,
           sourceETag: 'candidate-etag',
         });
+        expect(body).not.toHaveProperty('seedBytes');
         expect(body.sourceSHA256).toMatch(SHA256);
         return new Response(null, { status });
       })
@@ -387,7 +392,13 @@ test('a source edit retries from freshly loaded state after a checkpoint CAS con
     document.getText('source').insert(0, text);
     return Buffer.from(Y.encodeStateAsUpdate(document)).toString('base64');
   };
-  const base = { access: 'write', epoch: 1, format: 'text' } as SourceSession;
+  // A saved state always has its base SHA bound.
+  const base = {
+    access: 'write',
+    baseSourceSHA256: 'sha',
+    epoch: 1,
+    format: 'text',
+  } as SourceSession;
   // The second bootstrap sees what another replica committed meanwhile.
   vi.spyOn(store, 'session')
     .mockResolvedValueOnce({
@@ -530,6 +541,7 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     room: 'source:f:epoch:1',
     sourceURL: 'http://old-source',
     state: Buffer.from('saved11').toString('base64'),
+    stateSeedSHA256: null,
     workspaceId: 'ws',
   };
   const pool = {
@@ -622,4 +634,392 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
   expect(same).toEqual({ netTokens: 0, pendingEffects: [] });
   expect(runtime).not.toHaveBeenCalled();
   expect(request).not.toHaveBeenCalled();
+});
+
+test('a save starts from the durable copy while the row names it, and reads the session again once it does not', async () => {
+  const text = (value: string) => {
+    const document = new Y.Doc();
+    document.clientID = 0;
+    document.getText('source').insert(0, value);
+    return Buffer.from(Y.encodeStateAsUpdate(document)).toString('base64');
+  };
+  let row = 3;
+  const pool = {
+    query: vi.fn(async () => ({
+      rows: [
+        { base_revision: '1', checkpoint: String(row), pending_effects: [] },
+      ],
+    })),
+  } as unknown as Pool;
+  // The baseline derives from the base, which the first save downloads.
+  const bytes = Buffer.from('base');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(bytes))
+  );
+  const store = new SourceDocumentStore(pool, 'http://gateway', 'secret');
+  const session = {
+    access: 'write',
+    baseRevision: 1,
+    baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
+    checkpoint: 3,
+    epoch: 1,
+    fileId: 'f_1',
+    format: 'text',
+    indexedBaseline: null,
+    pendingEffects: [],
+    room: 'source:f_1:epoch:1',
+    sourceURL: 'http://unused',
+    state: text('base'),
+    stateSeedSHA256: null,
+  } as unknown as SourceSession;
+  const sessions = vi.spyOn(store, 'session').mockResolvedValue(session);
+  const saved: { expectedCheckpoint: number; state: string }[] = [];
+  vi.spyOn(store, 'request').mockImplementation((async (
+    _file: string,
+    _endpoint: string,
+    body: (typeof saved)[number]
+  ) => {
+    saved.push(body);
+    row = body.expectedCheckpoint + 1;
+    return { checkpoint: row };
+  }) as never);
+  const room = new Y.Doc();
+  attachDocumentContributorTracker(room, 'instance');
+  await store.load(session.room, room, 'u1');
+  const writer = {
+    connection: { context: { access: 'write', userId: 'u1' } },
+    source: 'connection',
+  };
+  const type = (value: string) => {
+    room.transact(() => room.getText('source').insert(0, value), writer);
+    const snapshot = new Y.Doc();
+    Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(room));
+    return store.store(session.room, snapshot);
+  };
+  await type('A ');
+  await type('B ');
+  // Loading and the first save read the session; the second save started
+  // from this instance's copy.
+  expect(sessions).toHaveBeenCalledTimes(2);
+  expect(saved.map((body) => body.expectedCheckpoint)).toEqual([3, 4]);
+  // Another instance saved: the row names checkpoint 9, which is read again
+  // and merged instead of overwritten.
+  row = 9;
+  const elsewhere = new Y.Doc();
+  Y.applyUpdate(elsewhere, Buffer.from(text('base'), 'base64'));
+  elsewhere.getText('source').insert(4, ' elsewhere');
+  sessions.mockResolvedValue({
+    ...session,
+    checkpoint: 9,
+    state: Buffer.from(Y.encodeStateAsUpdate(elsewhere)).toString('base64'),
+  });
+  await type('C ');
+  expect(sessions).toHaveBeenCalledTimes(3);
+  expect(saved[2].expectedCheckpoint).toBe(9);
+  expect(textState(Buffer.from(saved[2].state, 'base64'))).toBe(
+    'C B A base elsewhere'
+  );
+  room.destroy();
+});
+
+// A document merged over several saves (durable state, then the room) can keep
+// adjacent deleted structs apart where a fresh document merges them; the
+// content is the same, so the stored change must be accepted every time.
+test('a state merged over several saves is stored as its change over the seed', () => {
+  const seedDoc = new Y.Doc();
+  seedDoc.clientID = 0;
+  seedDoc.getMap('shapes').set('base', 1);
+  const seed = Y.encodeStateAsUpdate(seedDoc);
+  const room = new Y.Doc();
+  room.clientID = 7;
+  Y.applyUpdate(room, seed);
+  const shapes = room.getMap<Y.Map<number>>('shapes');
+  const replace = (key: string, x: number) => {
+    const shape = new Y.Map<number>();
+    shapes.set(key, shape);
+    shape.set('x', x);
+  };
+  let durable = seed;
+  let layouts = 0;
+  const save = () => {
+    const merged = new Y.Doc();
+    Y.applyUpdate(merged, durable);
+    Y.applyUpdate(merged, Y.encodeStateAsUpdate(room));
+    const state = Y.encodeStateAsUpdate(merged);
+    const fresh = new Y.Doc();
+    Y.applyUpdate(fresh, state);
+    const canonical = Y.encodeStateAsUpdate(fresh);
+    if (!Buffer.from(state).equals(canonical)) layouts++;
+    expect(
+      Buffer.from(rebuildState(seed, seedChange(seed, state))).equals(canonical)
+    ).toBe(true);
+    durable = state;
+    merged.destroy();
+    fresh.destroy();
+  };
+  replace('a', 8);
+  replace('b', 4);
+  shapes.get('a')?.set('x', 3);
+  replace('b', 5);
+  save();
+  shapes.get('b')?.set('x', 7);
+  shapes.get('a')?.set('x', 5);
+  save();
+  replace('a', 2);
+  save();
+  save();
+  // The case exists: some merged state differs from its fresh encoding.
+  expect(layouts).toBeGreaterThan(0);
+  room.destroy();
+});
+
+// A text publication moves the base (and indexed checkpoint) but not the
+// checkpoint or epoch: the next save reads the session again, so effects are
+// computed against the published text.
+test('after a text publication a save reads the session again and counts only the new edit', async () => {
+  const sha = (bytes: Uint8Array) =>
+    createHash('sha256').update(bytes).digest('hex');
+  const oldBase = Buffer.from('hello');
+  const newBase = Buffer.from('A hello');
+  let row = { base_revision: '1', checkpoint: '3', pending_effects: [] };
+  const pool = {
+    query: vi.fn(async () => ({ rows: [row] })),
+  } as unknown as Pool;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === 'http://old' ? oldBase : newBase)
+    )
+  );
+  const store = new SourceDocumentStore(pool, 'http://gateway', 'secret');
+  let session = {
+    access: 'write',
+    baseRevision: 1,
+    baseSourceSHA256: sha(oldBase),
+    checkpoint: 3,
+    epoch: 1,
+    fileId: 'f_1',
+    format: 'text',
+    indexedBaseline: null,
+    indexedCheckpoint: 0,
+    pendingEffects: [],
+    room: 'source:f_1:epoch:1',
+    sourceURL: 'http://old',
+    state: Buffer.from(textSeed(oldBase)).toString('base64'),
+    stateSeedSHA256: null,
+  } as unknown as SourceSession;
+  const sessions = vi.spyOn(store, 'session').mockImplementation(async () => ({
+    ...session,
+    checkpoint: Number(row.checkpoint),
+  }));
+  const saved: {
+    expectedCheckpoint: number;
+    pendingEffects: { after?: string }[];
+  }[] = [];
+  vi.spyOn(store, 'request').mockImplementation((async (
+    _file: string,
+    _endpoint: string,
+    body: (typeof saved)[number]
+  ) => {
+    saved.push(body);
+    row = { ...row, checkpoint: String(body.expectedCheckpoint + 1) };
+    return { checkpoint: body.expectedCheckpoint + 1 };
+  }) as never);
+  const room = new Y.Doc();
+  attachDocumentContributorTracker(room, 'instance');
+  await store.load(session.room, room, 'u1');
+  const writer = {
+    connection: { context: { access: 'write', userId: 'u1' } },
+    source: 'connection',
+  };
+  const type = (value: string) => {
+    room.transact(() => room.getText('source').insert(0, value), writer);
+    const snapshot = new Y.Doc();
+    Y.applyUpdate(snapshot, Y.encodeStateAsUpdate(room));
+    return store.store(session.room, snapshot);
+  };
+  await type('A ');
+  const reads = sessions.mock.calls.length;
+  // Checkpoint 4 publishes as "A hello" (source_refresh.go, text branch).
+  row = { ...row, base_revision: '2' };
+  session = {
+    ...session,
+    baseRevision: 2,
+    baseSourceSHA256: sha(newBase),
+    indexedCheckpoint: 4,
+    sourceURL: 'http://new',
+  };
+  await type('B ');
+  expect(sessions.mock.calls.length).toBe(reads + 1);
+  expect(saved[1].pendingEffects.map((effect) => effect.after)).toEqual(['B ']);
+  room.destroy();
+});
+
+// A replayed agent edit answers with the row's checkpoint and stores nothing,
+// so its recomputed state must not stand in for the row on the next save.
+// A replayed agent edit answers with a checkpoint (the row's, or a later one
+// when another commit raced it) and stores nothing, so its recomputed state
+// must not stand in for the row on the next save.
+test.each([4, 5])(
+  'a replayed agent edit answered with checkpoint %i leaves no durable copy behind',
+  async (answered) => {
+    const stateOf = (text: string) => {
+      const document = new Y.Doc();
+      document.clientID = 0;
+      document.getText('source').insert(0, text);
+      return Buffer.from(Y.encodeStateAsUpdate(document)).toString('base64');
+    };
+    const bytes = Buffer.from('text');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(bytes))
+    );
+    const pool = {
+      query: vi.fn(async () => ({
+        // The row names the answered checkpoint, which a kept copy would match.
+        rows: [
+          {
+            base_revision: '1',
+            checkpoint: String(answered),
+            pending_effects: [],
+          },
+        ],
+      })),
+    } as unknown as Pool;
+    const store = new SourceDocumentStore(pool, 'http://gateway', 'secret');
+    const session = {
+      access: 'write',
+      baseRevision: 1,
+      baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
+      checkpoint: 4,
+      epoch: 1,
+      fileId: 'f_1',
+      format: 'text',
+      indexedBaseline: null,
+      pendingEffects: [],
+      room: 'source:f_1:epoch:1',
+      sourceURL: 'http://base',
+      state: stateOf('text'),
+      stateSeedSHA256: null,
+    } as unknown as SourceSession;
+    const sessions = vi.spyOn(store, 'session').mockResolvedValue(session);
+    const request = vi.spyOn(store, 'request').mockResolvedValue({
+      checkpoint: answered,
+      operation: { operationId: 'op_1' },
+    });
+    await store.applyEdit({
+      actorUserId: 'u1',
+      commands: [{ expectedText: 'text', text: 'TEXT', type: 'replace_text' }],
+      fileId: 'f_1',
+      operation: {
+        actorUserId: 'u1',
+        id: 'op_1',
+        requestHash: 'h',
+        toolVersion: 1,
+      },
+    });
+    const room = new Y.Doc();
+    attachDocumentContributorTracker(room, 'instance');
+    Y.applyUpdate(room, Buffer.from(session.state as string, 'base64'));
+    room.transact(() => room.getText('source').insert(0, 'more '), {
+      connection: { context: { access: 'write', userId: 'u1' } },
+      source: 'connection',
+    });
+    request.mockResolvedValue({ checkpoint: 6 });
+    await store.store(session.room, room);
+    // The store read the session again instead of trusting the replayed state.
+    expect(sessions).toHaveBeenCalledTimes(2);
+    expect(
+      textState(
+        Buffer.from(
+          (request.mock.calls.at(-1)?.[2] as { state: string } | undefined)
+            ?.state as string,
+          'base64'
+        )
+      )
+    ).toBe('more text');
+    room.destroy();
+  }
+);
+
+// A rebuild that cannot hold (a change missing from its seed) is an Office
+// engine error: reported with drafts kept, never retried by the failed-store
+// runner (server.ts storeSource).
+test('a change that does not rebuild from its seed is an engine error', () => {
+  const seedDoc = new Y.Doc();
+  seedDoc.clientID = 0;
+  seedDoc.getText('source').insert(0, 'seed');
+  const seed = Y.encodeStateAsUpdate(seedDoc);
+  const other = new Y.Doc();
+  other.clientID = 0;
+  other.getText('source').insert(0, 'another lineage');
+  const edited = new Y.Doc();
+  Y.applyUpdate(edited, Y.encodeStateAsUpdate(other));
+  edited.clientID = 9;
+  edited.getText('source').insert(0, 'X');
+  // The change refers to items only the other lineage has.
+  const change = Y.encodeStateAsUpdate(
+    edited,
+    Y.encodeStateVectorFromUpdate(Y.encodeStateAsUpdate(other))
+  );
+  const refused = (() => {
+    try {
+      rebuildState(Y.encodeStateAsUpdate(new Y.Doc()), change);
+    } catch (error) {
+      return error;
+    }
+  })();
+  expect(refused).toBeInstanceOf(SourceStateRebuildError);
+  expect(refused).toBeInstanceOf(officeRuntime.OfficeEngineError);
+  expect(() => seedChange(seed, Y.encodeStateAsUpdate(seedDoc))).not.toThrow();
+  seedDoc.destroy();
+  other.destroy();
+  edited.destroy();
+});
+
+// A room that unloads forgets its durable copy: the next load starts over.
+test('a forgotten room saves from a fresh session read', async () => {
+  const bytes = Buffer.from('base');
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(bytes))
+  );
+  const pool = {
+    query: vi.fn(async () => ({
+      rows: [{ base_revision: '1', checkpoint: '3', pending_effects: [] }],
+    })),
+  } as unknown as Pool;
+  const store = new SourceDocumentStore(pool, 'http://gateway', 'secret');
+  const session = {
+    access: 'write',
+    baseRevision: 1,
+    baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
+    checkpoint: 3,
+    epoch: 1,
+    fileId: 'f_1',
+    format: 'text',
+    indexedBaseline: null,
+    pendingEffects: [],
+    room: 'source:f_1:epoch:1',
+    sourceURL: 'http://base',
+    state: Buffer.from(textSeed(bytes)).toString('base64'),
+    stateSeedSHA256: null,
+  } as unknown as SourceSession;
+  const sessions = vi.spyOn(store, 'session').mockResolvedValue(session);
+  vi.spyOn(store, 'request').mockResolvedValue({ checkpoint: 4 });
+  const room = new Y.Doc();
+  attachDocumentContributorTracker(room, 'instance');
+  // Warm the base, so only the forgotten copy can send the save to a read.
+  await store.seed(session);
+  await store.load(session.room, room, 'u1');
+  store.forget(session.room);
+  room.transact(() => room.getText('source').insert(0, 'A '), {
+    connection: { context: { access: 'write', userId: 'u1' } },
+    source: 'connection',
+  });
+  await store.store(session.room, room);
+  expect(sessions).toHaveBeenCalledTimes(2);
+  room.destroy();
 });

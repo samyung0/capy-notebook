@@ -81,13 +81,7 @@ def stage_source_candidate(cur, file_id: str, fields: dict[str, Any]) -> bool:
     active = source_refresh_for(file_id)
     if active is None:
         return False
-    allowed = {
-        "parse_artifact_key",
-        "parse_artifact_fingerprint",
-        "parse_artifact_version",
-        "source_sha256",
-        "content_hash",
-    }
+    allowed = {"source_sha256", "content_hash"}
     if not fields or not set(fields).issubset(allowed):
         raise ValueError("invalid candidate fields")
     # Every caller first takes the source/attempt fence in this transaction.
@@ -1055,10 +1049,6 @@ def active_local_spool_keys(cur) -> set[str]:
           UNION
           SELECT payload#>>'{parseArtifact,key}' AS key
           FROM jobs WHERE status IN ('pending','running')
-          UNION
-          SELECT f.parsed_blob_path AS key
-          FROM jobs j JOIN files f ON f.id=j.payload->>'fileId'
-          WHERE j.status IN ('pending','running')
         ) active
         WHERE key IS NOT NULL AND key <> ''
         """
@@ -1301,50 +1291,6 @@ def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:
     cur.execute(
         "UPDATE files SET content_hash=%s WHERE id=%s AND trashed_at IS NULL",
         (content_hash, file_id),
-    )
-
-
-def set_file_parse_artifact(
-    cur,
-    file_id: str,
-    blob_path: str,
-    fingerprint: str,
-    parser_version: str,
-) -> None:
-    if stage_source_candidate(
-        cur,
-        file_id,
-        {
-            "parse_artifact_key": blob_path,
-            "parse_artifact_fingerprint": fingerprint,
-            "parse_artifact_version": parser_version,
-        },
-    ):
-        return
-    cur.execute(
-        """UPDATE files
-        SET parsed_blob_path=%s, parsed_fingerprint=%s, parsed_parser_version=%s
-        WHERE id=%s AND trashed_at IS NULL""",
-        (blob_path, fingerprint, parser_version, file_id),
-    )
-
-
-def clear_file_parse_artifact(cur, file_id: str) -> None:
-    if stage_source_candidate(
-        cur,
-        file_id,
-        {
-            "parse_artifact_key": None,
-            "parse_artifact_fingerprint": None,
-            "parse_artifact_version": None,
-        },
-    ):
-        return
-    cur.execute(
-        """UPDATE files
-        SET parsed_blob_path=NULL, parsed_fingerprint=NULL, parsed_parser_version=NULL
-        WHERE id=%s AND trashed_at IS NULL""",
-        (file_id,),
     )
 
 

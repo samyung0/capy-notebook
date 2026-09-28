@@ -290,6 +290,7 @@ export async function scenarioSourceSession(
     sourceIdentity: fileId,
     sourceURL: seed.sourceURL,
     state: sourceRoomState(room),
+    stateSeedSHA256: null,
     workspaceId: file.workspaceId,
   };
 }

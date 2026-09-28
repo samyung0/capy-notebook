@@ -608,12 +608,6 @@ components:
           type: boolean
         isEdited:
           type: boolean
-        parentCommentId:
-          type: string
-        replies:
-          items:
-            $ref: "#/components/schemas/Comment"
-          type: array
         updatedAt:
           format: date-time
           type: string
@@ -629,7 +623,6 @@ components:
         - isDeleted
         - createdAt
         - updatedAt
-        - replies
       type: object
     ContentOrderItem:
       additionalProperties: false
@@ -772,8 +765,6 @@ components:
           minItems: 1
           nullable: true
           type: array
-        parentCommentId:
-          type: string
       required:
         - contentRich
       type: object
@@ -1192,8 +1183,6 @@ components:
           type: string
         isDeleted:
           type: boolean
-        isResolved:
-          type: boolean
         materialId:
           type: string
         updatedAt:
@@ -1208,7 +1197,6 @@ components:
         - anchorQuote
         - userId
         - authorName
-        - isResolved
         - isDeleted
         - createdAt
         - updatedAt
@@ -3261,6 +3249,9 @@ components:
           format: base64
           nullable: true
           type: string
+        stateSeedSHA256:
+          nullable: true
+          type: string
         uploadHeaders:
           additionalProperties:
             type: string
@@ -3276,6 +3267,7 @@ components:
         - checkpoint
         - leaseToken
         - state
+        - stateSeedSHA256
         - sourceBlobPath
         - format
         - baseSourceURL
@@ -3320,6 +3312,8 @@ components:
           type: integer
         state:
           format: base64
+          type: string
+        stateSeedSHA256:
           type: string
       required:
         - actorIds
@@ -3537,10 +3531,6 @@ components:
           type: string
         leaseToken:
           type: string
-        seedBytes:
-          format: int64
-          minimum: 0
-          type: integer
         sizeBytes:
           format: int64
           type: integer
@@ -3556,7 +3546,6 @@ components:
         - sourceSHA256
         - sizeBytes
         - sourceETag
-        - seedBytes
       type: object
     SourceRefreshInputBody:
       additionalProperties: false
@@ -3614,6 +3603,8 @@ components:
         pendingEffects: {}
         rebasedState:
           format: base64
+          type: string
+        rebasedStateSeedSHA256:
           type: string
         sourceETag:
           type: string
@@ -3685,6 +3676,9 @@ components:
           format: base64
           nullable: true
           type: string
+        stateSeedSHA256:
+          nullable: true
+          type: string
         workspaceId:
           type: string
       required:
@@ -3700,6 +3694,7 @@ components:
         - baseSourceSHA256
         - sourceURL
         - state
+        - stateSeedSHA256
         - indexedBaseline
         - pendingEffects
         - netTokens
@@ -4220,20 +4215,6 @@ components:
           type: array
       required:
         - contentRich
-      type: object
-    UpdateDiscussionReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateDiscussionReq.json
-          format: uri
-          readOnly: true
-          type: string
-        isResolved:
-          type: boolean
-      required:
-        - isResolved
       type: object
     UpdateEventReq:
       additionalProperties: false
@@ -5483,32 +5464,6 @@ paths:
       summary: Soft-delete a comment discussion
       tags:
         - Material collaboration
-    patch:
-      operationId: updateMaterialDiscussion
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateDiscussionReq"
-        required: true
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Resolve or reopen a comment discussion
-      tags:
-        - Material collaboration
   /api/discussions/{id}/comments:
     post:
       operationId: createMaterialComment
@@ -5537,7 +5492,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Add a comment or one-level reply
+      summary: Add a comment to a discussion
       tags:
         - Material collaboration
   /api/events:

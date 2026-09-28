@@ -128,7 +128,6 @@ export type {
   UpdateCardReq,
   UpdateCardStudyStateReq,
   UpdateChapterReq,
-  UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
   UpdateFlashcardSetReq,
@@ -439,9 +438,8 @@ export interface FileListParams {
 export type { Provenance, ProvenanceBook } from './gen/model';
 
 /* ---------------- Plate collaboration ---------------- */
-export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
+export type MaterialComment = Omit<GenComment, 'contentRich'> & {
   contentRich: import('@/features/materials/document').MaterialValue | null;
-  replies: MaterialComment[];
 };
 
 export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {

@@ -4,7 +4,6 @@ quarantine, the receipt keys the worker bills from, and the bundle contract."""
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import importlib.util
 import io
@@ -31,8 +30,6 @@ spec.loader.exec_module(parser_app)
 def _result(pages: int = 1, ocr: list[int] | None = None) -> dict:
     return {
         "content_list": [{"type": "text", "text": "a", "page_idx": 0}],
-        "md": "a",
-        "images": {},
         "_ocr_pages": ocr or [],
         "_page_count": pages,
         "_source_format": "pdf",
@@ -629,35 +626,16 @@ def test_bundle_rejects_content_beyond_configured_budget(
         )
 
 
-def test_bundle_rejects_image_bytes_beyond_configured_budget(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(parser_app, "MAX_IMAGE_BYTES", 8)
-
-    with pytest.raises(ValueError, match="image exceeds"):
-        parser_app._bundle_bytes(
-            {
-                "content_list": [],
-                "images": {"figure.png": base64.b64encode(b"x" * 9).decode()},
-            },
-            "fp",
-            "job-1",
-            {},
-        )
-
-
-def test_bundle_layout_carries_receipt_evidence_and_rewritten_image_paths() -> None:
-    """The capy-parser-bundle-v4 entries the worker validates and extracts;
-    ``parsed.pdf`` rides along only when font repair changed the bytes."""
-    png = base64.b64encode(b"\x89PNG fake").decode()
+def test_bundle_carries_only_what_ingest_reads() -> None:
+    """The capy-parser-bundle-v5 entries the worker validates and extracts;
+    ``parsed.pdf`` rides along only when font repair changed the bytes. Image
+    files and ODL Markdown never enter the bundle."""
     bundle = parser_app._bundle_bytes(
         {
             "content_list": [
                 {"type": "image", "img_path": "document_images/imageFile1.png"},
                 {"type": "text", "text": "body", "page_idx": 0},
             ],
-            "md": "# doc",
-            "images": {"imageFile1.png": png},
             "_page_evidence": {"page_texts": ["body"], "visible_headings": []},
             "_parsed_pdf": b"%PDF-1.7 repaired",
             "_furniture": ["Running header", "p."],
@@ -671,7 +649,6 @@ def test_bundle_layout_carries_receipt_evidence_and_rewritten_image_paths() -> N
         names = sorted(archive.namelist())
         manifest = json.loads(archive.read("manifest.json"))
         content = json.loads(archive.read("content_list.json"))
-        assert "preview.pdf" not in names
         assert archive.read("parsed.pdf") == b"%PDF-1.7 repaired"
         assert json.loads(archive.read("refinement.json")) == {
             "furniture": ["Running header", "p."],
@@ -679,13 +656,11 @@ def test_bundle_layout_carries_receipt_evidence_and_rewritten_image_paths() -> N
         }
     assert names == [
         "content_list.json",
-        "document.md",
-        "images/imageFile1.png",
         "manifest.json",
         "parsed.pdf",
         "refinement.json",
     ]
-    assert manifest["schema"] == "capy-parser-bundle-v4"
+    assert manifest["schema"] == "capy-parser-bundle-v5"
     assert manifest["parser_version"] == parser_app.PARSER_VERSION
     assert manifest["source_fingerprint"] == "fp"
     assert manifest["parse_receipt"] == {
@@ -693,12 +668,12 @@ def test_bundle_layout_carries_receipt_evidence_and_rewritten_image_paths() -> N
         "request_id": "job-1",
         "measurements": {"_page_count": 3, "_server_parse_ms": 100},
     }
-    assert content[0]["img_path"] == "images/imageFile1.png"
+    assert content[0] == {"type": "image"}
 
 
 def test_bundle_without_font_repair_carries_no_parsed_pdf() -> None:
     bundle = parser_app._bundle_bytes(
-        {"content_list": [], "md": "", "images": {}, "_furniture": []},
+        {"content_list": [], "_furniture": []},
         "fp",
         "job-1",
         {},
@@ -706,7 +681,6 @@ def test_bundle_without_font_repair_carries_no_parsed_pdf() -> None:
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         assert sorted(archive.namelist()) == [
             "content_list.json",
-            "document.md",
             "manifest.json",
             "refinement.json",
         ]
@@ -784,7 +758,6 @@ def test_office_run_keeps_only_evidence_in_bundle(monkeypatch, tmp_path):
         lambda *_args, **_kwargs: SimpleNamespace(
             content_list=[{"type": "text", "text": "Source text", "page_idx": 0}],
             markdown="Source text",
-            images={},
             ocr_pages=[],
             page_count=1,
             phases={},

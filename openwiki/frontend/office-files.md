@@ -65,6 +65,14 @@ seeds and `shared/office-checkpoint.test.ts`, then the XLSX golden seeds in
 CI runs it inside `vendor/betteroffice` after the office build. A golden seed
 hash that differs between the old and the new pin means the seed output
 changed, so the bump ships in a [maintenance window](#maintenance-window).
+Golden seeds cover a few fixtures; stored Office changes depend on every stored
+base seeding the same bytes. Before deploying a pin to an environment, run the
+seed check there: `office-maintenance seed-manifest` in the gateway container
+lists every base a stored change names (format, base SHA, seed SHA-256, file
+count, a signed base link), and `pnpm office:seed-check <manifest>` re-seeds each
+with the new pin's engine (`collaboration/src/seedCheck.ts`). It exits 1 when
+any seed hash differs; the pin then ships in a maintenance window whose reset
+covers the formats it lists.
 Until parser-tolerant XLSX binding lands, any change under `crates/xlsx-parse`,
 `crates/xlsx-model` or `crates/betteroffice-xlsx` counts as seed-changing for
 XLSX: a room binds to a fingerprint of the whole parse, which four golden
@@ -95,9 +103,11 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 lock, so a suspended owner's shared files keep rendering) that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
 saved checkpoint is ahead of the indexed one (`indexedBaseline` and
-`pendingEffects` are omitted). The host passes that state as `checkpoint` on
-the `load` message; the runtime applies it over the base with the editor
-engines in a disposable `exportCheckpoint` worker (the same composition as the
+`pendingEffects` are omitted), with its `stateSeedSHA256`. The host passes
+that state as `checkpoint` and the hash as `checkpointSeedSHA256` on the `load`
+message (protocol version 5); the runtime applies it over the base with the
+editor engines in a disposable `exportCheckpoint` worker, which for a change
+seeds the base first and refuses a seed whose hash differs (the same composition as the
 collaboration service's headless export), terminates it, and opens the viewer
 on the exported bytes. With no unpublished edits the base opens directly and
 no editor engine loads. The view is not live: it reflects the state at open,
@@ -276,21 +286,44 @@ the same deterministic seed (text seeds under a fixed client too). A writer's
 sync writes its contributor marker even when it brings nothing new, so a save
 whose room adds nothing to the durable state but markers stores nothing and
 answers with the current checkpoint: Saved shows, and a NULL state stays NULL.
-The first save with an edit stores the state with its seed's size
-(`seed_bytes`) and binds the source SHA of a never-parsed upload. A NULL
-`indexed_baseline` means the baseline is derived from the base: the decoded
-text, or the engine baseline of seed(base);
-the service caches seeds and derived baselines by base SHA next to the bases.
+The first save with an edit binds the source SHA of a never-parsed upload and,
+for text, records its seed's size (`seed_bytes`). An Office state that grew
+from seed(base) is stored as its Yjs change over that seed (the update past the
+seed's state vector, plus the whole delete set), with the seed's SHA-256 in
+`state_seed_sha256`: a one-edit DOCX or PPTX row is under 1 KB instead of the
+whole document model. Every write checks that seed plus the change rebuilds the
+exact state; every read re-seeds the base, refuses a change whose seed hash
+differs (the engine now seeds that base differently: publish it on the
+previous engine) and requires that nothing stays pending. Text states and DOCX
+or PPTX states a publication rebased (they keep a stored baseline) are stored
+whole. A NULL `indexed_baseline` means the baseline is derived from the base:
+the decoded text, or the engine baseline of seed(base);
+the service caches seeds (with their hashes) and derived baselines by base SHA
+next to the bases.
 Only a publication that rebased later DOCX or PPTX edits stores a baseline,
 because the rebased state's identities cannot be derived; a publication
 without later edits returns the state and baseline to NULL. The Go API
 rechecks current source access, epoch and account state through a small
-access-only endpoint for each incoming edit. Checkpoint writes check storage
+access-only endpoint for incoming edits, at most every 5 s per connection. Checkpoint writes check storage
 growth (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
-checkpoint and an agent edit's receipt only, and the browser's editing session
-read carries the state without the baseline or pending effects. Saved means the
+checkpoint and an agent edit's receipt only. The browser's editing session read
+carries neither the baseline nor pending effects, and a text state only: an
+Office editor takes its document from the room's sync. The view read carries
+the saved state with its seed hash, and the runtime's export worker seeds the
+base, checks the hash and applies the change before exporting. Saved means the
 server has acknowledged the requested checkpoint; Ctrl/Cmd+S flushes that same
-path. The DOCX File > Save and the PPTX save button request the same
+path. The browser asks for a checkpoint 1 s after typing pauses. Like a
+material room, that request only registers its receipt for the room's next
+debounced store (source rooms: 5 s idle, 30 s at most,
+`COLLABORATION_SOURCE_DEBOUNCE_MS` and `COLLABORATION_SOURCE_MAX_DEBOUNCE_MS`;
+material rooms keep 2 s and 10 s), unless no store is waiting to carry it. An
+explicit save (Ctrl/Cmd+S, the editors' save buttons, leaving Edit, and the
+first sync) sends `flush` and persists at once, as do the publication handoff
+and the maintenance pause. A save starts from the instance's last durable copy
+of the room while the row still names its checkpoint and base, reading only the row's
+pending effects (captions land there without a checkpoint); a conflict reads
+the session and state again. Shutdown flushes every room's pending store, and
+the collaboration container has a 60 s stop grace period for it. The DOCX File > Save and the PPTX save button request the same
 checkpoint through `onSaveRequest`, with nothing serialized. The XLSX save
 button has no such hook: it serializes the workbook, and the runtime discards
 the bytes and requests the checkpoint. Flushing pending input awaits each editor's own
@@ -316,7 +349,12 @@ controls Saved. A failed DOCX input queue stays pending until the session ends.
 
 Each incoming source update is checked without copying the room: contributor
 markers against the decoded update, and size against an estimate kept from the
-room's applied update bytes. Only when the estimate passes the 100 MB cap is the
+room's applied update bytes. The writer's access is revalidated at most every
+5 s per connection. Membership, role and share changes, and a user's own
+account change, close that user's connections through the collaboration
+eviction outbox; anything else (such as the owner's account state for a
+collaborator) takes effect within those 5 s, and every checkpoint rechecks each
+writer. Only when the estimate passes the 100 MB cap is the
 exact size computed; an update over the cap gets an unrecoverable
 `source-checkpoint-failed` message, so the client goes to recovery instead of
 reconnecting and resending. The exact limit at save still applies.
@@ -484,7 +522,7 @@ reprocess jobs) is in flight.
 `server/migrations/templates/office_window_reset.sql`, refuses to run unless the
 pause is on and nothing of those formats is unpublished or in flight, under a
 lock on `source_documents`; that guard is the only protection, since no dropped
-state is kept. It then bumps the epoch, drops the state (and its seed size) and
+state is kept. It then bumps the epoch, drops the state (with its seed hash) and
 stored baseline,
 empties pending effects and deletes refresh candidates, so rooms reseed on the
 new engine. A file that cannot publish keeps the pause on until an operator

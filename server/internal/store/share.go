@@ -510,16 +510,15 @@ type workspaceCloneChapter struct {
 }
 
 type workspaceCloneFile struct {
-	id, name, kind, status          string
-	chapterID, parser, blobPath     *string
-	parsedFingerprint               *string
-	parsedParserVersion, sourceETag *string
-	contentHash, sourceSHA256       *string
-	sizeBytes                       int64
-	position                        int64
-	indexed, everParsed             bool
-	parseMode                       string
-	provenance                      []byte
+	id, name, kind, status      string
+	chapterID, parser, blobPath *string
+	sourceETag                  *string
+	contentHash, sourceSHA256   *string
+	sizeBytes                   int64
+	position                    int64
+	indexed, everParsed         bool
+	parseMode                   string
+	provenance                  []byte
 }
 
 type workspaceCloneAsset struct {
@@ -675,8 +674,7 @@ func (s *Store) snapshotWorkspaceForClone(
 				JOIN rag_contents rc ON rc.id=fc.content_id
 				WHERE fc.file_id=files.id AND rc.status='ready'
 			)),
-			parser, blob_path,
-			parsed_fingerprint, parsed_parser_version, source_etag,
+			parser, blob_path, source_etag,
 			content_hash, source_sha256, parse_mode, ever_parsed_successfully,
 			provenance
 		 FROM files
@@ -700,8 +698,6 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.indexed,
 			&file.parser,
 			&file.blobPath,
-			&file.parsedFingerprint,
-			&file.parsedParserVersion,
 			&file.sourceETag,
 			&file.contentHash,
 			&file.sourceSHA256,
@@ -990,10 +986,10 @@ func (s *Store) cloneWorkspaceOnce(
 			// Attribution travels with the copy, as it does for materials.
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
-				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, provenance)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+				 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, provenance)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath,
-				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.provenance); err != nil {
+				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.provenance); err != nil {
 				return Workspace{}, err
 			}
 		}

@@ -233,7 +233,6 @@ export * from './updateCardStudyStateReq.ts';
 export * from './updateChapterReq.ts';
 export * from './updateCommentReq.ts';
 export * from './updateCommentReqContentRichItem.ts';
-export * from './updateDiscussionReq.ts';
 export * from './updateEventReq.ts';
 export * from './updateFileReq.ts';
 export * from './updateFlashcardContentReq.ts';

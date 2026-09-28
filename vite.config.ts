@@ -88,7 +88,9 @@ export default defineConfig(({ mode }) => {
         '@betteroffice/xlsx-react',
         '@wllama/wllama',
       ],
-      include: ['pdfjs-dist/legacy/build/pdf.mjs'],
+      // Export worker imports are outside the initial crawl. Discovering these
+      // on the first Word export otherwise reloads every open development page.
+      include: ['buffer', 'katex', 'pdfjs-dist/legacy/build/pdf.mjs'],
     },
     plugins: [
       react(),
