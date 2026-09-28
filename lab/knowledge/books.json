@@ -390,7 +390,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "accounting",
-      "version": 6
+      "version": 8
     },
     {
       "id": "accounting-principles-a-business-perspective",
@@ -699,7 +699,7 @@
         "PDF page 2 states © 2008 by Paul deLespinasse, CC BY-SA 4.0, and Original source: Global Text."
       ],
       "subject_id": "political-science",
-      "version": 5
+      "version": 6
     },
     {
       "id": "becoming-a-change-facilitator",
@@ -763,7 +763,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "calculus",
-      "version": 3
+      "version": 4
     },
     {
       "id": "business-ethics",
@@ -1899,7 +1899,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "databases",
-      "version": 5
+      "version": 6
     },
     {
       "id": "educational-administration-the-roles-of-leadership-and-manag",
@@ -1981,7 +1981,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "electrical-engineering",
-      "version": 5
+      "version": 6
     },
     {
       "id": "electromagnetics-volume-2",
@@ -2301,7 +2301,7 @@
       ],
       "rights_notes": [],
       "subject_id": "electrical-engineering",
-      "version": 5
+      "version": 7
     },
     {
       "id": "hands-on-anatomy",
@@ -6668,7 +6668,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "philosophy",
-      "version": 4
+      "version": 6
     },
     {
       "id": "introduction-to-college-research",
@@ -6945,7 +6945,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "statistics",
-      "version": 7
+      "version": 9
     },
     {
       "id": "java-java-java-object-oriented-problem-solving-3-e",
@@ -8469,7 +8469,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "management",
-      "version": 7
+      "version": 9
     },
     {
       "id": "ordinary-differential-equations",
@@ -8966,7 +8966,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "statistics",
-      "version": 6
+      "version": 7
     },
     {
       "id": "principles-of-finance",
