@@ -71,9 +71,11 @@ test('question formula accepts physical digits and retains them after commit', a
   page,
 }) => {
   await page.goto('/bank/mensuration/bank-quadratic?mode=edit');
+  // Page readiness: MathLive loads lazily, so this gets the editor-loading
+  // allowance openEditorNote uses.
   await expect(
     page.locator('[data-math-preview] .ML__base').first()
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
   await page
     .getByRole('button', { exact: true, name: 'Edit question' })
     .click();
