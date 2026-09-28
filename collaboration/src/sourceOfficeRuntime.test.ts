@@ -26,6 +26,7 @@ import {
   effectTokens,
   rebuildState,
   SourceDocumentStore,
+  SourceRequestError,
   SourceSeedChangedError,
   type SourceSession,
   trimEffect,
@@ -33,6 +34,7 @@ import {
 
 const BASE_MISMATCH = /base/;
 const BODY_POSITION = /^body:(\d+)$/;
+const REBASE_REFUSAL = /^Office rebase: /;
 
 afterAll(closeOfficeRuntime);
 afterEach(() => vi.unstubAllGlobals());
@@ -626,3 +628,70 @@ test.each([
   },
   60_000
 );
+
+test('a publication rebase the engine refuses ends the refresh with a 422', async () => {
+  const read = (path: string) =>
+    readFile(new URL(`../../vendor/betteroffice/${path}`, import.meta.url));
+  const [bytes, other] = await Promise.all([
+    read('apps/demo/public/sample.xlsx'),
+    read('apps/demo/public/showcase.xlsx'),
+  ]);
+  const sha256 = (value: Uint8Array) =>
+    createHash('sha256').update(value).digest('hex');
+  const seed = await runOffice('seedOffice', 'xlsx', bytes);
+  const [first, second] = (
+    await runOffice('inspectOffice', bytes, seed)
+  ).filter((entry) => entry.value.length > 0);
+  const captured = await runOffice('applyOfficeCommands', bytes, seed, [
+    setText('xlsx', first, 'Captured'),
+  ]);
+  const latest = await runOffice(
+    'applyOfficeCommands',
+    bytes,
+    { ...seed, state: captured.state },
+    [setText('xlsx', second, 'Later')]
+  );
+  const change = (state: Uint8Array) =>
+    Buffer.from(Y.diffUpdate(state, Y.encodeStateVectorFromUpdate(seed.state)));
+  // The published workbook's sheets are not the captured ones.
+  const pool = {
+    query: vi.fn(async () => ({
+      rows: [
+        {
+          source_sha256: sha256(other),
+          state: change(captured.state),
+          state_seed_sha256: sha256(seed.state),
+        },
+      ],
+    })),
+  } as unknown as Pool;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) => new Response(url === 'http://base' ? bytes : other)
+    )
+  );
+  const sources = new SourceDocumentStore(pool, 'http://api', 'secret');
+  vi.spyOn(sources, 'request').mockResolvedValue({
+    sourceURL: 'http://export',
+  });
+  const refused = sources.rebasePublication(
+    {
+      baseSourceSHA256: seed.baseSha256,
+      checkpoint: 11,
+      epoch: 1,
+      fileId: 'f',
+      format: 'xlsx',
+      pendingEffects: [],
+      sourceURL: 'http://base',
+      state: change(latest.state).toString('base64'),
+      stateSeedSHA256: sha256(seed.state),
+    } as unknown as SourceSession,
+    { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
+  );
+  await expect(refused).rejects.toBeInstanceOf(SourceRequestError);
+  await expect(refused).rejects.toMatchObject({
+    message: expect.stringMatching(REBASE_REFUSAL),
+    status: 422,
+  });
+}, 60_000);

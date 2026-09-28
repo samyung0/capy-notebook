@@ -163,12 +163,30 @@ same place in the export's seed: texts are aligned unit by unit (UTF-16 code
 units and embeds), entities are paired by place (DOCX stories, tables, rows,
 cells, paragraph ids and comments; PPTX slides, shapes, stories, paragraphs
 and comments), and an entity created later whose id the seed already uses is
-renamed. The rebase fails explicitly, failing the publication, when a later
-edit touches content the export wrote differently (the DOCX export moves text
-typed before a leading page break or before a table in the same paragraph),
-when a restored slide, shape or paragraph needs source XML the export dropped
-(Undo of a deletion made before the capture), or when the rebased text and
-image effects differ from the saved ones.
+renamed. The rebase fails explicitly when a later edit touches content the
+export wrote differently, when a restored slide, shape or paragraph needs
+source XML the export dropped (Undo of a deletion made before the capture), or
+when the rebased text and image effects differ from the saved ones. A refusal
+is terminal: the collaboration service answers the publication with 422, the
+ingest worker ends the source refresh job without retrying it and records the
+refusal in `refresh_error`, and the saved edits stay on the old base for the
+next publication. DOCX visual (formatting) effects are left out of that
+comparison because an export still writes some formatting its own way.
+
+The DOCX export writes page and column breaks from the story's break units, the
+way the seed reads them back: the units that open a paragraph slot become
+trailing breaks of the paragraph before it (or leading breaks of the slot's
+paragraph when none precedes it), a paragraph keeps recorded breaks that still
+match its units, and a paragraph whose leading page break is the
+`pageBreakBeforeRun` attribute keeps that break. So inserted breaks are saved,
+deleted ones stay deleted and an edited paragraph keeps its breaks, in the body
+and its block content controls (cells, headers, footers and notes hold no
+break units). One state the seed never produces does not round trip: text
+ahead of a table (or a page break) inside one paragraph slot, left by typing
+before the slot's leading block or by merging a paragraph into a slot that
+opens with one. The export writes that text after the table (a page break is
+kept in place), so the rebase lands edits to the text but refuses an edit to
+that table or break.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor

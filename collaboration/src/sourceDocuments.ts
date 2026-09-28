@@ -868,7 +868,14 @@ export class SourceDocumentStore {
       },
       { ...checkpoint, state: await this.stateOf(session) },
       exported
-    );
+    ).catch((error: unknown) => {
+      // The engine refused the rebase, as it would every retry of this parse,
+      // so the refresh job ends (a 4xx the ingest worker treats as terminal).
+      throw error instanceof OfficeEngineError &&
+        error.message.startsWith('Office rebase:')
+        ? new SourceRequestError(422, error.message)
+        : error;
+    });
     for (const effect of rebased.effects) {
       if (!effect.imageSHA256) continue;
       const prior = session.pendingEffects.find(

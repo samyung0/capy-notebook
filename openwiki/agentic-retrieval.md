@@ -2529,12 +2529,13 @@ Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
 publication URL and omits it from the strict JSON body for Office, text and
 already-published receipt recovery. Office coordinates connected clients, rebases the
-latest saved state onto the captured export, and compares-and-swaps that saved
-checkpoint. A newer save retries local rebase with the same completed parse.
+latest saved state onto seed(export) of the captured export, and compares-and-swaps that saved
+checkpoint. A newer save retries local rebase with the same completed parse. A
+rebase the engine refuses answers 422, which ends the refresh job without a
+retry (see [Office files](frontend/office-files.md)).
 Publication advances the indexed checkpoint, retains the current checkpoint and
-residual changes, increments the editing epoch and clears Undo/Redo. XLSX/PPTX
-retain only binary package differences needed by current edits; DOCX preserves
-source-bound native embeds and relationships. The old full base is released.
+residual changes, increments the editing epoch and clears Undo/Redo. The
+rebased state keeps no package parts of the old base, which is released.
 Text retains exact residual changes and its Y.Text lineage. Once all processing
 finishes, `sourcePublicationReady` marks the job for publication-only retries;
 a ready shared content row alone cannot skip caption/derivative work.

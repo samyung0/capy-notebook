@@ -364,6 +364,39 @@ async def test_publication_retry_requires_completed_candidate_and_keeps_parsed_w
         db.reset_source_refresh(token)
 
 
+@pytest.mark.asyncio
+async def test_a_refused_publication_rebase_ends_the_refresh(workspace, monkeypatch):
+    from types import SimpleNamespace
+
+    from pipeline.config import cfg
+    from pipeline.ingest import worker
+    from pipeline.jobs import TerminalError, is_retryable
+
+    job = candidate(workspace)
+    file_id = job["payload"]["fileId"]
+    token = db.bind_source_refresh(job)
+    refusal = '{"message":"Office rebase: a change at stories/body:4 touches content the export wrote differently"}'
+    monkeypatch.setattr(cfg, "gateway_url", "http://gateway.invalid")
+    monkeypatch.setattr(cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(
+        worker.requests,
+        "post",
+        lambda *args, **kwargs: SimpleNamespace(status_code=422, text=refusal),
+    )
+    try:
+        await store.attach_file_content(
+            workspace_id=workspace.id,
+            file_id=file_id,
+            content_hash="completed-hash",
+            claim_job_id=job["id"],
+        )
+        with pytest.raises(TerminalError, match="Office rebase") as refused:
+            worker._finish_source_refresh(file_id, job["id"], "completed-hash")
+        assert not is_retryable(refused.value)
+    finally:
+        db.reset_source_refresh(token)
+
+
 def test_indexing_a_file_clears_its_reprocess_mark(workspace):
     file_id = workspace.add_file("source.docx")
     with workspace._connect() as conn:
