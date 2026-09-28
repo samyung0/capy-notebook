@@ -22,6 +22,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "pipeline"))
 from pipeline.prompts.generate import QUESTION_CONTRACT
 
+# Recorded in every receipt and packet hash; packets made for another model stay unused.
+MODEL = {"model": "claude-opus-5-5", "effort": "medium"}
+
 
 def read(path):
     return json.loads(path.read_text(encoding="utf-8"))
@@ -40,7 +43,7 @@ def sha(path):
 
 
 class PendingStage(Exception):
-    """A frozen packet needs a fresh Codex subagent before this stage can resume."""
+    """A frozen packet needs a fresh subagent before this stage can resume."""
 
 
 def validate_stage_output(stage, payload, value):
@@ -86,7 +89,7 @@ def verify_packet(packet, receipt):
 
 
 def invoke(topic, stage, payload, shape, learner_image=None):
-    """Prepare a packet, then admit the explicitly bound Astra worker's output."""
+    """Prepare a packet, then admit the explicitly bound worker's output."""
     prompt = (Path(__file__).parent / "prompts" / (stage + ".md")).read_text(
         encoding="utf-8"
     )
@@ -107,8 +110,7 @@ def invoke(topic, stage, payload, shape, learner_image=None):
             "input": payload,
             "schema": shape,
             "prompt": prompt,
-            "model": "gpt-6-astra",
-            "effort": "medium",
+            **MODEL,
         },
         sort_keys=True,
         ensure_ascii=False,
@@ -128,9 +130,8 @@ def invoke(topic, stage, payload, shape, learner_image=None):
             receipt_path,
             {
                 "stage": stage,
-                "model": "gpt-6-astra",
-                "effort": "medium",
-                "provider": "codex_subagent",
+                **MODEL,
+                "provider": "claude_code_subagent",
                 "agent_id": None,
                 "input_sha256": sha(receipt_dir / "input.json"),
                 "schema_sha256": sha(receipt_dir / "schema.json"),
@@ -152,7 +153,7 @@ def invoke(topic, stage, payload, shape, learner_image=None):
     verify_packet(receipt_dir, receipt)
     output = receipt_dir / "output.json"
     if not output.exists():
-        print("Awaiting Astra medium subagent: " + str(receipt_dir))
+        print("Awaiting subagent: " + str(receipt_dir))
         raise PendingStage()
     if not receipt.get("agent_id"):
         raise ValueError("Bind the dispatched agent with run.py bind before admission")
@@ -392,7 +393,7 @@ def check():
                     else:
                         raise AssertionError("Changed learner image was accepted")
     print(
-        "Offline checks passed: blind projection, fixed-unit exact answers, overlap detection, schema and frozen Codex output admission"
+        "Offline checks passed: blind projection, fixed-unit exact answers, overlap detection, schema and frozen subagent output admission"
     )
 
 

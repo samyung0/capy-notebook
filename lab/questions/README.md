@@ -10,8 +10,10 @@ Before a pilot, supply an official syllabus and a topic directory containing
 `syllabus_reference` URL. Verified HKDSE Mathematics Compulsory and IELTS Academic Reading catalogs
 are in `syllabi/`. Preserve a distinct directory for each generation run.
 
-The pilot uses fresh Codex GPT-6 Astra subagents at medium reasoning effort,
-as selected by Epo. The stage driver makes no model API or Claude CLI calls.
+The pilot uses fresh Claude Code Opus 5.5 subagents at medium reasoning effort,
+as selected by Epo; each agent owns one topic per stage. Earlier GPT-6 Astra
+packets remain as audit records. The stage driver makes no model API or Claude
+CLI calls.
 Each stage prepares frozen `input.json`, `schema.json`, and `prompt.md` files
 under a content-hashed receipt directory, then exits pending until the assigned
 subagent writes `output.json`. Dispatch with no conversation history. The writer
@@ -70,7 +72,7 @@ style notes and the output contract; the solver receives the learner projection.
 Closed comparison is exact against the author's accepted representation, allowing
 case and outside whitespace for text blanks. It performs no numerical or unit
 conversion. A disagreement can be a defective question or a solver error and must
-be inspected. Open comparison uses a separate Astra medium judge packet,
+be inspected. Open comparison uses a separate judge packet,
 with the current overall 0/0.5/1 part award. It does not install production Jev.
 
 Every packet saves frozen input/schema/prompt hashes before dispatch, then
