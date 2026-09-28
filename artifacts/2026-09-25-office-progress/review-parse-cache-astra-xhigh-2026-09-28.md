@@ -13,6 +13,8 @@ checks of these changes.
 | `comment_ci_astra_review` | Comment accessible name and fixture-name isolation after the separate `d5d31d17` merge | No actionable findings. Browser execution remained with the parent. |
 | `parse_cache_measurement_astra_closing` | Comparison assembler, report/JSON, migration evidence and closing look at the two CI fixes | One evidence-wording correction verified; no remaining actionable findings. |
 | `editor_ci_astra_review` | Three assertions/setup failures in the expanded editor suite from `d5d31d17` | No actionable findings. Confirmed rendered-text geometry, Slate selection readiness and heading-based accessible naming. |
+| `comment_selection_astra_review` | Later selected-text comment failure and export-worker dependency reload | Found a real native/Slate selection race hidden by the initial test-only fix; application fix and deterministic regression independently rechecked. |
+| `comment_capture_astra_closing` | Fresh closing review of Comment capture, focused tests and Vite prebundling | No actionable findings. Confirmed all shared Comment callers, installed Slate guards/conversion and the limits of the before/after evidence. |
 
 ## Rollout findings and corrections
 
@@ -81,3 +83,42 @@ All existing editing, spacing, indentation and insertion checks remain.
 The reviewer inspected the parent's initial three-case pass. After that review,
 the parent also passed all nine repetitions with one worker and retries disabled,
 and formatting/lint checks. Full Linux CI is checked separately after the push.
+
+## Comment capture and export-worker dependencies
+
+CI 36341111503 passed the earlier corrected cases and all 39 Docker browser
+cases. A later selected-text comment case failed, and a CSV preview setup
+retried after losing its execution context. These were investigated separately.
+
+The first review caught a real application issue that the proposed settled
+selection setup would have hidden. The Linux trace showed exactly the intended
+text highlighted immediately before Comment opened, but the saved discussion
+had neither text anchor. Slate synchronizes native selection through a 100 ms
+throttle, while Comment previously captured `editor.selection` directly. The
+shared action now captures the native range when both endpoints belong to this
+editor. It uses the stored Slate range for commands outside the editor, and
+does not substitute a stale range if conversion of an in-editor range fails.
+
+The new immediate-selection case creates a native range and clicks Comment in
+the same browser task. It failed with missing anchors before the application
+fix and passed after it. All five comment cases passed without retries, covering
+cursor, empty block, settled selection, immediate selection and command-palette
+selection. Exact stored block, anchors, quote, decoration and thread assertions
+remain. Earlier repeated comment/to-do setup checks also passed all eight cases.
+The reviewer confirmed the original finding fixed; a fresh closing reviewer
+found no actionable issue in the final code.
+
+The CSV trace showed a page reload during a parallel Word export. A cold-cache
+run logged late dependency discovery of `buffer` and `katex`, both existing
+imports inside the export worker, followed by Vite's reload message. Both tests
+passed in that reproduction, so it proves the reload mechanism rather than a
+deterministic CSV failure. Adding the two dependencies to Vite's prebundle list
+produced two passes with no reload or late-discovery message in the same cold
+parallel check. No CSV assertion or retry behavior was changed.
+
+Both reviewers inspected source and the parent's local Chromium logs without
+running browser tests. The five-case run preceded the final explicit
+`suppressThrow: true` option required by Plate's type declaration; both reviewers
+confirmed it matches installed Slate behavior. The parent subsequently confirmed
+`pnpm run check` exited successfully. Fresh full Linux CI remains a separate
+post-push verification, and these changes do not alter the measured UAT release.

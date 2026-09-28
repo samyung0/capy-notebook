@@ -387,3 +387,34 @@ These are test-only corrections. The focused three-case run passed, followed by
 nine repetitions with one worker and no retries. Formatting/lint passed. An
 explicit Astra xhigh reviewer found no actionable issue in the bounded changes;
 full Linux CI remains the final check after pushing this follow-up.
+
+### Comment capture and development-server reload
+
+[CI 36341111503](https://github.com/samyung0/capy-notebook/actions/runs/36341111503)
+passed all three corrected cases on their first attempts, all 39 Docker browser
+cases and the four other jobs. It exposed a selected-text comment failure and a
+CSV preview retry in the editor suite, which had 103 passes, one failure, one
+flaky case and one skip.
+
+The Linux trace showed the correct text visibly selected before Comment opened,
+but the saved discussion had no anchors. Comment captured `editor.selection`
+before Slate's throttled native-selection sync. A focused same-task selection
+and Comment click reproduced the missing anchors before the application fix.
+The shared Comment action now converts the current native range when its
+endpoints belong to the editor, preserving stored selection for commands opened
+outside it. Portable mouse selection also replaces the tests' platform-dependent
+Home/End setup. All five comment cases passed without retries, including the
+immediate-click regression and command-palette selection. Root formatting, lint
+and TypeScript checks passed.
+
+The CSV test lost its execution context during a Vite reload triggered by the
+parallel Word-export test. A cold-cache reproduction logged late discovery of
+the export worker's existing `buffer` and `katex` dependencies, then a reload.
+Both cases happened to pass in that reproduction. Explicitly prebundling those
+dependencies removed the reload in the same cold-cache parallel run, with both
+cases passing without retries. CSV assertions and retries were unchanged.
+
+The initial Astra xhigh reviewer identified the real capture race and confirmed
+the fix. A fresh Astra xhigh closing review found no actionable issue. Full Linux
+CI is checked after pushing this follow-up. The requested pull from `origin/main`
+found no incoming changes at `5fd64dd2` and preserved these local fixes.

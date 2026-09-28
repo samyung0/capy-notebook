@@ -383,13 +383,24 @@ export function CollaborationProvider({
       isOwner: role === 'owner',
       mutationPending,
       openComment: () => {
-        if (!canEdit || !editor.selection) return;
-        const blockId = editor.api.node([editor.selection.anchor.path[0]])?.[0]
-          ?.id;
+        if (!canEdit) return;
+        // A toolbar click can precede Slate's throttled native selection sync.
+        const nativeSelection = editor.api.getWindow()?.getSelection();
+        const selection =
+          nativeSelection &&
+          editor.api.hasSelectableTarget(nativeSelection.anchorNode) &&
+          editor.api.hasTarget(nativeSelection.focusNode)
+            ? editor.api.toSlateRange(nativeSelection, {
+                exactMatch: false,
+                suppressThrow: true,
+              })
+            : editor.selection;
+        if (!selection) return;
+        const blockId = editor.api.node([selection.anchor.path[0]])?.[0]?.id;
         if (typeof blockId !== 'string' || !blockId) return;
         commentTarget.current = {
           blockId,
-          selection: structuredClone(editor.selection),
+          selection: structuredClone(selection),
         };
         setComment('');
         setError(null);

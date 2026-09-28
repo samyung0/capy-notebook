@@ -515,7 +515,10 @@ When creating a comment, the browser converts the selected Slate range with
 `relativeRangeToSlateRange` against the live shared root.
 With only a cursor, the comment attaches to the containing top-level block,
 including an empty block, without text anchors or a quote. The browser captures
-the block ID when the comment dialog opens.
+the block ID when the comment dialog opens. It reads the current native range
+when both endpoints belong to that editor, so a fast Comment click does not
+capture an older range while Slate's throttled selection sync is pending.
+Commands opened outside the editor retain its stored Slate selection.
 
 Comment highlighting is local decoration state. It is never applied with
 `editor.tf.setNodes`, so opening or hovering a comment cannot create a Yjs

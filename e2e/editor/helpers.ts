@@ -17,6 +17,24 @@ export async function openEditorNote(
   return editor;
 }
 
+/** Select one rendered text line and wait for Slate's range to update. */
+export async function selectEditorLine(page: Page, line: Locator) {
+  const text = await line.innerText();
+  await line.scrollIntoViewIfNeeded();
+  const bounds = (await line.boundingBox())!;
+  const centerY = bounds.y + bounds.height / 2;
+  await page.mouse.move(bounds.x + bounds.width - 1, centerY);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 1, centerY, { steps: 8 });
+  await page.mouse.up();
+  await expect
+    .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+    .toBe(text);
+  await expect(
+    page.getByRole('toolbar', { name: 'Selection actions' })
+  ).toBeVisible();
+}
+
 /** Hover a block and return its (gutter) drag handle button. */
 export async function hoverBlockHandle(
   page: Page,
