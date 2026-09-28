@@ -140,12 +140,31 @@ changed, over the fingerprinted source that every open requires:
   package, resolved at lowering; an inserted image keeps its data URL until the
   next publication rebases it into a reference. Charts and drawings the model
   cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
-  and export unchanged until edited. Comment ranges survive publications: the
-  seed gives each unit inside a range, in any story, to every comment open
-  there (another comment's reference mark only when the range goes on past
-  it), and the export writes range and bookmark boundaries at the same story
-  units. A boundary inside a hyperlink or field moves to its edge, so that
-  comment widens to hold it whole.
+  and export unchanged until edited. A comment range covers the same content
+  from one publication to the next within the story it opened in: the seed
+  gives each unit inside a range to every comment open there (another
+  comment's reference mark only when the range goes on past it), and the
+  export writes range and bookmark boundaries at those story units. A page
+  or column break the editor puts in a cell or header is one unit until the
+  export seeds it, as it seeds every break from the file there, as none: it is
+  written, carries no effects entry, and its paragraph keeps it through later
+  publications. Where a range cannot be written exactly it settles after one
+  publication:
+  - Markers Word nests in a hyperlink, tracked insertion or deletion, inline
+    content control, simple field or complex field result move to that
+    container's edges at seed (start before, end after); inside a field result,
+    to the field's edges. An editor boundary inside a hyperlink or field moves to its
+    edge the same way, so the comment widens to hold it whole.
+  - A range crossing into or out of a table or block content control covers
+    only the story it opened in and closes at that story's end. It keeps a
+    single reference mark: the export generates one only for a comment with
+    none anywhere in the document.
+  - An editor range starting or ending exactly at a table saves at the start
+    of the next paragraph.
+
+  Comments spanning several stories are unsupported, since the editor cannot
+  create them. An editor save (download, view bytes) adds reply markers only
+  to replies that have none of their own.
 - XLSX (schema 8) keeps the sheet topology plus per-cell overrides keyed by
   stable identity; unedited cells come from the source. Pending effects are
   read off the overrides (`xlsxPendingEffects`: one per changed cell, per row
