@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // DeletionGraceDays is the reactivation window between a deletion request and
@@ -26,7 +28,7 @@ func (s *Store) RequestAccountDeletion(
 	userID string,
 	immediate bool,
 ) (AccountStatus, error) {
-	return s.requestAccountDeletion(ctx, userID, immediate, nil)
+	return s.requestAccountDeletion(ctx, s.pool, userID, immediate, nil)
 }
 
 // RequestAccountDeletionAtGeneration rejects a confirmation based on a stale
@@ -66,18 +68,19 @@ func (s *Store) requestAccountDeletionAtGeneration(
 	expectedGeneration int64,
 	revokeSessions bool,
 ) (AccountStatus, error) {
-	unlock, err := s.lockAccountLifecycle(ctx, userID)
+	conn, unlock, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return AccountStatus{}, err
 	}
 	defer unlock()
 	return s.requestAccountDeletion(
-		ctx, userID, immediate, &expectedGeneration, revokeSessions,
+		ctx, conn, userID, immediate, &expectedGeneration, revokeSessions,
 	)
 }
 
 func (s *Store) requestAccountDeletion(
 	ctx context.Context,
+	db lifecycleDB,
 	userID string,
 	immediate bool,
 	expectedGeneration *int64,
@@ -87,7 +90,7 @@ func (s *Store) requestAccountDeletion(
 	if immediate {
 		purgeAfter = time.Now()
 	}
-	tx, err := s.pool.Begin(ctx)
+	tx, err := db.Begin(ctx)
 	if err != nil {
 		return AccountStatus{}, err
 	}
@@ -213,12 +216,12 @@ func (s *Store) FindActiveUserIDByEmail(ctx context.Context, email string) (stri
 // window. There is no user-facing API for this — support runs
 // cmd/cancel-deletion after verifying the request out-of-band.
 func (s *Store) CancelAccountDeletion(ctx context.Context, userID string) (AccountStatus, error) {
-	unlock, err := s.lockAccountLifecycle(ctx, userID)
+	conn, unlock, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return AccountStatus{}, err
 	}
 	defer unlock()
-	tx, err := s.pool.Begin(ctx)
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return AccountStatus{}, err
 	}
@@ -249,14 +252,14 @@ func (s *Store) CancelAccountDeletion(ctx context.Context, userID string) (Accou
 	}
 	if tag.RowsAffected() == 0 {
 		var identityDeletedAt *time.Time
-		if err := s.pool.QueryRow(ctx, `SELECT identity_deleted_at FROM users WHERE id=$1`,
+		if err := conn.QueryRow(ctx, `SELECT identity_deleted_at FROM users WHERE id=$1`,
 			userID).Scan(&identityDeletedAt); err != nil {
 			if isNoRows(err) {
 				return AccountStatus{}, ErrNotFound
 			}
 			return AccountStatus{}, err
 		}
-		status, statusErr := s.AccountAccess(ctx, userID)
+		status, statusErr := s.accountAccess(ctx, conn, userID)
 		if statusErr != nil {
 			return AccountStatus{}, statusErr
 		}
@@ -286,24 +289,26 @@ func (s *Store) CancelAccountDeletion(ctx context.Context, userID string) (Accou
 	if err := tx.Commit(ctx); err != nil {
 		return AccountStatus{}, err
 	}
-	return s.AccountAccess(ctx, userID)
+	return s.accountAccess(ctx, conn, userID)
 }
 
 // lockAccountLifecycle serializes cancellation with the multi-transaction
 // purge workflow. A session advisory lock survives the workspace-deletion
 // transactions inside PurgeUser, and PostgreSQL releases it automatically if
-// the connection dies.
-func (s *Store) lockAccountLifecycle(ctx context.Context, userID string) (func(), error) {
+// the connection dies. Work under the lock runs on the returned connection:
+// a holder that waited on the pool for a second one deadlocked once
+// concurrent lifecycle calls held every pooled connection.
+func (s *Store) lockAccountLifecycle(ctx context.Context, userID string) (*pgxpool.Conn, func(), error) {
 	conn, err := s.pool.Acquire(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	lockKey := "account-lifecycle:" + userID
 	if _, err := conn.Exec(ctx, `SELECT pg_advisory_lock(hashtext($1))`, lockKey); err != nil {
 		conn.Release()
-		return nil, err
+		return nil, nil, err
 	}
-	return func() {
+	return conn, func() {
 		_, _ = conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtext($1))`, lockKey)
 		conn.Release()
 	}, nil
@@ -313,15 +318,15 @@ func (s *Store) lockAccountLifecycle(ctx context.Context, userID string) (func()
 // so the account enters the same purge flow with no reactivation window. It is
 // idempotent: an account already scheduled or already purged is left alone.
 func (s *Store) MarkIdentityDeleted(ctx context.Context, userID string) error {
-	unlock, err := s.lockAccountLifecycle(ctx, userID)
+	conn, unlock, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return err
 	}
 	defer unlock()
-	if _, err := s.RequestAccountDeletion(ctx, userID, true); err != nil {
+	if _, err := s.requestAccountDeletion(ctx, conn, userID, true, nil); err != nil {
 		return err
 	}
-	return s.MarkIdentityDeletionComplete(ctx, userID)
+	return markIdentityDeletionComplete(ctx, conn, userID)
 }
 
 // NotifyAccountDeletionRequested records the in-app + email confirmation that

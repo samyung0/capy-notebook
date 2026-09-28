@@ -26,6 +26,15 @@ type rowQueryer interface {
 	QueryRow(context.Context, string, ...any) pgx.Row
 }
 
+// lifecycleDB is satisfied by both *pgxpool.Pool and the *pgxpool.Conn that
+// holds an account-lifecycle lock, so work under that lock stays on its
+// connection instead of waiting on the pool for a second one.
+type lifecycleDB interface {
+	rowQueryer
+	Begin(context.Context) (pgx.Tx, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
 var ErrNotFound = errors.New("not found")
 
 // ErrModelUnavailable means the request named a model that cannot be priced or

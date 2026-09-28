@@ -1102,3 +1102,33 @@ func TestClerkProfileSyncSeedsNameOnInsertOnly(t *testing.T) {
 		t.Fatalf("avatar after refresh = %q, want the refreshed avatar", avatar)
 	}
 }
+
+func TestConcurrentIdentityDeletionsFinishOnTheirLockConnections(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// More Clerk deletions than pooled connections: a holder waiting on the
+	// pool for a second connection would deadlock them all.
+	users := make([]string, int(s.pool.Config().MaxConns)*2)
+	for i := range users {
+		users[i] = newBlobTestUser(t, s, "u_identity_delete_pool")
+	}
+	errs := make(chan error, len(users))
+	for _, userID := range users {
+		go func() { errs <- s.MarkIdentityDeleted(ctx, userID) }()
+	}
+	for range users {
+		if err := <-errs; err != nil {
+			t.Fatalf("identity deletion: %v", err)
+		}
+	}
+	var unmarked int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE id=ANY($1)
+		AND (deletion_requested_at IS NULL OR identity_deleted_at IS NULL)`,
+		users).Scan(&unmarked); err != nil {
+		t.Fatal(err)
+	}
+	if unmarked != 0 {
+		t.Fatalf("%d of %d identity deletions were not recorded", unmarked, len(users))
+	}
+}

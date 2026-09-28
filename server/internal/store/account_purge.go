@@ -135,14 +135,14 @@ func (s *Store) ClaimUsersDueForPurge(ctx context.Context, limit int) ([]string,
 // Owned content, PII scrubbing, and the tombstone are one transaction. Blob
 // deletion remains an outbox side effect created by the same transaction.
 func (s *Store) PurgeUser(ctx context.Context, userID string) error {
-	unlock, err := s.lockAccountLifecycle(ctx, userID)
+	conn, unlock, err := s.lockAccountLifecycle(ctx, userID)
 	if err != nil {
 		return err
 	}
 	defer unlock()
 
 	var deletionRequestedAt, purgeAfter, deletedAt *time.Time
-	err = s.pool.QueryRow(ctx, `SELECT deletion_requested_at, purge_after, deleted_at
+	err = conn.QueryRow(ctx, `SELECT deletion_requested_at, purge_after, deleted_at
 		FROM users WHERE id=$1`, userID).Scan(&deletionRequestedAt, &purgeAfter, &deletedAt)
 	if isNoRows(err) {
 		return ErrNotFound
@@ -162,7 +162,7 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 		return ErrForbidden
 	}
 
-	tx, err := s.pool.Begin(ctx)
+	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -332,7 +332,11 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 }
 
 func (s *Store) MarkIdentityDeletionComplete(ctx context.Context, userID string) error {
-	tag, err := s.pool.Exec(ctx, `UPDATE users SET
+	return markIdentityDeletionComplete(ctx, s.pool, userID)
+}
+
+func markIdentityDeletionComplete(ctx context.Context, db lifecycleDB, userID string) error {
+	tag, err := db.Exec(ctx, `UPDATE users SET
 		identity_deleted_at=COALESCE(identity_deleted_at, now()),
 		identity_delete_pending=false, identity_delete_not_before=NULL,
 		session_revoke_pending=false, session_revoke_not_before=NULL,
