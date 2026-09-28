@@ -2535,20 +2535,20 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 ## Editable source refresh and pending evidence
 
 `source_documents` separates the live durable editing checkpoint from the
-published source/index checkpoint. `indexed_baseline` stores versioned semantic
-comparison JSON as bytes: exact plain text, or Office entry IDs, text, positions,
-image hashes/references and visual fingerprints. It contains neither a second
-Yjs document nor media bytes. The collaboration server projects the merged
-current state and compares it to this baseline on each durable save; net-zero
-changes and Undo cancel by equality. Initialization writes the baseline with the
-first state, and successful publication advances it with the published source.
-Office publication rebinds the latest saved native state to the exported package
-and maps the captured indexed projection into that state's identities. Only the
-compact baseline persists. Text publication compares the captured candidate with the latest state
-and retains later edits. The transient candidate still fixes one export while
-editing continues. The internal checkpoint request uses
-`initialize` and `baseSourceSHA256` only for the initial seed; ordinary saves
-omit them. Seed hashes remain validated by the store when `initialize` is true. The collaboration service captures a fixed
+published source/index checkpoint. The indexed baseline is versioned semantic
+comparison data: exact plain text, or Office entry IDs, text, positions, image
+hashes/references and visual fingerprints. It is never stored (migration 0043
+dropped `indexed_baseline`): the collaboration service derives it from the
+published base, as the decoded text or the engine baseline of seed(base), and
+caches it by base SHA. The collaboration server projects the merged current
+state and compares it to this baseline on each durable save; net-zero changes
+and Undo cancel by equality. Office publication rebases the latest saved state
+onto seed(export), so the new baseline derives from the export. Text publication
+compares the captured candidate with the latest state and retains later edits.
+The transient candidate still fixes one export while editing continues. The
+internal checkpoint request carries `baseSourceSHA256` (and, for text,
+`seedBytes`) only on the first save from a NULL state; ordinary saves omit them.
+The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
 holds its source, seed, parse artifacts, canonical index and consumed
 caption digests until publication. Existing parser/ingest workers process that
@@ -2582,12 +2582,13 @@ Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
 publication URL and omits it from the strict JSON body for Office, text and
 already-published receipt recovery. Office coordinates connected clients, rebases the
-latest saved state onto the captured export, and compares-and-swaps that saved
-checkpoint. A newer save retries local rebase with the same completed parse.
+latest saved state onto seed(export) of the captured export, and compares-and-swaps that saved
+checkpoint. A newer save retries local rebase with the same completed parse. A
+rebase the engine refuses answers 422, which ends the refresh job without a
+retry (see [Office files](frontend/office-files.md)).
 Publication advances the indexed checkpoint, retains the current checkpoint and
-residual changes, increments the editing epoch and clears Undo/Redo. XLSX/PPTX
-retain only binary package differences needed by current edits; DOCX preserves
-source-bound native embeds and relationships. The old full base is released.
+residual changes, increments the editing epoch and clears Undo/Redo. The
+rebased state keeps no package parts of the old base, which is released.
 Text retains exact residual changes and its Y.Text lineage. Once all processing
 finishes, `sourcePublicationReady` marks the job for publication-only retries;
 a ready shared content row alone cannot skip caption/derivative work.

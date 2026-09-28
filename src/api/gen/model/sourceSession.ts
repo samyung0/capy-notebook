@@ -17,8 +17,6 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceSessionFormat;
-  /** @nullable */
-  indexedBaseline: string | null;
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: unknown;

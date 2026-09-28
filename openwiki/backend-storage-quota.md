@@ -193,11 +193,11 @@ authorization doc).
 A collaborative source is charged its source bytes (`files.size_bytes`) plus
 the generated `source_documents.storage_bytes` (migration 0039): its serialized
 pending effects (an empty list costs nothing, so opening a file charges only
-its source), plus its stored editing state, plus a stored baseline when one
-exists (only after a publication that rebased later DOCX or PPTX edits). An
-Office state is charged as stored: the change over seed(base) that the service
-stores for every state that grew from its seed (a one-edit DOCX or PPTX row is
-under 1 KB), or the whole state a DOCX or PPTX rebase left. A text state keeps
+its source), plus its stored editing state (migration 0043 dropped the stored
+baseline; it derives from the base). An Office state is charged as stored: the
+change over seed(base) that the service stores for every Office state,
+including one a publication rebased onto seed(export) (a one-edit DOCX or PPTX
+row is under 1 KB). A text state keeps
 its lineage across publications and is stored whole, so it is charged its
 growth beyond the seed it started from (`max(0, state - seed_bytes)`), and
 `seed_bytes` is recorded for text only (a CHECK keeps it 0 for Office rows). A
@@ -207,8 +207,8 @@ later edits returns the state to NULL. A refresh candidate is uncharged while
 transient: admission does not gate on it, and publication gates the net change
 of the file's bytes and its source row. Before a parse is paid for, finalize
 refuses (except for system jobs) what publication would certainly refuse: the
-new bytes minus the old, plus a source row with no state, baseline or effects,
-minus the current row. Reconciliation sums the same columns. Owner changes
+new bytes minus the old, plus a source row with no state or effects, minus
+the current row. Reconciliation sums the same columns. Owner changes
 transfer the charge with the file. Checkpoint growth and publication run under
 source/workspace/account locks. Negative changes remain negative ledger
 deltas.
@@ -225,11 +225,10 @@ refresh. A window's reset drops the states of the reset formats and keeps no
 copy.
 
 A candidate retains old A and exported B temporarily. Successful Office handoff
-rebinds the latest saved state to B, clears Undo/Redo and releases A. XLSX/PPTX
-state can retain binary package parts needed by later edits but absent or different
-in B; it does not retain another full source archive. DOCX binds native embeds and
-relationships to B, whose exporter already preserves inherited package parts. Text
-retains its existing editing lineage. Shared caption payloads are platform
+rebases the latest saved state onto seed(B), clears Undo/Redo and releases A.
+The state keeps no package parts of A: a later edit that needs content B
+dropped fails the publication instead. Text retains its existing editing
+lineage. Shared caption payloads are platform
 artifacts referenced by containing resources; published clones attach their
 own references and exclude pending captions. A failed candidate cannot remove
 the currently published source/index.

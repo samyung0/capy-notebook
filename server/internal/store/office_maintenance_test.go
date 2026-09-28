@@ -211,15 +211,15 @@ func TestExportOnlyPublication(t *testing.T) {
 	if blobPath != candidate.SourceBlobPath || sha != finalize.SourceSHA256 || size != 120 || revision != 2 || indexed || hasHash {
 		t.Fatalf("file row: %s %s %d %d indexed=%v hash=%v", blobPath, sha, size, revision, indexed, hasHash)
 	}
-	// The state is seed(export) again: NULL, with a derived baseline.
+	// The state is seed(export) again: NULL.
 	var epoch, checkpoint, indexedCheckpoint, netTokens, seedBytes int64
-	var state, storedBaseline []byte
+	var state []byte
 	var effects string
 	var marked, running bool
-	if err = s.pool.QueryRow(ctx, `SELECT epoch,checkpoint,indexed_checkpoint,net_tokens,seed_bytes,state,indexed_baseline,pending_effects::text,reprocess_at IS NOT NULL,running_job_id IS NOT NULL FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &checkpoint, &indexedCheckpoint, &netTokens, &seedBytes, &state, &storedBaseline, &effects, &marked, &running); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT epoch,checkpoint,indexed_checkpoint,net_tokens,seed_bytes,state,pending_effects::text,reprocess_at IS NOT NULL,running_job_id IS NOT NULL FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &checkpoint, &indexedCheckpoint, &netTokens, &seedBytes, &state, &effects, &marked, &running); err != nil {
 		t.Fatal(err)
 	}
-	if epoch != 2 || indexedCheckpoint != checkpoint || netTokens != 0 || seedBytes != 0 || state != nil || storedBaseline != nil || effects != "[]" || !marked || running {
+	if epoch != 2 || indexedCheckpoint != checkpoint || netTokens != 0 || seedBytes != 0 || state != nil || effects != "[]" || !marked || running {
 		t.Fatalf("source row: epoch=%d checkpoint=%d/%d tokens=%d state=%q effects=%s marked=%v running=%v", epoch, checkpoint, indexedCheckpoint, netTokens, state, effects, marked, running)
 	}
 	var aliases, captions, candidates int
@@ -265,7 +265,6 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	baseline := sourceTestBaseline("docx", "D")
 	if err = s.FinalizeSourceRefresh(ctx, file, SourceRefreshFinalize{JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("d", 64), SizeBytes: 90, SourceETag: "etag-d"}); err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +280,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	}
 	doc = sourceTestEdit(t, s, owner, doc, "later-state")
 	residual := json.RawMessage(`[{"id":"p","kind":"text","label":"Paragraph","operation":"replace","before":"a","after":"b"}]`)
-	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-d", PendingEffects: residual, NetTokens: 1, IndexedBaseline: baseline, RebasedState: []byte("rebased-later"), ExpectedLatestCheckpoint: doc.Checkpoint - 1}
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-d", PendingEffects: residual, NetTokens: 1, RebasedState: []byte("rebased-later"), RebasedStateSeedSHA256: sourceTestStateSeed, ExpectedLatestCheckpoint: doc.Checkpoint - 1}
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
 		t.Fatalf("publication missing the later save: %v", err)
 	}
@@ -290,7 +289,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "rebased-later" || string(published.IndexedBaseline) != string(baseline) || published.NetTokens != 1 || published.BaseRevision != 2 {
+	if published.Epoch != 2 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "rebased-later" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.NetTokens != 1 || published.BaseRevision != 2 {
 		t.Fatalf("export publication: %+v", published)
 	}
 	var marked, indexed bool
@@ -348,7 +347,7 @@ func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
-	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), IndexedBaseline: sourceTestBaseline("docx", "F"), RebasedState: []byte(strings.Repeat("r", 2000+len("seed-f"))), ExpectedLatestCheckpoint: candidate.Checkpoint}
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), RebasedState: []byte(strings.Repeat("r", 2000+len("seed-f"))), RebasedStateSeedSHA256: sourceTestStateSeed, ExpectedLatestCheckpoint: candidate.Checkpoint}
 	// With no save after the capture the state returns to seed(export): a
 	// rebased state is refused.
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
@@ -506,7 +505,7 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out.Epoch != 2 || out.IndexedCheckpoint != out.Checkpoint || out.State != nil || out.IndexedBaseline != nil {
+	if out.Epoch != 2 || out.IndexedCheckpoint != out.Checkpoint || out.State != nil {
 		t.Fatalf("frozen owner's republish: %+v", out)
 	}
 }
@@ -758,7 +757,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 	}
 	var epoch int64
 	var dropped bool
-	if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND indexed_baseline IS NULL AND pending_effects='[]'::jsonb FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &dropped); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT epoch,state IS NULL AND seed_bytes=0 AND pending_effects='[]'::jsonb FROM source_documents WHERE file_id=$1`, file).Scan(&epoch, &dropped); err != nil {
 		t.Fatal(err)
 	}
 	if epoch != 2 || !dropped {

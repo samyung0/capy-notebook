@@ -2588,6 +2588,16 @@ base and exits 1 when any seed changed: that pin then ships through the
 window below, and its reset covers the formats listed as changed (plus any
 golden seed changes). An empty manifest passes.
 
+The same bump keeps the fork's Yjs equal to Capy's: the fork's root
+`package.json` pins the `yjs` it bundles into `shared/office-checkpoint.mjs`
+(which the collaboration worker rebases with), and it must be the version
+`collaboration/package.json` and `pnpm-lock.yaml` resolve. Compare
+`grep '"yjs"' vendor/betteroffice/package.json collaboration/package.json`
+before the bump and bump both together. Both copies speak the same update
+format, and the collaboration service's main thread loads the bundle only for
+`OFFICE_DOCUMENT_ROOTS`, which is why it logs Yjs's "already imported" warning
+once.
+
 A maintenance export-only publication makes the saved state the file's bytes
 without a parser or provider call: the collaboration service exports and
 uploads the candidate as for any refresh, and finalizing it replaces the file's
@@ -2629,11 +2639,28 @@ Steps:
    of those formats has unpublished edits or a refresh in flight, and it holds
    a lock on `source_documents` for its transaction. Then, in one statement,
    it releases AI edit Undo, deletes refresh candidates, bumps the epoch,
-   drops the state and stored baseline and empties pending effects. No dropped
-   state is kept.
+   drops the state and empties pending effects. No dropped state is kept.
 5. `resume`. Tabs from before the deploy get 403 on reconnect and go to
    recovery or the banner. Editing needs the pause off, so the check comes
    after this step.
 6. Check: open one file of each format in Edit, make an edit, publish it, and
    confirm quota and the `source_documents` rows (an Office edit stores a small
    `state` with `state_seed_sha256` set).
+
+**Migration 0043 (DOCX and PPTX rebases onto seed(export)).** It drops
+`source_documents.indexed_baseline` and requires every Office state to name
+its seed. A DOCX or PPTX state that a publication rebased on the earlier
+release is stored whole with a baseline, and the migration refuses to run
+while one exists. Before deploying, run on the environment's database:
+
+```sql
+SELECT file_id, format FROM source_documents
+WHERE indexed_baseline IS NOT NULL
+   OR (format <> 'text' AND state IS NOT NULL AND state_seed_sha256 IS NULL);
+```
+
+No rows: deploy normally. Otherwise, on the old release, `pause`, then
+`publish-all` and `status` until `status` prints `0 unpublished, 0 in flight`
+(each such file publishes with no later edits, which returns its state to
+NULL), deploy with editing still paused, then `resume`. The BetterOffice pin
+of this release keeps every seed, so it needs no reset migration.

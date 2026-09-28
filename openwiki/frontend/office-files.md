@@ -102,12 +102,12 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account
 lock, so a suspended owner's shared files keep rendering) that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
-saved checkpoint is ahead of the indexed one (`indexedBaseline` and
-`pendingEffects` are omitted), with its `stateSeedSHA256`. The host passes
-that state as `checkpoint` and the hash as `checkpointSeedSHA256` on the `load`
-message (protocol version 5); the runtime applies it over the base with the
-editor engines in a disposable `exportCheckpoint` worker, which for a change
-seeds the base first and refuses a seed whose hash differs (the same composition as the
+saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
+with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the
+hash as `checkpointSeedSHA256` on the `load` message (protocol version 5); the
+runtime applies it over the base with the editor engines in a disposable
+`exportCheckpoint` worker, which for a change seeds the base first and refuses
+a seed whose hash differs (the same composition as the
 collaboration service's headless export), terminates it, and opens the viewer
 on the exported bytes. With no unpublished edits the base opens directly and
 no editor engine loads. The view is not live: it reflects the state at open,
@@ -150,9 +150,102 @@ changed, over the fingerprinted source that every open requires:
   array formula keeps its `t="array"` range only while its anchor cell still
   holds its original content; otherwise it saves as a single-cell formula.
 - PPTX keeps no parsed package or media in Yjs: both come from the source
-  package. Inserted pictures stay binary on their shape, and rebase overlays
-  store changed parts, media included, as bytes. Comments live in
-  `pptx:comments`.
+  package. Inserted pictures stay binary on their shape until a publication
+  writes them into the package. Comments live in `pptx:comments`.
+
+A publication rebases the edits saved after its capture onto seed(export) in
+every format (`rebaseOffice` in `vendor/betteroffice/shared/office-checkpoint.ts`),
+so the rebased state is stored as its change over that seed and its effects
+come from the export's derived baseline. XLSX replays them as overrides. DOCX
+and PPTX (`vendor/betteroffice/shared/office-rebase.ts`) apply the later edits
+to the captured state, record the resulting Yjs changes and replay each at the
+same place in the export's seed: texts are aligned unit by unit (UTF-16 code
+units and embeds), entities are paired by place (DOCX stories, tables, rows,
+cells and paragraph ids; PPTX slides, shapes, stories, paragraphs, and
+comments by slide, author, text and time), DOCX comments by the numeric id the
+export writes for them (`commentOoxmlIds`), and an entity created later whose
+id the seed already uses is renamed. A DOCX comment anchor the later edits
+wrote lands through the alignment of the latest story with the rebased one,
+made once per story in a rebase. The reference field the export writes at the
+end of a comment made in the editor is a seed unit the later edits never
+held, so the alignment treats it as transparent: text typed or deleted beside
+it lands beside it, a later delete that spans it deletes it too, and an
+anchor may span it. A comment the later edits removed takes its reference
+field with it, as removing it in the editor does (removeComment deletes the
+comment's reference fields), since an export drops a field that names no
+comment. Such field units are also left out of the DOCX effects baseline,
+where the comment's own entry carries the change.
+The rebase fails explicitly when a later edit or such an anchor touches
+content the export wrote differently, when a restored slide, shape or
+paragraph needs source XML the export dropped (Undo of a deletion made before
+the capture), when the rebased text and image effects differ from the
+saved ones (DOCX comments compared by author and visible text, since the
+export adds the body's reference run), or when the editor's render bridge
+refuses a rebased DOCX story (text or a field ahead of a table or content
+control in one paragraph slot): the rebase runs the bridge over every story
+of the result (`assertDocxRenders`). A refusal (an error the engine raises
+with the `Office rebase:` prefix, including XLSX's) is terminal: the
+collaboration service answers the publication with 422, the ingest worker
+ends the source refresh job without retrying it and records the refusal in
+`refresh_error`, and the saved edits stay on the old base for the next
+publication. Any other engine error (a trap, a timeout) answers 500 and the
+job retries. The check does not verify formatting, which is accepted: DOCX
+visual effects are left out because an export writes some formatting its own
+way, and PPTX visual effects (shape geometry, layout, text formatting) are
+compared only by their count and operation, since they carry no values.
+
+The DOCX export writes page and column breaks from the story's break units, the
+way the seed reads them back: the units that open a paragraph slot become
+trailing breaks of the paragraph before it (or leading breaks of the slot's
+paragraph when none precedes it), a paragraph keeps recorded breaks that still
+match its units, and a paragraph whose leading page break is the
+`pageBreakBeforeRun` attribute keeps that break. So inserted breaks are saved,
+deleted ones stay deleted and an edited paragraph keeps its breaks, in the body
+and its block content controls (cells, headers, footers and notes hold no
+break units).
+
+The DOCX editor never puts paragraph text ahead of a table, block content
+control or page or column break in one paragraph slot, as in Word (the render
+bridge refuses that state). Delete at the end of a paragraph just before such
+a block, or Backspace at the start of the block's paragraph, does not merge
+the two (`merge_paragraphs` in `crates/docx-edit`):
+
+- before a page or column break it removes the break;
+- before a table or block content control it removes the paragraph when that
+  is empty (nothing but its mark and comment reference fields, which show
+  nothing; the table's paragraph keeps its own properties), and otherwise
+  changes nothing. The paragraph between two tables belongs to the first
+  table's slot, so it is never removed and two tables are never joined.
+
+Delete or Backspace right next to a table or block content control never
+deletes it: the user selects it to delete it. A break next to the caret goes
+like any character. One engine edit (`delete_at`, `deleteAt` in the session)
+makes every Backspace and Delete, resident or not, so suggesting mode,
+headers, footers and notes delete and place the caret as the resident path
+does. Suggesting mode marks what it removes deleted; only the author's own
+pending paragraph mark goes (Backspacing over one's own Enter), so an own
+inserted paragraph before an original break still suggests the break's
+deletion. Enter at the start of a slot that opens with a block inserts an
+empty paragraph before the block and leaves the block's paragraph (id and
+properties, borders included) as it was, so Delete in the new paragraph
+restores the document.
+
+A range delete (a selection delete or a cut) ending at the start of such a
+slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
+in its own paragraph, unless the range starts at that paragraph's start: then
+the whole paragraph goes. A replacement (type-over, paste) keeps the mark in
+both cases, since its text needs the paragraph. Accepting a suggested deletion
+of such a mark keeps the mark while its paragraph still holds content, so
+text typed into a paragraph after its deletion was suggested stays out of the
+block's slot (`ops/resolve.rs`). Text, tabs, breaks and inline objects,
+images included, inserted at a location ahead of a slot's leading blocks land
+after them, with the caret following (`inline_landing`). The editor ref
+API's page break opens the next paragraph slot. The state still arises from
+concurrent edits (one editor merges a paragraph while another opens the next
+slot with a table), and it does not round trip: the export writes the text
+after the table (a page break is kept in place), so the rebase lands edits to
+the text but refuses an edit to that table or break, and refuses outright a
+result the render bridge refuses.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
@@ -308,15 +401,12 @@ seed's state vector, plus the whole delete set), with the seed's SHA-256 in
 whole document model. Every write checks that seed plus the change rebuilds the
 exact state; every read re-seeds the base, refuses a change whose seed hash
 differs (the engine now seeds that base differently: publish it on the
-previous engine) and requires that nothing stays pending. Text states and DOCX
-or PPTX states a publication rebased (they keep a stored baseline) are stored
-whole. A NULL `indexed_baseline` means the baseline is derived from the base:
-the decoded text, or the engine baseline of seed(base);
-the service caches seeds (with their hashes) and derived baselines by base SHA
-next to the bases.
-Only a publication that rebased later DOCX or PPTX edits stores a baseline,
-because the rebased state's identities cannot be derived; a publication
-without later edits returns the state and baseline to NULL. The Go API
+previous engine) and requires that nothing stays pending. Text states are
+stored whole; every Office state names its seed (a CHECK since migration
+0043). No row stores a baseline: the indexed baseline always derives from the
+base, as the decoded text or the engine baseline of seed(base), and the service
+caches seeds (with their hashes) and derived baselines by base SHA next to the
+bases. A publication without later edits returns the state to NULL. The Go API
 rechecks current source access, epoch and account state through a small
 access-only endpoint for incoming edits, at most every 5 s per connection. Checkpoint writes check storage
 growth (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
@@ -417,8 +507,8 @@ into the new epoch, where unsaved changes go to recovery); a writer that
 disconnects is no longer waited for. The service then persists the room once.
 The publishing coordinator waits up to 60 seconds for every instance's
 acknowledgement, since that persist can queue behind a running save, and then
-publishes the source, index, rebased current state and matching indexed
-baseline atomically. The room lock covers that wait plus one Office engine
+publishes the source, index and rebased current state (its change over
+seed(export)) atomically. The room lock covers that wait plus one Office engine
 call (3 minutes), and each instance's recovery watchdog outlasts the lock.
 While the room is locked, a reconnecting editor's authentication is refused
 with the distinct reason `source-publishing`; the editor reconnects once after
@@ -508,8 +598,8 @@ refresh, and the same saved state always exports the same bytes. A maintenance
 export-only publication (system payer) publishes in finalize
 (`publishExportTx` in `server/internal/store/office_maintenance.go`), since
 editing is paused: it makes the export the file's bytes, bumps the epoch,
-returns the state and indexed baseline to NULL (seed(export) and its derived
-baseline), empties pending effects, drops the file's index and caption
+returns the state to NULL (seed(export), whose baseline derives from the
+export), empties pending effects, drops the file's index and caption
 associations and evicts the old room. A save after the capture supersedes the
 job and a later run exports again. The automatic export of a store-only file
 instead keeps the finalized candidate and publishes it through the handoff,
@@ -536,8 +626,7 @@ reprocess jobs) is in flight.
 `server/migrations/templates/office_window_reset.sql`, refuses to run unless the
 pause is on and nothing of those formats is unpublished or in flight, under a
 lock on `source_documents`; that guard is the only protection, since no dropped
-state is kept. It then bumps the epoch, drops the state (with its seed hash) and
-stored baseline,
+state is kept. It then bumps the epoch, drops the state (with its seed hash),
 empties pending effects and deletes refresh candidates, so rooms reseed on the
 new engine. A file that cannot publish keeps the pause on until an operator
 fixes it on the old engine, so no engine ever holds another engine's state.
@@ -592,8 +681,8 @@ OOXML export. See [the test catalog](../test-catalog.md) for entry points.
 
 The source comparison baseline is separate from the editable Yjs state. It holds
 text and stable positions, image hashes and references, and hashes of visual
-metadata. Office handoff publishes the rebased saved state and, for DOCX and
-PPTX, a baseline mapped into its identities; open editors show the
+metadata and is derived from the base, never stored. Office handoff publishes
+the rebased saved state as its change over seed(export); open editors show the
 newer-version banner. The maintenance window's reset migration
 (`0034_office_window_reset.sql`, from the template) drops every Office state
 of the old engine so rooms reseed on the new one.

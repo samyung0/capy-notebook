@@ -17,7 +17,6 @@ import {
   removeDocumentContributors,
 } from '../../../collaboration/src/contributors';
 import {
-  encodeBaseline,
   seedChange,
   trimEffect,
 } from '../../../collaboration/src/sourceDocuments';
@@ -49,7 +48,7 @@ await mkdir(output, { recursive: true });
 const db = new Client({ connectionString: database });
 await db.connect();
 await db.query(`CREATE TEMP TABLE measurements (
-  id serial, state bytea, baseline bytea, effects jsonb NOT NULL, seed_bytes bigint NOT NULL
+  id serial, state bytea, effects jsonb NOT NULL, seed_bytes bigint NOT NULL
 )`);
 const databaseInfo = (
   await db.query(
@@ -111,13 +110,6 @@ try {
     const seed = await office.seedOffice(format, bytes);
     const baseline =
       format === 'xlsx' ? [] : await office.officeBaseline(bytes, seed);
-    const derivedBaseline =
-      format === 'xlsx'
-        ? 0
-        : Buffer.from(
-            encodeBaseline({ entries: baseline, format, version: 1 }),
-            'base64'
-          ).length;
     const entries = await office.inspectOffice(bytes, seed);
     const target = entries.find(
       (entry) =>
@@ -190,30 +182,21 @@ try {
     async function measure(
       state: Uint8Array | null,
       fx: unknown[],
-      seedSize: number,
-      storedBaseline: Uint8Array | null = null
+      seedSize: number
     ) {
       const inserted = await db.query(
-        'INSERT INTO measurements(state,baseline,effects,seed_bytes) VALUES($1,$2,$3,$4) RETURNING id',
-        [
-          state && Buffer.from(state),
-          storedBaseline && Buffer.from(storedBaseline),
-          JSON.stringify(fx),
-          seedSize,
-        ]
+        'INSERT INTO measurements(state,effects,seed_bytes) VALUES($1,$2,$3) RETURNING id',
+        [state && Buffer.from(state), JSON.stringify(fx), seedSize]
       );
       const row = (
         await db.query(
           `SELECT
         COALESCE(octet_length(state),0) AS state_bytes,
-        COALESCE(octet_length(baseline),0) AS baseline_bytes,
         COALESCE(octet_length(NULLIF(effects,'[]'::jsonb)::text),0) AS effect_bytes,
         COALESCE(pg_column_size(state),0) AS state_stored,
-        COALESCE(pg_column_size(baseline),0) AS baseline_stored,
         pg_column_size(effects) AS effects_stored,
         COALESCE(octet_length(NULLIF(effects,'[]'::jsonb)::text),0)
-          + GREATEST(0,COALESCE(octet_length(state),0)-seed_bytes)
-          + COALESCE(octet_length(baseline),0) AS quota_extra
+          + GREATEST(0,COALESCE(octet_length(state),0)-seed_bytes) AS quota_extra
         FROM measurements WHERE id=$1`,
           [inserted.rows[0].id]
         )
@@ -223,8 +206,8 @@ try {
       );
     }
     // Stored and charged as the service does since migration 0039 (a change
-    // over the seed, charged as stored); *_full_state keeps the earlier full
-    // state with its growth-over-seed charge for comparison.
+    // over the seed, charged as stored; 0043 stores no baseline); *_full_state
+    // keeps the earlier full state with its growth-over-seed charge for comparison.
     const unopened = await measure(null, [], 0);
     await edit(' Capy storage probe.');
     const oneEffects = await effects(stored);
@@ -260,28 +243,16 @@ try {
       checkpoint(),
       exported
     );
-    const rebaseBaseline =
-      format === 'xlsx'
-        ? null
-        : Buffer.from(
-            encodeBaseline({ entries: rebase.baseline, format, version: 1 }),
-            'base64'
-          );
-    // XLSX rebases onto seed(export) and stores its change; a DOCX or PPTX
-    // rebase keeps its lineage and baseline and is stored whole.
+    // Every rebase lands on seed(export) and is stored as its change over it.
     const rebased = await measure(
-      format === 'xlsx'
-        ? changeOver(exportedSeed.state, rebase.state)
-        : rebase.state,
+      changeOver(exportedSeed.state, rebase.state),
       rebase.effects.map(trimEffect),
-      0,
-      rebaseBaseline
+      0
     );
     const rebasedFull = await measure(
       rebase.state,
       rebase.effects.map(trimEffect),
-      exportedSeed.state.length,
-      rebaseBaseline
+      exportedSeed.state.length
     );
     assert(
       (
@@ -307,7 +278,6 @@ try {
         0
       ),
       seed_bytes: seed.state.length,
-      derived_baseline_bytes: derivedBaseline,
       unopened,
       one_edit: one,
       one_edit_full_state: oneFull,

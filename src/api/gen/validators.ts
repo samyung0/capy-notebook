@@ -1282,7 +1282,7 @@ export const GetSourceSessionParams = zod.object({
 })
 
 export const GetSourceSessionQueryParams = zod.object({
-  "view": zod.boolean().optional().describe('Viewer read: read access only, omits indexedBaseline and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
+  "view": zod.boolean().optional().describe('Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
 })
 
 export const GetSourceSessionResponse = zod.object({
@@ -1294,7 +1294,6 @@ export const GetSourceSessionResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string().nullable(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
@@ -4467,7 +4466,6 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string().nullable(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
@@ -4586,7 +4584,6 @@ export const PublishSourceRefreshBody = zod.object({
   "contentId": zod.string(),
   "epoch": zod.int(),
   "expectedLatestCheckpoint": zod.int(),
-  "indexedBaseline": zod.string().optional(),
   "jobId": zod.string(),
   "leaseToken": zod.string(),
   "netTokens": zod.int(),
@@ -4605,7 +4602,6 @@ export const PublishSourceRefreshResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
-  "indexedBaseline": zod.string().nullable(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),

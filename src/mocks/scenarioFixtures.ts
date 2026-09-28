@@ -282,7 +282,6 @@ export async function scenarioSourceSession(
     epoch: seed.epoch,
     fileId,
     format: seed.format,
-    indexedBaseline: '',
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: null,

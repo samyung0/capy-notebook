@@ -217,7 +217,6 @@ async function mockSourceSession(
     epoch: SOURCE_EPOCH,
     fileId,
     format: 'text',
-    indexedBaseline: `mock-${fileId}-${file.revision}`,
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: null,

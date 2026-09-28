@@ -406,8 +406,10 @@ def _finish_source_refresh(
                 f"source publication gateway returned {response.status_code}"
             )
         elif response.status_code != 200:
+            # Includes a publication rebase the Office engine refused (422).
             raise TerminalError(
-                f"source publication gateway returned {response.status_code}"
+                f"source publication gateway returned {response.status_code}: "
+                f"{response.text[:500]}"
             )
     _settle_published_source_refresh(job_id, payload)
     return True

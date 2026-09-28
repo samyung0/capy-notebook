@@ -37,8 +37,14 @@ def candidate(workspace, *, format="docx"):
             (job_id, json.dumps(payload)),
         )
         conn.execute(
-            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,state,indexed_baseline,running_job_id) VALUES(%s,%s,1,%s,1,'state-b','state-a',%s)",
-            (file_id, format, "sources/" + file_id, job_id),
+            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,state,state_seed_sha256,running_job_id) VALUES(%s,%s,1,%s,1,'state-b',%s,%s)",
+            (
+                file_id,
+                format,
+                "sources/" + file_id,
+                None if format == "text" else "0" * 64,
+                job_id,
+            ),
         )
         conn.execute(
             "INSERT INTO source_refresh_candidates(file_id,job_id,epoch,checkpoint,lease_token,state,source_blob_path) VALUES(%s,%s,1,1,'lease-b','state-b',%s)",
@@ -354,6 +360,39 @@ async def test_publication_retry_requires_completed_candidate_and_keeps_parsed_w
             )
         assert worker._resume_source_publication(job) is True
         assert publications == [(file_id, job["id"], "completed-hash")]
+    finally:
+        db.reset_source_refresh(token)
+
+
+@pytest.mark.asyncio
+async def test_a_refused_publication_rebase_ends_the_refresh(workspace, monkeypatch):
+    from types import SimpleNamespace
+
+    from pipeline.config import cfg
+    from pipeline.ingest import worker
+    from pipeline.jobs import TerminalError, is_retryable
+
+    job = candidate(workspace)
+    file_id = job["payload"]["fileId"]
+    token = db.bind_source_refresh(job)
+    refusal = '{"message":"Office rebase: a change at stories/body:4 touches content the export wrote differently"}'
+    monkeypatch.setattr(cfg, "gateway_url", "http://gateway.invalid")
+    monkeypatch.setattr(cfg, "pipeline_secret", "secret")
+    monkeypatch.setattr(
+        worker.requests,
+        "post",
+        lambda *args, **kwargs: SimpleNamespace(status_code=422, text=refusal),
+    )
+    try:
+        await store.attach_file_content(
+            workspace_id=workspace.id,
+            file_id=file_id,
+            content_hash="completed-hash",
+            claim_job_id=job["id"],
+        )
+        with pytest.raises(TerminalError, match="Office rebase") as refused:
+            worker._finish_source_refresh(file_id, job["id"], "completed-hash")
+        assert not is_retryable(refused.value)
     finally:
         db.reset_source_refresh(token)
 

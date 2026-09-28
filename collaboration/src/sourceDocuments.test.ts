@@ -10,7 +10,6 @@ import {
 import * as officeRuntime from './officeRuntime.js';
 import {
   effectTokens,
-  encodeBaseline,
   rebuildState,
   SourceDocumentStore,
   SourceRequestError,
@@ -162,16 +161,11 @@ test('a delayed source store merges a newer durable replica before saving', asyn
   const session: SourceSession = {
     access: 'write',
     baseRevision: 1,
-    baseSourceSHA256: 'sha',
+    baseSourceSHA256: createHash('sha256').update('base').digest('hex'),
     checkpoint: 8,
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: encodeBaseline({
-      format: 'text',
-      text: 'base',
-      version: 1,
-    }),
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: [],
@@ -183,6 +177,11 @@ test('a delayed source store merges a newer durable replica before saving', asyn
   };
   const store = new SourceDocumentStore({} as Pool, 'http://unused', 'secret');
   vi.spyOn(store, 'session').mockResolvedValue(session);
+  // The indexed baseline is the base's text.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('base'))
+  );
   let persisted = '';
   vi.spyOn(store, 'request').mockImplementation(
     async (_file, _endpoint, body) => {
@@ -360,7 +359,15 @@ test('an image replacement keeps a caption only for the same actual bytes', asyn
   };
   const unchanged = { ...old, caption: undefined };
   const replacement = { ...old, caption: undefined, imageSHA256: 'new-bytes' };
+  // The indexed baseline derives from seed(base) once, then is cached.
   vi.spyOn(officeRuntime, 'runOffice')
+    .mockResolvedValueOnce({
+      baseSha256: '',
+      format: 'docx',
+      schemaVersion: 1,
+      state: new Uint8Array([0]),
+    })
+    .mockResolvedValueOnce([])
     .mockResolvedValueOnce([])
     .mockResolvedValueOnce([unchanged])
     .mockResolvedValueOnce([])
@@ -368,11 +375,6 @@ test('an image replacement keeps a caption only for the same actual bytes', asyn
   const session = {
     baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
     format: 'docx',
-    indexedBaseline: encodeBaseline({
-      entries: [],
-      format: 'docx',
-      version: 1,
-    }),
     pendingEffects: [old],
     sourceURL: 'http://base',
   } as SourceSession;
@@ -454,7 +456,6 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
     sourceURL: 'http://base',
@@ -511,12 +512,29 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
   other.destroy();
 });
 
-test('Office rebase uses the captured state and latest saved state, retaining captions by media hash', async () => {
+test('Office rebase uses the captured state and latest saved state, stores the result as its change over seed(export) and retains captions by media hash', async () => {
   const oldSource = Buffer.from('old package'),
     newSource = Buffer.from('parsed package');
   const digest = (bytes: Uint8Array) =>
     createHash('sha256').update(bytes).digest('hex');
   const imageSHA256 = 'a'.repeat(64);
+  // seed(base), and the captured and saved states as changes over it.
+  const base = new Y.Doc();
+  base.clientID = 5;
+  base.getMap('pptx:slides').set('slide', 'base');
+  const baseSeed = Y.encodeStateAsUpdate(base);
+  base.clientID = 9;
+  base.getMap('pptx:slides').set('slide', 'captured');
+  const captured = Y.encodeStateAsUpdate(
+    base,
+    Y.encodeStateVectorFromUpdate(baseSeed)
+  );
+  base.getMap('pptx:slides').set('slide', 'saved');
+  const saved = Y.encodeStateAsUpdate(
+    base,
+    Y.encodeStateVectorFromUpdate(baseSeed)
+  );
+  base.destroy();
   const session: SourceSession = {
     access: 'write',
     baseRevision: 1,
@@ -525,7 +543,6 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     epoch: 1,
     fileId: 'f',
     format: 'pptx',
-    indexedBaseline: '',
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: [
@@ -540,14 +557,18 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     ],
     room: 'source:f:epoch:1',
     sourceURL: 'http://old-source',
-    state: Buffer.from('saved11').toString('base64'),
-    stateSeedSHA256: null,
+    state: Buffer.from(saved).toString('base64'),
+    stateSeedSHA256: digest(baseSeed),
     workspaceId: 'ws',
   };
   const pool = {
     query: vi.fn(async () => ({
       rows: [
-        { source_sha256: digest(newSource), state: Buffer.from('captured10') },
+        {
+          source_sha256: digest(newSource),
+          state: Buffer.from(captured),
+          state_seed_sha256: digest(baseSeed),
+        },
       ],
     })),
   };
@@ -567,8 +588,20 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     )
   );
   const [head, tail] = ['a'.repeat(50), 'z'.repeat(50)];
-  const runtime = vi.spyOn(officeRuntime, 'runOffice').mockResolvedValue({
-    baseline: [],
+  // seed(export), and the rebased state: that seed plus a later edit.
+  const exported = new Y.Doc();
+  exported.clientID = 7;
+  exported.getMap('pptx:slides').set('slide', 'seeded');
+  const seed = Y.encodeStateAsUpdate(exported);
+  exported.clientID = 11;
+  exported.getMap('pptx:slides').set('later', 'edit');
+  const rebased = Y.encodeStateAsUpdate(exported);
+  const change = Y.encodeStateAsUpdate(
+    exported,
+    Y.encodeStateVectorFromUpdate(seed)
+  );
+  exported.destroy();
+  const rebase = {
     effects: [
       {
         id: 'new-id',
@@ -586,8 +619,16 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
         operation: 'replace',
       },
     ],
-    state: Buffer.from('rebased11'),
-  });
+    state: rebased,
+  };
+  const runtime = vi
+    .spyOn(officeRuntime, 'runOffice')
+    .mockImplementation((async (name: string, ...args: unknown[]) =>
+      name === 'seedOffice'
+        ? {
+            state: oldSource.equals(args[1] as Uint8Array) ? baseSeed : seed,
+          }
+        : rebase) as typeof officeRuntime.runOffice);
   const result = await sources.rebasePublication(session, {
     checkpoint: 10,
     epoch: 1,
@@ -601,17 +642,14 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
   expect(runtime).toHaveBeenCalledWith(
     'rebaseOffice',
     oldSource,
-    expect.objectContaining({ state: Buffer.from('captured10') }),
-    expect.objectContaining({ state: Buffer.from('saved11') }),
+    expect.objectContaining({ state: rebuildState(baseSeed, captured) }),
+    expect.objectContaining({ state: rebuildState(baseSeed, saved) }),
     newSource
   );
+  expect(runtime).toHaveBeenCalledWith('seedOffice', 'pptx', newSource);
   expect(result).toMatchObject({
-    indexedBaseline: encodeBaseline({
-      entries: [],
-      format: 'pptx',
-      version: 1,
-    }),
-    rebasedState: Buffer.from('rebased11').toString('base64'),
+    rebasedState: Buffer.from(change).toString('base64'),
+    rebasedStateSeedSHA256: digest(seed),
   });
   // Rebased text effects are trimmed, and netTokens counts the trimmed text.
   expect(result.pendingEffects).toMatchObject([
@@ -629,11 +667,152 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     { ...session, checkpoint: 10 },
     { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
   );
-  // No save after the capture: the state and baseline go back to NULL, meaning
-  // seed(export) and its derived baseline.
+  // No save after the capture: the state goes back to NULL, meaning
+  // seed(export).
   expect(same).toEqual({ netTokens: 0, pendingEffects: [] });
   expect(runtime).not.toHaveBeenCalled();
   expect(request).not.toHaveBeenCalled();
+});
+
+test('only an engine refusal ends a publication rebase with a 422; any other engine error stays a 500', async () => {
+  const oldSource = Buffer.from('old package');
+  const newSource = Buffer.from('parsed package');
+  const digest = (bytes: Uint8Array) =>
+    createHash('sha256').update(bytes).digest('hex');
+  const base = new Y.Doc();
+  base.clientID = 5;
+  base.getMap('stories').set('body', 'seeded');
+  const seed = Y.encodeStateAsUpdate(base);
+  base.clientID = 9;
+  base.getMap('stories').set('body', 'saved');
+  const saved = Y.encodeStateAsUpdate(
+    base,
+    Y.encodeStateVectorFromUpdate(seed)
+  );
+  base.destroy();
+  const sources = new SourceDocumentStore(
+    {
+      query: vi.fn(async () => ({
+        rows: [
+          {
+            source_sha256: digest(newSource),
+            state: Buffer.from(saved),
+            state_seed_sha256: digest(seed),
+          },
+        ],
+      })),
+    } as unknown as Pool,
+    'http://api',
+    'secret'
+  );
+  vi.spyOn(sources, 'request').mockResolvedValue({
+    sourceURL: 'http://new-source',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === 'http://old-source' ? oldSource : newSource)
+    )
+  );
+  const publish = (message: string) => {
+    vi.spyOn(officeRuntime, 'runOffice').mockImplementation((async (
+      name: string
+    ) => {
+      if (name === 'seedOffice') return { state: seed };
+      throw new officeRuntime.OfficeEngineError(message);
+    }) as typeof officeRuntime.runOffice);
+    return sources
+      .rebasePublication(
+        {
+          baseSourceSHA256: digest(oldSource),
+          checkpoint: 11,
+          epoch: 1,
+          fileId: 'f',
+          format: 'docx',
+          pendingEffects: [],
+          sourceURL: 'http://old-source',
+          state: Buffer.from(saved).toString('base64'),
+          stateSeedSHA256: digest(seed),
+        } as unknown as SourceSession,
+        { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
+      )
+      .catch((error: unknown) => error);
+  };
+  const refused = await publish(
+    'Office rebase: a change at stories/body:4 touches content the export wrote differently'
+  );
+  expect(refused).toBeInstanceOf(SourceRequestError);
+  expect(refused).toMatchObject({ status: 422 });
+  // A timeout or trap is not a refusal: the server answers 500 and the
+  // refresh job retries it.
+  const failed = await publish('Office rebaseOffice timed out');
+  expect(failed).toBeInstanceOf(officeRuntime.OfficeEngineError);
+  expect(failed).not.toBeInstanceOf(SourceRequestError);
+});
+
+test('an Office state that names no seed is refused on every read, a candidate included', async () => {
+  const sources = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+  const read = {
+    baseSourceSHA256: 'a'.repeat(64),
+    sourceURL: 'http://base',
+    state: Buffer.from('whole').toString('base64'),
+    stateSeedSHA256: null,
+  };
+  await expect(
+    sources.stateOf({ ...read, format: 'pptx' })
+  ).rejects.toBeInstanceOf(SourceStateRebuildError);
+  // A text state is complete as stored.
+  expect(
+    Buffer.from(await sources.stateOf({ ...read, format: 'text' })).toString()
+  ).toBe('whole');
+  // A publication whose captured candidate names no seed never reaches the
+  // engine.
+  const [oldSource, newSource] = [Buffer.from('old'), Buffer.from('parsed')];
+  const digest = (bytes: Uint8Array) =>
+    createHash('sha256').update(bytes).digest('hex');
+  const candidates = new SourceDocumentStore(
+    {
+      query: vi.fn(async () => ({
+        rows: [
+          {
+            source_sha256: digest(newSource),
+            state: Buffer.from('whole'),
+            state_seed_sha256: null,
+          },
+        ],
+      })),
+    } as unknown as Pool,
+    'http://api',
+    'secret'
+  );
+  vi.spyOn(candidates, 'request').mockResolvedValue({
+    sourceURL: 'http://new-source',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === read.sourceURL ? oldSource : newSource)
+    )
+  );
+  const runtime = vi.spyOn(officeRuntime, 'runOffice');
+  await expect(
+    candidates.rebasePublication(
+      {
+        ...read,
+        baseSourceSHA256: digest(oldSource),
+        checkpoint: 11,
+        epoch: 1,
+        fileId: 'f',
+        format: 'docx',
+        pendingEffects: [],
+        stateSeedSHA256: 'c'.repeat(64),
+      } as unknown as SourceSession,
+      { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
+    )
+  ).rejects.toBeInstanceOf(SourceStateRebuildError);
+  expect(runtime).not.toHaveBeenCalled();
 });
 
 test('a save starts from the durable copy while the row names it, and reads the session again once it does not', async () => {
@@ -666,7 +845,6 @@ test('a save starts from the durable copy while the row names it, and reads the 
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
     sourceURL: 'http://unused',
@@ -802,7 +980,6 @@ test('after a text publication a save reads the session again and counts only th
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     indexedCheckpoint: 0,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
@@ -897,7 +1074,6 @@ test.each([4, 5])(
       epoch: 1,
       fileId: 'f_1',
       format: 'text',
-      indexedBaseline: null,
       pendingEffects: [],
       room: 'source:f_1:epoch:1',
       sourceURL: 'http://base',
@@ -1000,7 +1176,6 @@ test('a forgotten room saves from a fresh session read', async () => {
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
     sourceURL: 'http://base',
