@@ -85,7 +85,8 @@ danger, warning). After checking, choices tag "Your answer" and "Correct
 answer", true/false shows two result rows, a short answer marks its field and
 lists every accepted answer with its unit, an open answer shows the judge's
 reason after a full/half/no marks lead, matching rows show the chosen letter
-and the correct one, and wrong ordering rows show their right position.
+and the correct one above the option list, and wrong ordering rows show their
+right position.
 Matching dropdowns list letters in stored option order; only ordering starts
 shuffled. The static view numbers matching items above the lettered options on
 phones and beside them from md.

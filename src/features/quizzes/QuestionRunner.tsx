@@ -362,12 +362,8 @@ function PartRunner({
         })}
       </ol>
     );
-    // After checking, the item rows carry the result without the option list.
-    return review ? (
-      rows
-    ) : (
-      <MatchingLayout items={rows} options={answer.options} />
-    );
+    // The option list stays after checking so result letters keep their text.
+    return <MatchingLayout items={rows} options={answer.options} />;
   }
   if (answer.type === 'ordering') {
     if (review && !Array.isArray(value)) return <p>—</p>;
