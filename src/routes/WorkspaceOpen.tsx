@@ -51,7 +51,7 @@ import { FilesPanel } from '@/features/workspace/FilesPanel';
 import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
 import { GeneratePanel } from '@/features/workspace/GeneratePanel';
 import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
-import { StorageOwnerBanner } from '@/features/workspace/StorageOwnerBanner';
+import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
@@ -320,7 +320,7 @@ export default function WorkspaceOpen() {
   const viewer = (
     <Panel className="w-full" sectionClassName="h-full gap-0">
       <h1 className="sr-only">{ws.name}</h1>
-      <StorageOwnerBanner workspace={ws} />
+      <WorkspaceHealth workspace={ws} />
       <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
         <CenterContent
           beforeFileDelete={confirmViewerReplacement}

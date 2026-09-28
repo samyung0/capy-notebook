@@ -193,8 +193,9 @@ def main() -> None:
                 results[depth]["status"] == 429
                 and results[depth]["body"]["code"] == "parser_capacity"
             ), results[depth]
-            assert max(s["executing_jobs"] for s in samples) == 1
-            assert max(s["queued_jobs"] for s in samples) == depth - 1
+            workers = samples[0]["parse_workers"]
+            assert max(s["executing_jobs"] for s in samples) == workers
+            assert max(s["queued_jobs"] for s in samples) == depth - workers
             waits = [r["body"]["_queue_ms"] for r in accepted]
             assert waits == sorted(waits), waits
     print(

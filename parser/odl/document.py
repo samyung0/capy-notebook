@@ -90,7 +90,9 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            start_new_session=True,
+            # Its own group for the timeout kill below, inside the parse
+            # child's session so ending a parse child ends LibreOffice too.
+            process_group=0,
         )
         try:
             stdout, stderr = process.communicate(timeout=OFFICE_CONVERT_TIMEOUT_S)

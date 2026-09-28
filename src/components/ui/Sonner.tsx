@@ -9,7 +9,7 @@ import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
 const sonnerCardVariants = cva(
-  'pointer-events-auto relative z-9999 w-full min-w-0 max-w-96 flex-row items-start gap-2 rounded-card shadow-card md:gap-2.5 md:p-3.5',
+  'pointer-events-auto relative z-9999 w-full min-w-0 max-w-96 flex-row items-center gap-3 rounded-card shadow-card md:gap-2.5 md:p-3.5',
   {
     defaultVariants: {
       variant: 'default',
@@ -46,7 +46,7 @@ function Toast(props: ToastProps) {
         variant === 'success') && (
         <Icon
           className={cn(
-            'size-5 shrink-0',
+            'size-5 shrink-0 self-start',
             variant === 'error' && 'text-tint-error-fg',
             variant === 'warning' && 'text-tint-warning-fg',
             variant === 'success' && 'text-tint-success-fg'
@@ -68,29 +68,28 @@ function Toast(props: ToastProps) {
       </ContentSwap>
       {button && (
         <Button
-          className="wrap-anywhere -mt-1.25 h-auto min-h-7.5 max-w-[94px] shrink-0 whitespace-normal px-1.5 py-1.5 text-left font-bold leading-4.5 sm:max-w-[130px] sm:px-2 md:mx-2"
+          className="wrap-anywhere h-auto min-h-7.5 max-w-[94px] shrink-0 whitespace-normal rounded-lg px-3 py-1.5 text-center leading-4.5 sm:max-w-[130px]"
           onClick={() => {
             button.onClick();
             sonnerToast.dismiss(id);
           }}
           size="sm"
           type="button"
-          variant={variant === 'default' ? 'ghost-hover' : 'ghost'}
         >
           {button.label}
         </Button>
       )}
       {showCloseButton && (
         <IconButton
-          className="-mt-0.5 size-6 shrink-0 rounded-[7px] text-fg-secondary"
+          className="absolute -top-2 -left-2 size-5 rounded-full border border-divider bg-surface p-0 text-fg-secondary shadow-card hover:bg-surface-hover-bg [&>svg]:size-3"
           icon="x"
           label={m.action_close()}
           onClick={() => {
             sonnerToast.dismiss(id);
           }}
           size="xs"
+          strokeWidth={2}
           type="button"
-          variant={variant === 'default' ? 'ghost-hover' : 'ghost'}
         />
       )}
     </Card>

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 from importlib import resources
 from pathlib import Path
@@ -22,7 +23,7 @@ ODL_FLAGS = (
     "cluster",
     "--include-header-footer",
 )
-JVM_MAX_HEAP = os.environ.get("CAPY_PARSER_JVM_MAX_HEAP", "3g")
+JVM_MAX_HEAP = os.environ.get("CAPY_PARSER_JVM_MAX_HEAP", "1g")
 
 
 class JavaTimeout(RuntimeError):
@@ -31,6 +32,10 @@ class JavaTimeout(RuntimeError):
 
 class JavaPageTreeError(RuntimeError):
     """The reader could not resolve the PDF's page tree."""
+
+
+class JavaKilled(RuntimeError):
+    """SIGKILL ended the JVM; in the parser container that is the OOM killer."""
 
 
 def jar_path() -> Path:
@@ -72,6 +77,8 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         )
     except subprocess.TimeoutExpired as exc:
         raise JavaTimeout(f"OpenDataLoader exceeded {timeout_s:.0f} seconds") from exc
+    if completed.returncode == -signal.SIGKILL:
+        raise JavaKilled(f"OpenDataLoader was killed: {completed.stdout[-2000:]}")
     if completed.returncode != 0:
         error = (
             JavaPageTreeError

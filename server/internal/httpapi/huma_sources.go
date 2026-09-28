@@ -86,9 +86,11 @@ func (a *api) getSourceUploadPolicy(
 
 	parseModes := []apimodel.SourceUploadParseModePolicy{
 		{
-			Mode:       sourceupload.ParseModeFast,
-			Extensions: sourceupload.ParseExtensions(sourceupload.ParseModeFast),
-			MaxBytes:   maxBytes,
+			Mode:        sourceupload.ParseModeFast,
+			Extensions:  sourceupload.ParseExtensions(sourceupload.ParseModeFast),
+			MaxBytes:    maxBytes,
+			MaxPages:    a.cfg.ParseMaxPages,
+			MaxOCRPages: a.cfg.ParseMaxOCRPages,
 		},
 		{
 			Mode:       sourceupload.ParseModeNone,
@@ -192,6 +194,9 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 	}
 	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {
+		return nil, err
 	}
 	if sourceupload.NeedsIngestJob(name, body.Kind, body.ParseMode) {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), body.EstimatedCreditMicros); err != nil {

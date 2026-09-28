@@ -14,5 +14,6 @@ export type UploadSourceBody = {
   kind?: Blob | string;
   /** @maxLength 120 */
   name?: Blob | string;
+  pageCount?: number;
   parseMode?: Blob | string;
 };

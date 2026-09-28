@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { ApiError } from '@/api/client';
+import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 
 import {
@@ -60,6 +61,9 @@ describe('source upload policy', () => {
     expect(defaultParseMode(file('script.py'), 'txt', sourceUploadPolicy)).toBe(
       'none'
     );
+    expect(
+      parseModeIssues(file('book.pdf'), 'pdf', sourceUploadPolicy, true)
+    ).toEqual({ fast: m.source_parse_over_pages({ max: 1400 }) });
   });
 });
 

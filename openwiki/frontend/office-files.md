@@ -216,20 +216,34 @@ and back on. Each row owns its progress bar; there is no separate queue panel.
 
 PDF.js reports an exact PDF page count and estimates OCR routing from the text
 layer with the parser's own rule: a page with fewer than 40 text-layer
-characters goes to OCR (`TEXTLESS_CHARS` in `sourceAnalysisCore.ts`); image
-coverage is recorded but no longer decides routing. The OOXML probe reads ZIP/XML parts:
-PPTX slide count is exact, while DOCX pagination, XLSX rendered pages, and every
-Office OCR classification are explicitly estimates. XLSX estimates printed
+characters goes to OCR (`TEXTLESS_CHARS` in `sourceAnalysisCore.ts`). It reads
+text only (no operator list) and loads the packed pdf.js CMaps, which Vite
+emits as same-origin assets fetched on demand, so non-embedded CJK fonts read
+as text rather than scans. The OOXML probe reads ZIP/XML parts:
+PPTX slide count is exact, while DOCX pagination (the larger of Word's saved
+page count and the body's page breaks), XLSX rendered pages, and every Office
+OCR classification are explicitly estimates. XLSX estimates printed
 pages from each worksheet's used row/column extent because its eventual
-LibreOffice print layout is not
-available in the browser. PDF analysis rejects excessive page, text, operator,
-decoded-image, estimated-memory, and wall-clock work; it also limits individual
-PDF.js operations and cleans each page before advancing. DOCX saved page
-metadata is accepted only inside the same bounded page model and otherwise
-falls back to explicit/rendered page-break evidence. OOXML extraction is
-limited to 4,096 archive entries and 128 MiB of selected expanded XML; media
-payloads and unrelated package parts are never inflated by the probe. These
-estimates drive only the dialog summary. Images and audio do not enter the
+LibreOffice print layout is not available in the browser. Every format stops
+at the upload policy's fast-parse `maxPages`. Each PDF.js open, page load and
+text read has 5 seconds, since a malformed stream can leave a PDF.js promise
+unsettled; there is no whole-document time or memory budget. OOXML extraction
+is limited to 4,096 archive entries and 128 MiB of selected expanded XML;
+media payloads and unrelated package parts are never inflated by the probe.
+
+The estimate feeds the dialog summary and the page limits, both from
+`source-upload-policy` (`parseModes[fast].maxPages` 1,400 and `maxOcrPages`
+1,000, the parser's own env values). Every reserved fast-parse source carries
+an estimate, so a failed analysis keeps Add disabled until the row is removed
+or switched to no parsing. The row names the failure: a user-password PDF (an
+owner-password-only PDF opens and passes), a damaged file, more pages than
+`maxPages` (fast parsing is also disabled in the row's mode menu), or the
+generic message for a transport error or a browser safety limit. A PDF whose
+text-less count is above 105% of `maxOcrPages` is refused; from 95% up to that
+it warns and uploads, since the count can be off by a few pages and the parser
+refuses the file at admission if it really is over. Office OCR estimates miss
+slide-master text, so they warn from 95% and never block. The upload sends the
+page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
 browser page/OCR analysis queue: the ingest worker captions or transcribes them,
 and those provider costs are deliberately absent from the page-based estimate.
 The server-owned page rates (1.0 credit per digital page and per OCR page) are

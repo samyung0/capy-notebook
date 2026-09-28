@@ -640,7 +640,9 @@ function MermaidThemeMenu({
           label={m.mermaid_theme()}
         >
           <MermaidSwatch theme={theme} />
-          <span className="translate-y-px">{MERMAID_THEME_LABEL[theme]()}</span>
+          <span className="translate-y-px pl-1">
+            {MERMAID_THEME_LABEL[theme]()}
+          </span>
         </ToolbarButton>
       </PopoverTrigger>
       <ToolbarPopoverContent align="end" className="w-46" open={open}>
@@ -728,10 +730,6 @@ export function MermaidElement(props: PlateElementProps) {
         <Suspense fallback={null}>
           <MermaidSourceDialog
             onClose={() => setEditing(false)}
-            onRemove={() => {
-              const at = locate();
-              if (at) editor.tf.removeNodes({ at });
-            }}
             onSave={(source) => {
               const at = locate();
               if (at) editor.tf.setNodes({ source }, { at });

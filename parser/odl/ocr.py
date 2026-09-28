@@ -1,9 +1,10 @@
 """Selective RapidOCR: pages with almost no native text are rendered and read.
 
 Configuration selected in the September 8 lab runs: PP-OCRv6 small detector and
-recogniser, the mobile angle classifier, 2560 px long edge, 8 ONNX threads,
-text score 0.5. Blank pages are routed too and simply yield no lines; every
-routed page counts as an OCR page for billing.
+recogniser, the mobile angle classifier, 2560 px long edge, text score 0.5.
+Four ONNX threads (the lab used eight) because the parser's one OCR process
+shares the CPUs with its parse children. Blank pages are routed too and simply
+yield no lines; every routed page counts as an OCR page for billing.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from PIL import Image
 from . import layout
 
 TEXTLESS_CHARS = 40
-MAX_EDGE, THREADS, TEXT_SCORE = 2560, 8, 0.5
+MAX_EDGE, THREADS, TEXT_SCORE = 2560, 4, 0.5
 MODEL_DIR = Path(os.environ.get("CAPY_RAPIDOCR_MODEL_DIR", "/models/rapidocr"))
 MODEL_FILES = {
     "Det": "PP-OCRv6_det_small.onnx",
@@ -112,18 +113,29 @@ def merge(blocks: list[dict], page_idx: int, new: list[dict]) -> list[dict]:
     return blocks[: last + 1] + new + blocks[last + 1 :]
 
 
+def page_blocks(page: pymupdf.Page) -> list[dict]:
+    """Render one page, read its lines and order them by layout region."""
+    image = render(page)
+    new = line_blocks(ocr_lines(image), image.size, page.number)
+    if len(new) > 1:
+        new, decision = layout.order_blocks(new, layout.regions(image, MODEL_DIR))
+        print(
+            f"ocr page={page.number + 1} lines={len(new)} order={decision}", flush=True
+        )
+    return new
+
+
+def read_page(pdf: str, page_idx: int) -> list[dict]:
+    """The OCR process's unit of work: one page of a parse child's work-dir PDF."""
+    with pymupdf.open(pdf) as document:
+        return page_blocks(document[page_idx])
+
+
 def add_ocr_text(
     blocks: list[dict], document: pymupdf.Document
 ) -> tuple[list[dict], list[int]]:
     """Append OCR line blocks for every text-less page; return the routed pages."""
     pages = textless_pages(document)
     for page_idx in pages:
-        image = render(document[page_idx])
-        new = line_blocks(ocr_lines(image), image.size, page_idx)
-        if len(new) > 1:
-            new, decision = layout.order_blocks(new, layout.regions(image, MODEL_DIR))
-            print(
-                f"ocr page={page_idx + 1} lines={len(new)} order={decision}", flush=True
-            )
-        blocks = merge(blocks, page_idx, new)
+        blocks = merge(blocks, page_idx, page_blocks(document[page_idx]))
     return blocks, pages

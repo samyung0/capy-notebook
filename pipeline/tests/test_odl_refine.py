@@ -592,6 +592,43 @@ def test_split_ligature_spaces_drawn_inside_the_glyph_are_dropped(
     assert revised[2] is blocks[2]
 
 
+def test_source_glyphs_are_kept_for_one_page_at_a_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the current page's rawdict stays cached; a revisited page is read
+    again and repaired exactly like a block read alone."""
+    with pymupdf.open() as document:
+        for _ in range(2):
+            page = document.new_page()
+            writer = pymupdf.TextWriter(page.rect)
+            font = pymupdf.Font("helv")
+            writer.append((100, 100), "beneﬁ", font=font, fontsize=12)
+            end = writer.last_point.x
+            writer.append((end - 4, 100), " ", font=font, fontsize=12)
+            writer.append((end, 100), "ts", font=font, fontsize=12)
+            writer.write_text(page)
+        pdf = tmp_path / "source.pdf"
+        document.save(pdf)
+    box = [0, 0, 1000, 1000]
+    blocks = [
+        {"type": "text", "text": "beneﬁ ts", "page_idx": page, "bbox": box}
+        for page in (0, 0, 1, 0)
+    ]
+    reads: list[int] = []
+    get_text = pymupdf.Page.get_text
+
+    def counted(page, option="text", **kwargs):
+        if option == "rawdict":
+            reads.append(page.number)
+        return get_text(page, option, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Page, "get_text", counted)
+    revised, dropped = source_text.join_split_ligatures(blocks, pdf)
+    assert reads == [0, 1, 0]
+    assert dropped == 4 and {b["text"] for b in revised} == {"beneﬁts"}
+    assert revised == [source_text.join_split_ligatures([b], pdf)[0][0] for b in blocks]
+
+
 def test_wide_to_unicode_ranges_split_at_byte_blocks() -> None:
     with pymupdf.open() as document:
         page = document.new_page()

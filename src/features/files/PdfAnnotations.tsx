@@ -7,7 +7,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
-import { WarningBanner } from '@/components/banners/WarningBanner';
+import { FileBanner } from '@/components/banners/FileBanner';
 import { m } from '@/i18n';
 import { PdfAnnotationToolbar, type PdfTool } from './PdfAnnotationToolbar';
 import {
@@ -434,7 +434,7 @@ export function PdfAnnotations({
           toolbar
         )}
       {writeError && (
-        <WarningBanner message={m.pdf_annotations_write_failed()} />
+        <FileBanner message={m.pdf_annotations_write_failed()} tone="error" />
       )}
       {pages.map((page) => {
         const number = Number(page.dataset.page),

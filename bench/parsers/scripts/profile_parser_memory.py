@@ -10,6 +10,7 @@ still held, after dropping it and ``gc.collect()``, and after
 document starts from).
 
     docker run --rm --network none -v /opt:/opt -e CAPY_PARSE_SHARED_DIR=/tmp/s \
+      -e CAPY_PARSE_WORKERS=1 \
       --entrypoint python IMAGE /path/profile_parser_memory.py manifest.json out.jsonl [--trim] [--trace]
 
 ``--trace`` adds tracemalloc's peak per step (Python objects only; PyMuPDF and

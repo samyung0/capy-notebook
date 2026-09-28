@@ -9,6 +9,7 @@ import type { SourceUploadParseModePolicyMode } from './sourceUploadParseModePol
 export interface SourceUploadParseModePolicy {
   extensions: string[];
   maxBytes: number;
+  maxOcrPages?: number;
   maxPages?: number;
   mode: SourceUploadParseModePolicyMode;
 }

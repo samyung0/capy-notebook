@@ -1,11 +1,13 @@
 import type { SourceFile } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
-import { WarningBanner } from '@/components/banners/WarningBanner';
+import {
+  FileBanner,
+  type FileBannerAction,
+} from '@/components/banners/FileBanner';
 import { ErrorAction } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { useOnlineStatus } from '@/lib/online';
 import { fileIsIngesting } from './fileUtils';
 
@@ -75,17 +77,13 @@ export function FileEmpty({
  */
 export function SourceReplacedBanner({ paused }: { paused?: boolean }) {
   return (
-    <WarningBanner
-      action={
-        <ErrorAction
-          iconLeftClassName="me-1"
-          onClick={() => window.location.reload()}
-          size="sm"
-        >
-          {m.error_action_reload()}
-        </ErrorAction>
-      }
-      icon="info"
+    <FileBanner
+      actions={[
+        {
+          label: m.error_action_reload(),
+          onClick: () => window.location.reload(),
+        },
+      ]}
       message={paused ? m.source_edit_paused() : m.source_edit_replaced()}
     />
   );
@@ -100,17 +98,36 @@ export function FileNotIndexedBanner({
   if (fileIsIngesting(file.status) || file.indexed) return null;
   const failed = file.status === 'failed';
   return (
-    <div
-      className={cn(
-        'shrink-0 border-b px-4 py-2 text-sm',
-        failed
-          ? 'border-solid-error/40 bg-tint-error text-tint-error-fg'
-          : 'border-divider bg-surface-hover-bg text-fg-secondary'
+    <FileBanner
+      message={failed ? m.files_not_indexed_failed() : m.files_not_indexed()}
+      testId="file-not-indexed"
+      tone={failed ? 'error' : 'neutral'}
+    />
+  );
+}
+
+/** The source editor's banners: pause at open, replaced session, errors. */
+export function SourceBanners({
+  actions,
+  error,
+  paused,
+  pausedAtOpen,
+  replaced,
+}: {
+  actions: FileBannerAction[];
+  error: string | null;
+  paused: boolean;
+  pausedAtOpen: boolean;
+  replaced: boolean;
+}) {
+  return (
+    <>
+      {error && <FileBanner actions={actions} message={error} tone="error" />}
+      {pausedAtOpen ? (
+        <FileBanner message={m.source_edit_paused_error()} />
+      ) : (
+        replaced && <SourceReplacedBanner paused={paused} />
       )}
-      data-testid="file-not-indexed"
-      role="status"
-    >
-      {failed ? m.files_not_indexed_failed() : m.files_not_indexed()}
-    </div>
+    </>
   );
 }

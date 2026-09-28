@@ -67,6 +67,14 @@ class ParserOOMError(ParserTerminalResourceError):
     """The fingerprint was active when the parser cgroup killed a process."""
 
 
+class ParserTooManyScannedPagesError(ParserClientError):
+    """More pages lack a text layer than the parser's OCR stage admits."""
+
+
+class ParserTooManyPagesError(ParserClientError):
+    """The document has more pages than the parser reads (CAPY_PARSE_MAX_PAGES)."""
+
+
 class ParserCapacityError(ParserClientError):
     """The parser's bounded local document queue is full."""
 
@@ -315,6 +323,10 @@ def _request_artifact(
                 raise ParserHardTimeoutError(str(detail))
             if payload.get("code") == "parse_oom":
                 raise ParserOOMError(str(detail))
+            if payload.get("code") == "parse_too_many_scanned_pages":
+                raise ParserTooManyScannedPagesError(str(detail))
+            if payload.get("code") == "parse_too_many_pages":
+                raise ParserTooManyPagesError(str(detail))
         if (
             resp.status_code == 429
             and isinstance(payload, dict)

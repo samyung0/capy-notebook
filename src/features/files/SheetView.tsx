@@ -1,11 +1,9 @@
 import { useEffect } from 'react';
 import type { ViewableFile } from '@/api/types';
-import { WarningBanner } from '@/components/banners/WarningBanner';
-import { ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileModeControl } from './FileModeControl';
-import { FileError, SourceReplacedBanner } from './FileStates';
+import { FileError, SourceBanners } from './FileStates';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 
@@ -88,51 +86,35 @@ export default function SheetView({
           }
         />
       </div>
-      {runtime.error && (
-        <WarningBanner
-          action={
-            <>
-              {runtime.mode === 'view' && (
-                <ErrorAction
-                  iconLeftClassName="me-1"
-                  onClick={runtime.retryView}
-                  size="sm"
-                >
-                  {m.error_action_retry()}
-                </ErrorAction>
-              )}
-              {runtime.mode === 'edit' && (
-                <ErrorAction
-                  iconLeft="download"
-                  iconLeftClassName="me-1"
-                  onClick={() => {
+      <SourceBanners
+        actions={[
+          ...(runtime.mode === 'view'
+            ? [{ label: m.error_action_retry(), onClick: runtime.retryView }]
+            : [
+                {
+                  label: m.source_edit_download_draft(),
+                  onClick: () => {
                     void runtime.downloadDraft().catch(() => {});
-                  }}
-                  size="sm"
-                >
-                  {m.source_edit_download_draft()}
-                </ErrorAction>
-              )}
-              {runtime.status === 'recovery' && (
-                <ErrorAction
-                  disabled={runtime.discarding}
-                  iconLeft="trash"
-                  iconLeftClassName="me-1"
-                  onClick={() => {
+                  },
+                },
+              ]),
+          ...(runtime.status === 'recovery'
+            ? [
+                {
+                  disabled: runtime.discarding,
+                  label: m.source_edit_discard_draft(),
+                  onClick: () => {
                     void runtime.discardDraft();
-                  }}
-                  size="sm"
-                >
-                  {m.source_edit_discard_draft()}
-                </ErrorAction>
-              )}
-            </>
-          }
-          icon="fileError"
-          message={runtime.error}
-        />
-      )}
-      {runtime.replaced && <SourceReplacedBanner paused={runtime.paused} />}
+                  },
+                },
+              ]
+            : []),
+        ]}
+        error={runtime.error}
+        paused={runtime.paused}
+        pausedAtOpen={runtime.pausedAtOpen}
+        replaced={runtime.replaced}
+      />
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />

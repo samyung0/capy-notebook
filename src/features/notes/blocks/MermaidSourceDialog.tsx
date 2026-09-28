@@ -15,13 +15,11 @@ export default function MermaidSourceDialog({
   source,
   theme,
   onSave,
-  onRemove,
   onClose,
 }: {
   source: string;
   theme: MermaidTheme;
   onSave: (source: string) => void;
-  onRemove: () => void;
   onClose: () => void;
 }) {
   const {
@@ -39,20 +37,15 @@ export default function MermaidSourceDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} type="button" variant="ghost">
+          <Button
+            onClick={onClose}
+            size="lg"
+            type="button"
+            variant="ghost-hover"
+          >
             {m.action_cancel()}
           </Button>
-          <Button
-            onClick={() => {
-              onRemove();
-              onClose();
-            }}
-            type="button"
-            variant="danger-light"
-          >
-            {m.question_ui_remove_block()}
-          </Button>
-          <Button type="submit" variant="accent">
+          <Button size="lg" type="submit" variant="accent">
             {m.action_save()}
           </Button>
         </>
@@ -76,6 +69,24 @@ export default function MermaidSourceDialog({
                 {...field}
                 aria-label={m.editor_mermaid_source()}
                 className="min-h-72 flex-1 font-mono"
+                onKeyDown={(event) => {
+                  // Tab indents the source; Shift+Tab still leaves the field.
+                  if (
+                    event.key !== 'Tab' ||
+                    event.shiftKey ||
+                    event.nativeEvent.isComposing
+                  )
+                    return;
+                  event.preventDefault();
+                  const area = event.currentTarget;
+                  area.setRangeText(
+                    '  ',
+                    area.selectionStart,
+                    area.selectionEnd,
+                    'end'
+                  );
+                  field.onChange(area.value);
+                }}
               />
             )}
           />

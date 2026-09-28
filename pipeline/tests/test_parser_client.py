@@ -369,6 +369,21 @@ def test_oom_response_is_terminally_classified(monkeypatch, parser_url):
         parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
 
+@pytest.mark.parametrize(
+    ("code", "error"),
+    [
+        ("parse_too_many_scanned_pages", "ParserTooManyScannedPagesError"),
+        ("parse_too_many_pages", "ParserTooManyPagesError"),
+    ],
+)
+def test_page_limits_are_their_own_terminal_errors(
+    monkeypatch, parser_url, code, error
+):
+    _stub_request(monkeypatch, _Resp(422, {"code": code, "detail": "1500 pages"}))
+    with pytest.raises(getattr(parser_client, error), match="1500"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
 def test_parser_capacity_response_is_classified_without_becoming_terminal(
     monkeypatch, parser_url
 ):

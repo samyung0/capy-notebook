@@ -67,7 +67,7 @@ class Config:
     # one active parse job and one active ingest job without sharing databases.
     shared_capacity_lock_dir: str = _env("CAPY_SHARED_CAPACITY_LOCK_DIR", "")
     parse_coordinator_concurrency: int = int(
-        _env("CAPY_PARSE_COORDINATOR_CONCURRENCY", "4")
+        _env("CAPY_PARSE_COORDINATOR_CONCURRENCY", "8")
     )
     db_sync_pool_max_size: int = int(_env("CAPY_DB_SYNC_POOL_MAX_SIZE", "4"))
     db_async_pool_max_size: int = int(_env("CAPY_DB_ASYNC_POOL_MAX_SIZE", "8"))
@@ -113,19 +113,21 @@ class Config:
     # In production the ingest worker and parser both run on the Netcup ingest host.
     parser_url: str = _env("PARSER_URL", "")
     parser_token: str = _env("PARSER_TOKEN", "")
-    # One document request end to end, including its wait in the parser's
-    # FIFO. The parser's own per-document deadline (CAPY_PARSE_DOCUMENT_TIMEOUT,
-    # 600 s) is the hard stop that quarantines a fingerprint; the request can
-    # wait behind CAPY_PARSE_QUEUE_DEPTH - 1 such documents before its own run
-    # starts, so this bound is the depth (4) times the deadline plus a margin.
-    parser_timeout: int = int(_env("PARSER_TIMEOUT", "2520"))
+    # One document request end to end: its wait for a parse child and its
+    # parse, each bounded by CAPY_PARSE_DOCUMENT_TIMEOUT (900 s; with 8 queued
+    # over 5 children one wait round), then the OCR stage, where round robin
+    # reads at most the CAPY_PARSE_OCR_PAGE_CAP (500) admitted pages before
+    # this document's last one, at up to 5 s a page next to five 1,400-page
+    # parses (4.8 s measured 2026-09-28 with four OCR threads): 2 x 900 + 500 x 5
+    # + 120.
+    parser_timeout: int = int(_env("PARSER_TIMEOUT", "4420"))
     # The parser and ingest worker mount this directory on the Netcup ingest host.
     # Sources are job-scoped; parse bundles are fingerprint-addressed handoffs
     # deleted once their ingest continuation finishes.
     parse_shared_dir: str = _env("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
     # The parse job must outlive one parser call; the continuation has its own
     # smaller budget for embeddings and final bookkeeping.
-    parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "2700"))
+    parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "4600"))
     ingest_timeout: int = int(_env("CAPY_INGEST_TIMEOUT", "1200"))
     # Parser artifacts cross a container boundary and may contain highly
     # compressed text. Keep both the local zip and its extracted form bounded
@@ -327,8 +329,8 @@ if not 0 < cfg.import_job_timeout < 720:
 if not cfg.import_download_hosts:
     raise ValueError("CAPY_IMPORT_DOWNLOAD_HOSTS must name at least one host")
 
-if not 1 <= cfg.parse_coordinator_concurrency <= 4:
-    raise ValueError("CAPY_PARSE_COORDINATOR_CONCURRENCY must be between 1 and 4")
+if not 1 <= cfg.parse_coordinator_concurrency <= 8:
+    raise ValueError("CAPY_PARSE_COORDINATOR_CONCURRENCY must be between 1 and 8")
 
 if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
     raise ValueError("pipeline database pool limits must be positive")

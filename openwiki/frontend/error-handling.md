@@ -67,6 +67,14 @@ meta: { errorToast: false }
 and `too_many_streams`. The add-source dialog toasts it and keeps the unsent
 tail. Do not map it onto credits or the file-cap copy.
 
+Browser analysis of a fast-parse row reports inline on that row, never as a
+toast: one message each for a user-password PDF, a damaged file, more pages
+than the policy's `maxPages`, and more text-less PDF pages than 105% of
+`maxOcrPages` (all hold Add), a non-blocking warning from 95% of `maxOcrPages`,
+and the generic "could not be analyzed" only for transport errors and browser
+safety limits. `sourceAnalysisIssue` in `sourceDetails.ts` owns the rules; see
+[office-files.md](office-files.md).
+
 Abort errors and account-blocking errors are also excluded from the global
 mutation toast. Toast IDs are derived from the normalized error kind, so repeated
 failures of the same kind update/deduplicate instead of stacking. The global
@@ -107,11 +115,24 @@ does not also emit a global toast.
 
 ## Offline and paused work
 
-`ConnectionBanner` exposes offline state as
-`[data-connection-status="offline"]`. TanStack Query's `onlineManager` pauses
-network work until connectivity returns; loading UI should describe that it is
-waiting rather than escalating the pause to an error. Stream disconnections use
-the related `reconnecting` status.
+Nothing app-wide sits above the page, so connection and account state never
+shift the layout. The dashboard banner slot (`DashboardBanner`) shows one card
+at a time in place of the default banner: frozen, over-quota grace, offline,
+reconnecting (stream disconnected). The connection card carries
+`[data-connection-status="offline"]` or `"reconnecting"`. Suspended, deleted and
+deletion-pending accounts keep the full-screen `AccountBlockedScreen`.
+
+Inside a workspace, `WorkspaceHealth` raises one `userToast` per problem on
+arrival: offline (also whenever the browser goes offline there), the storage owner out
+of storage (worded for the owner or a member), or the reader's own frozen
+account when the owner is fine. The storage toast's Details action and the
+header's red triangle open the same details dialog. The file header status slot
+shows the triangle first, then a `wifiOff` icon while offline
+(`[data-connection-status="offline"]`), then the note save state.
+
+TanStack Query's `onlineManager` pauses network work until connectivity
+returns; loading UI should describe that it is waiting rather than escalating
+the pause to an error.
 
 ## Streaming failures
 
@@ -136,8 +157,17 @@ reconnects without the banner. An ingest `pending` or
 the affected file state and triggers a refetch. A file that finished without
 retrieval chunks (`indexed: false`, including ingest failure and
 `parseMode=none` store-only uploads) still renders its viewer. The center pane
-shows a pinned status banner (`[data-testid="file-not-indexed"]`) under the
-header instead of replacing the body with a full-page error.
+shows a status strip (`[data-testid="file-not-indexed"]`) under the header
+instead of replacing the body with a full-page error.
+
+File and material banners share `FileBanner`: a flat full-width strip with no
+leading icon and `text-fg` on a grey (info, ingest progress, newer version,
+maintenance pause) or red-tint (error) background, `role="status"` or
+`role="alert"` respectively. Its close button hides it until the message
+changes or the page remounts it. Actions are small ghost underlined buttons on a
+new line, aligned right. An Office or text source opened in edit mode while the
+maintenance pause refuses the session falls back to view mode in the same frame
+and shows the pause as a grey strip.
 
 A signed-in tab holds `GET /api/stream` open for its whole life, with
 `?workspace=` set on the workspace page. It carries three named SSE events:
@@ -268,8 +298,7 @@ PDF annotation-load failures use `userToast` with Retry to refetch private marks
 without reloading the PDF. The file viewer reports the request failure even
 while PDF bytes are loading or the PDF cannot render. Repeated failures reuse one toast per file; recovery
 or closing the viewer dismisses it. Office/text recovery and PDF annotation
-write errors use `WarningBanner`, with recovery actions supplied through its
-optional action slot. Statistics and
+write errors use `FileBanner`, with recovery actions passed as `actions`. Statistics and
 indexing tabs share an `ErrorState` panel with normalized copy and manual retry.
 
 Non-toast error actions use `ErrorAction` from `Button.tsx`: ghost-hover with the
@@ -278,8 +307,9 @@ their own semantic icon. File errors no longer override button
 radius or weight. User scenarios reaches these controls through application failures; the panel
 does not mount standalone error-container previews.
 
-`userToast` uses a compact inline layout with text-only actions aligned to the
-first title line, an inset close button and 8px gaps (6px on narrow screens).
+`userToast` uses a compact inline layout with a dark filled action button
+centred vertically, a small round close button on the top-left corner and 8px
+gaps (6px on narrow screens).
 Descriptions render only when present. Default, success, warning and error
 backgrounds use 70% opacity; text and status icons remain opaque. Error entrance
 motion, toast IDs, action callbacks and dismiss behavior are unchanged.
@@ -291,9 +321,8 @@ seeded material failures include load, decode and diagram-render errors.
 General error displays and warning banners default to `error` (`Alert02Icon`).
 The icon map no longer includes `warning` or imports `AlertCircleIcon`; warning
 toast/callout variants retain their colors and use the `error` glyph.
-`FileError` and `FileEmpty` use `fileError` (`FileExclamationPointIcon`). Office
-and source-text error/recovery banners explicitly request that icon through
-`WarningBanner`. `FileError` accepts an icon override: note edit-permission
+`FileError` and `FileEmpty` use `fileError` (`FileExclamationPointIcon`); file
+banners carry no icon. `FileError` accepts an icon override: note edit-permission
 failures use `securityWarning`, while user-info and collaboration-service
 failures use `error`. Normalized network/offline and permission icons remain
 specific to their causes.

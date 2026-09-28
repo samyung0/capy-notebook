@@ -4,15 +4,23 @@ The caller owns artifact identity and caching. The worker and parser share a
 local spool: this service reads one source key and atomically publishes one
 fingerprint-addressed zip key without a B2 round trip.
 
-Documents run one at a time through OpenDataLoader plus the native repairs in
-``odl/`` (and RapidOCR on pages without a text layer); up to four documents wait
-in a FIFO queue. A document that exceeds its hard deadline is quarantined by
-fingerprint and the process exits so Docker replaces it.
+Two stages. CAPY_PARSE_WORKERS persistent parse children each run one document
+at a time through OpenDataLoader plus the native repairs in ``odl/``, waiting
+documents in one FIFO. A document with pages lacking a text layer then frees
+its child and joins the OCR stage, where one OCR process that owns the RapidOCR
+and layout models reads one page per waiting document per turn.
+CAPY_PARSE_QUEUE_DEPTH bounds the documents in both stages plus the FIFO, and
+CAPY_PARSE_OCR_PAGE_CAP the text-less pages admitted; CAPY_PARSE_MAX_PAGES
+refuses a longer document outright. A document past its parse
+deadline or OOM-killed is quarantined by fingerprint and only its parse child is
+replaced; one with a page past its OCR limit is quarantined the same way.
 """
 
 from __future__ import annotations
 
 import asyncio
+import ctypes
+import gc
 import hashlib
 import hmac
 import io
@@ -29,9 +37,9 @@ import tempfile
 import time
 import zipfile
 from collections import deque
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from multiprocessing.connection import Connection
 from pathlib import Path, PurePosixPath
@@ -39,8 +47,7 @@ from typing import Any, NoReturn
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from odl.java import JavaTimeout
-from starlette.background import BackgroundTask
+from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
 PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v11"
@@ -83,23 +90,48 @@ MAX_ARTIFACT_EXPANDED_BYTES = int(
 )
 MAX_CONTENT_BYTES = int(os.environ.get("CAPY_PARSE_CONTENT_MAX_BYTES", str(128 << 20)))
 MAX_CONTENT_BLOCKS = int(os.environ.get("CAPY_PARSE_CONTENT_MAX_BLOCKS", "250000"))
-# Documents waiting plus the one executing. Matches the four parse coordinator
-# processes an ingest host runs; a fifth request is answered 429.
-QUEUE_DEPTH = int(os.environ.get("CAPY_PARSE_QUEUE_DEPTH", "4"))
-# Wall clock for one document's parse, started when it leaves the queue. The
-# Java step gets the remaining budget as its own subprocess timeout; the Python
-# repairs are bounded by the same timer and end in a process restart.
+# Documents admitted: in a parse child, in the OCR stage or waiting for a child.
+# One request more is answered 429.
+QUEUE_DEPTH = int(os.environ.get("CAPY_PARSE_QUEUE_DEPTH", "8"))
+# Persistent parse children, one document each. The compose files set it; there
+# is no default here because the capacity test picks the production value.
+PARSE_WORKERS = int(os.environ.get("CAPY_PARSE_WORKERS") or 0)
+# Wall clock for one document in its parse child, started when it leaves the
+# queue and ended by the handoff to the OCR stage. The Java step gets the
+# remaining budget as its own subprocess timeout.
 PARSE_DOCUMENT_TIMEOUT_S = max(
-    1, int(os.environ.get("CAPY_PARSE_DOCUMENT_TIMEOUT", "600"))
+    1, int(os.environ.get("CAPY_PARSE_DOCUMENT_TIMEOUT", "900"))
 )
+# The OCR stage has no document clock: each page gets this long in the OCR
+# process (queue wait does not count), and a page past it fails its document
+# like a hard timeout.
+OCR_PAGE_TIMEOUT_S = max(1, int(os.environ.get("CAPY_PARSE_OCR_PAGE_TIMEOUT", "60")))
+# Text-less pages admitted and not yet read, across all documents. A document
+# that would pass it waits (429); one with more such pages alone is refused.
+OCR_PAGE_CAP = int(os.environ.get("CAPY_PARSE_OCR_PAGE_CAP", "500"))
+# Pages in one document. The API serves the same value in the upload policy,
+# so there is no default here: the compose files pass the shared env value.
+MAX_PAGES = int(os.environ.get("CAPY_PARSE_MAX_PAGES") or 0)
 RESTART_BACKSTOP_S = 1.0
-OOM_POLL_INTERVAL_S = 0.25
+# The kernel OOM-kills the highest oom_score first: a parse child (one document)
+# before the shared OCR process (every document waiting on OCR), before the API.
+PARSE_OOM_SCORE_ADJ = 1000
+OCR_OOM_SCORE_ADJ = 500
+# One OCR process death fails the documents in the OCR stage; this many in a
+# row, with no page answered in between, restart the whole parser.
+OCR_DEATH_LIMIT = 3
 SHARED_DIR = Path(
     os.environ.get("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
 ).resolve()
 WORK_DIR = Path(os.environ.get("CAPY_PARSE_WORK_DIR", "/run/capy-parser/work"))
 if not 1 <= QUEUE_DEPTH <= 16:
     raise RuntimeError("CAPY_PARSE_QUEUE_DEPTH must be between 1 and 16")
+if MAX_PAGES < 1:
+    raise RuntimeError("CAPY_PARSE_MAX_PAGES must be set to a positive page count")
+if not 1 <= PARSE_WORKERS <= QUEUE_DEPTH:
+    raise RuntimeError(
+        "CAPY_PARSE_WORKERS must be set between 1 and CAPY_PARSE_QUEUE_DEPTH"
+    )
 if any(
     value <= 0
     for value in (
@@ -109,6 +141,7 @@ if any(
         MAX_ARTIFACT_EXPANDED_BYTES,
         MAX_CONTENT_BYTES,
         MAX_CONTENT_BLOCKS,
+        OCR_PAGE_CAP,
     )
 ):
     raise RuntimeError("parser byte/count limits must be positive")
@@ -138,8 +171,23 @@ class ParserCapacity(RuntimeError):
     pass
 
 
+class ParseTooManyScannedPages(RuntimeError):
+    pass
+
+
+class ParseTooManyPages(RuntimeError):
+    pass
+
+
+def _check_page_count(pages: int) -> None:
+    if pages > MAX_PAGES:
+        raise ParseTooManyPages(
+            f"{pages} pages; the parser reads at most {MAX_PAGES} pages per file"
+        )
+
+
 def _terminate_process() -> NoReturn:
-    """Let the container supervisor replace a timed-out parser process."""
+    """Let the container supervisor replace a parser that failed as a whole."""
     os._exit(1)
 
 
@@ -148,14 +196,25 @@ def _schedule_restart_backstop() -> None:
     asyncio.get_running_loop().call_later(RESTART_BACKSTOP_S, _terminate_process)
 
 
+class _ChildExited(ParserRuntimeFailure):
+    """A child's pipe closed: it died. ``exitcode`` is -9 for SIGKILL."""
+
+    def __init__(self, message: str, exitcode: int | None = None) -> None:
+        super().__init__(message)
+        self.exitcode = exitcode
+
+
 @dataclass
 class _QueuedDocument:
     document: Document
     enqueued_at: float
     future: asyncio.Future[tuple[dict[str, Any], int]]
     started_at: float | None = None
-    timed_out: bool = False
-    released: bool = False
+    # The cgroup's oom_kill count when the document started executing.
+    oom_kills: int = 0
+    # Text-less pages still to read: the source's count at admission, the
+    # parsed PDF's at the handoff, then counting down.
+    ocr_pages: int = 0
 
 
 def _cgroup_event_value(name: str) -> int:
@@ -174,8 +233,13 @@ def _cgroup_event_value(name: str) -> int:
     return max(0, values.get(name, 0))
 
 
-def run_document(document: Document) -> dict[str, Any]:
-    """Normalise, parse and shape one document inside the parse child."""
+def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, Any]:
+    """Normalise, parse and shape one document inside the parse child.
+
+    With ``ocr_path`` the text-less pages (``_ocr_pages``) are left for the OCR
+    stage: the parsed PDF goes to ``ocr_path`` and ``_merge_ocr`` finishes the
+    result. Without it (bench scripts) OCR runs here.
+    """
     from odl.document import normalize_document
 
     normalized = normalize_document(document.data, document.name)
@@ -183,13 +247,21 @@ def run_document(document: Document) -> dict[str, Any]:
         from odl.capture import capture_page
 
         return capture_page(normalized.data, **document.capture)
+    if normalized.preview_pdf is not None:
+        from odl.document import pdf_page_count
+
+        # Office pages exist only after LibreOffice; PDFs were counted at admission.
+        _check_page_count(pdf_page_count(normalized.data))
     from odl.refine import parse_pdf
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="doc-", dir=WORK_DIR))
     try:
         output = parse_pdf(
-            normalized.data, work, java_timeout_s=PARSE_DOCUMENT_TIMEOUT_S
+            normalized.data,
+            work,
+            java_timeout_s=PARSE_DOCUMENT_TIMEOUT_S,
+            read_ocr=ocr_path is None,
         )
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -203,27 +275,114 @@ def run_document(document: Document) -> dict[str, Any]:
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
     }
+    pending = ocr_path is not None and bool(output.ocr_pages)
+    if pending:
+        # The bytes of the work-dir PDF every repair read.
+        ocr_path.write_bytes(output.parsed_pdf or normalized.data)
     if normalized.preview_pdf is not None:
-        from odl.evidence import page_evidence
+        if pending:
+            result["_evidence_pending"] = True  # Needs the OCR lines.
+        else:
+            from odl.evidence import page_evidence
 
-        result["_page_evidence"] = page_evidence(
-            output.parsed_pdf or normalized.data, output.content_list
-        )
+            result["_page_evidence"] = page_evidence(
+                output.parsed_pdf or normalized.data, output.content_list
+            )
     elif output.parsed_pdf is not None:
         result["_parsed_pdf"] = output.parsed_pdf
     return result
 
 
-def _parse_worker_main(requests: Connection, responses: Connection) -> None:
-    """Keep parser models in one disposable child while the API stays alive."""
+def _merge_ocr(
+    result_path: Path, pdf_path: Path, lines: dict[int, list[dict]]
+) -> dict[str, Any]:
+    """Finish a document the OCR stage read: the same merges, in page order,
+    that ``ocr.add_ocr_text`` makes, then any Office evidence."""
+    from odl import ocr
+
+    result = _read_worker_result(result_path)
+    blocks = result["content_list"]
+    for page_idx in result["_ocr_pages"]:
+        blocks = ocr.merge(blocks, page_idx, lines[page_idx])
+    result["content_list"] = blocks
+    if result.pop("_evidence_pending", False):
+        from odl.evidence import page_evidence
+
+        result["_page_evidence"] = page_evidence(pdf_path.read_bytes(), blocks)
+    return result
+
+
+def _admission_pages(data: bytes) -> tuple[int, int]:
+    """Admission's cheap counts: pages, and text-less pages by the test
+    ``ocr.textless_pages`` applies.
+
+    Office sources count none here (their PDF exists only after LibreOffice):
+    the parse child checks their page count after conversion, and its exact
+    text-less count replaces this one at the handoff.
+    """
+    if not data.lstrip().startswith(b"%PDF"):
+        return 0, 0
+    import pymupdf
+    from odl import ocr
+
+    try:
+        with pymupdf.open(stream=data, filetype="pdf") as document:
+            if len(document) > MAX_PAGES:
+                return len(document), 0  # Refused on the page count alone.
+            return len(document), len(ocr.textless_pages(document))
+    except Exception:  # noqa: BLE001 - the parse itself reports a broken PDF
+        return 0, 0
+
+
+def _release_memory() -> None:
+    """Hand the heap a finished unit of work freed back to the kernel.
+
+    glibc keeps freed arenas (about 0.8 GiB after a large document) otherwise.
+    """
+    gc.collect()
+    try:
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except (OSError, AttributeError):
+        pass  # Not glibc (macOS development).
+
+
+def _set_oom_score_adj(value: int) -> None:
+    try:
+        Path("/proc/self/oom_score_adj").write_text(str(value), encoding="ascii")
+    except OSError:
+        pass
+
+
+def _send_error(connection: Connection, exc: Exception) -> None:
+    try:
+        connection.send(("error", exc))
+    except Exception:  # noqa: BLE001 - replace an unpicklable exception
+        connection.send(("error", RuntimeError(f"{type(exc).__name__}: {exc}")))
+
+
+def _kill_session(sid: int) -> None:
+    """SIGKILL what is left of a parse child's session, where LibreOffice runs
+    in a group of its own (Linux /proc; elsewhere a no-op)."""
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            if int(stat.read_text().rsplit(")", 1)[1].split()[3]) == sid:
+                os.kill(int(stat.parent.name), signal.SIGKILL)
+        except (OSError, ValueError, IndexError):
+            continue
+
+
+def _parse_worker_main(
+    requests: Connection, responses: Connection, work_dir: str
+) -> None:
+    """One parse slot: documents in, file-backed results out. The reply names
+    the text-less pages left for the OCR stage."""
+    global WORK_DIR
     try:
         os.setsid()
     except OSError:
         pass
-    try:
-        Path("/proc/self/oom_score_adj").write_text("1000", encoding="ascii")
-    except OSError:
-        pass
+    _set_oom_score_adj(PARSE_OOM_SCORE_ADJ)
+    WORK_DIR = Path(work_dir)
 
     while True:
         try:
@@ -232,24 +391,53 @@ def _parse_worker_main(requests: Connection, responses: Connection) -> None:
             return
         if request is None:
             return
-        source_path, result_path, name, fingerprint, capture = request
+        source_path, result_path, ocr_path, name, fingerprint, capture = request
         document = None
         result = None
         try:
             document = Document(
                 Path(source_path).read_bytes(), name, fingerprint, capture
             )
-            result = run_document(document)
+            result = run_document(document, Path(ocr_path))
             with Path(result_path).open("wb") as output:
                 pickle.dump(result, output, protocol=pickle.HIGHEST_PROTOCOL)
-            responses.send(("ok", None))
+            responses.send(("ok", result.get("_ocr_pages") or []))
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
-            try:
-                responses.send(("error", exc))
-            except Exception:  # noqa: BLE001 - replace an unpicklable exception
-                responses.send(("error", RuntimeError(f"{type(exc).__name__}: {exc}")))
+            _send_error(responses, exc)
         finally:
             document = result = None
+            _release_memory()
+
+
+def _ocr_worker_main(requests: Connection, responses: Connection) -> None:
+    """The only process that loads the OCR models; reads one page per request."""
+    _set_oom_score_adj(OCR_OOM_SCORE_ADJ)
+    from odl import ocr
+
+    while True:
+        try:
+            request = requests.recv()
+        except EOFError:
+            return
+        if request is None:
+            return
+        try:
+            responses.send(("ok", ocr.read_page(*request)))
+        except Exception as exc:  # noqa: BLE001 - returned to the waiting document
+            _send_error(responses, exc)
+        finally:
+            _release_memory()
+
+
+def _unwrap(message: tuple[str, Any]) -> Any:
+    status, payload = message
+    if status == "error":
+        if isinstance(payload, BaseException):
+            raise payload
+        raise RuntimeError("parser child returned an invalid error")
+    if status != "ok":
+        raise RuntimeError("parser child returned an invalid response")
+    return payload
 
 
 def _temporary_file(suffix: str) -> Path:
@@ -259,31 +447,25 @@ def _temporary_file(suffix: str) -> Path:
     return Path(name)
 
 
-class _ParseWorkerProcess:
-    """Persistent spawned child with file-backed messages for large results."""
+class _Child:
+    """A persistent spawned child with one request and one response pipe."""
 
-    def __init__(self) -> None:
+    def __init__(self, target: Callable[..., None], *args: str, name: str) -> None:
+        self._target = target
+        self._args = args
+        self._name = name
         self._process: multiprocessing.Process | None = None
         self._requests: Connection | None = None
         self._responses: Connection | None = None
 
     def start(self) -> None:
-        WORK_DIR.mkdir(parents=True, exist_ok=True)
-        for path in (*WORK_DIR.glob("doc-*"), *WORK_DIR.glob("transfer-*")):
-            if path.is_dir():
-                shutil.rmtree(path, ignore_errors=True)
-            else:
-                try:
-                    path.unlink()
-                except FileNotFoundError:
-                    pass
         context = multiprocessing.get_context("spawn")
         child_requests, self._requests = context.Pipe(duplex=False)
         self._responses, child_responses = context.Pipe(duplex=False)
         self._process = context.Process(
-            target=_parse_worker_main,
-            args=(child_requests, child_responses),
-            name="parser-document-worker",
+            target=self._target,
+            args=(child_requests, child_responses, *self._args),
+            name=self._name,
         )
         self._process.start()
         child_requests.close()
@@ -293,62 +475,44 @@ class _ParseWorkerProcess:
     def alive(self) -> bool:
         return self._process is not None and self._process.is_alive()
 
-    async def run(self, document: Document) -> dict[str, Any]:
-        if not self.alive:
-            raise ParserRuntimeFailure("parser child process is not running")
-        source_path = await asyncio.to_thread(_temporary_file, ".source")
-        result_path = await asyncio.to_thread(_temporary_file, ".result")
+    def _exit_code(self) -> int | None:
+        if self._process is None:
+            return None
+        self._process.join(timeout=5)
+        return self._process.exitcode
+
+    async def _exited(self) -> _ChildExited:
+        code = await asyncio.to_thread(self._exit_code)
+        return _ChildExited(f"{self._name} exited unexpectedly (code {code})", code)
+
+    async def send(self, message: object) -> None:
+        if self._requests is None:
+            raise ParserRuntimeFailure(f"{self._name} is not running")
         try:
-            await asyncio.to_thread(source_path.write_bytes, document.data)
-            if self._requests is None or self._responses is None:
-                raise ParserRuntimeFailure("parser child connections are unavailable")
-            try:
-                await asyncio.to_thread(
-                    self._requests.send,
-                    (
-                        str(source_path),
-                        str(result_path),
-                        document.name,
-                        document.fingerprint,
-                        document.capture,
-                    ),
-                )
-            except (BrokenPipeError, EOFError, OSError) as exc:
-                raise ParserRuntimeFailure(
-                    "parser child process exited before accepting the document"
-                ) from exc
-            try:
-                status, payload = await asyncio.to_thread(self._responses.recv)
-            except (EOFError, OSError) as exc:
-                code = self._process.exitcode if self._process is not None else None
-                raise ParserRuntimeFailure(
-                    f"parser child process exited unexpectedly (code {code})"
-                ) from exc
-            if status == "error":
-                if isinstance(payload, BaseException):
-                    raise payload
-                raise RuntimeError("parser child returned an invalid error")
-            if status != "ok":
-                raise RuntimeError("parser child returned an invalid response")
-            return await asyncio.to_thread(_read_worker_result, result_path)
-        finally:
-            for path in (source_path, result_path):
-                try:
-                    path.unlink()
-                except FileNotFoundError:
-                    pass
+            await asyncio.to_thread(self._requests.send, message)
+        except (BrokenPipeError, EOFError, OSError) as exc:
+            raise await self._exited() from exc
+
+    async def recv(self) -> Any:
+        if self._responses is None:
+            raise ParserRuntimeFailure(f"{self._name} is not running")
+        try:
+            return await asyncio.to_thread(self._responses.recv)
+        except (EOFError, OSError) as exc:
+            raise await self._exited() from exc
 
     def terminate(self) -> None:
+        """SIGKILL the child and everything left in its session."""
         process = self._process
-        if process is None or not process.is_alive():
+        if process is None or process.pid is None:
             return
+        if process.is_alive():
+            process.kill()
         try:
-            if os.getpgid(process.pid) == process.pid:
-                os.killpg(process.pid, signal.SIGTERM)
-                return
-        except (OSError, TypeError):
+            os.killpg(process.pid, signal.SIGKILL)  # Java runs in its group.
+        except OSError:
             pass
-        process.terminate()
+        _kill_session(process.pid)
 
     def stop(self) -> None:
         process = self._process
@@ -361,16 +525,69 @@ class _ParseWorkerProcess:
             except (BrokenPipeError, EOFError, OSError):
                 pass
             process.join(timeout=1)
-        if process.is_alive():
-            self.terminate()
-            process.join(timeout=1)
-        if process.is_alive():
-            process.kill()
-            process.join(timeout=1)
+        self.terminate()  # Also ends Java or LibreOffice a dead child left.
+        process.join(timeout=1)
         for connection in (self._requests, self._responses):
             if connection is not None:
                 connection.close()
-        self._process = None
+        self._process = self._requests = self._responses = None
+
+
+class _ParseWorkerProcess(_Child):
+    """One parse slot's child with file-backed messages for large results."""
+
+    def __init__(self, slot: int) -> None:
+        self.work_dir = WORK_DIR / f"slot-{slot}"
+        super().__init__(
+            _parse_worker_main, str(self.work_dir), name=f"parse child {slot}"
+        )
+
+    def start(self) -> None:
+        # A killed child leaves its document directory behind.
+        shutil.rmtree(self.work_dir, ignore_errors=True)
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        super().start()
+
+    async def run(
+        self, document: Document, result_path: Path, ocr_path: Path
+    ) -> list[int]:
+        """Parse into ``result_path``; return the pages left for OCR, whose
+        PDF the child wrote to ``ocr_path``."""
+        if not self.alive:
+            raise ParserRuntimeFailure(f"{self._name} is not running")
+        source_path = await asyncio.to_thread(_temporary_file, ".source")
+        try:
+            await asyncio.to_thread(source_path.write_bytes, document.data)
+            await self.send(
+                (
+                    str(source_path),
+                    str(result_path),
+                    str(ocr_path),
+                    document.name,
+                    document.fingerprint,
+                    document.capture,
+                )
+            )
+            return _unwrap(await self.recv())
+        finally:
+            _unlink(source_path)
+
+
+class _OCRProcess(_Child):
+    def __init__(self) -> None:
+        super().__init__(_ocr_worker_main, name="OCR process")
+
+    async def page(self, pdf: str, page_idx: int) -> list[dict]:
+        await self.send((pdf, page_idx))
+        return _unwrap(await self.recv())
+
+
+def _unlink(*paths: Path) -> None:
+    for path in paths:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _read_worker_result(path: Path) -> dict[str, Any]:
@@ -381,166 +598,192 @@ def _read_worker_result(path: Path) -> dict[str, Any]:
     return result
 
 
+def _clear_work_dir() -> None:
+    """Startup removes what an earlier parser process abandoned."""
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    for path in (
+        *WORK_DIR.glob("doc-*"),
+        *WORK_DIR.glob("slot-*"),
+        *WORK_DIR.glob("transfer-*"),
+    ):
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            _unlink(path)
+
+
+@dataclass
+class _Slot:
+    index: int
+    process: _ParseWorkerProcess
+    work: _QueuedDocument | None = None
+    deadline: asyncio.TimerHandle | None = None
+    # Set when the slot's document was ended; the child is replaced before the
+    # next document.
+    restart: bool = False
+    task: asyncio.Task[None] | None = None
+
+
+@dataclass
+class _OCRDocument:
+    """A document whose parse is done and whose text-less pages wait for OCR.
+    Its blocks stay in the child's result file until the last page is read."""
+
+    work: _QueuedDocument
+    result_path: Path
+    pdf_path: Path
+    pages: list[int]
+    queue_ms: int
+    lines: dict[int, list[dict]] = field(default_factory=dict)
+    ocr_s: float = 0.0
+
+
 class ParserRuntime:
-    """One worker over a bounded FIFO of documents."""
+    """PARSE_WORKERS parse children over one bounded FIFO, then an OCR stage:
+    one OCR process reading one page per waiting document per turn."""
 
     def __init__(
         self,
-        runner: Callable[[Document], Awaitable[dict[str, Any]]] | None = None,
+        parse_process: Callable[[int], _ParseWorkerProcess] = _ParseWorkerProcess,
+        ocr_process: Callable[[], _OCRProcess] = _OCRProcess,
     ) -> None:
         self.started_at = time.monotonic()
         self.state = "starting"
         self.active_jobs = 0
-        self._runner = runner
-        self._parse_process: _ParseWorkerProcess | None = None
+        self._new_parse_process = parse_process
+        self._new_ocr_process = ocr_process
         self._queue: deque[_QueuedDocument] = deque()
-        self._current: _QueuedDocument | None = None
         self._condition = asyncio.Condition()
-        self._worker: asyncio.Task[None] | None = None
-        self._oom_monitor: asyncio.Task[None] | None = None
-        self._deadline: asyncio.TimerHandle | None = None
+        self._slots: list[_Slot] = []
+        self._ocr: _OCRProcess | None = None
+        # Round robin: the document at the left gets the next page, then moves
+        # to the right end.
+        self._ocr_docs: deque[_OCRDocument] = deque()
+        self._ocr_ready = asyncio.Event()
+        self._ocr_task: asyncio.Task[None] | None = None
         self._last_completed_at: float | None = None
-        self._oom_kill_events = 0
         self.documents_completed = 0
 
     async def start(self) -> None:
-        self._oom_kill_events = _cgroup_event_value("oom_kill")
-        if self._runner is None:
-            self._parse_process = _ParseWorkerProcess()
-            self._parse_process.start()
-        self._worker = asyncio.create_task(self._run(), name="parser-worker")
-        self._worker.add_done_callback(self._worker_done)
-        self._oom_monitor = asyncio.create_task(
-            self._watch_oom_kills(), name="parser-oom-monitor"
-        )
+        await asyncio.to_thread(_clear_work_dir)
+        self._ocr = self._new_ocr_process()
+        self._ocr.start()
+        self._ocr_task = asyncio.create_task(self._serve_ocr(), name="OCR stage")
+        self._ocr_task.add_done_callback(self._task_done)
+        for index in range(PARSE_WORKERS):
+            slot = _Slot(index, self._new_parse_process(index))
+            slot.process.start()
+            slot.task = asyncio.create_task(
+                self._run_slot(slot), name=f"parse slot {index}"
+            )
+            slot.task.add_done_callback(self._task_done)
+            self._slots.append(slot)
         self.state = "ready"
 
     async def close(self) -> None:
         self.state = "stopping"
-        if self._deadline is not None:
-            self._deadline.cancel()
-            self._deadline = None
-        for task in (self._oom_monitor, self._worker):
+        tasks = [slot.task for slot in self._slots] + [self._ocr_task]
+        for slot in self._slots:
+            if slot.deadline is not None:
+                slot.deadline.cancel()
+        for task in tasks:
             if task is not None:
                 task.cancel()
-                await asyncio.gather(task, return_exceptions=True)
+        await asyncio.gather(
+            *(t for t in tasks if t is not None), return_exceptions=True
+        )
         for waiting in self._queue:
-            if not waiting.future.done():
-                waiting.future.cancel()
-            self._release(waiting)
+            waiting.future.cancel()
         self._queue.clear()
-        if self._parse_process is not None:
-            await asyncio.to_thread(self._parse_process.stop)
-            self._parse_process = None
-        self._oom_monitor = self._worker = None
+        while self._ocr_docs:
+            doc = self._ocr_docs.popleft()
+            doc.work.future.cancel()
+            _unlink(doc.result_path, doc.pdf_path)
+        children = [slot.process for slot in self._slots] + [self._ocr]
+        for child in children:
+            if child is not None:
+                await asyncio.to_thread(child.stop)
+        self._slots = []
+        self._ocr = self._ocr_task = None
 
     @property
     def ready(self) -> bool:
-        child_ready = self._runner is not None or (
-            self._parse_process is not None and self._parse_process.alive
+        tasks = [slot.task for slot in self._slots] + [self._ocr_task]
+        return self.state == "ready" and all(
+            task is not None and not task.done() for task in tasks
         )
-        return self.state == "ready" and self._worker is not None and child_ready
 
-    def _worker_done(self, worker: asyncio.Task[None]) -> None:
-        if self.state == "stopping" or worker.cancelled():
+    def _task_done(self, task: asyncio.Task[None]) -> None:
+        if self.state == "stopping" or task.cancelled():
             return
-        try:
-            exc = worker.exception()
-        except asyncio.CancelledError:
-            return
-        detail = (
-            "parser worker exited unexpectedly"
-            if exc is None
-            else f"parser worker exited: {exc}"
+        exc = task.exception()
+        self._fail_runtime(
+            ParserRuntimeFailure(
+                f"{task.get_name()} exited"
+                + (f": {exc}" if exc is not None else " unexpectedly")
+            )
         )
-        self._fail_runtime(ParserRuntimeFailure(detail))
 
-    def _pending(self) -> list[_QueuedDocument]:
-        pending = list(self._queue)
-        if self._current is not None:
-            pending.insert(0, self._current)
-        return pending
+    def _finished(self, work: _QueuedDocument) -> None:
+        """A document's answer is set: it leaves admission."""
+        if not work.future.cancelled():
+            work.future.exception()  # Retrieved: the request may be gone.
+        self.active_jobs -= 1
+        if work.started_at is not None:
+            self.documents_completed += 1
+            self._last_completed_at = asyncio.get_running_loop().time()
 
-    def _release(self, work: _QueuedDocument) -> None:
-        if work.released:
-            return
-        work.released = True
-        self.active_jobs = max(0, self.active_jobs - 1)
-
-    @staticmethod
-    def _consume_future(future: asyncio.Future[tuple[dict[str, Any], int]]) -> None:
-        if not future.cancelled():
-            future.exception()
-
-    def _fail_runtime(self, exc: Exception) -> None:
-        if self.state == "stopping":
+    def _fail_runtime(self, exc: ParserRuntimeFailure) -> None:
+        """A process-wide failure: fail everything and let Docker restart us."""
+        if self.state in {"stopping", "failed"}:
             return
         self.state = "failed"
-        if self._parse_process is not None:
-            self._parse_process.terminate()
-        current = self._current
-        if current is not None and not current.future.done():
-            current.future.set_exception(type(exc)(str(exc)))
+        detail = str(exc)
+        for slot in self._slots:
+            slot.process.terminate()
+            if slot.work is not None and not slot.work.future.done():
+                slot.work.future.set_exception(ParserRuntimeFailure(detail))
+        if self._ocr is not None:
+            self._ocr.terminate()
+        self._fail_ocr_stage(detail)
         for waiting in self._queue:
             if not waiting.future.done():
-                waiting.future.set_exception(type(exc)(str(exc)))
-            self._release(waiting)
+                waiting.future.set_exception(ParserRuntimeFailure(detail))
         self._queue.clear()
         _schedule_restart_backstop()
 
-    async def _watch_oom_kills(self) -> None:
-        while True:
-            await asyncio.sleep(OOM_POLL_INTERVAL_S)
-            current = _cgroup_event_value("oom_kill")
-            if current > self._oom_kill_events:
-                self._record_oom_kill(current)
-            elif (
-                self._parse_process is not None
-                and not self._parse_process.alive
-                and self.state == "ready"
-            ):
-                self._fail_runtime(
-                    ParserRuntimeFailure("parser child process exited unexpectedly")
-                )
+    def _active(self) -> list[_QueuedDocument]:
+        return [
+            *self._queue,
+            *(slot.work for slot in self._slots if slot.work is not None),
+            *(doc.work for doc in self._ocr_docs),
+        ]
 
-    def _record_oom_kill(self, current: int) -> None:
-        if current <= self._oom_kill_events:
-            return
-        self._oom_kill_events = current
-        self.state = "failed"
-        if self._parse_process is not None:
-            self._parse_process.terminate()
-        detail = "parser cgroup killed a process because it ran out of memory"
-        pending = self._pending()
-        for work in pending:
-            active = work is self._current and not work.future.done()
-            if active and work.document.fingerprint:
-                try:
-                    _write_quarantine(work.document.fingerprint, "parse_oom", detail)
-                except OSError as exc:
-                    print(f"could not write parser OOM marker: {exc}", flush=True)
-            error: Exception = (
-                ParseOOM(detail)
-                if active
-                else ParserRuntimeFailure("parser restarted after an OOM kill")
-            )
-            if not work.future.done():
-                work.future.set_exception(type(error)(str(error)))
-            if work is not self._current:
-                self._release(work)
-        self._queue.clear()
-        _schedule_restart_backstop()
-
-    async def parse(self, document: Document) -> tuple[dict[str, Any], int]:
+    async def parse(
+        self, document: Document, ocr_pages: int = 0, pages: int = 0
+    ) -> tuple[dict[str, Any], int]:
+        """Admit a document with ``pages`` pages, ``ocr_pages`` of them
+        estimated text-less (both 0 for Office, checked in the parse child)."""
         if not self.ready:
             raise RuntimeError("parser is not ready")
+        _check_page_count(pages)
+        if ocr_pages > OCR_PAGE_CAP:
+            raise ParseTooManyScannedPages(
+                f"{ocr_pages} pages have no text layer; "
+                f"the parser reads at most {OCR_PAGE_CAP}"
+            )
         loop = asyncio.get_running_loop()
         async with self._condition:
             if self.active_jobs >= QUEUE_DEPTH:
                 raise ParserCapacity("parser document queue is full")
+            backlog = sum(work.ocr_pages for work in self._active())
+            if ocr_pages and backlog + ocr_pages > OCR_PAGE_CAP:
+                raise ParserCapacity("parser OCR backlog is full")
             self.active_jobs += 1
-            work = _QueuedDocument(document, time.perf_counter(), loop.create_future())
-            work.future.add_done_callback(self._consume_future)
+            work = _QueuedDocument(
+                document, time.perf_counter(), loop.create_future(), ocr_pages=ocr_pages
+            )
+            work.future.add_done_callback(lambda _: self._finished(work))
             self._queue.append(work)
             self._condition.notify_all()
         try:
@@ -550,7 +793,6 @@ class ParserRuntime:
                 if work in self._queue:
                     self._queue.remove(work)
                     work.future.cancel()
-                    self._release(work)
             raise
 
     async def _next(self) -> _QueuedDocument:
@@ -559,86 +801,221 @@ class ParserRuntime:
                 await self._condition.wait()
             return self._queue.popleft()
 
-    def _expire(self, work: _QueuedDocument) -> None:
-        if work is not self._current or work.timed_out or work.future.done():
-            return
-        work.timed_out = True
-        detail = f"parse exceeded {PARSE_DOCUMENT_TIMEOUT_S} seconds"
-        if self._parse_process is not None:
-            self._parse_process.terminate()
-        if work.document.fingerprint:
-            try:
-                _write_quarantine(
-                    work.document.fingerprint, "parse_hard_timeout", detail
-                )
-            except OSError as exc:
-                print(f"could not write parser timeout marker: {exc}", flush=True)
-        self.state = "failed"
-        work.future.set_exception(ParseHardTimeout(detail))
-        for waiting in self._queue:
-            if not waiting.future.done():
-                waiting.future.set_exception(
-                    ParserRuntimeFailure("parser restarted after a hard timeout")
-                )
-            self._release(waiting)
-        self._queue.clear()
-        _schedule_restart_backstop()
-
-    async def _run(self) -> None:
+    async def _run_slot(self, slot: _Slot) -> None:
         loop = asyncio.get_running_loop()
         while True:
-            work = await self._next()
-            if work.future.done():
-                self._release(work)
-                continue
-            queue_ms = max(0, round((time.perf_counter() - work.enqueued_at) * 1000))
-            self._current = work
-            work.started_at = loop.time()
-            self._deadline = loop.call_later(
-                PARSE_DOCUMENT_TIMEOUT_S, self._expire, work
-            )
+            # Made before taking a document, so documents start in FIFO order.
+            result_path = await asyncio.to_thread(_temporary_file, ".result")
+            ocr_path = await asyncio.to_thread(_temporary_file, ".pdf")
             try:
-                if self._runner is not None:
-                    result = await self._runner(work.document)
-                elif self._parse_process is not None:
-                    result = await self._parse_process.run(work.document)
+                work = await self._next()
+                while work.future.done():
+                    work = await self._next()
+            except asyncio.CancelledError:
+                _unlink(result_path, ocr_path)
+                raise
+            queue_ms = max(0, round((time.perf_counter() - work.enqueued_at) * 1000))
+            slot.work = work
+            work.started_at = loop.time()
+            work.oom_kills = _cgroup_event_value("oom_kill")
+            slot.deadline = loop.call_later(
+                PARSE_DOCUMENT_TIMEOUT_S, self._expire, slot, work
+            )
+            handed_off = False
+            try:
+                if slot.restart or not slot.process.alive:
+                    slot.restart = False
+                    await asyncio.to_thread(slot.process.stop)
+                    slot.process.start()
+                pages = await slot.process.run(work.document, result_path, ocr_path)
+                if work.future.done():
+                    pass
+                elif pages:
+                    handed_off = self._hand_off(
+                        work, result_path, ocr_path, pages, queue_ms
+                    )
                 else:
-                    raise ParserRuntimeFailure("parser child process is unavailable")
-                if not work.future.done():
-                    work.future.set_result((result, queue_ms))
+                    result = await asyncio.to_thread(_read_worker_result, result_path)
+                    if not work.future.done():
+                        work.future.set_result((result, queue_ms))
             except asyncio.CancelledError:
                 if not work.future.done():
                     work.future.cancel()
                 raise
             except Exception as exc:  # noqa: BLE001 - returned to owning request
-                current_oom_kills = _cgroup_event_value("oom_kill")
-                if current_oom_kills > self._oom_kill_events:
-                    self._record_oom_kill(current_oom_kills)
-                elif isinstance(exc, JavaTimeout) and not work.future.done():
-                    self._expire(work)
-                elif isinstance(exc, ParserRuntimeFailure) and self.state == "ready":
-                    self._fail_runtime(exc)
-                elif not work.future.done():
-                    work.future.set_exception(exc)
+                self._fail_document(slot, work, exc)
             finally:
-                if self._deadline is not None:
-                    self._deadline.cancel()
-                    self._deadline = None
-                self._last_completed_at = loop.time()
-                self.documents_completed += 1
-                self._current = None
-                self._release(work)
+                if slot.deadline is not None:
+                    slot.deadline.cancel()
+                    slot.deadline = None
+                slot.work = None
+                if not handed_off:
+                    await asyncio.to_thread(_unlink, result_path, ocr_path)
                 result = None
                 work = None
 
+    def _hand_off(
+        self,
+        work: _QueuedDocument,
+        result_path: Path,
+        ocr_path: Path,
+        pages: list[int],
+        queue_ms: int,
+    ) -> bool:
+        """Free the slot: the document's text-less pages join the OCR stage."""
+        if len(pages) > OCR_PAGE_CAP:
+            work.future.set_exception(
+                ParseTooManyScannedPages(
+                    f"{len(pages)} pages have no text layer; "
+                    f"the parser reads at most {OCR_PAGE_CAP}"
+                )
+            )
+            return False
+        work.ocr_pages = len(pages)
+        self._ocr_docs.append(
+            _OCRDocument(work, result_path, ocr_path, list(pages), queue_ms)
+        )
+        self._ocr_ready.set()
+        return True
+
+    def _fail_document(
+        self, slot: _Slot, work: _QueuedDocument, exc: Exception
+    ) -> None:
+        if work.future.done():
+            return  # The deadline already answered and stopped this document.
+        if isinstance(exc, JavaTimeout):
+            self._expire(slot, work)
+            return
+        # The kernel kills the process with the highest oom_score, so a
+        # document whose child, or Java inside it, died by SIGKILL while the
+        # cgroup's oom_kill count rose is the one that was using the memory.
+        killed = isinstance(exc, JavaKilled) or (
+            isinstance(exc, _ChildExited) and exc.exitcode == -signal.SIGKILL
+        )
+        if killed and _cgroup_event_value("oom_kill") > work.oom_kills:
+            slot.restart = True
+            slot.process.terminate()
+            _quarantine_and_fail(
+                work,
+                "parse_oom",
+                ParseOOM("parser cgroup killed a process because it ran out of memory"),
+            )
+            return
+        work.future.set_exception(exc)
+
+    def _expire(self, slot: _Slot, work: _QueuedDocument) -> None:
+        """The parse-stage deadline: stop only this slot's child."""
+        if slot.work is not work or work.future.done():
+            return
+        slot.restart = True
+        slot.process.terminate()
+        _quarantine_and_fail(
+            work,
+            "parse_hard_timeout",
+            ParseHardTimeout(f"parse exceeded {PARSE_DOCUMENT_TIMEOUT_S} seconds"),
+        )
+
+    def _fail_ocr_stage(self, detail: str) -> None:
+        while self._ocr_docs:
+            doc = self._ocr_docs.popleft()
+            if not doc.work.future.done():
+                doc.work.future.set_exception(ParserRuntimeFailure(detail))
+            _unlink(doc.result_path, doc.pdf_path)
+
+    def _drop(self, doc: _OCRDocument) -> None:
+        if doc in self._ocr_docs:
+            self._ocr_docs.remove(doc)
+        _unlink(doc.result_path, doc.pdf_path)
+
+    async def _serve_ocr(self) -> None:
+        """One page per waiting document per turn, so a small upload finishes
+        next to a long scan. Queue wait is free; each page has its own limit."""
+        assert self._ocr is not None
+        loop = asyncio.get_running_loop()
+        deaths = 0
+        while True:
+            while not self._ocr_docs:
+                self._ocr_ready.clear()
+                await self._ocr_ready.wait()
+            doc = self._ocr_docs[0]
+            if doc.work.future.done():
+                self._drop(doc)
+                continue
+            page_idx = doc.pages[len(doc.lines)]
+            if not self._ocr.alive:
+                await asyncio.to_thread(self._ocr.stop)
+                self._ocr.start()
+            started = loop.time()
+            reading = asyncio.ensure_future(self._ocr.page(str(doc.pdf_path), page_idx))
+            await asyncio.wait({reading}, timeout=OCR_PAGE_TIMEOUT_S)
+            if self.state != "ready":
+                return  # _fail_runtime already answered every document.
+            if not reading.done():
+                detail = (
+                    f"OCR of page {page_idx + 1} exceeded {OCR_PAGE_TIMEOUT_S} seconds"
+                )
+                _quarantine_and_fail(
+                    doc.work, "parse_hard_timeout", ParseHardTimeout(detail)
+                )
+                # A page that still has no answer after a second limit means
+                # the process is stuck, not slow.
+                await asyncio.wait({reading}, timeout=OCR_PAGE_TIMEOUT_S)
+                if not reading.done():
+                    self._ocr.terminate()
+                await asyncio.gather(reading, return_exceptions=True)
+                self._drop(doc)
+                continue
+            try:
+                lines = reading.result()
+            except _ChildExited as exc:
+                # Not these documents' fault: they retry once, nothing is
+                # quarantined, and the next page starts a fresh OCR process.
+                deaths += 1
+                self._fail_ocr_stage(f"OCR process exited (code {exc.exitcode})")
+                if deaths >= OCR_DEATH_LIMIT:
+                    self._fail_runtime(
+                        ParserRuntimeFailure(
+                            f"OCR process exited {deaths} times in a row"
+                        )
+                    )
+                if self.state != "ready":
+                    return  # The whole parser is going down.
+                continue
+            except Exception as exc:  # noqa: BLE001 - the page's own error
+                deaths = 0
+                if not doc.work.future.done():
+                    doc.work.future.set_exception(exc)
+                self._drop(doc)
+                continue
+            deaths = 0
+            doc.lines[page_idx] = lines
+            doc.ocr_s += loop.time() - started
+            doc.work.ocr_pages -= 1
+            if len(doc.lines) < len(doc.pages):
+                self._ocr_docs.rotate(-1)
+                continue
+            try:
+                result = await asyncio.to_thread(
+                    _merge_ocr, doc.result_path, doc.pdf_path, doc.lines
+                )
+                result["_phases"]["ocr"] = result["_phases"].get("ocr", 0.0) + doc.ocr_s
+                if not doc.work.future.done():
+                    doc.work.future.set_result((result, doc.queue_ms))
+            except Exception as exc:  # noqa: BLE001 - returned to owning request
+                if not doc.work.future.done():
+                    doc.work.future.set_exception(exc)
+            finally:
+                self._drop(doc)
+                result = None
+
     def health(self) -> dict[str, Any]:
         now = asyncio.get_running_loop().time()
-        current = self._current
-        oldest_active_s = (
-            max(0.0, now - current.started_at)
-            if current is not None and current.started_at is not None
-            else 0.0
-        )
+        executing = [
+            slot.work.started_at
+            for slot in self._slots
+            if slot.work is not None and slot.work.started_at is not None
+        ]
+        oldest_active_s = max((now - started for started in executing), default=0.0)
         oldest_queued_s = (
             max(0.0, time.perf_counter() - min(w.enqueued_at for w in self._queue))
             if self._queue
@@ -654,8 +1031,10 @@ class ParserRuntime:
         return {
             "active_jobs": self.active_jobs,
             "queued_jobs": len(self._queue),
-            "executing_jobs": 1 if current is not None else 0,
-            "oldest_active_job_s": round(oldest_active_s, 3),
+            "executing_jobs": len(executing),
+            "ocr_stage_jobs": len(self._ocr_docs),
+            "ocr_queued_pages": sum(doc.work.ocr_pages for doc in self._ocr_docs),
+            "oldest_active_job_s": round(max(0.0, oldest_active_s), 3),
             "oldest_queued_job_s": round(oldest_queued_s, 3),
             "last_job_completed_age_s": last_completed_age_s,
             "active_slices": 0,
@@ -663,9 +1042,22 @@ class ParserRuntime:
             "oldest_active_slice_s": 0.0,
             "oldest_queued_slice_s": 0.0,
             "last_slice_completed_age_s": last_completed_age_s,
-            "cgroup_oom_kill_events": self._oom_kill_events,
+            "cgroup_oom_kill_events": _cgroup_event_value("oom_kill"),
             "documents_completed": self.documents_completed,
         }
+
+
+def _quarantine_and_fail(
+    work: _QueuedDocument, reason: str, error: ParseHardTimeout | ParseOOM
+) -> None:
+    """Quarantine a runaway document's fingerprint and answer it."""
+    if work.document.fingerprint:
+        try:
+            _write_quarantine(work.document.fingerprint, reason, str(error))
+        except OSError as exc:
+            print(f"could not write parser {reason} marker: {exc}", flush=True)
+    if not work.future.done():
+        work.future.set_exception(error)
 
 
 runtime = ParserRuntime()
@@ -1009,7 +1401,8 @@ def _write_artifact(key: str, data: bytes) -> None:
 
 async def _run(document: Document) -> tuple[dict[str, Any], dict[str, Any]]:
     started = time.perf_counter()
-    result, queue_ms = await runtime.parse(document)
+    pages, ocr_pages = await asyncio.to_thread(_admission_pages, document.data)
+    result, queue_ms = await runtime.parse(document, ocr_pages, pages)
     measurements = _measurements(result, time.perf_counter() - started, queue_ms)
     return result, measurements
 
@@ -1040,6 +1433,10 @@ async def healthz() -> JSONResponse:
             "xlsx",
         ],
         "queue_depth": QUEUE_DEPTH,
+        "parse_workers": PARSE_WORKERS,
+        "ocr_page_cap": OCR_PAGE_CAP,
+        "max_pages": MAX_PAGES,
+        "ocr_page_timeout_s": OCR_PAGE_TIMEOUT_S,
         "parse_document_timeout_s": PARSE_DOCUMENT_TIMEOUT_S,
         **runtime.health(),
         **_process_tree_memory(),
@@ -1052,6 +1449,10 @@ def _failure_response(
 ) -> JSONResponse:
     if isinstance(exc, ParseHardTimeout):
         code, status = "parse_hard_timeout", 422
+    elif isinstance(exc, ParseTooManyScannedPages):
+        code, status = "parse_too_many_scanned_pages", 422
+    elif isinstance(exc, ParseTooManyPages):
+        code, status = "parse_too_many_pages", 422
     elif isinstance(exc, ParseOOM):
         code, status = "parse_oom", 422
     elif isinstance(exc, ParserRuntimeFailure):
@@ -1061,12 +1462,7 @@ def _failure_response(
             {"detail": f"parse failed: {exc}", **(measurements or {})},
             status_code=500,
         )
-    _schedule_restart_backstop()
-    return JSONResponse(
-        {"code": code, "detail": str(exc)},
-        status_code=status,
-        background=BackgroundTask(_terminate_process),
-    )
+    return JSONResponse({"code": code, "detail": str(exc)}, status_code=status)
 
 
 @app.post("/capture_page")
@@ -1231,16 +1627,9 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
     # waiter could win the billing transaction for somebody else's parse.
     payload = dict(task_payload)
     receipt_request_id = str(payload.pop("_receipt_request_id", ""))
-    restart_parser = bool(payload.pop("_restart_parser", False))
     if status_code < 300 and receipt_request_id != request_id:
         payload = {"artifact": payload["artifact"]}
-    if restart_parser:
-        _schedule_restart_backstop()
-    return JSONResponse(
-        payload,
-        status_code=status_code,
-        background=BackgroundTask(_terminate_process) if restart_parser else None,
-    )
+    return JSONResponse(payload, status_code=status_code)
 
 
 async def _artifact_task(
@@ -1303,7 +1692,6 @@ async def _produce_artifact(
                 "code": "parse_hard_timeout",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
-                "_restart_parser": True,
             },
             422,
         )
@@ -1313,7 +1701,24 @@ async def _produce_artifact(
                 "code": "parse_oom",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
-                "_restart_parser": True,
+            },
+            422,
+        )
+    except ParseTooManyScannedPages as exc:
+        return (
+            {
+                "code": "parse_too_many_scanned_pages",
+                "detail": str(exc),
+                "source_fingerprint": fingerprint,
+            },
+            422,
+        )
+    except ParseTooManyPages as exc:
+        return (
+            {
+                "code": "parse_too_many_pages",
+                "detail": str(exc),
+                "source_fingerprint": fingerprint,
             },
             422,
         )
@@ -1323,7 +1728,6 @@ async def _produce_artifact(
                 "code": "parser_runtime_failed",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
-                "_restart_parser": True,
             },
             503,
         )

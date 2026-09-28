@@ -169,11 +169,20 @@ export function Mermaid({
 const MERMAID_TEXT_CLASS = 'font-normal leading-normal';
 
 /** A theme's panel with one node in its fill and border, for theme menus. */
-export function MermaidSwatch({ theme }: { theme: MermaidTheme }) {
+export function MermaidSwatch({
+  theme,
+  className,
+}: {
+  theme: MermaidTheme;
+  className?: string;
+}) {
   const [panel, fill, border] = MERMAID_THEME_SWATCH[theme];
   return (
     <span
-      className="grid size-4 shrink-0 place-items-center rounded-sm ring-1 ring-black/15"
+      className={cn(
+        'grid size-4 shrink-0 place-items-center rounded-sm ring-1 ring-black/15',
+        className
+      )}
       style={{ background: panel }}
     >
       <span

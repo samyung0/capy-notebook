@@ -1,10 +1,8 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import type { ViewableFile } from '@/api/types';
-import { WarningBanner } from '@/components/banners/WarningBanner';
-import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
-import { SourceReplacedBanner } from './FileStates';
+import { SourceBanners } from './FileStates';
 import { SourceTextEditor } from './SourceTextEditor';
 import { useSourceSession } from './useSourceSession';
 
@@ -25,6 +23,13 @@ export function SourceTextView({
   const [previewURL, setPreviewURL] = useState<string>();
   const [leaving, setLeaving] = useState(false);
   const source = useSourceSession(file.id, joined);
+  // The maintenance pause refused editing before the room opened.
+  const pausedAtOpen = source.paused && !source.doc;
+  useEffect(() => {
+    if (!editing || !pausedAtOpen) return;
+    setJoined(false);
+    setMode('view');
+  }, [editing, pausedAtOpen, setMode]);
   useEffect(() => {
     onDirtyChange?.(source.dirty);
     return () => onDirtyChange?.(false);
@@ -102,40 +107,33 @@ export function SourceTextView({
             : undefined
         }
       />
-      {source.error && (
-        <WarningBanner
-          action={
-            <>
-              {source.doc && (
-                <ErrorAction
-                  iconLeft="download"
-                  iconLeftClassName="me-1"
-                  onClick={downloadDraft}
-                  size="sm"
-                >
-                  {m.source_edit_download_draft()}
-                </ErrorAction>
-              )}
-              {source.status === 'recovery' && (
-                <ErrorAction
-                  disabled={source.discarding}
-                  iconLeft="trash"
-                  iconLeftClassName="me-1"
-                  onClick={() => {
+      <SourceBanners
+        actions={[
+          ...(source.doc
+            ? [
+                {
+                  label: m.source_edit_download_draft(),
+                  onClick: downloadDraft,
+                },
+              ]
+            : []),
+          ...(source.status === 'recovery'
+            ? [
+                {
+                  disabled: source.discarding,
+                  label: m.source_edit_discard_draft(),
+                  onClick: () => {
                     void source.discardDraft();
-                  }}
-                  size="sm"
-                >
-                  {m.source_edit_discard_draft()}
-                </ErrorAction>
-              )}
-            </>
-          }
-          icon="fileError"
-          message={source.error}
-        />
-      )}
-      {source.replaced && <SourceReplacedBanner paused={source.paused} />}
+                  },
+                },
+              ]
+            : []),
+        ]}
+        error={source.error}
+        paused={source.paused}
+        pausedAtOpen={pausedAtOpen}
+        replaced={source.replaced}
+      />
       <div className="min-h-0 flex-1 overflow-auto">
         {editing ? (
           source.doc ? (

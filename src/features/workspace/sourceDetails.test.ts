@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import {
   aggregateSourceAnalysis,
   initialAnalysisStatus,
   remoteSourceAnalysisInput,
   sourceAnalysisBlocksSubmit,
+  sourceAnalysisIssue,
+  sourceAnalysisIssueMessage,
   validateLocalSourceSelection,
 } from './sourceDetails';
 
@@ -207,5 +210,104 @@ describe('initialAnalysisStatus', () => {
     expect(
       initialAnalysisStatus('notes.txt', undefined, sourceUploadPolicy)
     ).toBe('idle');
+  });
+});
+
+describe('fast-parse page limits', () => {
+  // The mock policy mirrors production: maxPages 1400, maxOcrPages 500.
+  const input = remoteSourceAnalysisInput(
+    {
+      analysisUrl: '/api/workspaces/ws_1/sources/import-content',
+      fileId: 'file_1',
+      name: 'scan.pdf',
+      sizeBytes: 2048,
+    },
+    'google',
+    {},
+    'inspection_1',
+    sourceUploadPolicy
+  );
+  const analyzed = (extension: 'pdf' | 'pptx', ocrPageCount: number) => ({
+    analysisInput: input,
+    analysisResult: {
+      extension,
+      ocrPageCount,
+      pageCount: 1400,
+      pageCountEstimated: false,
+      pages: [],
+      scanEstimate: true as const,
+      textPageCount: 1400 - ocrPageCount,
+    },
+    analysisStatus: 'ready' as const,
+    kind: 'pdf' as const,
+    parseMode: 'fast' as const,
+  });
+
+  it('refuses a PDF past 105% of the OCR cap and warns from 95%', () => {
+    expect(sourceAnalysisIssue(analyzed('pdf', 474), sourceUploadPolicy)).toBe(
+      null
+    );
+    expect(
+      sourceAnalysisIssue(analyzed('pdf', 475), sourceUploadPolicy)
+    ).toEqual({ code: 'scanned_pages_warning', ocrPages: 475 });
+    expect(
+      sourceAnalysisIssue(analyzed('pdf', 525), sourceUploadPolicy)?.code
+    ).toBe('scanned_pages_warning');
+    expect(
+      sourceAnalysisIssue(analyzed('pdf', 526), sourceUploadPolicy)?.code
+    ).toBe('too_many_scanned_pages');
+    expect(
+      sourceAnalysisBlocksSubmit(analyzed('pdf', 525), sourceUploadPolicy)
+    ).toBe(false);
+    expect(
+      sourceAnalysisBlocksSubmit(analyzed('pdf', 526), sourceUploadPolicy)
+    ).toBe(true);
+  });
+
+  it('only warns on an Office OCR estimate', () => {
+    const office = analyzed('pptx', 1300);
+    expect(sourceAnalysisIssue(office, sourceUploadPolicy)?.code).toBe(
+      'scanned_pages_warning'
+    );
+    expect(sourceAnalysisBlocksSubmit(office, sourceUploadPolicy)).toBe(false);
+  });
+
+  it('gives each failure its own message with the policy limits', () => {
+    const failed = (
+      analysisError:
+        | 'password_protected'
+        | 'unreadable'
+        | 'too_many_pages'
+        | 'failed'
+    ) =>
+      sourceAnalysisIssue(
+        { ...analyzed('pdf', 0), analysisError, analysisStatus: 'error' },
+        sourceUploadPolicy
+      );
+    const message = (issue: ReturnType<typeof failed>) =>
+      issue ? sourceAnalysisIssueMessage(issue, sourceUploadPolicy) : null;
+
+    expect(message(failed('password_protected'))).toBe(
+      m.source_analysis_password_protected()
+    );
+    expect(message(failed('unreadable'))).toBe(m.source_analysis_unreadable());
+    expect(message(failed('too_many_pages'))).toBe(
+      m.source_analysis_too_many_pages({ max: 1400 })
+    );
+    expect(message(failed('failed'))).toBe(m.source_analysis_failed());
+    expect(
+      message(sourceAnalysisIssue(analyzed('pdf', 600), sourceUploadPolicy))
+    ).toBe(m.source_analysis_too_many_scanned_pages({ max: 500, ocr: 600 }));
+    expect(m.source_analysis_too_many_pages({ max: 1400 })).toContain('1400');
+    expect(
+      sourceAnalysisIssue(
+        {
+          ...analyzed('pdf', 0),
+          analysisInput: undefined,
+          analysisStatus: 'error',
+        },
+        sourceUploadPolicy
+      )
+    ).toEqual({ code: 'unsupported' });
   });
 });

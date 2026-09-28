@@ -1329,6 +1329,11 @@ async def _ensure_document_artifact(
             name,
             job["id"],
         )
+    except (
+        parser_client.ParserTooManyScannedPagesError,
+        parser_client.ParserTooManyPagesError,
+    ) as exc:
+        raise TerminalError(str(exc)) from exc
     except parser_client.ParserTerminalResourceError as exc:
         raise TerminalError(
             "this file hit a terminal parser resource limit and is "

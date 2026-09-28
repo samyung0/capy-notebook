@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -75,6 +76,17 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// requiredPageCap reads a parser page limit the API shares with the ingest host
+// through deploy/env-manifest.json. There is no default: a missing or bad
+// value stops the API instead of serving a limit the parser does not enforce.
+func requiredPageCap(key string) (int, error) {
+	n, err := strconv.Atoi(os.Getenv(key))
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%s must be set to a positive page count", key)
+	}
+	return n, nil
 }
 
 func strongEmailSecret(value string) bool {
@@ -226,6 +238,14 @@ func main() {
 	if err := validateStripeConfiguration(
 		stripeSecretKey, stripeWebhookSecret, stripePricePro,
 	); err != nil {
+		log.Fatal(err)
+	}
+	parseMaxPages, err := requiredPageCap("CAPY_PARSE_MAX_PAGES")
+	if err != nil {
+		log.Fatal(err)
+	}
+	parseMaxOCRPages, err := requiredPageCap("CAPY_PARSE_OCR_PAGE_CAP")
+	if err != nil {
 		log.Fatal(err)
 	}
 	for i := range e2eUserIDs {
@@ -412,6 +432,8 @@ func main() {
 		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
 		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
 		PipelineSecret:         pipeSecret,
+		ParseMaxPages:          parseMaxPages,
+		ParseMaxOCRPages:       parseMaxOCRPages,
 		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,

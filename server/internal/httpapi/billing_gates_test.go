@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
@@ -69,10 +71,12 @@ func openBilling(t *testing.T) billingFixture {
 	}
 
 	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", httpapi.Config{
-		E2EAuth:       true,
-		E2ESecret:     "e2e-test-secret",
-		E2EUserIDs:    []string{ownerID, actorID},
-		ModelRegistry: reg,
+		E2EAuth:          true,
+		E2ESecret:        "e2e-test-secret",
+		E2EUserIDs:       []string{ownerID, actorID},
+		ModelRegistry:    reg,
+		ParseMaxPages:    1400,
+		ParseMaxOCRPages: 1000,
 	})
 	return billingFixture{
 		handler: h, pool: pool, store: st, registry: reg,
@@ -268,5 +272,44 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
 	if storage.Code != http.StatusForbidden || errorCode(t, storage) != "storage_quota_exceeded" {
 		t.Fatalf("owner storage: %d %s", storage.Code, storage.Body.String())
+	}
+}
+
+func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T) {
+	fx := openBilling(t)
+	rec := doReq(t, fx.handler, http.MethodGet, "/api/source-upload-policy", fx.actorID, nil)
+	var policy apimodel.SourceUploadPolicy
+	if err := json.Unmarshal(rec.Body.Bytes(), &policy); err != nil {
+		t.Fatal(err)
+	}
+	modes := map[string]apimodel.SourceUploadParseModePolicy{}
+	for _, mode := range policy.ParseModes {
+		modes[mode.Mode] = mode
+	}
+	if fast := modes["fast"]; fast.MaxPages != 1400 || fast.MaxOCRPages != 1000 {
+		t.Fatalf("fast mode caps: %#v", fast)
+	}
+	if none := modes["none"]; none.MaxPages != 0 || none.MaxOCRPages != 0 {
+		t.Fatalf("none mode caps: %#v", none)
+	}
+
+	reserve := func(parseMode string, pages int) *httptest.ResponseRecorder {
+		return doReq(t, fx.handler, http.MethodPost,
+			"/api/workspaces/"+fx.workspaceID+"/sources/uploads", fx.actorID, map[string]any{
+				"name": "book.pdf", "kind": "pdf", "parseMode": parseMode,
+				"sizeBytes": 1024, "contentType": "application/pdf", "pageCount": pages,
+			})
+	}
+	if over := reserve("fast", 1401); over.Code != http.StatusBadRequest ||
+		!strings.Contains(over.Body.String(), "at most 1400 pages") {
+		t.Fatalf("fast over the cap: %d %s", over.Code, over.Body.String())
+	}
+	for _, ok := range []struct {
+		mode  string
+		pages int
+	}{{"fast", 1400}, {"none", 5000}} {
+		if rec := reserve(ok.mode, ok.pages); rec.Code != http.StatusCreated {
+			t.Fatalf("%s %d pages: %d %s", ok.mode, ok.pages, rec.Code, rec.Body.String())
+		}
 	}
 }

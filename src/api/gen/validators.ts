@@ -3079,6 +3079,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "parseModes": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
   "maxBytes": zod.int(),
+  "maxOcrPages": zod.int().optional(),
   "maxPages": zod.int().optional(),
   "mode": zod.enum(['fast', 'none'])
 }))
@@ -4138,6 +4139,7 @@ export const UploadSourceBody = zod.object({
   "file": zod.instanceof(File),
   "kind": zod.instanceof(File).or(zod.string()).optional(),
   "name": zod.instanceof(File).or(zod.string()).optional(),
+  "pageCount": zod.int().optional(),
   "parseMode": zod.instanceof(File).or(zod.string()).optional()
 })
 
@@ -4279,6 +4281,8 @@ export const createSourceUploadBodyEstimatedCreditMicrosMin = 0;
 
 export const createSourceUploadBodyNameMax = 120;
 
+export const createSourceUploadBodyPageCountMin = 0;
+
 
 
 export const CreateSourceUploadBody = zod.object({
@@ -4288,6 +4292,7 @@ export const CreateSourceUploadBody = zod.object({
   "estimatedCreditMicros": zod.int().min(createSourceUploadBodyEstimatedCreditMicrosMin).optional(),
   "kind": zod.string().optional(),
   "name": zod.string().min(1).max(createSourceUploadBodyNameMax),
+  "pageCount": zod.int().min(createSourceUploadBodyPageCountMin).optional(),
   "parseMode": zod.string().optional(),
   "sizeBytes": zod.int()
 })

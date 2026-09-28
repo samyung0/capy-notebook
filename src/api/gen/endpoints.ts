@@ -7214,6 +7214,9 @@ if(uploadSourceBody?.kind !== undefined) {
 if(uploadSourceBody?.name !== undefined) {
  formData.append(`name`, uploadSourceBody.name instanceof Blob ? uploadSourceBody.name : new Blob([uploadSourceBody.name], { type: 'text/plain' }));
  }
+if(uploadSourceBody?.pageCount !== undefined) {
+ formData.append(`pageCount`, uploadSourceBody.pageCount.toString())
+ }
 if(uploadSourceBody?.parseMode !== undefined) {
  formData.append(`parseMode`, uploadSourceBody.parseMode instanceof Blob ? uploadSourceBody.parseMode : new Blob([uploadSourceBody.parseMode], { type: 'text/plain' }));
  }

@@ -224,6 +224,9 @@ type CreateSourceUploadReq struct {
 	// upload policy rates. It only gates admission headroom; the parser
 	// receipt bills the measured pages.
 	EstimatedCreditMicros int64 `json:"estimatedCreditMicros,omitempty" minimum:"0"`
+	// PageCount is the browser's page count for a fast-parse document; a
+	// count past the upload policy's maxPages is refused.
+	PageCount int `json:"pageCount,omitempty" minimum:"0"`
 }
 
 // SourceUploadReservation is the presigned PUT the browser uses after reserve.

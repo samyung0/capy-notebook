@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { defaultScrollSelectionIntoView, type ReactEditor } from 'slate-react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
@@ -265,12 +266,30 @@ const NoteEditorContent = memo(function NoteEditorContent({
         decorate={decorate}
         onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
+        scrollSelectionIntoView={scrollSelectionIntoView}
       />
       {/* Share the editor's containing block so scrolling moves both natively. */}
       <FloatingToolbar />
     </PlateContainer>
   );
 });
+
+/**
+ * A void block's caret (diagram, image, embed) sits at its top-left corner, so
+ * the default scroll jumped a tall block back to its top whenever it
+ * re-rendered, e.g. after a theme change. A void on screen stays put.
+ */
+const scrollSelectionIntoView: NonNullable<
+  React.ComponentProps<typeof PlateContent>['scrollSelectionIntoView']
+> = (editor, domRange) => {
+  const block = domRange.startContainer.parentElement?.closest(
+    '[data-slate-void="true"]'
+  );
+  const rect = block?.getBoundingClientRect();
+  if (rect && rect.bottom > 0 && rect.top < window.innerHeight) return;
+  // Plate types its editor narrowly; at runtime it is the slate-react one.
+  defaultScrollSelectionIntoView(editor as unknown as ReactEditor, domRange);
+};
 
 export function NoteEditorCore({
   material,
