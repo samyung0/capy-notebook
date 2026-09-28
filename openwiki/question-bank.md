@@ -96,25 +96,29 @@ inserting a question.
 
 `lab/questions` is a local staged builder. References stay private; a clean-room
 writer, blind solver, judge/fix pass, actual component renderer and copy check
-produce frozen publication evidence. See its [README](../lab/questions/README.md).
+produce frozen publication evidence. Every stage runs as a fresh Claude Code Opus
+5.5 medium subagent that owns one topic. IELTS Academic Reading questions are
+written on lightly adapted library excerpts (`run.py passage`), one excerpt per
+question, and record that excerpt as the question's source; HKDSE questions are
+original with empty sources. The renderer serves MathLive's fonts, waits for
+every formula, and re-renders only named question ids after a fix. See its
+[README](../lab/questions/README.md).
 `server/cmd/bank` migrates, publishes and reports status. Publication uploads
 immutable assets and inserts new IDs; it does not overwrite later reviewer edits.
 
 ## Delivery and checks
 
-The implementation is in the working tree. The separate bank database and B2
-buckets are provisioned; the public asset hostname is configured in Cloudflare.
-Verified pilot catalogs cover 18 HKDSE units and 11 IELTS task types, with fresh
-Astra medium subagents selected for each generation stage. The first topic,
-Functions and their graphs, passed blind solving (50/50), visual review and
-copy checks. Quadratics, logarithms and polynomials also passed all admission
-checks, bringing the published count to 200, with zero dropped or skipped.
-Another 150 questions are rendered and Go-valid but unpublished; the other 22
-topics have admitted references/styles and writer packets ready. The user
-requested wrap-up after this round, and all subagents/publication processes are
-finished. See the [handoff](../question-bank-handoff.md) for exact continuation
-state. Cloudflare serves a published graph with HTTP 200,
-immutable cache headers and a cache hit.
+The separate bank database and B2 buckets are provisioned; the public asset
+hostname is configured in Cloudflare. The pilot covers all 18 HKDSE Mathematics
+Compulsory units (50 questions each) and all 11 IELTS Academic Reading task types
+(18 passage-based questions each, 4-7 items per passage). Every published
+question passed blind solving from its learner render with exact comparison,
+open-answer judging, full review-render inspection (passage fidelity for IELTS),
+Go validation and the 12-word copy check; repairs were re-rendered, re-solved
+and rechecked. The 50 short generated-passage IELTS multiple-choice questions of
+the first round were deleted and replaced by the library-passage set. See the
+[handoff](../question-bank-handoff.md) for exact state. Cloudflare serves a
+published graph with HTTP 200, immutable cache headers and a cache hit.
 Coordinate the old-quiz data cutover before application rollout.
 Do not deploy the new readers over old question records without that cutover.
 

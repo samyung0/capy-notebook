@@ -1,259 +1,116 @@
-# Question bank handoff — 2026-09-27
+# Question bank handoff — 2026-09-28
 
-The user asked to wrap up after the current subagent round. All subagents have
-finished, new dispatches have stopped, and all publication processes have
-settled. **200 questions are published; 150 more are written but unpublished.**
-The pilot is not yet finished. Resume only when the user asks.
+The pilot is complete. **1,098 questions are live** in the bank, all unreviewed:
+18 HKDSE Mathematics Compulsory units × 50 and 11 IELTS Academic Reading task
+types × 18 passage questions. Nothing is running and no generation is pending.
 
-## Workspace and scope
+## Where things are
 
-- Repository: `C:\WEB\capy-notebook`, branch `main`, base commit
-  `75512bb3ea413ff5aa134502b7f491c471b52d65`.
-- Phases 1–7 of [question-bank-plan.md](question-bank-plan.md) are implemented in
-  the working tree. There is extensive unrelated work in the same dirty tree;
-  preserve it. Several question-bank implementation directories are untracked.
-  No commit, PR, application deployment or old-quiz data reset was performed.
-- The full pilot is 29 topics × approximately 50 questions: 18 HKDSE Mathematics
-  Compulsory units and 11 IELTS Academic Reading task types. The first topic was
-  completed end to end before expansion.
-- Local generation data and receipts are ignored under
-  `data/question-bank/pilot-2026-09-27/`. Continue in this workspace or preserve
-  that directory separately; a Git checkout alone cannot resume this run.
+- Code: `main`. The pipeline is `lab/questions` (read its
+  [README](lab/questions/README.md) before running anything); the bank CLI is
+  `server/cmd/bank`; the question UI is `src/features/questions` and
+  `src/routes/QuestionBank.tsx`.
+- Decisions: `human/agentic-retrieval.md` (pipeline, model, IELTS library
+  passages, render id filter), `human/miscellaneous.md` (question UI) and
+  `human/frontend/plate-editor.md` (formula previews). They override anything
+  older in this file's history, including the GPT-6 Astra instruction.
+- Run data (ignored): `data/question-bank/pilot-2026-09-27/`, one directory per
+  topic with receipts, renders, solves, reviews, copy checks and publication
+  logs. A Git checkout alone cannot reproduce the evidence; keep that directory.
+- Helpers used for this round, copied from the session scratchpad:
+  `data/question-bank/pilot-2026-09-27/tools-2026-09-28/`.
+  - `bind.py <packet-list> <agent-id>` binds every packet in a list.
+  - `closed.py <topic>` lists closed-answer disagreements.
+  - `fixq.py <topic> <issues.json>` turns review findings into fix packets
+    (issues are `[{"id", "issue"}]`; run until it prints "applied").
+  - `apply_packet.py <topic> <packet>` applies an admitted fix packet from its
+    frozen input when the payload has since changed.
+  - `delete_old_mc.py` removed the 50 first-round IELTS MC questions (its log is
+    `deleted-2026-09-28.json` in that old run directory).
+  - `ielts/` picks and remaps library excerpts and builds `passages.json`.
 
-## Stable pilot checkpoint
+## How a topic was produced
 
-| Topic | Questions | State |
-| --- | ---: | --- |
-| Functions and their graphs | 50 | Published; 90 parts and 7 graph assets |
-| Solving single-variable quadratics | 50 | Published; 53 parts |
-| Exponential functions and logarithms | 50 | Published; 51 parts |
-| Polynomial operations and theorems | 50 | Published; 50 parts |
-| Further equation-solving methods | 50 | Rendered, Go-valid, visual PASS; fresh blind solving pending |
-| Direct, inverse and joint variation | 50 | Rendered and Go-valid; blind solving and visual review pending |
-| IELTS — Selecting answers from choices | 50 | Rendered and Go-valid; blind solving, visual and passage-fact review pending |
-| Other 22 pilot topics | 0 | References/styles admitted; frozen writer packets ready and unbound |
+Every stage ran as a fresh Claude Code Opus 5.5 medium subagent (`qb-worker`,
+defined in the ignored `.claude/agents/qb-worker.md`) owning one topic.
 
-Live `bank status` confirmed four published topics × 50 questions, all
-unreviewed. All 200 passed blind solving from learner images, exact comparison,
-complete visual review, Go validation and copy checking. No questions were
-dropped or skipped from the published batches.
+1. `write` (maths, 50 per unit) or `passage` (IELTS, one question per library
+   excerpt in `passages.json`, 450–950 words, CC BY / BY-SA / CC0 / public
+   domain, current book version only).
+2. `render.ts <topic>` for review and learner PNGs.
+3. `solve` from the learner PNG only, then `compare`; open parts go to judge
+   packets.
+4. A reviewer agent viewed every review render (and, for IELTS, diffed each
+   passage against its excerpt).
+5. Disagreements and review findings became fix packets (`fixq.py`); fixed ids
+   were re-rendered with `render.ts <topic> <id ...>`, re-solved and compared.
+6. `copycheck` (12-word overlap with private references), `prepare-publish`,
+   then `go run ./cmd/bank validate` and `publish` from `server/`.
 
-Exact local continuation records:
+Publishing IELTS needs the library database for provenance. `.env.local` has
+`localhost`, which hangs on IPv6 through the tunnel; override it:
 
-- [Progress inventory](data/question-bank/pilot-2026-09-27/expansion-progress.md): all 29 topic states.
-- [Exact handoff state](data/question-bank/pilot-2026-09-27/round-handoff-state.json): every topic path,
-  receipt path, worker identity, stage admission and output status.
-- [Expansion notes](data/question-bank/pilot-2026-09-27/expansion-handoff-notes.md): frozen visual
-  fix details, manual reference imports and resume commands.
-- Each expansion publication retains `publication.log` and
-  `publication-summary.json`; the first topic uses `publish-first-resume.log` in
-  the pilot parent directory.
-
-The root-owned MSW preview process was stopped. A separate existing IPv6 server
-on port 5173 was left alone. The local bank tunnel remains on
-`127.0.0.1:15433` (PID 43224 at handoff); no generation, renderer or publication
-process remains active.
-
-## Decisions already made
-
-- Every generation stage uses a fresh **GPT-6 Astra, medium** subagent with no
-  inherited conversation. The user explicitly chose this. Do not substitute a
-  model API, Claude, or another effort. The UI review used **Astra xhigh**.
-- Approved designs are
-  [the original mock](artifacts/2026-09-25-question-bank-mocks.html) and
-  [responsive layout A](artifacts/2026-09-27-question-bank-responsive-mocks.html).
-  Prefer clean navigation; remove the redundant exam/subject heading. Use
-  named minimum breakpoints (`sm:`, `md:`), never custom or maximum breakpoints.
-- Reuse shared ToolbarGroup/ToolbarButton. Plate already has scroll fading;
-  question toolbars add the scroll classes through `className`, without changing
-  base Toolbar styles. Back navigation uses `navigationBack`. Remove sits beside
-  Save on the right, using the shared dialog conventions.
-- Content edits retain Reviewed. Do not add reviewer locks or approval workflow.
-  Reject stale saves and retain drafts. All authored quiz/flashcard writes carry
-  `expectedRevision`; bank writes use the exact `updatedAt` token. Embedded
-  materials refetch on every view/edit open.
-- Matching has a separate choice pool, including unused options and permitted
-  reuse. Quantity answers prescribe one unit, display it separately and accept
-  only the value. No typed units or unit conversion.
-- Computational questions use deterministic answer types. Open/essay questions
-  are non-computational. Production Jev integration, per-item scoring, the
-  computation classifier and direct study from the bank remain deferred in
-  [todo-question-bank.md](todo-question-bank.md). The completed Jev screening
-  favors direct 0/0.5/1 grading; it is not production accuracy approval.
-- Bank uploads use the authenticated server API with environment credentials,
-  plus the local publisher. They are not restricted to this PC. Local/UAT app
-  connections are readers; production gets the restricted editor connection.
-
-## UI implementation and verification
-
-The requested fresh Astra xhigh comparison found eight gaps and three follow-up
-issues. They were corrected and a fresh closing review found no remaining
-actionable issue within that scope. Reports and screenshots:
-
-- `data/question-bank/ui-alignment-2026-09-27/report.md`
-- `data/question-bank/ui-alignment-2026-09-27/recheck.md`
-- `data/question-bank/ui-alignment-2026-09-27/final-closing.md`
-- `final-bank-header-{390,900}.png` and
-  `final-formula-keyboard-{phone,desktop}.png` in the same directory.
-
-Main corrections: dedicated quiz edit routing for standalone/material/embedded
-entry points; safe return paths; phone full-screen question dialog with a
-scrolling body and fixed header/footer; compact table/text/graph/chart editors;
-outline summaries; aligned submitted scores; responsive headers. Shared base
-Toolbar/Dialog/Header defaults remain unchanged.
-
-MathLive needed a functional correction: its native beforeinput/input/keydown
-events stop at the math field so Slate cannot cancel entry. Physical and virtual
-digits now commit and reopen. The question dialog gives the virtual keyboard its
-own grid row through scoped caller classes; escaped underscores and `!` in its
-Tailwind height selectors are intentional, because MathLive uses unlayered CSS.
-The relevant files are `src/features/questions/MathField.tsx`, `TextEditor.tsx`
-and `QuestionDialog.tsx`. Note callers retain their native keyboard button.
-
-Completed checks are recorded in `data/question-bank/verification.md`:
-
-- Frontend: 428 tests / 82 files; editor helper suite: 4 tests.
-- Collaboration: 194 tests / 24 files; focused Go harness: six affected packages.
-- Final `pnpm run fmt`, `pnpm run fix`, `pnpm run typecheck`, and production build
-  passed after the UI corrections. Build ran with Sentry upload disabled.
-- Focused MathLive E2E passed: `pnpm run e2e:slow
-  --config=e2e/editor/playwright.editor.config.ts question-formula.spec.ts`, with
-  `EDITOR_E2E_PORT=4529`. Physical input/commit/reopen is automated; root also
-  verified the virtual keypad in the browser.
-- Focused pipeline normalization: 2 passed, 59 deselected. Focused publisher and
-  question validator checks passed after archive upload was bounded to four
-  workers.
-- Local real HTTP handlers read the first published topic through the actual
-  read-only bank role: syllabus/list/detail 200, learner answers/schemes/solutions
-  absent. `live-reader-http.log` and archived `live-reader-http_test.go` are under
-  the pilot directory. The temporary Go package was removed from `server/tmp`
-  so future test suites cannot accidentally perform live reads.
-
-CI editor performance budgets, deployed API verification and real comment-email
-delivery remain unverified. Do not repeat broad suites solely to resume data
-generation; rerun relevant checks when code changes or a failure warrants it.
-
-## Infrastructure already configured
-
-- Separate `bank` PostgreSQL database on ingest host `159.195.61.195`, container
-  `capy-library-db`, private endpoint `10.77.0.2:5433`. Owner `capy_bank`, editor
-  `capy_bank_editor`, reader `capy_library_reader`. Migrations and column grants
-  are applied. Editor can update only the content/audit/review columns.
-- Local owner/reader URLs and publisher credentials are in ignored `.env.local`.
-  The local SSH tunnel uses port `15433`; its PID file is
-  `data/question-bank/tunnel.pid`. Verify the listener before resuming.
-- Ignored `deploy/.env.uat` has `BANK_DATABASE_URL` using the reader's private
-  endpoint and `BANK_ASSETS_URL`. Its manifest check passed. No environment push
-  or deployment ran. Private archive credentials were removed from the UAT API
-  environment. `deploy/.env.prod` does not exist locally.
-- Public B2 bucket: `capy-notebook-question-bank-public` (`allPublic`). Private
-  bucket: `capy-notebook-question-bank-private` (`allPrivate`). Region
-  `eu-central-003`; endpoint `https://s3.eu-central-003.backblazeb2.com`.
-- **BANK_ASSETS_URL=https://bank-assets.capynotebook.com** is filled in both
-  ignored local and UAT env files. Cloudflare has a proxied CNAME to
-  `f003.backblazeb2.com`, a host-scoped URL rewrite adding
-  `/file/capy-notebook-question-bank-public`, and host-only Strict TLS. The zone's
-  existing global TLS setting was preserved. Both rules are active.
-- A real browser request for a published SVG returned HTTP 200,
-  `image/svg+xml`, `CF-Cache-Status: HIT` and one-year immutable cache headers.
-  Evidence: `asset-delivery-browser.json` and `cloudflare-graph-delivery.png` in
-  the pilot directory. Python urllib gets Cloudflare 1010; do not weaken browser
-  protection to accommodate that diagnostic client.
-- Bank backups use the existing 03:15 **Europe/Berlin** cron, a separate
-  write-only key and private `backups/` prefix. B2 hides these after 30 days and
-  deletes one day later; reference/run archives do not expire. Empty and first
-  50-question backups were downloaded, hash-checked and restored, with exact
-  table fingerprints. The final checkpoint also restored **all 200 questions**
-  from `backups/bank-20260927T082121Z.dump` (60,045 bytes), with every public-table
-  fingerprint matching the live bank. SHA-256:
-  `73eb9d0292acdc866298a9e0da7db1b9d5c1deae2d117e5b9e452a8a670b3c58`.
-  The disposable restore database was removed and its absence verified. Reader
-  privileges and syllabus/list/detail SQL checks passed again. See
-  [backup evidence](data/question-bank/pilot-2026-09-27/backup-verification.md)
-  and `checkpoint-backup.log`. The bank-only helper is
-  `verify-checkpoint-backup.py`; it requires an explicit expected row count.
-
-Do not copy credentials into this file or chat. Existing local configuration and
-the host's `/opt/capy-library-db/.env` contain what is needed. Do not rerun
-`setup-backup.py`; it provisions keys and assumes an empty lifecycle configuration.
-
-## Generation safeguards and resumption
-
-Read [lab/questions/README.md](lab/questions/README.md) and the per-topic
-`expansion-progress.md`/handoff records before doing work. The coordinator is
-`/root/pilot_expansion`; current outputs are on the shared filesystem.
-
-- Frozen packets live in each topic's `receipts/`. Input, prompt, schema and
-  learner-image hashes are recorded. Bind a fresh worker identity, then rerun the
-  original stage to validate/admit its output. Preserve admitted outputs and
-  unused/stale packets. Never edit them to force agreement.
-- Writers receive only topic metadata, approved style and the schema. Solvers
-  receive only the learner projection and **must actually inspect every learner
-  PNG**. Graph recipes, SVGs, URLs, schemes and accepted answers are excluded.
-  Use fresh agents after repairs. Correctness and visual admission are separate.
-- All review PNGs need visual review; contact sheets are useful for coverage,
-  with full-resolution checks for long pages, figures or ambiguous rendering.
-  A visual pass does not set the production Reviewed marker.
-- Use explicit empty source arrays for these synthetic pilot questions before
-  publication; unpublished batches still need that publication metadata.
-  References stay private. Writers must not invent specific studies or historical claims
-  in original IELTS passages. Some references have narrow exemplar coverage;
-  their notes disclose this.
-- Official reference downloads sometimes returned urllib 403. Workers saved
-  actual official bytes through ordinary HTTPS/local copies and checked UTF-8
-  notes; this is documented. Do not replace private references with generated
-  text or modify already-admitted reference outputs.
-- Run one topic renderer at a time. The renderer uses
-  `node_modules/.vite-question-render`, separate from the app dev cache. It writes
-  both review and learner PNGs, matching manifests and content-hashed graph SVGs.
-- Publish only after blind comparison, visual review, Go validation and copy
-  checks pass. `prepare-publish` logs unresolved drops. Publication inserts new
-  IDs and never overwrites reviewer edits. Uploads must finish before insertion;
-  four bounded archive workers are intentional. Do not use the errgroup's
-  canceled child context for the later database transaction.
-
-Commands, replacing `<topic>` with the existing absolute topic directory:
-
-```powershell
-uv run --project pipeline python -X utf8 lab/questions/run.py solve <topic>
-# Dispatch fresh Astra medium workers for the frozen packets, then bind each:
-uv run --project pipeline python -X utf8 lab/questions/run.py bind <receipt> --agent-id <canonical-worker>
-# Rerun solve to admit outputs, then:
-uv run --project pipeline python -X utf8 lab/questions/run.py compare <topic>
-uv run --project pipeline python -X utf8 lab/questions/run.py fix <topic>
-# After a repair: render, validate, solve and compare again.
-pnpm exec tsx lab/questions/render.ts <topic>
-uv run --project pipeline python -X utf8 lab/questions/run.py copycheck <topic>
-uv run --project pipeline python -X utf8 lab/questions/run.py prepare-publish <topic>
-# From server/:
-go run ./cmd/bank validate <topic>
-go run ./cmd/bank publish <topic>
-go run ./cmd/bank status
+```bash
+export LIBRARY_DATABASE_URL="$(grep '^LIBRARY_DATABASE_URL=' ../.env.local | cut -d= -f2- | sed 's/@localhost:/@127.0.0.1:/')"
 ```
 
-Publication is already authorized as part of the pilot, but the user's latest
-instruction is to stop at this round and hand off. Wait for a request to resume
-before starting another generation round.
+The tunnel is
+`ssh -i ~/.ssh/capy_ingest_159_195_61_195 -N -L 127.0.0.1:15433:10.77.0.2:5433 root@159.195.61.195`.
 
-The next ready batch is Equations: all 50 current review renders pass visual
-review, including an admitted repair to one malformed inequality distractor.
-`current-solve-packets.json` inside that topic lists the current 50 learner
-packets. Older packets from before the repair remain for audit; do not dispatch
-them. Fresh blind solving has not started. The repaired question is
-`eafe2dfd-2822-4810-8951-18b87edabbde`; option C now correctly displays
-`c ≤ -1/4`. The topic's visual report documents both the finding and recheck.
+## Lessons from this round
 
-Variations and IELTS Multiple Choice have 50 rendered, Go-validated questions
-each. They still need fresh blind solving, complete visual review, comparison,
-copy checks, publication metadata and publication. Do not treat their successful
-authoring/schema validation as correctness admission.
+These lived in the dispatch prompts given to each agent, not in the frozen
+`prompts/*.md`; repeat them when dispatching new topics.
 
-## Application rollout remains separate
+- Writers paraphrase instructions; the official IELTS rubric wording trips the
+  copy check.
+- Quantity answers with a `unit` are plain numbers: no thousands separators or
+  surds (Go `quantityPattern`).
+- Graph terms reject `PI`; use `x*0.017453292519943295` for degrees.
+- Write JSON with `json.dump`; shell heredocs turn `\frac` into a form feed.
+- Answer-position leaks were the most common review finding: heading lists in
+  answer order, MC keys always longest or in a fixed slot, unused positions in
+  sentence endings. Ask reviewers to check for them.
+- Library excerpts sometimes repeat a paragraph (parser artefact, logged in the
+  retrieval backlog); passage writers drop the repeat.
+- Bind every agent before rerunning a stage, or the comparison runs on stale
+  outputs.
 
-Configure the production restricted editor connection and application editor
-grant, and the existing approved comment recipient `samyung@stablestudio.org`.
-Coordinate the old-quiz data cutover before deploying the incompatible new
-question shape. Prepare a concrete rollout and verify the CI editor performance
-gate on its normal runner. No production rollout, destructive data cutover or
-external email has been approved in this checkpoint. The user has no unresolved
-choice blocking local pilot generation.
+## Open items
+
+- **Matching layout.** Mock with options A (current), B (numbered items with
+  spacing, recommended) and C (B plus roman numerals for heading options):
+  https://claude.ai/artifact/2RshSuGZ3LBYXXWczDP2tw. Waiting for the developer's
+  pick; then record it in `human/miscellaneous.md` and change
+  `src/features/quizzes/QuestionRunner.tsx` / `QuestionView.tsx`.
+- **UI notes seen in renders, not yet decided:** a faint grid shows when a graph
+  sets `grid: false`; the review answer line prints raw LaTeX; IELTS
+  instructions are stored in part 1's blocks rather than the stem; "65 °" renders
+  with a space before the degree sign.
+- **Review.** All live questions are unreviewed. Editors mark them in the bank
+  UI; publication never overwrites their edits. Soft spots the blind solvers
+  noted but that passed: diagram labels that lean on everyday anatomy (eye
+  cornea/iris), a label pointing at a box already captioned "Generator" (both
+  "power station" and "power plant" are accepted), and short passages under
+  250 words (refraction, biological pump).
+- **Rollout (unchanged).** Configure the production editor connection and grant,
+  coordinate the old-quiz data cutover before deploying the new question shape,
+  and verify the CI editor performance gate. No production rollout was approved.
+- **Backups.** The nightly 03:15 Europe/Berlin dump covers the bank; the last
+  restore test was at 200 questions (`backup-verification.md`). Repeat it with
+  `verify-checkpoint-backup.py` and the new row count before relying on it.
+
+## Infrastructure (unchanged since 2026-09-27)
+
+- `bank` database in `capy-library-db` on `159.195.61.195`, private endpoint
+  `10.77.0.2:5433`. Roles: owner `capy_bank`, editor `capy_bank_editor`, reader
+  `capy_library_reader`. Credentials are in ignored `.env.local` and the host's
+  `/opt/capy-library-db/.env`; never copy them here.
+- B2 buckets `capy-notebook-question-bank-public` and `-private`
+  (`eu-central-003`). Public assets are served from
+  `https://bank-assets.capynotebook.com` through Cloudflare with immutable
+  caching.
+- `deploy/.env.uat` carries the reader `BANK_DATABASE_URL` and
+  `BANK_ASSETS_URL`; `deploy/.env.prod` does not exist locally.
+- Do not rerun `setup-backup.py`; it provisions keys and assumes an empty
+  lifecycle configuration.
