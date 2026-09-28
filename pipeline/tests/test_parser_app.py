@@ -12,6 +12,7 @@ import json
 import os
 import pickle
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -146,6 +147,14 @@ async def test_parse_child_is_persistent_and_contains_document_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
+    unlink = parser_app._unlink
+
+    def slow_unlink(*paths: Path) -> None:
+        # A slow CI filesystem: close() must still leave no transfer file.
+        time.sleep(0.2)
+        unlink(*paths)
+
+    monkeypatch.setattr(parser_app, "_unlink", slow_unlink)
     runtime = parser_app.ParserRuntime()
     await runtime.start()
     child = runtime._slots[0].process._process

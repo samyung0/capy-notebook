@@ -852,7 +852,10 @@ class ParserRuntime:
                     slot.deadline = None
                 slot.work = None
                 if not handed_off:
-                    await asyncio.to_thread(_unlink, result_path, ocr_path)
+                    # Synchronous like their creation: the owner's future is
+                    # already set, so a close() cancelling this await would
+                    # return before a to_thread unlink ran.
+                    _unlink(result_path, ocr_path)
                 result = None
                 work = None
 
