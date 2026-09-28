@@ -2301,7 +2301,7 @@
       ],
       "rights_notes": [],
       "subject_id": "electrical-engineering",
-      "version": 7
+      "version": 9
     },
     {
       "id": "hands-on-anatomy",
@@ -6945,7 +6945,7 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "statistics",
-      "version": 9
+      "version": 10
     },
     {
       "id": "java-java-java-object-oriented-problem-solving-3-e",
