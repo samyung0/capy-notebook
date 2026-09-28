@@ -198,12 +198,8 @@ export async function runJourney(
     if (id === 'source-replaced')
       announceSourceEpoch(scenarioText, advanceScenarioSource(scenarioText));
     else await ui.click(m.action_save());
-    if (id === 'source-replaced')
-      await ui.wait(
-        () => document.body.textContent?.includes(m.source_edit_replaced()),
-        'newer version banner'
-      );
-    else await ui.element('[role="alert"]');
+    // Unsaved edits send a replaced session to recovery, so both show the error strip.
+    await ui.element('[role="alert"]');
     return;
   }
   if (id === 'source-draft-recovery') {
