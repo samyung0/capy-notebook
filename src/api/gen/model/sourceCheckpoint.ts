@@ -26,4 +26,5 @@ export interface SourceCheckpoint {
   /** @minimum 0 */
   seedBytes?: number;
   state: string;
+  stateSeedSHA256?: string;
 }

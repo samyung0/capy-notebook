@@ -61,6 +61,7 @@ function setup() {
     room: 'source:f:epoch:1',
     sourceURL: 'https://unused',
     state: '',
+    stateSeedSHA256: null,
     workspaceId: 'ws',
   };
   const connection = {

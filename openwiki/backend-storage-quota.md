@@ -191,18 +191,19 @@ transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
 A collaborative source is charged its source bytes (`files.size_bytes`) plus
-the generated `source_documents.storage_bytes` (migration 0033): its serialized
+the generated `source_documents.storage_bytes` (migration 0039): its serialized
 pending effects (an empty list costs nothing, so opening a file charges only
-its source), plus its editing state's growth beyond the seed it started
-from (`max(0, state - seed_bytes)`; a NULL state is the seed and costs
-nothing), plus a stored baseline when one exists (only after a publication
-that rebased later DOCX or PPTX edits). The engine's representation of the
-file is a platform cost. The first save with an edit records `seed_bytes` (a
-save with nothing changed stores nothing, so opening and saving leaves the
-state NULL); a publication
-that rebased later edits records the size of the export's seed its state grew
-from (the candidate keeps that size, not the seed), and one without later
-edits returns the state to NULL. A refresh candidate is uncharged while
+its source), plus its stored editing state, plus a stored baseline when one
+exists (only after a publication that rebased later DOCX or PPTX edits). An
+Office state is charged as stored: the change over seed(base) that the service
+stores for every state that grew from its seed (a one-edit DOCX or PPTX row is
+under 1 KB), or the whole state a DOCX or PPTX rebase left. A text state keeps
+its lineage across publications and is stored whole, so it is charged its
+growth beyond the seed it started from (`max(0, state - seed_bytes)`), and
+`seed_bytes` is recorded for text only (a CHECK keeps it 0 for Office rows). A
+NULL state is the seed and costs nothing: a save with nothing changed stores
+nothing, so opening and saving leaves the state NULL, and a publication without
+later edits returns the state to NULL. A refresh candidate is uncharged while
 transient: admission does not gate on it, and publication gates the net change
 of the file's bytes and its source row. Before a parse is paid for, finalize
 refuses (except for system jobs) what publication would certainly refuse: the

@@ -76,6 +76,7 @@ export function useOfficeRuntime({
   const [viewBytes, setViewBytes] = useState<{
     bytes: ArrayBuffer;
     checkpoint?: ArrayBuffer;
+    checkpointSeedSHA256?: string;
   } | null>(null);
   const [analysis, setAnalysis] = useState<OfficeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(config.error);
@@ -212,11 +213,17 @@ export function useOfficeRuntime({
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const bytes = await response.arrayBuffer();
-        const checkpoint =
-          session.checkpoint !== session.indexedCheckpoint && session.state
-            ? decodeSourceState(session.state).slice().buffer
-            : undefined;
-        if (!controller.signal.aborted) setViewBytes({ bytes, checkpoint });
+        const saved =
+          session.checkpoint !== session.indexedCheckpoint && session.state;
+        const checkpoint = saved
+          ? decodeSourceState(saved).slice().buffer
+          : undefined;
+        // A stored change applies over seed(base), named by its hash.
+        const checkpointSeedSHA256 = saved
+          ? (session.stateSeedSHA256 ?? undefined)
+          : undefined;
+        if (!controller.signal.aborted)
+          setViewBytes({ bytes, checkpoint, checkpointSeedSHA256 });
       })
       .catch((value: unknown) => {
         if (!controller.signal.aborted) setError(toError(value).message);
@@ -254,6 +261,8 @@ export function useOfficeRuntime({
         bytes,
         canEdit,
         checkpoint,
+        checkpointSeedSHA256:
+          mode === 'view' ? viewBytes!.checkpointSeedSHA256 : undefined,
         citation: mode === 'view' ? citationRef.current : null,
         collaboration,
         fileName: file.name,

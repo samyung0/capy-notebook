@@ -5,24 +5,33 @@
 //	office-maintenance publish-all  # publish every Office source with unpublished edits
 //	office-maintenance status       # the pause, unpublished files, work in flight; exit 1 until ready
 //	office-maintenance resume       # allow Office editing again
+//	office-maintenance seed-manifest # JSON lines of every seed a stored Office change was taken over
 //
-// DATABASE_URL selects the database. The gateway image ships the command as
-// /app/office-maintenance; run it inside the `server` container, which holds it.
+// DATABASE_URL selects the database, and seed-manifest signs base links with
+// the gateway's B2_* settings (B2_LINK_TTL, seconds, sets how long they last).
+// The gateway image ships the command as /app/office-maintenance; run it
+// inside the `server` container, which holds both.
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
+const usage = "usage: office-maintenance pause|publish-all|status|resume|seed-manifest"
+
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: office-maintenance pause|publish-all|status|resume")
+		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
 	dsn := os.Getenv("DATABASE_URL")
@@ -90,8 +99,47 @@ func main() {
 		if !ready.Ready() {
 			os.Exit(1)
 		}
+	case "seed-manifest":
+		// The pin bump's seed check (pnpm office:seed-check) reads these lines.
+		if err = seedManifest(ctx, st); err != nil {
+			log.Fatalf("seed-manifest: %v", err)
+		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: office-maintenance pause|publish-all|status|resume")
+		fmt.Fprintln(os.Stderr, usage)
 		os.Exit(2)
 	}
+}
+
+func seedManifest(ctx context.Context, st *store.Store) error {
+	ttl, err := strconv.Atoi(os.Getenv("B2_LINK_TTL"))
+	if err != nil {
+		ttl = 300 // the gateway's default (cmd/api)
+	}
+	b2, err := blob.NewB2(blob.B2Config{
+		Endpoint: os.Getenv("B2_ENDPOINT"), Region: os.Getenv("B2_REGION"), Bucket: os.Getenv("B2_BUCKET"),
+		KeyID: os.Getenv("B2_KEY_ID"), AppKey: os.Getenv("B2_APP_KEY"),
+		UsePathStyle: os.Getenv("B2_FORCE_PATH_STYLE") == "true",
+		LinkTTL:      time.Duration(ttl) * time.Second,
+	})
+	if err != nil {
+		return err
+	}
+	seeds, err := st.OfficeSeeds(ctx)
+	if err != nil {
+		return err
+	}
+	out := json.NewEncoder(os.Stdout)
+	for _, seed := range seeds {
+		url, err := b2.PresignGet(ctx, seed.BaseBlobPath)
+		if err != nil {
+			return err
+		}
+		if err = out.Encode(struct {
+			store.OfficeSeed
+			SourceURL string `json:"sourceURL"`
+		}{seed, url}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

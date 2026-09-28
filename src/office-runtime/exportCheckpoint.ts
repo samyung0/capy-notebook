@@ -9,7 +9,8 @@ type WorkerResponse =
 export function exportCheckpoint(
   format: OfficeFormat,
   base: ArrayBuffer,
-  checkpoint: ArrayBuffer
+  checkpoint: ArrayBuffer,
+  seedSHA256?: string
 ): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(
@@ -27,6 +28,9 @@ export function exportCheckpoint(
       worker.terminate();
       reject(new Error(event.message));
     };
-    worker.postMessage({ base, checkpoint, format, id }, [base, checkpoint]);
+    worker.postMessage({ base, checkpoint, format, id, seedSHA256 }, [
+      base,
+      checkpoint,
+    ]);
   });
 }

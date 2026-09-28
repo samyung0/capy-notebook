@@ -224,6 +224,7 @@ async function mockSourceSession(
     sourceIdentity: `mock-${fileId}`,
     sourceURL: link.url,
     state: sourceRoomState(room),
+    stateSeedSHA256: null,
     workspaceId: file.workspaceId,
   };
 }

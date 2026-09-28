@@ -21,5 +21,6 @@ export interface SourceRefreshPublish {
   netTokens: number;
   pendingEffects: unknown;
   rebasedState?: string;
+  rebasedStateSeedSHA256?: string;
   sourceETag: string;
 }

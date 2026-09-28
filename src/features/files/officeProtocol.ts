@@ -1,4 +1,4 @@
-export const OFFICE_PROTOCOL_VERSION = 4 as const;
+export const OFFICE_PROTOCOL_VERSION = 5 as const;
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 export type OfficeCitation = { quote: string; page?: number };
@@ -43,6 +43,11 @@ export type OfficeHostMessage =
       collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
       /** View mode only: saved Yrs state to export over `bytes` before opening. */
       checkpoint?: ArrayBuffer;
+      /**
+       * With a checkpoint: it is the change over seed(`bytes`) whose SHA-256
+       * this is; without, the checkpoint is a complete state.
+       */
+      checkpointSeedSHA256?: string;
       citation?: OfficeCitation | null;
     }
   | {
@@ -156,6 +161,10 @@ export function isOfficeHostMessage(
       (candidate as { bytes?: unknown }).bytes instanceof ArrayBuffer &&
       typeof (candidate as { revision?: unknown }).revision === 'number' &&
       isRevision((candidate as { revision: number }).revision) &&
+      ['undefined', 'string'].includes(
+        typeof (candidate as { checkpointSeedSHA256?: unknown })
+          .checkpointSeedSHA256
+      ) &&
       (candidate.mode === 'view' ||
         isCollaboration(candidate.collaboration))) ||
       (candidate.type === 'set-capabilities' &&

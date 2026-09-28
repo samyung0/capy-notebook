@@ -3261,6 +3261,9 @@ components:
           format: base64
           nullable: true
           type: string
+        stateSeedSHA256:
+          nullable: true
+          type: string
         uploadHeaders:
           additionalProperties:
             type: string
@@ -3276,6 +3279,7 @@ components:
         - checkpoint
         - leaseToken
         - state
+        - stateSeedSHA256
         - sourceBlobPath
         - format
         - baseSourceURL
@@ -3320,6 +3324,8 @@ components:
           type: integer
         state:
           format: base64
+          type: string
+        stateSeedSHA256:
           type: string
       required:
         - actorIds
@@ -3537,10 +3543,6 @@ components:
           type: string
         leaseToken:
           type: string
-        seedBytes:
-          format: int64
-          minimum: 0
-          type: integer
         sizeBytes:
           format: int64
           type: integer
@@ -3556,7 +3558,6 @@ components:
         - sourceSHA256
         - sizeBytes
         - sourceETag
-        - seedBytes
       type: object
     SourceRefreshInputBody:
       additionalProperties: false
@@ -3614,6 +3615,8 @@ components:
         pendingEffects: {}
         rebasedState:
           format: base64
+          type: string
+        rebasedStateSeedSHA256:
           type: string
         sourceETag:
           type: string
@@ -3685,6 +3688,9 @@ components:
           format: base64
           nullable: true
           type: string
+        stateSeedSHA256:
+          nullable: true
+          type: string
         workspaceId:
           type: string
       required:
@@ -3700,6 +3706,7 @@ components:
         - baseSourceSHA256
         - sourceURL
         - state
+        - stateSeedSHA256
         - indexedBaseline
         - pendingEffects
         - netTokens

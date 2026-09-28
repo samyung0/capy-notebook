@@ -173,6 +173,9 @@ services:
         condition: service_healthy
       server:
         condition: service_healthy
+    # Shutdown flushes every room's debounced save (up to 30 s behind for a
+    # source room) before exiting.
+    stop_grace_period: 60s
     restart: unless-stopped
 
   retrieval:

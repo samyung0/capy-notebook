@@ -5,6 +5,7 @@ import { type Document, Server } from '@hocuspocus/server';
 import { Redis as IORedis } from 'ioredis';
 import { Pool } from 'pg';
 import * as Y from 'yjs';
+import { accessRecheck } from './accessRecheck.js';
 import {
   assertAllowedOrigin,
   type CollaborationContext,
@@ -12,7 +13,10 @@ import {
   SOURCE_ROOM_PATTERN,
   verifyCollaborationToken,
 } from './auth.js';
-import { broadcastCheckpointPersisted } from './checkpointReceipt.js';
+import {
+  broadcastCheckpointPersisted,
+  registerCheckpointRequest,
+} from './checkpointReceipt.js';
 import { loadConfig } from './config.js';
 import {
   assertUpdatePreservesContributors,
@@ -73,6 +77,7 @@ import {
   observeServiceCommandStore,
   ServiceCommandCompletions,
 } from './serviceCommand.js';
+import { debounceSourceStores, persistsNow } from './sourceDebounce.js';
 import {
   MAX_SOURCE_STATE_BYTES,
   SourceDocumentStore,
@@ -131,6 +136,10 @@ const roomEvictions = new RoomEvictionState();
 // writing a marker into the Y.Doc, so acknowledging a save costs no Yjs update
 // and leaves nothing behind in the persisted document.
 const pendingCheckpoints = new Map<string, Set<string>>();
+// A source writer's access is revalidated at most this often per connection;
+// access and membership changes close its connection anyway (the eviction
+// outbox), and every checkpoint rechecks each writer.
+const recheckSourceAccess = accessRecheck(5000);
 const MAX_PENDING_CHECKPOINTS = 64;
 const MAX_CHECKPOINT_ID_LENGTH = 128;
 const evictionWaiters = new Map<
@@ -552,7 +561,8 @@ const server = new Server<CollaborationContext>({
   },
   async afterUnloadDocument({ documentName }) {
     pendingCheckpoints.delete(documentName);
-    if (!SOURCE_ROOM_PATTERN.test(documentName)) store.forgetRoom(documentName);
+    if (SOURCE_ROOM_PATTERN.test(documentName)) sources.forget(documentName);
+    else store.forgetRoom(documentName);
   },
   // Runs per inbound message, so it must stay free of I/O. Distributed eviction
   // always reaches this instance over Redis pub/sub and populates
@@ -585,10 +595,12 @@ const server = new Server<CollaborationContext>({
       }
       assertUpdatePreservesContributors(document, yjsUpdate);
       if (SOURCE_ROOM_PATTERN.test(document.name)) {
-        await sources.assertConnectionAccess(
-          document.name,
-          context.userId,
-          context.access
+        await recheckSourceAccess(connection, () =>
+          sources.assertConnectionAccess(
+            document.name,
+            context.userId,
+            context.access
+          )
         );
         const format = sourceFormats.get(document);
         let refusal: string | null = null;
@@ -737,6 +749,7 @@ const server = new Server<CollaborationContext>({
       epoch?: unknown;
       checkpoint?: unknown;
       clean?: unknown;
+      flush?: unknown;
     };
     try {
       event = JSON.parse(payload);
@@ -760,14 +773,26 @@ const server = new Server<CollaborationContext>({
     ) {
       return;
     }
-    let pending = pendingCheckpoints.get(document.name);
-    if (!pending) {
-      pending = new Set();
-      pendingCheckpoints.set(document.name, pending);
-    }
-    if (pending.size >= MAX_PENDING_CHECKPOINTS) return;
-    pending.add(id);
-    if (SOURCE_ROOM_PATTERN.test(document.name)) {
+    const source = SOURCE_ROOM_PATTERN.test(document.name);
+    // A source room's idle receipts wait for its debounced store; a full set
+    // is drained by saving now rather than dropping this request.
+    if (
+      !(await registerCheckpointRequest(
+        pendingCheckpoints,
+        document.name,
+        id,
+        MAX_PENDING_CHECKPOINTS,
+        source ? () => persistSource(document) : undefined
+      ))
+    )
+      return;
+    // An explicit save (flush) persists at once. The idle request only
+    // registers its receipt for the room's debounced store, as in a material
+    // room, unless no store is waiting to carry it.
+    if (
+      source &&
+      persistsNow(server.hocuspocus, document.name, event.flush === true)
+    ) {
       // storeSource already reports the failure and sends the client receipt.
       // Hocuspocus does not await stateless callbacks.
       await persistSource(document).catch(() => undefined);
@@ -912,6 +937,12 @@ function sourceReceipt(
   );
   if (!pending?.size) pendingCheckpoints.delete(document.name);
 }
+
+debounceSourceStores(
+  server.hocuspocus,
+  config.sourceDebounceMs,
+  config.sourceMaxDebounceMs
+);
 
 const queueSourceSave = roomSaveQueue(storeSource);
 function persistSource(document: Document) {

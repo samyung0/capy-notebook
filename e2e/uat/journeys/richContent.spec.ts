@@ -16,7 +16,7 @@ import {
   publishWhileEditing,
   saved,
   savedExport,
-  seedBytes,
+  seedSHA256,
   storageCharge,
 } from './office';
 import {
@@ -42,7 +42,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
     const name = richFiles[format];
     const bytes = await fixture(name, marker, 'rich-content');
-    const seed = await seedBytes(format, bytes);
+    const seed = await seedSHA256(format, bytes);
     const before = await storageCharge(run);
     const fileId = await upload(run, workspaceId, name, bytes, true);
     const editor = await run.createActor(`rich-${format}-editor`);
@@ -81,12 +81,12 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     assertRichPreserved(format, bytes, edited.bytes, marker);
     // The owner's editor shows the collaborator's edit as well as its own.
     await expectRichContent(ownerFrame, format, marker, 'edit');
-    // Edits charge their effects and the state's growth beyond seed(base).
+    // Edits are stored as their change over seed(base) and charged as stored.
     const editCharge = async () => {
       await saved(run.owner.page);
       await saved(editor.page);
       const charged = await officeCharge(run, fileId, before);
-      assert.equal(Number(charged.seed_bytes), seed);
+      assert.equal(charged.state_seed_sha256, seed);
       assert(Array.isArray(charged.pending_effects));
       assert(charged.pending_effects.length > 0);
       return charged;

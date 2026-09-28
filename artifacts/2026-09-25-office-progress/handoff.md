@@ -437,3 +437,31 @@ and 40 runs with four workers at load average 22 passed without retries.
 No storage-relevant runtime changed after `21a8f996` (one comment in
 `source_refresh.go`; same BetterOffice pin), so the September 28 storage report
 remains the current measurement.
+
+## Office save cost, 2026-09-28
+
+Epo asked why every DOCX/PPTX save rewrote a full snapshot. Two Opus
+investigations ([write path](save-write-path-2026-09-28.md),
+[state representation](state-representation-2026-09-28.md)) led to four
+recorded decisions (`human/frontend/office-files.md`,
+`human/backend-storage-quota.md`, 2026-09-28):
+
+- Source rooms debounce 5 s / 30 s; the browser's idle request only registers
+  its receipt, explicit saves `flush`. Saved still means a database commit.
+- Office states are stored as their Yjs change over seed(base) with
+  `state_seed_sha256` (migration 0039), rebuilt and checked on every write and
+  read; text and DOCX/PPTX states rebased by a publication stay whole. Office
+  rows are charged as stored, text keeps `seed_bytes`.
+- Write path: blob-reference triggers fire only on path changes, saves start
+  from the instance's durable copy, the base is downloaded once, and access is
+  rechecked at most every 5 s per connection.
+- Pin bumps run `office-maintenance seed-manifest` and
+  `pnpm office:seed-check` first (runbook). No legacy Office editing data
+  exists anywhere, so nothing converts old rows.
+
+One saved edit across the 18 native fixtures now stores 4.7 KB of state
+instead of 559 KB ([report](../../bench/parsers/reports/2026-09-28-office-state-diffs.md)).
+An Opus review found a critical rebuild-check bug (non-canonical merged
+encodings refused valid saves permanently) and a text-publication fast-path
+bug; both are fixed with regression tests, and an Opus recheck plus the
+reviewers' fuzzers (0 refusals in about 30k saves) closed the loop.

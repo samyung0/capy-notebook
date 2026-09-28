@@ -2510,8 +2510,8 @@ forward. The environment manifest includes these app-host values.
 
 ## Office maintenance window
 
-An Office engine upgrade that changes seed output (the fork's golden seed tests
-decide, per format) ships in a maintenance window: editing pauses, every file
+An Office engine upgrade that changes seed output (the seed check below and the
+fork's golden seed tests decide, per format) ships in a maintenance window: editing pauses, every file
 with unpublished edits publishes on the old engine at platform cost, and the
 deploy resets the saved states so rooms reseed on the new engine (decision in
 `human/frontend/office-files.md`). An upgrade that keeps seeds only bumps
@@ -2536,6 +2536,18 @@ run against the environment's database:
 | `publish-all` | Requests a publication for every Office source with unpublished edits (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. Prints one line per file and the number refused. |
 | `status` | Prints whether editing is paused, every Office source still unpublished (with its running job and `refresh_error`) and the Office publication and reprocess work in flight: `source_refresh` jobs, the `parse` or `ingest` jobs they became, and system-paid reprocess jobs. Other uploads and text refreshes are not counted. Exits 1 until editing is paused and both lists are empty. |
 | `resume` | Deletes the pause row. |
+| `seed-manifest` | Prints one JSON line per base a stored Office change was taken over: format, base SHA, the seed's SHA-256, the number of files, and a signed base link (lifetime `B2_LINK_TTL` seconds, default 300; pass `-e B2_LINK_TTL=3600` to `docker exec` for a slow copy). Reads only. |
+
+**Seed check, before every BetterOffice pin bump.** Stored Office changes are
+kept as their change over seed(base), so a pin that seeds any stored base
+differently cannot read them (the service refuses them, it never misapplies
+them). Before deploying a pin to an environment, run
+`docker exec server-<resource-uuid> /app/office-maintenance seed-manifest > seeds.jsonl`
+there, copy the file to a checkout of the new pin, run `pnpm office:prepare`,
+then `pnpm office:seed-check seeds.jsonl`. It prints `same` or `changed` per
+base and exits 1 when any seed changed: that pin then ships through the
+window below, and its reset covers the formats listed as changed (plus any
+golden seed changes). An empty manifest passes.
 
 A maintenance export-only publication makes the saved state the file's bytes
 without a parser or provider call: the collaboration service exports and
@@ -2584,4 +2596,5 @@ Steps:
    recovery or the banner. Editing needs the pause off, so the check comes
    after this step.
 6. Check: open one file of each format in Edit, make an edit, publish it, and
-   confirm quota and the `source_documents` rows.
+   confirm quota and the `source_documents` rows (an Office edit stores a small
+   `state` with `state_seed_sha256` set).

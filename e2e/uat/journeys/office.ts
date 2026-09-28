@@ -41,7 +41,7 @@ function engine() {
 export async function savedState(run: UatRun, fileId: string) {
   const rows = await run.query(
     `SELECT format,checkpoint,indexed_checkpoint,epoch,base_blob_path,base_source_sha256,
-    encode(state,'base64') AS state FROM source_documents WHERE file_id=%s`,
+    encode(state,'base64') AS state,state_seed_sha256 FROM source_documents WHERE file_id=%s`,
     [fileId]
   );
   assert.equal(rows.length, 1, `missing source state for ${fileId}`);
@@ -85,14 +85,17 @@ export async function savedExport(run: UatRun, fileId: string) {
     row.format === 'docx' || row.format === 'xlsx' || row.format === 'pptx'
   );
   const native = await engine();
+  const seed = await native.seedOffice(row.format, base);
   const checkpoint: Checkpoint = state
     ? {
         baseSha256: source.sha256,
         format: row.format,
         schemaVersion: 1,
-        state,
+        state: row.state_seed_sha256
+          ? overSeed(seed.state, state, string(row.state_seed_sha256))
+          : state,
       }
-    : await native.seedOffice(row.format, base);
+    : seed;
   const bytes = state
     ? await native.exportOffice(base, checkpoint, {
         now: '2026-01-01T00:00:00.000Z',
@@ -107,9 +110,26 @@ export async function savedExport(run: UatRun, fileId: string) {
   };
 }
 
-/** Size of seed(base), the part of the editing state the owner is not charged for. */
-export async function seedBytes(format: OfficeFormat, base: Uint8Array) {
-  return (await (await engine()).seedOffice(format, base)).state.byteLength;
+/**
+ * A stored Office change applied over seed(base): the seed must be the one it
+ * names, and every item the change refers to must be in it.
+ */
+function overSeed(seed: Uint8Array, change: Uint8Array, seedSHA256: string) {
+  assert.equal(sha256(seed), seedSHA256, 'Stored change names another seed');
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, seed);
+    Y.applyUpdate(doc, change);
+    assert(!doc.store.pendingStructs && !doc.store.pendingDs);
+    return Y.encodeStateAsUpdate(doc);
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** SHA-256 of seed(base), which a stored Office change names. */
+export async function seedSHA256(format: OfficeFormat, base: Uint8Array) {
+  return sha256((await (await engine()).seedOffice(format, base)).state);
 }
 
 /** The owner's storage charge as the app reports it. */
@@ -119,8 +139,9 @@ export async function storageCharge(run: UatRun) {
 
 /**
  * The owner's charge since `before` (read before the upload) is the source
- * plus its pending effects, editing-state growth beyond the recorded seed and
- * a stored baseline (human/backend-storage-quota.md, 2026-09-25 Office rule).
+ * plus its pending effects, its stored editing state (for text, its growth
+ * beyond the recorded seed) and a stored baseline
+ * (human/backend-storage-quota.md, 2026-09-28 rule).
  */
 export async function officeCharge(
   run: UatRun,
@@ -130,7 +151,7 @@ export async function officeCharge(
   const [charge, rows] = await Promise.all([
     storageCharge(run),
     run.query(
-      `SELECT f.size_bytes,d.checkpoint,d.seed_bytes,d.pending_effects,d.net_tokens,
+      `SELECT f.size_bytes,d.format,d.checkpoint,d.seed_bytes,d.state_seed_sha256,d.pending_effects,d.net_tokens,
       octet_length(d.state) AS state_bytes,
       COALESCE(octet_length(NULLIF(d.pending_effects,'[]'::jsonb)::text),0) AS effects_bytes,
       octet_length(d.indexed_baseline) AS baseline_bytes
@@ -143,7 +164,9 @@ export async function officeCharge(
   const growth =
     row.state_bytes === null
       ? 0
-      : Math.max(0, Number(row.state_bytes) - Number(row.seed_bytes));
+      : row.format === 'text'
+        ? Math.max(0, Number(row.state_bytes) - Number(row.seed_bytes))
+        : Number(row.state_bytes);
   assert.equal(
     charge - before,
     Number(row.size_bytes) +

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/blob"
@@ -163,20 +164,25 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 		!bytes.Contains(published.Body.Bytes(), []byte(`"state":null`)) {
 		t.Fatalf("published row view session = %d body=%s", published.Code, published.Body.String())
 	}
-	if _, err := st.Pool().Exec(ctx, `UPDATE source_documents SET checkpoint=checkpoint+1,state='\x01' WHERE file_id=$1`, file.ID); err != nil {
+	seed := strings.Repeat("a", 64)
+	if _, err := st.Pool().Exec(ctx, `UPDATE source_documents SET checkpoint=checkpoint+1,state='\x01',state_seed_sha256=$2 WHERE file_id=$1`, file.ID, seed); err != nil {
 		t.Fatal(err)
 	}
+	// The saved change rides along with the seed it was taken over.
 	edited := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil)
 	if edited.Code != http.StatusOK ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
+		!bytes.Contains(edited.Body.Bytes(), []byte(`"stateSeedSHA256":"`+seed+`"`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"pendingEffects":null`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
 	}
-	// The editor read carries the state but leaves the baseline and effects server-side.
+	// An Office editor takes its document from the room's sync: the editor
+	// read carries no state, and leaves the baseline and effects server-side.
 	full := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
 	if full.Code != http.StatusOK ||
-		!bytes.Contains(full.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"state":null`)) ||
+		!bytes.Contains(full.Body.Bytes(), []byte(`"stateSeedSHA256":null`)) ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"pendingEffects":null`)) {
 		t.Fatalf("editor session = %d body=%s", full.Code, full.Body.String())

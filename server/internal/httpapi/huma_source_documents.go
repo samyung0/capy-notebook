@@ -128,8 +128,12 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	// The browser opens the state; the baseline and effects stay server-side.
+	// The baseline and effects stay server-side. The browser opens a text
+	// state; an Office editor takes its document from the room's sync.
 	session.IndexedBaseline, session.PendingEffects = nil, nil
+	if session.Format != "text" {
+		session.State, session.StateSeedSHA256 = nil, nil
+	}
 	return a.sourceSessionResponse(ctx, session)
 }
 func (a *api) bootstrapSourceDocument(ctx context.Context, in *sourceBootstrapInput) (*sourceSessionOutput, error) {

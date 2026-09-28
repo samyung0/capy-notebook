@@ -1321,6 +1321,7 @@ export const GetSourceSessionResponse = zod.object({
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
   "state": zod.string().nullable(),
+  "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
 
@@ -4494,6 +4495,7 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
   "state": zod.string().nullable(),
+  "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
 
@@ -4541,7 +4543,8 @@ export const CheckpointSourceDocumentBody = zod.object({
 }).optional(),
   "pendingEffects": zod.unknown(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
-  "state": zod.string()
+  "state": zod.string(),
+  "stateSeedSHA256": zod.string().optional()
 })
 
 export const CheckpointSourceDocumentResponse = zod.object({
@@ -4609,6 +4612,7 @@ export const PublishSourceRefreshBody = zod.object({
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
   "rebasedState": zod.string().optional(),
+  "rebasedStateSeedSHA256": zod.string().optional(),
   "sourceETag": zod.string()
 })
 
@@ -4629,6 +4633,7 @@ export const PublishSourceRefreshResponse = zod.object({
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
   "state": zod.string().nullable(),
+  "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
 
@@ -4686,6 +4691,7 @@ export const ClaimSourceRefreshResponse = zod.object({
   "leaseToken": zod.string(),
   "sourceBlobPath": zod.string(),
   "state": zod.string().nullable(),
+  "stateSeedSHA256": zod.string().nullable(),
   "uploadHeaders": zod.record(zod.string(), zod.string()),
   "uploadURL": zod.string()
 })
@@ -4702,16 +4708,11 @@ export const FinalizeSourceRefreshHeader = zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const finalizeSourceRefreshBodySeedBytesMin = 0;
-
-
-
 export const FinalizeSourceRefreshBody = zod.object({
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "jobId": zod.string(),
   "leaseToken": zod.string(),
-  "seedBytes": zod.int().min(finalizeSourceRefreshBodySeedBytesMin),
   "sizeBytes": zod.int(),
   "sourceETag": zod.string(),
   "sourceSHA256": zod.string()

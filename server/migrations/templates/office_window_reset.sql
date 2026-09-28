@@ -4,7 +4,8 @@
 -- engine upgrade window; openwiki/deployment-runbook.md, "Office maintenance
 -- window"). The window's pin bump copies it to the next numbered migration and
 -- fills the placeholder:
---   {{FORMATS}}  formats whose golden seeds changed, e.g. 'docx','xlsx','pptx'
+--   {{FORMATS}}  formats whose seeds changed (the pin bump's seed check or the
+--                golden seeds), e.g. 'docx','xlsx','pptx'
 -- Written for the NULL-state model the window ships with: a NULL state is
 -- seed(base), a NULL indexed_baseline is derived from the base, and
 -- storage_bytes counts a NULL column as 0. Checked once against that schema.
@@ -47,7 +48,7 @@ WITH dropped AS (
   DELETE FROM source_refresh_candidates c USING dropped WHERE c.file_id = dropped.file_id
 )
 UPDATE source_documents d
-SET epoch = d.epoch + 1, state = NULL, seed_bytes = 0, indexed_baseline = NULL, pending_effects = '[]'::jsonb,
+SET epoch = d.epoch + 1, state = NULL, state_seed_sha256 = NULL, seed_bytes = 0, indexed_baseline = NULL, pending_effects = '[]'::jsonb,
     net_tokens = 0, running_job_id = NULL, desired_checkpoint = NULL, desired_manual = false,
     refresh_error = NULL, updated_at = now()
 FROM dropped

@@ -121,7 +121,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
   const [synced, setSynced] = useState(false);
   const runtime = useRef<{
     provider: SourceProvider;
-    checkpoint: () => void;
+    checkpoint: (flush?: boolean) => void;
     sequence: number;
     acknowledged: number;
     pending: Map<string, number>;
@@ -141,7 +141,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       return Promise.reject(new Error(m.source_edit_offline()));
     return new Promise((resolve, reject) => {
       flushWaiters.current.push({ reject, resolve, sequence: active.sequence });
-      active.checkpoint();
+      active.checkpoint(true);
     });
   }, []);
 
@@ -221,7 +221,9 @@ export function useSourceSession(fileId: string, enabled: boolean) {
       if (cancelled) return;
       const shared = new Y.Doc();
       doc = shared;
-      if (session.state)
+      // A text session carries its state; an Office editor takes its document
+      // from the room's sync (the stored state may be a change over the seed).
+      if (session.state && session.format === 'text')
         Y.applyUpdate(shared, decodeSourceState(session.state), RESTORE_ORIGIN);
       recoveryDrafts = sourceRecoveryDrafts(drafts, session);
       const draft = recoveryDrafts[0];
@@ -302,13 +304,19 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         }
         provider?.disconnect();
       };
-      const checkpoint = () => {
+      // An explicit save (flush) persists at once; the idle request is
+      // acknowledged by the room's next debounced store.
+      const checkpoint = (flush = false) => {
         if (!provider?.isAuthenticated || active.recovery) return;
         clearTimeout(timer);
         const id = crypto.randomUUID();
         pending.set(id, active.sequence);
         provider.sendStateless(
-          JSON.stringify({ id, type: 'checkpoint-request' })
+          JSON.stringify({
+            id,
+            type: 'checkpoint-request',
+            ...(flush && { flush }),
+          })
         );
       };
       active.checkpoint = checkpoint;
@@ -450,7 +458,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           if (state && !cancelled && !active.recovery) {
             setLoaded({ bytes, doc: shared, session });
             setSynced(true);
-            checkpoint();
+            checkpoint(true);
           }
         },
         onUnsyncedChanges: ({ number }) => {
@@ -517,7 +525,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           });
         }
         clearTimeout(timer);
-        timer = setTimeout(checkpoint, 1000);
+        timer = setTimeout(() => checkpoint(), 1000);
       });
     })().catch(fail);
     return () => {
