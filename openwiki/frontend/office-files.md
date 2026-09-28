@@ -169,15 +169,21 @@ wrote lands through the alignment of the latest story with the rebased one,
 made once per story in a rebase. The reference field the export writes at the
 end of a comment made in the editor is a seed unit the later edits never
 held, so the alignment treats it as transparent: text typed or deleted beside
-it lands beside it, and an anchor may span it. Such field units are also left
-out of the DOCX effects baseline, where the comment's own entry carries the
-change.
+it lands beside it, a later delete that spans it deletes it too, and an
+anchor may span it. A comment the later edits removed takes its reference
+field with it, as removing it in the editor does (removeComment deletes the
+comment's reference fields), since an export drops a field that names no
+comment. Such field units are also left out of the DOCX effects baseline,
+where the comment's own entry carries the change.
 The rebase fails explicitly when a later edit or such an anchor touches
 content the export wrote differently, when a restored slide, shape or
 paragraph needs source XML the export dropped (Undo of a deletion made before
-the capture), or when the rebased text and image effects differ from the
+the capture), when the rebased text and image effects differ from the
 saved ones (DOCX comments compared by author and visible text, since the
-export adds the body's reference run). A refusal (an error the engine raises
+export adds the body's reference run), or when the editor's render bridge
+refuses a rebased DOCX story (text or a field ahead of a table or content
+control in one paragraph slot): the rebase runs the bridge over every story
+of the result (`assertDocxRenders`). A refusal (an error the engine raises
 with the `Office rebase:` prefix, including XLSX's) is terminal: the
 collaboration service answers the publication with 422, the ingest worker
 ends the source refresh job without retrying it and records the refusal in
@@ -206,26 +212,40 @@ the two (`merge_paragraphs` in `crates/docx-edit`):
 
 - before a page or column break it removes the break;
 - before a table or block content control it removes the paragraph when that
-  holds nothing but its mark (the table's paragraph keeps its own
-  properties), and otherwise changes nothing. The paragraph between two
-  tables belongs to the first table's slot, so it is never removed and two
-  tables are never joined.
+  is empty (nothing but its mark and comment reference fields, which show
+  nothing; the table's paragraph keeps its own properties), and otherwise
+  changes nothing. The paragraph between two tables belongs to the first
+  table's slot, so it is never removed and two tables are never joined.
 
-Suggesting mode marks the break or the paragraph mark deleted instead. The
-caret stays where it was unless its paragraph is gone: the merge returns it,
-and the non-resident Backspace and Delete (suggesting mode, headers, footers
-and notes) put it there as the resident path leaves it. A range delete (a
-selection delete, a cut or a replacement) ending at the start of such a slot
-keeps the paragraph mark before it (`kept_mark`), so the text left stays in
-its own paragraph; a range starting at a paragraph's start still takes the
-mark. Text, tabs, breaks and inline objects, images included, inserted at a
-location ahead of a slot's leading blocks land after them, with the caret
-following (`inline_landing`). The editor ref
+Delete or Backspace right next to a table or block content control never
+deletes it: the user selects it to delete it. A break next to the caret goes
+like any character. One engine edit (`delete_at`, `deleteAt` in the session)
+makes every Backspace and Delete, resident or not, so suggesting mode,
+headers, footers and notes delete and place the caret as the resident path
+does. Suggesting mode marks what it removes deleted; only the author's own
+pending paragraph mark goes (Backspacing over one's own Enter), so an own
+inserted paragraph before an original break still suggests the break's
+deletion. Enter at the start of a slot that opens with a block inserts an
+empty paragraph before the block and leaves the block's paragraph (id and
+properties, borders included) as it was, so Delete in the new paragraph
+restores the document.
+
+A range delete (a selection delete or a cut) ending at the start of such a
+slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
+in its own paragraph, unless the range starts at that paragraph's start: then
+the whole paragraph goes. A replacement (type-over, paste) keeps the mark in
+both cases, since its text needs the paragraph. Accepting a suggested deletion
+of such a mark keeps the mark while its paragraph still holds content, so
+text typed into a paragraph after its deletion was suggested stays out of the
+block's slot (`ops/resolve.rs`). Text, tabs, breaks and inline objects,
+images included, inserted at a location ahead of a slot's leading blocks land
+after them, with the caret following (`inline_landing`). The editor ref
 API's page break opens the next paragraph slot. The state still arises from
 concurrent edits (one editor merges a paragraph while another opens the next
 slot with a table), and it does not round trip: the export writes the text
 after the table (a page break is kept in place), so the rebase lands edits to
-the text but refuses an edit to that table or break.
+the text but refuses an edit to that table or break, and refuses outright a
+result the render bridge refuses.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
