@@ -30,7 +30,11 @@ export function MathPreview({
       element.style.cssText =
         'max-width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:1.21em;font-weight:400;font-style:normal;line-height:1.2;pointer-events:none;--text-font-family:KaTeX_Main,"Times New Roman",serif;';
       // The initial render reads this attribute synchronously on connection.
-      element.setAttribute('value', tex);
+      // MathLive 0.110 has no \dots; show \ldots, keeping the stored LaTeX.
+      element.setAttribute(
+        'value',
+        tex.replace(/\\dots(?![a-zA-Z])/g, '\\ldots')
+      );
       host.current.append(element);
       cleanup = () => element.remove();
       host.current.setAttribute('aria-label', element.getValue('spoken-text'));
