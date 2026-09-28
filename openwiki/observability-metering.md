@@ -707,7 +707,12 @@ rates, and the reservation refuses as `llm_credits_exhausted` when used +
 reserved + estimate would exceed 1.3× the plan limit; provider import
 reservations stay on the plain exhaustion check. The dialog
 holds submit while any fast-parse analysis is running or failed, so every
-reserved document carries an estimate. The browser reads the fast-parse
+reserved document carries an estimate; since 2026-09-28 analysis fails only for
+real reasons (damaged file, user password, over the policy's page or OCR page
+cap), each with its own message (see
+[frontend/office-files.md](frontend/office-files.md)). The reservation also
+takes the analysed `pageCount` and refuses a fast parse above `maxPages`. The
+browser reads the fast-parse
 extension list from the upload policy; a format added to the server's
 `parseExtensions` that the browser estimator cannot open shows as unsupported
 in the dialog; the user can still add it store-only, and fast parsing for it
@@ -785,10 +790,18 @@ actor, because `usage_events` needs a real actor.
 The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The
 historical database column names still say parse download/upload, but those
-values no longer measure B2 transfers. The parser runs one document at a time
-(Java plus the Python repairs in one container), so the receipt also carries
-per-phase timings; whole-host sampling captures CPU and memory. These fields
-are operational telemetry only. Page counts determine the charge.
+values no longer measure B2 transfers. The receipt also carries per-phase
+timings; the `ocr` phase is the time the OCR process spent on this document's
+pages, not its wait for a turn, and `_queue_ms` is only the wait for a parse
+child. With several parse children the process/cgroup RSS/PSS fields measure
+the whole parser, including the other documents running then, not this
+document alone; whole-host sampling captures CPU and memory. These fields are
+operational telemetry only. Page counts determine the charge. `/healthz`
+reports `executing_jobs` (documents in a parse child, 0 to `parse_workers`),
+`ocr_stage_jobs` (documents waiting for or in OCR), `ocr_queued_pages` (their
+unread pages), `ocr_page_cap` and `ocr_page_timeout_s`; `active_jobs` counts
+both stages plus the waiting documents. The host sampler stores only the
+fields it stored before, so the Ops chart does not show the OCR stage yet.
 
 Host saturation is separate. `pipeline.ingest.host_sampler` reads host `/proc`,
 polls parser admission counts, reads the durable parse/ingest queues and spool,

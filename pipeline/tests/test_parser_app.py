@@ -1,5 +1,6 @@
-"""Offline tests for the parser service runtime: bounded FIFO, hard deadline and
-quarantine, the receipt keys the worker bills from, and the bundle contract."""
+"""Offline tests for the parser service runtime: parse slots over one bounded
+FIFO, per-slot deadline/OOM isolation and quarantine, the shared OCR queue, the
+receipt keys the worker bills from, and the bundle contract."""
 
 from __future__ import annotations
 
@@ -8,8 +9,9 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
+import pickle
 import sys
-import time
 import zipfile
 from pathlib import Path
 
@@ -19,12 +21,20 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PARSER_DIR = REPO_ROOT / "parser"
 if str(PARSER_DIR) not in sys.path:
     sys.path.insert(0, str(PARSER_DIR))
+# The compose files set them; the module refuses to load without them.
+os.environ.setdefault("CAPY_PARSE_WORKERS", "1")
+os.environ.setdefault("CAPY_PARSE_MAX_PAGES", "1400")
 
 spec = importlib.util.spec_from_file_location("app", PARSER_DIR / "app.py")
 assert spec is not None and spec.loader is not None
 parser_app = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = parser_app
 spec.loader.exec_module(parser_app)
+
+
+@pytest.fixture(autouse=True)
+def _work_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path / "work")
 
 
 def _result(pages: int = 1, ocr: list[int] | None = None) -> dict:
@@ -38,11 +48,97 @@ def _result(pages: int = 1, ocr: list[int] | None = None) -> dict:
     }
 
 
-def _runtime() -> parser_app.ParserRuntime:
-    async def run(document):
-        return await asyncio.to_thread(parser_app.run_document, document)
+class FakeChild:
+    """A parse or OCR child: ``handler`` does the work, and ``terminate()``
+    ends it the way SIGKILL ends a real child (its pipe closes, code -9)."""
 
-    return parser_app.ParserRuntime(run)
+    def __init__(self, handler) -> None:
+        self.handler = handler
+        self.starts = self.terminations = 0
+        self.exitcode: int | None = None
+
+    def start(self) -> None:
+        self.starts += 1
+        self.exitcode = None
+        self._killed = asyncio.Event()
+
+    @property
+    def alive(self) -> bool:
+        return self.starts > 0 and self.exitcode is None
+
+    async def _until_killed(self, work):
+        task = asyncio.ensure_future(work)
+        killed = asyncio.ensure_future(self._killed.wait())
+        await asyncio.wait({task, killed}, return_when="FIRST_COMPLETED")
+        killed.cancel()
+        if not self._killed.is_set():
+            return task.result()
+        task.cancel()
+        raise parser_app._ChildExited("child was killed", self.exitcode)
+
+    async def run(self, document, result_path, _ocr_path):
+        """A parse child: the handler's result goes to the result file, and its
+        ``_ocr_pages`` are what the stage hands to OCR."""
+        result = await self._until_killed(self.handler(document))
+        result_path.write_bytes(pickle.dumps(result))
+        return result.get("_ocr_pages") or []
+
+    async def page(self, pdf, page_idx):
+        return await self._until_killed(self.handler(self, pdf, page_idx))
+
+    def terminate(self) -> None:
+        self.terminations += 1
+        if self.exitcode is None:
+            self.exitcode = -9
+            self._killed.set()
+
+    def stop(self) -> None:
+        pass
+
+
+async def _no_ocr(_child, _pdf, _page_idx):
+    raise AssertionError("no OCR expected")
+
+
+def _scan(name: str, pages: int) -> dict:
+    """A parse result with ``pages`` text-less pages left for the OCR stage."""
+    return {
+        **_result(pages),
+        "content_list": [
+            {"type": "text", "text": f"{name} native {p}", "page_idx": p}
+            for p in range(pages)
+        ],
+        "_ocr_pages": list(range(pages)),
+    }
+
+
+def _runtime(monkeypatch, handler, *, workers=1, depth=4, ocr=_no_ocr):
+    monkeypatch.setattr(parser_app, "PARSE_WORKERS", workers)
+    monkeypatch.setattr(parser_app, "QUEUE_DEPTH", depth)
+    children = [FakeChild(handler) for _ in range(workers)]
+    reader = FakeChild(ocr)
+    runtime = parser_app.ParserRuntime(lambda index: children[index], lambda: reader)
+    return runtime, children, reader
+
+
+async def _until(predicate) -> None:
+    for _ in range(400):
+        if predicate():
+            return
+        await asyncio.sleep(0.005)
+    raise AssertionError("condition not reached")
+
+
+def test_parse_workers_must_fit_the_queue_depth(monkeypatch) -> None:
+    monkeypatch.setenv("CAPY_PARSE_QUEUE_DEPTH", "2")
+    for workers in ("", "0", "3"):
+        monkeypatch.setenv("CAPY_PARSE_WORKERS", workers)
+        spec = importlib.util.spec_from_file_location(
+            "app_check", PARSER_DIR / "app.py"
+        )
+        assert spec is not None and spec.loader is not None
+        with pytest.raises(RuntimeError, match="CAPY_PARSE_WORKERS"):
+            spec.loader.exec_module(importlib.util.module_from_spec(spec))
 
 
 @pytest.mark.asyncio
@@ -52,9 +148,8 @@ async def test_parse_child_is_persistent_and_contains_document_errors(
     monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
     runtime = parser_app.ParserRuntime()
     await runtime.start()
-    assert runtime._parse_process is not None
-    assert runtime._parse_process._process is not None
-    pid = runtime._parse_process._process.pid
+    child = runtime._slots[0].process._process
+    assert child is not None
     try:
         for name in ("first.txt", "second.txt"):
             with pytest.raises(
@@ -62,7 +157,7 @@ async def test_parse_child_is_persistent_and_contains_document_errors(
             ):
                 await runtime.parse(parser_app.Document(b"not a document", name))
             assert runtime.ready
-            assert runtime._parse_process._process.pid == pid
+            assert runtime._slots[0].process._process is child
     finally:
         await runtime.close()
 
@@ -70,63 +165,58 @@ async def test_parse_child_is_persistent_and_contains_document_errors(
 
 
 @pytest.mark.asyncio
-async def test_documents_run_one_at_a_time_in_arrival_order(
+async def test_slots_take_documents_in_arrival_order_up_to_the_worker_count(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    order: list[str] = []
+    started: list[str] = []
     active = peak = 0
 
-    def run_document(document):
+    async def handler(document):
         nonlocal active, peak
+        started.append(document.name)
         active += 1
         peak = max(peak, active)
-        time.sleep(0.01)
-        order.append(document.name)
+        await asyncio.sleep(0.01)
         active -= 1
         return _result()
 
-    monkeypatch.setattr(parser_app, "run_document", run_document)
-    monkeypatch.setattr(parser_app, "QUEUE_DEPTH", 4)
-    runtime = _runtime()
+    runtime, _, _ = _runtime(monkeypatch, handler, workers=2)
     await runtime.start()
     try:
         results = await asyncio.gather(
             *(
                 runtime.parse(parser_app.Document(b"pdf", f"{n}.pdf"))
-                for n in ("first", "second", "third")
+                for n in ("first", "second", "third", "fourth")
             )
         )
     finally:
         await runtime.close()
 
-    assert order == ["first.pdf", "second.pdf", "third.pdf"]
-    assert peak == 1
+    assert started == ["first.pdf", "second.pdf", "third.pdf", "fourth.pdf"]
+    assert peak == 2
     assert all(queue_ms >= 0 for _result, queue_ms in results)
-    assert runtime.documents_completed == 3
+    assert runtime.documents_completed == 4
 
 
 @pytest.mark.asyncio
-async def test_a_fifth_document_is_refused_while_four_are_held(
+async def test_depth_counts_executing_and_waiting_documents_across_slots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     release = asyncio.Event()
-    loop = asyncio.get_running_loop()
 
-    def run_document(_document):
-        asyncio.run_coroutine_threadsafe(release.wait(), loop).result()
+    async def handler(_document):
+        await release.wait()
         return _result()
 
-    monkeypatch.setattr(parser_app, "run_document", run_document)
-    monkeypatch.setattr(parser_app, "QUEUE_DEPTH", 4)
-    runtime = _runtime()
+    runtime, _, _ = _runtime(monkeypatch, handler, workers=2, depth=4)
     await runtime.start()
     try:
         held = [
             asyncio.create_task(runtime.parse(parser_app.Document(b"pdf", f"{n}.pdf")))
             for n in range(4)
         ]
-        await asyncio.sleep(0.02)
-        assert runtime.active_jobs == 4
+        await _until(lambda: runtime.health()["executing_jobs"] == 2)
+        assert runtime.active_jobs == 4 and runtime.health()["queued_jobs"] == 2
         with pytest.raises(parser_app.ParserCapacity):
             await runtime.parse(parser_app.Document(b"pdf", "fifth.pdf"))
         release.set()
@@ -140,19 +230,18 @@ async def test_a_fifth_document_is_refused_while_four_are_held(
 async def test_cancelling_a_queued_request_removes_only_that_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(parser_app, "QUEUE_DEPTH", 2)
     first_started = asyncio.Event()
     release_first = asyncio.Event()
     executed: list[str] = []
 
-    async def run(document):
+    async def handler(document):
         executed.append(document.name)
         if document.name == "first.pdf":
             first_started.set()
             await release_first.wait()
         return _result()
 
-    runtime = parser_app.ParserRuntime(run)
+    runtime, _, _ = _runtime(monkeypatch, handler, depth=2)
     await runtime.start()
     try:
         first = asyncio.create_task(
@@ -168,7 +257,7 @@ async def test_cancelling_a_queued_request_removes_only_that_work(
         cancelled.cancel()
         with pytest.raises(asyncio.CancelledError):
             await cancelled
-        assert runtime.active_jobs == 1
+        await _until(lambda: runtime.active_jobs == 1)
         assert runtime.health()["queued_jobs"] == 0
 
         replacement = asyncio.create_task(
@@ -190,27 +279,22 @@ async def test_cancelling_a_queued_request_removes_only_that_work(
 async def test_cancelling_an_executing_request_keeps_deadline_and_admission(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(parser_app, "QUEUE_DEPTH", 1)
     monkeypatch.setattr(parser_app, "PARSE_DOCUMENT_TIMEOUT_S", 0.05)
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "_schedule_restart_backstop", lambda: None)
     started = asyncio.Event()
-    release = asyncio.Event()
 
-    async def run(_document):
+    async def handler(_document):
         started.set()
-        await release.wait()
-        return _result()
+        await asyncio.Event().wait()
 
-    runtime = parser_app.ParserRuntime(run)
+    runtime, (child,), _ = _runtime(monkeypatch, handler, depth=1)
     await runtime.start()
     try:
         request = asyncio.create_task(
             runtime.parse(parser_app.Document(b"", "cancelled.pdf"))
         )
         await started.wait()
-        assert runtime._current is not None
-        owned_future = runtime._current.future
+        owned_future = runtime._slots[0].work.future
 
         request.cancel()
         with pytest.raises(asyncio.CancelledError):
@@ -220,124 +304,63 @@ async def test_cancelling_an_executing_request_keeps_deadline_and_admission(
         with pytest.raises(parser_app.ParserCapacity):
             await runtime.parse(parser_app.Document(b"", "over-admitted.pdf"))
 
-        for _ in range(20):
-            if runtime.state == "failed":
-                break
-            await asyncio.sleep(0.01)
-        assert runtime.state == "failed"
+        await _until(lambda: runtime.active_jobs == 0)
         assert isinstance(owned_future.exception(), parser_app.ParseHardTimeout)
-        assert runtime.active_jobs == 1
+        assert child.terminations == 1 and runtime.state == "ready"
         assert not (tmp_path / "quarantine").exists()
-
-        release.set()
-        for _ in range(20):
-            if runtime.active_jobs == 0:
-                break
-            await asyncio.sleep(0.01)
-        assert runtime.active_jobs == 0
     finally:
-        release.set()
         await runtime.close()
 
 
 @pytest.mark.asyncio
-async def test_hard_deadline_quarantines_the_fingerprint_and_restarts(
+async def test_hard_deadline_quarantines_and_replaces_only_that_slot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The deadline starts when the document leaves the queue; the executing
-    fingerprint is quarantined, waiting documents fail as runtime failures."""
+    fingerprint is quarantined, its child replaced, and the other slot and
+    the queue keep running."""
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "PARSE_DOCUMENT_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(parser_app, "RESTART_BACKSTOP_S", 60)
-    restarts: list[float] = []
+    monkeypatch.setattr(parser_app, "PARSE_DOCUMENT_TIMEOUT_S", 0.2)
     monkeypatch.setattr(
-        parser_app, "_schedule_restart_backstop", lambda: restarts.append(1)
+        parser_app, "_schedule_restart_backstop", lambda: pytest.fail("restart")
     )
     release = asyncio.Event()
-    loop = asyncio.get_running_loop()
 
-    def run_document(_document):
-        asyncio.run_coroutine_threadsafe(release.wait(), loop).result()
+    async def handler(document):
+        if document.name == "slow.pdf":
+            await asyncio.Event().wait()
+        await release.wait()
         return _result()
 
-    monkeypatch.setattr(parser_app, "run_document", run_document)
-    runtime = _runtime()
-    terminations = 0
-
-    class ParseProcess:
-        @property
-        def alive(self):
-            return True
-
-        def terminate(self):
-            nonlocal terminations
-            terminations += 1
-
-        def stop(self):
-            pass
-
-    runtime._parse_process = ParseProcess()
+    runtime, children, _ = _runtime(monkeypatch, handler, workers=2)
     await runtime.start()
     try:
         slow = asyncio.create_task(
-            runtime.parse(
-                parser_app.Document(b"pdf", "slow.pdf", fingerprint="slow-fp")
-            )
+            runtime.parse(parser_app.Document(b"", "slow.pdf", "slow-fp"))
         )
-        waiting = asyncio.create_task(
-            runtime.parse(
-                parser_app.Document(b"pdf", "next.pdf", fingerprint="next-fp")
-            )
+        await asyncio.sleep(0.1)  # other's deadline falls after slow's
+        other = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "other.pdf", "other-fp"))
+        )
+        queued = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "next.pdf", "next-fp"))
         )
         with pytest.raises(parser_app.ParseHardTimeout):
             await slow
-        with pytest.raises(parser_app.ParserRuntimeFailure):
-            await waiting
-        assert runtime.state == "failed" and restarts and terminations == 1
         release.set()
+        await asyncio.gather(other, queued)
+        assert runtime.state == "ready"
+        assert sorted(c.terminations for c in children) == [0, 1]
+        assert sorted(c.starts for c in children) == [1, 2]
     finally:
         await runtime.close()
 
     marker = json.loads((tmp_path / "quarantine" / "slow-fp.json").read_text())
     assert marker["reason"] == "parse_hard_timeout"
     assert marker["parser_version"] == parser_app.PARSER_VERSION
-    assert not (tmp_path / "quarantine" / "next-fp.json").exists()
-
-
-@pytest.mark.asyncio
-async def test_ordinary_child_failure_retries_all_jobs_without_quarantine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "_schedule_restart_backstop", lambda: None)
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def fail(_document):
-        started.set()
-        await release.wait()
-        raise parser_app.ParserRuntimeFailure("child exited")
-
-    runtime = parser_app.ParserRuntime(fail)
-    await runtime.start()
-    try:
-        active = asyncio.create_task(
-            runtime.parse(parser_app.Document(b"", "active.pdf", "active-fp"))
-        )
-        await started.wait()
-        queued = asyncio.create_task(
-            runtime.parse(parser_app.Document(b"", "queued.pdf", "queued-fp"))
-        )
-        await asyncio.sleep(0)
-        assert runtime.active_jobs == 2
-        release.set()
-        for task in (active, queued):
-            with pytest.raises(parser_app.ParserRuntimeFailure, match="child exited"):
-                await task
-    finally:
-        await runtime.close()
-
-    assert not (tmp_path / "quarantine").exists()
+    assert sorted(p.name for p in (tmp_path / "quarantine").iterdir()) == [
+        "slow-fp.json"
+    ]
 
 
 @pytest.mark.asyncio
@@ -345,13 +368,11 @@ async def test_java_timeout_is_a_hard_timeout(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "_schedule_restart_backstop", lambda: None)
 
-    def run_document(_document):
+    async def handler(_document):
         raise parser_app.JavaTimeout("OpenDataLoader exceeded 600 seconds")
 
-    monkeypatch.setattr(parser_app, "run_document", run_document)
-    runtime = _runtime()
+    runtime, (child,), _ = _runtime(monkeypatch, handler)
     await runtime.start()
     try:
         with pytest.raises(parser_app.ParseHardTimeout):
@@ -359,57 +380,418 @@ async def test_java_timeout_is_a_hard_timeout(
     finally:
         await runtime.close()
     assert (tmp_path / "quarantine" / "fp.json").exists()
+    assert child.terminations == 1
 
 
-def test_oom_kill_marks_only_executing_fingerprint_terminal(
+@pytest.mark.parametrize(
+    ("death", "oom_kills", "expected"),
+    [
+        ("child", 1, "parse_oom"),
+        ("java", 1, "parse_oom"),
+        # SIGKILL without a cgroup OOM kill, or an ordinary crash during one:
+        # a runtime failure with the ordinary retry, nothing quarantined.
+        ("child", 0, "runtime"),
+        ("crash", 1, "runtime"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_oom_kill_is_attributed_to_the_document_whose_process_died(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, death, oom_kills, expected
+) -> None:
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    kills = 0
+    monkeypatch.setattr(parser_app, "_cgroup_event_value", lambda _name: kills)
+    other_started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handler(document):
+        nonlocal kills
+        if document.name == "other.pdf":
+            other_started.set()
+            await release.wait()
+            return _result()
+        await other_started.wait()
+        kills += oom_kills
+        if death == "java":
+            raise parser_app.JavaKilled("OpenDataLoader was killed")
+        raise parser_app._ChildExited("exited", -9 if death == "child" else 1)
+
+    runtime, children, _ = _runtime(monkeypatch, handler, workers=2)
+    await runtime.start()
+    try:
+        other = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "other.pdf", "other-fp"))
+        )
+        victim = runtime.parse(parser_app.Document(b"", "big.pdf", "big-fp"))
+        error = (
+            parser_app.ParseOOM
+            if expected == "parse_oom"
+            else parser_app.ParserRuntimeFailure
+        )
+        with pytest.raises(error):
+            await victim
+        release.set()
+        assert (await other)[0] == _result()
+    finally:
+        await runtime.close()
+
+    quarantined = sorted(p.name for p in tmp_path.glob("quarantine/*.json"))
+    assert quarantined == (["big-fp.json"] if expected == "parse_oom" else [])
+    # Only the victim's child is stopped, and only for an OOM.
+    assert sum(c.terminations for c in children) == (expected == "parse_oom")
+
+
+@pytest.mark.asyncio
+async def test_handoff_frees_the_slot_and_merges_ocr_lines_in_page_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A scan's slot takes the next document while its pages wait for OCR;
+    the deadline covers only the parse stage."""
+    monkeypatch.setattr(parser_app, "PARSE_DOCUMENT_TIMEOUT_S", 0.05)
+    read = asyncio.Event()
+
+    async def handler(document):
+        return _scan("scan", 3) if document.name == "scan.pdf" else _result()
+
+    async def ocr(_child, _pdf, page_idx):
+        await read.wait()
+        return [{"type": "text", "text": f"ocr {page_idx}", "page_idx": page_idx}]
+
+    runtime, _, _ = _runtime(monkeypatch, handler, ocr=ocr)
+    await runtime.start()
+    try:
+        scan = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "scan.pdf"), ocr_pages=3)
+        )
+        await _until(lambda: runtime.health()["ocr_stage_jobs"] == 1)
+        # One worker: the native document parses while the scan waits for OCR.
+        await runtime.parse(parser_app.Document(b"", "native.pdf"))
+        health = runtime.health()
+        assert health["executing_jobs"] == 0 and health["ocr_queued_pages"] == 3
+        await asyncio.sleep(0.1)  # past the parse deadline: the OCR stage has none
+        read.set()
+        result, _ = await scan
+    finally:
+        await runtime.close()
+
+    assert [b["text"] for b in result["content_list"]] == [
+        "scan native 0",
+        "ocr 0",
+        "scan native 1",
+        "ocr 1",
+        "scan native 2",
+        "ocr 2",
+    ]
+    assert result["_phases"]["ocr"] > 0
+    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+
+
+@pytest.mark.asyncio
+async def test_ocr_reads_one_page_per_waiting_document_per_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    served: list[tuple[str, int]] = []
+    active = peak = 0
+
+    async def handler(document):
+        if document.name == "small.pdf":
+            await asyncio.sleep(0.005)  # arrives while the scan's first page runs
+            return _scan("small", 2)
+        return _scan("big", 4)
+
+    async def ocr(_child, pdf, page_idx):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        await asyncio.sleep(0.02)
+        active -= 1
+        name = "small" if "small" in served_names[pdf] else "big"
+        served.append((name, page_idx))
+        return []
+
+    served_names: dict[str, str] = {}
+    run = FakeChild.run
+
+    async def remember(self, document, result_path, ocr_path):
+        served_names[str(ocr_path)] = document.name
+        return await run(self, document, result_path, ocr_path)
+
+    monkeypatch.setattr(FakeChild, "run", remember)
+    runtime, _, reader = _runtime(monkeypatch, handler, workers=2, ocr=ocr)
+    await runtime.start()
+    try:
+        await asyncio.gather(
+            runtime.parse(parser_app.Document(b"", "big.pdf")),
+            runtime.parse(parser_app.Document(b"", "small.pdf")),
+        )
+    finally:
+        await runtime.close()
+
+    assert peak == 1 and reader.starts == 1
+    assert served == [
+        ("big", 0),
+        ("small", 0),
+        ("big", 1),
+        ("small", 1),
+        ("big", 2),
+        ("big", 3),
+    ]
+
+
+@pytest.mark.parametrize("stuck", [False, True])
+@pytest.mark.asyncio
+async def test_a_page_past_its_limit_quarantines_only_its_document(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stuck
+) -> None:
+    """Queue wait is free: the other document's pages wait out the slow page
+    and still pass. The OCR process restarts only if it never answers."""
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    monkeypatch.setattr(parser_app, "OCR_PAGE_TIMEOUT_S", 0.2)
+
+    async def handler(document):
+        return _scan(document.name, 1 if document.name == "slow.pdf" else 2)
+
+    async def ocr(_child, pdf, _page_idx):
+        if pdf == slow_pdf[0]:
+            await asyncio.sleep(3600 if stuck else 0.3)
+        else:
+            await asyncio.sleep(0.01)
+        return []
+
+    slow_pdf: list[str] = []
+    run = FakeChild.run
+
+    async def remember(self, document, result_path, ocr_path):
+        if document.name == "slow.pdf":
+            slow_pdf.append(str(ocr_path))
+        return await run(self, document, result_path, ocr_path)
+
+    monkeypatch.setattr(FakeChild, "run", remember)
+    runtime, _, reader = _runtime(monkeypatch, handler, workers=2, ocr=ocr)
+    await runtime.start()
+    try:
+        slow = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "slow.pdf", "slow-fp"))
+        )
+        await _until(lambda: runtime.health()["ocr_stage_jobs"] == 1)
+        other = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "other.pdf", "other-fp"))
+        )
+        with pytest.raises(parser_app.ParseHardTimeout, match="OCR of page 1"):
+            await slow
+        await other
+        assert runtime.state == "ready"
+        assert (reader.terminations, reader.starts) == ((1, 2) if stuck else (0, 1))
+    finally:
+        await runtime.close()
+    marker = json.loads((tmp_path / "quarantine" / "slow-fp.json").read_text())
+    assert marker["reason"] == "parse_hard_timeout"
+    assert not (tmp_path / "quarantine" / "other-fp.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_admission_caps_the_ocr_backlog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(parser_app, "OCR_PAGE_CAP", 5)
+    release = asyncio.Event()
+
+    async def handler(document):
+        await release.wait()
+        # An Office source counts no pages on arrival: its parse finds 6.
+        return _scan("office", 6) if document.name == "deck.pptx" else _result()
+
+    runtime, _, _ = _runtime(monkeypatch, handler, workers=2, depth=8)
+    await runtime.start()
+    try:
+        with pytest.raises(parser_app.ParseTooManyScannedPages, match="at most 5"):
+            await runtime.parse(parser_app.Document(b"", "huge.pdf"), ocr_pages=6)
+        held = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "four.pdf"), ocr_pages=4)
+        )
+        await _until(lambda: runtime.active_jobs == 1)
+        with pytest.raises(parser_app.ParserCapacity, match="OCR backlog"):
+            await runtime.parse(parser_app.Document(b"", "two.pdf"), ocr_pages=2)
+        fits = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "one.pdf"), ocr_pages=1)
+        )
+        deck = asyncio.create_task(runtime.parse(parser_app.Document(b"", "deck.pptx")))
+        await _until(lambda: runtime.active_jobs == 3)
+        release.set()
+        await asyncio.gather(held, fits)
+        with pytest.raises(parser_app.ParseTooManyScannedPages, match="6 pages"):
+            await deck
+    finally:
+        await runtime.close()
+    assert runtime.active_jobs == 0
+
+
+@pytest.mark.asyncio
+async def test_ocr_process_death_fails_only_the_ocr_stage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "_schedule_restart_backstop", lambda: None)
-    loop = asyncio.new_event_loop()
+    monkeypatch.setattr(
+        parser_app, "_schedule_restart_backstop", lambda: pytest.fail("restart")
+    )
+    native_release = asyncio.Event()
+    calls = 0
+
+    async def ocr(child, _pdf, _page_idx):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(0.02)  # the second scan joins the stage
+            child.terminate()
+            await asyncio.sleep(0)
+        return [{"type": "text", "text": "ocr", "page_idx": 0}]
+
+    async def handler(document):
+        if document.name == "native.pdf":
+            await native_release.wait()
+            return _result()
+        return _scan(document.name, 1)
+
+    runtime, children, reader = _runtime(monkeypatch, handler, workers=3, ocr=ocr)
+    await runtime.start()
     try:
-        active = parser_app._QueuedDocument(
-            parser_app.Document(b"", "a.pdf", "active-fp"), 0.0, loop.create_future()
+        native = asyncio.create_task(
+            runtime.parse(parser_app.Document(b"", "native.pdf", "native-fp"))
         )
-        queued = parser_app._QueuedDocument(
-            parser_app.Document(b"", "b.pdf", "queued-fp"), 0.0, loop.create_future()
+        first, second = await asyncio.gather(
+            runtime.parse(parser_app.Document(b"", "scan-a.pdf", "a-fp")),
+            runtime.parse(parser_app.Document(b"", "scan-b.pdf", "b-fp")),
+            return_exceptions=True,
         )
-        runtime = parser_app.ParserRuntime()
-        runtime._current = active
-        runtime._queue.append(queued)
-        runtime._record_oom_kill(1)
-
-        assert isinstance(active.future.exception(), parser_app.ParseOOM)
-        assert isinstance(queued.future.exception(), parser_app.ParserRuntimeFailure)
-        marker = json.loads((tmp_path / "quarantine" / "active-fp.json").read_text())
-        assert marker["reason"] == "parse_oom"
-        assert not (tmp_path / "quarantine" / "queued-fp.json").exists()
+        assert isinstance(first, parser_app.ParserRuntimeFailure)
+        assert isinstance(second, parser_app.ParserRuntimeFailure)
+        # A fresh OCR process serves the next page; parse children are kept.
+        later, _ = await runtime.parse(parser_app.Document(b"", "scan-c.pdf", "c-fp"))
+        assert [b["text"] for b in later["content_list"]] == [
+            "scan-c.pdf native 0",
+            "ocr",
+        ]
+        native_release.set()
+        await native
+        assert runtime.state == "ready" and reader.starts == 2
+        assert all(c.terminations == 0 for c in children)
     finally:
-        loop.close()
+        await runtime.close()
+    assert not (tmp_path / "quarantine").exists()
 
 
-def test_late_oom_event_does_not_quarantine_a_completed_document(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.asyncio
+async def test_repeated_ocr_process_deaths_restart_the_parser(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    monkeypatch.setattr(parser_app, "_schedule_restart_backstop", lambda: None)
-    loop = asyncio.new_event_loop()
+    restarts: list[int] = []
+    monkeypatch.setattr(
+        parser_app, "_schedule_restart_backstop", lambda: restarts.append(1)
+    )
+
+    async def ocr(child, _pdf, _page_idx):
+        child.terminate()
+        await asyncio.sleep(0)
+
+    async def handler(document):
+        return _scan(document.name, 1)
+
+    runtime, _, reader = _runtime(monkeypatch, handler, ocr=ocr)
+    await runtime.start()
     try:
-        finished = parser_app._QueuedDocument(
-            parser_app.Document(b"", "done.pdf", "done-fp"),
-            0.0,
-            loop.create_future(),
-        )
-        finished.future.set_result((_result(), 0))
-        runtime = parser_app.ParserRuntime()
-        runtime._current = finished
-
-        runtime._record_oom_kill(1)
-
-        assert finished.future.result() == (_result(), 0)
-        assert not (tmp_path / "quarantine" / "done-fp.json").exists()
+        for n in range(parser_app.OCR_DEATH_LIMIT):
+            with pytest.raises(parser_app.ParserRuntimeFailure):
+                await runtime.parse(parser_app.Document(b"", f"{n}.pdf"))
+        await _until(lambda: runtime.state == "failed")
+        assert restarts == [1] and reader.starts == parser_app.OCR_DEATH_LIMIT
     finally:
-        loop.close()
+        await runtime.close()
+
+
+def test_merge_matches_reading_ocr_inside_parse_pdf(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """The OCR stage's result equals ``ocr.add_ocr_text`` in the parse child,
+    Office evidence included."""
+    import pymupdf
+    from odl import layout, ocr
+    from odl.evidence import page_evidence
+
+    pdf = tmp_path / "document.pdf"
+    with pymupdf.open() as document:
+        document.new_page().insert_text((50, 50), "native heading text " * 4)
+        document.new_page().draw_rect(pymupdf.Rect(20, 20, 200, 90), fill=(0, 0, 0))
+        document.new_page()
+        document.save(pdf)
+
+    def lines(image):
+        ink = image.convert("L").tobytes().count(0)
+        box = [[10, 10], [60, 10], [60, 30], [10, 30]]
+        return [{"box": box, "text": f"ink {ink}", "score": 0.9}]
+
+    monkeypatch.setattr(ocr, "ocr_lines", lines)
+    monkeypatch.setattr(layout, "regions", lambda image, path: [])
+    native = [{"type": "text", "text": "native", "page_idx": 0, "bbox": [0, 0, 1, 1]}]
+    with pymupdf.open(pdf) as document:
+        expected, pages = ocr.add_ocr_text(native, document)
+    result_path = tmp_path / "result.pickle"
+    result_path.write_bytes(
+        pickle.dumps(
+            {"content_list": native, "_ocr_pages": pages, "_evidence_pending": True}
+        )
+    )
+    read = {page: ocr.read_page(str(pdf), page) for page in reversed(pages)}
+    merged = parser_app._merge_ocr(result_path, pdf, read)
+    assert merged["content_list"] == expected and pages == [1, 2]
+    assert merged["_page_evidence"] == page_evidence(pdf.read_bytes(), expected)
+
+
+def test_admission_counts_pages_and_uses_the_ocr_test(tmp_path: Path) -> None:
+    import pymupdf
+
+    with pymupdf.open() as document:
+        document.new_page().insert_text((50, 50), "native text " * 8)
+        document.new_page()
+        document.new_page().insert_text((50, 50), "short")
+        data = document.tobytes()
+    assert parser_app._admission_pages(data) == (3, 2)
+    assert parser_app._admission_pages(b"PK\x03\x04 office zip") == (0, 0)
+
+
+@pytest.mark.asyncio
+async def test_page_cap_refuses_pdfs_at_admission_and_office_after_conversion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pymupdf
+    from odl import document as odl_document
+
+    monkeypatch.setattr(parser_app, "MAX_PAGES", 2)
+
+    async def never_parsed(_document):
+        raise AssertionError("refused before a parse child")
+
+    runtime, _, _ = _runtime(monkeypatch, never_parsed)
+    await runtime.start()
+    try:
+        with pytest.raises(parser_app.ParseTooManyPages, match="at most 2 pages"):
+            await runtime.parse(parser_app.Document(b"", "long.pdf"), pages=3)
+        assert runtime.active_jobs == 0
+    finally:
+        await runtime.close()
+
+    with pymupdf.open() as rendered:
+        for _ in range(3):
+            rendered.new_page()
+        pdf = rendered.tobytes()
+    monkeypatch.setattr(
+        odl_document,
+        "normalize_document",
+        lambda data, name: odl_document.NormalizedDocument(
+            pdf, "deck.pdf", "pptx", preview_pdf=pdf
+        ),
+    )
+    with pytest.raises(parser_app.ParseTooManyPages, match="3 pages"):
+        parser_app.run_document(parser_app.Document(b"PK", "deck.pptx"))
 
 
 def test_receipt_keeps_the_metering_keys_and_counts_ocr_routed_pages() -> None:
@@ -437,8 +819,10 @@ def test_receipt_keeps_the_metering_keys_and_counts_ocr_routed_pages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_health_keeps_slice_keys_as_zeros() -> None:
-    runtime = _runtime()
+async def test_health_keeps_slice_keys_as_zeros(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime, _, _ = _runtime(monkeypatch, None)
     await runtime.start()
     try:
         health = runtime.health()
@@ -538,7 +922,7 @@ async def test_artifact_request_rejects_a_foreign_parser_version() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hard_timeout_response_asks_for_a_restart(
+async def test_hard_timeout_response_carries_its_code(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def timed_out(_document):
@@ -557,7 +941,6 @@ async def test_hard_timeout_response_asks_for_a_restart(
 
     assert status == 422
     assert payload["code"] == "parse_hard_timeout"
-    assert payload["_restart_parser"] is True
 
 
 @pytest.mark.asyncio

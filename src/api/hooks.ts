@@ -1238,6 +1238,7 @@ export function useUploadSource(wsId: string) {
       chapterName,
       parseMode,
       estimatedCreditMicros,
+      pageCount,
       onUploadProgress,
       signal,
     }: {
@@ -1253,6 +1254,9 @@ export function useUploadSource(wsId: string) {
        * refuses a reservation that would land past its credit headroom; the
        * parser receipt still bills the measured pages. */
       estimatedCreditMicros?: number;
+      /** The analysed page count of a fast-parse document; the gateway
+       * refuses one past the policy's maxPages. */
+      pageCount?: number;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
     }) => {
@@ -1267,6 +1271,7 @@ export function useUploadSource(wsId: string) {
         if (estimatedCreditMicros) {
           form.append('estimatedCreditMicros', String(estimatedCreditMicros));
         }
+        if (pageCount) form.append('pageCount', String(pageCount));
         return api.upload<SourceFile>(
           `/workspaces/${wsId}/sources`,
           form,
@@ -1288,6 +1293,7 @@ export function useUploadSource(wsId: string) {
           estimatedCreditMicros: estimatedCreditMicros || undefined,
           kind,
           name: file.name,
+          pageCount: pageCount || undefined,
           parseMode,
           sizeBytes: file.size,
         })

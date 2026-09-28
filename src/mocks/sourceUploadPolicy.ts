@@ -107,6 +107,8 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
     {
       extensions: parseExtensions,
       maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
+      maxOcrPages: 500,
+      maxPages: 1400,
       mode: 'fast',
     },
     {

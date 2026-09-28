@@ -1,46 +1,29 @@
 import { unzipSync } from 'fflate';
 
-import type {
-  SourceAnalysisExtension,
-  SourceAnalysisOoxmlExtension,
-  SourceAnalysisResult,
-  SourcePageAnalysis,
+import {
+  SourceAnalysisError,
+  type SourceAnalysisExtension,
+  type SourceAnalysisOoxmlExtension,
+  type SourceAnalysisResult,
+  type SourcePageAnalysis,
 } from './sourceAnalysis';
 
 // The parser routes a page to OCR when its text layer has fewer than this many
 // characters (blank pages included); the browser estimate mirrors that rule.
 export const TEXTLESS_CHARS = 40;
-// OOXML exposes image presence cheaply, but calculating rendered area would
-// require a layout engine. Image coverage is recorded for the analysis result
-// only; it no longer decides OCR routing.
-const UNKNOWN_IMAGE_COVERAGE = 0.5;
 // The upload limit bounds the compressed input, not what a ZIP can expand to.
 // Keep the browser probe bounded before fflate allocates any entry buffers.
 export const MAX_OOXML_EXPANDED_BYTES = 128 * 1024 * 1024;
 export const MAX_OOXML_ARCHIVE_ENTRIES = 4096;
-// Browser analysis is a preflight estimate, not the authoritative parser. Keep
-// hostile PDF streams and stale DOCX metadata from controlling worker memory.
-export const MAX_DOCX_ANALYSIS_PAGES = 2000;
-export const MAX_XLSX_ANALYSIS_PAGES = 2000;
-export const MAX_PDF_ANALYSIS_PAGES = 2000;
-export const MAX_PDF_ANALYSIS_OPERATORS = 250_000;
-export const MAX_PDF_ANALYSIS_TEXT_CHARS = 8_000_000;
-export const MAX_PDF_ANALYSIS_IMAGE_PIXELS = 24_000_000;
-export const MAX_PDF_IMAGE_PIXELS = 16_000_000;
-export const MAX_PDF_ANALYSIS_ESTIMATED_BYTES = 128 * 1024 * 1024;
-export const MAX_PDF_ANALYSIS_MILLISECONDS = 30_000;
+// A pdf.js promise can hang on a malformed stream; each open, page load and
+// text read gets this long. Long documents only take more operations.
 export const MAX_PDF_OPERATION_MILLISECONDS = 5000;
-const PDF_OPERATOR_ESTIMATED_BYTES = 64;
-const PDF_TEXT_CHAR_ESTIMATED_BYTES = 2;
-const PDF_IMAGE_PIXEL_ESTIMATED_BYTES = 4;
 const DECIMAL_ENTITY_PATTERN = /^&#(\d+);$/u;
-const DRAWING_PATTERN = /<(?:legacyDrawing|drawing)\b/iu;
 const ENTITY_PATTERN = /&(?:amp|apos|gt|lt|quot|#\d+|#x[\da-f]+);/giu;
 const EXPLICIT_PAGE_BREAK_PATTERN =
   /<w:br\b[^>]*w:type=["']page["'][^>]*\/?\s*>/giu;
 const HEX_ENTITY_PATTERN = /^&#x([\da-f]+);$/iu;
 const NUMBERED_XML_PATTERN = /(\d+)\.xml$/u;
-const PICTURE_PATTERN = /<(?:p:pic|a:blip)\b/iu;
 const RENDERED_PAGE_BREAK_PATTERN = /<w:lastRenderedPageBreak\b[^>]*\/?\s*>/giu;
 const SHARED_STRING_CELL_PATTERN = /\bt=["']s["']/iu;
 const CELL_REFERENCE_PATTERN = /\br=["']([a-z]{1,3})([1-9]\d*)["']/giu;
@@ -53,18 +36,40 @@ const VALUE_PATTERN = /<v(?:\s[^>]*)?>([\s\S]*?)<\/v>/iu;
 
 export function classifySourcePage(
   text: string,
-  imageCoverage: number,
   pageNumber: number
 ): SourcePageAnalysis {
   const chars = text.trim().length;
   const textless = chars < TEXTLESS_CHARS;
   return {
     chars,
-    imageCoverage: Math.min(1, Math.max(0, imageCoverage)),
     needsOcr: textless,
     pageNumber,
     reason: textless ? 'textless' : 'text_layer',
   };
+}
+
+/** What a reader's error means for the user. A user password is its own case
+ * (an owner-password-only PDF opens normally); anything else pdf.js or the
+ * OOXML probe rejects means the file is damaged or not what it claims. */
+export function analysisErrorFor(error: unknown): SourceAnalysisError {
+  if (error instanceof SourceAnalysisError) return error;
+  const message = error instanceof Error ? error.message : String(error);
+  return new SourceAnalysisError(
+    error instanceof Error && error.name === 'PasswordException'
+      ? 'password_protected'
+      : 'unreadable',
+    message
+  );
+}
+
+function tooManyPages(
+  extension: SourceAnalysisExtension,
+  maxPages: number
+): SourceAnalysisError {
+  return new SourceAnalysisError(
+    'too_many_pages',
+    `${extension.toUpperCase()} has more than ${maxPages} pages`
+  );
 }
 
 type Archive = Record<string, Uint8Array>;
@@ -74,18 +79,17 @@ const decoder = new TextDecoder();
 function boundedUnzip(data: Uint8Array): Archive {
   let entryCount = 0;
   let expandedBytes = 0;
-  let hasWordMedia = false;
 
-  const archive = unzipSync(data, {
+  return unzipSync(data, {
     filter: ({ name, originalSize }) => {
       entryCount += 1;
       if (entryCount > MAX_OOXML_ARCHIVE_ENTRIES) {
-        throw new Error(
+        throw new SourceAnalysisError(
+          'failed',
           `OOXML archive contains too many entries (maximum ${MAX_OOXML_ARCHIVE_ENTRIES})`
         );
       }
 
-      if (name.startsWith('word/media/')) hasWordMedia = true;
       const needed =
         name === 'docProps/app.xml' ||
         name === 'word/document.xml' ||
@@ -98,7 +102,8 @@ function boundedUnzip(data: Uint8Array): Archive {
         throw new Error('OOXML archive contains an invalid expanded size');
       }
       if (originalSize > MAX_OOXML_EXPANDED_BYTES - expandedBytes) {
-        throw new Error(
+        throw new SourceAnalysisError(
+          'failed',
           `OOXML archive expands beyond the browser analysis limit (maximum ${MAX_OOXML_EXPANDED_BYTES / 1024 / 1024} MiB)`
         );
       }
@@ -106,10 +111,6 @@ function boundedUnzip(data: Uint8Array): Archive {
       return true;
     },
   });
-  // DOCX classification only needs to know whether media exists. Avoid
-  // inflating already-compressed images solely to count them.
-  if (hasWordMedia) archive['word/media/__present__'] = new Uint8Array();
-  return archive;
 }
 
 function xml(archive: Archive, path: string): string {
@@ -124,146 +125,6 @@ function countMatches(value: string, pattern: RegExp, maximum: number): number {
     if (count > maximum) break;
   }
   return count;
-}
-
-function estimatedPdfValueBytes(
-  value: unknown,
-  seen: WeakSet<object>,
-  depth: number
-): number {
-  if (typeof value === 'string') return value.length * 2;
-  if (typeof value === 'number' || typeof value === 'boolean') return 8;
-  if (typeof value !== 'object' || value === null || depth > 4) return 0;
-  if (seen.has(value)) return 0;
-  seen.add(value);
-  if (value instanceof ArrayBuffer) return value.byteLength;
-  if (ArrayBuffer.isView(value)) return value.byteLength;
-
-  if (Array.isArray(value)) {
-    let bytes = value.length * 8;
-    if (bytes > MAX_PDF_ANALYSIS_ESTIMATED_BYTES) return bytes;
-    for (const entry of value) {
-      bytes += estimatedPdfValueBytes(entry, seen, depth + 1);
-      if (bytes > MAX_PDF_ANALYSIS_ESTIMATED_BYTES) break;
-    }
-    return bytes;
-  }
-
-  let bytes = 0;
-  for (const key in value) {
-    if (!Object.hasOwn(value, key)) continue;
-    bytes += key.length * 2 + 8;
-    bytes += estimatedPdfValueBytes(Reflect.get(value, key), seen, depth + 1);
-    if (bytes > MAX_PDF_ANALYSIS_ESTIMATED_BYTES) break;
-  }
-  return bytes;
-}
-
-export function estimatePdfArgumentBytes(values: readonly unknown[]): number {
-  const seen = new WeakSet<object>();
-  let bytes = 0;
-  for (const value of values) {
-    bytes += estimatedPdfValueBytes(value, seen, 0);
-    if (bytes > MAX_PDF_ANALYSIS_ESTIMATED_BYTES) break;
-  }
-  return bytes;
-}
-
-export class PdfAnalysisBudget {
-  #estimatedBytes: number;
-  #imagePixels = 0;
-  #operatorCount = 0;
-  readonly #startedAt: number;
-  #textChars = 0;
-
-  constructor(inputBytes: number, startedAt: number) {
-    this.#estimatedBytes = Math.max(0, inputBytes);
-    this.#startedAt = startedAt;
-    this.#assertEstimatedBytes();
-  }
-
-  assertElapsed(now: number): void {
-    if (now - this.#startedAt > MAX_PDF_ANALYSIS_MILLISECONDS) {
-      throw new Error(
-        `PDF analysis timed out (maximum ${MAX_PDF_ANALYSIS_MILLISECONDS / 1000} seconds)`
-      );
-    }
-  }
-
-  assertPageCount(pageCount: number): void {
-    if (
-      !Number.isSafeInteger(pageCount) ||
-      pageCount < 1 ||
-      pageCount > MAX_PDF_ANALYSIS_PAGES
-    ) {
-      throw new Error(
-        `PDF has too many pages for browser analysis (maximum ${MAX_PDF_ANALYSIS_PAGES})`
-      );
-    }
-  }
-
-  recordText(textChars: number): void {
-    if (!Number.isSafeInteger(textChars) || textChars < 0) {
-      throw new Error('PDF text has an invalid size');
-    }
-    this.#textChars += textChars;
-    if (this.#textChars > MAX_PDF_ANALYSIS_TEXT_CHARS) {
-      throw new Error(
-        `PDF text exceeds the browser analysis limit (maximum ${MAX_PDF_ANALYSIS_TEXT_CHARS} characters)`
-      );
-    }
-    this.#estimatedBytes += textChars * PDF_TEXT_CHAR_ESTIMATED_BYTES;
-    this.#assertEstimatedBytes();
-  }
-
-  recordOperators(
-    operatorCount: number,
-    imagePixels: number,
-    argumentBytes = 0
-  ): void {
-    if (!Number.isSafeInteger(operatorCount) || operatorCount < 0) {
-      throw new Error('PDF operator list has an invalid size');
-    }
-    if (!Number.isSafeInteger(imagePixels) || imagePixels < 0) {
-      throw new Error('PDF image data has an invalid size');
-    }
-    if (!Number.isSafeInteger(argumentBytes) || argumentBytes < 0) {
-      throw new Error('PDF operator arguments have an invalid size');
-    }
-    this.#operatorCount += operatorCount;
-    if (this.#operatorCount > MAX_PDF_ANALYSIS_OPERATORS) {
-      throw new Error(
-        `PDF operator list exceeds the browser analysis limit (maximum ${MAX_PDF_ANALYSIS_OPERATORS} operations)`
-      );
-    }
-    this.#imagePixels += imagePixels;
-    if (this.#imagePixels > MAX_PDF_ANALYSIS_IMAGE_PIXELS) {
-      throw new Error(
-        `PDF images exceed the browser analysis limit (maximum ${MAX_PDF_ANALYSIS_IMAGE_PIXELS} decoded pixels)`
-      );
-    }
-    this.#estimatedBytes +=
-      operatorCount * PDF_OPERATOR_ESTIMATED_BYTES +
-      imagePixels * PDF_IMAGE_PIXEL_ESTIMATED_BYTES +
-      argumentBytes;
-    this.#assertEstimatedBytes();
-  }
-
-  remainingMilliseconds(now: number): number {
-    this.assertElapsed(now);
-    return Math.min(
-      MAX_PDF_OPERATION_MILLISECONDS,
-      MAX_PDF_ANALYSIS_MILLISECONDS - (now - this.#startedAt)
-    );
-  }
-
-  #assertEstimatedBytes(): void {
-    if (this.#estimatedBytes > MAX_PDF_ANALYSIS_ESTIMATED_BYTES) {
-      throw new Error(
-        `PDF analysis exceeds the browser memory estimate (maximum ${MAX_PDF_ANALYSIS_ESTIMATED_BYTES / 1024 / 1024} MiB)`
-      );
-    }
-  }
 }
 
 function decodeXmlEntities(value: string): string {
@@ -320,41 +181,29 @@ function finishResult(
   };
 }
 
-function analyzeDocx(archive: Archive): SourceAnalysisResult {
+function analyzeDocx(archive: Archive, maxPages: number): SourceAnalysisResult {
   const document = xml(archive, 'word/document.xml');
   if (!document) throw new Error('The DOCX document body is missing');
 
   const app = xml(archive, 'docProps/app.xml');
-  const declaredPages = positiveElementNumber(app, 'Pages');
   const renderedBreaks = countMatches(
     document,
     RENDERED_PAGE_BREAK_PATTERN,
-    MAX_DOCX_ANALYSIS_PAGES
+    maxPages
   );
   const explicitBreaks = countMatches(
     document,
     EXPLICIT_PAGE_BREAK_PATTERN,
-    MAX_DOCX_ANALYSIS_PAGES - Math.min(renderedBreaks, MAX_DOCX_ANALYSIS_PAGES)
+    maxPages - Math.min(renderedBreaks, maxPages)
   );
-  const breakEstimate = Math.max(1, renderedBreaks + explicitBreaks + 1);
-  if (breakEstimate > MAX_DOCX_ANALYSIS_PAGES) {
-    throw new Error(
-      `DOCX has too many pages for browser analysis (maximum ${MAX_DOCX_ANALYSIS_PAGES})`
-    );
-  }
-  // Word's saved page count can be stale or attacker-controlled. Use it only
-  // when it is plausible, and never below explicit page evidence in the body.
-  const pageCount =
-    declaredPages !== null && declaredPages <= MAX_DOCX_ANALYSIS_PAGES
-      ? Math.max(declaredPages, breakEstimate)
-      : breakEstimate;
+  // Word's saved page count can be stale; never go below the page breaks in
+  // the body. Both are estimates of LibreOffice's pagination.
+  const pageCount = Math.max(
+    positiveElementNumber(app, 'Pages') ?? 0,
+    renderedBreaks + explicitBreaks + 1
+  );
+  if (pageCount > maxPages) throw tooManyPages('docx', maxPages);
   const text = textNodes(document, 'w:t');
-  const mediaCount = Object.keys(archive).filter((path) =>
-    path.startsWith('word/media/')
-  ).length;
-  const textPerPage = pageCount > 0 ? text.length / pageCount : 0;
-  const estimatedCoverage =
-    mediaCount > 0 && textPerPage < TEXTLESS_CHARS ? UNKNOWN_IMAGE_COVERAGE : 0;
   const pages: SourcePageAnalysis[] = [];
   for (let index = 0; index < pageCount; index += 1) {
     pages.push(
@@ -363,7 +212,6 @@ function analyzeDocx(archive: Archive): SourceAnalysisResult {
           Math.floor((text.length * index) / pageCount),
           Math.floor((text.length * (index + 1)) / pageCount)
         ),
-        estimatedCoverage,
         index + 1
       )
     );
@@ -389,17 +237,15 @@ function numberedParts(archive: Archive, pattern: RegExp): string[] {
 
 function analyzePptx(
   archive: Archive,
+  maxPages: number,
   onPart?: (completed: number, total: number) => void
 ): SourceAnalysisResult {
   const slidePaths = numberedParts(archive, SLIDE_PATH_PATTERN);
   if (slidePaths.length === 0) throw new Error('The PPTX contains no slides');
+  if (slidePaths.length > maxPages) throw tooManyPages('pptx', maxPages);
   const pages = slidePaths.map((path, index) => {
-    const slide = xml(archive, path);
-    const text = textNodes(slide, 'a:t');
-    const hasPicture = PICTURE_PATTERN.test(slide);
     const page = classifySourcePage(
-      text,
-      hasPicture ? UNKNOWN_IMAGE_COVERAGE : 0,
+      textNodes(xml(archive, path), 'a:t'),
       index + 1
     );
     onPart?.(index + 1, slidePaths.length);
@@ -439,6 +285,7 @@ function sheetText(sheet: string, strings: readonly string[]): string {
 
 function analyzeXlsx(
   archive: Archive,
+  maxPages: number,
   onPart?: (completed: number, total: number) => void
 ): SourceAnalysisResult {
   const sheetPaths = numberedParts(archive, SHEET_PATH_PATTERN);
@@ -449,7 +296,6 @@ function analyzeXlsx(
   for (const [index, path] of sheetPaths.entries()) {
     const sheet = xml(archive, path);
     const text = sheetText(sheet, strings);
-    const hasDrawing = DRAWING_PATTERN.test(sheet);
     let lastRow = 1;
     let lastColumn = 1;
     for (const match of sheet.matchAll(CELL_REFERENCE_PATTERN)) {
@@ -467,21 +313,13 @@ function analyzeXlsx(
     // the server renderer, but a 50x10 cell window is a useful conservative
     // preflight for ordinary portrait sheets.
     const sheetPageCount = Math.ceil(lastRow / 50) * Math.ceil(lastColumn / 10);
-    if (pages.length + sheetPageCount > MAX_XLSX_ANALYSIS_PAGES) {
-      throw new Error(
-        `XLSX has too many estimated pages for browser analysis (maximum ${MAX_XLSX_ANALYSIS_PAGES})`
-      );
+    if (pages.length + sheetPageCount > maxPages) {
+      throw tooManyPages('xlsx', maxPages);
     }
     for (let pageIndex = 0; pageIndex < sheetPageCount; pageIndex += 1) {
       const start = Math.floor((text.length * pageIndex) / sheetPageCount);
       const end = Math.floor((text.length * (pageIndex + 1)) / sheetPageCount);
-      pages.push(
-        classifySourcePage(
-          text.slice(start, end),
-          hasDrawing ? UNKNOWN_IMAGE_COVERAGE : 0,
-          pages.length + 1
-        )
-      );
+      pages.push(classifySourcePage(text.slice(start, end), pages.length + 1));
     }
     onPart?.(index + 1, sheetPaths.length);
   }
@@ -491,15 +329,16 @@ function analyzeXlsx(
 export function analyzeOoxmlBuffer(
   data: Uint8Array,
   extension: SourceAnalysisOoxmlExtension,
+  maxPages: number,
   onPart?: (completed: number, total: number) => void
 ): SourceAnalysisResult {
   const archive = boundedUnzip(data);
   if (extension === 'docx') {
     onPart?.(0, 1);
-    const result = analyzeDocx(archive);
+    const result = analyzeDocx(archive, maxPages);
     onPart?.(1, 1);
     return result;
   }
-  if (extension === 'pptx') return analyzePptx(archive, onPart);
-  return analyzeXlsx(archive, onPart);
+  if (extension === 'pptx') return analyzePptx(archive, maxPages, onPart);
+  return analyzeXlsx(archive, maxPages, onPart);
 }

@@ -112,7 +112,8 @@ export function useSourceSession(fileId: string, enabled: boolean) {
   }, []);
   const [handoff, setHandoff] = useState(false);
   // A newer version was published while this saved view stayed open, or the
-  // maintenance pause closed it (paused: the banner says so).
+  // maintenance pause closed it (paused: the banner says so). Paused with no
+  // document means the pause refused the session before it opened.
   const [replaced, setReplaced] = useState(false);
   const [paused, setPaused] = useState(false);
   const flushHandler = useRef<((pause?: boolean) => Promise<void>) | null>(
@@ -171,6 +172,11 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     };
     const fail = (value: unknown) => {
       if (cancelled) return;
+      // Refused before the room opened: the view falls back to view mode.
+      if (maintenancePaused(value) && !runtime.current) {
+        setPaused(true);
+        return;
+      }
       const next = maintenancePaused(value)
         ? new Error(m.source_edit_paused_error())
         : value instanceof Error

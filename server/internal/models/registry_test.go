@@ -104,7 +104,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 	_, err = pool.Exec(ctx, `
 		UPDATE model_configs
 		   SET is_default_for = array_remove(is_default_for, 'chat')
-		 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, glmRef.ProviderSlug, glmRef.ModelSlug)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled`, glmRef.ProviderSlug, glmRef.ModelSlug)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `
 			UPDATE model_configs
 			   SET is_default_for = array_append(is_default_for, 'chat')
-			 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, glmRef.ProviderSlug, glmRef.ModelSlug)
+			 WHERE provider_slug=$1 AND model_slug=$2 AND enabled`, glmRef.ProviderSlug, glmRef.ModelSlug)
 	})
 	old, err := reg.Get(ctx, flashRef, 1)
 	if err != nil {

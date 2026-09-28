@@ -216,7 +216,10 @@ open button.
 
 Every block embed (`img`, `video`, diagrams) must be a void node. Enter on a
 selected void opens an empty paragraph below it (`voidBlockBreak.ts`); a
-non-void embed would instead be split into two copies of itself.
+non-void embed would instead be split into two copies of itself. A void's caret sits at its
+top-left corner, so `NoteEditorCore` skips slate's scroll-into-view while any
+part of the void is on screen; otherwise re-rendering a tall block (a theme
+change) jumped the page back to its top.
 
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no
@@ -277,7 +280,8 @@ caption is typed in a field under the diagram that rewrites the
 `mermaid_caption` text with `voids: true`. The node stays void, so a DOM
 selection inside it maps to the caption element; `fixMermaidSelection` moves
 such points onto the caption text. The edit dialog shows source beside a live
-preview in the block's theme; a parse error appears under the source while the
+preview in the block's theme (Tab indents by two spaces; deleting lives on the
+toolbar); a parse error appears under the source while the
 preview keeps the last diagram that parsed.
 
 Chart and graph nodes store their question block under `block`

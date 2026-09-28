@@ -87,6 +87,8 @@ import {
   calculateParseCreditMicros,
   localSourceAnalysisInput,
   SourceAnalysisCancelledError,
+  SourceAnalysisError,
+  type SourceAnalysisErrorCode,
   type SourceAnalysisInput,
   type SourceAnalysisProgress,
   SourceAnalysisQueue,
@@ -98,6 +100,8 @@ import {
   remoteSourceAnalysisInput,
   type SourceAnalysisStatus,
   sourceAnalysisBlocksSubmit,
+  sourceAnalysisIssue,
+  sourceAnalysisIssueMessage,
   validateLocalSourceSelection,
 } from './sourceDetails';
 import {
@@ -141,6 +145,7 @@ function reportPickerFailure(
 
 type Provider = 'google' | 'microsoft';
 export interface PendingSource {
+  analysisError?: SourceAnalysisErrorCode;
   analysisInput?: SourceAnalysisInput;
   analysisProgress?: SourceAnalysisProgress;
   analysisResult?: SourceAnalysisResult;
@@ -414,7 +419,7 @@ export function ParseModeSelect({
     { name: pending.name, size: pending.sizeBytes },
     pending.kind,
     policy,
-    pending.analysisResult?.pageCount
+    pending.analysisError === 'too_many_pages'
   );
   return (
     <Select
@@ -442,6 +447,30 @@ export function ParseModeSelect({
         </SelectGroup>
       </SelectContent>
     </Select>
+  );
+}
+
+/** A fast-parse row's analysis failure, refusal or OCR warning. */
+function SourceAnalysisNote({
+  policy,
+  source,
+}: {
+  policy: SourceUploadPolicy;
+  source: PendingSource;
+}) {
+  const issue = sourceAnalysisIssue(source, policy);
+  if (!issue) return null;
+  return (
+    <p
+      className={cn(
+        't-meta',
+        issue.code === 'scanned_pages_warning'
+          ? 'text-tint-warning-fg'
+          : 'text-tint-error-fg'
+      )}
+    >
+      {sourceAnalysisIssueMessage(issue, policy)}
+    </p>
   );
 }
 
@@ -569,6 +598,7 @@ function useSourceBatch(
         return;
       }
       patchSource(source.key, {
+        analysisError: undefined,
         analysisProgress: {
           completed: 0,
           percent: 0,
@@ -604,6 +634,8 @@ function useSourceBatch(
         (error) => {
           if (error instanceof SourceAnalysisCancelledError) return;
           patchSource(source.key, {
+            analysisError:
+              error instanceof SourceAnalysisError ? error.code : 'failed',
             analysisProgress: undefined,
             analysisStatus: 'error',
           });
@@ -743,6 +775,10 @@ function useSourceBatch(
               kind: source.kind,
               onUploadProgress: (uploadPct) =>
                 patchSource(source.key, { uploadPct }),
+              pageCount:
+                source.parseMode === 'fast'
+                  ? source.analysisResult?.pageCount
+                  : undefined,
               parseMode: source.parseMode,
               signal: controller.signal,
             })
@@ -1088,15 +1124,11 @@ function SourceList({
               </div>
             </div>
             {source.parseMode === 'fast' &&
-              (source.analysisStatus === 'error' ? (
-                <p className="t-meta text-tint-error-fg">
-                  {source.analysisInput
-                    ? m.source_analysis_failed()
-                    : m.source_analysis_unsupported()}
-                </p>
+              (source.analysisStatus === 'error' ||
+              source.analysisStatus === 'ready' ? (
+                <SourceAnalysisNote policy={uploadPolicy} source={source} />
               ) : (
-                source.analysisStatus !== 'idle' &&
-                source.analysisStatus !== 'ready' && (
+                source.analysisStatus !== 'idle' && (
                   <div className="flex flex-col gap-1">
                     <ProgressBar
                       height={4}

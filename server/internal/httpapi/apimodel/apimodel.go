@@ -184,7 +184,11 @@ type SourceUploadParseModePolicy struct {
 	Mode       string   `json:"mode" enum:"fast,none"`
 	Extensions []string `json:"extensions" nullable:"false"`
 	MaxBytes   int64    `json:"maxBytes"`
-	MaxPages   int      `json:"maxPages,omitempty"`
+	// MaxPages is the parser's page cap and MaxOCRPages its cap on pages
+	// without a text layer (CAPY_PARSE_MAX_PAGES, CAPY_PARSE_OCR_PAGE_CAP).
+	// Only the fast mode sets them.
+	MaxPages    int `json:"maxPages,omitempty"`
+	MaxOCRPages int `json:"maxOcrPages,omitempty"`
 }
 
 type SourceUploadPolicy struct {

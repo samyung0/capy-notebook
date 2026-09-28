@@ -23,10 +23,10 @@ The Python services share one Postgres schema owned by Go migrations
 
 | Process | Entry | Role |
 | --- | --- | --- |
-| Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
+| Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`), one document at a time behind a depth-4 FIFO; normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -568,64 +568,137 @@ their shape; there are no slices.
 
 ### Parse capacity
 
-The parser runs one document at a time. Requests enter a depth-4 FIFO
-(`CAPY_PARSE_QUEUE_DEPTH`: one executing, three waiting); a fifth concurrent request is answered `429` and the
-coordinator returns its job to `pending` as a capacity wait without spending an
-attempt (`YIELD_BACKOFF_S`, 2 s). There is no Redis admission gate and no page
-slicing: a 610-page textbook is one Java run plus the repairs, about 14 s of
-which is table recovery. The four coordinator children are the outer cap.
+Parsing runs in two stages inside the parser container. `CAPY_PARSE_WORKERS`
+(5) persistent parse children each take one document from one FIFO and run
+`parse_pdf` up to, but not including, OCR. A document whose parsed PDF has
+text-less pages (under 40 characters of text layer) then hands off to the OCR
+stage and frees its child for the next document, so an OCR-heavy book never
+holds a parse slot while its pages wait. `CAPY_PARSE_QUEUE_DEPTH` (8) counts
+documents in a parse child, in the OCR stage and waiting, and must be at least
+the worker count (checked at startup); one more concurrent request is answered
+`429` and the coordinator returns its job to `pending` as a capacity wait
+without spending an attempt (`YIELD_BACKOFF_S`, 2 s). There is no Redis
+admission gate and no page slicing: a 610-page textbook is one Java run plus
+the repairs, about 14 s of which is table recovery. The eight coordinator
+children are the outer cap.
 
-| Route | Host | Parser admission | Per-document deadline | JVM heap |
+| Route | Host | Parser admission | Deadlines | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | FIFO depth 4, one worker | 600 s | `CAPY_PARSER_JVM_MAX_HEAP` (8g prod, 3g nonprod) |
+| fast | one 8-core / 16 GiB VM | depth 8, 5 parse children, 1 OCR process, 500 text-less pages | 900 s parse stage, 60 s per OCR page | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
+
+The capacity run on the ingest host (14 GiB, 8 CPUs, 1g heap) found CPU and
+the deadline, not memory, to be the limit: each 1,216-page book adds about
+1.45 GiB and nothing was OOM-killed up to eight slots, six native slots parsed
+13.3 pages/s against 3.3 for one, and a 150-page scan's OCR went from 258 s to
+568 s when it competed with three book parses, which is why OCR became its own
+stage. Four ONNX threads beat eight next to five book parses: the scan's OCR
+took 369 s against 402 s and the books 215–223 s against 263–271 s (alone, 290 s
+against 259 s).
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
-Four coordinator children claim only parse rows and flip the file to
+Eight coordinator children claim only parse rows and flip the file to
 `processing` when the parser accepts the request. While the parser runs, no
 ingest worker slot is occupied.
 
-Each document has a 600-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
-that starts when it leaves the queue, before LibreOffice normalisation of an
-Office source and the Java run; queue wait does not spend it. The Java
-subprocess itself runs under the same timeout. If a document crosses the
-deadline, the parser atomically writes a quarantine marker keyed by source
-fingerprint and exact parser implementation, returns `parse_hard_timeout` for
-that file, and exits so Docker replaces the whole parser process. The exit is
-scheduled before response delivery, so a client disconnect cannot leave the
-failed parser running. The offending parse is terminal and later submissions of
-that exact fingerprint fail immediately while that parser version is live. Other
-in-flight and queued jobs interrupted by the restart follow their ordinary
-retry policy. A parser-version change (`PARSER_IMPLEMENTATION` in
+Admission also caps the OCR backlog. On arrival the API counts a PDF source's
+text-less pages with the same test the parse uses; an Office source counts
+none until its parse (its PDF exists only after LibreOffice). A document whose
+count exceeds `CAPY_PARSE_OCR_PAGE_CAP` (1,000) is refused with the terminal
+`parse_too_many_scanned_pages`; one that would lift the admitted-but-unread
+pages past the cap waits as `429 parser_capacity`. At the handoff the parsed
+PDF's exact count replaces the estimate, and an Office or font-repaired
+document over the cap fails with the same terminal code. Before the OCR stage
+such documents timed out at about 320 scanned pages.
+
+Admission also refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400)
+pages, counted from the uploaded bytes in the same pass, with the terminal
+`parse_too_many_pages` before it takes a parse child. An Office source is
+checked in its parse child right after LibreOffice, before the Java run. The
+coordinator maps both page codes to a terminal file failure carrying the
+parser's reason (no quarantine, no retry). The API serves the same two env
+values in the upload policy (`parseModes[fast].maxPages`, `maxOcrPages`) and
+refuses a fast-parse reservation whose claimed `pageCount` exceeds `maxPages`;
+the browser checks both caps before upload (see
+[frontend/office-files.md](frontend/office-files.md)), and the parser stays
+authoritative for files that bypass it.
+
+The parse stage has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
+that starts when a document leaves the queue, before LibreOffice normalisation
+of an Office source and the Java run, and ends at the handoff; queue wait does
+not spend it. The Java subprocess itself runs under the same timeout. If a
+document crosses the deadline, the parser atomically writes a quarantine marker
+keyed by source fingerprint and exact parser implementation, returns
+`parse_hard_timeout` for that file, and kills only that document's parse child
+with its session (Java and LibreOffice); the child is respawned before its slot
+takes the next document. The other children, the OCR stage and the queue keep
+running. The offending parse is terminal and later submissions of that exact
+fingerprint fail immediately while that parser version is live. A parser-version change (`PARSER_IMPLEMENTATION` in
 `parser/app.py`, mirrored by `PARSER_IMPLEMENTATIONS` in
 `pipeline/parse/parser_client.py`) creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The whole-document parser request has a 2,520-second bound (`PARSER_TIMEOUT`:
-the queue depth of four times the 600-second deadline, plus a margin, so the
-request behind three deadline-length documents still gets its artifact) and
-the parse job a 2,700-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the
-independent ingest continuation has a 1,200-second bound. A timed-out
-coordinator or ingest process records its retry and exits; the supervisor or
-Docker replaces only that process, so a cancelled blocking thread cannot
-overlap a later job.
+The OCR stage has no document clock. One OCR process owns the RapidOCR and
+PP-DocLayoutV3 models (about 0.4 GiB loaded, plus 0.5–0.8 GiB while reading a
+page; four ONNX threads); parse children never load them. It reads one page
+per waiting document per turn (round robin), rendering from the parsed PDF the
+child wrote beside its result (`ocr.read_page`), and trims its heap after each
+page. A small upload therefore finishes next to a 300-page scan. Each page gets
+`CAPY_PARSE_OCR_PAGE_TIMEOUT` (60 s) in the OCR process; waiting for its turn
+does not count. A page past its limit quarantines its document as
+`parse_hard_timeout`, like a runaway parse; the OCR process is replaced only if
+it still has not answered after a second limit (stuck, not slow). When a
+document's last page is read, the API merges the lines into its blocks in page
+order (`ocr.merge`, as `ocr.add_ocr_text` does) and, for an Office source,
+computes the page evidence; the result is byte-identical to reading OCR inside
+`parse_pdf`. Its `oom_score_adj` is 500: the kernel kills a parse child (one
+document) before the OCR process (every document in the OCR stage), and the
+API (0) last. If the OCR process dies, every document in the OCR stage fails as
+`parser_runtime_failed` (one ordinary retry, nothing quarantined) and the next
+page starts a fresh OCR process; three deaths in a row with no page answered
+in between restart the whole parser.
 
-The API process owns the FIFO, deadline and cgroup `oom_kill` watcher. A single
-persistent spawned child owns LibreOffice, Java, repairs and lazy OCR models.
-Mode-0600 temporary files carry source and result data between them; small pipe
-messages carry only status and paths. The child has its own process group and
-sets Linux `oom_score_adj` to 1000, so memory pressure preferentially kills the
-parse work while the API can classify the failure. Deadline and shutdown stop
-the parse process group. Startup removes abandoned transfer and document files.
-Cancelling an executing caller leaves the runtime-owned future, admission slot
-and deadline active. Cancelling waiting work removes it from the queue. The
-persistent loops release the previous document and result between executions.
+The whole-document parser request has a 4,420-second bound (`PARSER_TIMEOUT`:
+one wait for a parse child and the parse itself, 900 s each with eight admitted
+over five children, then at most the 500 admitted pages before the document's
+last page at up to 5 s a page, the rate a 150-page scan kept next to five
+1,400-page book parses with four OCR threads (722 s, 4.8 s a page; 290 s alone),
+plus a 120 s margin)
+and the parse job a 4,600-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
+continuation has a 1,200-second bound. A page may legally take up to 60 s, so a
+backlog of slow pages can outlast the bound; the client's retry then rejoins
+the parse already in flight for that fingerprint. A timed-out coordinator or
+ingest process records its retry and exits; the supervisor or Docker replaces
+only that process, so a cancelled blocking thread cannot overlap a later job.
 
-If the cgroup records an OOM kill while a document is active, the API writes a `parse_oom` quarantine marker
-for that fingerprint, marks `/healthz` failed, and exits. A completed artifact
-takes precedence over a late marker. Files that were only queued when the OOM
-happened follow the ordinary policy of one retry. The same one-retry policy
-applies to connection errors. Hard timeout and OOM markers are terminal without
-a retry.
+The API process owns the FIFO, the parse deadlines and the OCR stage. Each
+persistent spawned parse child owns LibreOffice, Java and the repairs for one
+document at a time, in its own session (`setsid`; LibreOffice runs in its own
+process group inside it) with Linux `oom_score_adj` 1000 and a work directory
+`slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
+Mode-0600 temporary files carry the source, the pickled result and, for the
+OCR stage, the parsed PDF; small pipe messages carry only status, paths and the
+text-less page list. A handed-off document's blocks stay in its result file
+until the OCR stage finishes. After each document the child drops the result,
+runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
+1.4 GiB of retained heap back to about 0.55 GiB. Startup removes abandoned
+transfer, document and slot files. Cancelling an executing caller leaves the
+runtime-owned future, admission slot and deadline active. Cancelling waiting
+work removes it from the queue.
+
+An OOM kill is attributed to the document whose parse child, or the Java run
+inside it, died by SIGKILL while the cgroup's `oom_kill` count rose above its
+value when that document started. The kernel picks the process with the highest
+`oom_score` (the largest parse child or JVM), so that document is the one using
+the memory; with several slots it can be a large document rather than the one
+whose allocation tipped the cgroup over. It gets a `parse_oom` quarantine
+marker, its child is respawned, and the other documents continue. A SIGKILL
+without a counted OOM kill, a LibreOffice process killed inside a conversion
+(its launcher hides the signal), or any other child crash is a
+`parser_runtime_failed` with one ordinary retry. A completed artifact takes
+precedence over a late marker. Hard timeout and OOM markers are terminal
+without a retry. Only a process-wide failure (repeated OCR deaths, or a
+runtime task that cannot continue) marks `/healthz` failed and exits so Docker
+replaces the parser.
 
 After an artifact is published, OOM, timeout, worker death, and other
 post-processing failures never create a parser quarantine. The ingest
@@ -2508,7 +2581,7 @@ current chunk, with full coverage in the large-document reduction path.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `CAPY_RAPIDOCR_MODEL_DIR`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to four coordinator processes, a depth-4 parser FIFO with one worker, 600 s per document, 2,520 s per request (the queue depth times the deadline plus a margin), 2,700 s per parse job. Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_TIMEOUT`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `CAPY_RAPIDOCR_MODEL_DIR`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose) and one OCR process, 900 s per document in the parse stage, 60 s per OCR page, 500 text-less pages admitted, 4,420 s per request and 4,600 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
 | Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT` | Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |

@@ -20,6 +20,8 @@ export interface CreateSourceUploadReq {
      * @maxLength 120
      */
   name: string;
+  /** @minimum 0 */
+  pageCount?: number;
   parseMode?: string;
   sizeBytes: number;
 }

@@ -83,6 +83,15 @@ export function useOfficeRuntime({
   const [replicaReady, setReplicaReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const source = useSourceSession(file.id, joined);
+  // The maintenance pause refused editing before the room opened: show the
+  // saved view instead. The frame was never loaded for editing, so view mode
+  // loads into the same frame.
+  const pausedAtOpen = source.paused && !source.doc;
+  useEffect(() => {
+    if (mode !== 'edit' || !pausedAtOpen) return;
+    setJoined(false);
+    setMode('view');
+  }, [mode, pausedAtOpen, setMode]);
   const sourceRef = useRef(source);
   sourceRef.current = source;
   const revisionRef = useRef(revision);
@@ -476,6 +485,7 @@ export function useOfficeRuntime({
     iframeUrl: config.url,
     mode,
     paused: source.paused,
+    pausedAtOpen,
     ready: mode === 'view' ? !!analysis : replicaReady,
     replaced: source.replaced,
     retryView,

@@ -77,6 +77,12 @@ type Config struct {
 	// host's callbacks into /api/internal/*. Empty disables those routes and
 	// therefore Drive/OneDrive imports, which need the import worker.
 	PipelineSecret string
+	// ParseMaxPages and ParseMaxOCRPages are the ingest host parser's page cap
+	// and OCR page cap, from the same env keys (CAPY_PARSE_MAX_PAGES,
+	// CAPY_PARSE_OCR_PAGE_CAP). The upload policy serves them to the browser
+	// and a fast-parse reservation claiming more pages is refused.
+	ParseMaxPages    int
+	ParseMaxOCRPages int
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder     mail.Recorder

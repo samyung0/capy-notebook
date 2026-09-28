@@ -3,8 +3,7 @@ import { useEffect } from 'react';
 import { useEventStream } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { cn } from '@/lib/cn';
-import { AccountStatusBanner } from './AccountStatusBanner';
-import { ConnectionBanner } from './ConnectionBanner';
+import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { Sidebar } from './Sidebar';
 
 const WORKSPACE_PATH_PATTERN = /^\/workspaces\/([^/]+)$/;
@@ -32,8 +31,7 @@ export function AppShell() {
         </div>
       )}
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2.5">
-        <AccountStatusBanner />
-        <ConnectionBanner />
+        <AccountBlockedScreen />
         <div className="min-h-0 min-w-0 flex-1">
           <Outlet />
         </div>

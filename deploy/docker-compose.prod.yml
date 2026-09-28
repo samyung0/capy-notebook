@@ -126,6 +126,10 @@ services:
       RATE_LIMIT_DISABLED: "false"
       RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
       CAPY_CAPTION_CACHE_TTL_DAYS: ${CAPY_CAPTION_CACHE_TTL_DAYS:-90}
+      # The parser's page and OCR page caps, served in the upload policy; the
+      # ingest host reads the same GitHub environment values.
+      CAPY_PARSE_MAX_PAGES: ${CAPY_PARSE_MAX_PAGES:?set CAPY_PARSE_MAX_PAGES}
+      CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:?set CAPY_PARSE_OCR_PAGE_CAP}
     expose:
       - "8080"
     # The ingest host's import worker calls /api/internal/import/* over

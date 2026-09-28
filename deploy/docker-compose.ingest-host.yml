@@ -17,9 +17,9 @@ x-pipeline-env: &pipeline-env
   B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
   PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2520}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-4420}
   CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
-  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-2700}
+  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-4600}
   CAPY_INGEST_TIMEOUT: ${CAPY_INGEST_TIMEOUT:-1200}
   CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
   CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}
@@ -60,15 +60,26 @@ services:
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
       PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-      # Depth counts the executing document: one executes, three wait. A fifth
-      # request is 429 and the coordinator re-pends without spending an attempt.
-      CAPY_PARSE_QUEUE_DEPTH: ${CAPY_PARSE_QUEUE_DEPTH:-4}
-      # Hard deadline per document (Java plus repairs plus OCR); a breach
-      # quarantines the fingerprint and restarts the container.
-      CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-600}
-      # JVM heap inside the container limit: the kernel, not the JVM, ends a
-      # runaway parse so the cgroup OOM watch still fires.
-      CAPY_PARSER_JVM_MAX_HEAP: ${CAPY_PARSER_JVM_MAX_HEAP:-8g}
+      # Parse children, one document each. A document with text-less pages
+      # then frees its child and waits in the OCR stage (one OCR process).
+      CAPY_PARSE_WORKERS: ${CAPY_PARSE_WORKERS:-5}
+      # Depth counts documents in a parse child, in the OCR stage and waiting.
+      # One more is 429 and the coordinator re-pends without spending an
+      # attempt.
+      CAPY_PARSE_QUEUE_DEPTH: ${CAPY_PARSE_QUEUE_DEPTH:-8}
+      # Hard deadline per document in its parse child (Java plus repairs, wall
+      # clock); a breach quarantines the fingerprint and replaces that child.
+      CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-900}
+      # OCR stage: each page's limit in the OCR process (queue wait is free),
+      # and the text-less pages admitted at once. A document with more than
+      # the cap fails as parse_too_many_scanned_pages.
+      CAPY_PARSE_OCR_PAGE_TIMEOUT: ${CAPY_PARSE_OCR_PAGE_TIMEOUT:-60}
+      CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:-500}
+      # Pages per document; more fails as parse_too_many_pages. The API serves
+      # the same value in the upload policy.
+      CAPY_PARSE_MAX_PAGES: ${CAPY_PARSE_MAX_PAGES:?set CAPY_PARSE_MAX_PAGES}
+      # Per-document JVM heap; 1g parsed 15 to 1,220 pages as fast as 8g.
+      CAPY_PARSER_JVM_MAX_HEAP: ${CAPY_PARSER_JVM_MAX_HEAP:-1g}
       CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
       CAPY_OFFICE_CONVERT_TIMEOUT: ${CAPY_OFFICE_CONVERT_TIMEOUT:-180}
       CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
@@ -95,7 +106,8 @@ services:
     mem_limit: 14g
     memswap_limit: 18g
     cpus: 8.0
-    pids_limit: 256
+    # Threads count: five JVMs, onnxruntime and LibreOffice passed 256.
+    pids_limit: 512
     healthcheck:
       test:
         [
@@ -127,12 +139,14 @@ services:
       <<: *pipeline-env
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      CAPY_PARSE_COORDINATOR_CONCURRENCY: ${CAPY_PARSE_COORDINATOR_CONCURRENCY:-4}
+      CAPY_PARSE_COORDINATOR_CONCURRENCY: ${CAPY_PARSE_COORDINATOR_CONCURRENCY:-8}
       CAPY_DB_SYNC_POOL_MAX_SIZE: "2"
       CAPY_DB_ASYNC_POOL_MAX_SIZE: "2"
     command: ["python", "-m", "pipeline.ingest.parse_worker"]
-    mem_limit: ${CAPY_PARSE_COORDINATOR_MEMORY_LIMIT:-512m}
-    memswap_limit: ${CAPY_PARSE_COORDINATOR_MEMORY_SWAP_LIMIT:-768m}
+    # Nine Python processes of about 81 MiB each after imports, plus up to
+    # about 55 MiB per child while it validates a 1,220-page content list.
+    mem_limit: ${CAPY_PARSE_COORDINATOR_MEMORY_LIMIT:-1280m}
+    memswap_limit: ${CAPY_PARSE_COORDINATOR_MEMORY_SWAP_LIMIT:-1536m}
     cpus: ${CAPY_PARSE_COORDINATOR_CPUS:-1.0}
     pids_limit: ${CAPY_PARSE_COORDINATOR_PIDS_LIMIT:-128}
     depends_on:

@@ -50,6 +50,7 @@ def page_evidence(data: bytes, blocks: list[dict]) -> dict:
             if page.rotation:
                 continue
             if number not in pages:
+                pages.clear()  # Only the current page's glyphs stay in memory.
                 pages[number] = (
                     page.get_text(
                         "rawdict",

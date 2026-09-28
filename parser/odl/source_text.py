@@ -201,6 +201,10 @@ def repair_text(
             if page.rotation:
                 continue
             if page_index not in cache:
+                # Blocks arrive grouped by page: keep only the current page's
+                # glyphs (a revisited page is read again, identically).
+                cache.clear()
+                traces.clear()
                 cache[page_index] = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
             groups = cache[page_index]
             if repeat:
@@ -264,6 +268,7 @@ def join_split_ligatures(blocks: list[dict], pdf: Path) -> tuple[list[dict], int
             if page.rotation:
                 continue
             if page_index not in cache:
+                cache.clear()  # Only the current page, as in repair_text.
                 cache[page_index] = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
             area = rect_for(block, page)
             proven: Counter = Counter()

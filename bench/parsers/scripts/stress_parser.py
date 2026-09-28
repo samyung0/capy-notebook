@@ -35,7 +35,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-SCHEMA = "capy-parser-bundle-v4"
+SCHEMA = "capy-parser-bundle-v5"
 
 
 def cgroup_dir(container: str) -> Path:
@@ -100,6 +100,10 @@ class Sampler(threading.Thread):
         while not self.stop.is_set():
             stat = self.keyed("memory.stat")
             rss = self.rss_by_name()
+            meminfo = {
+                line.split(":")[0]: int(line.split()[1]) * 1024
+                for line in Path("/proc/meminfo").read_text().splitlines()
+            }
             self.rows.append(
                 {
                     "t": time.time(),
@@ -109,6 +113,8 @@ class Sampler(threading.Thread):
                     "swap": int(self.read("memory.swap.current") or 0),
                     "cpu_usec": self.keyed("cpu.stat").get("usage_usec", 0),
                     "oom_kill": self.keyed("memory.events").get("oom_kill", 0),
+                    "host_available": meminfo["MemAvailable"],
+                    "host_swap_used": meminfo["SwapTotal"] - meminfo["SwapFree"],
                     "java_rss": rss.get("java", 0),
                     "api_rss": rss.get("api", 0),
                     "child_rss": rss.get("child", 0),
@@ -143,6 +149,10 @@ class Sampler(threading.Thread):
             "peak_other_rss_gib": round(max(r["other_rss"] for r in rows) / gib, 2),
             "avg_cores": round(cpu_s / max(end - start, 1e-6), 2),
             "oom_kills": rows[-1]["oom_kill"] - rows[0]["oom_kill"],
+            "min_host_available_gib": round(
+                min(r["host_available"] for r in rows) / gib, 2
+            ),
+            "peak_host_swap_gib": round(max(r["host_swap_used"] for r in rows) / gib, 2),
         }
 
 

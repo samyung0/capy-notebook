@@ -57,8 +57,15 @@ class ParseOutput:
     parsed_pdf: bytes | None = None
 
 
-def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOutput:
-    """Parse one PDF. ``work_dir`` must be empty and is left for the caller to remove."""
+def parse_pdf(
+    data: bytes, work_dir: Path, *, java_timeout_s: float, read_ocr: bool = True
+) -> ParseOutput:
+    """Parse one PDF. ``work_dir`` must be empty and is left for the caller to remove.
+
+    With ``read_ocr`` false the text-less pages are listed in ``ocr_pages`` but
+    not read: the parser service's OCR stage reads them and merges the lines
+    with ``ocr.merge`` in page order, which gives the same blocks.
+    """
     phases: dict[str, float] = {}
     started = time.perf_counter()
     repaired, repaired_fonts = fonts.repair_fonts(data)
@@ -143,7 +150,10 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         phases["repairs"] = time.perf_counter() - started
 
         started = time.perf_counter()
-        blocks, ocr_pages = ocr.add_ocr_text(blocks, document)
+        if read_ocr:
+            blocks, ocr_pages = ocr.add_ocr_text(blocks, document)
+        else:
+            ocr_pages = ocr.textless_pages(document)
         phases["ocr"] = time.perf_counter() - started
         page_count = len(document)
 

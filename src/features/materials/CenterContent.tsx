@@ -4,6 +4,7 @@ import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
+import { FileBanner } from '@/components/banners/FileBanner';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
@@ -386,18 +387,13 @@ function FileBody({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {file && fileIsIngesting(file.status) && file.hasBytes && (
-        <div className="flex shrink-0 items-center gap-3 border-divider border-b bg-surface-hover-bg px-4 py-2">
-          <p className="t-meta min-w-0 flex-1 truncate text-fg-secondary">
-            {file.status === 'pending'
+        <FileBanner
+          message={
+            file.status === 'pending'
               ? m.files_pending_named({ name: file.name })
-              : m.files_processing_named({ name: file.name })}
-          </p>
-          <ProgressBar
-            className="w-28"
-            tone={color}
-            value={file.ingestPct ?? 0}
-          />
-        </div>
+              : m.files_processing_named({ name: file.name })
+          }
+        />
       )}
       {file && <FileNotIndexedBanner file={file} />}
       <div className="relative min-h-0 flex-1 overflow-auto">

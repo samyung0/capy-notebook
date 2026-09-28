@@ -4,7 +4,7 @@ import { useMe, useWorkspaces } from '@/api/hooks';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
-import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
+import DashboardBanner from '@/components/banners/DashboardBanner';
 import { Button } from '@/components/ui/Button';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -114,7 +114,7 @@ export default function Dashboard() {
       >
         <StreakHeading />
         {/* <CloudConnectBanner /> */}
-        <DashboardDefaultBanner />
+        <DashboardBanner />
         <WorkspacesSection />
       </Panel>
       {CLERK_ACTIVE && <OnboardingDialog />}

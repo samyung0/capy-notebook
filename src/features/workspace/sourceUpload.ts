@@ -1,6 +1,7 @@
 import { isApiError } from '@/api/client';
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
+import { m } from '@/i18n';
 
 export type ParseMode = 'fast' | 'none';
 
@@ -39,7 +40,8 @@ export function parseModeIssues(
   file: Pick<File, 'name' | 'size'>,
   kind: FileKind,
   policy: SourceUploadPolicy,
-  pageCount?: number | null
+  /** The browser analysis found more pages than the mode's maxPages. */
+  tooManyPages = false
 ): Record<ParsingMode, string | null> {
   if (isTextKind(kind, policy)) return { fast: null };
   const ext = extensionWithDot(file.name);
@@ -53,13 +55,7 @@ export function parseModeIssues(
     if (file.size > rule.maxBytes) {
       return `over ${Math.round(rule.maxBytes / 1024 / 1024)} MB`;
     }
-    if (
-      rule.maxPages != null &&
-      pageCount != null &&
-      pageCount > rule.maxPages
-    ) {
-      return `over ${rule.maxPages} pages`;
-    }
+    if (tooManyPages) return m.source_parse_over_pages({ max: rule.maxPages });
     return null;
   };
   return { fast: issueFor('fast') };
@@ -68,11 +64,10 @@ export function parseModeIssues(
 export function defaultParseMode(
   file: Pick<File, 'name' | 'size'>,
   kind: FileKind,
-  policy: SourceUploadPolicy,
-  pageCount?: number | null
+  policy: SourceUploadPolicy
 ): ParseMode {
   if (isTextKind(kind, policy)) return 'none';
-  const issues = parseModeIssues(file, kind, policy, pageCount);
+  const issues = parseModeIssues(file, kind, policy);
   if (!issues.fast) return 'fast';
   return 'none';
 }

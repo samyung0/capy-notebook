@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -27,6 +28,7 @@ type uploadSourceForm struct {
 	ParseMode   string               `form:"parseMode" required:"false"`
 	// EstimatedCreditMicros mirrors CreateSourceUploadReq for the proxied path.
 	EstimatedCreditMicros int64 `form:"estimatedCreditMicros" required:"false"`
+	PageCount             int   `form:"pageCount" required:"false"`
 }
 
 type uploadSourceInput struct {
@@ -137,6 +139,9 @@ func (a *api) uploadSource(ctx context.Context, in *uploadSourceInput) (*sourceF
 	if err := sourceupload.Validate(name, kind, parseMode, form.File.Size, maxBytes); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	if err := a.checkParsePages(parseMode, form.PageCount); err != nil {
+		return nil, err
+	}
 	needsJob := sourceupload.NeedsIngestJob(name, kind, parseMode)
 	if needsJob {
 		if err := a.s.AssertCreditsForEstimate(ctx, userID(ctx), form.EstimatedCreditMicros); err != nil {
@@ -159,6 +164,19 @@ func (a *api) uploadSource(ctx context.Context, in *uploadSourceInput) (*sourceF
 		return nil, hErr(err)
 	}
 	return &sourceFileOutput{Status: http.StatusCreated, Body: res}, nil
+}
+
+// checkParsePages refuses a fast parse the browser counted past the parser's
+// page cap. The count is the client's claim; the parser enforces the cap on
+// the real document either way.
+func (a *api) checkParsePages(parseMode string, pages int) error {
+	if pages < 0 {
+		return huma.Error400BadRequest("pageCount must not be negative")
+	}
+	if parseMode == sourceupload.ParseModeFast && pages > a.cfg.ParseMaxPages {
+		return huma.Error400BadRequest(fmt.Sprintf("fast parsing reads at most %d pages per file", a.cfg.ParseMaxPages))
+	}
+	return nil
 }
 
 func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {

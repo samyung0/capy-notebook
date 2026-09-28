@@ -6,6 +6,7 @@ import {
   calculateParseCreditMicros,
   localSourceAnalysisInput,
   SourceAnalysisCancelledError,
+  SourceAnalysisError,
   SourceAnalysisQueue,
   type SourceAnalysisRequest,
   type SourceAnalysisResult,
@@ -13,23 +14,23 @@ import {
   sourceAnalysisExtension,
 } from './sourceAnalysis';
 import {
+  analysisErrorFor,
   analyzeOoxmlBuffer,
   classifySourcePage,
-  estimatePdfArgumentBytes,
-  MAX_DOCX_ANALYSIS_PAGES,
   MAX_OOXML_ARCHIVE_ENTRIES,
   MAX_OOXML_EXPANDED_BYTES,
-  MAX_PDF_ANALYSIS_IMAGE_PIXELS,
-  MAX_PDF_ANALYSIS_MILLISECONDS,
-  MAX_PDF_ANALYSIS_OPERATORS,
-  MAX_PDF_ANALYSIS_PAGES,
-  MAX_PDF_ANALYSIS_TEXT_CHARS,
-  MAX_PDF_OPERATION_MILLISECONDS,
-  MAX_XLSX_ANALYSIS_PAGES,
-  PdfAnalysisBudget,
 } from './sourceAnalysisCore';
 
 const encoder = new TextEncoder();
+const MAX_PAGES = 1400;
+
+function errorCode(run: () => unknown): string | undefined {
+  try {
+    run();
+  } catch (error) {
+    return error instanceof SourceAnalysisError ? error.code : 'uncoded';
+  }
+}
 
 const result = (extension: 'pdf' | 'pptx' = 'pdf'): SourceAnalysisResult => ({
   extension,
@@ -39,14 +40,12 @@ const result = (extension: 'pdf' | 'pptx' = 'pdf'): SourceAnalysisResult => ({
   pages: [
     {
       chars: 900,
-      imageCoverage: 0,
       needsOcr: false,
       pageNumber: 1,
       reason: 'text_layer',
     },
     {
       chars: 0,
-      imageCoverage: 1,
       needsOcr: true,
       pageNumber: 2,
       reason: 'textless',
@@ -92,16 +91,16 @@ function input(name: string) {
 
 describe('source analysis classification', () => {
   it('matches the parser rule: under 40 native characters is OCR-routed', () => {
-    expect(classifySourcePage('a'.repeat(40), 0.95, 1)).toMatchObject({
+    expect(classifySourcePage('a'.repeat(40), 1)).toMatchObject({
       needsOcr: false,
       reason: 'text_layer',
     });
-    expect(classifySourcePage(`  ${'a'.repeat(39)}  `, 0, 1)).toMatchObject({
+    expect(classifySourcePage(`  ${'a'.repeat(39)}  `, 1)).toMatchObject({
       chars: 39,
       needsOcr: true,
       reason: 'textless',
     });
-    expect(classifySourcePage('', 1, 2)).toMatchObject({
+    expect(classifySourcePage('', 2)).toMatchObject({
       needsOcr: true,
       reason: 'textless',
     });
@@ -149,7 +148,7 @@ describe('OOXML analysis', () => {
     }
     expect(patchedEntries).toBe(2);
 
-    expect(() => analyzeOoxmlBuffer(oversized, 'xlsx')).toThrow(
+    expect(() => analyzeOoxmlBuffer(oversized, 'xlsx', MAX_PAGES)).toThrow(
       `OOXML archive expands beyond the browser analysis limit (maximum ${MAX_OOXML_EXPANDED_BYTES / 1024 / 1024} MiB)`
     );
   });
@@ -160,7 +159,9 @@ describe('OOXML analysis', () => {
       entries[`entry-${index}.xml`] = encoder.encode('x');
     }
 
-    expect(() => analyzeOoxmlBuffer(zipSync(entries), 'xlsx')).toThrow(
+    expect(() =>
+      analyzeOoxmlBuffer(zipSync(entries), 'xlsx', MAX_PAGES)
+    ).toThrow(
       `OOXML archive contains too many entries (maximum ${MAX_OOXML_ARCHIVE_ENTRIES})`
     );
   });
@@ -177,7 +178,7 @@ describe('OOXML analysis', () => {
         `<p:sld><a:t>${'Readable text '.repeat(45)}</a:t><p:pic><a:blip r:embed="rId2"/></p:pic></p:sld>`
       ),
     });
-    const analyzed = analyzeOoxmlBuffer(archive, 'pptx');
+    const analyzed = analyzeOoxmlBuffer(archive, 'pptx', MAX_PAGES);
     expect(analyzed).toMatchObject({
       ocrPageCount: 1,
       pageCount: 3,
@@ -196,7 +197,7 @@ describe('OOXML analysis', () => {
         `<w:document><w:t>${'Paragraph text '.repeat(220)}</w:t></w:document>`
       ),
     });
-    const analyzed = analyzeOoxmlBuffer(archive, 'docx');
+    const analyzed = analyzeOoxmlBuffer(archive, 'docx', MAX_PAGES);
     expect(analyzed.pageCount).toBe(3);
     expect(analyzed.pageCountEstimated).toBe(true);
   });
@@ -211,21 +212,48 @@ describe('OOXML analysis', () => {
       ),
     });
 
-    const analyzed = analyzeOoxmlBuffer(archive, 'docx');
+    const analyzed = analyzeOoxmlBuffer(archive, 'docx', MAX_PAGES);
     expect(analyzed.pageCount).toBe(3);
   });
 
-  it('rejects DOCX bodies whose page-break estimate exceeds the cap', () => {
-    const breaks = '<w:br w:type="page"/>'.repeat(MAX_DOCX_ANALYSIS_PAGES);
-    const archive = zipSync({
+  it('refuses Office files past the policy page cap as too_many_pages', () => {
+    const docx = zipSync({
       'word/document.xml': encoder.encode(
-        `<w:document><w:t>Text</w:t>${breaks}</w:document>`
+        `<w:document><w:t>Text</w:t>${'<w:br w:type="page"/>'.repeat(3)}</w:document>`
+      ),
+    });
+    const declaredDocx = zipSync({
+      'docProps/app.xml': encoder.encode(
+        '<Properties><Pages>4</Pages></Properties>'
+      ),
+      'word/document.xml': encoder.encode(
+        '<w:document><w:t>Text</w:t></w:document>'
+      ),
+    });
+    const pptx = zipSync({
+      'ppt/slides/slide1.xml': encoder.encode('<p:sld/>'),
+      'ppt/slides/slide2.xml': encoder.encode('<p:sld/>'),
+      'ppt/slides/slide3.xml': encoder.encode('<p:sld/>'),
+    });
+    const xlsx = zipSync({
+      'xl/worksheets/sheet1.xml': encoder.encode(
+        '<worksheet><sheetData><c r="A101"><v>1</v></c></sheetData></worksheet>'
       ),
     });
 
-    expect(() => analyzeOoxmlBuffer(archive, 'docx')).toThrow(
-      `DOCX has too many pages for browser analysis (maximum ${MAX_DOCX_ANALYSIS_PAGES})`
+    expect(errorCode(() => analyzeOoxmlBuffer(docx, 'docx', 3))).toBe(
+      'too_many_pages'
     );
+    expect(errorCode(() => analyzeOoxmlBuffer(declaredDocx, 'docx', 3))).toBe(
+      'too_many_pages'
+    );
+    expect(errorCode(() => analyzeOoxmlBuffer(pptx, 'pptx', 2))).toBe(
+      'too_many_pages'
+    );
+    expect(errorCode(() => analyzeOoxmlBuffer(xlsx, 'xlsx', 2))).toBe(
+      'too_many_pages'
+    );
+    expect(analyzeOoxmlBuffer(pptx, 'pptx', 3).pageCount).toBe(3);
   });
 
   it('counts worksheets and resolves shared strings', () => {
@@ -240,7 +268,7 @@ describe('OOXML analysis', () => {
         '<worksheet><sheetData><c><v>42</v></c></sheetData></worksheet>'
       ),
     });
-    const analyzed = analyzeOoxmlBuffer(archive, 'xlsx');
+    const analyzed = analyzeOoxmlBuffer(archive, 'xlsx', MAX_PAGES);
     expect(analyzed).toMatchObject({
       pageCount: 2,
       pageCountEstimated: true,
@@ -256,99 +284,30 @@ describe('OOXML analysis', () => {
       ),
     });
 
-    const analyzed = analyzeOoxmlBuffer(archive, 'xlsx');
+    const analyzed = analyzeOoxmlBuffer(archive, 'xlsx', MAX_PAGES);
 
     expect(analyzed.pageCount).toBe(4);
     expect(analyzed.sheetCount).toBe(1);
     expect(analyzed.pageCountEstimated).toBe(true);
   });
-
-  it('rejects an XLSX print estimate beyond the analysis cap', () => {
-    const archive = zipSync({
-      'xl/worksheets/sheet1.xml': encoder.encode(
-        '<worksheet><sheetData><c r="XFD1048576"><v>42</v></c></sheetData></worksheet>'
-      ),
-    });
-
-    expect(() => analyzeOoxmlBuffer(archive, 'xlsx')).toThrow(
-      `XLSX has too many estimated pages for browser analysis (maximum ${MAX_XLSX_ANALYSIS_PAGES})`
-    );
-  });
 });
 
-describe('PDF analysis budget', () => {
-  it('accepts ordinary usage through each exact limit', () => {
-    const budget = new PdfAnalysisBudget(0, 100);
-    budget.assertPageCount(MAX_PDF_ANALYSIS_PAGES);
-    budget.recordText(MAX_PDF_ANALYSIS_TEXT_CHARS);
-    budget.recordOperators(MAX_PDF_ANALYSIS_OPERATORS, 0);
-    expect(budget.remainingMilliseconds(100)).toBe(
-      MAX_PDF_OPERATION_MILLISECONDS
-    );
-    budget.assertElapsed(100 + MAX_PDF_ANALYSIS_MILLISECONDS);
-  });
+describe('analysis failures', () => {
+  it('tells a user password apart from a damaged file', () => {
+    const password = Object.assign(new Error('No password given'), {
+      name: 'PasswordException',
+    });
+    const invalid = Object.assign(new Error('Invalid PDF structure.'), {
+      name: 'InvalidPDFException',
+    });
+    const cap = new SourceAnalysisError('too_many_pages', 'PDF has more');
 
-  it('rejects excessive pages, text, operators, and decoded image pixels', () => {
-    expect(() => {
-      const budget = new PdfAnalysisBudget(0, 0);
-      budget.assertPageCount(MAX_PDF_ANALYSIS_PAGES + 1);
-    }).toThrow(
-      `PDF has too many pages for browser analysis (maximum ${MAX_PDF_ANALYSIS_PAGES})`
-    );
-
-    expect(() => {
-      const budget = new PdfAnalysisBudget(0, 0);
-      budget.recordText(MAX_PDF_ANALYSIS_TEXT_CHARS + 1);
-    }).toThrow(
-      `PDF text exceeds the browser analysis limit (maximum ${MAX_PDF_ANALYSIS_TEXT_CHARS} characters)`
-    );
-
-    expect(() => {
-      const budget = new PdfAnalysisBudget(0, 0);
-      budget.recordOperators(MAX_PDF_ANALYSIS_OPERATORS + 1, 0);
-    }).toThrow(
-      `PDF operator list exceeds the browser analysis limit (maximum ${MAX_PDF_ANALYSIS_OPERATORS} operations)`
-    );
-
-    expect(() => {
-      const budget = new PdfAnalysisBudget(0, 0);
-      budget.recordOperators(0, MAX_PDF_ANALYSIS_IMAGE_PIXELS + 1);
-    }).toThrow(
-      `PDF images exceed the browser analysis limit (maximum ${MAX_PDF_ANALYSIS_IMAGE_PIXELS} decoded pixels)`
-    );
-  });
-
-  it('rejects the cumulative memory estimate and elapsed-time budget', () => {
-    expect(() => {
-      const budget = new PdfAnalysisBudget(16 * 1024 * 1024, 0);
-      budget.recordText(MAX_PDF_ANALYSIS_TEXT_CHARS);
-      budget.recordOperators(
-        MAX_PDF_ANALYSIS_OPERATORS,
-        MAX_PDF_ANALYSIS_IMAGE_PIXELS
-      );
-    }).toThrow(
-      'PDF analysis exceeds the browser memory estimate (maximum 128 MiB)'
-    );
-
-    expect(() => {
-      const budget = new PdfAnalysisBudget(0, 100);
-      budget.assertElapsed(100 + MAX_PDF_ANALYSIS_MILLISECONDS + 1);
-    }).toThrow('PDF analysis timed out (maximum 30 seconds)');
-  });
-
-  it('includes decompressed operator argument buffers in the memory estimate', () => {
-    const bytes = estimatePdfArgumentBytes([
-      ['image', new Uint8Array(2 * 1024 * 1024)],
-      new Float32Array(128),
-    ]);
-
-    expect(bytes).toBeGreaterThanOrEqual(2 * 1024 * 1024 + 128 * 4);
-    expect(() => {
-      const budget = new PdfAnalysisBudget(127 * 1024 * 1024, 0);
-      budget.recordOperators(1, 0, bytes);
-    }).toThrow(
-      'PDF analysis exceeds the browser memory estimate (maximum 128 MiB)'
-    );
+    expect(analysisErrorFor(password).code).toBe('password_protected');
+    expect(analysisErrorFor(invalid).code).toBe('unreadable');
+    expect(
+      analysisErrorFor(new Error('The PPTX contains no slides')).code
+    ).toBe('unreadable');
+    expect(analysisErrorFor(cap)).toBe(cap);
   });
 });
 
@@ -386,6 +345,27 @@ describe('SourceAnalysisQueue', () => {
 
     workers[1].respond({ jobId: 'second', result: result(), type: 'result' });
     await expect(second.promise).resolves.toEqual(result());
+  });
+
+  it('rejects with the failure code the worker sent', async () => {
+    const workers: FakeWorker[] = [];
+    const queue = new SourceAnalysisQueue(() => {
+      const worker = new FakeWorker();
+      workers.push(worker);
+      return worker;
+    });
+    const job = queue.enqueue({ id: 'locked', input: input('locked.pdf') });
+    expect(workers[0].request?.input.maxPages).toBe(MAX_PAGES);
+    workers[0].respond({
+      code: 'password_protected',
+      jobId: 'locked',
+      message: 'No password given',
+      type: 'error',
+    });
+
+    await expect(job.promise).rejects.toMatchObject({
+      code: 'password_protected',
+    });
   });
 
   it('removes queued work and terminates active work when cancelled', async () => {

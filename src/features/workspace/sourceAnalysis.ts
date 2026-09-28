@@ -16,7 +16,6 @@ export type SourcePageReason = 'text_layer' | 'textless';
 
 export interface SourcePageAnalysis {
   chars: number;
-  imageCoverage: number;
   needsOcr: boolean;
   pageNumber: number;
   reason: SourcePageReason;
@@ -47,6 +46,8 @@ export interface SourceAnalysisInput {
   /** Stable caller-owned key used to reuse a completed analysis. */
   key: string;
   kind: SourceAnalysisExtension;
+  /** The fast-parse page cap: a longer document fails as too_many_pages. */
+  maxPages: number;
   name: string;
   source:
     | { file: File }
@@ -55,6 +56,24 @@ export interface SourceAnalysisInput {
         headers?: Readonly<Record<string, string>>;
         url: string;
       };
+}
+
+/** Why an analysis failed: a property of the file the user can act on, or
+ * `failed` for transport errors and the browser's own safety limits. */
+export type SourceAnalysisErrorCode =
+  | 'failed'
+  | 'password_protected'
+  | 'too_many_pages'
+  | 'unreadable';
+
+export class SourceAnalysisError extends Error {
+  readonly code: SourceAnalysisErrorCode;
+
+  constructor(code: SourceAnalysisErrorCode, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'SourceAnalysisError';
+  }
 }
 
 export interface ParsePageRates {
@@ -81,6 +100,18 @@ export function sourceAnalysisCacheKey(
   file: Pick<File, 'lastModified' | 'name' | 'size' | 'type'>
 ): string {
   return [file.name, file.size, file.lastModified, file.type].join('\0');
+}
+
+/** The fast mode's page cap and OCR page cap from the upload policy, which
+ * the parser enforces with the same values. Null when the policy has none:
+ * the source then gets no estimate and stays blocked. */
+export function fastParseLimits(
+  policy: Pick<SourceUploadPolicy, 'parseModes'>
+): { maxOcrPages: number; maxPages: number } | null {
+  const fast = policy.parseModes.find((mode) => mode.mode === 'fast');
+  return fast?.maxPages && fast.maxOcrPages
+    ? { maxOcrPages: fast.maxOcrPages, maxPages: fast.maxPages }
+    : null;
 }
 
 /** Extensions the server parses in fast mode, from the upload policy: the
@@ -120,10 +151,12 @@ export function localSourceAnalysisInput(
   policy: Pick<SourceUploadPolicy, 'parseModes'>
 ): SourceAnalysisInput | null {
   const kind = sourceAnalysisExtension(file.name, policy);
-  if (!kind) return null;
+  const limits = fastParseLimits(policy);
+  if (!(kind && limits)) return null;
   return {
     key: sourceAnalysisCacheKey(file),
     kind,
+    maxPages: limits.maxPages,
     name: file.name,
     source: { file },
   };
@@ -147,6 +180,7 @@ export type SourceAnalysisWorkerResponse =
       type: 'result';
     }
   | {
+      code: SourceAnalysisErrorCode;
       jobId: string;
       message: string;
       type: 'error';
@@ -310,7 +344,7 @@ export class SourceAnalysisQueue {
         this.#cache.set(job.cacheKey, response.result);
         job.resolve(response.result);
       } else {
-        job.reject(new Error(response.message));
+        job.reject(new SourceAnalysisError(response.code, response.message));
       }
       this.#drain();
     };
@@ -318,7 +352,12 @@ export class SourceAnalysisQueue {
       if (this.#active?.worker !== worker) return;
       this.#active = null;
       worker.terminate();
-      job.reject(new Error(event.message || 'Source analysis worker failed'));
+      job.reject(
+        new SourceAnalysisError(
+          'failed',
+          event.message || 'Source analysis worker failed'
+        )
+      );
       this.#drain();
     };
     try {

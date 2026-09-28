@@ -141,9 +141,9 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	// A fresh account is pinned to zai/glm-5.3-flash, whose floor is "low".
-	if body.SelectedThinking != "low" {
-		t.Fatalf("resolved thinking = %+v, want low", body)
+	// A fresh account is pinned to zai/glm-5.3-flash, whose default is "high".
+	if body.SelectedThinking != "high" {
+		t.Fatalf("resolved thinking = %+v, want high", body)
 	}
 	for _, model := range body.Models {
 		for _, level := range model.Thinking.Levels {

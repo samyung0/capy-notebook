@@ -988,6 +988,10 @@ components:
           maxLength: 120
           minLength: 1
           type: string
+        pageCount:
+          format: int64
+          minimum: 0
+          type: integer
         parseMode:
           type: string
         sizeBytes:
@@ -3724,6 +3728,9 @@ components:
             type: string
           type: array
         maxBytes:
+          format: int64
+          type: integer
+        maxOcrPages:
           format: int64
           type: integer
         maxPages:
@@ -8610,6 +8617,8 @@ paths:
                 contentType: text/plain
               name:
                 contentType: text/plain
+              pageCount:
+                contentType: text/plain
               parseMode:
                 contentType: text/plain
             schema:
@@ -8632,6 +8641,9 @@ paths:
                 name:
                   maxLength: 120
                   type: string
+                pageCount:
+                  format: int64
+                  type: integer
                 parseMode:
                   type: string
               required:

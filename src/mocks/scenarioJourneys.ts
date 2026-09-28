@@ -198,7 +198,12 @@ export async function runJourney(
     if (id === 'source-replaced')
       announceSourceEpoch(scenarioText, advanceScenarioSource(scenarioText));
     else await ui.click(m.action_save());
-    await ui.element('[role="alert"]');
+    if (id === 'source-replaced')
+      await ui.wait(
+        () => document.body.textContent?.includes(m.source_edit_replaced()),
+        'newer version banner'
+      );
+    else await ui.element('[role="alert"]');
     return;
   }
   if (id === 'source-draft-recovery') {
@@ -339,8 +344,8 @@ export async function runJourney(
   const readRoutes: Partial<Record<JourneyId, string>> = {
     'account-deleted': '/settings',
     'account-deletion-pending': '/settings',
-    'account-grace': '/settings',
-    'account-over-quota': '/settings',
+    'account-grace': '/',
+    'account-over-quota': '/',
     'account-suspended': '/settings',
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
     'attempt-load': `/quizzes/attempts/${db.attempts[0].id}`,
@@ -419,7 +424,7 @@ export async function runJourney(
         () => document.body.textContent?.includes(accountTitle()),
         'account status displayed'
       );
-      return 'The application displays its account status banner or blocked-account page.';
+      return 'The dashboard banner slot or the blocked-account page shows the account status.';
     }
     if (id === 'workspace-timeout')
       return 'The request remains pending; the application shows its loading state.';
