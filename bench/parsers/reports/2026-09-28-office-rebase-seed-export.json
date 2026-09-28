@@ -1,9 +1,9 @@
 {
-  "capy_revision": "b2be9177cb162a08e8c1312053b72c5a53fa9382",
-  "betteroffice_revision": "6957d88616a4a5ac5c64a69af746ecbd08d57731",
+  "capy_revision": "872a7546e5c781a06a63257c8dbb48d67d4b38fa",
+  "betteroffice_revision": "a7fdc61a31633906d8a3c9a68eaed4b94897b0a0",
   "runtime_manifest": {
     "docx": "2805312599afd02f53369937521726c4f994e54159225595c71ea1b2b6132529",
-    "parse": "1e5d66733a263dc1a38e58f87f0142441cf97d99a71bb3ec99e1a1cca6e8e087",
+    "parse": "20b2c88da08d96d05c1b508ae429403363423177c6ceac6a11531cc8f6ebf082",
     "opc": "dcfaeb6841c276047bdda8be1ed3dba987f03adc0e5db5dd657c9b3d99faa244",
     "xlsx": "e12268315a7692ae45c429adae4e27d8fd96b64b85543eb9c19fcedc4a838417",
     "pptx": "43a0d0171ec577deef2e6d11cf667c036f40ca21cc8871277b2ab513014afc1f"
@@ -42,8 +42,8 @@
         "effects_stored": 494,
         "quota_extra": 593
       },
-      "exported_bytes": 37937,
-      "exported_seed_bytes": 10729,
+      "exported_bytes": 37939,
+      "exported_seed_bytes": 10927,
       "during_refresh": {
         "state_bytes": 183,
         "effect_bytes": 484,
@@ -61,20 +61,20 @@
       "captured_state_bytes": 8978,
       "captured_state_stored": 147,
       "rebased_with_later_edit": {
-        "state_bytes": 438,
+        "state_bytes": 463,
         "effect_bytes": 464,
-        "state_stored": 442,
+        "state_stored": 467,
         "effects_stored": 494,
-        "quota_extra": 902
+        "quota_extra": 927
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 11151,
+        "state_bytes": 11374,
         "effect_bytes": 464,
-        "state_stored": 2337,
+        "state_stored": 2348,
         "effects_stored": 494,
-        "quota_extra": 886
+        "quota_extra": 911
       },
-      "milliseconds": 1060
+      "milliseconds": 1059
     },
     {
       "file": "e2e/fixtures/files/basic/grades.xlsx",
@@ -137,7 +137,7 @@
         "effects_stored": 284,
         "quota_extra": 465
       },
-      "milliseconds": 127
+      "milliseconds": 132
     },
     {
       "file": "e2e/fixtures/files/basic/lesson.pptx",
@@ -171,36 +171,36 @@
       "exported_bytes": 29352,
       "exported_seed_bytes": 4313,
       "during_refresh": {
-        "state_bytes": 187,
+        "state_bytes": 188,
         "effect_bytes": 268,
-        "state_stored": 191,
+        "state_stored": 192,
         "effects_stored": 282,
-        "quota_extra": 455
+        "quota_extra": 456
       },
       "during_refresh_full_state": {
-        "state_bytes": 4478,
+        "state_bytes": 4479,
         "effect_bytes": 268,
-        "state_stored": 1510,
+        "state_stored": 1512,
         "effects_stored": 282,
-        "quota_extra": 453
+        "quota_extra": 454
       },
       "captured_state_bytes": 4433,
       "captured_state_stored": 146,
       "rebased_with_later_edit": {
-        "state_bytes": 48,
+        "state_bytes": 49,
         "effect_bytes": 248,
-        "state_stored": 49,
+        "state_stored": 50,
         "effects_stored": 262,
-        "quota_extra": 296
+        "quota_extra": 297
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 4359,
+        "state_bytes": 4360,
         "effect_bytes": 248,
-        "state_stored": 1403,
+        "state_stored": 1404,
         "effects_stored": 262,
-        "quota_extra": 294
+        "quota_extra": 295
       },
-      "milliseconds": 131
+      "milliseconds": 132
     },
     {
       "file": "e2e/fixtures/files/rich-content/exchange-plan.docx",
@@ -218,37 +218,37 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 482,
+        "state_bytes": 481,
         "effect_bytes": 2394,
-        "state_stored": 486,
+        "state_stored": 485,
         "effects_stored": 776,
-        "quota_extra": 2876
+        "quota_extra": 2875
       },
       "one_edit_full_state": {
-        "state_bytes": 313109,
+        "state_bytes": 313108,
         "effect_bytes": 2394,
-        "state_stored": 47860,
+        "state_stored": 47859,
         "effects_stored": 776,
-        "quota_extra": 2522
+        "quota_extra": 2521
       },
-      "exported_bytes": 65489,
+      "exported_bytes": 65487,
       "exported_seed_bytes": 322774,
       "during_refresh": {
-        "state_bytes": 522,
+        "state_bytes": 518,
         "effect_bytes": 2412,
-        "state_stored": 526,
+        "state_stored": 522,
         "effects_stored": 795,
-        "quota_extra": 2934
+        "quota_extra": 2930
       },
       "during_refresh_full_state": {
-        "state_bytes": 313149,
+        "state_bytes": 313145,
         "effect_bytes": 2412,
-        "state_stored": 47899,
+        "state_stored": 47896,
         "effects_stored": 795,
-        "quota_extra": 2580
+        "quota_extra": 2576
       },
-      "captured_state_bytes": 313109,
-      "captured_state_stored": 486,
+      "captured_state_bytes": 313108,
+      "captured_state_stored": 485,
       "rebased_with_later_edit": {
         "state_bytes": 388,
         "effect_bytes": 2432,
@@ -263,7 +263,7 @@
         "effects_stored": 796,
         "quota_extra": 2466
       },
-      "milliseconds": 1231
+      "milliseconds": 1385
     },
     {
       "file": "e2e/fixtures/files/rich-content/course-guide.xlsx",
@@ -326,7 +326,7 @@
         "effects_stored": 285,
         "quota_extra": 467
       },
-      "milliseconds": 14276
+      "milliseconds": 14548
     },
     {
       "file": "e2e/fixtures/files/rich-content/lecture.pptx",
@@ -389,7 +389,7 @@
         "effects_stored": 261,
         "quota_extra": 294
       },
-      "milliseconds": 555
+      "milliseconds": 516
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/feature-rich.docx",
@@ -420,8 +420,8 @@
         "effects_stored": 574,
         "quota_extra": 665
       },
-      "exported_bytes": 40086,
-      "exported_seed_bytes": 50084,
+      "exported_bytes": 40088,
+      "exported_seed_bytes": 50810,
       "during_refresh": {
         "state_bytes": 212,
         "effect_bytes": 555,
@@ -439,20 +439,20 @@
       "captured_state_bytes": 42410,
       "captured_state_stored": 176,
       "rebased_with_later_edit": {
-        "state_bytes": 509,
+        "state_bytes": 531,
         "effect_bytes": 573,
-        "state_stored": 513,
+        "state_stored": 535,
         "effects_stored": 610,
-        "quota_extra": 1082
+        "quota_extra": 1104
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 50549,
+        "state_bytes": 51297,
         "effect_bytes": 573,
-        "state_stored": 9315,
+        "state_stored": 9325,
         "effects_stored": 610,
-        "quota_extra": 1038
+        "quota_extra": 1060
       },
-      "milliseconds": 1210
+      "milliseconds": 964
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/feature-rich.xlsx",
@@ -515,7 +515,7 @@
         "effects_stored": 285,
         "quota_extra": 490
       },
-      "milliseconds": 125
+      "milliseconds": 119
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/feature-rich.pptx",
@@ -533,52 +533,52 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 141,
+        "state_bytes": 142,
         "effect_bytes": 213,
-        "state_stored": 145,
+        "state_stored": 146,
         "effects_stored": 227,
-        "quota_extra": 354
+        "quota_extra": 355
       },
       "one_edit_full_state": {
-        "state_bytes": 17892,
+        "state_bytes": 17893,
         "effect_bytes": 213,
-        "state_stored": 4704,
+        "state_stored": 4705,
         "effects_stored": 227,
-        "quota_extra": 352
+        "quota_extra": 353
       },
       "exported_bytes": 16630,
       "exported_seed_bytes": 17773,
       "during_refresh": {
-        "state_bytes": 186,
+        "state_bytes": 188,
         "effect_bytes": 231,
-        "state_stored": 190,
+        "state_stored": 192,
+        "effects_stored": 245,
+        "quota_extra": 419
+      },
+      "during_refresh_full_state": {
+        "state_bytes": 17939,
+        "effect_bytes": 231,
+        "state_stored": 4743,
         "effects_stored": 245,
         "quota_extra": 417
       },
-      "during_refresh_full_state": {
-        "state_bytes": 17937,
-        "effect_bytes": 231,
-        "state_stored": 4742,
-        "effects_stored": 245,
-        "quota_extra": 415
-      },
-      "captured_state_bytes": 17892,
-      "captured_state_stored": 145,
+      "captured_state_bytes": 17893,
+      "captured_state_stored": 146,
       "rebased_with_later_edit": {
-        "state_bytes": 48,
+        "state_bytes": 49,
         "effect_bytes": 241,
-        "state_stored": 49,
+        "state_stored": 50,
         "effects_stored": 255,
-        "quota_extra": 289
+        "quota_extra": 290
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 17819,
+        "state_bytes": 17820,
         "effect_bytes": 241,
-        "state_stored": 4634,
+        "state_stored": 4636,
         "effects_stored": 255,
-        "quota_extra": 287
+        "quota_extra": 288
       },
-      "milliseconds": 90
+      "milliseconds": 79
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/book-30p.docx",
@@ -596,52 +596,52 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 132,
+        "state_bytes": 134,
         "effect_bytes": 353,
-        "state_stored": 136,
+        "state_stored": 138,
         "effects_stored": 375,
-        "quota_extra": 485
+        "quota_extra": 487
       },
       "one_edit_full_state": {
-        "state_bytes": 259372,
+        "state_bytes": 259374,
         "effect_bytes": 353,
-        "state_stored": 72451,
+        "state_stored": 72453,
         "effects_stored": 375,
-        "quota_extra": 479
+        "quota_extra": 481
       },
       "exported_bytes": 50487,
-      "exported_seed_bytes": 273990,
+      "exported_seed_bytes": 277686,
       "during_refresh": {
-        "state_bytes": 173,
+        "state_bytes": 175,
         "effect_bytes": 371,
-        "state_stored": 177,
+        "state_stored": 179,
         "effects_stored": 391,
-        "quota_extra": 544
+        "quota_extra": 546
       },
       "during_refresh_full_state": {
-        "state_bytes": 259413,
+        "state_bytes": 259415,
         "effect_bytes": 371,
-        "state_stored": 72485,
+        "state_stored": 72487,
         "effects_stored": 391,
-        "quota_extra": 538
+        "quota_extra": 540
       },
-      "captured_state_bytes": 259372,
-      "captured_state_stored": 136,
+      "captured_state_bytes": 259374,
+      "captured_state_stored": 138,
       "rebased_with_later_edit": {
-        "state_bytes": 446,
+        "state_bytes": 468,
         "effect_bytes": 361,
-        "state_stored": 450,
+        "state_stored": 472,
         "effects_stored": 383,
-        "quota_extra": 807
+        "quota_extra": 829
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 274430,
+        "state_bytes": 278148,
         "effect_bytes": 361,
-        "state_stored": 75392,
+        "state_stored": 75406,
         "effects_stored": 383,
-        "quota_extra": 801
+        "quota_extra": 823
       },
-      "milliseconds": 671
+      "milliseconds": 674
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/images-10.docx",
@@ -659,52 +659,52 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 132,
+        "state_bytes": 134,
         "effect_bytes": 2955,
-        "state_stored": 136,
+        "state_stored": 138,
         "effects_stored": 1251,
-        "quota_extra": 3087
+        "quota_extra": 3089
       },
       "one_edit_full_state": {
-        "state_bytes": 67444,
+        "state_bytes": 67446,
         "effect_bytes": 2955,
-        "state_stored": 18535,
+        "state_stored": 18537,
         "effects_stored": 1251,
-        "quota_extra": 3081
+        "quota_extra": 3083
       },
-      "exported_bytes": 4191552,
-      "exported_seed_bytes": 72143,
+      "exported_bytes": 4191558,
+      "exported_seed_bytes": 73045,
       "during_refresh": {
-        "state_bytes": 173,
+        "state_bytes": 175,
         "effect_bytes": 2973,
-        "state_stored": 177,
+        "state_stored": 179,
         "effects_stored": 1270,
-        "quota_extra": 3146
+        "quota_extra": 3148
       },
       "during_refresh_full_state": {
-        "state_bytes": 67485,
+        "state_bytes": 67487,
         "effect_bytes": 2973,
-        "state_stored": 18569,
+        "state_stored": 18571,
         "effects_stored": 1270,
-        "quota_extra": 3140
+        "quota_extra": 3142
       },
-      "captured_state_bytes": 67444,
-      "captured_state_stored": 136,
+      "captured_state_bytes": 67446,
+      "captured_state_stored": 138,
       "rebased_with_later_edit": {
-        "state_bytes": 446,
+        "state_bytes": 465,
         "effect_bytes": 2993,
-        "state_stored": 450,
+        "state_stored": 469,
         "effects_stored": 1273,
-        "quota_extra": 3439
+        "quota_extra": 3458
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 72583,
+        "state_bytes": 73504,
         "effect_bytes": 2993,
-        "state_stored": 19038,
+        "state_stored": 19058,
         "effects_stored": 1273,
-        "quota_extra": 3433
+        "quota_extra": 3452
       },
-      "milliseconds": 2811
+      "milliseconds": 2849
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/opaque-objects.docx",
@@ -722,52 +722,52 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 132,
+        "state_bytes": 133,
         "effect_bytes": 1363,
-        "state_stored": 136,
+        "state_stored": 137,
         "effects_stored": 1443,
-        "quota_extra": 1495
+        "quota_extra": 1496
       },
       "one_edit_full_state": {
-        "state_bytes": 48001,
+        "state_bytes": 48002,
         "effect_bytes": 1363,
-        "state_stored": 17299,
+        "state_stored": 17300,
         "effects_stored": 1443,
-        "quota_extra": 1489
+        "quota_extra": 1490
       },
       "exported_bytes": 59797,
-      "exported_seed_bytes": 49800,
+      "exported_seed_bytes": 50174,
       "during_refresh": {
-        "state_bytes": 171,
+        "state_bytes": 173,
         "effect_bytes": 1381,
-        "state_stored": 175,
+        "state_stored": 177,
         "effects_stored": 1463,
-        "quota_extra": 1552
+        "quota_extra": 1554
       },
       "during_refresh_full_state": {
-        "state_bytes": 48040,
+        "state_bytes": 48042,
         "effect_bytes": 1381,
-        "state_stored": 17335,
+        "state_stored": 17336,
         "effects_stored": 1463,
-        "quota_extra": 1546
+        "quota_extra": 1548
       },
-      "captured_state_bytes": 48001,
-      "captured_state_stored": 136,
+      "captured_state_bytes": 48002,
+      "captured_state_stored": 137,
       "rebased_with_later_edit": {
-        "state_bytes": 443,
+        "state_bytes": 465,
         "effect_bytes": 1361,
-        "state_stored": 447,
+        "state_stored": 469,
         "effects_stored": 1443,
-        "quota_extra": 1804
+        "quota_extra": 1826
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 50237,
+        "state_bytes": 50633,
         "effect_bytes": 1361,
-        "state_stored": 17728,
+        "state_stored": 17742,
         "effects_stored": 1443,
-        "quota_extra": 1798
+        "quota_extra": 1820
       },
-      "milliseconds": 259
+      "milliseconds": 233
     },
     {
       "file": "vendor/betteroffice/poc/fixtures/deck-50.pptx",
@@ -785,52 +785,52 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 141,
+        "state_bytes": 142,
         "effect_bytes": 248,
-        "state_stored": 145,
+        "state_stored": 146,
         "effects_stored": 262,
-        "quota_extra": 389
+        "quota_extra": 390
       },
       "one_edit_full_state": {
-        "state_bytes": 161384,
+        "state_bytes": 161385,
         "effect_bytes": 248,
-        "state_stored": 47113,
+        "state_stored": 47114,
         "effects_stored": 262,
-        "quota_extra": 387
+        "quota_extra": 388
       },
       "exported_bytes": 94199,
       "exported_seed_bytes": 161265,
       "during_refresh": {
-        "state_bytes": 186,
+        "state_bytes": 188,
         "effect_bytes": 266,
-        "state_stored": 190,
+        "state_stored": 192,
+        "effects_stored": 280,
+        "quota_extra": 454
+      },
+      "during_refresh_full_state": {
+        "state_bytes": 161431,
+        "effect_bytes": 266,
+        "state_stored": 47149,
         "effects_stored": 280,
         "quota_extra": 452
       },
-      "during_refresh_full_state": {
-        "state_bytes": 161429,
-        "effect_bytes": 266,
-        "state_stored": 47148,
-        "effects_stored": 280,
-        "quota_extra": 450
-      },
-      "captured_state_bytes": 161384,
-      "captured_state_stored": 145,
+      "captured_state_bytes": 161385,
+      "captured_state_stored": 146,
       "rebased_with_later_edit": {
-        "state_bytes": 48,
+        "state_bytes": 49,
         "effect_bytes": 246,
-        "state_stored": 49,
+        "state_stored": 50,
         "effects_stored": 260,
-        "quota_extra": 294
+        "quota_extra": 295
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 161311,
+        "state_bytes": 161312,
         "effect_bytes": 246,
-        "state_stored": 46986,
+        "state_stored": 46987,
         "effects_stored": 260,
-        "quota_extra": 292
+        "quota_extra": 293
       },
-      "milliseconds": 363
+      "milliseconds": 355
     },
     {
       "file": "vendor/betteroffice/crates/betteroffice-xlsx/tests/fixtures/storage/cells-1k.xlsx",
@@ -848,37 +848,37 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 243,
+        "state_bytes": 242,
         "effect_bytes": 266,
-        "state_stored": 247,
+        "state_stored": 246,
         "effects_stored": 252,
-        "quota_extra": 509
+        "quota_extra": 508
       },
       "one_edit_full_state": {
-        "state_bytes": 4428,
+        "state_bytes": 4427,
         "effect_bytes": 266,
-        "state_stored": 1653,
+        "state_stored": 1652,
         "effects_stored": 252,
-        "quota_extra": 507
+        "quota_extra": 506
       },
       "exported_bytes": 14772,
       "exported_seed_bytes": 4187,
       "during_refresh": {
-        "state_bytes": 290,
+        "state_bytes": 286,
         "effect_bytes": 284,
-        "state_stored": 294,
+        "state_stored": 290,
         "effects_stored": 270,
-        "quota_extra": 574
+        "quota_extra": 570
       },
       "during_refresh_full_state": {
-        "state_bytes": 4475,
+        "state_bytes": 4471,
         "effect_bytes": 284,
-        "state_stored": 1694,
+        "state_stored": 1692,
         "effects_stored": 270,
-        "quota_extra": 572
+        "quota_extra": 568
       },
-      "captured_state_bytes": 4428,
-      "captured_state_stored": 247,
+      "captured_state_bytes": 4427,
+      "captured_state_stored": 246,
       "rebased_with_later_edit": {
         "state_bytes": 170,
         "effect_bytes": 296,
@@ -893,7 +893,7 @@
         "effects_stored": 284,
         "quota_extra": 464
       },
-      "milliseconds": 370
+      "milliseconds": 356
     },
     {
       "file": "vendor/betteroffice/crates/betteroffice-xlsx/tests/fixtures/storage/cells-10k.xlsx",
@@ -927,18 +927,18 @@
       "exported_bytes": 90145,
       "exported_seed_bytes": 4187,
       "during_refresh": {
-        "state_bytes": 289,
+        "state_bytes": 290,
         "effect_bytes": 284,
-        "state_stored": 293,
+        "state_stored": 294,
         "effects_stored": 270,
-        "quota_extra": 573
+        "quota_extra": 574
       },
       "during_refresh_full_state": {
-        "state_bytes": 4474,
+        "state_bytes": 4475,
         "effect_bytes": 284,
-        "state_stored": 1693,
+        "state_stored": 1694,
         "effects_stored": 270,
-        "quota_extra": 571
+        "quota_extra": 572
       },
       "captured_state_bytes": 4428,
       "captured_state_stored": 247,
@@ -956,7 +956,7 @@
         "effects_stored": 284,
         "quota_extra": 464
       },
-      "milliseconds": 2947
+      "milliseconds": 2955
     },
     {
       "file": "vendor/betteroffice/crates/betteroffice-xlsx/tests/fixtures/storage/cells-100k.xlsx",
@@ -990,36 +990,36 @@
       "exported_bytes": 847563,
       "exported_seed_bytes": 4187,
       "during_refresh": {
-        "state_bytes": 286,
+        "state_bytes": 285,
         "effect_bytes": 284,
-        "state_stored": 290,
+        "state_stored": 289,
         "effects_stored": 270,
-        "quota_extra": 570
+        "quota_extra": 569
       },
       "during_refresh_full_state": {
-        "state_bytes": 4446,
+        "state_bytes": 4445,
         "effect_bytes": 284,
-        "state_stored": 1692,
+        "state_stored": 1691,
         "effects_stored": 270,
-        "quota_extra": 568
+        "quota_extra": 567
       },
       "captured_state_bytes": 4401,
       "captured_state_stored": 245,
       "rebased_with_later_edit": {
-        "state_bytes": 169,
+        "state_bytes": 170,
         "effect_bytes": 296,
-        "state_stored": 173,
+        "state_stored": 174,
         "effects_stored": 284,
-        "quota_extra": 465
+        "quota_extra": 466
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 4354,
+        "state_bytes": 4355,
         "effect_bytes": 296,
-        "state_stored": 1586,
+        "state_stored": 1587,
         "effects_stored": 284,
-        "quota_extra": 463
+        "quota_extra": 464
       },
-      "milliseconds": 38401
+      "milliseconds": 40604
     },
     {
       "file": "bench/parsers/fixtures/docs/jp_llm2.pptx",
@@ -1053,36 +1053,36 @@
       "exported_bytes": 24388911,
       "exported_seed_bytes": 714705,
       "during_refresh": {
-        "state_bytes": 1026,
+        "state_bytes": 1025,
         "effect_bytes": 323,
-        "state_stored": 1030,
+        "state_stored": 1029,
         "effects_stored": 337,
-        "quota_extra": 1349
+        "quota_extra": 1348
       },
       "during_refresh_full_state": {
-        "state_bytes": 714850,
+        "state_bytes": 714849,
         "effect_bytes": 323,
-        "state_stored": 186460,
+        "state_stored": 186459,
         "effects_stored": 337,
-        "quota_extra": 509
+        "quota_extra": 508
       },
       "captured_state_bytes": 714804,
       "captured_state_stored": 984,
       "rebased_with_later_edit": {
-        "state_bytes": 889,
+        "state_bytes": 888,
         "effect_bytes": 331,
-        "state_stored": 893,
+        "state_stored": 892,
         "effects_stored": 345,
-        "quota_extra": 1220
+        "quota_extra": 1219
       },
       "rebased_with_later_edit_full_state": {
-        "state_bytes": 714752,
+        "state_bytes": 714751,
         "effect_bytes": 331,
-        "state_stored": 186372,
+        "state_stored": 186371,
         "effects_stored": 345,
-        "quota_extra": 378
+        "quota_extra": 377
       },
-      "milliseconds": 4831
+      "milliseconds": 5146
     },
     {
       "file": "bench/rag/fixtures/local/2026-09-09-odl-agentic/originals/zh/zh_TW_llm.pptx",
@@ -1100,37 +1100,37 @@
         "quota_extra": 0
       },
       "one_edit": {
-        "state_bytes": 218,
+        "state_bytes": 217,
         "effect_bytes": 194,
-        "state_stored": 222,
+        "state_stored": 221,
         "effects_stored": 208,
-        "quota_extra": 412
+        "quota_extra": 411
       },
       "one_edit_full_state": {
-        "state_bytes": 479494,
+        "state_bytes": 479493,
         "effect_bytes": 194,
-        "state_stored": 111756,
+        "state_stored": 111755,
         "effects_stored": 208,
-        "quota_extra": 334
+        "quota_extra": 333
       },
       "exported_bytes": 8754723,
       "exported_seed_bytes": 479427,
       "during_refresh": {
-        "state_bytes": 264,
+        "state_bytes": 262,
         "effect_bytes": 212,
-        "state_stored": 268,
+        "state_stored": 266,
         "effects_stored": 226,
-        "quota_extra": 476
+        "quota_extra": 474
       },
       "during_refresh_full_state": {
-        "state_bytes": 479540,
+        "state_bytes": 479538,
         "effect_bytes": 212,
-        "state_stored": 111794,
+        "state_stored": 111793,
         "effects_stored": 226,
-        "quota_extra": 398
+        "quota_extra": 396
       },
-      "captured_state_bytes": 479494,
-      "captured_state_stored": 222,
+      "captured_state_bytes": 479493,
+      "captured_state_stored": 221,
       "rebased_with_later_edit": {
         "state_bytes": 126,
         "effect_bytes": 232,
@@ -1145,7 +1145,7 @@
         "effects_stored": 246,
         "quota_extra": 280
       },
-      "milliseconds": 2316
+      "milliseconds": 2433
     }
   ]
 }
