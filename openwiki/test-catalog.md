@@ -885,6 +885,7 @@ Popover appearance ownership is documented in [frontend/motion.md](frontend/moti
 - `src/features/questions/parseMathText.test.ts`, `TextEditor.test.ts`, `graph.test.ts`, `src/components/charts/CategoryChart.test.tsx`: math-token boundaries and editor serialization, safe graph expressions/export recipe, shared chart rendering.
 - `src/features/quizzes/QuizForm.test.ts`, `src/features/materials/document.test.ts`: canonical question round-trips through Plate/JSON/YAML, legacy rejection, note chart fences and part IDs unique across a material.
 - `src/features/quizzes/QuestionRunner.test.tsx`: submitted review renders part scores, scheme-before-answer, fixed units and collapsed solutions; open parts retain partial credit without fabricated item scores, and unanswered ordering does not display a shuffled answer.
+- `src/features/questions/QuestionView.test.tsx`: the review answer line typesets bare-LaTeX accepted answers and joins a plain `°` unit to its value while other units keep the space.
 - `server/internal/store/mistakes_test.go`: count/byte-bounded review batches preserve unattempted questions and source part IDs while virtual part IDs remain unique.
 - `server/internal/store/listing_test.go`: `TestEmptyQuizListingHasZeroQuestions` covers the empty quiz sentinel.
 - `server/internal/httpapi/quiz_grade_test.go`: the configured quiz slot receives the full rich grading request, including a 1.2 MB model answer, without truncation.

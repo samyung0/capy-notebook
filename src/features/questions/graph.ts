@@ -78,6 +78,14 @@ export async function createGraphBoard(
   } = {
     axis: graph.board.axis,
     boundingbox: graph.board.bbox,
+    // Default axis ticks span the board (majorHeight -1), drawing a faint
+    // grid; without a grid they stay short marks on the axes.
+    ...(!graph.board.grid && {
+      defaultAxes: {
+        x: { ticks: { majorHeight: 10 } },
+        y: { ticks: { majorHeight: 10 } },
+      },
+    }),
     grid: graph.board.grid,
     pan: { enabled: false },
     renderer: 'svg',

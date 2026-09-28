@@ -19,6 +19,9 @@ import {
 
 export type BlockSection = { partId?: string; solution?: boolean };
 
+// Accepted answers are often bare LaTeX such as `-2\sqrt{5}`.
+const LATEX_COMMAND = /\\[a-zA-Z]/;
+
 export function QuestionBlockView({ block }: { block: QuestionBlock }) {
   switch (block.type) {
     case 'text':
@@ -121,8 +124,18 @@ export function AnswerView({ part }: { part: QuestionPart }) {
     return (
       <TextView
         text={
-          answer.accepted.join('; ') +
-          (answer.type === 'short' && answer.unit ? ` ${answer.unit}` : '')
+          answer.accepted
+            .map((text) =>
+              !text.includes('$') && LATEX_COMMAND.test(text)
+                ? `$${text}$`
+                : text
+            )
+            .join('; ') +
+          (answer.type === 'short' && answer.unit
+            ? answer.unit === '°'
+              ? '°'
+              : ` ${answer.unit}`
+            : '')
         }
       />
     );
