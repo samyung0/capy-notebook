@@ -140,7 +140,12 @@ changed, over the fingerprinted source that every open requires:
   package, resolved at lowering; an inserted image keeps its data URL until the
   next publication rebases it into a reference. Charts and drawings the model
   cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
-  and export unchanged until edited.
+  and export unchanged until edited. Comment ranges survive publications: the
+  seed gives each unit inside a range, in any story, to every comment open
+  there (another comment's reference mark only when the range goes on past
+  it), and the export writes range and bookmark boundaries at the same story
+  units. A boundary inside a hyperlink or field moves to its edge, so that
+  comment widens to hold it whole.
 - XLSX (schema 8) keeps the sheet topology plus per-cell overrides keyed by
   stable identity; unedited cells come from the source. Pending effects are
   read off the overrides (`xlsxPendingEffects`: one per changed cell, per row
