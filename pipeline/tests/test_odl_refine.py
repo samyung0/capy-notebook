@@ -754,7 +754,9 @@ def test_formula_pictures_skip_tall_lines_and_tall_pictures(tmp_path: Path) -> N
     assert pictures.classify(blocks, document, tmp_path) == blocks
 
 
-def test_formula_pictures_are_placed_in_text(tmp_path: Path) -> None:
+def test_formula_pictures_are_placed_in_text_or_as_their_own_block(
+    tmp_path: Path,
+) -> None:
     document = pymupdf.open()
     page = document.new_page(width=600, height=800)
     page.insert_text((60, 100), "Let the rate be", fontsize=10)
@@ -763,8 +765,10 @@ def test_formula_pictures_are_placed_in_text(tmp_path: Path) -> None:
     page.insert_text((60, 250), "Text below the display formula", fontsize=10)
     page.insert_text((60, 400), "So we be", fontsize=10)
     page.insert_text((110, 400), "per plan, we be per hour.", fontsize=10)
-    inline, display, repeated_pair = INLINE, (100, 210, 200, 232), (100, 390, 108, 402)
-    for rect in (inline, display, repeated_pair):
+    page.insert_text((60, 500), "Cell value", fontsize=10)  # no paragraph block
+    inline, display = INLINE, (100, 210, 200, 232)
+    repeated_pair, no_host = (100, 390, 108, 402), (110, 490, 130, 502)
+    for rect in (inline, display, repeated_pair, no_host):
         _bars(page, rect)
     placed = {"type": "text", "text": "Let the rate be per hour today."}
     ambiguous = {"type": "text", "text": "So we be per plan, we be per hour."}
@@ -772,17 +776,21 @@ def test_formula_pictures_are_placed_in_text(tmp_path: Path) -> None:
         {**placed, "page_idx": 0, "bbox": _grid((60, 89, 243, 103))},
         _picture(tmp_path, "inline.png", 0, inline),
         _picture(tmp_path, "display.png", 0, display),
-        {**ambiguous, "page_idx": 0, "bbox": _grid((60, 389, 240, 403))},
+        _picture(tmp_path, "cell.png", 0, no_host),
         _picture(tmp_path, "pair.png", 0, repeated_pair),
+        {**ambiguous, "page_idx": 0, "bbox": _grid((60, 389, 240, 403))},
     ]
     result = pictures.classify(blocks, document, tmp_path)
     result = pictures.place_inline(result, document)
-    assert [(b["type"], b["text"], b.get("_picture")) for b in result] == [
+    # The unplaced pair carries its own placeholder after its paragraph; the
+    # hostless one keeps its place in reading order.
+    assert [(b["type"], b["text"], b.get("img_path")) for b in result] == [
         ("text", "Let the rate be [formula] per hour today.", None),
-        ("equation", "", "inline"),
-        ("equation", "[formula]", "display"),
+        ("equation", "", "inline.png"),
+        ("equation", "[formula]", "display.png"),
+        ("equation", "[formula]", "cell.png"),
         ("text", ambiguous["text"], None),
-        ("equation", "", "inline"),
+        ("equation", "[formula]", "pair.png"),
     ]
 
 

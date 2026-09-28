@@ -23,6 +23,9 @@ a legacy path (decision 2026-09-25).
   `display`). A display formula's text is `[formula]`. `pictures.place_inline`,
   after table recovery, splices `[formula]` into the one text or list block holding
   an inline picture, between the words beside it, when that pair occurs once there.
+  Otherwise the picture carries `[formula]` as its own block, right after its one
+  host paragraph, or in its reading-order place when no single paragraph holds it
+  (added 2026-09-29, below).
 - **Prompts.** Chat and curate each say that `[formula]` marks a formula printed as
   a picture, that the agent captures the page when a question needs that formula,
   and that it never presents the placeholder as content (`lab/playground/configs/curate.json`
@@ -195,6 +198,44 @@ changed text block equals v11's without its placeholders, and nothing else chang
 The unplaced reasons come from replaying the production rule over v11's text; the
 replay places exactly the 1,547 the parser placed.
 
+## Unplaced inline pictures (2026-09-29)
+
+The developer decided that an inline picture no unique word pair or single host
+paragraph places gets its own `[formula]` block after its paragraph; one with no
+single host paragraph keeps its reading-order place. Checked on the affected books:
+the ten extra books and the three gate documents with unplaced pictures (Chemistry,
+Precalculus, BOJ) parsed again in a throwaway container (`v12c`, the committed v12
+plus this change), and the library replay run again.
+
+| | Placeholders added | After its paragraph | In place (no single host) |
+| --- | ---: | ---: | ---: |
+| Brief Calculus | 265 | 198 | 67 |
+| Introductory Business Statistics | 58 | 40 | 18 |
+| Principles of Business Statistics | 14 | 4 | 10 |
+| Compact Anthology part 1 (an engraving strip) | 1 | | 1 |
+| Ten extra books | 338 | 242 | 96 |
+| Gate: Chemistry 8, Precalculus 4, BOJ 2 | 14 | | 14 |
+| Library replay, 120 books | 417 | 292 | 125 |
+
+Every unplaced picture now carries a placeholder, and each lands where its replayed
+reason says: the 242 after a paragraph are the 237 repeated pairs and 5 pairs not
+found, the 96 in place are the pictures with no host block. Placeholders in the ten
+books go from 2,239 to 2,577.
+
+Nothing else moves (`pictures_diff.py`, v12 → v12c, matching pictures by page and
+box):
+
+- every other block is identical and in the same order, including the 667 paragraphs
+  with placed placeholders; the 1,547 in-text placements are unchanged;
+- no picture is added or lost and no other key changes; figure records are equal
+  (3,328 and 3,820);
+- the gate compare on the 13 documents keeps all 1,355 outline anchors and 117
+  roots, finds no missing body text, and no body block changes ancestry apart from 3
+  in Online Statistics, which has no inline pictures and parses identically in both
+  arms (the ancestry check reports the same 3 between the identical v12 and v12m
+  parses);
+- the library replay's detections and in-text placements are unchanged.
+
 ## Timing
 
 Server parse time over the 66 documents went from 2,550 s (v11, 2026-09-25) to
@@ -227,35 +268,39 @@ the 66 documents, with the host otherwise quiet, was 2,592 s against v11's 2,550
   otherwise-detected inline picture an image (parametrised; each case trips only its
   own test); a picture beside a tall merged line and one 2.9 body lines tall stay
   images; a display formula carries `[formula]`, an inline one is spliced between its
-  words, and one whose word pair repeats in its paragraph stays unplaced; a repeated
+  words, one whose word pair repeats in its paragraph carries `[formula]` itself right
+  after that paragraph, and one with no host paragraph carries it in place; a repeated
   glyph among new words stays a formula while a repeat beside the same words and a
   repeat taller than 1.6 times the font size become furniture.
 - Each fails on a mutated rule: the six tests removed (6 fail), either tall-line
   guard removed, the fixed-context or glyph-height clause removed, all repeats
-  discarded, placement disabled.
-- `pnpm run test:pipeline:offline` on the merged tree: 858 passed, 5 failed outside
+  discarded, placement disabled, the unplaced picture not moved, or either
+  unplaced case left without its placeholder.
+- `pnpm run test:pipeline:offline` on the merged tree, before and after the
+  2026-09-29 change: 858 passed, 5 failed outside
   this change (Windows: a prompt_toolkit console, an encoding in the quiz golden, and
   three `test_parser_java.py` cases that use `signal.SIGKILL`), with the five modules
   that import `fcntl` and `test_parser_app.py` left out.
 
 ## Decision
 
-The rule meets the gate and the report's precision. Open questions for the developer:
+The rule meets the gate and the report's precision. The developer answered the open
+questions on 2026-09-29 (`human/agentic-retrieval.md`):
 
-1. **Unplaced inline pictures.** An inline picture with no single host block or with
-   a word pair that repeats in its paragraph stays an empty `equation` block, so its
-   formula leaves no mark in chunk text (the prototype's behaviour, kept). Unplaced:
-   14 of 18 on the gate, 338 of 1,885 in the extra books (237 repeated pairs, 96 no
-   host, 5 pairs not found), 417 of 2,109 in the library replay. Options: keep it; give
-   an unplaced picture the display text `[formula]` as its own block, which the chunk
-   shows after the paragraph; or append `[formula]` to the host paragraph.
-2. **Remaining false positives.** Accept 76% gate precision (Rice logos, grey key
-   caps, two BOJ pieces) and the ten real figures above, or tighten a test? Each
-   loses its figure record; the Rice logos and key caps also put `[formula]` into
-   chunk text. Music notation and score excerpts are the one class the six tests do
-   not see at all.
-3. **Parse time.** Up to about 8-9 s per book (Brief Calculus, Chemistry); fine under
-   the 600 s deadline for these books, and it scales with pages that hold pictures.
+1. **Unplaced inline pictures.** An inline picture that no unique word pair or single
+   host paragraph places gets its own `[formula]` block after its paragraph (the
+   section above). Where no single paragraph holds it (a table cell, a diagram), the
+   block keeps its reading-order place. Before the answer these pictures stayed empty:
+   14 of 18 on the gate, 338 of 1,885 in the extra books, 417 of 2,109 in the library
+   replay.
+2. **Remaining false positives: accepted.** The Rice logos, grey calculator key caps,
+   two BOJ chart pieces and the ten real figures above stay as they are. Known gap:
+   music notation and score excerpts are not caught by the six tests and can lose
+   their figure records.
+3. **Shipping.** v12 ships by push to main and a rebuilt builder parser
+   (`capy-kb-parser:pilot-v12`, v11 kept as backup, the container left stopped while
+   intake is paused); the ingest host takes it with the next release. Parse time
+   ships as measured above.
 
 Not done here: the 2026-09-28 measurement of the report's located formula pictures
 against the published chunk text. The library replay (`lib-replay.json`, every
@@ -267,7 +312,10 @@ Raw outputs, scripts and sheets are in the ignored
 `reports/local/2026-09-28-parser-v12-gate/`: `v11/` (copied), `v12/`, `v12m/`,
 `extras/` (`v11h/`, `v12/`, `v12m/`), `snapshots/parser-v11` (HEAD's `parser/` at
 `6ef13def`), `parser-v12`, `parser-v12m`, `compare-v11-v12.json`, `summary-v12.txt`,
-`gate-diff.json`, `extras-diff.json`, `lib-replay.json`, `precision.log` and
+`gate-diff.json`, `extras-diff.json`, `lib-replay.json`, `precision.log`, the
+2026-09-29 check (`snapshots/parser-v12c`, `extras/v12c/`, `v12c/` for the three gate
+documents, `unplaced/`, `extras-diff-v12c-vs-v12.json`, `gate-diff-v12c-vs-v12.json`,
+`lib-replay-v12c.json`, `extras/compare-v12m-v12c.json`, `unplaced/compare-v12m-v12c.json`) and
 `sheets/` (`brief_0`, `eei_0`, `bstat_0`, `extras-other_0`, `gate_0..2`,
 `lib-small_0..2`, `lib-mid_0..1`, each with its item list).
 
@@ -297,6 +345,9 @@ uv run python $S/lib_replay.py $GATE/lib-replay.json
 uv run python $S/precision.py $GATE v12 $GATE/lib-replay.json
 uv run python $S/same_arms.py $GATE v12 v12m
 uv run python $S/same_arms.py $GATE/extras v12 v12m
+uv run python $S/pictures_diff.py $GATE/extras v12m v12c $GATE/extras-diff-v12c-vs-v12.json
+uv run python $S/pictures_diff.py $GATE/unplaced v12m v12c $GATE/gate-diff-v12c-vs-v12.json
+uv run python $S/lib_replay.py $GATE/lib-replay-v12c.json
 uv run python $S/contact_sheet.py $GATE/extras v12 $GATE/sheets brief 36 brief-calculus
 uv run python $S/contact_sheet.py $GATE v12 $GATE/sheets gate 0
 docker exec <container> python /tmp/phases.py /app/parser /tmp/src/book.pdf   # timing

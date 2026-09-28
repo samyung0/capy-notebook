@@ -530,9 +530,10 @@ formula-picture rule to picture triage; the chunker stays at v12:
 - **Inline placement** (`pictures.place_inline`, after table recovery). The
   placeholder is spliced into the one text or list block holding the
   picture's centre, between the words beside the picture on its line, when
-  that pair (or the one word, at a line end) occurs once in the block. An
-  unplaced inline picture stays an empty `equation` block, which the chunker
-  skips.
+  that pair (or the one word, at a line end) occurs once in the block.
+  Otherwise the picture carries `[formula]` as its own block (decision
+  2026-09-29): right after its one host paragraph, or where it sits in reading
+  order when no single paragraph holds it (a table cell, a diagram).
 
 The placeholder is indexed as printed, with no tokenizer change, and the
 figure stage reads only `image` and `chart` blocks, so a formula picture
@@ -540,8 +541,12 @@ leaves the figure list. Parsed books keep their chunks; only new parses gain
 placeholders. Nothing transcribes formula pictures at parse time: the chat and
 curate prompts say `[formula]` marks a formula printed as a picture, to be
 read from a page capture when a question needs it and never presented as
-content. Stencil-mask rewriting and ODL's `--content-safety-off tiny` are not
-in v7 to v12; the tiny-text filter stays on.
+content. Known gaps, accepted (decision 2026-09-29): the detector is about 76%
+precise on the regression set (Rice logos, grey calculator key caps and a few
+real figures pass the tests), and music notation and score excerpts are not
+caught by the six tests, so they can lose their figure records. Stencil-mask
+rewriting and ODL's `--content-safety-off tiny` are not in v7 to v12; the
+tiny-text filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre

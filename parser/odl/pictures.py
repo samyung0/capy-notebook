@@ -11,7 +11,7 @@ rules, badges and formulas set as pictures arrive as images
   it (inline) or alone between two text lines (display), and passing the six
   precision tests (``_not_formula``). Retyped ``equation``: a display formula's
   text is PLACEHOLDER, an inline one is spliced into its paragraph by
-  ``place_inline``.
+  ``place_inline`` or else carries PLACEHOLDER itself.
 - Repeat: the same rendered picture on REPEAT_PAGES or more pages (licence
   badges, logos, icons, chapter bars). Kept as ``discarded`` page furniture,
   unless it is a glyph-sized formula among different words each time.
@@ -215,9 +215,13 @@ def classify(
 
 def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Splice PLACEHOLDER into the paragraph holding each inline formula picture,
-    between the words on either side of it when that pair occurs once there. An
-    unplaced picture stays an empty ``equation`` block."""
+    between the words on either side of it when that pair occurs once there.
+
+    An unplaced picture carries PLACEHOLDER as its own block: right after its one
+    host paragraph, or where it sits in reading order when it has no single host
+    (a table cell, a diagram)."""
     words: dict[int, list] = {}
+    after: dict[int, list[dict]] = defaultdict(list)  # id(host) -> its pictures
     for picture in [b for b in blocks if b.get("_picture") == "inline"]:
         number = picture["page_idx"]
         x = (picture["bbox"][0] + picture["bbox"][2]) / 2
@@ -233,24 +237,31 @@ def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             and b["bbox"][1] - 3 <= y <= b["bbox"][3] + 3
         ]
         if len(hosts) != 1:
+            picture["text"] = PLACEHOLDER
             continue
         host = hosts[0]
         page = document[number]
         if number not in words:
             words[number] = page.get_text("words")
         left, right = _words_beside(_rect(picture, page), words[number])
-        if left is None and right is None:
-            continue
         pattern = re.escape(left or "") + r"(\s*)" + re.escape(right or "")
         field = "text" if host["type"] == "text" else "list_items"
         values = (
             [host["text"]] if field == "text" else list(host.get("list_items") or [])
         )
         hits = [(i, m) for i, v in enumerate(values) for m in re.finditer(pattern, v)]
-        if len(hits) != 1:
+        if len(hits) != 1 or (left is None and right is None):
+            picture["text"] = PLACEHOLDER
+            after[id(host)].append(picture)
             continue
         i, m = hits[0]
         spliced = values[i][: m.start(1)] + f" {PLACEHOLDER} " + values[i][m.end(1) :]
         values[i] = re.sub(r"  +", " ", spliced)
         host[field] = values[0] if field == "text" else values
-    return blocks
+    moved = {id(p) for pictures in after.values() for p in pictures}
+    out: list[dict] = []
+    for block in blocks:
+        if id(block) not in moved:
+            out.append(block)
+            out.extend(after.get(id(block), ()))
+    return out
