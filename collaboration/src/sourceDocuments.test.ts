@@ -518,6 +518,23 @@ test('Office rebase uses the captured state and latest saved state, stores the r
   const digest = (bytes: Uint8Array) =>
     createHash('sha256').update(bytes).digest('hex');
   const imageSHA256 = 'a'.repeat(64);
+  // seed(base), and the captured and saved states as changes over it.
+  const base = new Y.Doc();
+  base.clientID = 5;
+  base.getMap('pptx:slides').set('slide', 'base');
+  const baseSeed = Y.encodeStateAsUpdate(base);
+  base.clientID = 9;
+  base.getMap('pptx:slides').set('slide', 'captured');
+  const captured = Y.encodeStateAsUpdate(
+    base,
+    Y.encodeStateVectorFromUpdate(baseSeed)
+  );
+  base.getMap('pptx:slides').set('slide', 'saved');
+  const saved = Y.encodeStateAsUpdate(
+    base,
+    Y.encodeStateVectorFromUpdate(baseSeed)
+  );
+  base.destroy();
   const session: SourceSession = {
     access: 'write',
     baseRevision: 1,
@@ -540,14 +557,18 @@ test('Office rebase uses the captured state and latest saved state, stores the r
     ],
     room: 'source:f:epoch:1',
     sourceURL: 'http://old-source',
-    state: Buffer.from('saved11').toString('base64'),
-    stateSeedSHA256: null,
+    state: Buffer.from(saved).toString('base64'),
+    stateSeedSHA256: digest(baseSeed),
     workspaceId: 'ws',
   };
   const pool = {
     query: vi.fn(async () => ({
       rows: [
-        { source_sha256: digest(newSource), state: Buffer.from('captured10') },
+        {
+          source_sha256: digest(newSource),
+          state: Buffer.from(captured),
+          state_seed_sha256: digest(baseSeed),
+        },
       ],
     })),
   };
@@ -602,9 +623,11 @@ test('Office rebase uses the captured state and latest saved state, stores the r
   };
   const runtime = vi
     .spyOn(officeRuntime, 'runOffice')
-    .mockImplementation((async (name: string) =>
+    .mockImplementation((async (name: string, ...args: unknown[]) =>
       name === 'seedOffice'
-        ? { state: seed }
+        ? {
+            state: oldSource.equals(args[1] as Uint8Array) ? baseSeed : seed,
+          }
         : rebase) as typeof officeRuntime.runOffice);
   const result = await sources.rebasePublication(session, {
     checkpoint: 10,
@@ -619,8 +642,8 @@ test('Office rebase uses the captured state and latest saved state, stores the r
   expect(runtime).toHaveBeenCalledWith(
     'rebaseOffice',
     oldSource,
-    expect.objectContaining({ state: Buffer.from('captured10') }),
-    expect.objectContaining({ state: Buffer.from('saved11') }),
+    expect.objectContaining({ state: rebuildState(baseSeed, captured) }),
+    expect.objectContaining({ state: rebuildState(baseSeed, saved) }),
     newSource
   );
   expect(runtime).toHaveBeenCalledWith('seedOffice', 'pptx', newSource);
@@ -649,6 +672,100 @@ test('Office rebase uses the captured state and latest saved state, stores the r
   expect(same).toEqual({ netTokens: 0, pendingEffects: [] });
   expect(runtime).not.toHaveBeenCalled();
   expect(request).not.toHaveBeenCalled();
+});
+
+test('only an engine refusal ends a publication rebase with a 422; any other engine error stays a 500', async () => {
+  const oldSource = Buffer.from('old package');
+  const newSource = Buffer.from('parsed package');
+  const digest = (bytes: Uint8Array) =>
+    createHash('sha256').update(bytes).digest('hex');
+  const base = new Y.Doc();
+  base.clientID = 5;
+  base.getMap('stories').set('body', 'seeded');
+  const seed = Y.encodeStateAsUpdate(base);
+  base.clientID = 9;
+  base.getMap('stories').set('body', 'saved');
+  const saved = Y.encodeStateAsUpdate(
+    base,
+    Y.encodeStateVectorFromUpdate(seed)
+  );
+  base.destroy();
+  const sources = new SourceDocumentStore(
+    {
+      query: vi.fn(async () => ({
+        rows: [
+          {
+            source_sha256: digest(newSource),
+            state: Buffer.from(saved),
+            state_seed_sha256: digest(seed),
+          },
+        ],
+      })),
+    } as unknown as Pool,
+    'http://api',
+    'secret'
+  );
+  vi.spyOn(sources, 'request').mockResolvedValue({
+    sourceURL: 'http://new-source',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === 'http://old-source' ? oldSource : newSource)
+    )
+  );
+  const publish = (message: string) => {
+    vi.spyOn(officeRuntime, 'runOffice').mockImplementation((async (
+      name: string
+    ) => {
+      if (name === 'seedOffice') return { state: seed };
+      throw new officeRuntime.OfficeEngineError(message);
+    }) as typeof officeRuntime.runOffice);
+    return sources
+      .rebasePublication(
+        {
+          baseSourceSHA256: digest(oldSource),
+          checkpoint: 11,
+          epoch: 1,
+          fileId: 'f',
+          format: 'docx',
+          pendingEffects: [],
+          sourceURL: 'http://old-source',
+          state: Buffer.from(saved).toString('base64'),
+          stateSeedSHA256: digest(seed),
+        } as unknown as SourceSession,
+        { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
+      )
+      .catch((error: unknown) => error);
+  };
+  const refused = await publish(
+    'Office rebase: a change at stories/body:4 touches content the export wrote differently'
+  );
+  expect(refused).toBeInstanceOf(SourceRequestError);
+  expect(refused).toMatchObject({ status: 422 });
+  // A timeout or trap is not a refusal: the server answers 500 and the
+  // refresh job retries it.
+  const failed = await publish('Office rebaseOffice timed out');
+  expect(failed).toBeInstanceOf(officeRuntime.OfficeEngineError);
+  expect(failed).not.toBeInstanceOf(SourceRequestError);
+});
+
+test('an Office state that names no seed is refused on every read, a candidate included', async () => {
+  const sources = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+  const read = {
+    baseSourceSHA256: 'a'.repeat(64),
+    sourceURL: 'http://base',
+    state: Buffer.from('whole').toString('base64'),
+    stateSeedSHA256: null,
+  };
+  await expect(
+    sources.stateOf({ ...read, format: 'pptx' })
+  ).rejects.toBeInstanceOf(SourceStateRebuildError);
+  // A text state is complete as stored.
+  expect(
+    Buffer.from(await sources.stateOf({ ...read, format: 'text' })).toString()
+  ).toBe('whole');
 });
 
 test('a save starts from the durable copy while the row names it, and reads the session again once it does not', async () => {

@@ -2588,6 +2588,16 @@ base and exits 1 when any seed changed: that pin then ships through the
 window below, and its reset covers the formats listed as changed (plus any
 golden seed changes). An empty manifest passes.
 
+The same bump keeps the fork's Yjs equal to Capy's: the fork's root
+`package.json` pins the `yjs` it bundles into `shared/office-checkpoint.mjs`
+(which the collaboration worker rebases with), and it must be the version
+`collaboration/package.json` and `pnpm-lock.yaml` resolve. Compare
+`grep '"yjs"' vendor/betteroffice/package.json collaboration/package.json`
+before the bump and bump both together. Both copies speak the same update
+format, and the collaboration service's main thread loads the bundle only for
+`OFFICE_DOCUMENT_ROOTS`, which is why it logs Yjs's "already imported" warning
+once.
+
 A maintenance export-only publication makes the saved state the file's bytes
 without a parser or provider call: the collaboration service exports and
 uploads the candidate as for any refresh, and finalizing it replaces the file's

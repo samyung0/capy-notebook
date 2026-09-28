@@ -161,17 +161,26 @@ and PPTX (`vendor/betteroffice/shared/office-rebase.ts`) apply the later edits
 to the captured state, record the resulting Yjs changes and replay each at the
 same place in the export's seed: texts are aligned unit by unit (UTF-16 code
 units and embeds), entities are paired by place (DOCX stories, tables, rows,
-cells, paragraph ids and comments; PPTX slides, shapes, stories, paragraphs
-and comments), and an entity created later whose id the seed already uses is
-renamed. The rebase fails explicitly when a later edit touches content the
-export wrote differently, when a restored slide, shape or paragraph needs
-source XML the export dropped (Undo of a deletion made before the capture), or
-when the rebased text and image effects differ from the saved ones. A refusal
-is terminal: the collaboration service answers the publication with 422, the
-ingest worker ends the source refresh job without retrying it and records the
-refusal in `refresh_error`, and the saved edits stay on the old base for the
-next publication. DOCX visual (formatting) effects are left out of that
-comparison because an export still writes some formatting its own way.
+cells and paragraph ids; PPTX slides, shapes, stories, paragraphs, and
+comments by slide, author, text and time), DOCX comments by the numeric id the
+export writes for them (`commentOoxmlIds`), and an entity created later whose
+id the seed already uses is renamed. A DOCX comment anchor the later edits
+wrote lands through the alignment of the latest story with the rebased one.
+The rebase fails explicitly when a later edit or such an anchor touches
+content the export wrote differently, when a restored slide, shape or
+paragraph needs source XML the export dropped (Undo of a deletion made before
+the capture), or when the rebased text and image effects differ from the
+saved ones (DOCX comments compared by author and visible text, since the
+export adds the body's reference run). A refusal (an error the engine raises
+with the `Office rebase:` prefix, including XLSX's) is terminal: the
+collaboration service answers the publication with 422, the ingest worker
+ends the source refresh job without retrying it and records the refusal in
+`refresh_error`, and the saved edits stay on the old base for the next
+publication. Any other engine error (a trap, a timeout) answers 500 and the
+job retries. The check does not verify formatting, which is accepted: DOCX
+visual effects are left out because an export writes some formatting its own
+way, and PPTX visual effects (shape geometry, layout, text formatting) are
+compared only by their count and operation, since they carry no values.
 
 The DOCX export writes page and column breaks from the story's break units, the
 way the seed reads them back: the units that open a paragraph slot become
@@ -181,12 +190,20 @@ match its units, and a paragraph whose leading page break is the
 `pageBreakBeforeRun` attribute keeps that break. So inserted breaks are saved,
 deleted ones stay deleted and an edited paragraph keeps its breaks, in the body
 and its block content controls (cells, headers, footers and notes hold no
-break units). One state the seed never produces does not round trip: text
-ahead of a table (or a page break) inside one paragraph slot, left by typing
-before the slot's leading block or by merging a paragraph into a slot that
-opens with one. The export writes that text after the table (a page break is
-kept in place), so the rebase lands edits to the text but refuses an edit to
-that table or break.
+break units).
+
+The DOCX editor never puts paragraph text ahead of a table, block content
+control or page or column break in one paragraph slot, as in Word (the render
+bridge refuses that state): Delete at the end of a paragraph just before such
+a block, or Backspace that would merge into it, changes nothing, and text,
+tabs, breaks and inline objects inserted at a location ahead of a slot's
+leading blocks land after them, with the caret following
+(`crates/docx-edit`, `inline_landing` and `merge_paragraphs`). The editor ref
+API's page break opens the next paragraph slot. The state still arises from
+concurrent edits (one editor merges a paragraph while another opens the next
+slot with a table), and it does not round trip: the export writes the text
+after the table (a page break is kept in place), so the rebase lands edits to
+the text but refuses an edit to that table or break.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor

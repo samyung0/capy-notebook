@@ -498,14 +498,19 @@ export class SourceDocumentStore {
   }
 
   /**
-   * The durable state, complete: seed(base) for NULL, the stored state, or
-   * seed(base) with the stored change applied. A change taken over another
-   * seed than this engine's is refused, never applied.
+   * The durable state, complete: seed(base) for NULL, a text state as stored,
+   * or seed(base) with the stored Office change applied. A change taken over
+   * another seed than this engine's, or an Office state that names no seed,
+   * is refused, never applied.
    */
   async stateOf(session: SourceBase & StoredState) {
     if (!session.state) return (await this.seed(session)).seed;
     const stored = Buffer.from(session.state, 'base64');
-    if (!session.stateSeedSHA256) return stored;
+    if (session.format === 'text') return stored;
+    if (!session.stateSeedSHA256)
+      throw new SourceStateRebuildError(
+        'An Office state is stored without the seed it is a change over'
+      );
     const { seed, seedSHA256 } = await this.seed(session);
     if (seedSHA256 !== session.stateSeedSHA256)
       throw new SourceSeedChangedError();
