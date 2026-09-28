@@ -66,8 +66,6 @@ for (const [set, name] of [
       (SELECT pg_column_size(r) FROM rag_contents r WHERE r.id=t.content_id) AS content_row,
       (SELECT jsonb_build_object('state_bytes',COALESCE(octet_length(d.state),0),
         'state_stored',COALESCE(pg_column_size(d.state),0),
-        'baseline_bytes',COALESCE(octet_length(d.indexed_baseline),0),
-        'baseline_stored',COALESCE(pg_column_size(d.indexed_baseline),0),
         'effects_stored',pg_column_size(d.pending_effects),'seed_bytes',d.seed_bytes,
         'quota_extra',d.storage_bytes) FROM source_documents d WHERE d.file_id=%s) AS editing,
       (SELECT COALESCE(sum(a.size_bytes),0) FROM artifact_cache a WHERE a.source_sha256=t.source_sha256) AS cache_bytes,

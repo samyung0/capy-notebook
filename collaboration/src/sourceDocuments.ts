@@ -107,8 +107,6 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceFormat;
-  /** Null: derived from the base (SourceDocumentStore.indexedBaseline). */
-  indexedBaseline: string | null;
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: NetEffect[];
@@ -117,10 +115,8 @@ export interface SourceSession {
   /** Null: seed(base) until the first save (SourceDocumentStore.seed). */
   state: string | null;
   /**
-   * With a state: the SHA-256 of seed(base) when the state is stored as its
-   * change over that seed (every Office state that grew from seed(base)),
-   * null when it is complete (text, or a DOCX or PPTX state a publication
-   * rebased, which keeps its stored baseline).
+   * With a state: the SHA-256 of seed(base) for an Office state, which is
+   * stored as its change over that seed; null for a text state (complete).
    */
   stateSeedSHA256: string | null;
   workspaceId: string;
@@ -137,28 +133,6 @@ export type SourceBaseline =
       format: Exclude<SourceFormat, 'text'>;
       entries: OfficeBaselineEntry[];
     };
-
-export function encodeBaseline(baseline: SourceBaseline) {
-  return Buffer.from(JSON.stringify(baseline)).toString('base64');
-}
-
-export function decodeBaseline(
-  encoded: string,
-  format: SourceFormat
-): SourceBaseline {
-  const baseline: SourceBaseline = JSON.parse(
-    Buffer.from(encoded, 'base64').toString('utf8')
-  );
-  if (
-    baseline.version !== 1 ||
-    baseline.format !== format ||
-    (baseline.format === 'text'
-      ? typeof baseline.text !== 'string'
-      : !Array.isArray(baseline.entries))
-  )
-    throw new Error('Invalid source comparison baseline');
-  return baseline;
-}
 
 export interface RefreshCandidate {
   baseRevision: number;
@@ -539,15 +513,11 @@ export class SourceDocumentStore {
   }
 
   /**
-   * How the complete `state` of `document` is stored: an Office state that
-   * grew from seed(base) as its change over that seed, text and a DOCX or
-   * PPTX state a publication rebased (it keeps its stored baseline) whole.
+   * How the complete `state` of `document` is stored: an Office state as its
+   * change over seed(base), text whole.
    */
-  private async storedState(
-    session: SourceBase & Pick<SourceSession, 'indexedBaseline'>,
-    state: Uint8Array
-  ) {
-    if (session.format === 'text' || session.indexedBaseline)
+  private async storedState(session: SourceBase, state: Uint8Array) {
+    if (session.format === 'text')
       return { state: Buffer.from(state).toString('base64') };
     const { seed, seedSHA256, seedVector } = await this.seed(session);
     return {
@@ -559,13 +529,11 @@ export class SourceDocumentStore {
   }
 
   /**
-   * The indexed baseline: the stored one (a publication that rebased later
-   * edits), else derived from the base: the decoded text, or the baseline of
-   * seed(base). XLSX keeps none; its effects come from its overrides.
+   * The indexed baseline, derived from the base: the decoded text, or the
+   * baseline of seed(base). XLSX keeps none; its effects come from its
+   * overrides.
    */
   private async indexedBaseline(session: SourceSession) {
-    if (session.indexedBaseline)
-      return decodeBaseline(session.indexedBaseline, session.format);
     const bytes = await this.base(session.sourceURL, session.baseSourceSHA256);
     if (session.format === 'text')
       return { format: 'text', text: decodeText(bytes), version: 1 } as const;
@@ -697,9 +665,7 @@ export class SourceDocumentStore {
     this.durable.set(
       room,
       { session, state },
-      state.byteLength +
-        (session.state?.length ?? 0) +
-        (session.indexedBaseline?.length ?? 0)
+      state.byteLength + (session.state?.length ?? 0)
     );
   }
 
@@ -911,20 +877,8 @@ export class SourceDocumentStore {
       if (prior?.caption) effect.caption = prior.caption;
     }
     const pendingEffects = rebased.effects.map(trimEffect);
-    if (session.format !== 'xlsx')
-      return {
-        // The rebased baseline lives in the rebased state's identities, which
-        // the export alone does not reproduce, so the state stays complete.
-        indexedBaseline: encodeBaseline({
-          entries: rebased.baseline,
-          format: session.format,
-          version: 1,
-        }),
-        netTokens: effectTokens(pendingEffects),
-        pendingEffects,
-        rebasedState: Buffer.from(rebased.state).toString('base64'),
-      };
-    // XLSX rebases onto seed(export): stored as its change over that seed.
+    // The rebase lands on seed(export): stored as its change over that seed,
+    // and the baseline derives from the export.
     const { seed, seedSHA256, seedVector } = await this.seed({
       baseSourceSHA256: candidate.source_sha256,
       format: session.format,

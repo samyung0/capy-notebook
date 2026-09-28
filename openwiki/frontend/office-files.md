@@ -102,12 +102,12 @@ mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account
 lock, so a suspended owner's shared files keep rendering) that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
-saved checkpoint is ahead of the indexed one (`indexedBaseline` and
-`pendingEffects` are omitted), with its `stateSeedSHA256`. The host passes
-that state as `checkpoint` and the hash as `checkpointSeedSHA256` on the `load`
-message (protocol version 5); the runtime applies it over the base with the
-editor engines in a disposable `exportCheckpoint` worker, which for a change
-seeds the base first and refuses a seed whose hash differs (the same composition as the
+saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
+with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the
+hash as `checkpointSeedSHA256` on the `load` message (protocol version 5); the
+runtime applies it over the base with the editor engines in a disposable
+`exportCheckpoint` worker, which for a change seeds the base first and refuses
+a seed whose hash differs (the same composition as the
 collaboration service's headless export), terminates it, and opens the viewer
 on the exported bytes. With no unpublished edits the base opens directly and
 no editor engine loads. The view is not live: it reflects the state at open,
@@ -150,9 +150,25 @@ changed, over the fingerprinted source that every open requires:
   array formula keeps its `t="array"` range only while its anchor cell still
   holds its original content; otherwise it saves as a single-cell formula.
 - PPTX keeps no parsed package or media in Yjs: both come from the source
-  package. Inserted pictures stay binary on their shape, and rebase overlays
-  store changed parts, media included, as bytes. Comments live in
-  `pptx:comments`.
+  package. Inserted pictures stay binary on their shape until a publication
+  writes them into the package. Comments live in `pptx:comments`.
+
+A publication rebases the edits saved after its capture onto seed(export) in
+every format (`rebaseOffice` in `vendor/betteroffice/shared/office-checkpoint.ts`),
+so the rebased state is stored as its change over that seed and its effects
+come from the export's derived baseline. XLSX replays them as overrides. DOCX
+and PPTX (`vendor/betteroffice/shared/office-rebase.ts`) apply the later edits
+to the captured state, record the resulting Yjs changes and replay each at the
+same place in the export's seed: texts are aligned unit by unit (UTF-16 code
+units and embeds), entities are paired by place (DOCX stories, tables, rows,
+cells, paragraph ids and comments; PPTX slides, shapes, stories, paragraphs
+and comments), and an entity created later whose id the seed already uses is
+renamed. The rebase fails explicitly, failing the publication, when a later
+edit touches content the export wrote differently (the DOCX export moves text
+typed before a leading page break or before a table in the same paragraph),
+when a restored slide, shape or paragraph needs source XML the export dropped
+(Undo of a deletion made before the capture), or when the rebased text and
+image effects differ from the saved ones.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
@@ -308,15 +324,12 @@ seed's state vector, plus the whole delete set), with the seed's SHA-256 in
 whole document model. Every write checks that seed plus the change rebuilds the
 exact state; every read re-seeds the base, refuses a change whose seed hash
 differs (the engine now seeds that base differently: publish it on the
-previous engine) and requires that nothing stays pending. Text states and DOCX
-or PPTX states a publication rebased (they keep a stored baseline) are stored
-whole. A NULL `indexed_baseline` means the baseline is derived from the base:
-the decoded text, or the engine baseline of seed(base);
-the service caches seeds (with their hashes) and derived baselines by base SHA
-next to the bases.
-Only a publication that rebased later DOCX or PPTX edits stores a baseline,
-because the rebased state's identities cannot be derived; a publication
-without later edits returns the state and baseline to NULL. The Go API
+previous engine) and requires that nothing stays pending. Text states are
+stored whole; every Office state names its seed (a CHECK since migration
+0043). No row stores a baseline: the indexed baseline always derives from the
+base, as the decoded text or the engine baseline of seed(base), and the service
+caches seeds (with their hashes) and derived baselines by base SHA next to the
+bases. A publication without later edits returns the state to NULL. The Go API
 rechecks current source access, epoch and account state through a small
 access-only endpoint for incoming edits, at most every 5 s per connection. Checkpoint writes check storage
 growth (see [storage quota](../backend-storage-quota.md)). The checkpoint answers with the new
@@ -417,8 +430,8 @@ into the new epoch, where unsaved changes go to recovery); a writer that
 disconnects is no longer waited for. The service then persists the room once.
 The publishing coordinator waits up to 60 seconds for every instance's
 acknowledgement, since that persist can queue behind a running save, and then
-publishes the source, index, rebased current state and matching indexed
-baseline atomically. The room lock covers that wait plus one Office engine
+publishes the source, index and rebased current state (its change over
+seed(export)) atomically. The room lock covers that wait plus one Office engine
 call (3 minutes), and each instance's recovery watchdog outlasts the lock.
 While the room is locked, a reconnecting editor's authentication is refused
 with the distinct reason `source-publishing`; the editor reconnects once after
@@ -508,8 +521,8 @@ refresh, and the same saved state always exports the same bytes. A maintenance
 export-only publication (system payer) publishes in finalize
 (`publishExportTx` in `server/internal/store/office_maintenance.go`), since
 editing is paused: it makes the export the file's bytes, bumps the epoch,
-returns the state and indexed baseline to NULL (seed(export) and its derived
-baseline), empties pending effects, drops the file's index and caption
+returns the state to NULL (seed(export), whose baseline derives from the
+export), empties pending effects, drops the file's index and caption
 associations and evicts the old room. A save after the capture supersedes the
 job and a later run exports again. The automatic export of a store-only file
 instead keeps the finalized candidate and publishes it through the handoff,
@@ -536,8 +549,7 @@ reprocess jobs) is in flight.
 `server/migrations/templates/office_window_reset.sql`, refuses to run unless the
 pause is on and nothing of those formats is unpublished or in flight, under a
 lock on `source_documents`; that guard is the only protection, since no dropped
-state is kept. It then bumps the epoch, drops the state (with its seed hash) and
-stored baseline,
+state is kept. It then bumps the epoch, drops the state (with its seed hash),
 empties pending effects and deletes refresh candidates, so rooms reseed on the
 new engine. A file that cannot publish keeps the pause on until an operator
 fixes it on the old engine, so no engine ever holds another engine's state.
@@ -592,8 +604,8 @@ OOXML export. See [the test catalog](../test-catalog.md) for entry points.
 
 The source comparison baseline is separate from the editable Yjs state. It holds
 text and stable positions, image hashes and references, and hashes of visual
-metadata. Office handoff publishes the rebased saved state and, for DOCX and
-PPTX, a baseline mapped into its identities; open editors show the
+metadata and is derived from the base, never stored. Office handoff publishes
+the rebased saved state as its change over seed(export); open editors show the
 newer-version banner. The maintenance window's reset migration
 (`0034_office_window_reset.sql`, from the template) drops every Office state
 of the old engine so rooms reseed on the new one.

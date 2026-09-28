@@ -10,7 +10,6 @@ import {
 import * as officeRuntime from './officeRuntime.js';
 import {
   effectTokens,
-  encodeBaseline,
   rebuildState,
   SourceDocumentStore,
   SourceRequestError,
@@ -162,16 +161,11 @@ test('a delayed source store merges a newer durable replica before saving', asyn
   const session: SourceSession = {
     access: 'write',
     baseRevision: 1,
-    baseSourceSHA256: 'sha',
+    baseSourceSHA256: createHash('sha256').update('base').digest('hex'),
     checkpoint: 8,
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: encodeBaseline({
-      format: 'text',
-      text: 'base',
-      version: 1,
-    }),
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: [],
@@ -183,6 +177,11 @@ test('a delayed source store merges a newer durable replica before saving', asyn
   };
   const store = new SourceDocumentStore({} as Pool, 'http://unused', 'secret');
   vi.spyOn(store, 'session').mockResolvedValue(session);
+  // The indexed baseline is the base's text.
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response('base'))
+  );
   let persisted = '';
   vi.spyOn(store, 'request').mockImplementation(
     async (_file, _endpoint, body) => {
@@ -360,7 +359,15 @@ test('an image replacement keeps a caption only for the same actual bytes', asyn
   };
   const unchanged = { ...old, caption: undefined };
   const replacement = { ...old, caption: undefined, imageSHA256: 'new-bytes' };
+  // The indexed baseline derives from seed(base) once, then is cached.
   vi.spyOn(officeRuntime, 'runOffice')
+    .mockResolvedValueOnce({
+      baseSha256: '',
+      format: 'docx',
+      schemaVersion: 1,
+      state: new Uint8Array([0]),
+    })
+    .mockResolvedValueOnce([])
     .mockResolvedValueOnce([])
     .mockResolvedValueOnce([unchanged])
     .mockResolvedValueOnce([])
@@ -368,11 +375,6 @@ test('an image replacement keeps a caption only for the same actual bytes', asyn
   const session = {
     baseSourceSHA256: createHash('sha256').update(bytes).digest('hex'),
     format: 'docx',
-    indexedBaseline: encodeBaseline({
-      entries: [],
-      format: 'docx',
-      version: 1,
-    }),
     pendingEffects: [old],
     sourceURL: 'http://base',
   } as SourceSession;
@@ -454,7 +456,6 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
     sourceURL: 'http://base',
@@ -511,7 +512,7 @@ test('a NULL state loads seed(base), a save without edits stores nothing, and th
   other.destroy();
 });
 
-test('Office rebase uses the captured state and latest saved state, retaining captions by media hash', async () => {
+test('Office rebase uses the captured state and latest saved state, stores the result as its change over seed(export) and retains captions by media hash', async () => {
   const oldSource = Buffer.from('old package'),
     newSource = Buffer.from('parsed package');
   const digest = (bytes: Uint8Array) =>
@@ -525,7 +526,6 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     epoch: 1,
     fileId: 'f',
     format: 'pptx',
-    indexedBaseline: '',
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: [
@@ -567,8 +567,20 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     )
   );
   const [head, tail] = ['a'.repeat(50), 'z'.repeat(50)];
-  const runtime = vi.spyOn(officeRuntime, 'runOffice').mockResolvedValue({
-    baseline: [],
+  // seed(export), and the rebased state: that seed plus a later edit.
+  const exported = new Y.Doc();
+  exported.clientID = 7;
+  exported.getMap('pptx:slides').set('slide', 'seeded');
+  const seed = Y.encodeStateAsUpdate(exported);
+  exported.clientID = 11;
+  exported.getMap('pptx:slides').set('later', 'edit');
+  const rebased = Y.encodeStateAsUpdate(exported);
+  const change = Y.encodeStateAsUpdate(
+    exported,
+    Y.encodeStateVectorFromUpdate(seed)
+  );
+  exported.destroy();
+  const rebase = {
     effects: [
       {
         id: 'new-id',
@@ -586,8 +598,14 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
         operation: 'replace',
       },
     ],
-    state: Buffer.from('rebased11'),
-  });
+    state: rebased,
+  };
+  const runtime = vi
+    .spyOn(officeRuntime, 'runOffice')
+    .mockImplementation((async (name: string) =>
+      name === 'seedOffice'
+        ? { state: seed }
+        : rebase) as typeof officeRuntime.runOffice);
   const result = await sources.rebasePublication(session, {
     checkpoint: 10,
     epoch: 1,
@@ -605,13 +623,10 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     expect.objectContaining({ state: Buffer.from('saved11') }),
     newSource
   );
+  expect(runtime).toHaveBeenCalledWith('seedOffice', 'pptx', newSource);
   expect(result).toMatchObject({
-    indexedBaseline: encodeBaseline({
-      entries: [],
-      format: 'pptx',
-      version: 1,
-    }),
-    rebasedState: Buffer.from('rebased11').toString('base64'),
+    rebasedState: Buffer.from(change).toString('base64'),
+    rebasedStateSeedSHA256: digest(seed),
   });
   // Rebased text effects are trimmed, and netTokens counts the trimmed text.
   expect(result.pendingEffects).toMatchObject([
@@ -629,8 +644,8 @@ test('Office rebase uses the captured state and latest saved state, retaining ca
     { ...session, checkpoint: 10 },
     { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
   );
-  // No save after the capture: the state and baseline go back to NULL, meaning
-  // seed(export) and its derived baseline.
+  // No save after the capture: the state goes back to NULL, meaning
+  // seed(export).
   expect(same).toEqual({ netTokens: 0, pendingEffects: [] });
   expect(runtime).not.toHaveBeenCalled();
   expect(request).not.toHaveBeenCalled();
@@ -666,7 +681,6 @@ test('a save starts from the durable copy while the row names it, and reads the 
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
     sourceURL: 'http://unused',
@@ -802,7 +816,6 @@ test('after a text publication a save reads the session again and counts only th
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     indexedCheckpoint: 0,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
@@ -897,7 +910,6 @@ test.each([4, 5])(
       epoch: 1,
       fileId: 'f_1',
       format: 'text',
-      indexedBaseline: null,
       pendingEffects: [],
       room: 'source:f_1:epoch:1',
       sourceURL: 'http://base',
@@ -1000,7 +1012,6 @@ test('a forgotten room saves from a fresh session read', async () => {
     epoch: 1,
     fileId: 'f_1',
     format: 'text',
-    indexedBaseline: null,
     pendingEffects: [],
     room: 'source:f_1:epoch:1',
     sourceURL: 'http://base',

@@ -91,9 +91,7 @@ export async function savedExport(run: UatRun, fileId: string) {
         baseSha256: source.sha256,
         format: row.format,
         schemaVersion: 1,
-        state: row.state_seed_sha256
-          ? overSeed(seed.state, state, string(row.state_seed_sha256))
-          : state,
+        state: overSeed(seed.state, state, string(row.state_seed_sha256)),
       }
     : seed;
   const bytes = state
@@ -139,9 +137,8 @@ export async function storageCharge(run: UatRun) {
 
 /**
  * The owner's charge since `before` (read before the upload) is the source
- * plus its pending effects, its stored editing state (for text, its growth
- * beyond the recorded seed) and a stored baseline
- * (human/backend-storage-quota.md, 2026-09-28 rule).
+ * plus its pending effects and its stored editing state (for text, its growth
+ * beyond the recorded seed) (human/backend-storage-quota.md, 2026-09-28 rule).
  */
 export async function officeCharge(
   run: UatRun,
@@ -153,8 +150,7 @@ export async function officeCharge(
     run.query(
       `SELECT f.size_bytes,d.format,d.checkpoint,d.seed_bytes,d.state_seed_sha256,d.pending_effects,d.net_tokens,
       octet_length(d.state) AS state_bytes,
-      COALESCE(octet_length(NULLIF(d.pending_effects,'[]'::jsonb)::text),0) AS effects_bytes,
-      octet_length(d.indexed_baseline) AS baseline_bytes
+      COALESCE(octet_length(NULLIF(d.pending_effects,'[]'::jsonb)::text),0) AS effects_bytes
       FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=%s`,
       [fileId]
     ),
@@ -169,10 +165,7 @@ export async function officeCharge(
         : Number(row.state_bytes);
   assert.equal(
     charge - before,
-    Number(row.size_bytes) +
-      Number(row.effects_bytes) +
-      growth +
-      Number(row.baseline_bytes ?? 0)
+    Number(row.size_bytes) + Number(row.effects_bytes) + growth
   );
   await run.attach(`${fileId}-charge`, {
     ...row,

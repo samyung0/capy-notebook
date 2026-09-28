@@ -14,13 +14,11 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
-// SourceSession: browser reads send null indexedBaseline and pendingEffects
-// (server-side only), and the viewer read sends null state unless a checkpoint
-// is ahead of the indexed one. A null state is seed(base) until the first save,
-// and a null indexedBaseline is derived from the base. With stateSeedSHA256 the
-// state is its change over seed(base), whose SHA-256 that is; without it a
-// stored state is complete (text, or a DOCX or PPTX state a publication
-// rebased).
+// SourceSession: browser reads send null pendingEffects (server-side only),
+// and the viewer read sends null state unless a checkpoint is ahead of the
+// indexed one. A null state is seed(base) until the first save. An Office
+// state is its change over seed(base), whose SHA-256 stateSeedSHA256 is; a
+// text state is complete. The indexed baseline is derived from the base.
 type SourceSession struct {
 	FileID            string          `json:"fileId"`
 	WorkspaceID       string          `json:"workspaceId"`
@@ -35,7 +33,6 @@ type SourceSession struct {
 	SourceURL         string          `json:"sourceURL"`
 	State             []byte          `json:"state" nullable:"true"`
 	StateSeedSHA256   *string         `json:"stateSeedSHA256" nullable:"true"`
-	IndexedBaseline   []byte          `json:"indexedBaseline" nullable:"true"`
 	PendingEffects    json.RawMessage `json:"pendingEffects"`
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
@@ -49,9 +46,8 @@ type SourceCheckpoint struct {
 	State              []byte          `json:"state"`
 	PendingEffects     json.RawMessage `json:"pendingEffects"`
 	NetTokens          int64           `json:"netTokens" minimum:"0"`
-	// Required for an Office state that grew from seed(base) (every Office
-	// state but a DOCX or PPTX one a publication rebased): State is then its
-	// change over that seed, and this is the seed's SHA-256.
+	// Required for an Office state, which is its change over seed(base): the
+	// seed's SHA-256.
 	StateSeedSHA256 string `json:"stateSeedSHA256,omitempty"`
 	// The first save over a null state (seed(base)) binds the SHA the service
 	// computed from the source bytes when the file has none yet (a store-only
@@ -248,7 +244,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,state_seed_sha256,indexed_baseline,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.IndexedBaseline, &out.PendingEffects, &out.NetTokens)
+	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,state_seed_sha256,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.PendingEffects, &out.NetTokens)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err
@@ -292,9 +288,9 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	}
 	// Sizes only: the stored state alone may reach 100 MB.
 	var format, sha string
-	var epoch, baseRevision, storageBytes, baselineBytes, seedBytes int64
+	var epoch, baseRevision, storageBytes, seedBytes int64
 	var seeded bool
-	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,storage_bytes,COALESCE(octet_length(indexed_baseline),0),seed_bytes,state IS NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &storageBytes, &baselineBytes, &seedBytes, &seeded); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,storage_bytes,seed_bytes,state IS NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &storageBytes, &seedBytes, &seeded); err != nil {
 		return out, err
 	}
 	if in.Operation != nil {
@@ -350,10 +346,8 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 			return out, err
 		}
 	}
-	// An Office state is stored as its change over seed(base), except a DOCX
-	// or PPTX state a publication rebased: that one keeps its stored baseline
-	// and stays complete. Text is always complete.
-	if diff := !text && baselineBytes == 0; diff != (in.StateSeedSHA256 != "") || (diff && !sha256Hex(in.StateSeedSHA256)) {
+	// An Office state is stored as its change over seed(base); text is complete.
+	if text != (in.StateSeedSHA256 == "") || (!text && !sha256Hex(in.StateSeedSHA256)) {
 		return out, ErrConflict
 	}
 	var effectsBytes int64
@@ -367,7 +361,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if text {
 		stateBytes = max(0, stateBytes-seedBytes)
 	}
-	growth := effectsBytes + stateBytes + baselineBytes - storageBytes
+	growth := effectsBytes + stateBytes - storageBytes
 	if in.Operation != nil {
 		// The retained inverse is owner storage too: admit state and inverse
 		// growth together.
@@ -594,22 +588,4 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	}
 	result.JobID = jobID
 	return result, tx.Commit(ctx)
-}
-
-// The collaboration runtime owns projection; reject a malformed or mismatched
-// stored baseline (only an Office publication that rebased later edits stores one).
-func validSourceBaseline(raw []byte, format string) bool {
-	var baseline struct {
-		Version int                `json:"version"`
-		Format  string             `json:"format"`
-		Text    *string            `json:"text"`
-		Entries *[]json.RawMessage `json:"entries"`
-	}
-	if len(raw) > 100<<20 || json.Unmarshal(raw, &baseline) != nil || baseline.Version != 1 || baseline.Format != format {
-		return false
-	}
-	if format == "text" {
-		return baseline.Text != nil && baseline.Entries == nil
-	}
-	return baseline.Entries != nil && baseline.Text == nil
 }

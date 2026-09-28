@@ -37,8 +37,14 @@ def candidate(workspace, *, format="docx"):
             (job_id, json.dumps(payload)),
         )
         conn.execute(
-            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,state,indexed_baseline,running_job_id) VALUES(%s,%s,1,%s,1,'state-b','state-a',%s)",
-            (file_id, format, "sources/" + file_id, job_id),
+            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,state,state_seed_sha256,running_job_id) VALUES(%s,%s,1,%s,1,'state-b',%s,%s)",
+            (
+                file_id,
+                format,
+                "sources/" + file_id,
+                None if format == "text" else "0" * 64,
+                job_id,
+            ),
         )
         conn.execute(
             "INSERT INTO source_refresh_candidates(file_id,job_id,epoch,checkpoint,lease_token,state,source_blob_path) VALUES(%s,%s,1,1,'lease-b','state-b',%s)",

@@ -46,8 +46,8 @@ def _publish(workspace, file_id, text, checkpoint=None):
         )
         if checkpoint is not None:
             conn.execute(
-                "UPDATE source_documents SET checkpoint=%s,indexed_checkpoint=%s,state=%s,indexed_baseline=%s,pending_effects='[]' WHERE file_id=%s",
-                (checkpoint, checkpoint, text.encode(), text.encode(), file_id),
+                "UPDATE source_documents SET checkpoint=%s,indexed_checkpoint=%s,state=%s,pending_effects='[]' WHERE file_id=%s",
+                (checkpoint, checkpoint, text.encode(), file_id),
             )
 
 
@@ -63,14 +63,8 @@ def _seed(workspace):
     }
     with workspace._connect() as conn:
         conn.execute(
-            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,indexed_checkpoint,state,indexed_baseline,pending_effects) VALUES(%s,'text',1,%s,1,0,%s,%s,%s::jsonb)",
-            (
-                file_id,
-                "sources/" + file_id,
-                B.encode(),
-                A.encode(),
-                json.dumps([effect]),
-            ),
+            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,indexed_checkpoint,state,pending_effects) VALUES(%s,'text',1,%s,1,0,%s,%s::jsonb)",
+            (file_id, "sources/" + file_id, B.encode(), json.dumps([effect])),
         )
     _publish(workspace, file_id, A)
     return file_id
@@ -247,8 +241,8 @@ async def test_first_authored_edit_preserves_existing_published_baseline(workspa
     captured = await pending.load(workspace.id, [file_id])
     with workspace._connect() as conn:
         conn.execute(
-            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,state,indexed_baseline) VALUES(%s,'text',1,%s,1,%s,%s)",
-            (file_id, "sources/" + file_id, B.encode(), A.encode()),
+            "INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,checkpoint,state) VALUES(%s,'text',1,%s,1,%s)",
+            (file_id, "sources/" + file_id, B.encode()),
         )
     await captured.validate()
 

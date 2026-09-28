@@ -28,13 +28,6 @@ func sourceTestFile(t *testing.T, s *Store, owner, name, kind string) (Workspace
 	}
 	return ws, file
 }
-func sourceTestBaseline(format, text string) []byte {
-	if format == "text" {
-		encoded, _ := json.Marshal(text)
-		return []byte(`{"version":1,"format":"text","text":` + string(encoded) + `}`)
-	}
-	return []byte(`{"version":1,"format":"` + format + `","entries":[]}`)
-}
 
 // sourceTestSeed opens the editing session: the row starts with a NULL state
 // (seed(base)) and a derived baseline, and nothing is saved.
@@ -55,7 +48,7 @@ var sourceTestStateSeed = strings.Repeat("c", 64)
 
 // sourceTestSave is a save of doc's next checkpoint under migration 0039's
 // rules: the first save binds the base SHA (and a text seed's size), and an
-// Office state that grew from seed(base) names that seed.
+// Office state names the seed it is a change over.
 func sourceTestSave(doc SourceSession, actor, state string) SourceCheckpoint {
 	save := SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte(state), PendingEffects: json.RawMessage(`[{"type":"text","before":"old","after":"new"}]`), NetTokens: 6000}
 	if doc.State == nil {
@@ -64,7 +57,7 @@ func sourceTestSave(doc SourceSession, actor, state string) SourceCheckpoint {
 			save.SeedBytes = sourceTestSeedBytes
 		}
 	}
-	if doc.Format != "text" && doc.IndexedBaseline == nil {
+	if doc.Format != "text" {
 		save.StateSeedSHA256 = sourceTestStateSeed
 	}
 	return save
@@ -94,7 +87,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	}
 	// A viewer opening first saves nothing (the state is seed(base)) and cannot author.
 	doc := sourceTestSeed(t, s, viewer, file.ID)
-	if doc.State != nil || doc.IndexedBaseline != nil || doc.Checkpoint != 0 {
+	if doc.State != nil || doc.Checkpoint != 0 {
 		t.Fatalf("bad seed: %+v", doc)
 	}
 	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); err != nil {
@@ -381,7 +374,6 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if string(candidate.State) != "candidate-state" || captured() != nil {
 		t.Fatalf("capture: claimed %q, stored %q", candidate.State, captured())
 	}
-	baseline := sourceTestBaseline(doc.Format, "B")
 	finalize := SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-b"}
 	if err = s.FinalizeSourceRefresh(ctx, file.ID, finalize); err != nil {
 		t.Fatal(err)
@@ -407,7 +399,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 		}
 	}
 	residual := json.RawMessage(`[{"id":"image-new","kind":"image","operation":"add","imageSHA256":"` + pendingImage + `","after":"new image"}]`)
-	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: 1, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, IndexedBaseline: baseline, RebasedState: []byte("rebased-newer-state"), PendingEffects: residual, NetTokens: 3}
+	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: 1, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, RebasedState: []byte("rebased-newer-state"), RebasedStateSeedSHA256: sourceTestStateSeed, PendingEffects: residual, NetTokens: 3}
 	// Another save wins while the native rebase is being calculated.
 	doc = sourceTestEdit(t, s, owner, doc, "newest-state")
 	if string(captured()) != "candidate-state" {
@@ -430,20 +422,12 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	// Retry only rebasing against the latest save; the same parsed candidate publishes.
 	publish.ExpectedLatestCheckpoint = doc.Checkpoint
 	publish.RebasedState = []byte("rebased-newest-state")
-	// A rebased DOCX state without its baseline would be compared against the
-	// export's identities.
-	publish.IndexedBaseline = nil
-	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
-		t.Fatalf("rebased state without its baseline: %v", err)
-	}
-	publish.IndexedBaseline = baseline
-	// A rebased DOCX state keeps the old lineage, so it is never a change over
-	// seed(export).
-	publish.RebasedStateSeedSHA256 = sourceTestStateSeed
-	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
-		t.Fatalf("rebased DOCX state stored as a seed change: %v", err)
-	}
+	// A rebased DOCX state lands on seed(export) and names that seed.
 	publish.RebasedStateSeedSHA256 = ""
+	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
+		t.Fatalf("rebased DOCX state without its seed: %v", err)
+	}
+	publish.RebasedStateSeedSHA256 = sourceTestStateSeed
 	// An export-only publication's reprocess mark ends once the file is indexed.
 	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET reprocess_at=now() WHERE file_id=$1`, file.ID); err != nil {
 		t.Fatal(err)
@@ -474,17 +458,16 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	if err = s.pool.QueryRow(ctx, `SELECT $1::jsonb`, residual).Scan(&normalizedResidual); err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || string(published.State) != "rebased-newest-state" || published.BaseRevision != 2 || string(published.IndexedBaseline) != string(baseline) || string(published.PendingEffects) != string(normalizedResidual) {
+	if published.Epoch != 2 || published.Checkpoint != doc.Checkpoint || published.IndexedCheckpoint != 1 || published.NetTokens != 3 || string(published.State) != "rebased-newest-state" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.BaseRevision != 2 || string(published.PendingEffects) != string(normalizedResidual) {
 		t.Fatalf("bad base promotion: %+v", published)
 	}
-	// A rebased DOCX state stays complete and is charged as stored.
+	// The rebased change is charged as stored.
 	var seedBytes, storage int64
-	var stateSeed *string
-	if err = s.pool.QueryRow(ctx, `SELECT seed_bytes,storage_bytes,state_seed_sha256 FROM source_documents WHERE file_id=$1`, file.ID).Scan(&seedBytes, &storage, &stateSeed); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT seed_bytes,storage_bytes FROM source_documents WHERE file_id=$1`, file.ID).Scan(&seedBytes, &storage); err != nil {
 		t.Fatal(err)
 	}
-	if want := int64(len(normalizedResidual) + len("rebased-newest-state") + len(baseline)); seedBytes != 0 || stateSeed != nil || storage != want {
-		t.Fatalf("seed_bytes=%d state_seed=%v storage_bytes=%d, want 0, nil and %d", seedBytes, stateSeed, storage, want)
+	if want := int64(len(normalizedResidual) + len("rebased-newest-state")); seedBytes != 0 || storage != want {
+		t.Fatalf("seed_bytes=%d storage_bytes=%d, want 0 and %d", seedBytes, storage, want)
 	}
 	var publishedCaptions, totalCaptions, candidates, receipt int
 	if err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM image_caption_associations WHERE file_id=$1 AND published),(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT count(*) FROM source_refresh_candidates WHERE file_id=$1),(SELECT (payload->>'sourcePublishedCheckpoint')::int FROM jobs WHERE id=$2)`, file.ID, job.JobID).Scan(&publishedCaptions, &totalCaptions, &candidates, &receipt); err != nil {
@@ -591,7 +574,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || published.IndexedBaseline != nil || published.NetTokens != 2 {
+	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || string(published.State) != "state-a-again" || published.NetTokens != 2 {
 		t.Fatalf("text residual or lineage lost: %+v", published)
 	}
 }
@@ -796,9 +779,8 @@ func TestSourceQuotaChargesEffectsAndStoredState(t *testing.T) {
 	}
 }
 
-// An Office state that grew from seed(base) is stored only as its change over
-// that seed, named by the seed's hash; a text state, or a DOCX state that
-// keeps a rebased baseline, is complete. The wrong kind is refused.
+// An Office state is stored only as its change over seed(base), named by the
+// seed's hash; a text state is complete. The wrong kind is refused.
 func TestSourceCheckpointStateKind(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -839,18 +821,6 @@ func TestSourceCheckpointStateKind(t *testing.T) {
 		}
 		if stateSeed == nil || *stateSeed != sourceTestStateSeed || doc.StateSeedSHA256 == nil || *doc.StateSeedSHA256 != sourceTestStateSeed || seedBytes != 0 {
 			t.Fatalf("Office state kind: %v %d", stateSeed, seedBytes)
-		}
-		// With a rebased baseline the DOCX state is complete.
-		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET indexed_baseline=$2 WHERE file_id=$1`, file.ID, sourceTestBaseline("docx", "")); err != nil {
-			t.Fatal(err)
-		}
-		if doc, err := s.SourceSession(ctx, owner, file.ID); err != nil {
-			t.Fatal(err)
-		} else if _, err = s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, owner, "complete")); err != nil {
-			t.Fatalf("complete rebased state: %v", err)
-		}
-		if err := s.pool.QueryRow(ctx, `SELECT state_seed_sha256 FROM source_documents WHERE file_id=$1`, file.ID).Scan(&stateSeed); err != nil || stateSeed != nil {
-			t.Fatalf("rebased state kind: %v %v", stateSeed, err)
 		}
 	}
 }
@@ -909,7 +879,7 @@ func TestOfficeStateDiffMigrationKeepsTheLedger(t *testing.T) {
 	defer func() { _ = tx.Rollback(ctx) }()
 	for _, q := range []string{
 		// The pre-0039 shape (0033's rule). Other tests' rows only need to satisfy it.
-		`ALTER TABLE source_documents DROP COLUMN storage_bytes, DROP COLUMN state_seed_sha256, DROP CONSTRAINT source_documents_seed_bytes_text_check`,
+		`ALTER TABLE source_documents DROP COLUMN storage_bytes, DROP COLUMN state_seed_sha256, DROP CONSTRAINT source_documents_seed_bytes_text_check, ADD COLUMN indexed_baseline bytea`,
 		`ALTER TABLE source_documents ADD COLUMN storage_bytes bigint GENERATED ALWAYS AS (COALESCE(octet_length(NULLIF(pending_effects, '[]'::jsonb)::text), 0)::bigint + GREATEST(0, COALESCE(octet_length(state), 0) - seed_bytes) + COALESCE(octet_length(indexed_baseline), 0)) STORED`,
 		`ALTER TABLE source_refresh_candidates DROP COLUMN state_seed_sha256, ADD COLUMN seed_bytes bigint CHECK (seed_bytes >= 0)`,
 		// An edited Office file and an edited text file, each over a seed.
@@ -948,5 +918,78 @@ func TestOfficeStateDiffMigrationKeepsTheLedger(t *testing.T) {
 	}
 	if officeCharge != int64(len(`[{"id": "p"}]`))+300+100 || officeSeed != 0 || textCharge != 30 || textSeed != 20 {
 		t.Fatalf("charges after 0039: office %d (seed %d), text %d (seed %d)", officeCharge, officeSeed, textCharge, textSeed)
+	}
+}
+
+// Migration 0043 drops the stored baseline once no row holds a state a
+// publication rebased whole, keeps every charge, and requires an Office state
+// to name its seed.
+func TestOfficeRebaseSeedExportMigration(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "rebase_seed_export")
+	_, rebased := sourceTestFile(t, s, owner, "rebased.docx", "doc")
+	_, change := sourceTestFile(t, s, owner, "change.pptx", "ppt")
+	_, text := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	body, err := migrations.FS.ReadFile("0043_office_rebase_seed_export.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	exec := func(q string, args ...any) error {
+		_, err := tx.Exec(ctx, q, args...)
+		return err
+	}
+	for _, q := range []string{
+		// The pre-0043 shape (0039's rule).
+		`ALTER TABLE source_documents DROP CONSTRAINT source_documents_office_state_seed_check, DROP COLUMN storage_bytes, ADD COLUMN indexed_baseline bytea`,
+		`ALTER TABLE source_documents ADD COLUMN storage_bytes bigint GENERATED ALWAYS AS (COALESCE(octet_length(NULLIF(pending_effects, '[]'::jsonb)::text), 0)::bigint + CASE WHEN format = 'text' THEN GREATEST(0, COALESCE(octet_length(state), 0) - seed_bytes) ELSE COALESCE(octet_length(state), 0) END + COALESCE(octet_length(indexed_baseline), 0)) STORED`,
+		// A DOCX state a publication rebased before: stored whole, with its baseline.
+		`INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,indexed_baseline,pending_effects) VALUES('` + rebased.ID + `','docx',1,'p','whole','baseline','[]')`,
+		`INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,state_seed_sha256,pending_effects) VALUES('` + change.ID + `','pptx',1,'p','change','` + sourceTestStateSeed + `','[{"id":"p"}]')`,
+		`INSERT INTO source_documents(file_id,format,base_revision,base_blob_path,state,seed_bytes,pending_effects) VALUES('` + text.ID + `','text',1,'p',convert_to(repeat('t',50),'UTF8'),20,'[]')`,
+	} {
+		if err = exec(q); err != nil {
+			t.Fatal(q, err)
+		}
+	}
+	if err = exec(`SAVEPOINT refused`); err != nil {
+		t.Fatal(err)
+	}
+	if err = exec(string(body)); err == nil || !strings.Contains(err.Error(), "publish it") {
+		t.Fatalf("0043 over a state rebased whole: %v", err)
+	}
+	// Its publication returns the state to seed(export).
+	if err = exec(`ROLLBACK TO SAVEPOINT refused`); err != nil {
+		t.Fatal(err)
+	}
+	if err = exec(`UPDATE source_documents SET state=NULL,indexed_baseline=NULL WHERE file_id=$1`, rebased.ID); err != nil {
+		t.Fatal(err)
+	}
+	charges := func() (booked, recount int64) {
+		t.Helper()
+		if err := tx.QueryRow(ctx, `SELECT
+			COALESCE((SELECT used_bytes FROM user_storage WHERE user_id=$1),0)+COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas WHERE user_id=$1),0),
+			COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1),0)+COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)`, owner).Scan(&booked, &recount); err != nil {
+			t.Fatal(err)
+		}
+		return booked, recount
+	}
+	bookedBefore, recountBefore := charges()
+	if err = exec(string(body)); err != nil {
+		t.Fatal(err)
+	}
+	if booked, recount := charges(); booked != bookedBefore || recount != recountBefore || booked != recount {
+		t.Fatalf("charges: booked %d → %d, recount %d → %d", bookedBefore, booked, recountBefore, recount)
+	}
+	if err = exec(`SAVEPOINT unnamed`); err != nil {
+		t.Fatal(err)
+	}
+	if err = exec(`UPDATE source_documents SET state_seed_sha256=NULL WHERE file_id=$1`, change.ID); err == nil || !strings.Contains(err.Error(), "source_documents_office_state_seed_check") {
+		t.Fatalf("an Office state without its seed: %v", err)
 	}
 }

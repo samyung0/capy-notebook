@@ -51,13 +51,10 @@ type SourceRefreshPublish struct {
 	PendingEffects json.RawMessage `json:"pendingEffects"`
 	NetTokens      int64           `json:"netTokens"`
 	// Office only, and only when edits saved after the capture were rebased
-	// onto the export: the rebased state, and for DOCX and PPTX its baseline.
-	// Without them the state returns to seed(export) and the baseline is
-	// derived from the export.
-	IndexedBaseline []byte `json:"indexedBaseline,omitempty"`
-	RebasedState    []byte `json:"rebasedState,omitempty"`
-	// An XLSX rebased state lands on seed(export) and is stored as its change
-	// over that seed, whose SHA-256 this is; a DOCX or PPTX one stays complete.
+	// onto the export: the rebased state, stored as its change over
+	// seed(export), whose SHA-256 RebasedStateSeedSHA256 is. Without them the
+	// state returns to seed(export). The baseline always derives from the export.
+	RebasedState             []byte `json:"rebasedState,omitempty"`
 	RebasedStateSeedSHA256   string `json:"rebasedStateSeedSHA256,omitempty"`
 	ExpectedLatestCheckpoint int64  `json:"expectedLatestCheckpoint"`
 }
@@ -202,8 +199,8 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	// The candidate is uncharged while transient, and publication gates the
 	// net growth. Before paying for a parse, refuse what publication would
 	// certainly refuse: it charges at least the new bytes and a source row
-	// with no state, baseline or effects (0 bytes) in place of the current
-	// row; later saves are charged when they land.
+	// with no state or effects (0 bytes) in place of the current row; later
+	// saves are charged when they land.
 	if !job.system {
 		var growth int64
 		if err = tx.QueryRow(ctx, `SELECT $2::bigint-f.size_bytes-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, in.SizeBytes).Scan(&growth); err != nil {
@@ -319,34 +316,24 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if json.Unmarshal(effects, &parsed) != nil || parsed == nil || netTokens < 0 {
 		return doc, ErrConflict
 	}
-	// NULL columns: with no edits after the capture the state returns to
-	// seed(export) and the baseline is derived from the export. Only a
-	// rebase of later edits stores a state, and a DOCX or PPTX baseline.
-	var state, baseline []byte
+	// A NULL state: with no edits after the capture it returns to
+	// seed(export). Only a rebase of later edits stores one, as its change
+	// over seed(export) with that seed's SHA-256. Text never stores either.
+	var state []byte
 	if len(in.RebasedState) > 0 {
 		state = in.RebasedState
 	}
-	if len(in.IndexedBaseline) > 0 {
-		baseline = in.IndexedBaseline
-	}
-	// A rebased state exists only when saves landed after the capture, and a
-	// rebased DOCX or PPTX state needs its baseline (its identities are not the
-	// export's) and stays complete; XLSX keeps no baseline and stores its
-	// change over seed(export). Text never stores either.
 	stateSeed := in.RebasedStateSeedSHA256
 	switch {
 	case doc.Format == "text":
-		if state != nil || baseline != nil || stateSeed != "" {
+		if state != nil || stateSeed != "" {
 			return doc, ErrConflict
 		}
 	case state == nil:
-		if baseline != nil || stateSeed != "" || doc.Checkpoint != in.Checkpoint || len(parsed) != 0 {
+		if stateSeed != "" || doc.Checkpoint != in.Checkpoint || len(parsed) != 0 {
 			return doc, ErrConflict
 		}
-	case len(state) > 100<<20 || doc.Checkpoint == in.Checkpoint || (doc.Format == "xlsx") == (baseline != nil) || (doc.Format == "xlsx") != sha256Hex(stateSeed) || (doc.Format != "xlsx" && stateSeed != ""):
-		return doc, ErrConflict
-	}
-	if baseline != nil && !validSourceBaseline(baseline, doc.Format) {
+	case len(state) > 100<<20 || doc.Checkpoint == in.Checkpoint || !sha256Hex(stateSeed):
 		return doc, ErrConflict
 	}
 	if !job.exportOnly {
@@ -366,7 +353,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	// rule: a text state keeps its seed size, an Office state is charged as
 	// stored) minus before.
 	var growth int64
-	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+COALESCE(octet_length($4::bytea),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-d.seed_bytes) ELSE COALESCE(octet_length($5::bytea),0) END-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, baseline, state).Scan(&growth); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT ($2::bigint-f.size_bytes)+COALESCE(octet_length(NULLIF($3::jsonb,'[]'::jsonb)::text),0)+CASE WHEN d.format='text' THEN GREATEST(0,COALESCE(octet_length(d.state),0)-d.seed_bytes) ELSE COALESCE(octet_length($4::bytea),0) END-d.storage_bytes FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, fileID, size, effects, state).Scan(&growth); err != nil {
 		return doc, err
 	}
 	if growth > 0 && !job.system {
@@ -375,7 +362,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		}
 	}
 	if job.exportOnly {
-		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, stateSeed: stateSeed, baseline: baseline, effects: effects, netTokens: netTokens}); err != nil {
+		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, stateSeed: stateSeed, effects: effects, netTokens: netTokens}); err != nil {
 			return doc, err
 		}
 		out, err := readSourceSession(ctx, tx, fileID, ws)
@@ -406,10 +393,10 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	}
 	if doc.Format == "text" {
 		// Text keeps its lineage; its baseline is the exported blob decoded.
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,indexed_baseline=NULL,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens)
 	} else {
 		// Indexed now, so an export-only publication's reprocess mark is done.
-		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,indexed_baseline=$6,state=$3,state_seed_sha256=NULLIF($9,''),reprocess_at=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, baseline, effects, netTokens, stateSeed)
+		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
 		if err == nil {
 			// Rebase can change native identities. Release AI edit guards and
 			// their Undo with the old editing epoch.

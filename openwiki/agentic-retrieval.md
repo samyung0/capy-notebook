@@ -2482,20 +2482,20 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 ## Editable source refresh and pending evidence
 
 `source_documents` separates the live durable editing checkpoint from the
-published source/index checkpoint. `indexed_baseline` stores versioned semantic
-comparison JSON as bytes: exact plain text, or Office entry IDs, text, positions,
-image hashes/references and visual fingerprints. It contains neither a second
-Yjs document nor media bytes. The collaboration server projects the merged
-current state and compares it to this baseline on each durable save; net-zero
-changes and Undo cancel by equality. Initialization writes the baseline with the
-first state, and successful publication advances it with the published source.
-Office publication rebinds the latest saved native state to the exported package
-and maps the captured indexed projection into that state's identities. Only the
-compact baseline persists. Text publication compares the captured candidate with the latest state
-and retains later edits. The transient candidate still fixes one export while
-editing continues. The internal checkpoint request uses
-`initialize` and `baseSourceSHA256` only for the initial seed; ordinary saves
-omit them. Seed hashes remain validated by the store when `initialize` is true. The collaboration service captures a fixed
+published source/index checkpoint. The indexed baseline is versioned semantic
+comparison data: exact plain text, or Office entry IDs, text, positions, image
+hashes/references and visual fingerprints. It is never stored (migration 0043
+dropped `indexed_baseline`): the collaboration service derives it from the
+published base, as the decoded text or the engine baseline of seed(base), and
+caches it by base SHA. The collaboration server projects the merged current
+state and compares it to this baseline on each durable save; net-zero changes
+and Undo cancel by equality. Office publication rebases the latest saved state
+onto seed(export), so the new baseline derives from the export. Text publication
+compares the captured candidate with the latest state and retains later edits.
+The transient candidate still fixes one export while editing continues. The
+internal checkpoint request carries `baseSourceSHA256` (and, for text,
+`seedBytes`) only on the first save from a NULL state; ordinary saves omit them.
+The collaboration service captures a fixed
 candidate and exports full source bytes to B2. `source_refresh_candidates`
 holds its source, seed, parse artifacts, canonical index and consumed
 caption digests until publication. Existing parser/ingest workers process that

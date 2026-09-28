@@ -148,7 +148,6 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	current := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil)
 	if current.Code != http.StatusOK ||
 		!bytes.Contains(current.Body.Bytes(), []byte(`"state":null`)) ||
-		!bytes.Contains(current.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(current.Body.Bytes(), []byte(`"sourceURL":"memory://sources/book.xlsx"`)) {
 		t.Fatalf("current view session = %d body=%s", current.Code, current.Body.String())
 	}
@@ -173,17 +172,15 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	if edited.Code != http.StatusOK ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"state":"AQ=="`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"stateSeedSHA256":"`+seed+`"`)) ||
-		!bytes.Contains(edited.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(edited.Body.Bytes(), []byte(`"pendingEffects":null`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
 	}
 	// An Office editor takes its document from the room's sync: the editor
-	// read carries no state, and leaves the baseline and effects server-side.
+	// read carries no state, and leaves the effects server-side.
 	full := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil)
 	if full.Code != http.StatusOK ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"state":null`)) ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"stateSeedSHA256":null`)) ||
-		!bytes.Contains(full.Body.Bytes(), []byte(`"indexedBaseline":null`)) ||
 		!bytes.Contains(full.Body.Bytes(), []byte(`"pendingEffects":null`)) {
 		t.Fatalf("editor session = %d body=%s", full.Code, full.Body.String())
 	}

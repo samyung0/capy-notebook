@@ -8,7 +8,6 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { parse } from 'yaml';
 import * as Y from 'yjs';
 import {
-  encodeBaseline,
   SourceDocumentStore,
   SourceRequestError,
   type SourceSession,
@@ -54,7 +53,6 @@ function setup() {
     epoch: 1,
     fileId: 'f',
     format: 'docx',
-    indexedBaseline: '',
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: [],
@@ -277,10 +275,10 @@ function publishThroughRoom(f: ReturnType<typeof setup>) {
     }),
   });
   vi.spyOn(f.sources, 'rebasePublication').mockResolvedValue({
-    indexedBaseline: 'baseline',
     netTokens: 0,
     pendingEffects: [],
     rebasedState: 'state',
+    rebasedStateSeedSHA256: 'a'.repeat(64),
   });
   vi.spyOn(f.sources, 'request').mockResolvedValue({ epoch: 2 });
   return f.handoff.publish({
@@ -477,7 +475,7 @@ test('publication retry uses the durable fenced receipt before checking the new 
   expect(f.redis.publish).not.toHaveBeenCalled();
 });
 
-test('text publication leaves the baseline to the export while retaining newer edits', async () => {
+test('text publication retains newer edits against the exported text', async () => {
   const f = setup();
   const state = (text: string) => {
     const doc = new Y.Doc();
@@ -489,11 +487,6 @@ test('text publication leaves the baseline to the export while retaining newer e
   f.session.format = 'text';
   f.session.checkpoint = 8;
   f.session.state = state('Exam Tuesday').toString('base64');
-  f.session.indexedBaseline = encodeBaseline({
-    format: 'text',
-    text: 'Exam Friday',
-    version: 1,
-  });
   f.pool.query.mockImplementation(async (sql: string) => ({
     rows: sql.includes('FROM files')
       ? [{ user_id: 'u' }]
@@ -503,7 +496,6 @@ test('text publication leaves the baseline to the export while retaining newer e
   }));
   let published:
     | {
-        indexedBaseline?: string;
         pendingEffects: unknown;
         expectedLatestCheckpoint: number;
       }
@@ -526,8 +518,6 @@ test('text publication leaves the baseline to the export while retaining newer e
     leaseToken: 'lease',
     sourceETag: 'etag',
   });
-  // The export is the captured text, so Go derives the baseline from it.
-  expect(published!.indexedBaseline).toBeUndefined();
   expect(published!.pendingEffects).toMatchObject([
     { after: 'Tues', before: 'Mon', operation: 'replace' },
   ]);
@@ -556,10 +546,10 @@ test('Office publication rebases a later save and retries only rebase when anoth
   const rebase = vi
     .spyOn(f.sources, 'rebasePublication')
     .mockImplementation(async (session) => ({
-      indexedBaseline: 'baseline7',
       netTokens: 0,
       pendingEffects: [],
       rebasedState: `state${session.checkpoint}`,
+      rebasedStateSeedSHA256: 'a'.repeat(64),
     }));
   const publish = vi
     .spyOn(f.sources, 'request')
@@ -592,18 +582,18 @@ test('Office publication rebases a later save and retries only rebase when anoth
     {
       ...receipt,
       expectedLatestCheckpoint: 8,
-      indexedBaseline: 'baseline7',
       netTokens: 0,
       pendingEffects: [],
       rebasedState: 'state8',
+      rebasedStateSeedSHA256: 'a'.repeat(64),
     },
     {
       ...receipt,
       expectedLatestCheckpoint: 9,
-      indexedBaseline: 'baseline7',
       netTokens: 0,
       pendingEffects: [],
       rebasedState: 'state9',
+      rebasedStateSeedSHA256: 'a'.repeat(64),
     },
   ]);
   expect(f.redis.publish).toHaveBeenLastCalledWith(

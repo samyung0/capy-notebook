@@ -90,6 +90,7 @@ interface Runtime {
     bytes: Uint8Array,
     checkpoint: OfficeCheckpoint
   ): Promise<OfficeBaselineEntry[]>;
+  /** Edits saved after the capture, landed on seed(exported), with their effects against the export. */
   rebaseOffice(
     bytes: Uint8Array,
     captured: OfficeCheckpoint,
@@ -97,7 +98,6 @@ interface Runtime {
     exported: Uint8Array
   ): Promise<{
     state: Uint8Array;
-    baseline: OfficeBaselineEntry[];
     effects: NetEffect[];
   }>;
   resolveAsset(

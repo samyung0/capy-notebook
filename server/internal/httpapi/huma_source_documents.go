@@ -65,7 +65,7 @@ type sourceSessionInput struct {
 	// View is the lock-free viewer read: read authorization only, no row
 	// insert, no indexed state or pending effects, and state only when a saved
 	// checkpoint is ahead of the indexed one.
-	View bool `query:"view" doc:"Viewer read: read access only, omits indexedBaseline and pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"`
+	View bool `query:"view" doc:"Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint"`
 }
 type annotationIDInput struct {
 	ID           string `path:"id"`
@@ -128,9 +128,9 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	if err = a.s.AssertOfficeEditable(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	// The baseline and effects stay server-side. The browser opens a text
-	// state; an Office editor takes its document from the room's sync.
-	session.IndexedBaseline, session.PendingEffects = nil, nil
+	// Effects stay server-side. The browser opens a text state; an Office
+	// editor takes its document from the room's sync.
+	session.PendingEffects = nil
 	if session.Format != "text" {
 		session.State, session.StateSeedSHA256 = nil, nil
 	}

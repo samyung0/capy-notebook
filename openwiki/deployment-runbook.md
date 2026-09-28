@@ -2629,11 +2629,28 @@ Steps:
    of those formats has unpublished edits or a refresh in flight, and it holds
    a lock on `source_documents` for its transaction. Then, in one statement,
    it releases AI edit Undo, deletes refresh candidates, bumps the epoch,
-   drops the state and stored baseline and empties pending effects. No dropped
-   state is kept.
+   drops the state and empties pending effects. No dropped state is kept.
 5. `resume`. Tabs from before the deploy get 403 on reconnect and go to
    recovery or the banner. Editing needs the pause off, so the check comes
    after this step.
 6. Check: open one file of each format in Edit, make an edit, publish it, and
    confirm quota and the `source_documents` rows (an Office edit stores a small
    `state` with `state_seed_sha256` set).
+
+**Migration 0043 (DOCX and PPTX rebases onto seed(export)).** It drops
+`source_documents.indexed_baseline` and requires every Office state to name
+its seed. A DOCX or PPTX state that a publication rebased on the earlier
+release is stored whole with a baseline, and the migration refuses to run
+while one exists. Before deploying, run on the environment's database:
+
+```sql
+SELECT file_id, format FROM source_documents
+WHERE indexed_baseline IS NOT NULL
+   OR (format <> 'text' AND state IS NOT NULL AND state_seed_sha256 IS NULL);
+```
+
+No rows: deploy normally. Otherwise, on the old release, `pause`, then
+`publish-all` and `status` until `status` prints `0 unpublished, 0 in flight`
+(each such file publishes with no later edits, which returns its state to
+NULL), deploy with editing still paused, then `resume`. The BetterOffice pin
+of this release keeps every seed, so it needs no reset migration.

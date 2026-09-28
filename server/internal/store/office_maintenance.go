@@ -248,12 +248,12 @@ func (s *Store) OfficeReadiness(ctx context.Context) (OfficeReadiness, error) {
 }
 
 // exportPublication is what an export-only publication writes: the export as
-// the file's bytes, with the state, baseline and effects that go with it (nil
-// state and baseline: seed(export) and its derived baseline).
+// the file's bytes, with the state and effects that go with it (a nil state:
+// seed(export)).
 type exportPublication struct {
 	jobID, sourcePath, sha, etag, stateSeed string
 	size, checkpoint, attemptID, netTokens  int64
-	state, baseline                         []byte
+	state                                   []byte
 	effects                                 json.RawMessage
 }
 
@@ -275,8 +275,7 @@ func (s *Store) publishExportTx(ctx context.Context, tx pgx.Tx, fileID, sourcePa
 	if _, err := tx.Exec(ctx, `SELECT enqueue_source_collaboration_eviction($1,'discard')`, fileID); err != nil {
 		return false, err
 	}
-	// No edits after the capture: the state is seed(export) (NULL) and the
-	// baseline is derived from the export.
+	// No edits after the capture: the state is seed(export) (NULL).
 	err := applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: sourcePath, sha: in.SourceSHA256, etag: in.SourceETag, size: in.SizeBytes, checkpoint: in.Checkpoint, effects: json.RawMessage(`[]`)})
 	return err == nil, err
 }
@@ -303,7 +302,7 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($9,''),indexed_baseline=$4,base_revision=d.base_revision+1,base_blob_path=$5,base_source_sha256=$6,pending_effects=$7,net_tokens=$8,running_job_id=NULL,desired_checkpoint=CASE WHEN $7::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $7::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.baseline, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
 		return err
 	}
 	if err := invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
