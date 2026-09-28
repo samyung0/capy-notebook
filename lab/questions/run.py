@@ -49,6 +49,8 @@ class PendingStage(Exception):
 def validate_stage_output(stage, payload, value):
     if stage == "write" and len(value["questions"]) != payload["count"]:
         raise ValueError("Writer returned a different question count")
+    if stage == "passage" and len(value["questions"]) != 1:
+        raise ValueError("A passage packet returns one question")
     if stage == "solve":
         parts = payload["question"]["parts"]
         answers = value["answers"]
@@ -238,6 +240,8 @@ def assign_ids(question, previous=None):
 
 def closed_correct(answer, value):
     kind = answer["type"]
+    if kind == "mcq" and type(value) is int:
+        value = [value]  # The solve schema admits a bare index for a single choice.
     if kind in ("mcq", "multi"):
         return (
             isinstance(value, list)
@@ -407,6 +411,7 @@ def main():
             "references",
             "style",
             "write",
+            "passage",
             "solve",
             "compare",
             "fix",
@@ -496,6 +501,41 @@ def main():
         for question in result["questions"]:
             assign_ids(question)
             save(topic / "questions" / (question["id"] + ".json"), question)
+    elif args.stage == "passage":
+        # One packet per library excerpt; provenance comes from passages.json, never the writer.
+        if list((topic / "questions").glob("*.json")):
+            raise ValueError(
+                "Questions already exist; use fix or a fresh topic run directory"
+            )
+        written = []
+        pending = False
+        for passage in read(topic / "passages.json"):
+            try:
+                result = invoke(
+                    topic,
+                    "passage",
+                    {
+                        "topic": metadata,
+                        "style": (topic / "style.md").read_text(encoding="utf-8"),
+                        "passage": passage,
+                        "contract": QUESTION_CONTRACT,
+                    },
+                    schema.WRITE,
+                )
+            except PendingStage:
+                pending = True
+                continue
+            written.append((passage, result["questions"][0]))
+        if pending:
+            raise PendingStage()
+        sources = {}
+        for passage, question in written:
+            assign_ids(question)
+            save(topic / "questions" / (question["id"] + ".json"), question)
+            sources[question["id"]] = [
+                {key: passage[key] for key in ("excerptId", "bookId", "version")}
+            ]
+        save(topic / "sources.json", sources)
     elif args.stage == "solve":
         pending = False
         for path, question in questions(topic):

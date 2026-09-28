@@ -29,10 +29,21 @@ if (!assetBase) {
     .trim()
     .replace(/^["']|["']$/g, '');
 }
+// Optional question ids re-render only those, keeping the other manifest entries.
+const only = new Set(process.argv.slice(3));
 const files = (await readdir(path.join(topic, 'questions')))
-  .filter((name) => name.endsWith('.json'))
+  .filter(
+    (name) =>
+      name.endsWith('.json') && (!only.size || only.has(name.slice(0, -5))),
+  )
   .sort();
 if (!files.length) throw new Error('No questions to render.');
+if (only.size && files.length !== only.size)
+  throw new Error('Unknown question id.');
+const previous = async (name: string) =>
+  only.size
+    ? JSON.parse(await readFile(path.join(topic, 'render', name), 'utf8'))
+    : {};
 await mkdir(path.join(topic, 'render'), { recursive: true });
 await mkdir(path.join(topic, 'assets'), { recursive: true });
 const server = await createServer({
@@ -75,11 +86,11 @@ if (!address || typeof address === 'string')
   throw new Error('Renderer did not bind.');
 const browser = await chromium.launch({ headless: true });
 console.info('Headless browser ready.');
-const manifest: Record<string, string> = {};
+const manifest: Record<string, string> = await previous('manifest.json');
 const learnerManifest: Record<
   string,
   { question_sha256: string; image_sha256: string }
-> = {};
+> = await previous('learner-manifest.json');
 try {
   const page = await browser.newPage({
     viewport: { width: 1200, height: 900 },

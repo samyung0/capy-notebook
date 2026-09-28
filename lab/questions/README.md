@@ -51,7 +51,9 @@ uv run --project pipeline python lab/questions/run.py check
 uv run --project pipeline python lab/questions/run.py references <topic>
 uv run --project pipeline python lab/questions/run.py style <topic>
 uv run --project pipeline python lab/questions/run.py write <topic> --count 50
-pnpm exec tsx lab/questions/render.ts <topic>
+# or, for reading comprehension on library passages listed in <topic>/passages.json:
+uv run --project pipeline python lab/questions/run.py passage <topic>
+pnpm exec tsx lab/questions/render.ts <topic> [question-id ...]
 # From server/: go run ./cmd/bank validate <absolute-topic-directory>
 uv run --project pipeline python lab/questions/run.py solve <topic>
 uv run --project pipeline python lab/questions/run.py compare <topic>
@@ -86,13 +88,23 @@ The renderer saves both `<id>.png` for review and `<id>.learner.png` for solving
 `render/learner-manifest.json` binds each learner image to its question hash.
 Unchanged question JSON is not rewritten on rerenders. Solve and judge refuse
 stale learner renders. Only the learner PNG is copied into their frozen packets.
+After a fix, pass the repaired question ids to the renderer: it re-renders only
+those and merges them into both manifests, so the other questions keep their
+blind evidence. A whole-topic rerender changes every learner PNG whenever the
+components have changed, and every question then needs a fresh blind solve.
+
+`passage` writes one question per entry of `passages.json`, each an excerpt
+record (`excerptId`, `bookId`, `version`, book, licence and exact library text)
+chosen for the topic's task type. The writer may lightly adapt the passage but
+adds no facts. Admission records each question's `sources.json` entry from its
+packet's excerpt, never from the writer.
 
 Copy checking flags every shared 12-word run against extracted references.
 `prepare-publish` rejects missing/stale evidence, drops unresolved disagreements
 or overlaps into its log, and writes `publish.json` without sending anything.
 The prepared questions still require the authoritative Go bank validator. For
-library-sourced material, supply `sources.json` mapping question IDs to arrays of
-`{excerptId, bookId, version}` references. The publisher validates those records
+library-sourced material, `sources.json` maps question IDs to arrays of
+`{excerptId, bookId, version}` references (`passage` writes it). The publisher validates those records
 and resolves each historical excerpt through `LIBRARY_DATABASE_URL` before any
 upload; synthetic pilot questions carry an explicit empty array.
 
