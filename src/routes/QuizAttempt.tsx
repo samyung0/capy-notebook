@@ -183,7 +183,7 @@ function Attempt({ quizId }: { quizId: string }) {
     const pct = Math.round((score.awarded / Math.max(0.5, score.max)) * 100);
     return (
       <Panel sectionClassName="h-full">
-        <div className="mx-auto flex h-full w-full max-w-2xl flex-col items-center gap-5 overflow-auto px-6 py-6 text-center">
+        <div className="mx-auto flex h-full w-full max-w-2xl flex-col items-center gap-5 overflow-auto px-4 py-6 text-center md:px-6">
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-accent-1 text-tint-accent-1-fg">
             <Icon className="non-scaling-svg" name="quiz" size={30} />
           </span>
@@ -224,7 +224,7 @@ function Attempt({ quizId }: { quizId: string }) {
 
   return (
     <Panel sectionClassName="h-full">
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
+      <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-4 py-6 md:px-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
             className="text-fg-muted hover:text-fg"

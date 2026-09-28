@@ -81,7 +81,7 @@ export default function AttemptResult() {
 
   return (
     <Panel sectionClassName="h-full">
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-auto px-6 py-6">
+      <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-auto px-4 py-6 md:px-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
             className="text-fg-muted hover:text-fg"

@@ -420,7 +420,7 @@ export default function QuestionBank() {
                         </ToolbarButton>
                       </ToolbarGroup>
                     </Toolbar>
-                    <div className="min-h-0 flex-1 overflow-auto px-5 py-6 lg:px-8 lg:py-7">
+                    <div className="min-h-0 flex-1 overflow-auto px-4 py-6 md:px-5 lg:px-8 lg:py-7">
                       <div className="mx-auto max-w-180">
                         <QuestionView
                           question={detail.question}
@@ -433,7 +433,7 @@ export default function QuestionBank() {
                       </div>
                     </div>
                     {mode === 'edit' && detail.editor && (
-                      <footer className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-divider border-t px-5 py-3 lg:px-8">
+                      <footer className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-divider border-t px-4 py-3 md:px-5 lg:px-8">
                         <p className="mr-auto flex items-center gap-1.5 text-fg-muted text-sm">
                           {detail.reviewedAt ? (
                             <>

@@ -76,6 +76,19 @@ Completion and saved attempt pages share the part review renderer: score in the
 marks column, marking scheme, submitted answer, then collapsed worked solution.
 Closed parts show item awards from their deterministic result; open parts keep
 their part award without inventing per-item scores.
+
+Answer areas span the text and marks columns of a part row; phones use 16px
+pane padding and a 1.5rem number column. Choice letters sit in bordered 26px
+keys; matching letters and ordering numbers use the same box without a border.
+Selected and result rows reuse the editor callout variants (tip, success,
+danger, warning). After checking, choices tag "Your answer" and "Correct
+answer", true/false shows two result rows, a short answer marks its field and
+lists every accepted answer with its unit, an open answer shows the judge's
+reason after a full/half/no marks lead, matching rows show the chosen letter
+and the correct one, and wrong ordering rows show their right position.
+Matching dropdowns list letters in stored option order; only ordering starts
+shuffled. The static view numbers matching items above the lettered options on
+phones and beside them from md.
 Review batches respect the existing 200-question and 2 MiB bounds, namespace
 their part IDs without changing stored source IDs, and remove only questions
 answered correctly in that batch. Unattempted mistakes remain.

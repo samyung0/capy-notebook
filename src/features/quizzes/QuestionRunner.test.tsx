@@ -34,8 +34,31 @@ it('reviews the graded snapshot with marks, scheme, fixed-unit answer and collap
   expect(html).toContain('disabled=""');
   expect(html).toContain('value="2"');
   expect(html).toContain('>cm</span>');
-  expect(html).toContain('<details>');
-  expect(html).not.toContain('<details open');
+  // Collapsed: no `open` attribute after the class.
+  expect(html).toContain('<details class="col-start-2 min-w-0">');
+});
+
+it('letters matching options in stored order and keeps option indices as answers', () => {
+  const question = exampleQuestion('match', {
+    options: ['Stores DNA', 'Makes ATP', 'Unused choice'],
+    pairs: [{ left: 'Mitochondria', right: 1 }],
+    type: 'matching',
+  });
+  const render = (review: boolean) =>
+    renderToStaticMarkup(
+      <QuestionRunner
+        answers={{ 'match-part': { '0': 2 } }}
+        onChange={() => {}}
+        question={question}
+        review={review}
+      />
+    );
+  expect(render(false)).toContain(
+    '<option value="0">A</option><option value="1">B</option><option value="2" selected="">C</option>'
+  );
+  const reviewed = render(true);
+  expect(reviewed).toContain('>C</span>');
+  expect(reviewed).toContain('Correct: B');
 });
 
 it('shows an open part award without inventing per-item marks or an unanswered ordering response', () => {

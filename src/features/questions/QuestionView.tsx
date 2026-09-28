@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Icon } from '@/components/ui/Icon';
+import {
+  CALLOUT_CONTAINER_CLASS,
+  CALLOUT_VARIANT_CLASS,
+  type CalloutVariant,
+} from '@/features/notes/richBlockConfig';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { TextView } from './TextView';
@@ -120,25 +125,27 @@ export function AnswerView({ part }: { part: QuestionPart }) {
           ))}
       </ol>
     );
-  if (answer.type === 'short' || answer.type === 'open')
+  if (answer.type === 'short' || answer.type === 'open') {
+    const unit =
+      answer.type === 'short' && answer.unit
+        ? answer.unit === '°'
+          ? '°'
+          : ` ${answer.unit}`
+        : '';
+    // Every accepted answer carries its unit.
     return (
       <TextView
-        text={
-          answer.accepted
-            .map((text) =>
-              !text.includes('$') && LATEX_COMMAND.test(text)
+        text={answer.accepted
+          .map(
+            (text) =>
+              (!text.includes('$') && LATEX_COMMAND.test(text)
                 ? `$${text}$`
-                : text
-            )
-            .join('; ') +
-          (answer.type === 'short' && answer.unit
-            ? answer.unit === '°'
-              ? '°'
-              : ` ${answer.unit}`
-            : '')
-        }
+                : text) + unit
+          )
+          .join('; ')}
       />
     );
+  }
   if (answer.type === 'ordering')
     return (
       <ol className="list-inside list-decimal">
@@ -162,46 +169,109 @@ export function AnswerView({ part }: { part: QuestionPart }) {
     );
 }
 
+export const optionLetter = (index: number) => String.fromCharCode(65 + index);
+
+/** 26px option label: bordered for choice letters, `bare` for matching letters and ordering numbers. */
+export function OptionKey({
+  bare = false,
+  className,
+  children,
+}: {
+  bare?: boolean;
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        'grid size-6.5 shrink-0 place-items-center rounded-lg border-[1.5px] font-bold text-fg-secondary tabular-nums leading-none',
+        bare
+          ? 'border-transparent text-[13.5px]'
+          : 'border-line-strong text-[12.5px]',
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Answer row shaped like an editor callout; tip marks a selection, success/danger/warning a result. Row content keeps `text-fg` itself. */
+export function answerRowClass(variant?: CalloutVariant) {
+  return cn(
+    'flex items-start gap-3 px-2.5 py-[7px]',
+    CALLOUT_CONTAINER_CLASS,
+    variant ? CALLOUT_VARIANT_CLASS[variant] : 'border-transparent'
+  );
+}
+
+/** Matching items above the lettered options on phones, side by side from md. */
+export function MatchingLayout({
+  className,
+  items,
+  options,
+}: {
+  className?: string;
+  items: ReactNode;
+  options: string[];
+}) {
+  return (
+    <div
+      className={cn(
+        'grid gap-4.5 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:gap-6',
+        className
+      )}
+    >
+      {items}
+      <ol className="grid content-start gap-2">
+        {options.map((text, i) => (
+          <li className="flex items-start gap-2.5 md:gap-3" key={i}>
+            <OptionKey bare>{optionLetter(i)}</OptionKey>
+            <TextView className="min-w-0 pt-px" text={text} />
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// Answer areas span the text and marks columns of a part row.
 function Choices({ part }: { part: QuestionPart | LearnerPart }) {
   const answer = part.answer;
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <ol className="grid gap-2">
+      <ol className="col-[2/-1] grid min-w-0 gap-1">
         {answer.options.map((text, i) => (
-          <li className="flex gap-3" key={i}>
-            <span className="text-fg-muted">
-              {String.fromCharCode(65 + i)}.
-            </span>
-            <TextView text={text} />
+          <li className={answerRowClass()} key={i}>
+            <OptionKey>{optionLetter(i)}</OptionKey>
+            <TextView className="min-w-0 flex-1 pt-px" text={text} />
           </li>
         ))}
       </ol>
     );
   if (answer.type === 'matching')
     return (
-      <div className="grid grid-cols-2 gap-4">
-        <ol>
-          {('left' in answer
-            ? answer.left
-            : answer.pairs.map((pair) => pair.left)
-          ).map((text, i) => (
-            <li key={i}>
-              <TextView text={text} />
-            </li>
-          ))}
-        </ol>
-        <ol>
-          {answer.options.map((text, i) => (
-            <li key={i}>
-              {String.fromCharCode(65 + i)}. <TextView text={text} />
-            </li>
-          ))}
-        </ol>
-      </div>
+      <MatchingLayout
+        className="col-[2/-1] min-w-0"
+        items={
+          <ol className="grid content-start gap-2">
+            {('left' in answer
+              ? answer.left
+              : answer.pairs.map((pair) => pair.left)
+            ).map((text, i) => (
+              <li className="flex items-baseline gap-2 md:gap-3" key={i}>
+                <span className="w-5 shrink-0 font-bold md:w-6">{i + 1}.</span>
+                <TextView className="min-w-0" text={text} />
+              </li>
+            ))}
+          </ol>
+        }
+        options={answer.options}
+      />
     );
   if (answer.type === 'ordering')
     return (
-      <ul>
+      <ul className="col-[2/-1] min-w-0">
         {answer.items.map((text, i) => (
           <li key={i}>
             <TextView text={text} />
@@ -215,6 +285,7 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
 export interface QuestionViewProps {
   question: Question | LearnerQuestion;
   questionNumber?: number;
+  /** Returns grid items for the part row; an answer spans `col-[2/-1]`. */
   renderAnswer?: (part: QuestionPart | LearnerPart) => ReactNode;
   renderBlock?: (
     block: QuestionBlock,
@@ -254,11 +325,14 @@ export function QuestionView({
         )}
       </div>
     ));
+  const partBlocks = (part: QuestionPart | LearnerPart) =>
+    part.blocks.slice(partOffset);
   // 1A: number, part label and text share one column grid so every text line
-  // starts at the same x; marks stay smaller than the question text.
+  // starts at the same x; marks stay smaller than the question text. Phones
+  // use the tighter B′ columns.
   return (
     <article className="min-w-0 space-y-4 text-[15px] leading-relaxed">
-      <header className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
+      <header className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-baseline gap-x-1.5 md:grid-cols-[1.75rem_minmax(0,1fr)_auto] md:gap-x-2">
         <span className="font-bold">
           {questionNumber != null && `${questionNumber}.`}
         </span>
@@ -293,7 +367,7 @@ export function QuestionView({
           <div
             className={cn(
               'min-w-0 space-y-4',
-              question.layout === 'paper' && 'pl-9'
+              question.layout === 'paper' && 'pl-7.5 md:pl-9'
             )}
           >
             {blocks(
@@ -306,7 +380,7 @@ export function QuestionView({
         <ol className="min-w-0 space-y-6">
           {question.parts.map((part, index) => (
             <li
-              className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] gap-x-2"
+              className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] gap-x-1.5 gap-y-3 md:grid-cols-[1.75rem_minmax(0,1fr)_auto] md:gap-x-2"
               key={part.id}
             >
               <span className="font-bold">
@@ -315,53 +389,51 @@ export function QuestionView({
                     ? `(${String.fromCharCode(97 + index)})`
                     : `${index + 1}.`)}
               </span>
-              <div className="min-w-0 space-y-3">
-                {blocks(
-                  part.blocks.slice(partOffset),
-                  { partId: part.id },
-                  partOffset
-                )}
-                {renderAnswer ? renderAnswer(part) : <Choices part={part} />}
-                {review && 'markscheme' in part && (
-                  <div className="space-y-1 text-fg-secondary text-sm">
-                    <h4 className="font-semibold text-fg-muted text-xs">
-                      {m.question_ui_answer()}
-                    </h4>
-                    <div>
-                      <AnswerView part={part} />
-                    </div>
-                    <h4 className="pt-2 font-semibold text-fg-muted text-xs">
-                      {m.question_ui_marking_scheme()}
-                    </h4>
-                    <ul className="space-y-1">
-                      {part.markscheme.map((item, i) => (
-                        <li key={i}>
-                          <TextView text={item} />
-                        </li>
-                      ))}
-                    </ul>
-                    {part.solution.length > 0 && (
-                      // Editors check solutions, so they start open here;
-                      // learners' after-submit review keeps them collapsed.
-                      <details open>
-                        <summary className="cursor-pointer pt-2 font-semibold">
-                          {m.question_ui_worked_solution()}
-                        </summary>
-                        <div className="mt-2 space-y-3">
-                          {blocks(part.solution, {
-                            partId: part.id,
-                            solution: true,
-                          })}
-                        </div>
-                      </details>
-                    )}
-                  </div>
-                )}
-              </div>
+              {partBlocks(part).length > 0 && (
+                <div className="min-w-0 space-y-3">
+                  {blocks(partBlocks(part), { partId: part.id }, partOffset)}
+                </div>
+              )}
               {!merged && (
-                <span className="whitespace-nowrap pt-1 text-fg-muted text-xs">
+                <span className="col-start-3 whitespace-nowrap pt-1 text-fg-muted text-xs">
                   {renderMarks ? renderMarks(part) : `[${partMarks(part)}]`}
                 </span>
+              )}
+              {renderAnswer ? renderAnswer(part) : <Choices part={part} />}
+              {review && 'markscheme' in part && (
+                <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
+                  <h4 className="font-semibold text-fg-muted text-xs">
+                    {m.question_ui_answer()}
+                  </h4>
+                  <div>
+                    <AnswerView part={part} />
+                  </div>
+                  <h4 className="pt-2 font-semibold text-fg-muted text-xs">
+                    {m.question_ui_marking_scheme()}
+                  </h4>
+                  <ul className="space-y-1">
+                    {part.markscheme.map((item, i) => (
+                      <li key={i}>
+                        <TextView text={item} />
+                      </li>
+                    ))}
+                  </ul>
+                  {part.solution.length > 0 && (
+                    // Editors check solutions, so they start open here;
+                    // learners' after-submit review keeps them collapsed.
+                    <details open>
+                      <summary className="cursor-pointer pt-2 font-semibold">
+                        {m.question_ui_worked_solution()}
+                      </summary>
+                      <div className="mt-2 space-y-3">
+                        {blocks(part.solution, {
+                          partId: part.id,
+                          solution: true,
+                        })}
+                      </div>
+                    </details>
+                  )}
+                </div>
               )}
             </li>
           ))}
@@ -380,43 +452,67 @@ export function QuestionReview({
     <QuestionView
       question={question}
       questionNumber={questionNumber}
-      renderAnswer={(part) =>
-        'markscheme' in part ? (
-          <div className="space-y-1">
-            <h4 className="font-semibold text-fg-muted text-xs">
-              {m.question_ui_marking_scheme()}
-            </h4>
-            <ul className="space-y-1 text-sm">
-              {part.markscheme.map((item, i) => (
-                <li className="flex items-baseline gap-4" key={i}>
-                  <TextView className="min-w-0 flex-1" text={item} />
-                  {part.answer.type !== 'open' && part.awarded != null && (
-                    <span
-                      className={cn(
-                        'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
-                        part.awarded === partMarks(part)
-                          ? 'text-solid-success'
-                          : 'text-solid-error'
-                      )}
-                    >
-                      <Icon
-                        name={part.awarded === partMarks(part) ? 'check' : 'x'}
-                        size={12}
-                      />
-                      {part.awarded === partMarks(part) ? '1' : '0'}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-            <h4 className="pt-2 font-semibold text-fg-muted text-xs">
-              {m.question_ui_your_answer()}
-            </h4>
+      renderAnswer={(part) => {
+        if (!('markscheme' in part)) return null;
+        const max = partMarks(part);
+        // The judge's open-answer award: full, half or no marks.
+        const verdict =
+          part.awarded === max
+            ? 'success'
+            : part.awarded
+              ? 'warning'
+              : 'danger';
+        return (
+          <>
+            <div className="col-start-2 min-w-0 space-y-1">
+              <h4 className="font-semibold text-fg-muted text-xs">
+                {m.question_ui_marking_scheme()}
+              </h4>
+              <ul className="space-y-1 text-sm">
+                {part.markscheme.map((item, i) => (
+                  <li className="flex items-baseline gap-4" key={i}>
+                    <TextView className="min-w-0 flex-1" text={item} />
+                    {part.answer.type !== 'open' && part.awarded != null && (
+                      <span
+                        className={cn(
+                          'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
+                          part.awarded === max
+                            ? 'text-solid-success'
+                            : 'text-solid-error'
+                        )}
+                      >
+                        <Icon
+                          name={part.awarded === max ? 'check' : 'x'}
+                          size={12}
+                        />
+                        {part.awarded === max ? '1' : '0'}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <h4 className="pt-2 font-semibold text-fg-muted text-xs">
+                {m.question_ui_your_answer()}
+              </h4>
+            </div>
             {renderAnswer?.(part)}
-            {part.awardReason && <p>{part.awardReason}</p>}
+            {part.awardReason && (
+              <p className={cn(answerRowClass(verdict), 'col-[2/-1] text-sm')}>
+                <span className="min-w-0">
+                  <b>
+                    {verdict === 'success'
+                      ? m.question_ui_full_marks()
+                      : verdict === 'warning'
+                        ? m.question_ui_half_marks()
+                        : m.question_ui_no_marks()}
+                  </b>{' '}
+                  <span className="text-fg">{part.awardReason}</span>
+                </span>
+              </p>
+            )}
             {part.solution.length > 0 && (
-              <details>
-                <summary className="cursor-pointer pt-2 font-semibold text-fg-secondary text-sm">
+              <details className="col-start-2 min-w-0">
+                <summary className="cursor-pointer font-semibold text-fg-secondary text-sm">
                   {m.question_ui_worked_solution()}
                 </summary>
                 <div className="space-y-3 pt-3">
@@ -426,9 +522,9 @@ export function QuestionReview({
                 </div>
               </details>
             )}
-          </div>
-        ) : null
-      }
+          </>
+        );
+      }}
       renderMarks={(part) => (
         <>
           {'awarded' in part ? (part.awarded ?? '—') : '—'} / {partMarks(part)}

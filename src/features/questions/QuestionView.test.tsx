@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { AnswerView } from './QuestionView';
 import { exampleQuestion } from './questionFixtures';
 
-it('typesets bare LaTeX answers and joins a plain degree unit to its value', () => {
+it('typesets bare LaTeX answers and joins a plain degree unit to each value', () => {
   const answer = (accepted: string[], unit?: string) =>
     renderToStaticMarkup(
       <AnswerView
@@ -16,4 +16,5 @@ it('typesets bare LaTeX answers and joins a plain degree unit to its value', () 
   expect(latex).toContain('<span> -2√5</span>');
   expect(answer(['65'], '°')).toContain('65°');
   expect(answer(['65'], '°C')).toContain('65 °C');
+  expect(answer(['53.1', '53.13'], '°')).toContain('53.1°; 53.13°');
 });
