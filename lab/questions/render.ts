@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { createServer } from 'vite';
 import type { Question } from '../../src/features/questions/types';
+import { mathliveFonts } from '../../vite-mathlive';
 
 const root = path.resolve(import.meta.dirname, '../..');
 console.info('Starting local question renderer.');
@@ -60,6 +61,7 @@ const server = await createServer({
   plugins: [
     react(),
     tailwindcss(),
+    mathliveFonts(),
     {
       name: 'bank-render',
       configureServer(instance) {

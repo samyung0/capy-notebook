@@ -17,6 +17,25 @@ declare global {
   }
 }
 
+// MathPreview mounts MathLive asynchronously; a screenshot taken earlier drops formulas.
+async function mathDrawn() {
+  const deadline = performance.now() + 10_000;
+  for (;;) {
+    const pending = Array.from(
+      document.querySelectorAll('[data-math-preview]'),
+    ).filter((host) => {
+      const field = host.querySelector('math-field');
+      return field
+        ? !field.shadowRoot?.querySelector('.ML__latex')?.childElementCount
+        : !host.textContent;
+    });
+    if (!pending.length) return;
+    if (performance.now() > deadline)
+      throw new Error(`${pending.length} formulas did not render`);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
 async function display(question: Question, review: boolean) {
   flushSync(() =>
     root.render(
@@ -34,6 +53,7 @@ async function display(question: Question, review: boolean) {
   await Promise.all(
     Array.from(document.images, (image) => image.decode()),
   );
+  await mathDrawn();
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
   );
