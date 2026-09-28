@@ -418,3 +418,22 @@ The initial Astra xhigh reviewer identified the real capture race and confirmed
 the fix. A fresh Astra xhigh closing review found no actionable issue. Full Linux
 CI is checked after pushing this follow-up. The requested pull from `origin/main`
 found no incoming changes at `5fd64dd2` and preserved these local fixes.
+
+### Table-of-contents retitle flake
+
+[CI 36368412155](https://github.com/samyung0/capy-notebook/actions/runs/36368412155)
+passed every job at `31941850`. The comment-capture and prebundle fixes held.
+One editor case flaked: the table-of-contents retitle typed `updated` mid-word
+(`Editor matrix headinupdatedg`). The trace shows the h1 click landing at its
+centre, the space landing at the end after `End`, then the TOC re-render
+restoring Slate's stale click caret before the remaining text. This is the
+throttled-selectionchange race already documented in `live-collaboration.spec.ts`.
+
+The insertions tests now use `clickTextEnd`, which clicks the text's last pixel
+instead of relying on `End`, so a stale restore lands at the same place. The
+slash test's inline workaround moved into that helper. Test-only; 25 serial runs
+and 40 runs with four workers at load average 22 passed without retries.
+
+No storage-relevant runtime changed after `21a8f996` (one comment in
+`source_refresh.go`; same BetterOffice pin), so the September 28 storage report
+remains the current measurement.

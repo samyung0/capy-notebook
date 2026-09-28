@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import { chooseAllBlocksEntry } from '../helpers/editor';
-import { openEditorNote } from './helpers';
+import { clickTextEnd, openEditorNote } from './helpers';
 
 test.describe('inline and block insertions', () => {
   test('mention dropdown opens inside a heading and inserts a member', async ({
@@ -15,8 +15,9 @@ test.describe('inline and block insertions', () => {
 
     // Regression: the dropdown rendered inline (not portaled) and never
     // became visible inside headings.
-    await editor.getByText(EDITOR_NOTE.headingText, { exact: true }).click();
-    await page.keyboard.press('End');
+    await clickTextEnd(
+      editor.getByText(EDITOR_NOTE.headingText, { exact: true })
+    );
     await page.keyboard.type(' @');
 
     const listbox = page.getByRole('listbox');
@@ -35,8 +36,9 @@ test.describe('inline and block insertions', () => {
       EDITOR_NOTE.firstParagraph
     );
 
-    await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
-    await page.keyboard.press('End');
+    await clickTextEnd(
+      editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true })
+    );
     await page.keyboard.type(' @');
 
     const listbox = page.getByRole('listbox');
@@ -52,15 +54,9 @@ test.describe('inline and block insertions', () => {
       EDITOR_NOTE.thirdParagraph
     );
 
-    // Clicking the text node often lands mid-word; End+Enter then race and
-    // `/table` gets inserted as plain text ("paragr/tableaph") with no menu.
-    const paragraph = editor.getByText(EDITOR_NOTE.thirdParagraph, {
-      exact: true,
-    });
-    const box = await paragraph.boundingBox();
-    expect(box, 'paragraph has a bounding box').not.toBeNull();
-    await page.mouse.click(box!.x + box!.width - 1, box!.y + box!.height / 2);
-    await page.keyboard.press('End');
+    await clickTextEnd(
+      editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true })
+    );
     await page.keyboard.press('Enter');
     await page.keyboard.type('/');
     const listbox = page.getByRole('listbox');
@@ -140,13 +136,13 @@ test.describe('inline and block insertions', () => {
     // The heading list is cached per top-level block and reused whenever that
     // block's identity is unchanged, so the case that has to keep working is
     // the one where a cached block really did change.
-    await editor.locator('h1').click();
-    // Wait for Slate to take the click's selection; its late DOM sync would
-    // otherwise move the caret back from where End put it.
+    await clickTextEnd(
+      editor.locator('h1').getByText(EDITOR_NOTE.headingText, { exact: true })
+    );
+    // Wait for Slate to take the click's selection before typing.
     await expect(page.getByRole('button', { name: 'Block type' })).toHaveText(
       'Heading 1'
     );
-    await page.keyboard.press('End');
     await page.keyboard.type(' updated');
 
     await expect(
