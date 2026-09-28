@@ -37,10 +37,21 @@ export async function selectEditorLine(page: Page, line: Locator) {
   await page.mouse.move(bounds.x + bounds.width - 1, centerY);
   await page.mouse.down();
   await page.mouse.move(bounds.x + 1, centerY, { steps: 8 });
-  await page.mouse.up();
+  // A loaded browser can leave the drag's last step out of the native range,
+  // so hold the button and nudge the pointer at the line start until it
+  // covers the line.
+  let nudge = 0;
   await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString()))
+    .poll(async () => {
+      const selected = await page.evaluate(() =>
+        window.getSelection()?.toString()
+      );
+      if (selected !== text)
+        await page.mouse.move(bounds.x + 1 + (nudge++ % 2), centerY);
+      return selected;
+    })
     .toBe(text);
+  await page.mouse.up();
   await expect(
     page.getByRole('toolbar', { name: 'Selection actions' })
   ).toBeVisible();

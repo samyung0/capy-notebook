@@ -151,12 +151,13 @@ test('Biology file fixtures reach the shared PDF error and empty preview', async
   await expect(
     page.getByText('Private annotations could not be loaded.', { exact: true })
   ).toHaveCount(0);
+  // A second full workspace load, with the same allowance as the first.
   await page.goto('/workspaces/ws_bio?file=mock-preview-empty');
   await expect(
     page
       .getByRole('alert')
       .getByText("This file can't be previewed", { exact: true })
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 30_000 });
 });
 
 test('invitations are standalone and transfer previews open only one dialog', async ({
