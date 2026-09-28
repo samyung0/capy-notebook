@@ -235,11 +235,7 @@ export class SourceSeedChangedError extends OfficeEngineError {
 }
 
 /** A stored change that does not rebuild its state from the seed. */
-export class SourceStateRebuildError extends OfficeEngineError {
-  constructor(message: string) {
-    super(message);
-  }
-}
+export class SourceStateRebuildError extends OfficeEngineError {}
 
 /**
  * seed plus a stored change over it: the complete state. Every item the

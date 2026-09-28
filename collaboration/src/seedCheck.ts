@@ -70,19 +70,19 @@ async function main() {
     const checks = await checkSeeds(lines);
     const changed = checks.filter((c) => c.seedSHA256 !== c.stateSeedSHA256);
     for (const c of checks)
-      console.log(
-        [
+      process.stdout.write(
+        `${[
           c.seedSHA256 === c.stateSeedSHA256 ? 'same' : 'changed',
           c.format,
           c.baseSourceSHA256,
           `${c.files} file(s)`,
-        ].join('\t')
+        ].join('\t')}\n`
       );
     const formats = [...new Set(changed.map((c) => c.format))];
-    console.log(
+    process.stdout.write(
       changed.length
-        ? `${changed.length} of ${checks.length} seeds changed (${formats.join(', ')}): run the Office maintenance window before deploying this pin`
-        : `${checks.length} seeds unchanged: this pin can deploy without a window`
+        ? `${changed.length} of ${checks.length} seeds changed (${formats.join(', ')}): run the Office maintenance window before deploying this pin\n`
+        : `${checks.length} seeds unchanged: this pin can deploy without a window\n`
     );
     process.exitCode = changed.length ? 1 : 0;
   } finally {

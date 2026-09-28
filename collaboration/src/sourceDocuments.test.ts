@@ -934,7 +934,8 @@ test.each([4, 5])(
     expect(
       textState(
         Buffer.from(
-          (request.mock.calls.at(-1)?.[2] as { state: string }).state,
+          (request.mock.calls.at(-1)?.[2] as { state: string } | undefined)
+            ?.state as string,
           'base64'
         )
       )
