@@ -683,6 +683,142 @@ def test_picture_triage_drops_slivers_and_discards_repeats(tmp_path: Path) -> No
     ]
 
 
+# Formula pictures: 10 pt Helvetica lines are 13.8 pt tall on a 600 x 800 page.
+def _grid(rect: tuple) -> list[float]:
+    return [rect[0] / 0.6, rect[1] / 0.8, rect[2] / 0.6, rect[3] / 0.8]
+
+
+def _bars(page: pymupdf.Page, rect: tuple, colour=(0, 0, 0)) -> None:
+    """Formula-like ink: three 1 pt bars across the picture."""
+    x0, y0, x1, y1 = rect
+    for i in (1, 2, 3):
+        y = y0 + i * (y1 - y0) / 4
+        page.draw_rect((x0, y - 0.5, x1, y + 0.5), color=None, fill=colour)
+
+
+def _picture(tmp_path: Path, name: str, page: int, rect: tuple, data=b"") -> dict:
+    (tmp_path / name).write_bytes(data or name.encode())
+    return {"type": "image", "img_path": name, "page_idx": page, "bbox": _grid(rect)}
+
+
+INLINE = (130, 90, 168, 102)  # between "be" (ends x 124.5) and "per" on y 89-103
+
+
+@pytest.mark.parametrize(
+    "case", ["formula", "caption", "colour", "blank", "small", "text", "mid-tone"]
+)
+def test_formula_pictures_pass_the_six_precision_tests(
+    tmp_path: Path, case: str
+) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_text((60, 100), "Let the rate be", fontsize=10)
+    page.insert_text((175, 100), "per hour today.", fontsize=10)
+    rect = (130, 96, 168, 98.5) if case == "small" else INLINE
+    if case == "caption":
+        page.insert_text((60, 114), "Figure 3 The rate", fontsize=10)
+    if case == "mid-tone":
+        page.draw_rect(rect, color=None, fill=(0.7, 0.7, 0.7))
+    if case == "text":
+        page.insert_text((140, 100), "dx", fontsize=10)
+    if case == "small":
+        page.draw_rect((130, 97, 168, 98), color=None, fill=(0, 0, 0))
+    elif case != "blank":
+        _bars(page, rect, (1, 0, 0) if case == "colour" else (0, 0, 0))
+    block = _picture(tmp_path, "p.png", 0, rect)
+    [result] = pictures.classify([block], document, tmp_path)
+    if case == "formula":
+        assert result == {**block, "type": "equation", "text": "", "_picture": "inline"}
+    else:
+        assert result == block
+
+
+def test_formula_pictures_skip_tall_lines_and_tall_pictures(tmp_path: Path) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    for y in (600, 614, 628, 642):
+        page.insert_text((60, y), "Body text sets the line height.", fontsize=10)
+    # MuPDF merges a diagram's labels into one tall "line" (MIT Strang).
+    page.insert_text((60, 300), "Label", fontsize=30)
+    beside_tall_line = (140, 276, 200, 300)
+    # Three body lines tall, between two body lines.
+    page.insert_text((60, 400), "Text above the picture here.", fontsize=10)
+    page.insert_text((60, 460), "Text below the picture here.", fontsize=10)
+    tall = (80, 408, 180, 448)
+    for rect in (beside_tall_line, tall):
+        _bars(page, rect)
+    blocks = [
+        _picture(tmp_path, "a.png", 0, beside_tall_line),
+        _picture(tmp_path, "b.png", 0, tall),
+    ]
+    assert pictures.classify(blocks, document, tmp_path) == blocks
+
+
+def test_formula_pictures_are_placed_in_text(tmp_path: Path) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_text((60, 100), "Let the rate be", fontsize=10)
+    page.insert_text((175, 100), "per hour today.", fontsize=10)
+    page.insert_text((60, 200), "Text above the display formula", fontsize=10)
+    page.insert_text((60, 250), "Text below the display formula", fontsize=10)
+    page.insert_text((60, 400), "So we be", fontsize=10)
+    page.insert_text((110, 400), "per plan, we be per hour.", fontsize=10)
+    inline, display, repeated_pair = INLINE, (100, 210, 200, 232), (100, 390, 108, 402)
+    for rect in (inline, display, repeated_pair):
+        _bars(page, rect)
+    placed = {"type": "text", "text": "Let the rate be per hour today."}
+    ambiguous = {"type": "text", "text": "So we be per plan, we be per hour."}
+    blocks = [
+        {**placed, "page_idx": 0, "bbox": _grid((60, 89, 243, 103))},
+        _picture(tmp_path, "inline.png", 0, inline),
+        _picture(tmp_path, "display.png", 0, display),
+        {**ambiguous, "page_idx": 0, "bbox": _grid((60, 389, 240, 403))},
+        _picture(tmp_path, "pair.png", 0, repeated_pair),
+    ]
+    result = pictures.classify(blocks, document, tmp_path)
+    result = pictures.place_inline(result, document)
+    assert [(b["type"], b["text"], b.get("_picture")) for b in result] == [
+        ("text", "Let the rate be [formula] per hour today.", None),
+        ("equation", "", "inline"),
+        ("equation", "[formula]", "display"),
+        ("text", ambiguous["text"], None),
+        ("equation", "", "inline"),
+    ]
+
+
+def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words(
+    tmp_path: Path,
+) -> None:
+    document = pymupdf.open()
+    glyph, badge, tall = (105, 91, 125, 101), (260, 91, 290, 101), (385, 86, 405, 106)
+    blocks = []
+    for p in range(5):
+        page = document.new_page(width=600, height=800)
+        page.insert_text((60, 100), f"alpha{p} is", fontsize=10)
+        page.insert_text((130, 100), f"beta{p} and", fontsize=10)
+        page.insert_text((190, 100), "licensed under", fontsize=10)
+        page.insert_text((295, 100), "CC BY", fontsize=10)
+        page.insert_text((340, 100), f"gamma{p}", fontsize=10)
+        page.insert_text((410, 100), f"delta{p}", fontsize=10)
+        for rect in (glyph, badge, tall):
+            _bars(page, rect)
+        blocks += [
+            _picture(tmp_path, f"glyph{p}.png", p, glyph, b"glyph"),
+            _picture(tmp_path, f"badge{p}.png", p, badge, b"badge"),
+            _picture(tmp_path, f"tall{p}.png", p, tall, b"tall"),
+        ]
+    result = pictures.classify(blocks, document, tmp_path)
+    assert [(b["type"], b["img_path"][:-5]) for b in result] == [
+        (kind, name)
+        for _ in range(5)
+        for kind, name in (
+            ("equation", "glyph"),
+            ("discarded", "badge"),
+            ("discarded", "tall"),
+        )
+    ]
+
+
 def test_ocr_lines_become_page_blocks_after_the_page(tmp_path: Path) -> None:
     blocks = [
         {"page_idx": 0, "type": "image", "bbox": [0, 0, 1000, 1000]},

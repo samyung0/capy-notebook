@@ -65,7 +65,10 @@ CAPTURE_RULE = (
     "is the source of truth. If capture is unavailable or the detail is illegible, "
     "say it could not be verified instead of guessing. This rule applies to "
     "sources with pages and to uploaded images, which are one page each; "
-    "text-only sources and user-supplied values need no capture."
+    "text-only sources and user-supplied values need no capture. `[formula]` in "
+    "passage or material text marks a formula printed as a picture. When a "
+    "question needs that formula, capture its page and read the formula there; "
+    "never present the placeholder as content."
 )
 
 FOLLOW_REFERENCES_RULE = (

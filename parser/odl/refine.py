@@ -146,6 +146,7 @@ def parse_pdf(
         blocks = outline_levels.mark_book_titles(blocks, document)
         furniture_texts = furniture.repeated_across_pages(blocks)
         blocks, _ = tables.recover_tables(blocks, document)
+        blocks = pictures.place_inline(blocks, document)
         blocks = fonts.compose_negations(blocks)
         phases["repairs"] = time.perf_counter() - started
 

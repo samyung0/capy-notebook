@@ -50,7 +50,7 @@ from fastapi.responses import JSONResponse
 from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v11"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v12"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA

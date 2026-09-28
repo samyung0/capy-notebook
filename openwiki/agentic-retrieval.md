@@ -289,7 +289,7 @@ ported from the `bench/parsers` lab into `parser/odl/`: font `ToUnicode`
 repairs, picture triage, table-cell styles, column reading order, hidden-OCR-layer order, heading
 and table context, footer ancestry, list geometry and text-overprint repair,
 exponents, column continuations, source-geometry table recovery and negation
-composition. Pages whose
+composition, and formula pictures retyped with a `[formula]` placeholder. Pages whose
 text layer has fewer than 40 characters are routed to RapidOCR (PP-OCRv6 small,
 2560 px long edge, score 0.5, models baked into the image). Fresh OCR uses
 PP-DocLayoutV3 through rapid-layout 1.2.1 to order regions only when every line
@@ -307,7 +307,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v11` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v12` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -333,9 +333,9 @@ Parser v7 (decision 2026-09-24; evidence in
 - **Picture triage** (`pictures.classify`, right after adaptation). An image
   block with a side under 1 pt, or a short side under 1% of its long side, is
   dropped: rules and spacer pixels drawn as images. The same rendered picture
-  on 5 or more pages becomes `discarded` furniture. Other pictures, formula
-  pictures included, stay image blocks. Triage reads ODL's image files in the
-  parse work directory; no image bytes leave it.
+  on 5 or more pages becomes `discarded` furniture. Other pictures stay image
+  blocks until v12 retypes formula pictures (below). Triage reads ODL's image
+  files in the parse work directory; no image bytes leave it.
 
 Parser v8 (decision 2026-09-24; gate in
 `bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
@@ -505,9 +505,43 @@ rules; the chunker stays at v12:
   y = 0.069-0.086 and Accounting Principles' licence line are banners, a label
   such as "Example" at the top of a few pages stays a heading.
 
-The formula-picture rule, formula placeholders, stencil-mask rewriting and
-ODL's `--content-safety-off tiny` are not in v7 to v11; the tiny-text
-filter stays on.
+Parser v12 (decisions 2026-09-25 and 2026-09-28; evidence in
+`bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
+`bench/parsers/reports/2026-09-28-parser-v12-formula-gate.md`) adds the
+formula-picture rule to picture triage; the chunker stays at v12:
+
+- **Formula pictures** (`pictures.classify`). A picture that is not a sliver,
+  at most 2.5 body lines tall (the page's median line height), is inline when
+  it overlaps a line of at most two body lines by half its height, is no taller
+  than 1.8 times that line and has the line's text within 1.5 line heights
+  beside it; it is display when it sits alone between two body lines within 3
+  body lines above and below. Lines taller than two body lines never count:
+  MuPDF merges a diagram's labels into one tall line (MIT Strang). Six
+  precision tests, each on a detected picture, keep it an image: a caption
+  line ("Figure 3", "Fig. 2.19", "Table 1") among the first two lines just
+  below, a side under 3 pt, a word whose centre lies on the picture, or, in a
+  render of its box, under 0.3% dark ink (blank), over 45% mid-tone or darker
+  (key caps, badges) or over 35% of its non-white pixels coloured. A repeated
+  picture stays a formula only when it is at most 1.6 times the page's median
+  font size and its neighbouring words differ in most placements; otherwise
+  it is furniture as before. A detected formula becomes an `equation` block
+  with `_picture: inline` or `display`. A display formula's text is
+  `[formula]`.
+- **Inline placement** (`pictures.place_inline`, after table recovery). The
+  placeholder is spliced into the one text or list block holding the
+  picture's centre, between the words beside the picture on its line, when
+  that pair (or the one word, at a line end) occurs once in the block. An
+  unplaced inline picture stays an empty `equation` block, which the chunker
+  skips.
+
+The placeholder is indexed as printed, with no tokenizer change, and the
+figure stage reads only `image` and `chart` blocks, so a formula picture
+leaves the figure list. Parsed books keep their chunks; only new parses gain
+placeholders. Nothing transcribes formula pictures at parse time: the chat and
+curate prompts say `[formula]` marks a formula printed as a picture, to be
+read from a page capture when a question needs it and never presented as
+content. Stencil-mask rewriting and ODL's `--content-safety-off tiny` are not
+in v7 to v12; the tiny-text filter stays on.
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
@@ -966,8 +1000,9 @@ figures stage) both run. There are three kinds:
 - `parser_image`: the parser's image and chart blocks. Blocks 2 units or
   thinner on the 0-1000 grid are left out; they are formula bars and rules
   drawn as images (decision 2026-09-23). Parser v7 already drops images under
-  1 pt and types pictures repeated on 5 or more pages `discarded`, which this
-  stage does not read; the 2-unit rule stays for older parses.
+  1 pt and types pictures repeated on 5 or more pages `discarded`, and v12
+  retypes formula pictures `equation`; this stage reads neither. The 2-unit
+  rule stays for older parses.
 - `caption_page_reference`: `Figure N:` caption lines with no image block and
   no vector drawing they label, boxed as the whole page.
 - `vector_drawing`: drawings in the source PDF that the parser does not report
@@ -2002,7 +2037,9 @@ A curate turn builds materials instead of answering:
   search/read. Source gaps remain explicit; nearby concepts do not replace the
   requested scope. Capture pages when calculations, numbers or formulas appear
   wrong or corrupted. A `[Diagram description: ...]` block is a reviewer's
-  description of a figure, never quoted as the book's text. Workspace read tools
+  description of a figure, never quoted as the book's text. `[formula]` marks a
+  formula printed as a picture: capture its page when a question needs it, and
+  never present the placeholder as content. Workspace read tools
   remain available. Finish with a plain
   list of the materials, coverage, size and source books. The same module owns
   curate tool descriptions; the shared contract owns argument schemas.
@@ -2227,7 +2264,10 @@ using source-specific numerical results, formulas, table cells/relationships or
 figures, regardless of extraction confidence. Low-confidence text also requires
 capture when the uncertain passage matters. The model reads the image directly
 and reports unavailable or illegible evidence instead of guessing. Text-only
-sources and user-supplied values need no capture. This prompt rule does not add
+sources and user-supplied values need no capture. Both prompts say `[formula]`
+in passage, excerpt or material text marks a formula printed as a picture
+(parser v12): the page is captured when a question needs it, and the
+placeholder is never presented as content. This prompt rule does not add
 capture to the standalone `/generate` workflow. The
 render lives server-side because the pixels must be inside the provider request
 the Python agent builds mid-turn.
