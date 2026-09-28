@@ -144,12 +144,13 @@ changed, over the fingerprinted source that every open requires:
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
   comment's reference mark only when the range goes on past it), and the
-  export writes range and bookmark boundaries at those story units. In a cell
-  or header, a page or column break the editor inserts counts as one unit;
-  once exported it seeds as zero units, like every break the file already had
-  there. The export writes it, it carries no effects entry, and its paragraph
-  keeps it through later publications. Where a range cannot be written exactly
-  it settles after one publication:
+  export writes range and bookmark boundaries at those story units. In a table
+  cell, header, footer or note the export drops a page or column break the
+  editor inserted, and one from the file survives only while its paragraph's
+  text is unchanged, as before this change; keeping them is a separate, known
+  gap. Comment boundaries after such a break still land exactly, because its
+  unit is measured out. Where a range cannot be written exactly it settles
+  after one publication:
   - Markers Word nests in a hyperlink, tracked insertion or deletion, inline
     content control, simple field or complex field result move to that
     container's edges at seed (start before, end after). Inside a field
