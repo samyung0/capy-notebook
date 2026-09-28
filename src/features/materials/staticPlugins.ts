@@ -109,7 +109,7 @@ const StaticInlineEquationPlugin = createSlatePlugin({
 });
 const StaticYouTubePlugin = createSlatePlugin({
   key: 'video',
-  node: { isElement: true, type: 'video' },
+  node: { isElement: true, isVoid: true, type: 'video' },
 });
 
 /* List rendering parity with the editable surface (see notes/plugins.ts):

@@ -502,10 +502,11 @@ export default function WorkspaceOpen() {
           <ResizableHandle withHandle />
           <ResizablePanel
             className="overflow-visible!"
-            defaultSize={xl ? '400px' : '340px'}
+            // Relative so the rail grows on wide screens; ~410px at 1280px.
+            defaultSize="32%"
             id="rail"
-            maxSize={xl ? '600px' : '420px'}
-            minSize={xl ? '320px' : '300px'}
+            maxSize="50%"
+            minSize="300px"
           >
             {railColumn}
           </ResizablePanel>

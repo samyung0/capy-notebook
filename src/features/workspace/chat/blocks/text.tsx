@@ -1,5 +1,11 @@
 import { Streamdown } from 'streamdown';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import { Icon } from '@/components/ui/Icon';
+import {
+  CALLOUT_CONTAINER_CLASS,
+  CALLOUT_ICON,
+  CALLOUT_VARIANT_CLASS,
+  normalizeCalloutVariant,
+} from '@/features/notes/richBlockConfig';
 import { cn } from '@/lib/cn';
 import type { CalloutProps, MdProps, RevealProps, StepProps } from '../schema';
 import { Cites, elements } from './Cite';
@@ -52,39 +58,22 @@ export function Md({ props }: { props: MdProps }) {
   );
 }
 
-const CALLOUT: Record<
-  CalloutProps['kind'],
-  { className: string; icon: IconName }
-> = {
-  danger: { className: 'bg-tint-error text-tint-error-fg', icon: 'error' },
-  info: { className: 'bg-tint-info text-tint-info-fg', icon: 'info' },
-  success: {
-    className: 'bg-tint-success text-tint-success-fg',
-    icon: 'circleCheck',
-  },
-  tip: {
-    className: 'bg-tint-accent-1 text-tint-accent-1-fg',
-    icon: 'sparkles',
-  },
-  warning: {
-    className: 'bg-tint-warning text-tint-warning-fg',
-    icon: 'error',
-  },
-};
-
 export function Callout({ props }: { props: CalloutProps }) {
-  const style = CALLOUT[props.kind] ?? CALLOUT.info;
+  const variant = normalizeCalloutVariant(props.kind);
   return (
-    <div className={cn('my-3 rounded-card px-3 py-2.5', style.className)}>
-      <p className="mb-1 flex items-center gap-1.5 font-semibold text-xs">
-        <Icon name={style.icon} size={14} />
-        {props.title}
-      </p>
-      <Prose
-        className="text-[13px] text-current [&_p]:my-1"
-        text={props.text}
-      />
-      <Cites passages={props.passages} />
+    <div
+      className={cn(
+        'my-3 flex items-start gap-2 px-3 py-2.5',
+        CALLOUT_CONTAINER_CLASS,
+        CALLOUT_VARIANT_CLASS[variant]
+      )}
+    >
+      <Icon className="mt-px" name={CALLOUT_ICON[variant]} size={16} />
+      <div className="min-w-0 flex-1">
+        <p className="mb-0.5 font-semibold text-xs">{props.title}</p>
+        <Prose className="text-[13px] text-fg [&_p]:my-1" text={props.text} />
+        <Cites passages={props.passages} />
+      </div>
     </div>
   );
 }

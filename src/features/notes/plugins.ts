@@ -109,7 +109,6 @@ import {
 import { createElement } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { m } from '@/i18n';
 import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
@@ -126,7 +125,7 @@ import {
   collaborationTrailingBlockPlugin,
 } from './collaborationPlugins';
 import { LinkFloatingToolbar } from './LinkFloatingToolbar';
-import { MediaPlaceholderElement } from './MediaNodes';
+import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
@@ -134,6 +133,7 @@ import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
 import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
 import { queryHeadings } from './tocHeadings';
+import { VoidBlockBreakPlugin } from './voidBlockBreak';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -431,7 +431,7 @@ const MediaKit = [
   ImagePlugin.configure({ options: { disableUploadInsert: true } }),
   createPlatePlugin({
     key: 'video',
-    node: { isElement: true, type: 'video' },
+    node: { isElement: true, isVoid: true, type: 'video' },
   }).withComponent(YouTubeEmbedElement),
   AudioPlugin,
   FilePlugin,
@@ -530,6 +530,7 @@ export const MaterialKit: AnyPlugin[] = [
   CodeLinePlugin,
   CodeSyntaxPlugin,
   CodeBlockListCleanupPlugin,
+  VoidBlockBreakPlugin,
   TablePlugin.configure({ options: { minColumnWidth: 48 } })
     .extendEditorTransforms(({ editor }) => ({
       table: {

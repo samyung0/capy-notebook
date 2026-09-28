@@ -12,12 +12,15 @@ import {
 } from 'platejs/static';
 import type { CSSProperties, MouseEvent } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CalloutIcon } from '@/features/notes/CalloutIcon';
+import { EditorIcon } from '@/features/notes/EditorIcon';
 import {
   BLOCKQUOTE_CLASS,
   BOLD_MARK_CLASS,
   CALLOUT_CLASS,
   CODE_BLOCK_CLASS,
+  CODE_LINE_CLASS,
   CODE_MARK_CLASS,
   COLUMN_CLASS,
   COLUMN_GROUP_CLASS,
@@ -32,6 +35,7 @@ import {
   KBD_MARK_CLASS,
   LI_CLASS,
   LINK_CLASS,
+  MEDIA_CAPTION_CLASS,
   MENTION_CLASS,
   MERMAID_CAPTION_CLASS,
   OL_CLASS,
@@ -49,6 +53,7 @@ import {
   UL_CLASS,
 } from '@/features/notes/nodeStyles';
 import {
+  CALLOUT_CONTAINER_CLASS,
   CALLOUT_VARIANT_CLASS,
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
@@ -70,9 +75,18 @@ import { quizQuestionElementToQuestion } from './document';
 import { MaterialRefCard } from './MaterialRefCard';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { MathPreview } from './MathPreview';
-import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
+import {
+  type MediaAssetNode,
+  MediaAssetView,
+  openEditorAsset,
+} from './MediaAssetView';
+import { MediaFrame } from './MediaFrame';
 import { Mermaid } from './Mermaid';
-import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
+import {
+  YouTubeEmbed,
+  type YouTubeNode,
+  youtubeWatchUrl,
+} from './YouTubeEmbed';
 
 /* ------------------------------------------------------------- helpers */
 
@@ -196,7 +210,11 @@ function Callout(props: SlateElementProps) {
   return (
     <SlateElement
       {...props}
-      className={cn(CALLOUT_CLASS, CALLOUT_VARIANT_CLASS[variant])}
+      className={cn(
+        CALLOUT_CLASS,
+        CALLOUT_CONTAINER_CLASS,
+        CALLOUT_VARIANT_CLASS[variant]
+      )}
       data-callout-variant={variant}
     >
       <CalloutIcon variant={variant} />
@@ -297,9 +315,34 @@ function CodeSyntax(props: SlateLeafProps) {
 }
 
 function MediaAssetElement(props: SlateElementProps) {
+  const element = props.element as unknown as MediaAssetNode;
+  const caption = element.caption?.map((node) => node.text).join('');
   return (
     <SlateElement {...props} className="my-3">
-      <MediaAssetView element={props.element as unknown as MediaAssetNode} />
+      <MediaAssetView
+        caption={
+          caption && (
+            <figcaption
+              className={MEDIA_CAPTION_CLASS}
+              style={{ width: element.width }}
+            >
+              {caption}
+            </figcaption>
+          )
+        }
+        element={element}
+        toolbar={
+          element.assetId && (
+            <ToolbarButton
+              label={m.media_open_new_tab()}
+              onClick={() => openEditorAsset(element.assetId!)}
+              tooltipSide="top"
+            >
+              <EditorIcon name="externalLink" />
+            </ToolbarButton>
+          )
+        }
+      />
       {props.children}
     </SlateElement>
   );
@@ -311,7 +354,23 @@ function YouTubeElement(props: SlateElementProps) {
     <SlateElement {...props} className="my-3">
       <div contentEditable={false}>
         {element.videoId ? (
-          <YouTubeEmbed videoId={element.videoId} />
+          <MediaFrame
+            fill
+            toolbar={
+              <ToolbarButton asChild label={m.youtube_open()} tooltipSide="top">
+                <a
+                  href={youtubeWatchUrl(element.videoId)}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <EditorIcon name="externalLink" />
+                </a>
+              </ToolbarButton>
+            }
+            width={element.width}
+          >
+            <YouTubeEmbed videoId={element.videoId} />
+          </MediaFrame>
         ) : (
           <p className="rounded-card border border-solid-error/30 p-3 text-sm text-solid-error">
             {m.youtube_missing_id()}
@@ -361,7 +420,7 @@ function MermaidElement(props: SlateElementProps) {
   return (
     <SlateElement {...props} className="my-3 border border-transparent">
       <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
-      <Mermaid code={element.source} />
+      <Mermaid code={element.source} theme={element.theme} />
       {props.children}
     </SlateElement>
   );
@@ -416,7 +475,7 @@ export const staticNoteComponents = {
   chart: QuestionFigure,
   code: mark('code', CODE_MARK_CLASS),
   code_block: CodeBlock,
-  code_line: element(undefined),
+  code_line: element(undefined, CODE_LINE_CLASS),
   code_syntax: CodeSyntax,
   column: Column,
   column_group: element('div', COLUMN_GROUP_CLASS),

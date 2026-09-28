@@ -62,6 +62,13 @@ const fence = (source: string, language: string) => {
   return `${marker}${language.replace(/[\r\n`]/g, '')}\n${source}\n${marker}\n\n`;
 };
 
+/** Resized media stores a percentage of the block; exports cap images at 560px. */
+function exportWidth(width: unknown) {
+  if (typeof width === 'number') return width;
+  if (typeof width === 'string' && width.endsWith('%'))
+    return (560 * Number.parseFloat(width)) / 100;
+}
+
 export async function renderExport(
   value: MaterialValue,
   format: ExportFormat,
@@ -312,6 +319,7 @@ export async function renderExport(
         danger: ['#f9eeeb', '#b96558'],
         info: ['#eff6ff', '#3b82f6'],
         success: ['#eef5f0', '#5f9174'],
+        tip: ['#f3effa', '#8c7bd9'],
         warning: ['#faf4e8', '#be963f'],
       };
       if (!colors[variant]) throw new Error(`Unsupported callout: ${variant}`);
@@ -476,7 +484,7 @@ export async function renderExport(
           { source, type: 'image' },
           name,
           html,
-          typeof node.width === 'number' ? node.width : undefined
+          exportWidth(node.width)
         )) +
         (html
           ? `<p>${escapeHtml(caption(node))}</p>`

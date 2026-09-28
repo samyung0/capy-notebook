@@ -1,12 +1,5 @@
 import { EditorIcon } from './EditorIcon';
-import type { CalloutVariant } from './richBlockConfig';
-
-const icons = {
-  danger: 'circleX',
-  info: 'info',
-  success: 'circleCheck',
-  warning: 'error',
-} as const;
+import { CALLOUT_ICON, type CalloutVariant } from './richBlockConfig';
 
 export function CalloutIcon({ variant }: { variant: CalloutVariant }) {
   return (
@@ -16,7 +9,7 @@ export function CalloutIcon({ variant }: { variant: CalloutVariant }) {
       contentEditable={false}
       data-callout-icon
     >
-      <EditorIcon className="size-5" name={icons[variant]} />
+      <EditorIcon className="size-5" name={CALLOUT_ICON[variant]} />
     </span>
   );
 }

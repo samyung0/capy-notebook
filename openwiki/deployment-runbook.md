@@ -216,7 +216,7 @@ the scriptless route restores the Worker's existing API proxy. The fallback
 checks the request against `APP_ORIGIN`, so it cannot serve the old host once
 that binding points at the new app.
 
-Verify the SPA and a static asset, workspace summary HTML and legacy redirect,
+Verify the SPA and a static asset, workspace summary HTML,
 anonymous API 401, authenticated API JSON, and an authenticated SSE connection
 through at least one heartbeat. Check API `no-store`/`nosniff` headers and cache
 bypass. Tail the site Worker with uniquely marked requests: a summary render
@@ -241,7 +241,7 @@ a separate public deployment. Astro with fully static output is the preliminary
 choice; building that site is deferred. See the [landing-site handoff](landing-site-handoff.md).
 Keep `/support`, `/help-and-legal`, credits, and existing auth links in the app
 until real public destinations and approved documents exist. `/w/{workspaceId}`
-and its legacy `/share/workspaces/{id}` alias stay on the app Worker.
+stays on the app Worker.
 
 1. Save the current public environment values, Clerk application/return URLs,
    DNS, routes, tunnel ingress and edge rules for rollback. Finish existing UAT

@@ -27,8 +27,9 @@ test('feature-matrix downloads retain study content and Word video objects', asy
     'mat_note_bio_feature_matrix',
     'Editor feature matrix'
   );
+  // The seeded image turns the Markdown export into a zip with its assets.
   for (const [label, extension] of [
-    ['Export Markdown (.md)', 'md'],
+    ['Export Markdown (.md)', 'zip'],
     ['Export Word (.docx)', 'docx'],
   ]) {
     await page
@@ -39,8 +40,12 @@ test('feature-matrix downloads retain study content and Word video objects', asy
     const download = await downloaded;
     expect(download.suggestedFilename()).toBe(`document.${extension}`);
     const bytes = await readFile((await download.path())!);
-    if (extension === 'md') {
-      const source = bytes.toString();
+    if (extension === 'zip') {
+      const zip = unzipSync(bytes);
+      expect(Object.keys(zip).some((path) => path.startsWith('assets/'))).toBe(
+        true
+      );
+      const source = strFromU8(zip['document.md']);
       expect(source).toContain('Quiz answer key');
       expect(source).toContain('Card 2');
       expect(source).toContain('https://www.youtube.com/watch?v=URUJD5NEXC8');

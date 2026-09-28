@@ -40,7 +40,7 @@ export function Tabs({
         return (
           <button
             className={cn(
-              'shrink-0 px-3 py-2 font-semibold text-sm transition-colors',
+              'shrink-0 px-3 py-2 font-semibold text-sm transition-colors focus-visible:ring-inset',
               bottomBorder && 'border-b-2',
               active
                 ? 'border-action font-bold text-fg'

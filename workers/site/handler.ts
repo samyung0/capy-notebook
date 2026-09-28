@@ -6,7 +6,7 @@ import {
   workspaceID,
 } from './summary';
 
-const SUMMARY_PATH = /^\/(?:w|share\/workspaces)\/([^/]+)$/;
+const SUMMARY_PATH = /^\/w\/([^/]+)$/;
 
 type SiteBindings = Pick<Cloudflare.Env, 'API_ORIGIN' | 'APP_ORIGIN'> & {
   ASSETS: Pick<Cloudflare.Env['ASSETS'], 'fetch'>;
@@ -84,9 +84,7 @@ export async function handleSiteRequest(
         status,
       }
     );
-  const isSummary =
-    url.pathname.startsWith('/w/') ||
-    url.pathname.startsWith('/share/workspaces/');
+  const isSummary = url.pathname.startsWith('/w/');
   if (url.pathname === '/summary' || url.pathname === '/summary.html')
     return failure(404);
   try {
@@ -121,13 +119,6 @@ export async function handleSiteRequest(
     const match = url.pathname.match(SUMMARY_PATH);
     const id = match?.[1];
     if (!id || !workspaceID.test(id)) return failure(404);
-    if (url.pathname.startsWith('/share/'))
-      return new Response(null, {
-        headers: headers({
-          Location: `/w/${id}${url.searchParams.get('lang') === 'zh' ? '?lang=zh' : ''}`,
-        }),
-        status: 301,
-      });
     const apiOrigin = trustedOrigin(env.API_ORIGIN);
     const appOrigin = trustedOrigin(env.APP_ORIGIN);
     // Cloudflare's cache ignores Vary: Accept-Language, so the resolved locale

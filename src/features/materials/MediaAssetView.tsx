@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { MediaFrame } from './MediaFrame';
 
 /** Persisted media node shape for workspace-backed asset elements. */
 export interface MediaAssetNode {
   assetId?: string;
+  caption?: { text: string }[];
   name?: string;
   type: string;
   width?: string | number;
@@ -50,10 +53,37 @@ export function useResolvedAsset(assetId: string | undefined) {
   return [state, () => setGeneration((value) => value + 1)] as const;
 }
 
+/** Signed when clicked, not when rendered: open the tab first so the
+ * navigation stays inside the click's popup allowance. */
+export function openEditorAsset(assetId: string) {
+  const tab = window.open('', '_blank');
+  if (tab) tab.opener = null;
+  resolveEditorAsset(assetId).then(
+    (resolved) => {
+      if (tab) tab.location.href = resolved.url;
+    },
+    () => tab?.close()
+  );
+}
+
 /** Presentational media renderer shared by the editable node component and the
- * static preview. Resolves the asset URL and renders by media type. */
-export function MediaAssetView({ element }: { element: MediaAssetNode }) {
+ * static preview. Resolves the asset URL and renders by media type. Images get
+ * the hover `toolbar`, optional resize handles and a `caption` slot. */
+export function MediaAssetView({
+  caption,
+  element,
+  onWidthChange,
+  toolbar,
+}: {
+  caption?: ReactNode;
+  element: MediaAssetNode;
+  onWidthChange?: (width: string) => void;
+  toolbar?: ReactNode;
+}) {
   const [asset, reload] = useResolvedAsset(element.assetId);
+  // An SVG without width/height has no intrinsic width and collapses in a
+  // fit-to-image frame, so it fills the block instead.
+  const [fill, setFill] = useState(false);
   // A presigned URL is short-lived; seeking past the buffered range re-reads
   // it. Re-resolve once, then let a second failure surface.
   const retried = useRef(false);
@@ -62,18 +92,8 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
     retried.current = true;
     reload();
   };
-  // Signed when clicked, not when rendered: open the tab first so the
-  // navigation stays inside the click's popup allowance.
   const openFile = () => {
-    if (!element.assetId) return;
-    const tab = window.open('', '_blank');
-    if (tab) tab.opener = null;
-    resolveEditorAsset(element.assetId).then(
-      (resolved) => {
-        if (tab) tab.location.href = resolved.url;
-      },
-      () => tab?.close()
-    );
+    if (element.assetId) openEditorAsset(element.assetId);
   };
   return (
     <figure className="group relative m-0" contentEditable={false}>
@@ -93,12 +113,24 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
         </div>
       )}
       {asset.status === 'ready' && element.type === 'img' && (
-        <img
-          alt={element.name || asset.name}
-          className="mx-auto h-auto max-w-full rounded-card"
-          src={asset.url}
-          style={{ width: element.width }}
-        />
+        <MediaFrame
+          fill={fill}
+          onWidthChange={onWidthChange}
+          toolbar={toolbar}
+          width={element.width}
+        >
+          <img
+            alt={element.name || asset.name}
+            className={cn(
+              'block h-auto rounded-card',
+              element.width || fill ? 'w-full' : 'max-w-full'
+            )}
+            onLoad={(event) => {
+              if (!event.currentTarget.offsetWidth) setFill(true);
+            }}
+            src={asset.url}
+          />
+        </MediaFrame>
       )}
       {asset.status === 'ready' && element.type === 'audio' && (
         <audio
@@ -119,6 +151,7 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
           <span className="truncate">{element.name || asset.name}</span>
         </button>
       )}
+      {caption}
     </figure>
   );
 }

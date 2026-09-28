@@ -16,6 +16,11 @@ import {
 } from '@/components/ui/Select';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
+import { MermaidSwatch } from '@/features/materials/Mermaid';
+import {
+  MERMAID_THEME_LABEL,
+  MERMAID_THEMES,
+} from '@/features/materials/mermaidThemes';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import {
   useNoteEditorPrefs,
@@ -30,15 +35,17 @@ export function EditorSettingsDialog() {
   const displayWidth = useNoteEditorPrefs((state) => state.displayWidth);
   const setEnabled = useNoteEditorPrefs((state) => state.setEnabled);
   const setDisplayWidth = useNoteEditorPrefs((state) => state.setDisplayWidth);
+  const mermaidTheme = useNoteEditorPrefs((state) => state.mermaidTheme);
+  const setMermaidTheme = useNoteEditorPrefs((state) => state.setMermaidTheme);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('general');
   const { control, handleSubmit, reset, setValue } = useForm({
-    defaultValues: { displayWidth, enabled },
+    defaultValues: { displayWidth, enabled, mermaidTheme },
   });
 
   const changeOpen = (next: boolean) => {
     if (next) {
-      reset({ displayWidth, enabled });
+      reset({ displayWidth, enabled, mermaidTheme });
       setTab('general');
     }
     setOpen(next);
@@ -63,6 +70,7 @@ export function EditorSettingsDialog() {
           onSubmit={handleSubmit((draft) => {
             setEnabled(draft.enabled);
             setDisplayWidth(draft.displayWidth);
+            setMermaidTheme(draft.mermaidTheme);
             setOpen(false);
           })}
         >
@@ -77,34 +85,73 @@ export function EditorSettingsDialog() {
           />
           <div className="mt-1 px-3 py-5">
             {tab === 'general' ? (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="font-semibold" htmlFor="note-display-width">
-                  {m.editor_prefs_display_size()}
-                </label>
-                <Controller
-                  control={control}
-                  name="displayWidth"
-                  render={({ field }) => (
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <SelectTrigger
-                        className="w-44"
-                        id="note-display-width"
-                        onBlur={field.onBlur}
-                        ref={field.ref}
+              <div className="grid gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="font-semibold" htmlFor="note-display-width">
+                    {m.editor_prefs_display_size()}
+                  </label>
+                  <Controller
+                    control={control}
+                    name="displayWidth"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
                       >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="half">
-                          {m.editor_prefs_half_width()}
-                        </SelectItem>
-                        <SelectItem value="full">
-                          {m.editor_prefs_full_width()}
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
+                        <SelectTrigger
+                          className="w-44"
+                          id="note-display-width"
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="half">
+                            {m.editor_prefs_half_width()}
+                          </SelectItem>
+                          <SelectItem value="full">
+                            {m.editor_prefs_full_width()}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="font-semibold" htmlFor="note-mermaid-theme">
+                    {m.editor_prefs_mermaid_theme()}
+                  </label>
+                  <Controller
+                    control={control}
+                    name="mermaidTheme"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <SelectTrigger
+                          className="w-44"
+                          id="note-mermaid-theme"
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {MERMAID_THEMES.map((theme) => (
+                            <SelectItem key={theme} value={theme}>
+                              <span className="flex items-center gap-2">
+                                <MermaidSwatch theme={theme} />
+                                {MERMAID_THEME_LABEL[theme]()}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
               </div>
             ) : (
               <>

@@ -20,6 +20,8 @@ export const HR_CLASS =
   'h-0.5 rounded-sm border-none bg-divider bg-clip-content';
 export const CODE_BLOCK_CLASS =
   'group/code relative overflow-auto rounded-button my-1 bg-surface-hover-bg pr-4 p-6 text-sm [tab-size:2] print:break font-mono text-fg';
+/** Lines grow with their text so the block's right padding survives scrolling. */
+export const CODE_LINE_CLASS = 'w-max min-w-full';
 export const LINK_CLASS = 'text-link underline underline-offset-2';
 
 export const UL_CLASS = 'my-2 ml-5 list-disc space-y-1';
@@ -33,7 +35,7 @@ export const TH_CLASS =
   'h-12 border border-line bg-surface-hover-bg px-3 py-2 text-left font-semibold';
 
 export const CALLOUT_CLASS =
-  'group/callout relative my-2 flex items-start gap-3 rounded-sm border-l-4 px-4 py-3 leading-relaxed';
+  'group/callout relative my-2 flex items-start gap-2.5 px-3.5 py-2.5 leading-relaxed';
 export const COLUMN_GROUP_CLASS =
   'group/columns relative my-2 flex size-full gap-2 flex-row';
 export const COLUMN_CLASS =
@@ -82,4 +84,6 @@ export const FLASHCARD_CLASS =
   'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 rounded-card border border-line bg-surface p-3 text-sm';
 export const FLASHCARD_FRONT_CLASS = 'font-medium text-fg';
 export const FLASHCARD_BACK_CLASS = 'text-fg-secondary';
+export const MEDIA_CAPTION_CLASS =
+  'mx-auto mt-2 block max-w-full text-center text-fg-muted text-sm';
 export const MERMAID_CAPTION_CLASS = 'mt-2 text-center text-sm text-fg-muted';

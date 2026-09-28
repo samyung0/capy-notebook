@@ -12,6 +12,7 @@ import {
   parseQuizFenceBody,
   type QuizBlock,
 } from './blocks';
+import type { MermaidTheme } from './mermaidThemes';
 
 export interface MaterialDocumentMetrics {
   maxDepth: number;
@@ -83,6 +84,8 @@ export interface MermaidElement extends MaterialElement {
   children: [MermaidCaptionElement];
   id: string;
   source: string;
+  /** Unset draws in DEFAULT_MERMAID_THEME. */
+  theme?: MermaidTheme;
   type: 'mermaid';
 }
 

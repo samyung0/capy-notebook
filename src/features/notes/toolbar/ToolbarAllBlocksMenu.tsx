@@ -47,7 +47,7 @@ export function ToolbarAllBlocksMenu({
   return (
     <Popover modal={false} onOpenChange={setMoreOpen} open={moreOpen}>
       <PopoverTrigger asChild>
-        <ToolbarButton label={m.editor_all_blocks()}>
+        <ToolbarButton className="-mr-2 -ml-1" label={m.editor_all_blocks()}>
           <EditorIcon name="plus" />
         </ToolbarButton>
       </PopoverTrigger>

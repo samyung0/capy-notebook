@@ -1,4 +1,6 @@
+import { YjsEditor } from '@slate-yjs/core';
 import { createPlatePlugin } from 'platejs/react';
+import { useNoteEditorPrefs } from '../noteEditorPrefs';
 import {
   FlashcardBackElement,
   FlashcardElement,
@@ -11,6 +13,7 @@ import {
   QuizQuestionElement,
   VisualBlockElement,
 } from './elements';
+import { fixMermaidSelection, stampMermaidTheme } from './mermaidBlock';
 import {
   FLASHCARDS_KEY,
   MATERIAL_REF_KEY,
@@ -51,7 +54,28 @@ export const FlashcardBackPlugin = createPlatePlugin({
 export const MermaidElementPlugin = createPlatePlugin({
   key: MERMAID_KEY,
   node: { isElement: true, isVoid: true, type: MERMAID_KEY },
-}).withComponent(MermaidElement);
+})
+  .overrideEditor(({ editor, tf: { apply } }) => ({
+    transforms: {
+      apply(operation) {
+        // Remote Yjs operations arrive already stamped by their creator.
+        const local =
+          !YjsEditor.isYjsEditor(editor) || YjsEditor.isLocal(editor);
+        apply(
+          fixMermaidSelection(
+            editor,
+            local
+              ? stampMermaidTheme(
+                  operation,
+                  useNoteEditorPrefs.getState().mermaidTheme
+                )
+              : operation
+          )
+        );
+      },
+    },
+  }))
+  .withComponent(MermaidElement);
 
 export const MermaidCaptionPlugin = createPlatePlugin({
   key: 'mermaid_caption',

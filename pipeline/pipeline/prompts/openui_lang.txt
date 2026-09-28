@@ -17,7 +17,7 @@ Arguments marked with ? are optional. Sub-components can be inline or referenced
 
 ### Prose
 Answer(children: (Md | Callout | Steps | Reveal | Tags | Facts | Cards | Table | Chart | ScatterChart | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
-Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). passages: the shown passage numbers that ground it.
+Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). No Mermaid or other diagram code: chat shows it as raw text. passages: the shown passage numbers that ground it.
 Callout(kind: "info" | "tip" | "warning" | "success" | "danger", title: string, text: string, passages?: number[]) — A highlighted note: a definition, tip, misconception, warning or takeaway. text is Markdown.
 Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown the reader opens on demand: a hint, a solution, extra detail.
 Tags(tags: string[]) — A row of short keyword chips.

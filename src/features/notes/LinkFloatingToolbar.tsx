@@ -96,6 +96,7 @@ export function LinkFloatingToolbar() {
             variant="transparent"
             wrapperClassName="rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4"
           />
+          <Separator className="my-1" />
           <div className="flex items-center justify-end gap-0">
             <FloatingActionButton label={m.editor_link_save()} type="submit">
               <EditorIcon name="check" />

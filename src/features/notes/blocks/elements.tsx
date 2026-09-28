@@ -21,7 +21,11 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { materialQuery, useUpdateFlashcardContent } from '@/api/hooks';
 import { showErrorToast } from '@/api/queryClient';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
-import { Popover, PopoverAnchor } from '@/components/ui/Popover';
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { parseFlashcardsFenceBody } from '@/features/materials/blocks';
@@ -40,7 +44,13 @@ import {
 } from '@/features/materials/document';
 import { MaterialRefCard } from '@/features/materials/MaterialRefCard';
 import { StandaloneMaterialTitle } from '@/features/materials/MaterialRenderContext';
-import { Mermaid } from '@/features/materials/Mermaid';
+import { Mermaid, MermaidSwatch } from '@/features/materials/Mermaid';
+import {
+  MERMAID_THEME_LABEL,
+  MERMAID_THEMES,
+  type MermaidTheme,
+  mermaidTheme,
+} from '@/features/materials/mermaidThemes';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import {
   QuestionBlockView,
@@ -59,7 +69,12 @@ import {
   STUDY_BLOCK_LIST_CLASS,
 } from '../nodeStyles';
 import { ToolbarButton } from '../toolbar/ToolbarButton';
+import {
+  ToolbarPopoverContent,
+  ToolbarPopoverRow,
+} from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
+import { setMermaidCaption } from './mermaidBlock';
 import { flashcardsFenceBody } from './shared';
 import type { NoteVisualBlock } from './VisualBlockDialog';
 
@@ -490,10 +505,13 @@ const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
 function EmbedShell({
   props,
   onEdit,
+  tools,
   children,
 }: {
   props: PlateElementProps;
   onEdit: () => void;
+  /** Block-specific controls placed before edit, copy and delete. */
+  tools?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const editor = useEditorRef();
@@ -523,53 +541,66 @@ function EmbedShell({
       }),
     ]);
   }
+  const className = cn(
+    'relative my-4 rounded-md border border-transparent p-2',
+    active && 'border-action-accent ring-2 ring-action-accent/20'
+  );
+  const body = (
+    <div
+      contentEditable={false}
+      onMouseDown={(event) => {
+        // Fields inside the embed (the caption) take their own focus.
+        if (readOnly || (event.target as Element).closest('input')) return;
+        event.preventDefault();
+        const at = locate();
+        if (at) {
+          editor.tf.select(editor.api.start(at));
+          editor.tf.focus();
+        }
+      }}
+    >
+      {children}
+    </div>
+  );
+  // Slate's void spacer is already invisible; display:none would leave the
+  // caret without a position, so focusing the block scrolled the page away.
+  const spacer = (
+    <span className="absolute top-0 left-0">{props.children}</span>
+  );
+  const actions = (
+    <>
+      <ToolbarButton label={m.action_edit()} onClick={onEdit}>
+        <EditorIcon name="pencil" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={m.action_copy()}
+        onClick={() => void copy().catch(showErrorToast)}
+      >
+        <EditorIcon name="copy" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={m.action_delete()}
+        onClick={() => {
+          const at = locate();
+          if (at) editor.tf.removeNodes({ at });
+        }}
+        variant="danger-light"
+      >
+        <EditorIcon name="trash" />
+      </ToolbarButton>
+    </>
+  );
   return (
     <Popover modal={false} open={active}>
       <PopoverAnchor asChild>
-        <PlateElement
-          {...props}
-          className={cn(
-            'relative my-4 rounded-md border border-transparent p-2',
-            active && 'border-action-accent ring-2 ring-action-accent/20'
-          )}
-        >
-          <div
-            contentEditable={false}
-            onMouseDown={(event) => {
-              if (readOnly) return;
-              event.preventDefault();
-              const at = locate();
-              if (at) {
-                editor.tf.select(editor.api.start(at));
-                editor.tf.focus();
-              }
-            }}
-          >
-            {children}
-          </div>
-          <span className="hidden">{props.children}</span>
+        <PlateElement {...props} className={className}>
+          {body}
+          {spacer}
         </PlateElement>
       </PopoverAnchor>
       <FloatingBlockToolbar aria-label={m.editor_study_actions()} open={active}>
-        <ToolbarButton label={m.action_edit()} onClick={onEdit}>
-          <EditorIcon name="pencil" />
-        </ToolbarButton>
-        <ToolbarButton
-          label={m.action_copy()}
-          onClick={() => void copy().catch(showErrorToast)}
-        >
-          <EditorIcon name="copy" />
-        </ToolbarButton>
-        <ToolbarButton
-          label={m.action_delete()}
-          onClick={() => {
-            const at = locate();
-            if (at) editor.tf.removeNodes({ at });
-          }}
-          variant="danger-light"
-        >
-          <EditorIcon name="trash" />
-        </ToolbarButton>
+        {tools}
+        {actions}
       </FloatingBlockToolbar>
     </Popover>
   );
@@ -592,30 +623,121 @@ export function VisualBlockElement(props: PlateElementProps) {
   );
 }
 
+function MermaidThemeMenu({
+  theme,
+  onTheme,
+}: {
+  theme: MermaidTheme;
+  onTheme: (theme: MermaidTheme) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover modal={false} onOpenChange={setOpen} open={open}>
+      <PopoverTrigger asChild>
+        <ToolbarButton
+          className="px-1.5 text-sm"
+          dropdown
+          label={m.mermaid_theme()}
+        >
+          <MermaidSwatch theme={theme} />
+          <span className="translate-y-px">{MERMAID_THEME_LABEL[theme]()}</span>
+        </ToolbarButton>
+      </PopoverTrigger>
+      <ToolbarPopoverContent align="end" className="w-46" open={open}>
+        {MERMAID_THEMES.map((option) => (
+          <ToolbarPopoverRow
+            icon={<MermaidSwatch theme={option} />}
+            key={option}
+            label={MERMAID_THEME_LABEL[option]()}
+            onClick={() => onTheme(option)}
+            selected={option === theme}
+          />
+        ))}
+      </ToolbarPopoverContent>
+    </Popover>
+  );
+}
+
 export function MermaidElement(props: PlateElementProps) {
   const editor = useEditorRef();
+  const readOnly = useReadOnly();
   const element = props.element as unknown as MermaidNode;
+  const theme = mermaidTheme(element.theme);
+  const caption = NodeApi.string(props.element);
   const [editing, setEditing] = useState(false);
+  const [captioning, setCaptioning] = useState(false);
+  const captionRef = useRef<HTMLInputElement>(null);
+  const locate = () => editor.api.findPath(props.element);
+  useEffect(() => {
+    if (captioning) captionRef.current?.focus();
+  }, [captioning]);
   return (
     <>
-      <EmbedShell onEdit={() => setEditing(true)} props={props}>
+      <EmbedShell
+        onEdit={() => setEditing(true)}
+        props={props}
+        tools={
+          <>
+            <MermaidThemeMenu
+              onTheme={(next) => {
+                const at = locate();
+                if (at) editor.tf.setNodes({ theme: next }, { at });
+              }}
+              theme={theme}
+            />
+            <ToolbarButton
+              label={m.editor_caption_add()}
+              onClick={() => setCaptioning(true)}
+            >
+              <EditorIcon name="closedCaption" />
+            </ToolbarButton>
+          </>
+        }
+      >
         <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
-        <Mermaid code={element.source} />
-        {NodeApi.string(props.element).trim() && (
-          <p className={MERMAID_CAPTION_CLASS}>
-            {NodeApi.string(props.element)}
-          </p>
-        )}
+        <Mermaid code={element.source} theme={theme} />
+        {readOnly
+          ? caption.trim() && <p className={MERMAID_CAPTION_CLASS}>{caption}</p>
+          : (captioning || caption) && (
+              <input
+                aria-label={m.editor_caption_add()}
+                className={cn(
+                  MERMAID_CAPTION_CLASS,
+                  'block w-full bg-transparent outline-none placeholder:text-fg-placeholder'
+                )}
+                onBlur={() => setCaptioning(false)}
+                onChange={(event) => {
+                  const at = locate();
+                  if (at) setMermaidCaption(editor, at, event.target.value);
+                }}
+                onKeyDown={(event) => {
+                  // Keep editor shortcuts (Backspace, Enter, marks) out of the field.
+                  event.stopPropagation();
+                  if (event.key === 'Enter' || event.key === 'Escape') {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                }}
+                placeholder={m.editor_caption_placeholder()}
+                ref={captionRef}
+                value={caption}
+              />
+            )}
       </EmbedShell>
       {editing && (
         <Suspense fallback={null}>
           <MermaidSourceDialog
             onClose={() => setEditing(false)}
+            onRemove={() => {
+              const at = locate();
+              if (at) editor.tf.removeNodes({ at });
+            }}
             onSave={(source) => {
-              const at = editor.api.findPath(props.element);
+              const at = locate();
               if (at) editor.tf.setNodes({ source }, { at });
             }}
             source={element.source}
+            theme={theme}
           />
         </Suspense>
       )}

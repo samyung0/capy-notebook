@@ -1,14 +1,21 @@
 import {
+  Caption,
+  CaptionPlugin,
+  CaptionTextarea,
+} from '@platejs/caption/react';
+import {
   PlaceholderPlugin,
   PlaceholderProvider,
   updateUploadHistory,
 } from '@platejs/media/react';
-import type { TPlaceholderElement } from 'platejs';
+import type { TElement, TPlaceholderElement } from 'platejs';
 import { KEYS } from 'platejs';
 import {
   PlateElement,
   type PlateElementProps,
   useEditorPlugin,
+  useEditorRef,
+  useReadOnly,
   withHOC,
 } from 'platejs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -16,10 +23,25 @@ import { useFilePicker } from 'use-file-picker';
 import { isStorageQuotaError } from '@/api/client';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import type { IconName } from '@/components/ui/Icon';
+import { Input } from '@/components/ui/Input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
+import { Separator } from '@/components/ui/Separator';
+import { userToast } from '@/components/ui/userToast';
 import {
   type MediaAssetNode,
   MediaAssetView,
+  openEditorAsset,
 } from '@/features/materials/MediaAssetView';
+import { MediaFrame } from '@/features/materials/MediaFrame';
+import {
+  YouTubeEmbed,
+  type YouTubeNode,
+  youtubeWatchUrl,
+} from '@/features/materials/YouTubeEmbed';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -32,6 +54,9 @@ import {
   mediaNodeFromAsset,
   type plateMediaType,
 } from './media';
+import { MEDIA_CAPTION_CLASS } from './nodeStyles';
+import { ToolbarButton } from './toolbar/ToolbarButton';
+import { youtubeVideoId } from './youtube';
 
 type MediaType = ReturnType<typeof plateMediaType>;
 
@@ -241,10 +266,303 @@ export const MediaPlaceholderElement = withHOC(
 
 export function MediaAssetElement(props: PlateElementProps) {
   const element = props.element as unknown as MediaAssetNode;
+  const readOnly = useReadOnly();
+  if (element.type !== KEYS.img) {
+    return (
+      <PlateElement {...props} className="my-3">
+        <MediaAssetView element={element} />
+        {props.children}
+      </PlateElement>
+    );
+  }
   return (
     <PlateElement {...props} className="my-3">
-      <MediaAssetView element={element} />
+      <MediaAssetView
+        caption={
+          <Caption
+            className={MEDIA_CAPTION_CLASS}
+            style={{ width: element.width }}
+          >
+            <CaptionTextarea
+              className="w-full resize-none overflow-hidden bg-transparent text-center outline-none placeholder:text-fg-placeholder"
+              onBlur={(event) => {
+                // An empty caption the user opened and left goes away again.
+                if (!event.currentTarget.value)
+                  props.editor.setOption(CaptionPlugin, 'visibleId', null);
+              }}
+              placeholder={m.editor_caption_placeholder()}
+            />
+          </Caption>
+        }
+        element={element}
+        onWidthChange={
+          readOnly
+            ? undefined
+            : (width) => props.editor.tf.setNodes({ width }, { at: props.path })
+        }
+        toolbar={<ImageToolbar node={props.element} readOnly={readOnly} />}
+      />
       {props.children}
     </PlateElement>
+  );
+}
+
+function ImageToolbar({
+  node,
+  readOnly,
+}: {
+  node: TElement;
+  readOnly: boolean;
+}) {
+  const editor = useEditorRef();
+  const element = node as unknown as MediaAssetNode;
+  const { workspaceId, allowExternalAssets } = useEditorRuntime();
+  const [replacing, setReplacing] = useState(false);
+
+  const replace = async (file: File) => {
+    if (!acceptsPurpose(file, 'image')) {
+      userToast({
+        title: m.editor_choose_purpose({ purpose: m.editor_image() }),
+        variant: 'error',
+      });
+      return;
+    }
+    setReplacing(true);
+    try {
+      const asset = await uploadEditorAsset(workspaceId, file, 'image');
+      const { assetId, contentType, name, sizeBytes } =
+        mediaNodeFromAsset(asset);
+      // Keep the node id, width and caption; only the picture changes. The
+      // block may have been deleted while the upload ran.
+      const at = editor.api.findPath(node);
+      if (at)
+        editor.tf.setNodes({ assetId, contentType, name, sizeBytes }, { at });
+    } catch (cause) {
+      userToast({
+        description: isStorageQuotaError(cause)
+          ? m.editor_storage_quota()
+          : cause instanceof Error
+            ? cause.message
+            : undefined,
+        title: m.editor_upload_failed(),
+        variant: 'error',
+      });
+    } finally {
+      setReplacing(false);
+    }
+  };
+
+  const { openFilePicker } = useFilePicker({
+    accept: [MEDIA_ACCEPT.image],
+    multiple: false,
+    onFilesSelected: ({ plainFiles }) => {
+      if (plainFiles[0]) void replace(plainFiles[0]);
+    },
+  });
+
+  return (
+    <>
+      {!readOnly && (
+        <ToolbarButton
+          label={m.editor_caption_add()}
+          onClick={() => {
+            // Mount the caption field, then let CaptionTextarea focus itself.
+            editor.setOption(CaptionPlugin, 'visibleId', node.id as string);
+            const path = editor.api.findPath(node);
+            setTimeout(() => {
+              if (path) editor.setOption(CaptionPlugin, 'focusEndPath', path);
+            });
+          }}
+          tooltipSide="top"
+        >
+          <EditorIcon name="closedCaption" />
+        </ToolbarButton>
+      )}
+      {element.assetId && (
+        <ToolbarButton
+          label={m.media_open_new_tab()}
+          onClick={() => openEditorAsset(element.assetId!)}
+          tooltipSide="top"
+        >
+          <EditorIcon name="externalLink" />
+        </ToolbarButton>
+      )}
+      {!readOnly && allowExternalAssets && (
+        <ToolbarButton
+          disabled={replacing}
+          label={m.editor_image_replace()}
+          onClick={openFilePicker}
+          tooltipSide="top"
+        >
+          <EditorIcon
+            className={cn(replacing && 'animate-spin')}
+            name={replacing ? 'loader' : 'pencil'}
+          />
+        </ToolbarButton>
+      )}
+    </>
+  );
+}
+
+export function YouTubeEmbedElement(props: PlateElementProps) {
+  const element = props.element as unknown as YouTubeNode;
+  const readOnly = useReadOnly();
+  const videoId =
+    typeof element.videoId === 'string' ? element.videoId : undefined;
+
+  return (
+    <PlateElement
+      {...props}
+      className={cn(
+        'my-3',
+        !videoId && 'rounded-card border border-solid-error/30'
+      )}
+    >
+      <div contentEditable={false}>
+        {videoId ? (
+          <MediaFrame
+            fill
+            onWidthChange={
+              readOnly
+                ? undefined
+                : (width) =>
+                    props.editor.tf.setNodes({ width }, { at: props.path })
+            }
+            toolbar={
+              <>
+                <ToolbarButton
+                  asChild
+                  label={m.youtube_open()}
+                  tooltipSide="top"
+                >
+                  <a
+                    href={youtubeWatchUrl(videoId)}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <EditorIcon name="externalLink" />
+                  </a>
+                </ToolbarButton>
+                {!readOnly && (
+                  <YouTubeLinkEditor
+                    onSave={(next) =>
+                      props.editor.tf.setNodes(
+                        { videoId: next },
+                        { at: props.path }
+                      )
+                    }
+                    videoId={videoId}
+                  />
+                )}
+              </>
+            }
+            width={element.width}
+          >
+            <YouTubeEmbed videoId={videoId} />
+          </MediaFrame>
+        ) : (
+          <p className="p-3 text-sm text-solid-error">
+            {m.youtube_missing_id()}
+          </p>
+        )}
+      </div>
+      {props.children}
+    </PlateElement>
+  );
+}
+
+function YouTubeLinkEditor({
+  videoId,
+  onSave,
+}: {
+  videoId: string;
+  onSave: (videoId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [invalid, setInvalid] = useState(false);
+
+  return (
+    <Popover
+      onOpenChange={(next) => {
+        setOpen(next);
+        setUrl(youtubeWatchUrl(videoId));
+        setInvalid(false);
+      }}
+      open={open}
+    >
+      <PopoverTrigger asChild>
+        <ToolbarButton
+          active={open}
+          label={m.editor_youtube_edit()}
+          tooltipSide="top"
+        >
+          <EditorIcon name="pencil" />
+        </ToolbarButton>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-80 gap-0 p-1"
+        onCloseAutoFocus={(event) => event.preventDefault()}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const next = youtubeVideoId(url);
+            if (!next) {
+              setInvalid(true);
+              return;
+            }
+            if (next !== videoId) onSave(next);
+            setOpen(false);
+          }}
+        >
+          <Input
+            aria-invalid={invalid}
+            aria-label={m.editor_youtube_link()}
+            autoFocus
+            className="h-7 py-1 font-medium text-sm"
+            leftIcon="link"
+            onChange={(event) => {
+              setUrl(event.target.value);
+              setInvalid(false);
+            }}
+            placeholder="https://youtu.be/…"
+            value={url}
+            variant="transparent"
+            wrapperClassName={cn(
+              'rounded-none px-2 focus-within:bg-surface-hover-bg/40 [&_svg]:size-4',
+              invalid && 'ring-1 ring-solid-error'
+            )}
+          />
+          <Separator className="my-1" />
+          <div className="flex items-center justify-end gap-0">
+            <ToolbarButton
+              label={m.editor_link_save()}
+              tooltipSide="top"
+              type="submit"
+            >
+              <EditorIcon name="check" />
+            </ToolbarButton>
+            <ToolbarButton
+              label={m.editor_link_cancel()}
+              onClick={() => setOpen(false)}
+              tooltipSide="top"
+              type="button"
+            >
+              <EditorIcon name="x" />
+            </ToolbarButton>
+          </div>
+          {invalid && (
+            <p
+              className="mt-1.5 px-2 pb-1 text-solid-error text-xs"
+              role="alert"
+            >
+              {m.editor_youtube_invalid()}
+            </p>
+          )}
+        </form>
+      </PopoverContent>
+    </Popover>
   );
 }

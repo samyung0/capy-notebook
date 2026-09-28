@@ -204,6 +204,20 @@ Text leaves do not need IDs. Runtime values must never be written onto nodes:
 Media nodes persist `assetId` and stable metadata. Renderers resolve signed URLs
 at runtime.
 
+Image and YouTube blocks share `MediaFrame`: a toolbar docked top-right that
+shows on hover, and in edit mode two side handles that resize the block
+symmetrically and store `width` as a percentage string (`"62%"`). Exports scale a
+percentage against the 560px image cap. In edit mode the image toolbar adds a
+caption (Plate `CaptionPlugin`; the field focuses in place and an empty one hides
+on blur), open in new tab and replace; replace keeps the node id, width and
+caption. The YouTube toolbar has open on YouTube and a link editor that accepts
+any link `youtubeVideoId` parses. View mode and read-only editors show only the
+open button.
+
+Every block embed (`img`, `video`, diagrams) must be a void node. Enter on a
+selected void opens an empty paragraph below it (`voidBlockBreak.ts`); a
+non-void embed would instead be split into two copies of itself.
+
 Standalone quiz, flashcard, mindmap, and diagram titles live only in relational
 material metadata. Their stored Plate documents contain the custom block but no
 generated title heading. `MaterialRenderProvider` gives the custom block
@@ -236,8 +250,37 @@ and fail explicitly if a required reference cannot be read. Removing the referen
 trashes the row at the next projection and undo restores it (see
 [authorization](../authorization-permissions-lifecycles.md)). Mermaid blocks
 stay inline. Mermaid, chart and graph embeds render view-only in every editor
-mode. Selecting one shows the shared floating Edit/Copy/Delete toolbar; Edit
-opens a dialog. Chart and graph nodes store their question block under `block`
+mode. Selecting a chart or graph shows the shared floating Edit/Copy/Delete
+toolbar; Edit opens a dialog.
+
+Mermaid blocks keep mermaid.js and draw in one of five presets ported from
+modern_mermaid (`mermaidPresets.ts`): Linear Light, Linear Dark, Brutalist,
+Hand Drawn and Kawaii. Every block the editor inserts locally (toolbar,
+slash command, paste, import, AI edit) and every new diagram material is
+stamped with its creator's default theme, a per-user preference in the editor
+settings (General tab, below Display size), so all viewers see the same
+theme. Server-created diagrams (generate, agent tools) carry no `theme` and
+draw in Linear Light until someone picks one. The block
+stores its preset as optional `theme` on the `mermaid` node, and the diagram
+sits on the preset's background with no border. `renderMermaid` queues renders,
+because `mermaid.initialize` is global: each render sets its own preset, and
+mermaid scopes the output CSS to the SVG id, so blocks in one note keep their
+own themes. Frontmatter config would scope too, but mermaid's sanitizer blanks
+font stacks containing hyphens. Hand Drawn gets per-diagram roughen filters
+after rendering. Preset fonts (Excalifont, vendored Latin subset in
+`src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
+`FontFace` before the render, since mermaid measures labels while drawing; a
+failed font load draws in the fallback font. Selecting the block in edit mode shows the
+shared floating block toolbar under it (as for tables and columns): theme
+dropdown, caption, edit, copy, delete. The
+caption is typed in a field under the diagram that rewrites the
+`mermaid_caption` text with `voids: true`. The node stays void, so a DOM
+selection inside it maps to the caption element; `fixMermaidSelection` moves
+such points onto the caption text. The edit dialog shows source beside a live
+preview in the block's theme; a parse error appears under the source while the
+preview keeps the last diagram that parsed.
+
+Chart and graph nodes store their question block under `block`
 and a single empty text child; graphs export their SVG before saving. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
@@ -253,8 +296,8 @@ creates the DOCX or ZIP. No conversion endpoint or server job is involved.
 
 DOM-dependent figures are requested sequentially from the main thread and cached
 per export. KaTeX generates markup in the worker; the main thread lays it out and
-rasterizes it. Charts include a visible legend and data table. Mermaid uses the
-existing renderer. Figure rasterization uses an isolated iframe so html2canvas
+rasterizes it. Charts include a visible legend and data table. Mermaid renders
+through `renderMermaid` in the default theme; exports drop the block theme. Figure rasterization uses an isolated iframe so html2canvas
 does not clone the mounted editor. Completion, failure or editor unmount terminates
 the worker; duplicate clicks are disabled, and errors appear as a toast.
 

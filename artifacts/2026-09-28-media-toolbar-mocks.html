@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Media Toolbar Mocks</title>
+<style>
+:root{--page:#f4f6f5;--card:#fff;--fg:#222;--fg2:#4b4b4b;--muted:#6b6b6b;--line:#d6d6d6;--divider:#e6e6e6;--accent:#8c7bd9;color-scheme:light}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--fg);font:500 14px/1.45 "Fustat",system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 64px}
+h1{font-size:24px;font-weight:800;margin:0 0 6px;letter-spacing:-.02rem}
+h2{font-size:18px;font-weight:800;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+.lede{color:var(--fg2);margin:0 0 12px;max-width:780px}
+.key{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:6px;background:var(--fg);color:#fff;font-size:15px}
+section{margin-top:32px;padding-top:20px;border-top:1px solid var(--divider)}
+.pts{margin:0 0 14px;padding-left:18px;color:var(--fg2)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:760px){.grid{grid-template-columns:minmax(0,1fr)}}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.06rem;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+.frame{background:var(--card);border-radius:12px;padding:20px 24px}
+.media{position:relative;margin:0 auto}
+.media img{display:block;width:100%;height:auto;border-radius:18px}
+.cap{margin:8px 0 0;text-align:center;font-size:14px;color:var(--muted)}
+.cap-edit{color:var(--fg)}
+.ph{color:#9a9a9a}
+.caret{display:inline-block;width:1.5px;height:1.1em;background:var(--fg);vertical-align:-3px;margin-right:1px}
+/* resize handles */
+.hd{position:absolute;top:50%;width:6px;height:48px;margin-top:-24px;border-radius:999px;background:rgba(255,255,255,.95);border:1px solid rgba(0,0,0,.35);box-shadow:0 1px 3px rgba(0,0,0,.25);cursor:ew-resize}
+.hd-l{left:8px}.hd-r{right:8px}
+.hd.drag{background:#fff;border-color:var(--accent);box-shadow:0 0 0 3px rgba(140,123,217,.35)}
+.resizing{outline:2px solid var(--accent);outline-offset:2px;border-radius:18px}
+.wlabel{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:12px;font-weight:700;color:#fff;background:rgba(20,20,20,.72);border-radius:6px;padding:2px 8px}
+/* youtube */
+.yt-frame{position:relative;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:radial-gradient(circle at 60% 60%,#c2466b 0,#6b2340 30%,#2a1320 70%)}
+.yt-title{position:absolute;top:14px;left:16px;right:120px;color:#fff;font-weight:700;font-size:15px;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.yt-play{position:absolute;left:50%;top:50%;width:68px;height:48px;margin:-24px 0 0 -34px;border-radius:12px;background:#ff0033}
+.yt-play::after{content:"";position:absolute;left:28px;top:14px;border-left:16px solid #fff;border-top:10px solid transparent;border-bottom:10px solid transparent}
+/* toolbars */
+.tb{position:absolute;top:10px;right:10px;display:flex;align-items:center}
+.tb-btn{display:grid;place-items:center;width:34px;height:32px;cursor:pointer}
+.tb-A{background:rgba(24,24,24,.78);border-radius:8px;color:#fff;padding:2px}
+.tb-A .tb-btn+.tb-btn{border-left:1px solid rgba(255,255,255,.18)}
+.tb-A .tb-btn.on{background:rgba(255,255,255,.18);border-radius:6px}
+.tb-B{background:var(--card);border:1px solid var(--line);border-radius:6px;color:var(--fg2);padding:2px;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+.tb-B .tb-btn{width:30px;height:28px;border-radius:4px}
+.tb-B .tb-btn.on{background:#ece6f6;color:#5b4aa8}
+.tb-C{gap:6px}
+.tb-C .tb-btn{width:32px;height:32px;border-radius:6px;background:rgba(24,24,24,.72);color:#fff}
+.tb-C .tb-btn.on{background:#5b4aa8}
+/* url popover */
+.pop{position:absolute;top:50px;right:10px;width:min(340px,calc(100% - 20px));background:var(--card);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:12px}
+.pop label{display:block;font-size:12px;font-weight:700;color:var(--fg2);margin-bottom:6px}
+.inp{border:1px solid var(--accent);box-shadow:0 0 0 3px rgba(140,123,217,.2);border-radius:6px;padding:6px 8px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:clip}
+.pop-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:10px}
+.btn{font-size:13px;font-weight:600;padding:5px 12px;border-radius:6px}
+.btn.primary{background:#222;color:#fff}
+.btn.ghost{color:var(--fg2)}
+.shared{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:760px){.shared{grid-template-columns:minmax(0,1fr)}}
+.decide ol{padding-left:20px;color:var(--fg2)}
+.decide li{margin:6px 0}
+code{font-size:12px;background:#eef0ef;border-radius:4px;padding:1px 4px}
+</style>
+</head>
+<body>
+<main>
+<h1>Image and YouTube blocks: hover toolbar and resize handles</h1>
+<p class="lede">The toolbar sits in the top-right corner and shows while the block is hovered in edit mode. Clicks on it never reach the YouTube player. Image buttons: caption, open in new tab, replace (pen). YouTube buttons: open on YouTube, edit link (pen). Light theme only.</p>
+
+<section>
+  <h2>Shared by every option</h2>
+  <ul class="pts">
+    <li>Two white pill handles on the left and right edges, vertically centred, shown on hover. Dragging either one resizes the block symmetrically around the centre and saves the width as a percentage.</li>
+    <li>Caption: clicking the caption button shows an empty caption line under the image and puts the cursor in it. No popover. An empty caption disappears again when you click away.</li>
+    <li>The "Open on YouTube" link under the video goes away; it moves into the toolbar.</li>
+  </ul>
+  <div class="shared">
+    <div><div class="lbl">Dragging the right handle</div>
+<div class="frame">
+  <div class="media hovered resizing" style="width:62%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <span class="hd hd-l"></span><span class="hd hd-r drag"></span>
+    <span class="wlabel">62%</span>
+  </div>
+  <p class="cap">Animal cell: nucleus, mitochondria and ribosomes</p>
+</div></div>
+  </div>
+</section>
+
+
+<section id="opt-A">
+  <h2><span class="key">A</span>Dark segmented bar, like your reference</h2>
+  <ul class="pts"><li>One dark translucent bar with dividers between buttons. Reads on any image or video.</li><li>The active button (caption focused, link editor open) gets a lighter fill.</li></ul>
+  <div class="grid">
+    <div><div class="lbl">Image, hovered</div>
+<div class="frame">
+  <div class="media hovered" style="width:100%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <div class="tb tb-A"><span class="tb-btn" title="Add caption"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12C2 8.02033 2 6.03049 3.0528 4.70201C3.22119 4.48953 3.40678 4.29302 3.60746 4.11473C4.86213 3 6.74142 3 10.5 3H13.5C17.2586 3 19.1379 3 20.3925 4.11473C20.5932 4.29302 20.7788 4.48953 20.9472 4.70201C22 6.03049 22 8.02033 22 12C22 15.9797 22 17.9695 20.9472 19.298C20.7788 19.5105 20.5932 19.707 20.3925 19.8853C19.1379 21 17.2586 21 13.5 21H10.5C6.74142 21 4.86213 21 3.60746 19.8853C3.40678 19.707 3.22119 19.5105 3.0528 19.298C2 17.9695 2 15.9797 2 12Z"/><path d="M10.5 9H10C9.06812 9 8.60218 9 8.23463 9.15224C7.74458 9.35523 7.35523 9.74458 7.15224 10.2346C7 10.6022 7 11.0681 7 12C7 12.9319 7 13.3978 7.15224 13.7654C7.35523 14.2554 7.74458 14.6448 8.23463 14.8478C8.60218 15 9.06812 15 10 15H10.5M17 9H16.5C15.5681 9 15.1022 9 14.7346 9.15224C14.2446 9.35523 13.8552 9.74458 13.6522 10.2346C13.5 10.6022 13.5 11.0681 13.5 12C13.5 12.9319 13.5 13.3978 13.6522 13.7654C13.8552 14.2554 14.2446 14.6448 14.7346 14.8478C15.1022 15 15.5681 15 16.5 15H17"/></svg></span><span class="tb-btn" title="Open in new tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Replace image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+  </div>
+  <p class="cap">Animal cell: nucleus, mitochondria and ribosomes</p>
+</div></div>
+    <div><div class="lbl">Image, after clicking caption</div>
+<div class="frame">
+  <div class="media hovered" style="width:100%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <div class="tb tb-A"><span class="tb-btn on" title="Add caption"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12C2 8.02033 2 6.03049 3.0528 4.70201C3.22119 4.48953 3.40678 4.29302 3.60746 4.11473C4.86213 3 6.74142 3 10.5 3H13.5C17.2586 3 19.1379 3 20.3925 4.11473C20.5932 4.29302 20.7788 4.48953 20.9472 4.70201C22 6.03049 22 8.02033 22 12C22 15.9797 22 17.9695 20.9472 19.298C20.7788 19.5105 20.5932 19.707 20.3925 19.8853C19.1379 21 17.2586 21 13.5 21H10.5C6.74142 21 4.86213 21 3.60746 19.8853C3.40678 19.707 3.22119 19.5105 3.0528 19.298C2 17.9695 2 15.9797 2 12Z"/><path d="M10.5 9H10C9.06812 9 8.60218 9 8.23463 9.15224C7.74458 9.35523 7.35523 9.74458 7.15224 10.2346C7 10.6022 7 11.0681 7 12C7 12.9319 7 13.3978 7.15224 13.7654C7.35523 14.2554 7.74458 14.6448 8.23463 14.8478C8.60218 15 9.06812 15 10 15H10.5M17 9H16.5C15.5681 9 15.1022 9 14.7346 9.15224C14.2446 9.35523 13.8552 9.74458 13.6522 10.2346C13.5 10.6022 13.5 11.0681 13.5 12C13.5 12.9319 13.5 13.3978 13.6522 13.7654C13.8552 14.2554 14.2446 14.6448 14.7346 14.8478C15.1022 15 15.5681 15 16.5 15H17"/></svg></span><span class="tb-btn" title="Open in new tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Replace image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+  </div>
+  <p class="cap cap-edit"><span class="caret"></span><span class="ph">Add a caption</span></p>
+</div></div>
+    <div><div class="lbl">YouTube, hovered</div>
+<div class="frame">
+  <div class="media yt hovered">
+    <div class="yt-frame">
+      <div class="yt-title">Biology: Cell Structure I Nucleus Medical Media</div>
+      <div class="yt-play"></div>
+    </div>
+    <div class="tb tb-A"><span class="tb-btn" title="Open on YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Edit link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+    
+  </div>
+</div></div>
+    <div><div class="lbl">YouTube, after clicking the pen</div>
+<div class="frame">
+  <div class="media yt hovered">
+    <div class="yt-frame">
+      <div class="yt-title">Biology: Cell Structure I Nucleus Medical Media</div>
+      <div class="yt-play"></div>
+    </div>
+    <div class="tb tb-A"><span class="tb-btn" title="Open on YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn on" title="Edit link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+    <div class="pop">
+      <label>YouTube link</label>
+      <div class="inp">https://www.youtube.com/watch?v=URUJD5NEXC8<span class="caret"></span></div>
+      <div class="pop-actions"><span class="btn ghost">Cancel</span><span class="btn primary">Save</span></div>
+    </div>
+  </div>
+</div></div>
+  </div>
+</section>
+<section id="opt-B">
+  <h2><span class="key">B</span>Light app toolbar</h2>
+  <ul class="pts"><li>White bar with a thin border and small shadow, same look as the editor's other popovers.</li><li>Active button uses the accent tint.</li></ul>
+  <div class="grid">
+    <div><div class="lbl">Image, hovered</div>
+<div class="frame">
+  <div class="media hovered" style="width:100%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <div class="tb tb-B"><span class="tb-btn" title="Add caption"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12C2 8.02033 2 6.03049 3.0528 4.70201C3.22119 4.48953 3.40678 4.29302 3.60746 4.11473C4.86213 3 6.74142 3 10.5 3H13.5C17.2586 3 19.1379 3 20.3925 4.11473C20.5932 4.29302 20.7788 4.48953 20.9472 4.70201C22 6.03049 22 8.02033 22 12C22 15.9797 22 17.9695 20.9472 19.298C20.7788 19.5105 20.5932 19.707 20.3925 19.8853C19.1379 21 17.2586 21 13.5 21H10.5C6.74142 21 4.86213 21 3.60746 19.8853C3.40678 19.707 3.22119 19.5105 3.0528 19.298C2 17.9695 2 15.9797 2 12Z"/><path d="M10.5 9H10C9.06812 9 8.60218 9 8.23463 9.15224C7.74458 9.35523 7.35523 9.74458 7.15224 10.2346C7 10.6022 7 11.0681 7 12C7 12.9319 7 13.3978 7.15224 13.7654C7.35523 14.2554 7.74458 14.6448 8.23463 14.8478C8.60218 15 9.06812 15 10 15H10.5M17 9H16.5C15.5681 9 15.1022 9 14.7346 9.15224C14.2446 9.35523 13.8552 9.74458 13.6522 10.2346C13.5 10.6022 13.5 11.0681 13.5 12C13.5 12.9319 13.5 13.3978 13.6522 13.7654C13.8552 14.2554 14.2446 14.6448 14.7346 14.8478C15.1022 15 15.5681 15 16.5 15H17"/></svg></span><span class="tb-btn" title="Open in new tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Replace image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+  </div>
+  <p class="cap">Animal cell: nucleus, mitochondria and ribosomes</p>
+</div></div>
+    <div><div class="lbl">Image, after clicking caption</div>
+<div class="frame">
+  <div class="media hovered" style="width:100%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <div class="tb tb-B"><span class="tb-btn on" title="Add caption"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12C2 8.02033 2 6.03049 3.0528 4.70201C3.22119 4.48953 3.40678 4.29302 3.60746 4.11473C4.86213 3 6.74142 3 10.5 3H13.5C17.2586 3 19.1379 3 20.3925 4.11473C20.5932 4.29302 20.7788 4.48953 20.9472 4.70201C22 6.03049 22 8.02033 22 12C22 15.9797 22 17.9695 20.9472 19.298C20.7788 19.5105 20.5932 19.707 20.3925 19.8853C19.1379 21 17.2586 21 13.5 21H10.5C6.74142 21 4.86213 21 3.60746 19.8853C3.40678 19.707 3.22119 19.5105 3.0528 19.298C2 17.9695 2 15.9797 2 12Z"/><path d="M10.5 9H10C9.06812 9 8.60218 9 8.23463 9.15224C7.74458 9.35523 7.35523 9.74458 7.15224 10.2346C7 10.6022 7 11.0681 7 12C7 12.9319 7 13.3978 7.15224 13.7654C7.35523 14.2554 7.74458 14.6448 8.23463 14.8478C8.60218 15 9.06812 15 10 15H10.5M17 9H16.5C15.5681 9 15.1022 9 14.7346 9.15224C14.2446 9.35523 13.8552 9.74458 13.6522 10.2346C13.5 10.6022 13.5 11.0681 13.5 12C13.5 12.9319 13.5 13.3978 13.6522 13.7654C13.8552 14.2554 14.2446 14.6448 14.7346 14.8478C15.1022 15 15.5681 15 16.5 15H17"/></svg></span><span class="tb-btn" title="Open in new tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Replace image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+  </div>
+  <p class="cap cap-edit"><span class="caret"></span><span class="ph">Add a caption</span></p>
+</div></div>
+    <div><div class="lbl">YouTube, hovered</div>
+<div class="frame">
+  <div class="media yt hovered">
+    <div class="yt-frame">
+      <div class="yt-title">Biology: Cell Structure I Nucleus Medical Media</div>
+      <div class="yt-play"></div>
+    </div>
+    <div class="tb tb-B"><span class="tb-btn" title="Open on YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Edit link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+    
+  </div>
+</div></div>
+    <div><div class="lbl">YouTube, after clicking the pen</div>
+<div class="frame">
+  <div class="media yt hovered">
+    <div class="yt-frame">
+      <div class="yt-title">Biology: Cell Structure I Nucleus Medical Media</div>
+      <div class="yt-play"></div>
+    </div>
+    <div class="tb tb-B"><span class="tb-btn" title="Open on YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn on" title="Edit link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+    <div class="pop">
+      <label>YouTube link</label>
+      <div class="inp">https://www.youtube.com/watch?v=URUJD5NEXC8<span class="caret"></span></div>
+      <div class="pop-actions"><span class="btn ghost">Cancel</span><span class="btn primary">Save</span></div>
+    </div>
+  </div>
+</div></div>
+  </div>
+</section>
+<section id="opt-C">
+  <h2><span class="key">C</span>Separate dark buttons</h2>
+  <ul class="pts"><li>No shared bar. Each button is its own small dark square, so it covers less of the media.</li><li>Active button turns accent purple.</li></ul>
+  <div class="grid">
+    <div><div class="lbl">Image, hovered</div>
+<div class="frame">
+  <div class="media hovered" style="width:100%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <div class="tb tb-C"><span class="tb-btn" title="Add caption"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12C2 8.02033 2 6.03049 3.0528 4.70201C3.22119 4.48953 3.40678 4.29302 3.60746 4.11473C4.86213 3 6.74142 3 10.5 3H13.5C17.2586 3 19.1379 3 20.3925 4.11473C20.5932 4.29302 20.7788 4.48953 20.9472 4.70201C22 6.03049 22 8.02033 22 12C22 15.9797 22 17.9695 20.9472 19.298C20.7788 19.5105 20.5932 19.707 20.3925 19.8853C19.1379 21 17.2586 21 13.5 21H10.5C6.74142 21 4.86213 21 3.60746 19.8853C3.40678 19.707 3.22119 19.5105 3.0528 19.298C2 17.9695 2 15.9797 2 12Z"/><path d="M10.5 9H10C9.06812 9 8.60218 9 8.23463 9.15224C7.74458 9.35523 7.35523 9.74458 7.15224 10.2346C7 10.6022 7 11.0681 7 12C7 12.9319 7 13.3978 7.15224 13.7654C7.35523 14.2554 7.74458 14.6448 8.23463 14.8478C8.60218 15 9.06812 15 10 15H10.5M17 9H16.5C15.5681 9 15.1022 9 14.7346 9.15224C14.2446 9.35523 13.8552 9.74458 13.6522 10.2346C13.5 10.6022 13.5 11.0681 13.5 12C13.5 12.9319 13.5 13.3978 13.6522 13.7654C13.8552 14.2554 14.2446 14.6448 14.7346 14.8478C15.1022 15 15.5681 15 16.5 15H17"/></svg></span><span class="tb-btn" title="Open in new tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Replace image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+  </div>
+  <p class="cap">Animal cell: nucleus, mitochondria and ribosomes</p>
+</div></div>
+    <div><div class="lbl">Image, after clicking caption</div>
+<div class="frame">
+  <div class="media hovered" style="width:100%">
+    <img alt="Animal cell diagram" src="data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20960%20540%22%3E%3Crect%20width%3D%22960%22%20height%3D%22540%22%20fill%3D%22%23e9f3ee%22/%3E%3Cellipse%20cx%3D%22480%22%20cy%3D%22270%22%20rx%3D%22360%22%20ry%3D%22210%22%20fill%3D%22%23cfe8dc%22%20stroke%3D%22%232f7d56%22%20stroke-width%3D%2210%22/%3E%3Ccircle%20cx%3D%22440%22%20cy%3D%22250%22%20r%3D%2286%22%20fill%3D%22%23b9a8ec%22%20stroke%3D%22%235b4aa8%22%20stroke-width%3D%228%22/%3E%3Ccircle%20cx%3D%22420%22%20cy%3D%22235%22%20r%3D%2226%22%20fill%3D%22%235b4aa8%22/%3E%3Cellipse%20cx%3D%22660%22%20cy%3D%22200%22%20rx%3D%2270%22%20ry%3D%2234%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22640%22%20cy%3D%22350%22%20rx%3D%2262%22%20ry%3D%2230%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Cellipse%20cx%3D%22270%22%20cy%3D%22360%22%20rx%3D%2258%22%20ry%3D%2228%22%20fill%3D%22%23ffcc61%22%20stroke%3D%22%23a9772a%22%20stroke-width%3D%226%22/%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%22190%22%20r%3D%2214%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22560%22%20cy%3D%22420%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3Ccircle%20cx%3D%22760%22%20cy%3D%22280%22%20r%3D%2212%22%20fill%3D%22%23f35a71%22/%3E%3C/svg%3E">
+    <div class="tb tb-C"><span class="tb-btn on" title="Add caption"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12C2 8.02033 2 6.03049 3.0528 4.70201C3.22119 4.48953 3.40678 4.29302 3.60746 4.11473C4.86213 3 6.74142 3 10.5 3H13.5C17.2586 3 19.1379 3 20.3925 4.11473C20.5932 4.29302 20.7788 4.48953 20.9472 4.70201C22 6.03049 22 8.02033 22 12C22 15.9797 22 17.9695 20.9472 19.298C20.7788 19.5105 20.5932 19.707 20.3925 19.8853C19.1379 21 17.2586 21 13.5 21H10.5C6.74142 21 4.86213 21 3.60746 19.8853C3.40678 19.707 3.22119 19.5105 3.0528 19.298C2 17.9695 2 15.9797 2 12Z"/><path d="M10.5 9H10C9.06812 9 8.60218 9 8.23463 9.15224C7.74458 9.35523 7.35523 9.74458 7.15224 10.2346C7 10.6022 7 11.0681 7 12C7 12.9319 7 13.3978 7.15224 13.7654C7.35523 14.2554 7.74458 14.6448 8.23463 14.8478C8.60218 15 9.06812 15 10 15H10.5M17 9H16.5C15.5681 9 15.1022 9 14.7346 9.15224C14.2446 9.35523 13.8552 9.74458 13.6522 10.2346C13.5 10.6022 13.5 11.0681 13.5 12C13.5 12.9319 13.5 13.3978 13.6522 13.7654C13.8552 14.2554 14.2446 14.6448 14.7346 14.8478C15.1022 15 15.5681 15 16.5 15H17"/></svg></span><span class="tb-btn" title="Open in new tab"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Replace image"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+  </div>
+  <p class="cap cap-edit"><span class="caret"></span><span class="ph">Add a caption</span></p>
+</div></div>
+    <div><div class="lbl">YouTube, hovered</div>
+<div class="frame">
+  <div class="media yt hovered">
+    <div class="yt-frame">
+      <div class="yt-title">Biology: Cell Structure I Nucleus Medical Media</div>
+      <div class="yt-play"></div>
+    </div>
+    <div class="tb tb-C"><span class="tb-btn" title="Open on YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn" title="Edit link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+    
+  </div>
+</div></div>
+    <div><div class="lbl">YouTube, after clicking the pen</div>
+<div class="frame">
+  <div class="media yt hovered">
+    <div class="yt-frame">
+      <div class="yt-title">Biology: Cell Structure I Nucleus Medical Media</div>
+      <div class="yt-play"></div>
+    </div>
+    <div class="tb tb-C"><span class="tb-btn" title="Open on YouTube"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3H18C19.4142 3 20.1213 3 20.5607 3.43934C21 3.87868 21 4.58579 21 6V9M20 4L11 13"/><path d="M20 13C20 16.7712 20 18.6569 18.8284 19.8284C17.6569 21 15.7712 21 12 21H11C7.22876 21 5.34315 21 4.17157 19.8284C3 18.6569 3 16.7712 3 13V12C3 8.22876 3 6.34315 4.17157 5.17157C5.34315 4 7.22876 4 11 4"/></svg></span><span class="tb-btn on" title="Edit link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15.2141 5.98239L16.6158 4.58063C17.39 3.80646 18.6452 3.80646 19.4194 4.58063C20.1935 5.3548 20.1935 6.60998 19.4194 7.38415L18.0176 8.78591M15.2141 5.98239L6.98023 14.2163C5.93493 15.2616 5.41226 15.7842 5.05637 16.4211C4.70047 17.058 4.3424 18.5619 4 20C5.43809 19.6576 6.94199 19.2995 7.57889 18.9436C8.21579 18.5877 8.73844 18.0651 9.78375 17.0198L18.0176 8.78591M15.2141 5.98239L18.0176 8.78591"/><path d="M11 20H17"/></svg></span></div>
+    <span class="hd hd-l"></span><span class="hd hd-r"></span>
+    <div class="pop">
+      <label>YouTube link</label>
+      <div class="inp">https://www.youtube.com/watch?v=URUJD5NEXC8<span class="caret"></span></div>
+      <div class="pop-actions"><span class="btn ghost">Cancel</span><span class="btn primary">Save</span></div>
+    </div>
+  </div>
+</div></div>
+  </div>
+</section>
+
+<section class="decide">
+  <h2>What I need from you</h2>
+  <ol>
+    <li>Pick A, B or C for the toolbar.</li>
+    <li>Pen on an image: I made it "replace image" (opens the file picker, keeps the width and caption). OK?</li>
+    <li>Pen on YouTube opens a small link editor with Save. Paste any youtube.com or youtu.be link; a link that isn't YouTube shows an error and doesn't save.</li>
+    <li>Handles and toolbar only show in edit mode; view mode stays clean. OK?</li>
+  </ol>
+</section>
+</main>
+</body>
+</html>

@@ -1,6 +1,8 @@
+import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 
-export type CalloutVariant = 'danger' | 'info' | 'success' | 'warning';
+/** Shared by note callouts and chat `Callout` blocks. */
+export type CalloutVariant = 'danger' | 'info' | 'success' | 'tip' | 'warning';
 
 export const CALLOUT_VARIANTS: readonly {
   label: string;
@@ -14,15 +16,21 @@ export const CALLOUT_VARIANTS: readonly {
   },
   {
     get label() {
-      return m.editor_callout_success();
+      return m.editor_callout_tip();
     },
-    value: 'success',
+    value: 'tip',
   },
   {
     get label() {
       return m.editor_callout_warning();
     },
     value: 'warning',
+  },
+  {
+    get label() {
+      return m.editor_callout_success();
+    },
+    value: 'success',
   },
   {
     get label() {
@@ -38,11 +46,23 @@ export function normalizeCalloutVariant(value: unknown): CalloutVariant {
     : 'info';
 }
 
+/** Container shape shared by note and chat callouts; pair with a variant class. */
+export const CALLOUT_CONTAINER_CLASS = 'rounded-lg border';
+
 export const CALLOUT_VARIANT_CLASS: Record<CalloutVariant, string> = {
-  danger: 'border-solid-error bg-tint-error text-tint-error-fg',
-  info: 'border-solid-info bg-tint-info text-tint-info-fg',
-  success: 'border-solid-success bg-tint-success text-tint-success-fg',
-  warning: 'border-solid-warning bg-tint-warning text-tint-warning-fg',
+  danger: 'border-solid-error/45 bg-tint-error text-tint-error-fg',
+  info: 'border-solid-info/45 bg-tint-info text-tint-info-fg',
+  success: 'border-solid-success/45 bg-tint-success text-tint-success-fg',
+  tip: 'border-solid-accent-1/45 bg-tint-accent-1 text-tint-accent-1-fg',
+  warning: 'border-solid-warning/45 bg-tint-warning text-tint-warning-fg',
+};
+
+export const CALLOUT_ICON: Record<CalloutVariant, IconName> = {
+  danger: 'error',
+  info: 'info',
+  success: 'circleCheck',
+  tip: 'sparkles',
+  warning: 'error',
 };
 
 export const CODE_BLOCK_LANGUAGES = [

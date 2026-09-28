@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import {
+  DEFAULT_MERMAID_THEME,
+  type MermaidTheme,
+  mermaidTheme,
+} from '@/features/materials/mermaidThemes';
 import { m } from '@/i18n';
 
 /* ============================================================
@@ -181,9 +186,12 @@ export type NoteDisplayWidth = 'half' | 'full';
 interface NoteEditorPrefsState {
   displayWidth: NoteDisplayWidth;
   enabled: EnabledMap;
+  /** Stamped on each mermaid block this user creates. */
+  mermaidTheme: MermaidTheme;
   setAll: (value: boolean) => void;
   setDisplayWidth: (displayWidth: NoteDisplayWidth) => void;
   setEnabled: (enabled: EnabledMap) => void;
+  setMermaidTheme: (theme: MermaidTheme) => void;
   toggle: (id: WidgetGroupId) => void;
 }
 
@@ -192,6 +200,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
     (set) => ({
       displayWidth: 'half',
       enabled: { ...ALL_ENABLED },
+      mermaidTheme: DEFAULT_MERMAID_THEME,
       setAll: (value) =>
         set(() => ({
           enabled: WIDGET_GROUPS.reduce((acc, g) => {
@@ -201,6 +210,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
         })),
       setDisplayWidth: (displayWidth) => set({ displayWidth }),
       setEnabled: (enabled) => set({ enabled: { ...enabled } }),
+      setMermaidTheme: (mermaidTheme) => set({ mermaidTheme }),
       toggle: (id) =>
         set((s) => ({ enabled: { ...s.enabled, [id]: !s.enabled[id] } })),
     }),
@@ -213,6 +223,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
           ...p,
           displayWidth: p.displayWidth === 'full' ? 'full' : 'half',
           enabled: mergeEnabledGroups(p.enabled),
+          mermaidTheme: mermaidTheme(p.mermaidTheme),
         };
       },
       name: 'capy-note-editor-prefs',

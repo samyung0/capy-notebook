@@ -141,13 +141,9 @@ export async function renderExportFigure(figure: Figure): Promise<ExportImage> {
   document.body.append(host);
   try {
     if (figure.type === 'mermaid') {
-      const { getMermaid } = await import('@/features/materials/Mermaid');
-      const mermaid = await getMermaid();
-      const { svg } = await mermaid.render(
-        `export-${crypto.randomUUID()}`,
-        figure.source,
-        host
-      );
+      // Exports drop the block's theme and draw in the default one.
+      const { renderMermaid } = await import('@/features/materials/Mermaid');
+      const { svg } = await renderMermaid(figure.source, undefined, host);
       host.innerHTML = svg;
     } else throw new Error('Unexpected DOM figure.');
     const svg = host.querySelector('svg');

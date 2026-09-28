@@ -9,6 +9,7 @@ import {
   type QuizElement,
   quizNode,
 } from '@/features/materials/document';
+import type { CalloutVariant } from '@/features/notes/richBlockConfig';
 
 /** Lightweight builders for authored Plate note fixtures. */
 
@@ -71,7 +72,7 @@ export function quote(value: string | InlineChild[]) {
 
 export function callout(
   value: string | InlineChild[],
-  variant: 'info' | 'success' | 'warning' | 'danger' = 'info'
+  variant: CalloutVariant = 'info'
 ) {
   return {
     children: [p(value)],
@@ -128,6 +129,18 @@ export function inlineEquation(texExpression: string) {
     children: [text('')],
     texExpression,
     type: 'inline_equation' as const,
+  };
+}
+
+export function image(assetId: string, name: string, caption?: string) {
+  return {
+    assetId,
+    ...(caption && { caption: [{ text: caption }] }),
+    children: [text('')],
+    contentType: 'image/svg+xml',
+    id: assetId,
+    name,
+    type: 'img' as const,
   };
 }
 
