@@ -7,11 +7,11 @@ rules, badges and formulas set as pictures arrive as images
 - Sliver: a side under 1 pt, or the short side under 1% of the long side (ODL's
   own "subtle" test). dvips rules drawn as 1x1 stencil masks, spacer pixels;
   dropped.
-- Formula picture: at most 2.5 body lines tall, on a text line with text beside
-  it (inline) or alone between two text lines (display), and passing the six
-  precision tests (``_not_formula``). Retyped ``equation``: a display formula's
-  text is PLACEHOLDER, an inline one is spliced into its paragraph by
-  ``place_inline`` or else carries PLACEHOLDER itself.
+- Formula picture (unrotated pages only): at most 2.5 body lines tall, on a text
+  line with text beside it (inline) or alone between two text lines (display),
+  and passing the six precision tests (``_not_formula``). Retyped ``equation``:
+  a display formula's text is PLACEHOLDER, an inline one is spliced into its
+  paragraph by ``place_inline`` or else carries PLACEHOLDER itself.
 - Repeat: the same rendered picture on REPEAT_PAGES or more pages (licence
   badges, logos, icons, chapter bars). Kept as ``discarded`` page furniture,
   unless it is a glyph-sized formula among different words each time.
@@ -44,9 +44,10 @@ def _rect(block: dict, page: pymupdf.Page) -> pymupdf.Rect:
     return pymupdf.Rect(x0 * w, y0 * h, x1 * w, y1 * h)
 
 
-def _page_facts(page: pymupdf.Page) -> tuple[list, float, float, list]:
+def _page_facts(page: pymupdf.Page) -> tuple[list, float, float, list] | None:
     """Horizontal text lines with a letter or digit, their median height, the
-    median font size, and the page's words."""
+    median font size, and the page's words; None when the page has no such line
+    (no picture there is a formula)."""
     lines, sizes = [], []
     for block in page.get_text("dict", flags=TEXT_FLAGS)["blocks"]:
         for line in block.get("lines", []):
@@ -55,9 +56,10 @@ def _page_facts(page: pymupdf.Page) -> tuple[list, float, float, list]:
                 continue
             lines.append((pymupdf.Rect(line["bbox"]), text))
             sizes.extend(s["size"] for s in line["spans"] if s["text"].strip())
-    body = statistics.median(r.height for r, _ in lines) if lines else 12.0
-    size = statistics.median(sizes) if sizes else 10.0
-    return lines, body, size, page.get_text("words")
+    if not lines:
+        return None
+    body = statistics.median(r.height for r, _ in lines)
+    return lines, body, statistics.median(sizes), page.get_text("words")
 
 
 def _formula_kind(
@@ -161,12 +163,18 @@ def classify(
         if path.is_file():
             digests[index] = hashlib.sha1(path.read_bytes()).hexdigest()
             pages[digests[index]].add(blocks[index]["page_idx"])
-    facts: dict[int, tuple] = {}
+    facts: dict[int, tuple | None] = {}
 
-    def page_facts(number: int) -> tuple:
-        if number not in facts:
-            facts[number] = _page_facts(document[number])
-        return facts[number]
+    def page_facts(page: pymupdf.Page) -> tuple | None:
+        # Only the current page's text stays in memory, as in evidence.py. A
+        # rotated page is skipped like the other stages do: ODL's boxes and
+        # PyMuPDF's text are in different frames there.
+        if page.rotation:
+            return None
+        if page.number not in facts:
+            facts.clear()
+            facts[page.number] = _page_facts(page)
+        return facts[page.number]
 
     def repeated(index: int) -> bool:
         return index in digests and len(pages[digests[index]]) >= REPEAT_PAGES
@@ -176,10 +184,10 @@ def classify(
     # as x or dx sits among different words each time.
     contexts: dict[str, Counter] = defaultdict(Counter)
     for index in sorted(images):
-        if repeated(index):
-            number = blocks[index]["page_idx"]
-            rect = _rect(blocks[index], document[number])
-            contexts[digests[index]][_words_beside(rect, page_facts(number)[3])] += 1
+        page = document[blocks[index]["page_idx"]]
+        if repeated(index) and (page_fact := page_facts(page)):
+            beside = _words_beside(_rect(blocks[index], page), page_fact[3])
+            contexts[digests[index]][beside] += 1
     fixed = {
         key
         for key, seen in contexts.items()
@@ -196,10 +204,13 @@ def classify(
         short, long = sorted((rect.width, rect.height))
         if short < MIN_SIDE_PT or short < SUBTLE_ASPECT * long:
             continue
-        page_fact = page_facts(block["page_idx"])
-        kind = _formula_kind(rect, [r for r, _ in page_fact[0]], page_fact[1])
-        if repeated(index) and (
-            digests[index] in fixed or rect.height > 1.6 * page_fact[2]
+        kind = None
+        if page_fact := page_facts(page):
+            kind = _formula_kind(rect, [r for r, _ in page_fact[0]], page_fact[1])
+        if (
+            kind
+            and repeated(index)
+            and (digests[index] in fixed or rect.height > 1.6 * page_fact[2])
         ):
             kind = None
         if kind and _not_formula(page, rect, page_fact):
@@ -242,9 +253,11 @@ def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         host = hosts[0]
         page = document[number]
         if number not in words:
+            words.clear()  # only the current page, as in classify
             words[number] = page.get_text("words")
         left, right = _words_beside(_rect(picture, page), words[number])
-        pattern = re.escape(left or "") + r"(\s*)" + re.escape(right or "")
+        # Whole words only: the pair never matches inside a longer word.
+        pattern = rf"(?<!\S){re.escape(left or '')}(\s*){re.escape(right or '')}(?!\S)"
         field = "text" if host["type"] == "text" else "list_items"
         values = (
             [host["text"]] if field == "text" else list(host.get("list_items") or [])
@@ -255,8 +268,8 @@ def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             after[id(host)].append(picture)
             continue
         i, m = hits[0]
-        spliced = values[i][: m.start(1)] + f" {PLACEHOLDER} " + values[i][m.end(1) :]
-        values[i] = re.sub(r"  +", " ", spliced)
+        head, tail = values[i][: m.start(1)].rstrip(" "), values[i][m.end(1) :]
+        values[i] = " ".join(p for p in (head, PLACEHOLDER, tail.lstrip(" ")) if p)
         host[field] = values[0] if field == "text" else values
     moved = {id(p) for pictures in after.values() for p in pictures}
     out: list[dict] = []

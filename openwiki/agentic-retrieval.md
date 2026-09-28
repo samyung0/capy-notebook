@@ -511,10 +511,12 @@ Parser v12 (decisions 2026-09-25 and 2026-09-28; evidence in
 formula-picture rule to picture triage; the chunker stays at v12:
 
 - **Formula pictures** (`pictures.classify`). A picture that is not a sliver,
-  at most 2.5 body lines tall (the page's median line height), is inline when
-  it overlaps a line of at most two body lines by half its height, is no taller
-  than 1.8 times that line and has the line's text within 1.5 line heights
-  beside it; it is display when it sits alone between two body lines within 3
+  on a page without `/Rotate` (rotated pages are skipped, as in the other
+  refinement stages) and at most 2.5 body lines tall (the page's median line
+  height), is inline when it overlaps a line of at most two body lines by half
+  its height, is no taller than 1.8 times that line and either has the line's
+  text within 1.5 line heights beside it or lies within the line's width; it is
+  display when it sits alone between two body lines within 3
   body lines above and below. Lines taller than two body lines never count:
   MuPDF merges a diagram's labels into one tall line (MIT Strang). Six
   precision tests, each on a detected picture, keep it an image: a caption
@@ -523,15 +525,16 @@ formula-picture rule to picture triage; the chunker stays at v12:
   render of its box, under 0.3% dark ink (blank), over 45% mid-tone or darker
   (key caps, badges) or over 35% of its non-white pixels coloured. A repeated
   picture stays a formula only when it is at most 1.6 times the page's median
-  font size and its neighbouring words differ in most placements; otherwise
-  it is furniture as before. A detected formula becomes an `equation` block
+  font size and its neighbouring words differ in most placements (counted on
+  unrotated pages with text); otherwise it is furniture as before. Page text is
+  read one page at a time. A detected formula becomes an `equation` block
   with `_picture: inline` or `display`. A display formula's text is
   `[formula]`.
 - **Inline placement** (`pictures.place_inline`, after table recovery). The
   placeholder is spliced into the one text or list block holding the
   picture's centre, between the words beside the picture on its line, when
-  that pair (or the one word, at a line end) occurs once in the block.
-  Otherwise the picture carries `[formula]` as its own block (decision
+  that pair (or the one word, at a line end) occurs once in the block as whole
+  words; spaces are tidied only at the splice. Otherwise the picture carries `[formula]` as its own block (decision
   2026-09-29): right after its one host paragraph, or where it sits in reading
   order when no single paragraph holds it (a table cell, a diagram).
 
@@ -541,7 +544,9 @@ leaves the figure list. Parsed books keep their chunks; only new parses gain
 placeholders. Nothing transcribes formula pictures at parse time: the chat and
 curate prompts say `[formula]` marks a formula printed as a picture, to be
 read from a page capture when a question needs it and never presented as
-content. Known gaps, accepted (decision 2026-09-29): the detector is about 76%
+content, and the generate prompt (flashcards, quizzes, diagrams, mindmaps)
+says never to copy it into a generated item and to skip items whose answer
+needs that formula. Known gaps, accepted (decision 2026-09-29): the detector is about 76%
 precise on the regression set (Rice logos, grey calculator key caps and a few
 real figures pass the tests), and music notation and score excerpts are not
 caught by the six tests, so they can lose their figure records. Stencil-mask
@@ -2273,7 +2278,8 @@ sources and user-supplied values need no capture. Both prompts say `[formula]`
 in passage, excerpt or material text marks a formula printed as a picture
 (parser v12): the page is captured when a question needs it, and the
 placeholder is never presented as content. This prompt rule does not add
-capture to the standalone `/generate` workflow. The
+capture to the standalone `/generate` workflow, whose prompt instead never
+copies `[formula]` into an item and skips items that need the formula. The
 render lives server-side because the pixels must be inside the provider request
 the Python agent builds mid-turn.
 
@@ -2389,7 +2395,9 @@ is fixed, and the gateway must persist a parseable artifact.
 2. One `produce` call receives the bounded, evenly sampled context. There is no
    unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy,
    flashcard text, and diagram labels match the user's Settings language.
-   JSON keys and Mermaid syntax stay English.
+   JSON keys and Mermaid syntax stay English. The grounding rule also says
+   `[formula]` marks a formula printed as a picture (parser v12): it is never
+   copied into an item, and items whose answer needs that formula are skipped.
 3. Kind-specific normalizers (`extract_json`, `strip_fence`,
    `normalize_questions`) coerce the model reply into the shapes the Go
    persistence layer already expects: flashcards, quiz questions, mindmap /

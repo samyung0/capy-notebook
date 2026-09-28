@@ -4,8 +4,8 @@ The stage order is the lab's ``refined`` variant and must not be reshuffled:
 font repair, Java, cell styles, adaptation, picture triage, column order,
 hidden-OCR order, heading context, then table context, footer ancestry, list
 geometry, glyph repairs, exponents, column continuations, split ligatures,
-page numbers, heading levels, source tables, negation composition, and finally
-RapidOCR lines for pages without a text layer.
+page numbers, heading levels, source tables, inline formula placeholders,
+negation composition, and finally RapidOCR lines for pages without a text layer.
 """
 
 from __future__ import annotations

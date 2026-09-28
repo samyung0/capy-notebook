@@ -39,7 +39,9 @@ def generate_messages(
     """One material request: the grounding rules, then the kind's instruction."""
     system = (
         "You create study materials strictly from the provided source passages. "
-        "Do not invent facts that are not in them. Follow the requested output "
+        "Do not invent facts that are not in them. `[formula]` in a passage marks "
+        "a formula printed as a picture: never copy it into a generated item, and "
+        "skip items whose answer needs that formula. Follow the requested output "
         "format exactly, with no commentary around it.\n"
         + response_language_rule(locale)
     )

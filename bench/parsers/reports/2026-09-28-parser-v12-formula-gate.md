@@ -7,11 +7,13 @@ refinement", the six tests and the tall-line guard in Question 1), ported as dec
 on 2026-09-25 and 2026-09-28. The chunker stays at v12. Nothing has a version gate or
 a legacy path (decision 2026-09-25).
 
-- **Detection** (`pictures.classify`). A picture that is not a sliver, at most 2.5
+- **Detection** (`pictures.classify`). A picture that is not a sliver, on a page
+  without `/Rotate` (skipped like the other stages, since review fix 1), at most 2.5
   body lines tall, is inline when it overlaps a line of at most two body lines by half
-  its height, is no taller than 1.8 times that line and has the line's text within
-  1.5 line heights; it is display when it sits alone between two body lines. Lines
-  taller than two body lines never count.
+  its height, is no taller than 1.8 times that line and either has the line's text
+  within 1.5 line heights or lies within the line's width; it is display when it
+  sits alone between two body lines. Lines taller than two body lines never count.
+  Page text is read one page at a time.
 - **The six tests.** Each runs on a detected picture only. A caption line just
   below, a side under 3 pt, a word drawn on it, or in a render of its box under 0.3%
   dark ink, over 45% mid-tone or darker, or over 35% of its non-white pixels coloured
@@ -21,15 +23,18 @@ a legacy path (decision 2026-09-25).
   placements; otherwise it is furniture, as in v7.
 - **Text.** A detected formula becomes an `equation` block (`_picture: inline` or
   `display`). A display formula's text is `[formula]`. `pictures.place_inline`,
-  after table recovery, splices `[formula]` into the one text or list block holding
-  an inline picture, between the words beside it, when that pair occurs once there.
+  after table recovery and before negation composition, splices `[formula]` into
+  the one text or list block holding an inline picture, between the words beside it,
+  when that pair occurs once there as whole words, tidying spaces only at the splice.
   Otherwise the picture carries `[formula]` as its own block, right after its one
   host paragraph, or in its reading-order place when no single paragraph holds it
   (added 2026-09-29, below).
 - **Prompts.** Chat and curate each say that `[formula]` marks a formula printed as
   a picture, that the agent captures the page when a question needs that formula,
   and that it never presents the placeholder as content (`lab/playground/configs/curate.json`
-  mirrors curate).
+  mirrors curate). The generate prompt (flashcards, quizzes, diagrams, mindmaps)
+  says never to copy `[formula]` into a generated item and to skip items whose answer
+  needs that formula (review fix 2).
 
 The code matches the prototype's `pictures.py` plus the six tests exactly as
 `formula_features.py` and `formula_eval.py` computed them; the pixel shares come from
@@ -262,6 +267,55 @@ ONNX thread count (8 to 4); their text is identical. So the gate measures what i
 committed, and neither arm needed a rebuild. The merged run's server parse time over
 the 66 documents, with the host otherwise quiet, was 2,592 s against v11's 2,550 s.
 
+## Review fixes (2026-09-29)
+
+A review of `0f3a56c6` and `d7027604` found no blocker. The developer delegated its
+fixes (`human/agentic-retrieval.md`, "parser v12 review fixes"):
+
+1. **Rotated pages are skipped** in the formula rule and the repeat-context count, as
+   in the other stages that match ODL boxes against PyMuPDF text: there `page.rect`
+   is rotated while the text is not, so a box landed on the wrong line and the six
+   tests rendered the wrong region.
+2. **The generate prompt** says `[formula]` marks a formula printed as a picture,
+   never to copy it into a generated item, and to skip items whose answer needs it.
+3. **Whole words.** The pair around an inline picture matches only on word
+   boundaries, so a placeholder never lands inside a word ("the is" no longer matches
+   "atheist").
+4. **Spaces are tidied only at the splice.** v12 collapsed double spaces across the
+   whole host.
+5. **Page text is read one page at a time** in `classify` and `place_inline`.
+6. **No fallback defaults:** a page without text lines has no formula pictures.
+
+Checked with a fresh parse of the ten extra books and all 66 gate documents (`v12r`,
+throwaway container of `pilot-v12` with the fixed `parser/` mounted) and the library
+replay:
+
+- **Gate, v11 → v12r:** 5,031 of 5,031 anchors and 448 roots kept, 0 body blocks
+  change ancestry, wrong-path chunks 389 → 389, 0 of 26 witnesses change, 6 of 6
+  scope cases pass. Against the committed v12 (`v12m`) the only differences are the
+  14 unplaced pictures of `d7027604` and one LibreOffice paragraph that keeps its
+  original spacing. Census Income 2024 is identical: its 17 rotated pages hold no
+  pictures.
+- **Extra books, v12c → v12r:** 40 more inline pictures are placed in text (Brief
+  Calculus 27, Introductory Business Statistics 13), so 40 fewer carry their own
+  block after a paragraph (242 → 202). They are pictures at a line's start or end
+  whose one neighbour is a standalone comma or full stop ("whose derivative is
+  [formula] ."): the old pattern matched every comma in the paragraph and counted the
+  pair as repeated. Detections, figure records (3,328), anchors (943) and roots (69)
+  are unchanged, and no block changes except the ones gaining a placement.
+- **Exactness.** Every block holding a placeholder now equals v11's text once the
+  placeholders are cut out, byte for byte apart from the whitespace at each splice:
+  682 of 682 blocks in the extra books and 4 of 4 on the gate. Before the fix, 27 of
+  667 had double spaces collapsed elsewhere.
+- **Library replay:** the same 3,063 detections; in-text placements 1,692 → 1,738
+  (Brief Calculus +27, Introductory Business Statistics +13, Concepts of Biology +6),
+  own blocks after a paragraph 292 → 246, in place 125. No library book has a
+  detection on a rotated page.
+
+**Known limit.** Placement runs after the furniture keys are frozen, so a repeated
+line that gained a placeholder would no longer match its key and would be indexed on
+every page; no case exists in the gate, the extra books or the library replay.
+
 ## Tests
 
 - New in `pipeline/tests/test_odl_refine.py`: each of the six tests alone keeps an
@@ -271,13 +325,18 @@ the 66 documents, with the host otherwise quiet, was 2,592 s against v11's 2,550
   words, one whose word pair repeats in its paragraph carries `[formula]` itself right
   after that paragraph, and one with no host paragraph carries it in place; a repeated
   glyph among new words stays a formula while a repeat beside the same words and a
-  repeat taller than 1.6 times the font size become furniture.
+  repeat taller than 1.6 times the font size become furniture. With the review
+  fixes: a list item takes a placeholder while spacing elsewhere in it is kept, a
+  picture whose words occur only inside a longer word ("atheist") moves after the
+  list instead of splitting the word, and a picture on a rotated page stays an
+  image.
 - Each fails on a mutated rule: the six tests removed (6 fail), either tall-line
   guard removed, the fixed-context or glyph-height clause removed, all repeats
-  discarded, placement disabled, the unplaced picture not moved, or either
-  unplaced case left without its placeholder.
-- `pnpm run test:pipeline:offline` on the merged tree, before and after the
-  2026-09-29 change: 858 passed, 5 failed outside
+  discarded, placement disabled, the unplaced picture not moved, either unplaced
+  case left without its placeholder, list items not searched, word boundaries
+  removed, spaces collapsed across the host, or the rotation skip removed.
+- `pnpm run test:pipeline:offline` on the merged tree: 858 passed before the review
+  fixes and 860 after, 5 failed outside
   this change (Windows: a prompt_toolkit console, an encoding in the quiz golden, and
   three `test_parser_java.py` cases that use `signal.SIGKILL`), with the five modules
   that import `fcntl` and `test_parser_app.py` left out.
@@ -297,7 +356,10 @@ questions on 2026-09-29 (`human/agentic-retrieval.md`):
    two BOJ chart pieces and the ten real figures above stay as they are. Known gap:
    music notation and score excerpts are not caught by the six tests and can lose
    their figure records.
-3. **Shipping.** v12 ships by push to main and a rebuilt builder parser
+3. **Review fixes** (section above): rotated pages skipped, the generate prompt rule,
+   whole-word matching, splice-only spacing, one page of text at a time, no fallback
+   defaults. Placement after the furniture freeze stays, as a known limit.
+4. **Shipping.** v12 ships by push to main and a rebuilt builder parser
    (`capy-kb-parser:pilot-v12`, v11 kept as backup, the container left stopped while
    intake is paused); the ingest host takes it with the next release. Parse time
    ships as measured above.
@@ -315,7 +377,10 @@ Raw outputs, scripts and sheets are in the ignored
 `gate-diff.json`, `extras-diff.json`, `lib-replay.json`, `precision.log`, the
 2026-09-29 check (`snapshots/parser-v12c`, `extras/v12c/`, `v12c/` for the three gate
 documents, `unplaced/`, `extras-diff-v12c-vs-v12.json`, `gate-diff-v12c-vs-v12.json`,
-`lib-replay-v12c.json`, `extras/compare-v12m-v12c.json`, `unplaced/compare-v12m-v12c.json`) and
+`lib-replay-v12c.json`, `extras/compare-v12m-v12c.json`, `unplaced/compare-v12m-v12c.json`),
+the review-fix check (`snapshots/parser-v12r`, `v12r/`, `extras/v12r/`,
+`compare-v11-v12r.json`, `gate-diff-v12r-vs-v12m.json`, `extras-diff-v12r-vs-v12c.json`,
+`splice-v12c.log`, `splice-v12r.log`, `lib-replay-v12r.json`) and
 `sheets/` (`brief_0`, `eei_0`, `bstat_0`, `extras-other_0`, `gate_0..2`,
 `lib-small_0..2`, `lib-mid_0..1`, each with its item list).
 
@@ -348,6 +413,10 @@ uv run python $S/same_arms.py $GATE/extras v12 v12m
 uv run python $S/pictures_diff.py $GATE/extras v12m v12c $GATE/extras-diff-v12c-vs-v12.json
 uv run python $S/pictures_diff.py $GATE/unplaced v12m v12c $GATE/gate-diff-v12c-vs-v12.json
 uv run python $S/lib_replay.py $GATE/lib-replay-v12c.json
+uv run python $S/pictures_diff.py $GATE v12m v12r $GATE/gate-diff-v12r-vs-v12m.json
+uv run python $S/pictures_diff.py $GATE/extras v12c v12r $GATE/extras-diff-v12r-vs-v12c.json
+uv run python $S/splice_check.py $GATE/extras v11h v12r v12c
+uv run python $S/lib_replay.py $GATE/lib-replay-v12r.json
 uv run python $S/contact_sheet.py $GATE/extras v12 $GATE/sheets brief 36 brief-calculus
 uv run python $S/contact_sheet.py $GATE v12 $GATE/sheets gate 0
 docker exec <container> python /tmp/phases.py /app/parser /tmp/src/book.pdf   # timing

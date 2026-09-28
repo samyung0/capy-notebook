@@ -794,6 +794,54 @@ def test_formula_pictures_are_placed_in_text_or_as_their_own_block(
     ]
 
 
+def test_formula_pictures_in_list_items_match_whole_words(tmp_path: Path) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_text((60, 100), "Set x to", fontsize=10)
+    page.insert_text((123, 100), "zero now.", fontsize=10)
+    page.insert_text((60, 114), "and the", fontsize=10)
+    page.insert_text((123, 114), "is known.", fontsize=10)
+    first, second = (98, 90, 118, 102), (98, 104, 118, 116)
+    for rect in (first, second):
+        _bars(page, rect)
+    # "the is" occurs only inside "atheist": the second picture is not spliced
+    # mid-word but carries its own placeholder after the list. Spacing away
+    # from the splice is kept.
+    items = ["Set x to zero now.  Next.", "An atheist view."]
+    listed = {"type": "list", "list_items": items, "page_idx": 0}
+    blocks = [
+        _picture(tmp_path, "first.png", 0, first),
+        _picture(tmp_path, "second.png", 0, second),
+        {**listed, "bbox": _grid((60, 89, 170, 117))},
+    ]
+    result = pictures.classify(blocks, document, tmp_path)
+    result = pictures.place_inline(result, document)
+    assert [(b["type"], b.get("text"), b.get("img_path")) for b in result] == [
+        ("equation", "", "first.png"),
+        ("list", None, None),
+        ("equation", "[formula]", "second.png"),
+    ]
+    assert result[1]["list_items"] == ["Set x to [formula] zero now.  Next.", items[1]]
+
+
+def test_formula_pictures_skip_rotated_pages(tmp_path: Path) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_text((60, 100), "Let the rate be", fontsize=10)
+    page.insert_text((175, 100), "per hour today.", fontsize=10)
+    page.set_rotation(90)
+    # Ink where a clip of INLINE renders on the rotated page.
+    _bars(page, tuple(pymupdf.Rect(INLINE) * page.derotation_matrix))
+    # PyMuPDF's text stays unrotated while page.rect turns 800 x 600; a box that
+    # lands on the line and on ink in that mixed frame must not become a formula.
+    x0, y0, x1, y1 = INLINE
+    block = {
+        **_picture(tmp_path, "p.png", 0, INLINE),
+        "bbox": [x0 / 0.8, y0 / 0.6, x1 / 0.8, y1 / 0.6],
+    }
+    assert pictures.classify([block], document, tmp_path) == [block]
+
+
 def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words(
     tmp_path: Path,
 ) -> None:
