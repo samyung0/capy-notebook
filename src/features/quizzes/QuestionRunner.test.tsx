@@ -27,7 +27,7 @@ it('reviews the graded snapshot with marks, scheme, fixed-unit answer and collap
     />
   );
   expect(html).toContain('2 / 2');
-  expect(html.match(/1 \/ 1/g)).toHaveLength(2);
+  expect(html.match(/text-solid-success/g)).toHaveLength(2);
   expect(html.indexOf('Marking scheme')).toBeLessThan(
     html.indexOf('Your answer')
   );

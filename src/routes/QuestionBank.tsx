@@ -183,7 +183,9 @@ export default function QuestionBank() {
             <Link aria-label={m.action_back()} to="/create">
               <Icon name="navigationBack" size={20} />
             </Link>
-            <h1 className="t-subtitle">{m.question_ui_question_bank()}</h1>
+            <h1 className="t-large-card-title">
+              {m.question_ui_question_bank()}
+            </h1>
           </div>
         }
         titleClassName="shrink-0"
@@ -220,14 +222,21 @@ export default function QuestionBank() {
               wrapperClassName="mb-5"
             />
             {exams.map((exam) => (
-              <div className="mb-6" key={exam.id}>
-                <h2 className="t-subtitle mb-3">{exam.label}</h2>
+              <div className="mb-4" key={exam.id}>
+                <h2 className="px-1.5 pt-3 pb-1 font-bold text-fg-muted text-xs">
+                  {exam.label}
+                </h2>
                 {exam.subjects.map((subject) => (
-                  <details className="mb-3" key={subject.id} open>
-                    <summary className="cursor-pointer font-medium">
+                  <details className="group" key={subject.id} open>
+                    <summary className="flex cursor-pointer list-none items-center gap-2 px-1.5 py-2.5 font-bold [&::-webkit-details-marker]:hidden">
+                      <Icon
+                        className="-rotate-90 text-fg-muted transition-transform group-open:rotate-0"
+                        name="chevronDown"
+                        size={14}
+                      />
                       {subject.label}
                     </summary>
-                    <ul className="mt-2 space-y-1">
+                    <ul>
                       {subject.topics.map((item) => (
                         <li key={item.id}>
                           <button
@@ -235,14 +244,15 @@ export default function QuestionBank() {
                               item.id === topicId ? 'page' : undefined
                             }
                             className={cn(
-                              'flex w-full items-start justify-between gap-3 rounded-input px-3 py-2 text-left text-sm hover:bg-surface-hover-bg',
-                              item.id === topicId && 'bg-tint-accent-1'
+                              'flex min-h-11 w-full items-center justify-between gap-3 rounded-input py-2 pr-2.5 pl-6 text-left hover:bg-surface-hover-bg',
+                              item.id === topicId &&
+                                'bg-tint-accent-1 text-tint-accent-1-fg'
                             )}
                             onClick={() => topic(item.id)}
                             type="button"
                           >
                             <span>{item.label}</span>
-                            <span className="shrink-0 text-fg-muted">
+                            <span className="shrink-0 text-fg-muted text-xs tabular-nums">
                               {mode === 'edit' ? item.reviewed + '/' : ''}
                               {item.total}
                             </span>
@@ -275,7 +285,7 @@ export default function QuestionBank() {
           >
             <div className="space-y-3 border-divider border-b p-4">
               <Button
-                className="xl:hidden"
+                className="-ml-4 xl:hidden"
                 iconLeft="navigationBack"
                 onClick={() => setShowTopics(true)}
                 size="sm"
@@ -283,7 +293,7 @@ export default function QuestionBank() {
               >
                 {m.question_ui_topics()}
               </Button>
-              <h2 className="font-semibold">
+              <h2 className="t-subtitle">
                 {selectedTopic?.label ?? m.question_ui_choose_a_topic()}
               </h2>
               {topicId && (
@@ -436,8 +446,8 @@ export default function QuestionBank() {
                         </ToolbarGroup>
                       )}
                     </Toolbar>
-                    <div className="min-h-0 flex-1 overflow-auto p-4 md:p-6 xl:p-8">
-                      <div className="mx-auto max-w-4xl">
+                    <div className="min-h-0 flex-1 overflow-auto px-5 py-6 lg:px-8 lg:py-7">
+                      <div className="mx-auto max-w-180">
                         <QuestionView
                           question={detail.question}
                           questionNumber={detail.position}
@@ -543,22 +553,22 @@ function QuestionRow({
     <button
       aria-current={selected ? 'page' : undefined}
       className={cn(
-        'flex w-full gap-3 border-divider border-b p-4 text-left hover:bg-surface-hover-bg',
-        selected && 'bg-tint-accent-1'
+        'flex w-full gap-2 border-divider border-b px-4 py-3.5 text-left text-sm hover:bg-surface-hover-bg',
+        selected && 'bg-surface-hover-bg'
       )}
       onClick={onClick}
       type="button"
     >
-      <span className="text-fg-muted">{row.position}.</span>
+      <span className="w-6 shrink-0 font-bold">{row.position}.</span>
       <span className="min-w-0 flex-1">
-        <span className="line-clamp-3 text-sm">
+        <span className="line-clamp-2">
           {row.preview ? (
             <TextView text={row.preview} />
           ) : (
             m.question_ui_question_number({ number: row.position })
           )}
         </span>
-        <span className="mt-2 flex items-center gap-2 text-fg-muted text-xs">
+        <span className="mt-1 flex items-center gap-2 text-fg-muted text-xs">
           {row.marks === 1
             ? m.question_ui_one_mark()
             : m.question_ui_marks({ count: row.marks })}

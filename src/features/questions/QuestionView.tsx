@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
+import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { TextView } from './TextView';
@@ -70,7 +71,7 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
             ? block.image.url
             : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`;
       return (
-        <figure>
+        <figure className="mx-auto w-fit max-w-full">
           <img
             alt={block.description}
             className={cn(
@@ -224,19 +225,19 @@ export function QuestionView({
         )}
       </div>
     ));
+  // 1A: number, part label and text share one column grid so every text line
+  // starts at the same x; marks stay smaller than the question text.
   return (
-    <article className="min-w-0 space-y-5">
-      <header className="flex items-baseline gap-3">
-        {questionNumber != null && (
-          <span className="font-semibold">{questionNumber}.</span>
-        )}
-        {firstInHeader && (
-          <div className="min-w-0 flex-1">
-            {blocks(question.stem.slice(0, 1), {})}
-          </div>
-        )}
+    <article className="min-w-0 space-y-4 text-[15px] leading-relaxed">
+      <header className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-baseline gap-x-2">
+        <span className="font-bold">
+          {questionNumber != null && `${questionNumber}.`}
+        </span>
+        <div className="min-w-0">
+          {firstInHeader && blocks(question.stem.slice(0, 1), {})}
+        </div>
         {showTotalMarks && (
-          <span className="ml-auto shrink-0 text-fg-muted text-sm">
+          <span className="whitespace-nowrap text-fg-muted text-xs">
             {questionMarks(question) === 1
               ? m.question_ui_one_mark()
               : m.question_ui_marks({ count: questionMarks(question) })}
@@ -250,7 +251,12 @@ export function QuestionView({
         )}
       >
         {question.stem.length > Number(firstInHeader) && (
-          <div className="min-w-0 space-y-4">
+          <div
+            className={cn(
+              'min-w-0 space-y-4',
+              question.layout === 'paper' && 'pl-9'
+            )}
+          >
             {blocks(
               question.stem.slice(Number(firstInHeader)),
               {},
@@ -261,10 +267,10 @@ export function QuestionView({
         <ol className="min-w-0 space-y-6">
           {question.parts.map((part, index) => (
             <li
-              className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-3"
+              className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] gap-x-2"
               key={part.id}
             >
-              <span className="text-fg-muted">
+              <span className="font-bold">
                 {question.labels === 'letters'
                   ? `(${String.fromCharCode(97 + index)})`
                   : `${index + 1}.`}
@@ -273,15 +279,17 @@ export function QuestionView({
                 {blocks(part.blocks, { partId: part.id })}
                 {renderAnswer ? renderAnswer(part) : <Choices part={part} />}
                 {review && 'markscheme' in part && (
-                  <>
-                    <h4 className="font-semibold text-sm">
+                  <div className="space-y-1 text-fg-secondary text-sm">
+                    <h4 className="font-semibold text-fg-muted text-xs">
                       {m.question_ui_answer()}
                     </h4>
-                    <AnswerView part={part} />
-                    <h4 className="font-semibold text-sm">
+                    <div>
+                      <AnswerView part={part} />
+                    </div>
+                    <h4 className="pt-2 font-semibold text-fg-muted text-xs">
                       {m.question_ui_marking_scheme()}
                     </h4>
-                    <ul className="list-inside list-disc space-y-1">
+                    <ul className="space-y-1">
                       {part.markscheme.map((item, i) => (
                         <li key={i}>
                           <TextView text={item} />
@@ -290,10 +298,10 @@ export function QuestionView({
                     </ul>
                     {part.solution.length > 0 && (
                       <details>
-                        <summary className="cursor-pointer font-semibold text-sm">
+                        <summary className="cursor-pointer pt-2 font-semibold">
                           {m.question_ui_worked_solution()}
                         </summary>
-                        <div className="mt-3 space-y-4">
+                        <div className="mt-2 space-y-3">
                           {blocks(part.solution, {
                             partId: part.id,
                             solution: true,
@@ -301,10 +309,10 @@ export function QuestionView({
                         </div>
                       </details>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
-              <span className="whitespace-nowrap text-fg-muted text-sm">
+              <span className="whitespace-nowrap pt-1 text-fg-muted text-xs">
                 {renderMarks ? renderMarks(part) : `[${partMarks(part)}]`}
               </span>
             </li>
@@ -326,33 +334,41 @@ export function QuestionReview({
       questionNumber={questionNumber}
       renderAnswer={(part) =>
         'markscheme' in part ? (
-          <div className="space-y-3">
-            <h4 className="font-semibold text-sm">
+          <div className="space-y-1">
+            <h4 className="font-semibold text-fg-muted text-xs">
               {m.question_ui_marking_scheme()}
             </h4>
-            <ul className="space-y-1">
+            <ul className="space-y-1 text-sm">
               {part.markscheme.map((item, i) => (
-                <li className="flex items-baseline gap-3" key={i}>
-                  <span aria-hidden className="text-fg-muted">
-                    •
-                  </span>
+                <li className="flex items-baseline gap-4" key={i}>
                   <TextView className="min-w-0 flex-1" text={item} />
                   {part.answer.type !== 'open' && part.awarded != null && (
-                    <span className="shrink-0 whitespace-nowrap text-fg-muted">
-                      {part.awarded === partMarks(part) ? '1' : '0'} / 1
+                    <span
+                      className={cn(
+                        'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
+                        part.awarded === partMarks(part)
+                          ? 'text-solid-success'
+                          : 'text-solid-error'
+                      )}
+                    >
+                      <Icon
+                        name={part.awarded === partMarks(part) ? 'check' : 'x'}
+                        size={12}
+                      />
+                      {part.awarded === partMarks(part) ? '1' : '0'}
                     </span>
                   )}
                 </li>
               ))}
             </ul>
-            <h4 className="font-semibold text-sm">
+            <h4 className="pt-2 font-semibold text-fg-muted text-xs">
               {m.question_ui_your_answer()}
             </h4>
             {renderAnswer?.(part)}
             {part.awardReason && <p>{part.awardReason}</p>}
             {part.solution.length > 0 && (
               <details>
-                <summary className="cursor-pointer">
+                <summary className="cursor-pointer pt-2 font-semibold text-fg-secondary text-sm">
                   {m.question_ui_worked_solution()}
                 </summary>
                 <div className="space-y-3 pt-3">

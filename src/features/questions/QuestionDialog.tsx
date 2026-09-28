@@ -600,8 +600,8 @@ function QuestionDialogSession({
           type: blockLabels[block.type](),
         })}
         className={cn(
-          'relative border border-transparent p-1',
-          active && 'my-12 border-action-accent ring-1 ring-action-accent'
+          'relative outline-offset-4',
+          active && 'my-12 outline-2 outline-action-accent'
         )}
         onClick={() => setSelected({ kind: 'block', location })}
         onKeyDown={(event) => {
@@ -614,7 +614,7 @@ function QuestionDialogSession({
           aria-label={m.question_ui_block_actions()}
           className="scroll-fade-x max-w-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           open={active}
-          positionClassName="absolute bottom-full left-0 z-10 mb-2 max-w-full"
+          positionClassName="absolute bottom-full left-0 z-10 mb-3 max-w-full"
           role="toolbar"
         >
           <ToolbarGroup>
@@ -815,7 +815,7 @@ function QuestionDialogSession({
             >
               {m.question_ui_back_to_question()}
             </Button>
-            <h3 className="font-semibold">
+            <h3 className="t-large-card-title">
               {editing.kind === 'part'
                 ? m.question_ui_answer_and_marking_scheme()
                 : blockLabels[editing.block.type]()}
@@ -1003,7 +1003,7 @@ function QuestionDialogSession({
               </div>
               <div
                 className={cn(
-                  'min-w-0 md:block',
+                  'min-w-0 px-1.5 md:block',
                   mobileTab !== 'preview' && 'hidden'
                 )}
               >

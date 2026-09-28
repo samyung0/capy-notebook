@@ -269,10 +269,11 @@ function Attempt({ quizId }: { quizId: string }) {
             answers={answers}
             onChange={(partId, a) => setAnswers((s) => ({ ...s, [partId]: a }))}
             question={q}
+            questionNumber={idx + 1}
           />
         </div>
 
-        <div className="flex items-center justify-between border-divider border-t pt-4">
+        <div className="flex items-center justify-between pt-4">
           <Button
             disabled={idx === 0}
             iconLeft="navigationBack"
