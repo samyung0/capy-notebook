@@ -766,6 +766,53 @@ test('an Office state that names no seed is refused on every read, a candidate i
   expect(
     Buffer.from(await sources.stateOf({ ...read, format: 'text' })).toString()
   ).toBe('whole');
+  // A publication whose captured candidate names no seed never reaches the
+  // engine.
+  const [oldSource, newSource] = [Buffer.from('old'), Buffer.from('parsed')];
+  const digest = (bytes: Uint8Array) =>
+    createHash('sha256').update(bytes).digest('hex');
+  const candidates = new SourceDocumentStore(
+    {
+      query: vi.fn(async () => ({
+        rows: [
+          {
+            source_sha256: digest(newSource),
+            state: Buffer.from('whole'),
+            state_seed_sha256: null,
+          },
+        ],
+      })),
+    } as unknown as Pool,
+    'http://api',
+    'secret'
+  );
+  vi.spyOn(candidates, 'request').mockResolvedValue({
+    sourceURL: 'http://new-source',
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async (url: string) =>
+        new Response(url === read.sourceURL ? oldSource : newSource)
+    )
+  );
+  const runtime = vi.spyOn(officeRuntime, 'runOffice');
+  await expect(
+    candidates.rebasePublication(
+      {
+        ...read,
+        baseSourceSHA256: digest(oldSource),
+        checkpoint: 11,
+        epoch: 1,
+        fileId: 'f',
+        format: 'docx',
+        pendingEffects: [],
+        stateSeedSHA256: 'c'.repeat(64),
+      } as unknown as SourceSession,
+      { checkpoint: 10, epoch: 1, jobId: 'job', leaseToken: 'lease' }
+    )
+  ).rejects.toBeInstanceOf(SourceStateRebuildError);
+  expect(runtime).not.toHaveBeenCalled();
 });
 
 test('a save starts from the durable copy while the row names it, and reads the session again once it does not', async () => {

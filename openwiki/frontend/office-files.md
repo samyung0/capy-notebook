@@ -165,7 +165,13 @@ cells and paragraph ids; PPTX slides, shapes, stories, paragraphs, and
 comments by slide, author, text and time), DOCX comments by the numeric id the
 export writes for them (`commentOoxmlIds`), and an entity created later whose
 id the seed already uses is renamed. A DOCX comment anchor the later edits
-wrote lands through the alignment of the latest story with the rebased one.
+wrote lands through the alignment of the latest story with the rebased one,
+made once per story in a rebase. The reference field the export writes at the
+end of a comment made in the editor is a seed unit the later edits never
+held, so the alignment treats it as transparent: text typed or deleted beside
+it lands beside it, and an anchor may span it. Such field units are also left
+out of the DOCX effects baseline, where the comment's own entry carries the
+change.
 The rebase fails explicitly when a later edit or such an anchor touches
 content the export wrote differently, when a restored slide, shape or
 paragraph needs source XML the export dropped (Undo of a deletion made before
@@ -194,11 +200,27 @@ break units).
 
 The DOCX editor never puts paragraph text ahead of a table, block content
 control or page or column break in one paragraph slot, as in Word (the render
-bridge refuses that state): Delete at the end of a paragraph just before such
-a block, or Backspace that would merge into it, changes nothing, and text,
-tabs, breaks and inline objects inserted at a location ahead of a slot's
-leading blocks land after them, with the caret following
-(`crates/docx-edit`, `inline_landing` and `merge_paragraphs`). The editor ref
+bridge refuses that state). Delete at the end of a paragraph just before such
+a block, or Backspace at the start of the block's paragraph, does not merge
+the two (`merge_paragraphs` in `crates/docx-edit`):
+
+- before a page or column break it removes the break;
+- before a table or block content control it removes the paragraph when that
+  holds nothing but its mark (the table's paragraph keeps its own
+  properties), and otherwise changes nothing. The paragraph between two
+  tables belongs to the first table's slot, so it is never removed and two
+  tables are never joined.
+
+Suggesting mode marks the break or the paragraph mark deleted instead. The
+caret stays where it was unless its paragraph is gone: the merge returns it,
+and the non-resident Backspace and Delete (suggesting mode, headers, footers
+and notes) put it there as the resident path leaves it. A range delete (a
+selection delete, a cut or a replacement) ending at the start of such a slot
+keeps the paragraph mark before it (`kept_mark`), so the text left stays in
+its own paragraph; a range starting at a paragraph's start still takes the
+mark. Text, tabs, breaks and inline objects, images included, inserted at a
+location ahead of a slot's leading blocks land after them, with the caret
+following (`inline_landing`). The editor ref
 API's page break opens the next paragraph slot. The state still arises from
 concurrent edits (one editor merges a paragraph while another opens the next
 slot with a table), and it does not round trip: the export writes the text
