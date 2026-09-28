@@ -214,6 +214,7 @@ export default function QuestionBank() {
               !topicId || showTopics ? 'block' : 'hidden'
             )}
           >
+            <h2 className="t-subtitle mb-3">{m.question_ui_syllabus()}</h2>
             <Input
               aria-label={m.question_ui_find_a_topic()}
               onChange={(event) => setTopicFilter(event.target.value)}
@@ -223,9 +224,9 @@ export default function QuestionBank() {
             />
             {exams.map((exam) => (
               <div className="mb-4" key={exam.id}>
-                <h2 className="px-1.5 pt-3 pb-1 font-bold text-fg-muted text-xs">
+                <h3 className="px-1.5 pt-3 pb-1 font-bold text-fg-muted text-xs">
                   {exam.label}
-                </h2>
+                </h3>
                 {exam.subjects.map((subject) => (
                   <details className="group" key={subject.id} open>
                     <summary className="flex cursor-pointer list-none items-center gap-2 px-1.5 py-2.5 font-bold [&::-webkit-details-marker]:hidden">
@@ -293,9 +294,20 @@ export default function QuestionBank() {
               >
                 {m.question_ui_topics()}
               </Button>
-              <h2 className="t-subtitle">
-                {selectedTopic?.label ?? m.question_ui_choose_a_topic()}
-              </h2>
+              <div>
+                <h2 className="t-subtitle">
+                  {selectedTopic?.label ?? m.question_ui_choose_a_topic()}
+                </h2>
+                {topicId && list && (
+                  <p className="mt-0.5 text-fg-muted text-xs">
+                    {list.questions.length === 1
+                      ? m.question_ui_one_question()
+                      : m.question_ui_question_count({
+                          count: list.questions.length,
+                        })}
+                  </p>
+                )}
+              </div>
               {topicId && (
                 <Input
                   aria-label={m.question_ui_find_a_question()}
@@ -407,44 +419,6 @@ export default function QuestionBank() {
                           <Icon name="navigationForward" />
                         </ToolbarButton>
                       </ToolbarGroup>
-                      <span className="flex-1" />
-                      {mode === 'edit' && detail.editor && (
-                        <ToolbarGroup>
-                          <ToolbarButton
-                            label={m.question_ui_edit_question()}
-                            onClick={() => setEditing(structuredClone(detail))}
-                          >
-                            <Icon name="pencil" />
-                          </ToolbarButton>
-                          <ToolbarButton
-                            active={Boolean(detail.reviewedAt)}
-                            disabled={reviewing}
-                            label={
-                              detail.reviewedAt
-                                ? m.question_ui_mark_unreviewed()
-                                : m.question_ui_mark_reviewed()
-                            }
-                            onClick={() =>
-                              setReviewed({
-                                id: detail.question.id,
-                                reviewed: !detail.reviewedAt,
-                              })
-                            }
-                          >
-                            <Icon name="check" />
-                          </ToolbarButton>
-                        </ToolbarGroup>
-                      )}
-                      {mode === 'edit' && detail.editor && (
-                        <ToolbarGroup>
-                          <ToolbarButton
-                            label={m.question_ui_comment()}
-                            onClick={() => setCommentOpen(true)}
-                          >
-                            <Icon name="comment" />
-                          </ToolbarButton>
-                        </ToolbarGroup>
-                      )}
                     </Toolbar>
                     <div className="min-h-0 flex-1 overflow-auto px-5 py-6 lg:px-8 lg:py-7">
                       <div className="mx-auto max-w-180">
@@ -453,26 +427,75 @@ export default function QuestionBank() {
                           questionNumber={detail.position}
                           review={mode === 'edit' && detail.editor}
                         />
-                        {mode === 'edit' && detail.reviewedAt && (
-                          <p className="mt-6 text-fg-muted text-sm">
-                            {detail.reviewerName
-                              ? m.question_ui_reviewed_by({
-                                  name: detail.reviewerName,
-                                })
-                              : m.question_ui_reviewed()}
-                            {' · '}
-                            <time dateTime={detail.reviewedAt}>
-                              {new Date(detail.reviewedAt).toLocaleDateString(
-                                getLocale()
-                              )}
-                            </time>
-                          </p>
-                        )}
                         <MaterialAttributionFooter
                           provenance={detail.provenance}
                         />
                       </div>
                     </div>
+                    {mode === 'edit' && detail.editor && (
+                      <footer className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-divider border-t px-5 py-3 lg:px-8">
+                        <p className="mr-auto flex items-center gap-1.5 text-fg-muted text-sm">
+                          {detail.reviewedAt ? (
+                            <>
+                              <Icon
+                                className="shrink-0 text-solid-success"
+                                name="circleCheck"
+                                size={14}
+                              />
+                              <span>
+                                {detail.reviewerName
+                                  ? m.question_ui_reviewed_by({
+                                      name: detail.reviewerName,
+                                    })
+                                  : m.question_ui_reviewed()}
+                                {' · '}
+                                <time dateTime={detail.reviewedAt}>
+                                  {new Date(
+                                    detail.reviewedAt
+                                  ).toLocaleDateString(getLocale())}
+                                </time>
+                              </span>
+                            </>
+                          ) : (
+                            m.question_ui_not_reviewed()
+                          )}
+                        </p>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            disabled={reviewing}
+                            onClick={() =>
+                              setReviewed({
+                                id: detail.question.id,
+                                reviewed: !detail.reviewedAt,
+                              })
+                            }
+                            size="sm"
+                            variant="ghost-hover"
+                          >
+                            {detail.reviewedAt
+                              ? m.question_ui_undo_review()
+                              : m.question_ui_mark_reviewed()}
+                          </Button>
+                          <Button
+                            iconLeft="comment"
+                            onClick={() => setCommentOpen(true)}
+                            size="sm"
+                            variant="ghost-hover"
+                          >
+                            {m.question_ui_comment()}
+                          </Button>
+                          <Button
+                            aria-label={m.question_ui_edit_question()}
+                            iconLeft="pencil"
+                            onClick={() => setEditing(structuredClone(detail))}
+                            size="sm"
+                            variant="accent"
+                          >
+                            {m.question_ui_edit()}
+                          </Button>
+                        </div>
+                      </footer>
+                    )}
                   </>
                 )
               )
@@ -574,7 +597,6 @@ function QuestionRow({
             : m.question_ui_marks({ count: row.marks })}
           {row.hasFigure && <Icon name="image" size={13} />}
           {row.hasTable && <Icon name="table" size={13} />}
-          {edit && row.reviewedAt && <Icon name="check" size={13} />}
         </span>
         {edit && row.reviewedAt && (
           <span className="mt-1 block text-fg-muted text-xs">
@@ -588,6 +610,13 @@ function QuestionRow({
           </span>
         )}
       </span>
+      {edit && row.reviewedAt && (
+        <Icon
+          className="mt-0.5 shrink-0 text-action-accent"
+          name="circleCheck"
+          size={16}
+        />
+      )}
     </button>
   );
 }

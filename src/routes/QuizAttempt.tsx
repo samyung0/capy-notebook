@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
@@ -74,19 +74,19 @@ function Attempt({ quizId }: { quizId: string }) {
 
   if (fetchStatus === 'paused') {
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
   if (isLoading || (!isFetchedAfterMount && !isError)) {
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
@@ -104,7 +104,7 @@ function Attempt({ quizId }: { quizId: string }) {
 
   if (!quiz.questions.length) {
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-6 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
             <Icon className="non-scaling-svg" name="check" size={30} />
@@ -114,7 +114,7 @@ function Attempt({ quizId }: { quizId: string }) {
             <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
           </Link>
         </div>
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
@@ -182,7 +182,7 @@ function Attempt({ quizId }: { quizId: string }) {
   if (done) {
     const pct = Math.round((score.awarded / Math.max(0.5, score.max)) * 100);
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <div className="mx-auto flex h-full w-full max-w-2xl flex-col items-center gap-5 overflow-auto px-6 py-6 text-center">
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-accent-1 text-tint-accent-1-fg">
             <Icon className="non-scaling-svg" name="quiz" size={30} />
@@ -218,12 +218,12 @@ function Attempt({ quizId }: { quizId: string }) {
             <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
           </Link>
         </div>
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
   return (
-    <PanelWithInvertedRadius>
+    <Panel sectionClassName="h-full">
       <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
@@ -306,6 +306,6 @@ function Attempt({ quizId }: { quizId: string }) {
         </div>
         <MaterialAttributionFooter provenance={quiz.provenance} />
       </div>
-    </PanelWithInvertedRadius>
+    </Panel>
   );
 }

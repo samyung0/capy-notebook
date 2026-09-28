@@ -104,9 +104,18 @@ export function AnswerView({ part }: { part: QuestionPart }) {
     );
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <TextView
-        text={answer.correct.map((i) => answer.options[i]).join('; ')}
-      />
+      <ol className="grid gap-1">
+        {[...answer.correct]
+          .sort((a, b) => a - b)
+          .map((i) => (
+            <li className="flex gap-3" key={i}>
+              <span className="text-fg-muted">
+                {String.fromCharCode(65 + i)}.
+              </span>
+              <TextView text={answer.options[i] ?? ''} />
+            </li>
+          ))}
+      </ol>
     );
   if (answer.type === 'short' || answer.type === 'open')
     return (
@@ -144,7 +153,7 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
   const answer = part.answer;
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <ol className="mt-3 grid gap-2">
+      <ol className="grid gap-2">
         {answer.options.map((text, i) => (
           <li className="flex gap-3" key={i}>
             <span className="text-fg-muted">
@@ -157,7 +166,7 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
     );
   if (answer.type === 'matching')
     return (
-      <div className="mt-3 grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4">
         <ol>
           {('left' in answer
             ? answer.left
@@ -179,7 +188,7 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
     );
   if (answer.type === 'ordering')
     return (
-      <ul className="mt-3">
+      <ul>
         {answer.items.map((text, i) => (
           <li key={i}>
             <TextView text={text} />
@@ -213,8 +222,15 @@ export function QuestionView({
   renderBlock,
   renderMarks,
 }: QuestionViewProps) {
+  // A lone part needs no label. With no stem either, its first text block
+  // joins the header, whose marks then stand in for the part's.
+  const lone = question.parts.length === 1;
+  const merged = lone && question.stem.length === 0;
+  const lead = merged ? question.parts[0].blocks : question.stem;
   const firstInHeader =
-    question.layout === 'paper' && question.stem[0]?.type === 'text';
+    (merged || question.layout === 'paper') && lead[0]?.type === 'text';
+  const partOffset = Number(merged && firstInHeader);
+  const total = questionMarks(question);
   const blocks = (items: QuestionBlock[], section: BlockSection, offset = 0) =>
     items.map((block, i) => (
       <div key={i}>
@@ -234,14 +250,24 @@ export function QuestionView({
           {questionNumber != null && `${questionNumber}.`}
         </span>
         <div className="min-w-0">
-          {firstInHeader && blocks(question.stem.slice(0, 1), {})}
+          {firstInHeader &&
+            blocks(
+              lead.slice(0, 1),
+              merged ? { partId: question.parts[0].id } : {}
+            )}
         </div>
-        {showTotalMarks && (
+        {merged && renderMarks ? (
           <span className="whitespace-nowrap text-fg-muted text-xs">
-            {questionMarks(question) === 1
-              ? m.question_ui_one_mark()
-              : m.question_ui_marks({ count: questionMarks(question) })}
+            {renderMarks(question.parts[0])}
           </span>
+        ) : (
+          showTotalMarks && (
+            <span className="whitespace-nowrap text-fg-muted text-xs">
+              {total === 1
+                ? m.question_ui_one_mark()
+                : m.question_ui_marks({ count: total })}
+            </span>
+          )
         )}
       </header>
       <div
@@ -271,12 +297,17 @@ export function QuestionView({
               key={part.id}
             >
               <span className="font-bold">
-                {question.labels === 'letters'
-                  ? `(${String.fromCharCode(97 + index)})`
-                  : `${index + 1}.`}
+                {!lone &&
+                  (question.labels === 'letters'
+                    ? `(${String.fromCharCode(97 + index)})`
+                    : `${index + 1}.`)}
               </span>
               <div className="min-w-0 space-y-3">
-                {blocks(part.blocks, { partId: part.id })}
+                {blocks(
+                  part.blocks.slice(partOffset),
+                  { partId: part.id },
+                  partOffset
+                )}
                 {renderAnswer ? renderAnswer(part) : <Choices part={part} />}
                 {review && 'markscheme' in part && (
                   <div className="space-y-1 text-fg-secondary text-sm">
@@ -297,7 +328,9 @@ export function QuestionView({
                       ))}
                     </ul>
                     {part.solution.length > 0 && (
-                      <details>
+                      // Editors check solutions, so they start open here;
+                      // learners' after-submit review keeps them collapsed.
+                      <details open>
                         <summary className="cursor-pointer pt-2 font-semibold">
                           {m.question_ui_worked_solution()}
                         </summary>
@@ -312,9 +345,11 @@ export function QuestionView({
                   </div>
                 )}
               </div>
-              <span className="whitespace-nowrap pt-1 text-fg-muted text-xs">
-                {renderMarks ? renderMarks(part) : `[${partMarks(part)}]`}
-              </span>
+              {!merged && (
+                <span className="whitespace-nowrap pt-1 text-fg-muted text-xs">
+                  {renderMarks ? renderMarks(part) : `[${partMarks(part)}]`}
+                </span>
+              )}
             </li>
           ))}
         </ol>

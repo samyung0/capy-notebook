@@ -493,13 +493,16 @@ function QuestionDialogSession({
                 className="whitespace-nowrap [&>span]:inline"
                 text={label}
               />
+            ) : item.kind === 'part' ? (
+              <strong>{label}</strong>
             ) : (
               label
             )}
             {part && item.kind === 'part' && (
               <span className="text-fg-muted">
                 {' '}
-                · {answerLabels[part.answer.type]()}
+                {marksLabel(part.markscheme.length)} ·{' '}
+                {answerLabels[part.answer.type]()}
               </span>
             )}
           </span>
@@ -863,87 +866,15 @@ function QuestionDialogSession({
           </div>
         ) : (
           <>
-            <div className="mb-3 flex items-center gap-2">
-              <Tabs
-                className="min-w-0 flex-1 md:hidden"
-                onChange={(tab) => setMobileTab(tab as 'outline' | 'preview')}
-                tabs={[
-                  { label: m.question_ui_outline(), value: 'outline' },
-                  { label: m.question_ui_preview(), value: 'preview' },
-                ]}
-                value={mobileTab}
-              />
-              <span className="mr-auto hidden font-semibold md:block">
-                {m.question_ui_question()}
-              </span>
-              <Popover onOpenChange={setAddOpen} open={addOpen}>
-                <PopoverTrigger asChild>
-                  <ToolbarButton label={m.question_ui_add_block_or_part()}>
-                    <Icon name="plus" />
-                  </ToolbarButton>
-                </PopoverTrigger>
-                <PopoverContent>
-                  {(
-                    [
-                      'text',
-                      'chart',
-                      'graph',
-                      'table',
-                      ...(policy === 'bank' ? ['image' as const] : []),
-                      'part',
-                    ] as const
-                  ).map((type) => (
-                    <Button
-                      key={type}
-                      onClick={() => add(type)}
-                      type="button"
-                      variant="ghost"
-                    >
-                      {blockLabels[type]()}
-                    </Button>
-                  ))}
-                </PopoverContent>
-              </Popover>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <ToolbarButton label={m.question_ui_question_settings()}>
-                    <Icon name="moreVertical" />
-                  </ToolbarButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <div className="space-y-3 p-2">
-                    <SelectField
-                      label={m.question_ui_layout()}
-                      onChange={(layout) =>
-                        setDraft({
-                          ...draft,
-                          layout: layout as Question['layout'],
-                        })
-                      }
-                      options={[
-                        { label: m.question_ui_exam_paper(), value: 'paper' },
-                        { label: m.question_ui_split_view(), value: 'split' },
-                      ]}
-                      value={draft.layout}
-                    />
-                    <SelectField
-                      label={m.question_ui_part_labels()}
-                      onChange={(labels) =>
-                        setDraft({
-                          ...draft,
-                          labels: labels as Question['labels'],
-                        })
-                      }
-                      options={[
-                        { label: '(a), (b)', value: 'letters' },
-                        { label: '1, 2', value: 'numbers' },
-                      ]}
-                      value={draft.labels}
-                    />
-                  </div>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            <Tabs
+              className="mb-3 md:hidden"
+              onChange={(tab) => setMobileTab(tab as 'outline' | 'preview')}
+              tabs={[
+                { label: m.question_ui_outline(), value: 'outline' },
+                { label: m.question_ui_preview(), value: 'preview' },
+              ]}
+              value={mobileTab}
+            />
             <div className="grid min-h-72 min-w-0 gap-5 md:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.7fr)]">
               <div
                 className={cn(
@@ -951,6 +882,84 @@ function QuestionDialogSession({
                   mobileTab !== 'outline' && 'hidden'
                 )}
               >
+                <div className="flex items-center gap-1">
+                  <span className="mr-auto px-2 font-semibold">
+                    {m.question_ui_question()}
+                  </span>
+                  <Popover onOpenChange={setAddOpen} open={addOpen}>
+                    <PopoverTrigger asChild>
+                      <ToolbarButton label={m.question_ui_add_block_or_part()}>
+                        <Icon name="plus" />
+                      </ToolbarButton>
+                    </PopoverTrigger>
+                    <PopoverContent>
+                      {(
+                        [
+                          'text',
+                          'chart',
+                          'graph',
+                          'table',
+                          ...(policy === 'bank' ? ['image' as const] : []),
+                          'part',
+                        ] as const
+                      ).map((type) => (
+                        <Button
+                          key={type}
+                          onClick={() => add(type)}
+                          type="button"
+                          variant="ghost"
+                        >
+                          {blockLabels[type]()}
+                        </Button>
+                      ))}
+                    </PopoverContent>
+                  </Popover>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <ToolbarButton label={m.question_ui_question_settings()}>
+                        <Icon name="moreVertical" />
+                      </ToolbarButton>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <div className="space-y-3 p-2">
+                        <SelectField
+                          label={m.question_ui_layout()}
+                          onChange={(layout) =>
+                            setDraft({
+                              ...draft,
+                              layout: layout as Question['layout'],
+                            })
+                          }
+                          options={[
+                            {
+                              label: m.question_ui_exam_paper(),
+                              value: 'paper',
+                            },
+                            {
+                              label: m.question_ui_split_view(),
+                              value: 'split',
+                            },
+                          ]}
+                          value={draft.layout}
+                        />
+                        <SelectField
+                          label={m.question_ui_part_labels()}
+                          onChange={(labels) =>
+                            setDraft({
+                              ...draft,
+                              labels: labels as Question['labels'],
+                            })
+                          }
+                          options={[
+                            { label: '(a), (b)', value: 'letters' },
+                            { label: '1, 2', value: 'numbers' },
+                          ]}
+                          value={draft.labels}
+                        />
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
                 {draft.stem.map((block, index) =>
                   row(
                     { kind: 'block', location: { index } },
@@ -961,13 +970,9 @@ function QuestionDialogSession({
                   <div key={part.id}>
                     {row(
                       { kind: 'part', partId: part.id },
-                      m.question_ui_part_marks({
-                        label:
-                          draft.labels === 'letters'
-                            ? String.fromCharCode(97 + i)
-                            : i + 1,
-                        marks: marksLabel(part.markscheme.length),
-                      })
+                      draft.labels === 'letters'
+                        ? `(${String.fromCharCode(97 + i)})`
+                        : `${i + 1}.`
                     )}
                     {part.blocks.map((block, index) =>
                       row(
@@ -978,9 +983,11 @@ function QuestionDialogSession({
                     )}
                     {row(
                       { kind: 'solution', partId: part.id },
-                      m.question_ui_solution_blocks({
-                        count: part.solution.length,
-                      }),
+                      part.solution.length === 1
+                        ? m.question_ui_solution_one_block()
+                        : m.question_ui_solution_blocks({
+                            count: part.solution.length,
+                          }),
                       true
                     )}
                     {expandedSolutions.includes(part.id) &&

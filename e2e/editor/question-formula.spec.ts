@@ -74,9 +74,10 @@ test('question formula accepts physical digits and retains them after commit', a
   await expect(
     page.locator('[data-math-preview] .ML__base').first()
   ).toBeVisible();
+  // The MSW User scenarios panel floats over the footer's bottom-right Edit.
   await page
     .getByRole('button', { exact: true, name: 'Edit question' })
-    .click();
+    .press('Enter');
   const dialog = page.getByRole('dialog');
   await dialog
     .getByRole('button', { name: /^A rectangle has area/ })

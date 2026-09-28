@@ -1,7 +1,7 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useAttempt, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -38,25 +38,25 @@ export default function AttemptResult() {
 
   if (fetchStatus === 'paused') {
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <QueryPausedState className="h-full" />
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
   if (isLoading) {
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
   if (isError || !attempt) {
     return (
-      <PanelWithInvertedRadius>
+      <Panel sectionClassName="h-full">
         <ErrorState
           action={
             <ErrorAction
@@ -72,7 +72,7 @@ export default function AttemptResult() {
           title={m.quiz_attempt_unavailable()}
           variant="page"
         />
-      </PanelWithInvertedRadius>
+      </Panel>
     );
   }
 
@@ -80,7 +80,7 @@ export default function AttemptResult() {
   const hasBreakdown = attempt.questions.length > 0;
 
   return (
-    <PanelWithInvertedRadius>
+    <Panel sectionClassName="h-full">
       <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-auto px-6 py-6">
         <div className="mb-4 flex items-center gap-3">
           <Link
@@ -149,6 +149,6 @@ export default function AttemptResult() {
         </div>
         <MaterialAttributionFooter provenance={quiz?.provenance} />
       </div>
-    </PanelWithInvertedRadius>
+    </Panel>
   );
 }

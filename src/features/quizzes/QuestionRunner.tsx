@@ -92,7 +92,7 @@ function PartRunner({
             <button
               aria-pressed={selected}
               className={cn(
-                'flex items-start gap-3 rounded-input border border-line px-3 py-2 text-left',
+                'flex items-baseline gap-3 rounded-input border border-line px-3 py-2 text-left',
                 selected && 'border-accent bg-tint-accent-1',
                 review && correct && 'border-solid-success bg-tint-success',
                 review &&
@@ -113,7 +113,7 @@ function PartRunner({
               }
               type="button"
             >
-              <span className="t-label w-5 shrink-0">
+              <span className="w-5 shrink-0 text-fg-muted">
                 {String.fromCharCode(65 + i)}.
               </span>
               <TextView text={option} />
@@ -241,9 +241,9 @@ function PartRunner({
             className="flex items-center gap-2 rounded-input border border-line p-2"
             key={item}
           >
-            <span className="t-label w-5">{i + 1}.</span>
-            <div className="min-w-0 flex-1">
-              <TextView text={answer.items[item]} />
+            <div className="flex min-w-0 flex-1 items-baseline gap-2">
+              <span className="w-5 shrink-0 text-fg-muted">{i + 1}.</span>
+              <TextView className="min-w-0" text={answer.items[item]} />
             </div>
             <Button
               aria-label={m.question_ui_move_up()}
