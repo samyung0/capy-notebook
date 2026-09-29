@@ -687,6 +687,34 @@ async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch
     assert all(args[2] != "done" for args, _kwargs in events)
 
 
+@pytest.mark.parametrize(
+    ("code", "published"),
+    (("office_rebase_refused", False), ("terminalerror", True)),
+)
+def test_a_refused_office_rebase_publishes_no_failed_progress(
+    monkeypatch, code, published
+):
+    events: list[tuple] = []
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "report.docx")
+    monkeypatch.setattr(worker, "_finish_fail", lambda **_k: True)
+    monkeypatch.setattr(
+        worker.progress, "publish", lambda *args, **kwargs: events.append(args)
+    )
+
+    worker._notify_ingest_terminal(
+        "f_1",
+        "ws_1",
+        "job_1",
+        "source publication gateway returned 422: refused",
+        1,
+        _ingest_payload(),
+        "source_refresh",
+        code,
+    )
+
+    assert [args[2] for args in events] == (["failed"] if published else [])
+
+
 async def test_parsed_document_continuation_rechecks_account_lifecycle(monkeypatch):
     class ReachedPostProcessing(RuntimeError):
         pass

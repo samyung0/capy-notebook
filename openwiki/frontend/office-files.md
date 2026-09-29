@@ -223,7 +223,7 @@ of the result (`assertDocxRenders`). A refusal (an error the engine raises
 with the `Office rebase:` prefix, including XLSX's) is terminal: the
 collaboration service answers the publication with 422, and the ingest worker
 fails the job with the refusal (attempt error code `office_rebase_refused`)
-without retrying it. The saved edits stay on the old base and the file stays
+without retrying it or sending the workspace a failed progress event. The saved edits stay on the old base and the file stays
 due without a `refresh_error` (its desired checkpoint moves to the latest), so
 a fresh publication captures them after the usual quiet period; the capture
 holds every saved edit, so only edits saved during that publication can be

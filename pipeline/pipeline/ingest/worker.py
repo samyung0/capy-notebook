@@ -736,7 +736,9 @@ def _notify_ingest_terminal(
     )
     if not committed:
         return
-    if ws:
+    # A refused Office rebase leaves the published file as it was and due for
+    # a fresh publication, so the workspace sees no failure.
+    if ws and error_code != "office_rebase_refused":
         _publish_progress(
             ws,
             file_id,
