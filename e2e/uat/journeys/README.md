@@ -1,6 +1,6 @@
 # UAT critical paths
 
-Run these thirteen journeys deliberately through **Deterministic UAT quality**.
+Run these fourteen journeys deliberately through **Deterministic UAT quality**.
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -24,6 +24,7 @@ asserted. The existing authorization suite remains separate.
 | Billing | Sandbox subscription, paid renewal using a test clock, webhook-backed plan projection, deletion blocker and cancellation. Hosted payment-form entry is not covered. |
 | DOCX, XLSX, PPTX | Browser reserve/PUT/complete, exact source hash, parse/index facts and vectors, saved native edits from two accounts, first open by a third account, native export, reprocessing, trash/restore/purge. Spreadsheet formulas and document content survive. |
 | Rich-content DOCX, XLSX, PPTX | Store-only uploads ("No parsing"), so no parser, embedding or LLM call; the workspace has no provider session or model usage. Owner and editor make the fixture README's edits in the browser; both edits and the README's preserved content survive in the saved export, including DOCX East Asian language tags, and the editor and viewer accessibility mirrors show them. The owner's charge is the source alone after opening and grows only by pending effects and state growth beyond seed(base) after edits. All three formats then publish: the owner pastes a fixed, marked text worth about 3,500 net tokens, and the automatic refresh publishes the file export-only after 60 s idle while the editor stays open; its view stays mounted and read-only under the banner saying its changes were saved, the banner's button reloads the page, the published file keeps the content, and the charge is the new source alone. PPTX uses native clipboard paste, and the native/browser checks also cover composition input. |
+| Office refusal recovery | A parsed DOCX with a Word table of contents (`toc/report.docx`). About 3,500 pasted net tokens make the automatic publication due; it captures the paste and is held, because the owner renamed the file with `[hold-publication]` (UAT's `COLLABORATION_UAT_PUBLICATION_HOLD`). The owner edits a TOC link, saves, and releases the hold by renaming the file back. The held job fails with collaboration's `Office rebase:` refusal (attempt code `office_rebase_refused`, its Sentry event expected); the file stays published and due without `refresh_error`; a second automatic refresh publishes the edit, whose exact published bytes contain it, and the saved state returns to seed(published). Marked `fixme` until the refusing edit is defined. |
 | UTF-8 text | Browser edit, persisted Y.Text, automatic indexing and exact published bytes. |
 | Digital PDF | Upload/index and unchanged bytes; unavailable source collaboration room and API-based private annotation isolation. Pointer gestures and visual rendering are outside this assertion policy. |
 | Invalid CSV | Direct-ingest cell limit fails terminally with the exact persisted job error, no index/model spend publishes, exact expected error reaches Sentry. |
@@ -87,6 +88,7 @@ Configure these GitHub **uat environment** values. Full mappings are in
 | Variables | Setup |
 | --- | --- |
 | `UAT_TARGET_AUTHORIZED` | Exactly `true`. |
+| `COLLABORATION_UAT_PUBLICATION_HOLD` | Exactly `true` (UAT only; the deployment renderer refuses it in production). The Office refusal journey needs it to hold its publication. |
 | `UAT_APP_URL`, `UAT_API_URL`, `UAT_COLLAB_URL` | Exactly `https://app.uat.capynotebook.com`, `https://uat-api.capynotebook.com`, `wss://uat-collab.capynotebook.com`. Office is `https://uat-office.capynotebook.com`. |
 | `UAT_CLERK_TEST_MODE` | Exactly `true`, after enabling Clerk test emails/fixed code `424242` on the isolated UAT instance. Keys must resolve to its primary domain and `clerk.uat.capynotebook.com`. |
 | `CLERK_PUBLISHABLE_KEY`, `UAT_ACTOR_EMAIL_DOMAIN` | UAT frontend key and a controlled domain accepting generated `uat-…+clerk_test` mailboxes. Clerk auth uses fixed codes; app Resend mail must actually deliver. |
@@ -184,8 +186,9 @@ IDs and follow-up actions. Expected retention includes:
   and sandbox Stripe invoice/payment history.
 
 Sentry queries use exact run trace and actor IDs, with a final delivery window.
-Only the exact terminal CSV exception on its recorded failed-attempt trace is
-allowed. This is bounded error-delivery verification, not a guarantee that an
+An intentional failure's recorded failed-attempt trace allows only its recorded
+exception: the exact terminal CSV exception, and the Office refusal's
+`SourceRebaseRefusedError` whose value starts with the recorded refusal prefix. This is bounded error-delivery verification, not a guarantee that an
 event cannot arrive after the final query.
 
 Hard cancellation, lost runners and uncertain provider responses can leave

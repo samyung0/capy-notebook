@@ -92,6 +92,28 @@ export function validateRegistrationOwnership(
     throw new Error('Registration ownership mismatch');
 }
 
+/**
+ * An event on an intentional-failure trace carries exactly one exception: the
+ * type the journey recorded, with its exact `value` or, for a message that
+ * embeds a service response, its `valuePrefix`.
+ */
+export function expectedFailure(
+  expected: Record<string, unknown>,
+  exceptions: Record<string, unknown>[]
+) {
+  if (exceptions.length !== 1 || typeof expected.exceptionType !== 'string')
+    return false;
+  const [{ type, value }] = exceptions;
+  if (type !== expected.exceptionType || typeof value !== 'string')
+    return false;
+  if (typeof expected.value === 'string') return value === expected.value;
+  return (
+    typeof expected.valuePrefix === 'string' &&
+    expected.valuePrefix !== '' &&
+    value.startsWith(expected.valuePrefix)
+  );
+}
+
 export async function cleanupRun(id: string) {
   const directory = runDirectory(id);
   // No provider writes are possible before preflight creates the manifest.
@@ -453,8 +475,11 @@ export async function cleanupRun(id: string) {
       await step(
         'Verify correlated Sentry errors and expected failure delivery',
         async () => {
-          const expected = new Set(
-            resources('sentry-expected').map((resource) => resource.id)
+          const expected = new Map(
+            resources('sentry-expected').map((resource) => [
+              resource.id,
+              resource.details,
+            ])
           );
           // Allow the final requests' asynchronous error delivery before the negative check.
           await new Promise((resolve) => setTimeout(resolve, 30_000));
@@ -480,25 +505,21 @@ export async function cleanupRun(id: string) {
             'Expected Sentry failure received',
             readEvents,
             (rows) =>
-              [...expected].every((trace) =>
+              [...expected.keys()].every((trace) =>
                 rows.some((event) => event.trace_id === trace)
               ),
             expected.size ? 90_000 : 1
           );
           for (const event of events) {
-            if (!expected.has(String(event.trace_id)))
-              throw new Error('Unexpected correlated Sentry error');
+            const failure = expected.get(String(event.trace_id));
+            if (!failure) throw new Error('Unexpected correlated Sentry error');
             const details = await readSentryEvent(env, event);
             const exceptions = arrayField(details, 'entries')
               .map(object)
               .filter((entry) => entry.type === 'exception')
               .flatMap((entry) => arrayField(entry.data, 'values'))
               .map(object);
-            if (
-              exceptions.length !== 1 ||
-              exceptions[0].type !== 'TerminalError' ||
-              exceptions[0].value !== 'delimited table exceeds the cell limit'
-            )
+            if (!expectedFailure(failure, exceptions))
               throw new Error(
                 'Unexpected error on the intentional failure trace'
               );

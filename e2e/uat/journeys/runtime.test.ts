@@ -8,6 +8,7 @@ import { request } from '@playwright/test';
 import { savedTokenStatus } from './accounts';
 import {
   cleanupRun,
+  expectedFailure,
   validateCleanupTarget,
   validateRegistrationOwnership,
 } from './cleanup';
@@ -23,6 +24,7 @@ import {
 } from './evidence';
 import { settledSpend } from './files';
 import { refresh, savedExport } from './office';
+import { REFUSAL_PREFIX, republication } from './officeRefusal';
 import type { UatRun } from './runtime';
 
 test('settled ingest spend waits for an uncertain attempt to reach its receipt deadline', async () => {
@@ -139,6 +141,116 @@ test('Office publication stops on a terminal pipeline job while the old file sta
     /source refresh file_fixture failed in job_ingest: source publication gateway returned 503/
   );
   assert(recorded.includes('job_ingest'));
+});
+
+test('the republication wait ignores only the refused job and needs a second automatic refresh', async () => {
+  const fake = (failed: string[], automatic = 'true') =>
+    ({
+      poll: <T>(
+        label: string,
+        read: () => Promise<T>,
+        accept: (value: T) => boolean
+      ) => poll(label, read, accept, 1),
+      query: async (sql: string) => {
+        if (sql.includes("type='source_refresh'"))
+          return [
+            { automatic: 'true', checkpoint: 10 },
+            { automatic, checkpoint: 12 },
+          ];
+        if (sql.includes('FROM jobs'))
+          return ['job_refused', 'job_other', 'job_fresh'].map((id) => ({
+            error: failed.includes(id) ? 'failed' : null,
+            id,
+            status: failed.includes(id) ? 'failed' : 'done',
+          }));
+        if (sql.includes('FROM source_documents'))
+          return [{ indexed_checkpoint: 12, refresh_error: null }];
+        if (sql.includes('FROM files'))
+          return [
+            { blob_path: 'sources/new', revision: 2, source_sha256: 'b' },
+          ];
+        return [];
+      },
+      record: async () => {},
+    }) as unknown as UatRun;
+  const before = { revision: 1, source_sha256: 'a' };
+  const published = await republication(
+    fake(['job_refused']),
+    'file_fixture',
+    'job_refused',
+    12,
+    before
+  );
+  assert.equal(published.revision, 2);
+  await assert.rejects(
+    republication(
+      fake(['job_refused', 'job_other']),
+      'file_fixture',
+      'job_refused',
+      12,
+      before
+    ),
+    /source refresh file_fixture failed in job_other/
+  );
+  await assert.rejects(
+    republication(
+      fake(['job_refused'], 'false'),
+      'file_fixture',
+      'job_refused',
+      12,
+      before
+    )
+  );
+});
+
+test('an intentional-failure trace accepts only its recorded exception', () => {
+  const csv = {
+    exceptionType: 'TerminalError',
+    value: 'delimited table exceeds the cell limit',
+  };
+  const refusal = {
+    exceptionType: 'SourceRebaseRefusedError',
+    valuePrefix: REFUSAL_PREFIX,
+  };
+  const one = (type: string, value: string) => [{ type, value }];
+  assert(expectedFailure(csv, one('TerminalError', csv.value)));
+  assert(!expectedFailure(csv, one('TerminalError', `${csv.value}.`)));
+  assert(!expectedFailure(csv, one('ValueError', csv.value)));
+  assert(
+    !expectedFailure(csv, [
+      ...one('TerminalError', csv.value),
+      ...one('TerminalError', csv.value),
+    ])
+  );
+  assert(
+    expectedFailure(
+      refusal,
+      one(
+        'SourceRebaseRefusedError',
+        `${REFUSAL_PREFIX} a change at stories/body:4 touches content the export wrote differently"}`
+      )
+    )
+  );
+  assert(
+    !expectedFailure(
+      refusal,
+      one(
+        'SourceRebaseRefusedError',
+        'source publication gateway returned 422: {"title":"Unprocessable Entity"}'
+      )
+    )
+  );
+  assert(!expectedFailure(refusal, one('TerminalError', REFUSAL_PREFIX)));
+  // A record without an exception type or with an empty prefix accepts nothing.
+  assert(
+    !expectedFailure({ errorCode: 'terminalerror' }, one('TerminalError', ''))
+  );
+  assert(
+    !expectedFailure(
+      { exceptionType: 'TerminalError', valuePrefix: '' },
+      one('TerminalError', 'anything')
+    )
+  );
 });
 
 test('recorded cleanup ownership tolerates clock skew but never an identity mismatch', () => {

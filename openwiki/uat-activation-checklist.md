@@ -222,4 +222,4 @@ Clerk development instance. Point a local gateway at the UAT database only with
 
 ## Manual critical-path gate
 
-After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify all thirteen journeys and both cleanup/release checks passed. Review the retained-resource report, including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).
+After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify all fourteen journeys and both cleanup/release checks passed. Review the retained-resource report, including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).

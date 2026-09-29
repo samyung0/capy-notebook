@@ -325,8 +325,10 @@ test('oversized delimited structure: terminal ingest failure never publishes an 
     ) {
       await run.record('sentry-expected', string(attempt.trace_id), {
         errorCode: 'terminalerror',
+        exceptionType: 'TerminalError',
         fileId,
         jobId: attempt.job_id,
+        value: 'delimited table exceeds the cell limit',
       });
     }
     assert.equal(attempt.release_sha, run.env.expectedRevision);
