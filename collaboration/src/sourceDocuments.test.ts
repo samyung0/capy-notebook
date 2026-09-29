@@ -285,6 +285,14 @@ test.each([204, 409])(
 test.each([
   [undefined, false],
   [new SourceRequestError(409, 'Source candidate changed'), true],
+  [
+    new SourceRequestError(
+      422,
+      'Office rebase: a change at stories/body:4 touches content the export wrote differently'
+    ),
+    true,
+  ],
+  [new SourceRequestError(422, 'Source publish failed (422)'), false],
   [new SourceRequestError(503, 'Source handoff already running'), false],
 ])(
   'an owner export-only candidate publishes through the handoff after finalize (failure %s)',
@@ -335,8 +343,9 @@ test.each([
       leaseToken: 'lease',
       sourceETag: 'etag',
     });
-    // A superseded publication (409) returns the export to the scheduler
-    // (stale); any other refusal parks the file until its next save.
+    // A superseded publication (409) or a refused rebase returns the export
+    // to the scheduler (stale); any other refusal parks the file until its
+    // next save.
     expect(refused).toHaveLength(failure ? 1 : 0);
     if (failure) expect(refused[0]).toMatchObject({ stale });
   }

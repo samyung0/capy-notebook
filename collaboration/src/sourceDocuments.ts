@@ -1295,12 +1295,16 @@ export class SourceDocumentStore {
         error: error instanceof Error ? error.message : String(error),
         jobId,
         leaseToken: candidate.leaseToken,
-        // Only a superseded publication (409) goes back to the scheduler at
-        // once; any other refusal parks the file until its next save.
+        // A superseded publication (409) or a refused rebase (422, "Office
+        // rebase:") goes back to the scheduler at once, so a fresh publication
+        // captures the later edits; any other refusal parks the file until
+        // its next save.
         stale:
           publishing &&
           error instanceof SourceRequestError &&
-          error.status === 409,
+          (error.status === 409 ||
+            (error.status === 422 &&
+              error.message.startsWith('Office rebase:'))),
       });
       throw error;
     }

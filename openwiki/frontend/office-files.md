@@ -221,11 +221,15 @@ refuses a rebased DOCX story (text or a field ahead of a table or content
 control in one paragraph slot): the rebase runs the bridge over every story
 of the result (`assertDocxRenders`). A refusal (an error the engine raises
 with the `Office rebase:` prefix, including XLSX's) is terminal: the
-collaboration service answers the publication with 422, the ingest worker
-ends the source refresh job without retrying it and records the refusal in
-`refresh_error`, and the saved edits stay on the old base for the next
-publication. Any other engine error (a trap, a timeout) answers 500 and the
-job retries. The check does not verify formatting, which is accepted: DOCX
+collaboration service answers the publication with 422, and the ingest worker
+fails the job with the refusal (attempt error code `office_rebase_refused`)
+without retrying it. The saved edits stay on the old base and the file stays
+due without a `refresh_error` (its desired checkpoint moves to the latest), so
+a fresh publication captures them after the usual quiet period; the capture
+holds every saved edit, so only edits saved during that publication can be
+refused again. An export-only publication's refusal returns the file to the
+scheduler the same way. Any other engine error (a trap, a timeout) answers 500
+and the job retries. The check does not verify formatting, which is accepted: DOCX
 visual effects are left out because an export writes some formatting its own
 way, and PPTX visual effects (shape geometry, layout, text formatting) are
 compared only by their count and operation, since they carry no values.
@@ -650,8 +654,8 @@ like a refresh after its parse: editors flush, saves made after the capture
 are rebased onto the export and stay pending, and open editors get the
 newer-version banner. Its storage is gated on the net change at publication,
 and finalize renews its job lease for the handoff. A publication refused for
-any reason but a superseded candidate (409) parks the file until its next
-save.
+any reason but a superseded candidate (409) or a refused rebase (422
+`Office rebase:`) parks the file until its next save.
 Unless the file never parsed successfully (then its owner's Process, charged as
 the first parse, stays the way to index it) it is marked (`reprocess_at`): the refresh
 scheduler then parses and indexes the file's bytes as a plain system-paid parse

@@ -58,6 +58,8 @@ def classify_error(exc: BaseException) -> tuple[str, str, int | None]:
     status = (
         raw_status if isinstance(raw_status, int) and 100 <= raw_status <= 599 else None
     )
+    if isinstance(exc, db.SourceRebaseRefusedError):
+        return "source_refresh", "office_rebase_refused", status
     if isinstance(exc, TimeoutError):
         return "timeout", "job_timeout", status
     if "hardtimeout" in name.lower() or "hard timeout" in lowered:

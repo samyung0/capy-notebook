@@ -406,11 +406,15 @@ def _finish_source_refresh(
                 f"source publication gateway returned {response.status_code}"
             )
         elif response.status_code != 200:
-            # Includes a publication rebase the Office engine refused (422).
-            raise TerminalError(
+            detail = (
                 f"source publication gateway returned {response.status_code}: "
                 f"{response.text[:500]}"
             )
+            # collaboration answers a publication rebase the Office engine
+            # refused with 422 and the engine's "Office rebase:" message.
+            if response.status_code == 422 and "Office rebase:" in response.text:
+                raise db.SourceRebaseRefusedError(detail)
+            raise TerminalError(detail)
     _settle_published_source_refresh(job_id, payload)
     return True
 
@@ -580,7 +584,15 @@ def _finish_fail(
             if file_id:
                 active = db.source_refresh_for(file_id)
                 if active is not None:
-                    db.discard_source_candidate(cur, active, job_id, error, stale=False)
+                    # A refused Office rebase leaves the file due (stale), so a
+                    # fresh publication captures the edits it could not place.
+                    db.discard_source_candidate(
+                        cur,
+                        active,
+                        job_id,
+                        error,
+                        stale=error_code == "office_rebase_refused",
+                    )
             db.finish_job_attempt(
                 cur,
                 attempt_id=telemetry.current_attempt_id(),

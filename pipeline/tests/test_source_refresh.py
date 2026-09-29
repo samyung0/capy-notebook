@@ -365,23 +365,36 @@ async def test_publication_retry_requires_completed_candidate_and_keeps_parsed_w
 
 
 @pytest.mark.asyncio
-async def test_a_refused_publication_rebase_ends_the_refresh(workspace, monkeypatch):
+@pytest.mark.parametrize(
+    ("body", "due"),
+    (
+        (
+            '{"message":"Office rebase: a change at stories/body:4 touches content the export wrote differently"}',
+            True,
+        ),
+        # Any other refusal parks the file until its next save.
+        ('{"title":"Unprocessable Entity","status":422}', False),
+    ),
+    ids=("rebase-refused", "other-422"),
+)
+async def test_a_refused_publication_rebase_ends_the_refresh_and_leaves_the_file_due(
+    workspace, monkeypatch, body, due
+):
     from types import SimpleNamespace
 
     from pipeline.config import cfg
-    from pipeline.ingest import worker
+    from pipeline.ingest import telemetry, worker
     from pipeline.jobs import TerminalError, is_retryable
 
     job = candidate(workspace)
     file_id = job["payload"]["fileId"]
     token = db.bind_source_refresh(job)
-    refusal = '{"message":"Office rebase: a change at stories/body:4 touches content the export wrote differently"}'
     monkeypatch.setattr(cfg, "gateway_url", "http://gateway.invalid")
     monkeypatch.setattr(cfg, "pipeline_secret", "secret")
     monkeypatch.setattr(
         worker.requests,
         "post",
-        lambda *args, **kwargs: SimpleNamespace(status_code=422, text=refusal),
+        lambda *args, **kwargs: SimpleNamespace(status_code=422, text=body),
     )
     try:
         await store.attach_file_content(
@@ -390,9 +403,42 @@ async def test_a_refused_publication_rebase_ends_the_refresh(workspace, monkeypa
             content_hash="completed-hash",
             claim_job_id=job["id"],
         )
-        with pytest.raises(TerminalError, match="Office rebase") as refused:
+        with workspace._connect() as conn:
+            conn.execute(
+                "UPDATE source_documents SET checkpoint=2 WHERE file_id=%s", (file_id,)
+            )
+        with pytest.raises(TerminalError) as refused:
             worker._finish_source_refresh(file_id, job["id"], "completed-hash")
         assert not is_retryable(refused.value)
+        category, code, _ = telemetry.classify_error(refused.value)
+        worker._finish_fail(
+            file_id=file_id,
+            job_id=job["id"],
+            error=str(refused.value),
+            source_revision=1,
+            source_etag="etag-b",
+            error_category=category,
+            error_code=code,
+        )
+        with workspace._connect() as conn:
+            row = conn.execute(
+                "SELECT running_job_id,refresh_error,desired_checkpoint FROM source_documents WHERE file_id=%s",
+                (file_id,),
+            ).fetchone()
+            job_row = conn.execute(
+                "SELECT status,error FROM jobs WHERE id=%s", (job["id"],)
+            ).fetchone()
+            candidates = conn.execute(
+                "SELECT count(*) FROM source_refresh_candidates WHERE file_id=%s",
+                (file_id,),
+            ).fetchone()[0]
+        assert job_row == ("failed", str(refused.value)[:500]) and candidates == 0
+        if due:
+            # Due again at the latest checkpoint, like a superseded refresh.
+            assert code == "office_rebase_refused"
+            assert row == (None, None, 2)
+        else:
+            assert row[0] is None and row[1] == str(refused.value)
     finally:
         db.reset_source_refresh(token)
 

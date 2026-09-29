@@ -145,6 +145,14 @@ class SourceSupersededError(TerminalError):
     """The job's source revision is no longer the file's current source."""
 
 
+class SourceRebaseRefusedError(TerminalError):
+    """The Office engine refused to rebase edits saved after the capture.
+
+    The job fails, and the file stays due without a refresh error, so a fresh
+    publication captures those edits.
+    """
+
+
 class ProviderReceiptExpired(RuntimeError):
     """The exact provider receipt arrived after its stored deadline."""
 
