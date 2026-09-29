@@ -2242,6 +2242,30 @@
       "version": 4
     },
     {
+      "id": "euclid-s-elements-redux",
+      "title": "Euclid's Elements Redux",
+      "authors": [
+        "Daniel Callahan"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/euclid-s-elements-redux",
+      "download_url": "https://archive.org/download/euclid-elements-redux_201809/euclid-usletter.pdf",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/euclid-s-elements-redux",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Euclid's Elements Redux, Daniel Callahan. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/euclid-s-elements-redux",
+      "pdf_path": "data/knowledge-base/sources/ff8845a626fa7e755ffac9d75b4963f05ee41cf9a8d64a287c2ff81a88ae2428.pdf",
+      "sha256": "ff8845a626fa7e755ffac9d75b4963f05ee41cf9a8d64a287c2ff81a88ae2428",
+      "bytes": 2701975,
+      "pages": 553,
+      "first_content_page": 111,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "geometry"
+    },
+    {
       "id": "euclidean-plane-and-its-relatives",
       "title": "Euclidean plane and its relatives",
       "authors": [
@@ -2527,7 +2551,8 @@
       "first_content_page": 11,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "geometry"
+      "subject_id": "geometry",
+      "version": 1
     },
     {
       "id": "hands-on-anatomy",
