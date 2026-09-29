@@ -1693,6 +1693,30 @@
       "version": 1
     },
     {
+      "id": "contract-doctrine-theory-practice-volume-3",
+      "title": "Contract Doctrine, Theory & Practice Volume 3",
+      "authors": [
+        "J.H. Verkerke"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/contract-doctrine-theory-practice-volume-3",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/64",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/contract-doctrine-theory-practice-volume-3",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Contract Doctrine, Theory & Practice Volume 3, J.H. Verkerke. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/contract-doctrine-theory-practice-volume-3",
+      "pdf_path": "data/knowledge-base/sources/5a3aa151d15c1443ae2c8cb9aa62d3028cd4041cea1b3b356e8983da0f09cb71.pdf",
+      "sha256": "5a3aa151d15c1443ae2c8cb9aa62d3028cd4041cea1b3b356e8983da0f09cb71",
+      "bytes": 1565915,
+      "pages": 240,
+      "first_content_page": 12,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "contract-law"
+    },
+    {
       "id": "core-concepts-of-marketing",
       "title": "Core Concepts of Marketing",
       "authors": [
@@ -2265,6 +2289,30 @@
       "subject_id": "civil-law-procedure"
     },
     {
+      "id": "fish-fishing-and-conservation-low-resolution",
+      "title": "Fish, Fishing, and Conservation (low resolution)",
+      "authors": [
+        "Donald J. Orth"
+      ],
+      "edition": "",
+      "source_url": "https://vtechworks.lib.vt.edu/items/62d8c43f-d130-4e96-9b7d-d583783ccff2",
+      "download_url": "https://vtechworks.lib.vt.edu/bitstreams/65a7fae6-cdc3-4ae7-b7ad-694cd8b52857/download",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "license_evidence_url": "https://vtechworks.lib.vt.edu/items/62d8c43f-d130-4e96-9b7d-d583783ccff2",
+      "license_evidence_quote": "Orth, Donald (2023). Fish, Fishing, and Conservation . Blacksburg: Virginia Tech Department of Fish and Wildlife Conservation. https://doi.org/10.21061/fishandconservation . Licensed with CC BY 4.0 .",
+      "attribution_reviewed": false,
+      "attribution": "Fish, Fishing, and Conservation (low resolution), Donald J. Orth. CC BY 4.0. https://vtechworks.lib.vt.edu/items/62d8c43f-d130-4e96-9b7d-d583783ccff2",
+      "pdf_path": "data/knowledge-base/sources/8cd7969f578b6ed3b807d34067174bfbcca84a47dd9022f37ce8d276b525e6ba.pdf",
+      "sha256": "8cd7969f578b6ed3b807d34067174bfbcca84a47dd9022f37ce8d276b525e6ba",
+      "bytes": 11851154,
+      "pages": 413,
+      "first_content_page": 25,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "ecology-evolution"
+    },
+    {
       "id": "focusing-on-organizational-change",
       "title": "Focusing on Organizational Change",
       "authors": [
@@ -2288,6 +2336,32 @@
       "rights_notes": [],
       "subject_id": "management",
       "version": 5
+    },
+    {
+      "id": "fostering-communities-of-transformation-in-stem-higher-educa",
+      "title": "Fostering Communities of Transformation in STEM Higher Education: A Multi-institutional Collection of DEI Initiatives",
+      "authors": [
+        "Jonathan S. Briganti",
+        "Jill C. Sible",
+        "Anne M. Brown"
+      ],
+      "edition": "",
+      "source_url": "https://vtechworks.lib.vt.edu/items/a75b8e7e-c507-48c0-bf82-f3c2a6c9202a",
+      "download_url": "https://vtechworks.lib.vt.edu/bitstreams/536931e3-f808-4070-a073-213b88ae9b61/download",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/deed.en",
+      "license_evidence_url": "https://vtechworks.lib.vt.edu/items/a75b8e7e-c507-48c0-bf82-f3c2a6c9202a",
+      "license_evidence_quote": "Licensed with CC BY 4.0 .",
+      "attribution_reviewed": false,
+      "attribution": "Fostering Communities of Transformation in STEM Higher Education: A Multi-institutional Collection of DEI Initiatives, Jonathan S. Briganti, Jill C. Sible, Anne M. Brown. CC BY 4.0. https://vtechworks.lib.vt.edu/items/a75b8e7e-c507-48c0-bf82-f3c2a6c9202a",
+      "pdf_path": "data/knowledge-base/sources/7f3705c12ec0736d6068b84f58a2a958f718f2d76deb24771acf59ed7ee9f125.pdf",
+      "sha256": "7f3705c12ec0736d6068b84f58a2a958f718f2d76deb24771acf59ed7ee9f125",
+      "bytes": 18918319,
+      "pages": 295,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "curriculum-instruction"
     },
     {
       "id": "fundamental-methods-of-logic",
@@ -2336,7 +2410,8 @@
         }
       ],
       "rights_notes": [],
-      "subject_id": "philosophy"
+      "subject_id": "philosophy",
+      "version": 1
     },
     {
       "id": "fundamentals-of-compressible-fluid-mechanics",
@@ -2402,6 +2477,30 @@
       "version": 9
     },
     {
+      "id": "geometry-with-an-introduction-to-cosmic-topology-2018-editio",
+      "title": "Geometry with an Introduction to Cosmic Topology - 2018 Edition",
+      "authors": [
+        "Michael P. Hitchman"
+      ],
+      "edition": "2018 Edition, compiled October 2020",
+      "source_url": "https://mphitchman.com/gct/download.html",
+      "download_url": "https://mphitchman.github.io/geometry/GCTscreen.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://mphitchman.github.io/geometry/GCTscreen.pdf#page=2",
+      "license_evidence_quote": "This work is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License.",
+      "attribution_reviewed": false,
+      "attribution": "Geometry with an Introduction to Cosmic Topology - 2018 Edition, Michael P. Hitchman, 2018 Edition, compiled October 2020. CC BY-SA 4.0. https://mphitchman.com/gct/download.html",
+      "pdf_path": "data/knowledge-base/sources/f5d5bce2e9cca53db834f9e610e48462d9a95ab92a3e77005df17901b96bb4b3.pdf",
+      "sha256": "f5d5bce2e9cca53db834f9e610e48462d9a95ab92a3e77005df17901b96bb4b3",
+      "bytes": 2668403,
+      "pages": 238,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "geometry"
+    },
+    {
       "id": "hands-on-anatomy",
       "title": "Hands-on Anatomy",
       "authors": [
@@ -2422,9 +2521,755 @@
       "bytes": 77296873,
       "pages": 231,
       "first_content_page": 1,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 32,
+          "bbox": [
+            112.488,
+            242.619,
+            887.512,
+            645.539
+          ],
+          "figure": "Figure 2.1. Bones of the Shoulder; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_136",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 33,
+          "bbox": [
+            112.49,
+            78.742,
+            887.51,
+            485.463
+          ],
+          "figure": "Figure 2.2. Skeletal Landmarks of the Scapula; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_139",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 33,
+          "bbox": [
+            112.486,
+            490.524,
+            869.49,
+            521.475
+          ],
+          "figure": "Figure 2.2. Skeletal Landmarks of the Scapula; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_140",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 34,
+          "bbox": [
+            112.488,
+            78.74,
+            887.512,
+            482.49
+          ],
+          "figure": "Figure 2.3. Skeletal Landmarks of the Scapula; Posterior View",
+          "figure_id": "fig_85aa71ae16a005_142",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 38,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            485.629
+          ],
+          "figure": "Figure 2.4. Skeletal Landmarks of the Proximal Humerus; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_168",
+          "credit": "Kathleen Alsup & Glenn M. Fox, used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 52,
+          "bbox": [
+            112.48,
+            144.653,
+            887.52,
+            549.721
+          ],
+          "figure": "Figure 2.9. Acromioclavicular and Sternoclavicular Joints",
+          "figure_id": "fig_85aa71ae16a005_257",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 53,
+          "bbox": [
+            112.484,
+            78.739,
+            887.516,
+            486.36
+          ],
+          "figure": "Figure 2.10. Acromioclavicular and Coracoacromial Ligaments",
+          "figure_id": "fig_85aa71ae16a005_260",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 53,
+          "bbox": [
+            112.484,
+            491.418,
+            883.633,
+            522.369
+          ],
+          "figure": "Figure 2.10. Acromioclavicular and Coracoacromial Ligaments",
+          "figure_id": "fig_85aa71ae16a005_261",
+          "credit": "Kathleen Alsup & Glenn M. Fox, modified (altered), used with permission of the author; watermark (c) B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 64,
+          "bbox": [
+            112.482,
+            242.617,
+            887.518,
+            648.29
+          ],
+          "figure": "Figure 3.1. Skeletal Landmarks of the Distal Humerus; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_343",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 65,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            486.158
+          ],
+          "figure": "Figure 3.2. Skeletal Landmarks of the Distal Humerus; Posterior View",
+          "figure_id": "fig_85aa71ae16a005_346",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 65,
+          "bbox": [
+            112.486,
+            491.217,
+            880.635,
+            522.168
+          ],
+          "figure": "Figure 3.2. Skeletal Landmarks of the Distal Humerus; Posterior View",
+          "figure_id": "fig_85aa71ae16a005_347",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 66,
+          "bbox": [
+            112.488,
+            78.74,
+            887.512,
+            486.686
+          ],
+          "figure": "Figure 3.3. Skeletal Landmarks of the Ulna",
+          "figure_id": "fig_85aa71ae16a005_349",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 66,
+          "bbox": [
+            112.486,
+            491.746,
+            871.871,
+            522.697
+          ],
+          "figure": "Figure 3.3. Skeletal Landmarks of the Ulna",
+          "figure_id": "fig_85aa71ae16a005_350",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 67,
+          "bbox": [
+            112.482,
+            78.738,
+            887.518,
+            485.108
+          ],
+          "figure": "Figure 3.4. Skeletal Landmarks of the Radius",
+          "figure_id": "fig_85aa71ae16a005_352",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 69,
+          "bbox": [
+            112.49,
+            414.225,
+            887.51,
+            618.079
+          ],
+          "figure": "Figure 3.5. Muscles of the Anterior Forearm; Muscles of the Posterior Forearm",
+          "figure_id": "fig_85aa71ae16a005_373",
+          "credit": "Gordon Betts, Kelly A. Young, James A. Wise, Eddie Johnson, Brandon Poe, Dean H. Kruse, Oksana Korol, Jody E. Johnson, Mark Womble, Peter DeSaix; has been modified (cropped) and is used with permission of the author"
+        },
+        {
+          "page": 75,
+          "bbox": [
+            112.482,
+            458.047,
+            887.518,
+            845.839
+          ],
+          "figure": "Figure 3.6. Ligaments of the Elbow",
+          "figure_id": "fig_85aa71ae16a005_426",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 84,
+          "bbox": [
+            112.49,
+            242.621,
+            887.51,
+            633.486
+          ],
+          "figure": "Figure 4.1. Skeletal Landmarks of the Distal Radius",
+          "figure_id": "fig_85aa71ae16a005_484",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 85,
+          "bbox": [
+            112.484,
+            78.739,
+            887.516,
+            482.596
+          ],
+          "figure": "Figure 4.2. Skeletal Landmarks of the Distal Ulna",
+          "figure_id": "fig_85aa71ae16a005_487",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 85,
+          "bbox": [
+            112.486,
+            487.654,
+            848.891,
+            518.606
+          ],
+          "figure": "Figure 4.2. Skeletal Landmarks of the Distal Ulna",
+          "figure_id": "fig_85aa71ae16a005_488",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 86,
+          "bbox": [
+            112.49,
+            78.742,
+            887.51,
+            484.835
+          ],
+          "figure": "Figure 4.3. Carpal Bones; Palmar View",
+          "figure_id": "fig_85aa71ae16a005_490",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 86,
+          "bbox": [
+            112.486,
+            489.896,
+            840.319,
+            520.847
+          ],
+          "figure": "Figure 4.3. Carpal Bones; Palmar View",
+          "figure_id": "fig_85aa71ae16a005_491",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 87,
+          "bbox": [
+            112.482,
+            78.738,
+            887.518,
+            485.632
+          ],
+          "figure": "Figure 4.4. Bones and Joints of the Hand; Palmar View",
+          "figure_id": "fig_85aa71ae16a005_493",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 108,
+          "bbox": [
+            112.484,
+            242.619,
+            887.516,
+            650.814
+          ],
+          "figure": "Figure 5.1. Regions of the Spine; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_636",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 109,
+          "bbox": [
+            112.484,
+            78.739,
+            887.516,
+            485.631
+          ],
+          "figure": "Figure 5.2. Skeletal Landmarks of a Vertebra; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_639",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 109,
+          "bbox": [
+            112.486,
+            490.689,
+            885.804,
+            521.64
+          ],
+          "figure": "Figure 5.2. Skeletal Landmarks of a Vertebra; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_640",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 110,
+          "bbox": [
+            112.484,
+            78.739,
+            887.516,
+            486.935
+          ],
+          "figure": "Figure 5.3. Skeletal Landmarks of a Vertebra; Superior View",
+          "figure_id": "fig_85aa71ae16a005_642",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 110,
+          "bbox": [
+            112.486,
+            491.993,
+            862.171,
+            522.944
+          ],
+          "figure": "Figure 5.3. Skeletal Landmarks of a Vertebra; Superior View",
+          "figure_id": "fig_85aa71ae16a005_643",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 111,
+          "bbox": [
+            112.48,
+            78.738,
+            887.52,
+            486.943
+          ],
+          "figure": "Figure 5.4. Skeletal Landmarks of the Sternum",
+          "figure_id": "fig_85aa71ae16a005_645",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 111,
+          "bbox": [
+            112.486,
+            491.999,
+            827.992,
+            522.95
+          ],
+          "figure": "Figure 5.4. Skeletal Landmarks of the Sternum",
+          "figure_id": "fig_85aa71ae16a005_646",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 112,
+          "bbox": [
+            112.488,
+            78.742,
+            887.512,
+            485.137
+          ],
+          "figure": "Figure 5.5. The Thorax",
+          "figure_id": "fig_85aa71ae16a005_648",
+          "credit": "Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image marked © B. Kathleen Alsup & Glenn M. Fox"
+        },
+        {
+          "page": 125,
+          "bbox": [
+            112.484,
+            315.246,
+            887.516,
+            724.074
+          ],
+          "figure": "Figure 5.12. Supraspinous ligament; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_745",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 132,
+          "bbox": [
+            112.482,
+            242.618,
+            887.518,
+            650.214
+          ],
+          "figure": "Figure 6.1. Bones of the Hip Girdle",
+          "figure_id": "fig_85aa71ae16a005_785",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 133,
+          "bbox": [
+            112.482,
+            78.739,
+            887.518,
+            486.335
+          ],
+          "figure": "Figure 6.2. Skeletal Landmarks of the Os Coxae; Lateral View",
+          "figure_id": "fig_85aa71ae16a005_788",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 133,
+          "bbox": [
+            112.486,
+            491.392,
+            871.147,
+            522.343
+          ],
+          "figure": "Figure 6.2. Skeletal Landmarks of the Os Coxae; Lateral View",
+          "figure_id": "fig_85aa71ae16a005_789",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 134,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            486.521
+          ],
+          "figure": "Figure 6.3. Medial View of the Os Coxae",
+          "figure_id": "fig_85aa71ae16a005_791",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 134,
+          "bbox": [
+            112.486,
+            491.581,
+            850.284,
+            522.532
+          ],
+          "figure": "Figure 6.3. Medial View of the Os Coxae",
+          "figure_id": "fig_85aa71ae16a005_792",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 135,
+          "bbox": [
+            112.484,
+            78.74,
+            887.516,
+            485.631
+          ],
+          "figure": "Figure 6.4. Skeletal Landmarks of the Proximal Femur; Posterior View",
+          "figure_id": "fig_85aa71ae16a005_794",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 160,
+          "bbox": [
+            112.478,
+            242.615,
+            887.522,
+            650.894
+          ],
+          "figure": "Figure 7.1. Skeletal Landmarks of the Distal Femur; Posterior View",
+          "figure_id": "fig_85aa71ae16a005_943",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 160,
+          "bbox": [
+            112.486,
+            655.95,
+            879.329,
+            686.9
+          ],
+          "figure": "Figure 7.1. Skeletal Landmarks of the Distal Femur; Posterior View",
+          "figure_id": "fig_85aa71ae16a005_944",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 161,
+          "bbox": [
+            112.478,
+            78.736,
+            887.522,
+            485.082
+          ],
+          "figure": "Figure 7.2. Anterior and Posterior Views of the Patella",
+          "figure_id": "fig_85aa71ae16a005_946",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 161,
+          "bbox": [
+            112.486,
+            490.137,
+            886.494,
+            521.089
+          ],
+          "figure": "Figure 7.2. Anterior and Posterior Views of the Patella",
+          "figure_id": "fig_85aa71ae16a005_947",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 162,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            486.044
+          ],
+          "figure": "Figure 7.3. Skeletal Landmarks of the Proximal Tibia; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_949",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 162,
+          "bbox": [
+            112.486,
+            491.103,
+            867.76,
+            522.054
+          ],
+          "figure": "Figure 7.3. Skeletal Landmarks of the Proximal Tibia; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_950",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 163,
+          "bbox": [
+            110.839,
+            78.742,
+            885.861,
+            486.178
+          ],
+          "figure": "Figure 7.4. Skeletal Landmark of the Proximal Fibula",
+          "figure_id": "fig_85aa71ae16a005_952",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 163,
+          "bbox": [
+            112.486,
+            491.237,
+            876.986,
+            522.189
+          ],
+          "figure": "Figure 7.4. Skeletal Landmark of the Proximal Fibula",
+          "figure_id": "fig_85aa71ae16a005_953",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 175,
+          "bbox": [
+            112.48,
+            144.533,
+            887.52,
+            551.285
+          ],
+          "figure": "Figure 7.7. Ligaments and Meniscus of the Knee; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_1038",
+          "credit": "Figure credit: by Kathleen Alsup & Glenn M. Fox; has been modified (altered) and is used with permission of the author; image watermark \"© B. Kathleen Alsup & Glenn M. Fox\" (BlueLink)."
+        },
+        {
+          "page": 182,
+          "bbox": [
+            110.835,
+            241.464,
+            885.867,
+            780.854
+          ],
+          "figure": "Figure 8.1. Skeletal Landmark of the Distal Tibia; Anterior View",
+          "figure_id": "fig_85aa71ae16a005_1090",
+          "credit": "Figure 8.1. Skeletal Landmark of the Distal Tibia; Anterior View by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 183,
+          "bbox": [
+            112.49,
+            78.743,
+            887.51,
+            660.85
+          ],
+          "figure": "Figure 8.2. Skeletal Landmark of the Distal Fibula",
+          "figure_id": "fig_85aa71ae16a005_1093",
+          "credit": "Figure 8.2. Skeletal Landmark of the Distal Fibula by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 183,
+          "bbox": [
+            112.486,
+            665.913,
+            853.141,
+            696.864
+          ],
+          "figure": "Figure 8.2. Skeletal Landmark of the Distal Fibula",
+          "figure_id": "fig_85aa71ae16a005_1094",
+          "credit": "Figure 8.2. Skeletal Landmark of the Distal Fibula by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 184,
+          "bbox": [
+            112.49,
+            78.743,
+            887.51,
+            486.217
+          ],
+          "figure": "Figure 8.3. Tarsal Bones of the Foot; Superior View",
+          "figure_id": "fig_85aa71ae16a005_1096",
+          "credit": "Figure 8.3. Tarsal Bones of the Foot; Superior View by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 184,
+          "bbox": [
+            112.486,
+            491.279,
+            861.413,
+            522.231
+          ],
+          "figure": "Figure 8.3. Tarsal Bones of the Foot; Superior View",
+          "figure_id": "fig_85aa71ae16a005_1097",
+          "credit": "Figure 8.3. Tarsal Bones of the Foot; Superior View by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 185,
+          "bbox": [
+            112.48,
+            78.738,
+            887.52,
+            486.443
+          ],
+          "figure": "Figure 8.4. Skeletal Landmarks of the Medial Foot",
+          "figure_id": "fig_85aa71ae16a005_1099",
+          "credit": "Figure 8.4. Skeletal Landmarks of the Medial Foot by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 185,
+          "bbox": [
+            112.486,
+            491.499,
+            851.907,
+            522.45
+          ],
+          "figure": "Figure 8.4. Skeletal Landmarks of the Medial Foot",
+          "figure_id": "fig_85aa71ae16a005_1100",
+          "credit": "Figure 8.4. Skeletal Landmarks of the Medial Foot by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 187,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            484.747
+          ],
+          "figure": "Figure 8.6. Bones and Joints of the Foot; Superior View",
+          "figure_id": "fig_85aa71ae16a005_1105",
+          "credit": "Figure 8.6. Bones and Joints of the Foot; Superior View by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 197,
+          "bbox": [
+            112.488,
+            78.742,
+            887.512,
+            486.926
+          ],
+          "figure": "Figure 8.9. Achilles Tendon and Deltoid Ligament of the Ankle; Medial View",
+          "figure_id": "fig_85aa71ae16a005_1183",
+          "credit": "Figure 8.9. Achilles Tendon and Deltoid Ligament of the Ankle; Medial View by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 199,
+          "bbox": [
+            112.488,
+            78.742,
+            887.512,
+            485.482
+          ],
+          "figure": "Figure 8.11. Ligaments of the Lateral Ankle",
+          "figure_id": "fig_85aa71ae16a005_1195",
+          "credit": "Figure 8.11. Ligaments of the Lateral Ankle by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        },
+        {
+          "page": 208,
+          "bbox": [
+            112.484,
+            242.618,
+            887.516,
+            647.769
+          ],
+          "figure": "Figure 9.1. Anterior View of the Mandible",
+          "figure_id": "fig_85aa71ae16a005_1259",
+          "credit": "Figure 9.1. Anterior View of the Mandible by Kathleen Alsup & Glenn M. Fox is used with permission of the author."
+        },
+        {
+          "page": 209,
+          "bbox": [
+            112.482,
+            78.738,
+            887.518,
+            485.474
+          ],
+          "figure": "Figure 9.2. Skeletal Landmarks of the Mandible; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_1262",
+          "credit": "Figure 9.2. Skeletal Landmarks of the Mandible; Sagittal View by Kathleen Alsup & Glenn M. Fox is used with permission of the author."
+        },
+        {
+          "page": 209,
+          "bbox": [
+            112.486,
+            490.531,
+            875.821,
+            521.482
+          ],
+          "figure": "Figure 9.2. Skeletal Landmarks of the Mandible; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_1263",
+          "credit": "Figure 9.2. Skeletal Landmarks of the Mandible; Sagittal View by Kathleen Alsup & Glenn M. Fox is used with permission of the author."
+        },
+        {
+          "page": 210,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            486.578
+          ],
+          "figure": "Figure 9.3. The Hyoid Bone",
+          "figure_id": "fig_85aa71ae16a005_1265",
+          "credit": "Figure 9.3. The Hyoid Bone by Kathleen Alsup & Glenn M. Fox is used with permission of the author."
+        },
+        {
+          "page": 210,
+          "bbox": [
+            112.486,
+            491.637,
+            842.915,
+            522.589
+          ],
+          "figure": "Figure 9.3. The Hyoid Bone",
+          "figure_id": "fig_85aa71ae16a005_1266",
+          "credit": "Figure 9.3. The Hyoid Bone by Kathleen Alsup & Glenn M. Fox is used with permission of the author."
+        },
+        {
+          "page": 218,
+          "bbox": [
+            112.486,
+            78.74,
+            887.514,
+            484.682
+          ],
+          "figure": "Figure 9.7. The Temporomandibular Joint; Sagittal View",
+          "figure_id": "fig_85aa71ae16a005_1320",
+          "credit": "Figure 9.7. The Temporomandibular Joint; Sagittal View by Kathleen Alsup & Glenn M. Fox has been modified (altered) and is used with permission of the author."
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "anatomy-physiology"
+      "subject_id": "anatomy-physiology",
+      "version": 1
     },
     {
       "id": "how-does-cognition-influence-emotion",
@@ -7016,6 +7861,30 @@
       "version": 1
     },
     {
+      "id": "introduction-to-logic-and-critical-thinking",
+      "title": "Introduction to Logic and Critical Thinking",
+      "authors": [
+        "Matthew Van Cleave"
+      ],
+      "edition": "Version 2.0",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-logic-and-critical-thinking",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/644",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/84eeb325793925cf55ad17106514c56e292b8ccaf9960b3736152201c07f51c1.pdf#page=2",
+      "license_evidence_quote": "Introduction to Logic and Critical Thinking by Matthew J. Van Cleave is licensed under a Creative Commons Attribution 4.0 International License. To view a copy of this license, visit http://creativecommons.org/licenses/by/4.0/.",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to Logic and Critical Thinking, Matthew Van Cleave, Version 2.0. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/introduction-to-logic-and-critical-thinking",
+      "pdf_path": "data/knowledge-base/sources/84eeb325793925cf55ad17106514c56e292b8ccaf9960b3736152201c07f51c1.pdf",
+      "sha256": "84eeb325793925cf55ad17106514c56e292b8ccaf9960b3736152201c07f51c1",
+      "bytes": 3731640,
+      "pages": 244,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "philosophy"
+    },
+    {
       "id": "introduction-to-mips-assembly-language-programming",
       "title": "Introduction to MIPS Assembly Language Programming",
       "authors": [
@@ -7538,6 +8407,30 @@
       "rights_notes": [],
       "subject_id": "management",
       "version": 5
+    },
+    {
+      "id": "manufacturing-processes-4-5",
+      "title": "Manufacturing Processes 4-5",
+      "authors": [
+        "LamNgeun Virasak"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/manufacturing-processes-4-5",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1109",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/edae9e3aa9f12dd0429aa8b15fcf36af748cb0c6eb693eafd90ea4fd930f73cf.pdf#page=4",
+      "license_evidence_quote": "Manufacturing Processes 4-5 by LamNgeun Virasak is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Manufacturing Processes 4-5, LamNgeun Virasak. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/manufacturing-processes-4-5",
+      "pdf_path": "data/knowledge-base/sources/edae9e3aa9f12dd0429aa8b15fcf36af748cb0c6eb693eafd90ea4fd930f73cf.pdf",
+      "sha256": "edae9e3aa9f12dd0429aa8b15fcf36af748cb0c6eb693eafd90ea4fd930f73cf",
+      "bytes": 28107679,
+      "pages": 236,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "industrial-systems-engineering"
     },
     {
       "id": "marine-ecology-notes-2nd-edition",
@@ -9406,7 +10299,8 @@
         }
       ],
       "rights_notes": [],
-      "subject_id": "curriculum-instruction"
+      "subject_id": "curriculum-instruction",
+      "version": 1
     },
     {
       "id": "school-personnel-administration-and-instructional-supervisio",
@@ -10078,6 +10972,30 @@
       "rights_notes": [],
       "subject_id": "linguistics",
       "version": 2
+    },
+    {
+      "id": "theatreappreciation",
+      "title": "#TheatreAppreciation",
+      "authors": [
+        "Kiara Pipino"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/theatreappreciation",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3271",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/theatreappreciation",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "#TheatreAppreciation, Kiara Pipino. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/theatreappreciation",
+      "pdf_path": "data/knowledge-base/sources/b74b964c36b7a5cf5785c1cb07a8a9b91370b225eec57d7f0b3e0df10c1b3b0c.pdf",
+      "sha256": "b74b964c36b7a5cf5785c1cb07a8a9b91370b225eec57d7f0b3e0df10c1b3b0c",
+      "bytes": 11540574,
+      "pages": 244,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "theatre-film"
     },
     {
       "id": "tourism-the-international-business",
