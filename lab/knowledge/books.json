@@ -556,7 +556,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "discrete-mathematics"
+      "subject_id": "discrete-mathematics",
+      "version": 1
     },
     {
       "id": "animals-ethics-101-thinking-critically-about-animal-rights",
@@ -747,7 +748,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "statistics"
+      "subject_id": "statistics",
+      "version": 1
     },
     {
       "id": "becoming-a-change-facilitator",
@@ -2265,30 +2267,6 @@
       "version": 5
     },
     {
-      "id": "federal-rules-of-evidence",
-      "title": "Federal Rules of Evidence",
-      "authors": [
-        "Legal Information Institute, Cornell Law School"
-      ],
-      "edition": "",
-      "source_url": "https://open.umn.edu/opentextbooks/textbooks/federal-rules-of-evidence",
-      "download_url": "https://open.umn.edu/opentextbooks/formats/728",
-      "license": "CC BY-SA",
-      "license_url": "http://creativecommons.org/licenses/",
-      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/federal-rules-of-evidence",
-      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
-      "attribution_reviewed": false,
-      "attribution": "Federal Rules of Evidence, Legal Information Institute, Cornell Law School. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/federal-rules-of-evidence",
-      "pdf_path": "data/knowledge-base/sources/08b86beeeee6918c4e2e9d45304908ca98197eeb119eea95e8b39243699506c1.pdf",
-      "sha256": "08b86beeeee6918c4e2e9d45304908ca98197eeb119eea95e8b39243699506c1",
-      "bytes": 1850788,
-      "pages": 213,
-      "first_content_page": 1,
-      "figure_exclusions": [],
-      "rights_notes": [],
-      "subject_id": "civil-law-procedure"
-    },
-    {
       "id": "fish-fishing-and-conservation-low-resolution",
       "title": "Fish, Fishing, and Conservation (low resolution)",
       "authors": [
@@ -2362,6 +2340,32 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "curriculum-instruction"
+    },
+    {
+      "id": "fracture-mechanics-an-engineering-primer",
+      "title": "Fracture Mechanics: An Engineering Primer",
+      "authors": [
+        "Michael Janssen",
+        "Jan Zuidema",
+        "Russell Wanhill"
+      ],
+      "edition": "2nd Edition",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/fracture-mechanics-an-engineering-primer",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/4100",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://books.open.tudelft.nl/home/catalog/book/173",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License",
+      "attribution_reviewed": false,
+      "attribution": "Fracture Mechanics: An Engineering Primer, Michael Janssen, Jan Zuidema, Russell Wanhill, 2nd Edition. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/fracture-mechanics-an-engineering-primer",
+      "pdf_path": "data/knowledge-base/sources/e20062e44460539d5e3f8b29c057ebf6ead6adf3da7b81155ff00010c345aeb1.pdf",
+      "sha256": "e20062e44460539d5e3f8b29c057ebf6ead6adf3da7b81155ff00010c345aeb1",
+      "bytes": 42900451,
+      "pages": 379,
+      "first_content_page": 14,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "mechanical-engineering"
     },
     {
       "id": "fundamental-methods-of-logic",
@@ -7606,7 +7610,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "mechanical-engineering"
+      "subject_id": "mechanical-engineering",
+      "version": 1
     },
     {
       "id": "intro-to-logic",
@@ -10998,6 +11003,30 @@
       "subject_id": "theatre-film"
     },
     {
+      "id": "torts-cases-and-contexts-volume-1",
+      "title": "Torts: Cases and Contexts Volume 1",
+      "authors": [
+        "Eric E. Johnson"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/torts-cases-and-contexts-volume-1",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/393",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/torts-cases-and-contexts-volume-1",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Torts: Cases and Contexts Volume 1, Eric E. Johnson. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/torts-cases-and-contexts-volume-1",
+      "pdf_path": "data/knowledge-base/sources/a844974cf97ebf1526fe4c1b9315e47e4a051eef5568759a116e35df65e0b350.pdf",
+      "sha256": "a844974cf97ebf1526fe4c1b9315e47e4a051eef5568759a116e35df65e0b350",
+      "bytes": 2759704,
+      "pages": 454,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "civil-law-procedure"
+    },
+    {
       "id": "tourism-the-international-business",
       "title": "Tourism the International Business",
       "authors": [
@@ -11155,6 +11184,54 @@
       "rights_notes": [],
       "subject_id": "literature",
       "version": 5
+    },
+    {
+      "id": "yet-another-introductory-number-theory-textbook-cryptology-e",
+      "title": "Yet Another Introductory Number Theory Textbook (Cryptology Emphasis Version)",
+      "authors": [
+        "Jonathan A. Poritz"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/yet-another-introductory-number-theory-textbook-cryptology-emphasis-version",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1157",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/yet-another-introductory-number-theory-textbook-cryptology-emphasis-version",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Yet Another Introductory Number Theory Textbook (Cryptology Emphasis Version), Jonathan A. Poritz. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/yet-another-introductory-number-theory-textbook-cryptology-emphasis-version",
+      "pdf_path": "data/knowledge-base/sources/44ae6b2b3dd3c44ee4a6c59c57b623861cabae2a33d1d057df99a1e5c6dcb09f.pdf",
+      "sha256": "44ae6b2b3dd3c44ee4a6c59c57b623861cabae2a33d1d057df99a1e5c6dcb09f",
+      "bytes": 881013,
+      "pages": 128,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "discrete-mathematics"
+    },
+    {
+      "id": "you-re-smarter-than-you-think-introduction-to-statistics-com",
+      "title": "You're Smarter Than You Think: Introduction to Statistics · Community College Edition",
+      "authors": [
+        "Safaa Dabagh"
+      ],
+      "edition": "1st ed.",
+      "source_url": "https://learnwithoutwalls.com/statistics-textbook.html",
+      "download_url": "https://learnwithoutwalls.com/textbook/YoureSmarter_Statistics_SMC_WLAC.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://learnwithoutwalls.com/statistics-textbook.html",
+      "license_evidence_quote": "Licensed under Creative Commons CC BY 4.0 . Download it, print it, share it with your students, and adapt it for your course, just credit the original author.",
+      "attribution_reviewed": false,
+      "attribution": "You're Smarter Than You Think: Introduction to Statistics · Community College Edition, Safaa Dabagh, 1st ed.. CC BY 4.0. https://learnwithoutwalls.com/statistics-textbook.html",
+      "pdf_path": "data/knowledge-base/sources/4dece6ee17f047e382697151a6a049fb8ec523f502d8f87ca636e2c888140da2.pdf",
+      "sha256": "4dece6ee17f047e382697151a6a049fb8ec523f502d8f87ca636e2c888140da2",
+      "bytes": 1717315,
+      "pages": 255,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics"
     }
   ]
 }
