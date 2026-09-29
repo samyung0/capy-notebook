@@ -535,6 +535,30 @@
       "version": 1
     },
     {
+      "id": "an-introduction-to-the-theory-of-numbers",
+      "title": "An Introduction to the Theory of Numbers",
+      "authors": [
+        "Leo Moser"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/an-introduction-to-the-theory-of-numbers",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1281",
+      "license": "CC BY",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/an-introduction-to-the-theory-of-numbers",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "An Introduction to the Theory of Numbers, Leo Moser. CC BY. https://open.umn.edu/opentextbooks/textbooks/an-introduction-to-the-theory-of-numbers",
+      "pdf_path": "data/knowledge-base/sources/a00a5f49d5d8d71369b9da399fba2099648d9012b65165acc128eb1c06620e01.pdf",
+      "sha256": "a00a5f49d5d8d71369b9da399fba2099648d9012b65165acc128eb1c06620e01",
+      "bytes": 533539,
+      "pages": 95,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "discrete-mathematics"
+    },
+    {
       "id": "animals-ethics-101-thinking-critically-about-animal-rights",
       "title": "Animals & Ethics 101: Thinking Critically About Animal Rights",
       "authors": [
@@ -700,6 +724,30 @@
       ],
       "subject_id": "political-science",
       "version": 6
+    },
+    {
+      "id": "basic-statistics-using-r-for-crime-analysis",
+      "title": "Basic Statistics Using R for Crime Analysis",
+      "authors": [
+        "Jaeyong Choi"
+      ],
+      "edition": "First",
+      "source_url": "https://paadopt.org/bookshelf/basic-statistics-using-r-for-crime-analysis/",
+      "download_url": "https://paadopt.org/wp-content/uploads/2025/12/Basic-Statistics-Using-R-JChoi-20251202-1.pdf",
+      "license": "CC BY-SA 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "license_evidence_url": "https://paadopt.org/bookshelf/basic-statistics-using-r-for-crime-analysis/",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution-ShareAlike 4.0 International License (CC BY-SA 4.0) as a part of PA-ADOPT, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Basic Statistics Using R for Crime Analysis, Jaeyong Choi, First. CC BY-SA 4.0. https://paadopt.org/bookshelf/basic-statistics-using-r-for-crime-analysis/",
+      "pdf_path": "data/knowledge-base/sources/82a44ab017ea515b8ab0524379a66a75c37bbd06c90d446aeafdb251b0fb9442.pdf",
+      "sha256": "82a44ab017ea515b8ab0524379a66a75c37bbd06c90d446aeafdb251b0fb9442",
+      "bytes": 6646341,
+      "pages": 72,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "statistics"
     },
     {
       "id": "becoming-a-change-facilitator",
@@ -1641,7 +1689,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "ecology-evolution"
+      "subject_id": "ecology-evolution",
+      "version": 1
     },
     {
       "id": "core-concepts-of-marketing",
@@ -2192,6 +2241,30 @@
       "version": 5
     },
     {
+      "id": "federal-rules-of-evidence",
+      "title": "Federal Rules of Evidence",
+      "authors": [
+        "Legal Information Institute, Cornell Law School"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/federal-rules-of-evidence",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/728",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/federal-rules-of-evidence",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Federal Rules of Evidence, Legal Information Institute, Cornell Law School. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/federal-rules-of-evidence",
+      "pdf_path": "data/knowledge-base/sources/08b86beeeee6918c4e2e9d45304908ca98197eeb119eea95e8b39243699506c1.pdf",
+      "sha256": "08b86beeeee6918c4e2e9d45304908ca98197eeb119eea95e8b39243699506c1",
+      "bytes": 1850788,
+      "pages": 213,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "civil-law-procedure"
+    },
+    {
       "id": "focusing-on-organizational-change",
       "title": "Focusing on Organizational Change",
       "authors": [
@@ -2236,7 +2309,32 @@
       "bytes": 4759177,
       "pages": 209,
       "first_content_page": 1,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            0.0,
+            0.0,
+            1000.0,
+            1000.0
+          ],
+          "figure": "Book cover (page 1)",
+          "figure_id": "fig_b56889d7e74684_0",
+          "credit": "LibreTexts book cover, trademarked by LibreTexts, Inc."
+        },
+        {
+          "page": 3,
+          "bbox": [
+            73.529,
+            279.811,
+            926.471,
+            486.953
+          ],
+          "figure": "LibreTexts owl logo (page 3)",
+          "figure_id": "fig_b56889d7e74684_7",
+          "credit": "LibreTexts logo, trademarked by LibreTexts, Inc."
+        }
+      ],
       "rights_notes": [],
       "subject_id": "philosophy"
     },
@@ -2323,7 +2421,7 @@
       "sha256": "9ab8c248e54da8627405d49836f0b670df450b8931b580f26e550bd27f64db37",
       "bytes": 77296873,
       "pages": 231,
-      "first_content_page": null,
+      "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "anatomy-physiology"
@@ -6642,6 +6740,30 @@
       "version": 3
     },
     {
+      "id": "interpretation-of-metal-fab-drawings",
+      "title": "Interpretation of Metal Fab Drawings",
+      "authors": [
+        "Cameren Moran"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/interpretation-of-metal-fab-drawings",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/2416",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/c4b82c0a9ce4c654a5ac04842fcea86ed73376b8ea3f6f7b4bb9fbfc2465c14a.pdf#page=4",
+      "license_evidence_quote": "Interpretation of Metal Fab Drawings by Cameren Moran is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Interpretation of Metal Fab Drawings, Cameren Moran. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/interpretation-of-metal-fab-drawings",
+      "pdf_path": "data/knowledge-base/sources/c4b82c0a9ce4c654a5ac04842fcea86ed73376b8ea3f6f7b4bb9fbfc2465c14a.pdf",
+      "sha256": "c4b82c0a9ce4c654a5ac04842fcea86ed73376b8ea3f6f7b4bb9fbfc2465c14a",
+      "bytes": 1904763,
+      "pages": 104,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "mechanical-engineering"
+    },
+    {
       "id": "intro-to-logic",
       "title": "Intro to Logic",
       "authors": [
@@ -6892,6 +7014,30 @@
       "rights_notes": [],
       "subject_id": "applied-mathematics",
       "version": 1
+    },
+    {
+      "id": "introduction-to-mips-assembly-language-programming",
+      "title": "Introduction to MIPS Assembly Language Programming",
+      "authors": [
+        "Charles W. Kann"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-mips-assembly-language-programming",
+      "download_url": "http://cupola.gettysburg.edu/cgi/viewcontent.cgi?article=1001&context=oer",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/031494181256f93b190cbd7e7cade52b25dfec51c590c1187557531f6afb688b.pdf#page=2",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 License.",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to MIPS Assembly Language Programming, Charles W. Kann. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/introduction-to-mips-assembly-language-programming",
+      "pdf_path": "data/knowledge-base/sources/031494181256f93b190cbd7e7cade52b25dfec51c590c1187557531f6afb688b.pdf",
+      "sha256": "031494181256f93b190cbd7e7cade52b25dfec51c590c1187557531f6afb688b",
+      "bytes": 4856722,
+      "pages": 180,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "programming"
     },
     {
       "id": "introduction-to-school-leadership",
@@ -9021,6 +9167,30 @@
       "version": 4
     },
     {
+      "id": "principles-of-managerial-accounting",
+      "title": "Principles of Managerial Accounting",
+      "authors": [
+        "Christine Jonick"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/principles-fo-managerial-accounting",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3100",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/principles-fo-managerial-accounting",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Principles of Managerial Accounting, Christine Jonick. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/principles-fo-managerial-accounting",
+      "pdf_path": "data/knowledge-base/sources/2da84c761a604accb2e89a8b895f6ba66370dcd7ca27cb96d3dd3f400d68c1ca.pdf",
+      "sha256": "2da84c761a604accb2e89a8b895f6ba66370dcd7ca27cb96d3dd3f400d68c1ca",
+      "bytes": 3817028,
+      "pages": 126,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "accounting"
+    },
+    {
       "id": "principles-of-object-oriented-programming",
       "title": "Principles of Object-Oriented Programming",
       "authors": [
@@ -9221,7 +9391,20 @@
       "bytes": 41232896,
       "pages": 235,
       "first_content_page": 1,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 153,
+          "bbox": [
+            92.636,
+            71.582,
+            662.946,
+            381.624
+          ],
+          "figure": "HOLC map of Oakland, CA.",
+          "figure_id": "fig_89855c4d17ebc8_1151",
+          "credit": "Published by the Mapping Inequality project [7] under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License (https://creativecommons.org/licenses/by-nc-sa/4.0/)."
+        }
+      ],
       "rights_notes": [],
       "subject_id": "curriculum-instruction"
     },
