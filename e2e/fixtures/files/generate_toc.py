@@ -1,96 +1,113 @@
-"""Regenerate toc/report.docx: a Word-style table of contents; never contacts a provider."""
+"""Regenerate toc/report.docx, a Word table of contents whose publication rebase refuses a later edit to a TOC link; never contacts a provider."""
 
-from datetime import datetime
 from pathlib import Path
-
-from docx import Document
-from docx.enum.style import WD_STYLE_TYPE
-from docx.oxml import parse_xml
-from docx.oxml.ns import nsdecls
-from generate_basic import FACT, MARKER, stable_zip
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 ROOT = Path(__file__).parent / "toc"
-# (level, heading, bookmark): Word's TOC \o "1-3" \h \z \u over these headings.
-HEADINGS = (
-    (1, "Field survey", "_Toc100000001"),
-    (2, "Sampling sites", "_Toc100000002"),
-    (1, "Findings", "_Toc100000003"),
+MARKER = "UAT_RUN_MARKER"
+FACT = "Wetland plants absorb carbon and protect the shoreline."
+W = (
+    'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+    'xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" '
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
 )
+REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 
 
 def run(xml):
     return f"<w:r>{xml}</w:r>"
 
 
-def field(instruction, result):
-    """A complex field as Word writes it: begin, instruction, separate, result, end."""
+def text(value):
+    return run(f'<w:t xml:space="preserve">{value}</w:t>')
+
+
+def char(kind):
+    return run(f'<w:fldChar w:fldCharType="{kind}"/>')
+
+
+def instr(value):
+    return run(f'<w:instrText xml:space="preserve"> {value} </w:instrText>')
+
+
+def paragraph(para_id, xml, style=None):
+    props = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
+    return f'<w:p w14:paraId="{para_id}">{props}{xml}</w:p>'
+
+
+def entry(label, bookmark):
+    """A TOC entry as Word writes it: a link to the heading, a tab and PAGEREF."""
+    page = instr(f"PAGEREF {bookmark} \\h")
     return (
-        run('<w:fldChar w:fldCharType="begin"/>')
-        + run(f'<w:instrText xml:space="preserve"> {instruction} </w:instrText>')
-        + run('<w:fldChar w:fldCharType="separate"/>')
-        + result
-        + run('<w:fldChar w:fldCharType="end"/>')
-    )
-
-
-def entry(level, text, bookmark, first):
-    # The TOC field opens in the first entry's paragraph; each entry is a
-    # hyperlink to its heading's bookmark holding a PAGEREF field.
-    start = (
-        run('<w:fldChar w:fldCharType="begin"/>')
-        + run(
-            '<w:instrText xml:space="preserve"> TOC \\o "1-3" \\h \\z \\u </w:instrText>'
-        )
-        + run('<w:fldChar w:fldCharType="separate"/>')
-        if first
-        else ""
-    )
-    link = (
         f'<w:hyperlink w:anchor="{bookmark}" w:history="1">'
-        + run(f"<w:t>{text}</w:t>")
-        + run("<w:tab/>")
-        + field(f"PAGEREF {bookmark} \\h", run("<w:t>1</w:t>"))
+        '<w:r><w:rPr><w:rStyle w:val="Hyperlink"/><w:noProof/></w:rPr>'
+        f"<w:t>{label}</w:t></w:r>"
+        "<w:r><w:rPr><w:noProof/><w:webHidden/></w:rPr><w:tab/></w:r>"
+        + char("begin")
+        + page
+        + char("separate")
+        + "<w:r><w:rPr><w:noProof/><w:webHidden/></w:rPr><w:t>1</w:t></w:r>"
+        + char("end")
         + "</w:hyperlink>"
     )
-    return parse_xml(
-        f'<w:p {nsdecls("w")}><w:pPr><w:pStyle w:val="TOC{level}"/>'
-        '<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="8630"/></w:tabs>'
-        f"</w:pPr>{start}{link}</w:p>"
+
+
+def heading(para_id, label, bookmark, number):
+    return paragraph(
+        para_id,
+        f'<w:bookmarkStart w:id="{number}" w:name="{bookmark}"/>{text(label)}'
+        f'<w:bookmarkEnd w:id="{number}"/>',
+        "Heading1",
     )
 
 
 def main():
-    ROOT.mkdir(parents=True, exist_ok=True)
-    doc = Document()
-    doc.core_properties.created = doc.core_properties.modified = datetime(2026, 1, 1)  # noqa: DTZ001 - fixed OOXML metadata uses a naive timestamp
-    for level in (1, 2):
-        style = doc.styles.add_style(f"toc {level}", WD_STYLE_TYPE.PARAGRAPH)
-        style.element.styleId = f"TOC{level}"
-    doc.add_paragraph("Wetland field report", style="Title")
-    doc.add_paragraph("Contents", style="TOC Heading")
-    body = doc.element.body
-    sect = body[-1]
-    for index, (level, text, bookmark) in enumerate(HEADINGS):
-        sect.addprevious(entry(level, text, bookmark, index == 0))
-    end = run('<w:fldChar w:fldCharType="end"/>')
-    sect.addprevious(parse_xml(f"<w:p {nsdecls('w')}>{end}</w:p>"))
-    paragraphs = {
-        "Field survey": FACT,
-        "Sampling sites": "Three sampling sites line the eastern shore.",
-        "Findings": MARKER,
-    }
-    for index, (level, text, bookmark) in enumerate(HEADINGS):
-        heading = doc.add_heading(level=level)
-        heading._p.append(
-            parse_xml(
-                f'<w:bookmarkStart {nsdecls("w")} w:id="{index}" w:name="{bookmark}"/>'
-            )
+    # The first TOC paragraph opens with one run holding a label and a tab,
+    # which the export writes as two runs: the export's seed then numbers the
+    # TOC field otherwise than the editor's, so text typed inside the first
+    # entry after a publication's capture cannot be rebased.
+    body = (
+        paragraph("10000001", text("Wetland field report"), "Title")
+        + paragraph(
+            "10000002",
+            "<w:r><w:t>Contents</w:t><w:tab/></w:r>"
+            + char("begin")
+            + instr('TOC \\o "1-3" \\h \\z \\u')
+            + char("separate")
+            + entry("Introduction", "_Toc1"),
+            "TOC1",
         )
-        heading.add_run(text)
-        heading._p.append(parse_xml(f'<w:bookmarkEnd {nsdecls("w")} w:id="{index}"/>'))
-        doc.add_paragraph(paragraphs[text])
-    doc.save(ROOT / "report.docx")
-    stable_zip(ROOT / "report.docx")
+        + paragraph("10000003", entry("Details", "_Toc2") + char("end"), "TOC1")
+        + heading("10000004", "Introduction", "_Toc1", 1)
+        + paragraph("10000005", text(FACT), "Normal")
+        + heading("10000006", "Details", "_Toc2", 2)
+        + paragraph("10000007", text(MARKER), "Normal")
+    )
+    main_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+    parts = {
+        "[Content_Types].xml": (
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            f'<Override PartName="/word/document.xml" ContentType="{main_type}"/></Types>'
+        ),
+        "_rels/.rels": (
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            f'<Relationship Id="rId1" Type="{REL}/officeDocument" Target="word/document.xml"/>'
+            "</Relationships>"
+        ),
+        "word/_rels/document.xml.rels": '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>',
+        "word/document.xml": (
+            f"<w:document {W}><w:body>{body}"
+            '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>'
+        ),
+    }
+    ROOT.mkdir(parents=True, exist_ok=True)
+    with ZipFile(ROOT / "report.docx", "w", ZIP_DEFLATED) as archive:
+        for name, xml in parts.items():
+            info = ZipInfo(name, (2026, 1, 1, 0, 0, 0))
+            info.compress_type = ZIP_DEFLATED
+            archive.writestr(info, xml)
 
 
 if __name__ == "__main__":

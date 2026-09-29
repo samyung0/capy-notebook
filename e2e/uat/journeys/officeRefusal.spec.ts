@@ -25,11 +25,6 @@ import { test } from './runtime';
 test('docx refusal: a held publication refuses a TOC-link edit and the automatic republication publishes it', async ({
   run,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: PENDING until the BetterOffice field worker defines the refusing edit.
-  test.fixme(
-    true,
-    'Pending the refusing TOC-link edit from the BetterOffice field worker (editTocLink in officeRefusal.ts)'
-  );
   test.setTimeout(2_400_000);
   const workspaceId = await workspace(run, 'refusal');
   const marker = `UAT_${randomUUID().replaceAll('-', '')}`;

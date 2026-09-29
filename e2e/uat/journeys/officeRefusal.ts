@@ -3,7 +3,7 @@
 // publication held after its capture, a TOC-link edit the rebase refuses, and
 // the automatic republication that captures it.
 import assert from 'node:assert/strict';
-import type { FrameLocator, Page } from '@playwright/test';
+import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { sanitize } from './evidence';
 import { api, fileRow, object, string } from './files';
 import type { UatRun } from './runtime';
@@ -67,18 +67,50 @@ export async function heldPublication(run: UatRun, fileId: string) {
 }
 
 /**
- * PENDING (BetterOffice field worker): the edit on a table-of-contents link
- * that the publication rebase refuses (DOCX review round 5: a rebase refuses
- * when it cannot match each projected link in a field result to its field).
- * It saves the edit and returns text the published document.xml contains.
+ * The edit the publication rebase refuses (e2e/fixtures/files/toc/README.md):
+ * one character typed after "Intro" in the first TOC entry's link. A click on
+ * the link follows it to its heading, so the caret starts on the "Contents"
+ * label and arrows into the link. Typing at the entry's start, Backspace,
+ * Delete or Enter would land instead. Returns the text the published
+ * document.xml contains once a fresh publication captures the edit.
  */
-export async function editTocLink(
-  _page: Page,
-  _frame: FrameLocator
-): Promise<{ published: string }> {
-  throw new Error(
-    'The refusing TOC-link edit is pending from the BetterOffice field worker'
-  );
+export async function editTocLink(page: Page, frame: FrameLocator) {
+  const toc = frame.getByRole('paragraph').filter({ hasText: 'Contents' });
+  const label = toc.getByText('Contents', { exact: true });
+  const link = toc.getByText('Introduction', { exact: true });
+  const input = frame.getByRole('textbox', { name: 'Document input' });
+  const head = async () =>
+    Number(await input.getAttribute('data-selection-head'));
+  // The text cursor confirms hit testing is ready before the caret is placed.
+  await expect(async () => {
+    await label.hover({ force: true, timeout: 5000 });
+    await expect(frame.locator('.canvas-pages')).toHaveCSS('cursor', 'text', {
+      timeout: 1000,
+    });
+    await label.click({ force: true, timeout: 5000 });
+    await expect(input).toHaveAttribute('data-pointer-placement', 'ready', {
+      timeout: 1000,
+    });
+    const caret = await head();
+    expect(caret).toBeGreaterThanOrEqual(
+      Number(await label.getAttribute('data-doc-start'))
+    );
+    expect(caret).toBeLessThanOrEqual(
+      Number(await label.getAttribute('data-doc-end'))
+    );
+  }).toPass({ timeout: 60_000 });
+  const target = Number(await link.getAttribute('data-doc-start')) + 5;
+  for (let caret = await head(); caret !== target; caret = await head()) {
+    assert(caret < target, `the caret passed "Intro" (${caret} > ${target})`);
+    await input.press('ArrowRight');
+    await expect(input).not.toHaveAttribute(
+      'data-selection-head',
+      String(caret)
+    );
+  }
+  await input.pressSequentially('Z');
+  await page.getByRole('button', { exact: true, name: 'Save' }).click();
+  return { published: 'IntroZduction' };
 }
 
 /**
