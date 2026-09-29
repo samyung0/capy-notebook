@@ -140,7 +140,33 @@ changed, over the fingerprinted source that every open requires:
   package, resolved at lowering; an inserted image keeps its data URL until the
   next publication rebases it into a reference. Charts and drawings the model
   cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
-  and export unchanged until edited.
+  and export unchanged until edited. A comment range covers the same content
+  from one publication to the next within the story it opened in: the seed
+  gives each unit inside a range to every comment open there (another
+  comment's reference mark only when the range goes on past it), and the
+  export writes range and bookmark boundaries at those story units. In a table
+  cell, header, footer or note the export drops a page or column break the
+  editor inserted, and one from the file survives only while its paragraph's
+  text is unchanged, as before this change; keeping them is a separate, known
+  gap. Comment boundaries after such a break still land exactly, because its
+  unit is measured out. Where a range cannot be written exactly it settles
+  after one publication:
+  - Markers Word nests in a hyperlink, tracked insertion or deletion, inline
+    content control, simple field or complex field result move to that
+    container's edges at seed (start before, end after). Inside a field
+    result they move to the field's edges. An editor boundary inside a
+    hyperlink or field moves to its edge the same way, so the comment widens
+    to hold it whole.
+  - A range crossing into or out of a table or block content control covers
+    only the story it opened in and closes at that story's end. It keeps a
+    single reference mark: the export generates one only for a comment with
+    none anywhere in the document.
+  - An editor range starting or ending exactly at a table saves at the start
+    of the next paragraph.
+
+  Comments spanning several stories are unsupported, since the editor cannot
+  create them. An editor save (download, view bytes) adds reply markers only
+  to replies that have none of their own.
 - XLSX (schema 8) keeps the sheet topology plus per-cell overrides keyed by
   stable identity; unedited cells come from the source. Pending effects are
   read off the overrides (`xlsxPendingEffects`: one per changed cell, per row
@@ -173,7 +199,9 @@ it lands beside it, a later delete that spans it deletes it too, and an
 anchor may span it. A comment the later edits removed takes its reference
 field with it, as removing it in the editor does (removeComment deletes the
 comment's reference fields), since an export drops a field that names no
-comment. Such field units are also left out of the DOCX effects baseline,
+comment. Undo covers the comments root with the stories, so Ctrl+Z after
+removing a comment restores it with its field. Such field units are also left
+out of the DOCX effects baseline,
 where the comment's own entry carries the change.
 The rebase fails explicitly when a later edit or such an anchor touches
 content the export wrote differently, when a restored slide, shape or
@@ -228,16 +256,21 @@ inserted paragraph before an original break still suggests the break's
 deletion. Enter at the start of a slot that opens with a block inserts an
 empty paragraph before the block and leaves the block's paragraph (id and
 properties, borders included) as it was, so Delete in the new paragraph
-restores the document.
+restores the document; the editor's Enter then gives the next style to
+neither paragraph. Any split leaves a section with the mark that ends it (the
+new mark never takes `sectPr` or `sectionBreakType`), and a paragraph that
+loses its borders in a split loses them from `_originalFormatting` too, so a
+save does not write them back.
 
 A range delete (a selection delete or a cut) ending at the start of such a
 slot keeps the paragraph mark before it (`kept_mark`), so the text left stays
 in its own paragraph, unless the range starts at that paragraph's start: then
 the whole paragraph goes. A replacement (type-over, paste) keeps the mark in
 both cases, since its text needs the paragraph. Accepting a suggested deletion
-of such a mark keeps the mark while its paragraph still holds content, so
-text typed into a paragraph after its deletion was suggested stays out of the
-block's slot (`ops/resolve.rs`). Text, tabs, breaks and inline objects,
+of such a mark, or rejecting a suggested insertion of one (an Enter before a
+table), keeps the mark while its paragraph still holds content, clearing only
+its markers, so text typed into that paragraph stays out of the block's slot
+(`ops/resolve.rs`). Text, tabs, breaks and inline objects,
 images included, inserted at a location ahead of a slot's leading blocks land
 after them, with the caret following (`inline_landing`). The editor ref
 API's page break opens the next paragraph slot. The state still arises from

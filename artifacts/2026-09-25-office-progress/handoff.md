@@ -465,3 +465,35 @@ An Opus review found a critical rebuild-check bug (non-canonical merged
 encodings refused valid saves permanently) and a text-publication fast-path
 bug; both are fixed with regression tests, and an Opus recheck plus the
 reviewers' fuzzers (0 refusals in about 30k saves) closed the loop.
+
+## Stage 2 and DOCX fidelity, 2026-09-29
+
+Epo approved stage 2: DOCX and PPTX publication rebases now land on
+seed(export) like XLSX, so every Office state is its change over its seed and
+no row stores `indexed_baseline` (migration 0043). Rebased DOCX/PPTX rows drop
+from 1,074.8 KB to 4.2 KB across the 12 fixtures
+([report](../../bench/parsers/reports/2026-09-28-office-rebase-seed-export.md)).
+Six Opus implementation rounds and five reviews shaped it; every behaviour
+choice is a 2026-09-28/29 line in `human/frontend/office-files.md`:
+
+- A rebase the engine cannot reproduce exactly refuses with a terminal 422
+  (restored content, unaligned comment anchors, unrenderable states); the edits
+  stay saved and the next publication carries them.
+- The DOCX editor never puts text ahead of a table, page or column break or
+  block content control; Delete and Backspace follow Word and never delete a
+  table or content control.
+- Comments pair with the export's ids and land through the text alignment.
+- DOCX export fixes found on the way: page/column breaks saved from break
+  units, `w:cstheme`, valid `w14:paraId`, `w:rPr` before a rendered page
+  break, and exact comment and bookmark ranges across publications (a seed
+  change for DOCX with comment ranges; comment-free seeds are unchanged).
+- Page breaks outside the body (cells, headers, footers, notes) are still
+  dropped by the export; keeping them needs a representation change and is a
+  separate task.
+
+The account lifecycle deadlock (Clerk `user.deleted` webhooks holding the
+4-connection UAT pool) is fixed in `efde3dc8`. BetterOffice `capy-ci` is at
+`558f63d9`, pinned by `97224e85`. That revision passed CI and the full UAT
+gate (run 36493375567: 13/13 journeys, clean cleanup, no restarts); UAT held
+no Office rows, so the seed change needed no maintenance window. Production is
+untouched.

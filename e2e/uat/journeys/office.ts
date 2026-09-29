@@ -207,8 +207,9 @@ export async function publishWhileEditing(
     Object.assign(window, { uatPage: true });
   });
   const published = await automaticPublication(run, fileId);
+  // A neutral FileBanner is a status; only error banners are alerts.
   const banner = page
-    .getByRole('alert')
+    .getByRole('status')
     .filter({ hasText: 'A newer version of this file is available.' });
   await expect(
     banner.getByText(
