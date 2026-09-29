@@ -80,8 +80,9 @@ pages; at most 2,000 pending URLs per
 host; pages are read up to 20 MB and clipped to about 12k tokens before the
 model sees them; a PDF is capped at 200 MiB. The local builder parser container
 uses `CAPY_MAX_SOURCE_BYTES=209715200` to match; preserve this override when
-recreating it, and set `CAPY_PARSE_WORKERS=1` and `CAPY_PARSE_MAX_PAGES=1400`,
-which the parser requires (decision 2026-09-29). PDFs download two at a time with
+recreating it, and set `CAPY_PARSE_WORKERS=1` and `CAPY_PARSE_MAX_PAGES=100000`,
+which the parser requires; book ingestion takes books of any length and the
+application's own limits stay unchanged (decisions 2026-09-29). PDFs download two at a time with
 three attempts (waiting 5 s, then 20 s), are hashed while streaming, and a file
 whose sha256 is already held is recorded as a duplicate URL on the existing
 row; a file PyMuPDF cannot open is a failed row.
