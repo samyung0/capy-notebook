@@ -116,6 +116,33 @@ class ConfigTest(unittest.TestCase):
             )
             self.assertEqual(Path(temp, "uat.queue.env").stat().st_mode & 0o777, 0o600)
 
+    def test_render_refuses_the_uat_publication_hold_outside_uat(self):
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://uat.example.com",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "production", temp, "a" * 40)
+            coolify = json.loads(Path(temp, "coolify.json").read_text())
+            self.assertEqual(coolify["COLLABORATION_UAT_PUBLICATION_HOLD"], "")
+            values["COLLABORATION_UAT_PUBLICATION_HOLD"] = "true"
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "uat", temp, "a" * 40)
+            coolify = json.loads(Path(temp, "coolify.json").read_text())
+            self.assertEqual(coolify["COLLABORATION_UAT_PUBLICATION_HOLD"], "true")
+            with self.assertRaisesRegex(
+                ValueError, "COLLABORATION_UAT_PUBLICATION_HOLD is not allowed"
+            ):
+                config.render(values, "production", temp, "a" * 40)
+
     def test_coolify_payload_and_redacted_readback(self):
         secret = "never-disclose-this-value"
         values = {"POSTGRES_PASSWORD": secret, "OPENAI_API_KEY": ""}

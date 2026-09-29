@@ -232,7 +232,11 @@ scheduler the same way. Any other engine error (a trap, a timeout) answers 500
 and the job retries. The check does not verify formatting, which is accepted: DOCX
 visual effects are left out because an export writes some formatting its own
 way, and PPTX visual effects (shape geometry, layout, text formatting) are
-compared only by their count and operation, since they carry no values.
+compared only by their count and operation, since they carry no values. UAT reproduces a refusal deterministically: with
+`COLLABORATION_UAT_PUBLICATION_HOLD=true`, a publication waits after its
+capture, before the handoff, while its file's name contains `[hold-publication]`
+(at most 60 s, then it fails with 503), so the refusal journey can save an edit
+in between ([deployment runbook](../deployment-runbook.md) §12.2).
 
 The DOCX export writes page and column breaks from the story's break units, the
 way the seed reads them back: the units that open a paragraph slot become

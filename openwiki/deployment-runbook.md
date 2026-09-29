@@ -1952,7 +1952,14 @@ authentication strategy.
    `OPS_INGEST_PRIMARY_ENVIRONMENT=uat` and leave
    `OPS_INGEST_UAT_DATABASE_URL` unset. The standalone Ops renderer requires the
    primary environment to match the deployment target (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
-   and browser build variables.
+   and browser build variables. Set `COLLABORATION_UAT_PUBLICATION_HOLD=true`
+   for the Office refusal journey: collaboration then holds a publication after
+   its capture, before the handoff, while its file's name contains
+   `[hold-publication]` (at most 60 s, then that publication fails with 503
+   and the ingest worker retries it once). The journey sets and clears the
+   marker through the file rename API, so it holds only files its actor can
+   edit. It is UAT-only: the manifest scopes it to `uat`, production renders
+   it blank, and the renderer refuses a production value.
 6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.

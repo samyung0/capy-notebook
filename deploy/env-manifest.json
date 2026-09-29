@@ -406,6 +406,11 @@
       "targets": ["coolify"],
       "required_for": ["coolify"]
     },
+    "COLLABORATION_UAT_PUBLICATION_HOLD": {
+      "kind": "variable",
+      "targets": ["coolify"],
+      "environments": ["uat"]
+    },
     "COLLABORATION_URL": {
       "kind": "variable",
       "targets": ["coolify"],

@@ -14,6 +14,7 @@ import {
 } from './sourceDocuments.js';
 import {
   OFFICE_EDITING_PAUSED_REASON,
+  PUBLICATION_HOLD_MARKER,
   SOURCE_PUBLISHING_REASON,
   SourceHandoff,
   SourcePublishingError,
@@ -44,7 +45,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function setup() {
+function setup(publicationHold = false) {
   const session: SourceSession = {
     access: 'write',
     baseRevision: 1,
@@ -105,7 +106,8 @@ function setup() {
     host as unknown as Hocuspocus,
     sources,
     async () => new Set(['instance']),
-    persist
+    persist,
+    publicationHold
   );
   const event = {
     checkpoint: 7,
@@ -617,4 +619,62 @@ test('a busy Office handoff is retryable without discarding its parsed candidate
     })
   ).rejects.toMatchObject({ status: 503 });
   expect(rebase).not.toHaveBeenCalled();
+});
+
+test.each([
+  [true, ['report [hold-publication].docx', 'report.docx'], 'waits'],
+  [true, ['report [hold-publication].docx'], 'fails after 60 s'],
+  [false, ['report [hold-publication].docx'], 'ignores the marker'],
+])('the UAT publication hold (on: %s, names %j) %s', async (on, names) => {
+  vi.useFakeTimers();
+  const f = setup(on);
+  const held: string[] = [];
+  f.pool.query.mockImplementation(async (sql: string) => {
+    if (sql.startsWith('SELECT name FROM files')) {
+      const name = names[Math.min(held.length, names.length - 1)];
+      held.push(name);
+      return { rows: [{ name }] };
+    }
+    return {
+      rows: sql.includes('FROM files')
+        ? [{ user_id: 'u' }]
+        : [{ published: false }],
+    };
+  });
+  // The handoff lock is taken only once the hold ends.
+  const lock = vi.fn(async () => null);
+  Object.assign(f.redis, { set: lock });
+  const publishing = f.handoff
+    .publish({
+      attemptId: 1,
+      checkpoint: 7,
+      epoch: 1,
+      fileId: 'f',
+      jobId: 'job',
+      leaseToken: 'lease',
+    })
+    .catch((error: unknown) => error);
+  // Names are read every 500 ms.
+  await vi.advanceTimersByTimeAsync(400);
+  if (on) expect(lock).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(60_000);
+  const error = await publishing;
+  if (on && names.length === 1) {
+    expect(error).toMatchObject({
+      message: 'Publication hold timed out',
+      status: 503,
+    });
+    expect(lock).not.toHaveBeenCalled();
+  } else {
+    // Past the hold, the busy lock answers 503 as usual.
+    expect(error).toMatchObject({ message: 'Source handoff already running' });
+    expect(lock).toHaveBeenCalledOnce();
+  }
+  // Off, the name is never read; on, it is read until the marker is gone.
+  if (!on) expect(held).toEqual([]);
+  else if (names.length > 1) expect(held).toEqual(names);
+  else
+    expect(held.every((name) => name.includes(PUBLICATION_HOLD_MARKER))).toBe(
+      true
+    );
 });

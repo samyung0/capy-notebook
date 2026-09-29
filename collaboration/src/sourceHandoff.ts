@@ -25,6 +25,15 @@ const ACK_WAIT_MS = 60_000;
 const LOCK_MS = ACK_WAIT_MS + CALL_TIMEOUT_MS;
 const WATCHDOG_MS = LOCK_MS + 5000;
 
+/**
+ * UAT only (COLLABORATION_UAT_PUBLICATION_HOLD): an Office publication waits
+ * after its capture, before the handoff, while its file's name contains this
+ * marker, which a journey sets and clears through the file rename API. After
+ * PUBLICATION_HOLD_MS the publication fails (503: the worker retries it once).
+ */
+export const PUBLICATION_HOLD_MARKER = '[hold-publication]';
+const PUBLICATION_HOLD_MS = 60_000;
+
 /** Authentication refusal reason while the room is locked for a publication. */
 export const SOURCE_PUBLISHING_REASON = 'source-publishing';
 /** Hocuspocus sends `reason` to the refused provider, which retries shortly. */
@@ -81,6 +90,7 @@ export class SourceHandoff {
   private readonly sources: SourceDocumentStore;
   private readonly activeInstances: () => Promise<Set<string>>;
   private readonly persist: (document: Document) => Promise<void>;
+  private readonly publicationHold: boolean;
   constructor(
     instanceId: string,
     redis: Redis,
@@ -88,7 +98,8 @@ export class SourceHandoff {
     host: Hocuspocus,
     sources: SourceDocumentStore,
     activeInstances: () => Promise<Set<string>>,
-    persist: (document: Document) => Promise<void>
+    persist: (document: Document) => Promise<void>,
+    publicationHold: boolean
   ) {
     this.instanceId = instanceId;
     this.redis = redis;
@@ -97,6 +108,7 @@ export class SourceHandoff {
     this.sources = sources;
     this.activeInstances = activeInstances;
     this.persist = persist;
+    this.publicationHold = publicationHold;
   }
 
   ready(
@@ -317,6 +329,20 @@ export class SourceHandoff {
     return saved;
   }
 
+  private async hold(fileId: string) {
+    const deadline = Date.now() + PUBLICATION_HOLD_MS;
+    while (true) {
+      const file = await this.pool.query<{ name: string }>(
+        'SELECT name FROM files WHERE id=$1',
+        [fileId]
+      );
+      if (!file.rows[0]?.name.includes(PUBLICATION_HOLD_MARKER)) return;
+      if (Date.now() >= deadline)
+        throw new SourceRequestError(503, 'Publication hold timed out');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
   private async current(fileId: string): Promise<SourceSession> {
     const result = await this.pool.query<{ user_id: string }>(
       'SELECT w.user_id FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL',
@@ -392,6 +418,8 @@ export class SourceHandoff {
         }
       }
     }
+    // Editors stay writable during the hold: their saves land after the capture.
+    if (this.publicationHold) await this.hold(input.fileId);
     const id = randomUUID();
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;

@@ -145,6 +145,10 @@ def render(values, environment, output, revision):
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output, 0o700)
     coolify = target_values(values, "coolify")
+    for key, value in coolify.items():
+        # Keys scoped to other environments (the UAT publication hold) stay blank.
+        if value and environment not in MANIFEST[key].get("environments", [environment]):
+            fail(f"{key} is not allowed in {environment}")
     password = values.get("POSTGRES_PASSWORD", "")
     if not password:
         fail("POSTGRES_PASSWORD is required")

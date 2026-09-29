@@ -31,6 +31,20 @@ describe('loadConfig', () => {
     expect(config.secret).toBe('prod-secret');
   });
 
+  it('turns the UAT publication hold on only for exactly true', () => {
+    expect(loadConfig({}).uatPublicationHold).toBe(false);
+    expect(
+      loadConfig({ COLLABORATION_UAT_PUBLICATION_HOLD: '' }).uatPublicationHold
+    ).toBe(false);
+    expect(
+      loadConfig({ COLLABORATION_UAT_PUBLICATION_HOLD: 'true' })
+        .uatPublicationHold
+    ).toBe(true);
+    expect(() =>
+      loadConfig({ COLLABORATION_UAT_PUBLICATION_HOLD: '1' })
+    ).toThrow('must be true or unset');
+  });
+
   it('rejects an empty origins list', () => {
     expect(() =>
       loadConfig({ COLLABORATION_ALLOWED_ORIGINS: ' , , ' })

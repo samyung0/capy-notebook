@@ -163,6 +163,9 @@ services:
       REDIS_URL: redis://capy-redis:6379/0
       PORT: "1234"
       SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
+      # UAT only (the renderer refuses it in production): holds a publication
+      # while its file's name contains [hold-publication], for the journey.
+      COLLABORATION_UAT_PUBLICATION_HOLD: ${COLLABORATION_UAT_PUBLICATION_HOLD:-}
     expose:
       - "1234"
     healthcheck:

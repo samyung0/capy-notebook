@@ -1029,7 +1029,8 @@ const sourceHandoff = new SourceHandoff(
   server.hocuspocus,
   sources,
   activeInstanceIds,
-  persistSource
+  persistSource,
+  config.uatPublicationHold
 );
 
 async function handleHttpRequest(

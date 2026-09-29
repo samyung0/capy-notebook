@@ -17,6 +17,8 @@ export interface CollaborationConfig {
   /** Debounce of source (Office and text) room saves; material rooms use debounceMs. */
   sourceDebounceMs: number;
   sourceMaxDebounceMs: number;
+  /** UAT only: holds a publication while its file's name has the marker (sourceHandoff.ts). */
+  uatPublicationHold: boolean;
 }
 
 const TRAILING_SLASH = /\/$/;
@@ -50,6 +52,13 @@ function positiveInteger(
     throw new Error(`${name} must be a positive integer`);
   }
   return value;
+}
+
+function flag(env: NodeJS.ProcessEnv, name: string): boolean {
+  const value = env[name]?.trim();
+  if (!value) return false;
+  if (value !== 'true') throw new Error(`${name} must be true or unset`);
+  return true;
 }
 
 function parseOrigins(raw: string): Set<string> {
@@ -129,5 +138,6 @@ export function loadConfig(
       'COLLABORATION_SOURCE_MAX_DEBOUNCE_MS',
       30_000
     ),
+    uatPublicationHold: flag(env, 'COLLABORATION_UAT_PUBLICATION_HOLD'),
   };
 }
