@@ -152,12 +152,11 @@ changed, over the fingerprinted source that every open requires:
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
   comment's reference mark only when the range goes on past it), and the
-  export writes range and bookmark boundaries at those story units. In a table
-  cell, header, footer or note the export drops a page or column break the
-  editor inserted, and one from the file survives only while its paragraph's
-  text is unchanged, as before this change; keeping them is a separate, known
-  gap. Comment boundaries after such a break still land exactly, because its
-  unit is measured out. Where a range cannot be written exactly it settles
+  export writes range and bookmark boundaries at those story units. Page and
+  column breaks are units in every story, so boundaries beside them land
+  exactly; a comment opening before a paragraph's leading break covers the
+  break, and an editor comment starting exactly at a page break saves starting
+  after it, as at a table. Where a range cannot be written exactly it settles
   after one publication:
   - Markers Word nests in a hyperlink, tracked insertion or deletion, inline
     content control, simple field or complex field result move to that
@@ -219,7 +218,14 @@ saved ones (DOCX comments compared by author and visible text, since the
 export adds the body's reference run), or when the editor's render bridge
 refuses a rebased DOCX story (text or a field ahead of a table or content
 control in one paragraph slot): the rebase runs the bridge over every story
-of the result (`assertDocxRenders`). A refusal (an error the engine raises
+of the result (`assertDocxRenders`). A DOCX rebase never re-pairs the projected
+links and fields of a field result (a table of contents' entries, a REF field's
+link): each child in the latest state must land in the rebased state in the
+same field and result slot, one to one, or the rebase refuses. So text typed in
+such a child after the capture lands only when the export's seed numbers its
+field as the capture does, and a captured field slot holding two links refuses
+every later rebase (accepted as rare). Any failure while landing the later
+edits is a refusal (`RebaseError`). A refusal (an error the engine raises
 with the `Office rebase:` prefix, including XLSX's) is terminal: the
 collaboration service answers the publication with 422, and the ingest worker
 fails the job with the refusal (attempt error code `office_rebase_refused`)
@@ -238,15 +244,29 @@ capture, before the handoff, while its file's name contains `[hold-publication]`
 (at most 60 s, then it fails with 503), so the refusal journey can save an edit
 in between ([deployment runbook](../deployment-runbook.md) §12.2).
 
-The DOCX export writes page and column breaks from the story's break units, the
-way the seed reads them back: the units that open a paragraph slot become
-trailing breaks of the paragraph before it (or leading breaks of the slot's
-paragraph when none precedes it), a paragraph keeps recorded breaks that still
-match its units, and a paragraph whose leading page break is the
-`pageBreakBeforeRun` attribute keeps that break. So inserted breaks are saved,
-deleted ones stay deleted and an edited paragraph keeps its breaks, in the body
-and its block content controls (cells, headers, footers and notes hold no
-break units).
+Every DOCX page and column break is a story unit in every story (body, block
+content controls, table cells, headers, footers and notes), seeded and
+exported in its place, so inserted breaks are saved, deleted ones stay deleted
+and edits after a capture land beside them exactly. A break that opens its
+paragraph's text is flagged `leading` (this replaced the `pageBreakBeforeRun`
+paragraph attribute): the save writes it as the paragraph's first run, and the
+editor keeps the paragraph's space-before after it only while text follows,
+as the saved file does. Other breaks that open a paragraph slot are written
+as trailing breaks of the paragraph before it. A break with no paragraph
+before it and no text to lead (a story's start, right before a table) saves
+as a break-only paragraph of its own, and an insertion there after a capture
+refuses the rebase; a text-less paragraph whose breaks end in a column break
+keeps them. A break after a field, link or tracked change stays in place while
+the paragraph's text is unchanged and moves to the paragraph's end once it
+changes, as after plain runs (a file without `w14:paraId` finds a paragraph's
+source by its seeded index, `<story>:p<N>`). A bookmark opening before a
+paragraph's leading breaks stays before them (`breaksAfter`), and an empty
+list item before a leading break keeps its number. Tracked breaks keep
+`w:ins`/`w:del`. The toolbar offers a page break only outside table cells,
+headers, footers and notes, as in Word; breaks the file has there are kept.
+An AI `replace_text` treats the breaks a paragraph opens with as outside its
+replaceable text: inspect lists the paragraph with the text after them, and
+the replacement lands after them.
 
 The DOCX editor never puts paragraph text ahead of a table, block content
 control or page or column break in one paragraph slot, as in Word (the render
@@ -254,12 +274,19 @@ bridge refuses that state). Delete at the end of a paragraph just before such
 a block, or Backspace at the start of the block's paragraph, does not merge
 the two (`merge_paragraphs` in `crates/docx-edit`):
 
-- before a page or column break it removes the break;
+- before a page or column break it removes the break, unless the paragraph
+  is empty: then Delete at its end, or Backspace at the start of the break's
+  paragraph, removes the empty paragraph and hands its bookmarks to the
+  paragraph that stays, so Enter at the start of a break's paragraph then
+  Delete or Backspace restores the document. Deleting the text after a break,
+  or Enter right after it, leaves the break before an empty paragraph;
 - before a table or block content control it removes the paragraph when that
   is empty (nothing but its mark and comment reference fields, which show
   nothing; the table's paragraph keeps its own properties), and otherwise
   changes nothing. The paragraph between two tables belongs to the first
   table's slot, so it is never removed and two tables are never joined.
+- an empty paragraph whose mark ends a section is not empty for either rule,
+  so the section break stays.
 
 Delete or Backspace right next to a table or block content control never
 deletes it: the user selects it to delete it. A break next to the caret goes
@@ -267,9 +294,9 @@ like any character. One engine edit (`delete_at`, `deleteAt` in the session)
 makes every Backspace and Delete, resident or not, so suggesting mode,
 headers, footers and notes delete and place the caret as the resident path
 does. Suggesting mode marks what it removes deleted; only the author's own
-pending paragraph mark goes (Backspacing over one's own Enter), so an own
-inserted paragraph before an original break still suggests the break's
-deletion. Enter at the start of a slot that opens with a block inserts an
+pending paragraph mark goes (Backspacing over one's own Enter, or removing an
+own empty paragraph before a break). Enter at the start of a slot that opens
+with a block inserts an
 empty paragraph before the block and leaves the block's paragraph (id and
 properties, borders included) as it was, so Delete in the new paragraph
 restores the document; the editor's Enter then gives the next style to
@@ -295,6 +322,39 @@ slot with a table), and it does not round trip: the export writes the text
 after the table (a page break is kept in place), so the rebase lands edits to
 the text but refuses an edit to that table or break, and refuses outright a
 result the render bridge refuses.
+
+DOCX field containers stay where Word wrote them across publications:
+bookmarks inside `w:fldSimple`, a simple field inside a hyperlink or `w:ins`,
+tracked changes and content controls inside `w:fldSimple` or a complex field's
+result (one spanning paragraphs included), tracked changes and foreign markup
+inside field code, and a complex field nested in field code (mail-merge
+`IF { MERGEFIELD }`). Instruction text inside a field's begin run is kept. A
+tracked change holding a field's own `fldChar` moves in front of the field, so
+the field stays balanced. The editor shows a field's result with inserted and
+content-control text and without deleted text. Projected children of a field
+result (TOC entry links, a REF field's link) keep their field marker through
+Clear formatting, and text typed over a range that removes their field takes
+no field number, so the export never moves them into another field. Known
+export losses remain for a follow-up fork task: complex fields inside
+hyperlinks (a TOC entry's `PAGEREF` saves as its result), hyperlink and
+tracked-change nesting, a field inside one `w:ins` or `w:del`, content inside
+`w:ins`/`w:del` pairs, and bookmark offsets. Seeds changed with the break and
+field-container rules (breaks outside the body, leading or tracked breaks,
+comments and bookmarks beside a leading break, field containers, instruction
+text in a field's begin run), so the pin that brought them ships in a
+[maintenance window](#maintenance-window).
+
+The DOCX toolbar has no Editing/Suggesting/Viewing dropdown: the editor always
+edits directly, and Capy's View/Edit control is the only mode (the engine's
+suggesting support stays unused). Tracked changes that come with a Word file
+stay visible in the sidebar, which pins **Accept all** and **Reject all** above
+its change list whenever the document holds changes, including those kept
+inside fields, which stay out of the per-change list; when only those exist,
+one line above the buttons says the changes are inside fields, such as a table
+of contents. Each is one undo step and keeps the editor focused. They resolve
+changes only: a field whose kept changes resolve becomes what the seed makes of
+its export, a projected child the user edited keeps its edit and one the user
+deleted stays deleted, and a child resolves only for the field that records it.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
