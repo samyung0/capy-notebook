@@ -163,174 +163,230 @@
   color-scheme: light;
 }
 
-/* ---------------- classroom · DARK ---------------- */
+/* ---------------- classroom · MOCHA (Catppuccin mocha) ---------------- */
 [data-style="classroom"][data-theme="mocha"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #9085e9;
-  --chart-2: #d95926;
-  --chart-3: #199e70;
-  --chart-4: #3987e5;
-  --chart-5: #c98500;
-  --chart-6: #d55181;
-  --surface-page: #121513;
-  --surface-canvas: #0e100f;
-  --surface-card-bg: #1c201e;
-  --surface-card-fg: #f1f3f0;
-  --surface-card-fg-muted: #888d88;
-  --surface-card-border: #2c302d;
-  --surface-topbar-bg: #2b302c;
-  --surface-topbar-fg: #f1f3f0;
+  --chart-1: #cba6f7;
+  --chart-2: #fab387;
+  --chart-3: #a6e3a1;
+  --chart-4: #89b4fa;
+  --chart-5: #f9e2af;
+  --chart-6: #f5c2e7;
+
+  /* Surfaces: crust → mantle → base → surface0 = 4-step elevation */
+  --surface-page: #14151f; /* outer "device" */
+  --surface-page-hover: #232433;
+  --surface-canvas: #0d0e13;
+  --surface-card-bg: #1e1e2e;
+  --surface-card-hover-bg: #262637;
+  --surface-card-dark-bg: #313244; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #3a3b50;
+  --surface-topbar-bg: #232433;
+  --surface-topbar-fg: #cdd6f4;
+
+  --color-scrollbar: #45475a;
 
   /* Text roles */
-  --text-primary: #f1f3f0;
-  --text-secondary: #b4b8b3;
-  --text-muted: #888d88;
-  --text-placeholder: #6a6f6a;
-  --text-link: #b3a6ea;
-  --text-link-hover: #9d8ee0;
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --text-muted: #7f849c;
+  --text-placeholder: #6c7086;
+  --text-link: #b4befe;
+  --text-link-hover: #c3cbfe;
 
   /* Borders & lines */
-  --border-default: #2c302d;
-  --border-strong: #3a403c;
-  --divider: #262b28;
+  --border-default: #313244;
+  --border-strong: #45475a;
+  --divider: #282839;
 
-  /* Actions — near-black primary inverts to near-white */
-  --action-primary-bg: #f1f3f0;
-  --action-primary-fg: #1c201e;
-  --action-primary-hover: #ffffff;
-  --action-accent-bg: #9d8ee0;
-  --action-accent-fg: #1a1626;
-  --action-accent-hover: #b3a6ea;
-  --action-outline-bg: transparent;
-  --action-outline-fg: #f1f3f0;
-  --action-outline-border: #3a403c;
-  --action-ghost-fg: #b4b8b3;
+  /* Actions (pairs) — near-black primary inverts to a dimmed white */
+  --action-primary-bg: #c2c7e0;
+  --action-primary-fg: #1e1e2e;
+  --action-primary-hover: #d0d4e8;
+  --action-accent-bg: #cba6f7;
+  --action-accent-fg: #31293f;
+  --action-accent-hover: #d6baf9;
 
-  /* Tinted containers */
-  --tint-success-bg: #16301f;
-  --tint-success-fg: #8fe3b9;
-  --solid-success: #7bd9ab;
-  --tint-info-bg: #142634;
-  --tint-info-fg: #9bcdf6;
-  --solid-info: #8ec9f9;
-  --tint-warning-bg: #2f2611;
-  --tint-warning-fg: #f4c878;
-  --solid-warning: #ffcc61;
-  --tint-error-bg: #321a1f;
-  --tint-error-fg: #f49aa8;
-  --solid-error: #f98e9e;
-  --tint-accent-1-bg: #322a5c;
-  --tint-accent-1-fg: #cfc4f2;
-  --solid-purple: #9d8ee0;
-  --solid-accent-1: #9d8ee0;
-  --tint-accent-2-bg: #2c3b1c;
-  --tint-accent-2-fg: #cbe9a6;
-  --solid-green: #aef07f;
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
+  --tint-success-bg: #364143;
+  --tint-success-fg: #a6e3a1;
+  --tint-info-bg: #313953;
+  --tint-info-fg: #89b4fa;
+  --tint-warning-bg: #454145;
+  --tint-warning-fg: #f9e2af;
+  --tint-error-bg: #443244;
+  --tint-error-fg: #f38ba8;
+  --tint-accent-1-bg: #3d3652;
+  --tint-accent-1-fg: #cba6f7;
+  --tint-accent-dark-bg: #554a6e;
+  --tint-accent-dark-fg: #f4ebfd;
+  --tint-accent-2-bg: #364143;
+  --tint-accent-2-fg: #a6e3a1;
+  --solid-accent-1: #cba6f7;
+  --solid-accent-2: #a6e3a1;
+  --solid-success: #a6e3a1;
+  --solid-info: #89b4fa;
+  --solid-warning: #f9e2af;
+  --solid-error: #f38ba8;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #cba6f7;
+  --tint-purple-fg: #362f47;
+  --tint-green: #a6e3a1;
+  --tint-green-fg: #2f3b36;
+  --tint-blue: #89b4fa;
+  --tint-blue-fg: #293248;
+  --tint-amber: #f9e2af;
+  --tint-amber-fg: #3f3b39;
+  --tint-coral: #eba0ac;
+  --tint-coral-fg: #3d2e38;
+  --tint-graphite: #585b70;
+  --tint-graphite-fg: #f5f6fa;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #313244;
+  --tint-graphite-dark-fg: #cdd6f4;
 
   /* Sticky-note surfaces */
-  --note-green-bg: #2c3b1c;
-  --note-green-fg: #cbe9a6;
-  --note-green-fg-muted: rgba(203, 233, 166, 0.66);
-  --note-purple-bg: #322a5c;
-  --note-purple-fg: #cfc4f2;
-  --note-purple-fg-muted: rgba(207, 196, 242, 0.66);
-  --note-green-soft-bg: #2c3b1c;
-  --note-green-soft-fg: #cbe9a6;
-  --note-purple-soft-bg: #322a5c;
-  --note-purple-soft-fg: #cfc4f2;
+  --note-green-bg: #41514c;
+  --note-green-fg: #c1ebbd;
+  --note-green-fg-muted: rgba(193, 235, 189, 0.66);
+  --note-purple-bg: #4b4162;
+  --note-purple-fg: #dbc1f9;
+  --note-purple-fg-muted: rgba(219, 193, 249, 0.66);
+  --note-green-soft-bg: #364143;
+  --note-green-soft-fg: #a6e3a1;
+  --note-purple-soft-bg: #3d3652;
+  --note-purple-soft-fg: #cba6f7;
 
-  /* Shadows */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  /* Shadows — dark themes rely on surface contrast; keep shadows soft */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-raised:
-    0 1px 2px rgba(0, 0, 0, 0.45), 0 16px 44px rgba(0, 0, 0, 0.55);
-  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
-  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
 
-/* ---------------- classroom · MACCHIATO (starts as a copy of mocha; tune independently) ---------------- */
+/* ---------------- classroom · MACCHIATO (Catppuccin macchiato) ---------------- */
 [data-style="classroom"][data-theme="macchiato"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #9085e9;
-  --chart-2: #d95926;
-  --chart-3: #199e70;
-  --chart-4: #3987e5;
-  --chart-5: #c98500;
-  --chart-6: #d55181;
-  --surface-page: #121513;
-  --surface-canvas: #0e100f;
-  --surface-card-bg: #1c201e;
-  --surface-card-fg: #f1f3f0;
-  --surface-card-fg-muted: #888d88;
-  --surface-card-border: #2c302d;
-  --surface-topbar-bg: #2b302c;
-  --surface-topbar-fg: #f1f3f0;
+  --chart-1: #c6a0f6;
+  --chart-2: #f5a97f;
+  --chart-3: #a6da95;
+  --chart-4: #8aadf4;
+  --chart-5: #eed49f;
+  --chart-6: #f5bde6;
+
+  /* Surfaces: crust → mantle → base → surface0 = 4-step elevation */
+  --surface-page: #1e2030; /* outer "device" */
+  --surface-page-hover: #292c3e;
+  --surface-canvas: #181926;
+  --surface-card-bg: #24273a;
+  --surface-card-hover-bg: #2c2f43;
+  --surface-card-dark-bg: #363a4f; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #404458;
+  --surface-topbar-bg: #292c3e;
+  --surface-topbar-fg: #cad3f5;
+
+  --color-scrollbar: #494d64;
 
   /* Text roles */
-  --text-primary: #f1f3f0;
-  --text-secondary: #b4b8b3;
-  --text-muted: #888d88;
-  --text-placeholder: #6a6f6a;
-  --text-link: #b3a6ea;
-  --text-link-hover: #9d8ee0;
+  --text-primary: #cad3f5;
+  --text-secondary: #a5adcb;
+  --text-muted: #8087a2;
+  --text-placeholder: #6e738d;
+  --text-link: #b7bdf8;
+  --text-link-hover: #c5caf9;
 
   /* Borders & lines */
-  --border-default: #2c302d;
-  --border-strong: #3a403c;
-  --divider: #262b28;
+  --border-default: #363a4f;
+  --border-strong: #494d64;
+  --divider: #2d3145;
 
-  /* Actions — near-black primary inverts to near-white */
-  --action-primary-bg: #f1f3f0;
-  --action-primary-fg: #1c201e;
-  --action-primary-hover: #ffffff;
-  --action-accent-bg: #9d8ee0;
-  --action-accent-fg: #1a1626;
-  --action-accent-hover: #b3a6ea;
-  --action-outline-bg: transparent;
-  --action-outline-fg: #f1f3f0;
-  --action-outline-border: #3a403c;
-  --action-ghost-fg: #b4b8b3;
+  /* Actions (pairs) — near-black primary inverts to a dimmed white */
+  --action-primary-bg: #c5c9e6;
+  --action-primary-fg: #24273a;
+  --action-primary-hover: #d2d6ee;
+  --action-accent-bg: #c6a0f6;
+  --action-accent-fg: #30273e;
+  --action-accent-hover: #d3b5f8;
 
-  /* Tinted containers */
-  --tint-success-bg: #16301f;
-  --tint-success-fg: #8fe3b9;
-  --solid-success: #7bd9ab;
-  --tint-info-bg: #142634;
-  --tint-info-fg: #9bcdf6;
-  --solid-info: #8ec9f9;
-  --tint-warning-bg: #2f2611;
-  --tint-warning-fg: #f4c878;
-  --solid-warning: #ffcc61;
-  --tint-error-bg: #321a1f;
-  --tint-error-fg: #f49aa8;
-  --solid-error: #f98e9e;
-  --tint-accent-1-bg: #322a5c;
-  --tint-accent-1-fg: #cfc4f2;
-  --solid-purple: #9d8ee0;
-  --solid-accent-1: #9d8ee0;
-  --tint-accent-2-bg: #2c3b1c;
-  --tint-accent-2-fg: #cbe9a6;
-  --solid-green: #aef07f;
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
+  --tint-success-bg: #3b474a;
+  --tint-success-fg: #a6da95;
+  --tint-info-bg: #363f5b;
+  --tint-info-fg: #8aadf4;
+  --tint-warning-bg: #48464c;
+  --tint-warning-fg: #eed49f;
+  --tint-error-bg: #48384b;
+  --tint-error-fg: #ed8796;
+  --tint-accent-1-bg: #413d5c;
+  --tint-accent-1-fg: #c6a0f6;
+  --tint-accent-dark-bg: #584e76;
+  --tint-accent-dark-fg: #f2eafd;
+  --tint-accent-2-bg: #3b474a;
+  --tint-accent-2-fg: #a6da95;
+  --solid-accent-1: #c6a0f6;
+  --solid-accent-2: #a6da95;
+  --solid-success: #a6da95;
+  --solid-info: #8aadf4;
+  --solid-warning: #eed49f;
+  --solid-error: #ed8796;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #c6a0f6;
+  --tint-purple-fg: #3b3450;
+  --tint-green: #a6da95;
+  --tint-green-fg: #34403c;
+  --tint-blue: #8aadf4;
+  --tint-blue-fg: #2f374f;
+  --tint-amber: #eed49f;
+  --tint-amber-fg: #433e3e;
+  --tint-coral: #ee99a0;
+  --tint-coral-fg: #43333e;
+  --tint-graphite: #5b6078;
+  --tint-graphite-fg: #f5f6fa;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #363a4f;
+  --tint-graphite-dark-fg: #cad3f5;
 
   /* Sticky-note surfaces */
-  --note-green-bg: #2c3b1c;
-  --note-green-fg: #cbe9a6;
-  --note-green-fg-muted: rgba(203, 233, 166, 0.66);
-  --note-purple-bg: #322a5c;
-  --note-purple-fg: #cfc4f2;
-  --note-purple-fg-muted: rgba(207, 196, 242, 0.66);
-  --note-green-soft-bg: #2c3b1c;
-  --note-green-soft-fg: #cbe9a6;
-  --note-purple-soft-bg: #322a5c;
-  --note-purple-soft-fg: #cfc4f2;
+  --note-green-bg: #465652;
+  --note-green-fg: #c1e5b5;
+  --note-green-fg-muted: rgba(193, 229, 181, 0.66);
+  --note-purple-bg: #4e466b;
+  --note-purple-fg: #d7bdf9;
+  --note-purple-fg-muted: rgba(215, 189, 249, 0.66);
+  --note-green-soft-bg: #3b474a;
+  --note-green-soft-fg: #a6da95;
+  --note-purple-soft-bg: #413d5c;
+  --note-purple-soft-fg: #c6a0f6;
 
-  /* Shadows */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+  /* Shadows — dark themes rely on surface contrast; keep shadows soft */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-raised:
-    0 1px 2px rgba(0, 0, 0, 0.45), 0 16px 44px rgba(0, 0, 0, 0.55);
-  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
-  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }

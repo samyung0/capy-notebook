@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/Drawer';
+import {
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerTrigger,
+} from '@/components/ui/Drawer';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
@@ -11,6 +16,7 @@ import {
 } from '@/theme/theme';
 import { ButtonCard } from '../ui/ButtonCard';
 import { Card } from '../ui/Card';
+import { IconButton } from '../ui/IconButton';
 import { InputTitle } from '../ui/Input';
 
 const ThemeChooser = ({
@@ -22,24 +28,36 @@ const ThemeChooser = ({
   onChange: (color: Theme) => void;
   supportedThemes: Theme[];
 }) => (
-  <div className="flex flex-wrap gap-3.5">
+  <div className="flex w-full -translate-x-1 flex-wrap gap-0.5">
     {supportedThemes.map((c) => {
+      const t = THEMES.find((t) => t.value === c)!;
       const isSelected = selected === c;
       return (
         <button
-          aria-label={c}
+          aria-label={t.label}
           aria-pressed={isSelected}
-          className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-full transition-transform ease-(--motion-ease-smooth-out) hover:scale-105',
-            isSelected && 'ring-2 ring-action ring-offset-2 ring-offset-surface'
-          )}
+          className="group flex w-16 flex-col items-center gap-1.5 rounded-button px-3 py-2 transition-colors ease-(--motion-ease-smooth-out) hover:bg-surface-hover-bg"
           key={c}
           onClick={() => onChange(c)}
-          style={{
-            background: THEMES.find((t) => t.value === c)!.displayColor,
-          }}
           type="button"
-        />
+        >
+          <span
+            className={cn(
+              'block size-8 rounded-full border border-line transition-transform ease-(--motion-ease-smooth-out) group-hover:scale-105',
+              isSelected &&
+                'ring-2 ring-action ring-offset-2 ring-offset-surface'
+            )}
+            style={{ background: t.displayColor }}
+          />
+          <span
+            className={cn(
+              't-muted font-medium',
+              isSelected ? 'text-fg' : 'text-fg-muted'
+            )}
+          >
+            {t.label}
+          </span>
+        </button>
       );
     })}
   </div>
@@ -101,7 +119,7 @@ const StyleComponents = ({
           className={cn('min-w-20', className)}
           componentBeforeText={
             <FourColorIcon
-              background="#f4f6f5"
+              background="var(--surface-page)"
               colorFour="#8ec9f9"
               colorOne="#8c7bd9"
               colorThree="#fd7287"
@@ -119,11 +137,12 @@ const StyleComponents = ({
           className={cn('min-w-20', className)}
           componentBeforeText={
             <FourColorIcon
-              background="#f4f6f5"
-              colorFour="#8ec9f9"
-              colorOne="#8c7bd9"
-              colorThree="#fd7287"
-              colorTwo="#7bd9ab"
+              background="var(--surface-page)"
+              colorFour="#2383e2"
+              colorOne="#37352f"
+              colorThree="#9b9a97"
+              colorTwo="#d4d4d2"
+              innerClassname="rounded-[2px]"
             />
           }
           size="md"
@@ -164,21 +183,33 @@ export function ThemeDrawer({
         <Card
           asChild
           className={cn(
-            'flex h-full min-w-62 shrink-0 items-stretch gap-0 overflow-y-auto bg-surface px-4 py-7.5 shadow-none',
+            'relative flex h-full min-w-62 shrink-0 items-stretch gap-0 overflow-y-auto bg-surface px-4 py-7.5 shadow-none',
             className
           )}
           radius="card-xl"
           theme="surface-dark"
         >
           <aside>
+            <DrawerClose
+              render={
+                <IconButton
+                  className="absolute top-5 right-4 z-10"
+                  icon="x"
+                  label={m.action_close()}
+                  size="md"
+                  variant="ghost-hover"
+                />
+              }
+            />
             <div className="flex flex-col gap-6">
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-8">
                 <p className="t-card-title">{m.settings_theme()}</p>
                 <div className="flex flex-col gap-3">
                   <InputTitle>{m.common_style()}</InputTitle>
-                  <div className="grid w-full grid-cols-3 gap-3">
+                  <div className="grid w-full grid-cols-2 gap-3">
                     {STYLES.map((o) => (
                       <StyleComponents
+                        aria-pressed={style === o.value}
                         key={o.value}
                         label={
                           o.value === 'classroom'
@@ -193,7 +224,7 @@ export function ThemeDrawer({
                 </div>
                 <div className="flex flex-col gap-3">
                   <InputTitle>{m.settings_theme()}</InputTitle>
-                  <div className="grid w-full grid-cols-3 gap-3">
+                  <div className="flex w-full">
                     <ThemeChooser
                       onChange={setTheme}
                       selected={theme}

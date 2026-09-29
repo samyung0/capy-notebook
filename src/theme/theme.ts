@@ -10,12 +10,12 @@ export const STYLES: {
 }[] = [
   {
     label: 'Classroom',
-    supportedThemes: ['latte', 'mocha', 'macchiato'],
+    supportedThemes: ['latte', 'macchiato', 'mocha'],
     value: 'classroom',
   },
   {
     label: 'Notion',
-    supportedThemes: ['latte', 'mocha', 'macchiato'],
+    supportedThemes: ['latte', 'macchiato', 'mocha'],
     value: 'notion',
   },
 ];
@@ -26,14 +26,14 @@ export const THEMES: {
   displayColor: string;
   isDark: boolean;
 }[] = [
-  { displayColor: '#fafafa', isDark: false, label: 'Latte', value: 'latte' },
-  { displayColor: '#222222', isDark: true, label: 'Mocha', value: 'mocha' },
+  { displayColor: '#f7f7f7', isDark: false, label: 'Latte', value: 'latte' },
   {
     displayColor: '#24273a',
     isDark: true,
-    label: 'Macchiato',
+    label: 'Macchi',
     value: 'macchiato',
   },
+  { displayColor: '#1e1e2e', isDark: true, label: 'Mocha', value: 'mocha' },
 ];
 
 interface ThemeState {
