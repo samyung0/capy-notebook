@@ -120,10 +120,14 @@ export default function PdfView({
   page,
   regions,
   annotationFile,
+  annotationsReadOnly = false,
   onDirtyChange,
   onRetry,
 }: {
   annotationFile?: { id: string; revision: number };
+  /** A frozen account (the reader's or the owner's), or an owner at its
+   * storage limit, keeps the marks visible but draws no new ones. */
+  annotationsReadOnly?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
   onRetry?: () => void;
   url: string;
@@ -134,8 +138,10 @@ export default function PdfView({
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+  const [strip, setStrip] = useState<HTMLDivElement | null>(null);
   useHorizontalWheelScroll(toolbar);
-  const [mode, setMode] = useFileMode(!!annotationFile, 'view');
+  const canAnnotate = !!annotationFile && !annotationsReadOnly;
+  const [mode, setMode] = useFileMode(canAnnotate, 'view');
   const editing = mode === 'edit';
   const [annotationBusy, setAnnotationBusy] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -294,7 +300,7 @@ export default function PdfView({
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <FileModeControl
-        canEdit={!!annotationFile}
+        canEdit={canAnnotate}
         disabled={annotationBusy}
         mode={mode}
         onChange={setMode}
@@ -328,6 +334,7 @@ export default function PdfView({
           </ToolbarButton>
         </ToolbarGroup>
       </Toolbar>
+      <div ref={setStrip} />
       <div className="min-h-0 flex-1 overflow-auto" ref={scrollRef}>
         <div
           className="relative flex min-h-full w-max min-w-full flex-col items-center [&_.react-pdf__Page__textContent_span]:cursor-inherit"
@@ -384,6 +391,7 @@ export default function PdfView({
               onPendingChange={setAnnotationBusy}
               renderVersion={`${numPages}:${zoom}:${pageWidth}:${pageAspectRatio}:${pageMeasureVersion}`}
               revision={annotationFile.revision}
+              strip={strip}
               toolbar={toolbar}
             />
           )}

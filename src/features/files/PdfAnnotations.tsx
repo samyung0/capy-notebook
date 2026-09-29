@@ -30,6 +30,7 @@ const ERASER_CURSOR = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns=
 export function PdfAnnotations({
   containerRef,
   toolbar,
+  strip,
   fileId,
   revision,
   renderVersion,
@@ -38,6 +39,9 @@ export function PdfAnnotations({
 }: {
   containerRef: RefObject<HTMLDivElement | null>;
   toolbar: HTMLElement | null;
+  /** Under the PDF toolbar, outside the scrolling pages, so a strip stays in
+   * view like the ones under a note's toolbar. */
+  strip: HTMLElement | null;
   fileId: string;
   revision: number;
   renderVersion: string;
@@ -433,9 +437,15 @@ export function PdfAnnotations({
           />,
           toolbar
         )}
-      {writeError && (
-        <FileBanner message={m.pdf_annotations_write_failed()} tone="error" />
-      )}
+      {writeError &&
+        strip &&
+        createPortal(
+          <FileBanner
+            message={m.pdf_annotations_write_failed()}
+            tone="error"
+          />,
+          strip
+        )}
       {pages.map((page) => {
         const number = Number(page.dataset.page),
           rotation = Number(page.dataset.rotation ?? 0);

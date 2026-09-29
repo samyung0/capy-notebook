@@ -3,7 +3,8 @@ import { Link } from '@tanstack/react-router';
 import { qk } from '@/api/client';
 import type { EventStreamState } from '@/api/hooks';
 import { useMe } from '@/api/hooks';
-import { AccountState } from '@/api/types';
+import { AccountState, StorageUsageLevel } from '@/api/types';
+import { storageLimitLabel, usagePercent } from '@/features/billing/format';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useOnlineStatus } from '@/lib/online';
@@ -25,8 +26,9 @@ function formatDate(iso?: string) {
 }
 
 /**
- * The dashboard's banner slot. Account and connection problems take the
- * default banner's place, one at a time, so nothing shifts the app shell.
+ * The dashboard's banner slot. The viewer's own account and connection
+ * problems take the default banner's place, one at a time (frozen, grace,
+ * full, near the limit, offline, reconnecting), so nothing shifts the app shell.
  */
 export default function DashboardBanner() {
   const { data: me } = useMe({ errorBoundary: false });
@@ -88,6 +90,46 @@ export default function DashboardBanner() {
         {accountLinks}
       </SlotCard>
     );
+  const usage = account?.storageUsage;
+  if (
+    account &&
+    (usage === StorageUsageLevel.full || usage === StorageUsageLevel.near_limit)
+  ) {
+    const full = usage === StorageUsageLevel.full;
+    // Whole megabytes, rounded down so 95% never reads as the full limit.
+    const amounts = {
+      limit: storageLimitLabel(account.storageLimitBytes),
+      used: `${Math.floor(account.storageUsedBytes / 1_000_000)} MB`,
+    };
+    return (
+      <SlotCard
+        body={
+          full
+            ? m.account_banner_full_body(amounts)
+            : m.account_banner_near_body(amounts)
+        }
+        icon="database"
+        title={
+          full ? m.account_banner_full_title() : m.account_banner_near_title()
+        }
+        tone={full ? 'error' : 'warning'}
+      >
+        <div
+          aria-hidden
+          className="mt-2.5 h-1.5 max-w-[260px] overflow-hidden rounded-full bg-current/18"
+          data-testid="storage-usage-meter"
+        >
+          <div
+            className="h-full rounded-full bg-current"
+            style={{
+              width: `${usagePercent(account.storageUsedBytes, 0, account.storageLimitBytes)}%`,
+            }}
+          />
+        </div>
+        {accountLinks}
+      </SlotCard>
+    );
+  }
   if (!online || stream?.status === 'disconnected')
     return (
       <SlotCard

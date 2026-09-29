@@ -171,6 +171,7 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 	return AccessCapabilities{
 		CanView:          canView || role != "",
 		CanEdit:          RoleCanEdit(role),
+		CanEditContent:   RoleCanEdit(role),
 		CanManageMembers: role == RoleOwner,
 	}
 }

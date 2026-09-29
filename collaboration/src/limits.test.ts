@@ -226,9 +226,9 @@ describe('inbound update validation', () => {
     ]);
     const update = updateReplacingValue(document, [nestedParagraph(301)]);
 
-    expect(() =>
-      store.validateUpdate(room, document, update, { shrinkOnly: true })
-    ).toThrow(MaterialDocumentLimitError);
+    expect(() => store.validateUpdate(room, document, update)).toThrow(
+      MaterialDocumentLimitError
+    );
 
     document.destroy();
   });

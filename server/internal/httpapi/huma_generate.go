@@ -32,6 +32,18 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	// Refuse a frozen actor or owner, and an owner at its storage limit, before
+	// credits are reserved or spent; the material insert would refuse it anyway.
+	ownerID, err := a.s.WorkspaceOwnerID(ctx, in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if err := a.editErr(ctx, ownerID); err != nil {
+		return nil, hErr(err)
+	}
+	if err := a.s.StorageFullErr(ctx, ownerID); err != nil {
+		return nil, hErr(err)
+	}
 	actor := userID(ctx)
 	wsID := in.ID
 	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, actor, wsID)
@@ -283,7 +295,7 @@ func (a *api) generateViaPipe(
 			return nil, usage, err
 		}
 		quiz.IsOwner = mt.OwnerUserID == userID
-		quiz.CanEdit = true
+		quiz.CanEdit, quiz.CanEditContent = true, true
 		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, nil
 	case "flashcards":
 		var fp struct {
@@ -346,7 +358,7 @@ func (a *api) persistFlashcardSet(
 		return nil, err
 	}
 	flashcardSet.IsOwner = mt.OwnerUserID == userID
-	flashcardSet.CanEdit = true
+	flashcardSet.CanEdit, flashcardSet.CanEditContent = true, true
 	return map[string]any{"kind": "flashcards", "material": flashcardSet, "cards": out}, nil
 }
 

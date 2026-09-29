@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import { m } from '@/i18n';
 import {
+  deferStorageRefusal,
   describeError,
   errorKind,
+  handleWorkspaceRefusals,
   isAbortError,
   isChunkLoadError,
   isNonDisclosing,
@@ -171,5 +173,52 @@ describe('frontend error normalization', () => {
     expect(toastKeyFor(new TypeError('Failed to fetch'))).toBe(
       toastKeyFor(new Error('network error'))
     );
+  });
+});
+
+describe('frozen and storage refusals inside a workspace', () => {
+  const frozen = new ApiError(403, 'Forbidden', undefined, {
+    code: 'account_over_quota',
+  });
+
+  it('go to the open workspace status, and keep the own-account copy elsewhere', () => {
+    expect(deferStorageRefusal(frozen)).toBe(false);
+    expect(describeError(frozen).title).toBe(m.account_banner_frozen_title());
+    const status = vi.fn();
+    const leave = handleWorkspaceRefusals(status, false);
+    expect(deferStorageRefusal(new ApiError(500, 'Server Error'))).toBe(false);
+    expect(deferStorageRefusal(frozen)).toBe(true);
+    // The upload dialog seeing the refusal the mutation cache deferred: the
+    // status shows once.
+    expect(deferStorageRefusal(frozen)).toBe(true);
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(status).toHaveBeenCalledWith(frozen);
+    leave();
+    expect(deferStorageRefusal(frozen)).toBe(false);
+  });
+
+  it("send a storage refusal to the status, unless it is a member's own quota", () => {
+    const status = vi.fn();
+    // A member writing into a full owner's workspace gets the code alone.
+    const ownerQuota = new ApiError(403, 'Forbidden', undefined, {
+      code: 'storage_quota_exceeded',
+    });
+    // The charged account gets its numbers.
+    const ownQuota = () =>
+      new ApiError(403, 'Forbidden', undefined, {
+        code: 'storage_quota_exceeded',
+        ownerUserId: 'u_me',
+        storageLimitBytes: 100,
+      });
+    let leave = handleWorkspaceRefusals(status, false);
+    expect(deferStorageRefusal(ownerQuota)).toBe(true);
+    // A member's clone is charged to the member: the clone copy shows.
+    expect(deferStorageRefusal(ownQuota())).toBe(false);
+    leave();
+    leave = handleWorkspaceRefusals(status, true);
+    const owner = ownQuota();
+    expect(deferStorageRefusal(owner)).toBe(true);
+    leave();
+    expect(status.mock.calls).toEqual([[ownerQuota], [owner]]);
   });
 });

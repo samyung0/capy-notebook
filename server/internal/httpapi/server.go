@@ -276,6 +276,18 @@ var errScopeNoIndexedContent = errors.New("the requested scope has no indexed co
 var errContextTooLarge = errors.New("source context exceeds the selected model's input limit")
 var errSourceChanged = errors.New("sources changed while this request was running; please try again")
 
+// failFor is fail for a user-facing request: a storage refusal carries the
+// numbers when the requester is the charged account.
+func (a *api) failFor(w http.ResponseWriter, r *http.Request, err error) {
+	if detail := quotaDetail(err, uid(r)); detail != nil {
+		obs.ResponseError(w, err)
+		detail["code"], detail["message"] = "storage_quota_exceeded", "storage quota exceeded"
+		writeJSON(w, http.StatusForbidden, detail)
+		return
+	}
+	a.fail(w, err)
+}
+
 func (a *api) fail(w http.ResponseWriter, err error) {
 	obs.ResponseError(w, err)
 	if errors.Is(err, store.ErrNotFound) {
@@ -311,16 +323,11 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	var quota *store.QuotaExceededError
-	if errors.As(err, &quota) {
+	if errors.Is(err, store.ErrStorageQuotaExceeded) {
+		// The code alone; failFor adds the charged account's own numbers.
 		writeJSON(w, http.StatusForbidden, map[string]any{
-			"code":                  "storage_quota_exceeded",
-			"message":               "storage quota exceeded",
-			"storageUsedBytes":      quota.UsedBytes,
-			"storageReservedBytes":  quota.ReservedBytes,
-			"storageRequestedBytes": quota.RequestedBytes,
-			"storageLimitBytes":     quota.LimitBytes,
-			"ownerUserId":           quota.UserID,
+			"code":    "storage_quota_exceeded",
+			"message": "storage quota exceeded",
 		})
 		return
 	}
@@ -502,21 +509,44 @@ func (a *api) assertWS(w http.ResponseWriter, r *http.Request, wsID string) bool
 // chatAccess is what the chat stream needs to know about the actor.
 type chatAccess struct {
 	// canEdit follows the effective role (owner, member editor, or share-role
-	// editor): it unlocks the pending-sources notice. role is what the
-	// agent-tool operations table is evaluated from.
-	canEdit bool
-	role    store.WorkspaceRole
+	// editor) unless a frozen account makes the workspace read-only: it unlocks
+	// the pending-sources notice and curate. role is what the agent-tool
+	// operations table is evaluated from; readOnly (frozen) and full (the
+	// owner at its storage limit) narrow it.
+	canEdit  bool
+	readOnly bool
+	full     bool
+	role     store.WorkspaceRole
 }
 
 // assertWSChat admits any effective role (owner, member, or link/public
-// visitor) and reports what the actor may do beyond chatting.
+// visitor) and reports what the actor may do beyond chatting. Chat stays open
+// to frozen accounts; a frozen actor or owner makes the turn read-only.
 func (a *api) assertWSChat(w http.ResponseWriter, r *http.Request, wsID string) (chatAccess, bool) {
 	effective, err := a.s.WorkspaceEffectiveRole(r.Context(), uid(r), wsID)
 	if err != nil {
 		a.fail(w, err)
 		return chatAccess{}, false
 	}
-	return chatAccess{canEdit: store.RoleCanEdit(effective), role: effective}, true
+	readOnly, full := false, false
+	if store.RoleCanEdit(effective) {
+		ownerID, err := a.s.WorkspaceOwnerID(r.Context(), wsID)
+		if err != nil {
+			a.fail(w, err)
+			return chatAccess{}, false
+		}
+		if readOnly, err = a.readOnly(r.Context(), ownerID); err != nil {
+			a.fail(w, err)
+			return chatAccess{}, false
+		}
+		if full, err = a.ownerFull(r.Context(), ownerID); err != nil {
+			a.fail(w, err)
+			return chatAccess{}, false
+		}
+	}
+	return chatAccess{
+		canEdit: store.RoleCanEdit(effective) && !readOnly, readOnly: readOnly, full: full, role: effective,
+	}, true
 }
 
 func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) bool {

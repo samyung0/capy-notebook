@@ -21,6 +21,10 @@ import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
+import {
+  OfflineStatus,
+  WorkspaceStatusButton,
+} from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
@@ -105,7 +109,12 @@ export function CenterContent({
   };
 
   if (!item) {
-    return <EmptyCenter leading={leading} />;
+    return (
+      <EmptyCenter
+        leading={leading}
+        workspaceId={standalone ? '' : workspaceId}
+      />
+    );
   }
   return (
     <FileModeContext.Provider
@@ -222,6 +231,7 @@ function MaterialBody({
     <MaterialContent
       allowExternalAssets={allowExternalAssets}
       forceReadOnly={readOnly || choice === 'readOnly'}
+      key={materialId}
       materialId={materialId}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
@@ -249,6 +259,9 @@ export function MaterialContent({
   } = useMaterial(materialId, {
     errorBoundary: false,
   });
+  // The open room turned read-only (a frozen account or an owner at its storage
+  // limit): view mode under a grey strip; unsaved edits are discarded.
+  const [readOnly, setReadOnly] = useState(false);
   if (isLoading) {
     return <FileLoading />;
   }
@@ -263,7 +276,8 @@ export function MaterialContent({
     );
   }
   const policy = materialModePolicy(material.capabilities);
-  const activeMode = forceReadOnly ? 'view' : resolveMaterialMode(mode, policy);
+  const activeMode =
+    forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
 
   if (material.kind === 'quiz' && activeMode === 'edit') {
     return <OpenQuizEditor quizId={materialId} />;
@@ -271,6 +285,7 @@ export function MaterialContent({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
       <div className="min-h-0 flex-1">
         {activeMode === 'view' && (
           <div className="h-full min-h-0 overflow-auto">
@@ -292,6 +307,7 @@ export function MaterialContent({
                 key={`${materialId}:${activeMode}`}
                 materialId={materialId}
                 onEditorStatusChange={onEditorStatusChange}
+                onReadOnly={() => setReadOnly(true)}
               />
             </Suspense>
           </AppErrorBoundary>
@@ -314,7 +330,15 @@ function OpenQuizEditor({ quizId }: { quizId: string }) {
   );
 }
 
-function EmptyCenter({ leading }: { leading?: ReactNode }) {
+/** No file open: the header row keeps the workspace picker, then the offline
+ * and workspace status icons. No strip renders, since strips belong to a file. */
+function EmptyCenter({
+  leading,
+  workspaceId,
+}: {
+  leading?: ReactNode;
+  workspaceId: string;
+}) {
   return (
     <>
       <div className="flex h-14 items-center gap-2 border-divider border-b px-4 py-4">
@@ -324,6 +348,8 @@ function EmptyCenter({ leading }: { leading?: ReactNode }) {
             <h2 className="t-subtitle translate-y-px truncate">--</h2>
           </>
         )}
+        <OfflineStatus />
+        <WorkspaceStatusButton workspaceId={workspaceId} />
       </div>
       <div className="grid flex-1 place-items-center p-6">
         <div className="flex flex-col items-center gap-3">

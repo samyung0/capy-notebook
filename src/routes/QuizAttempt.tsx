@@ -18,6 +18,7 @@ import {
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { gradeAttemptQuestions } from '@/features/quizzes/scoreAttempt';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { scoreBucket } from '@/lib/analytics';
 import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
@@ -48,6 +49,7 @@ function Attempt({ quizId }: { quizId: string }) {
   const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz({
     errorToast: false,
   });
+  const frozen = useAccountFrozen();
   const navigate = useNavigate();
 
   const [idx, setIdx] = useState(0);
@@ -244,7 +246,7 @@ function Attempt({ quizId }: { quizId: string }) {
           </p>
           {!quiz.canEdit && (
             <Button
-              disabled={cloneQuizIsPending}
+              disabled={frozen || cloneQuizIsPending}
               iconLeft="plus"
               onClick={() =>
                 cloneQuiz(quizId, {

@@ -17,6 +17,7 @@ import {
   join,
   registerMockCollaborationProvider,
   rooms,
+  savedSourceState,
   sourceRoom,
 } from './collaboration';
 import * as db from './db';
@@ -190,7 +191,16 @@ it('acknowledges source checkpoints asynchronously and saves peer-only edits', a
   await vi.advanceTimersByTimeAsync(3000);
   const visible = client.document.getText('source').toString();
   expect(visible).not.toBe('base');
-  expect(db.fileLinks[room.target.id].url).toBe(db.textUrl(visible));
+  // Saved for the viewer's read, not published.
+  const saved = new Y.Doc();
+  documents.push(saved);
+  Y.applyUpdate(
+    saved,
+    Uint8Array.from(atob(savedSourceState(room.target.id)!), (character) =>
+      character.charCodeAt(0)
+    )
+  );
+  expect(saved.getText('source').toString()).toBe(visible);
   provider.destroy();
   await vi.advanceTimersByTimeAsync(1000);
   expect(rooms.has(room.name)).toBe(false);

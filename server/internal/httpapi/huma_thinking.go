@@ -44,7 +44,7 @@ func (a *api) listCanvases(ctx context.Context, _ *struct{}) (*canvasesOutput, e
 }
 
 func (a *api) createCanvas(ctx context.Context, in *createCanvasInput) (*canvasOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	res, err := a.s.CreateCanvas(ctx, userID(ctx), string(in.Body.Name))
@@ -63,7 +63,7 @@ func (a *api) getCanvas(ctx context.Context, in *canvasIDInput) (*canvasOutput, 
 }
 
 func (a *api) saveCanvas(ctx context.Context, in *saveCanvasInput) (*canvasOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	var scene json.RawMessage

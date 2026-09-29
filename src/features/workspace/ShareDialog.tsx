@@ -18,6 +18,7 @@ import { Separator } from '@/components/ui/Separator';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { deferStorageRefusal } from '@/lib/errors';
 import { track } from '@/lib/observability';
 import { Input, InputTitle } from '../../components/ui/Input';
 import { MATERIALMODE_ICON } from '../materials/materialIconMappings';
@@ -94,6 +95,7 @@ function toastShareSuccess() {
 }
 
 function toastShareError(err: unknown) {
+  if (deferStorageRefusal(err)) return;
   userToast({
     description: err instanceof Error ? err.message : m.source_try_again(),
     title: m.error_generic_title(),

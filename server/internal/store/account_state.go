@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -20,12 +21,16 @@ const (
 	// AccountActive is an unrestricted account.
 	AccountActive AccountState = "active"
 	// AccountOverQuotaGrace is a lapsed subscription whose stored bytes exceed
-	// the tier limit, still inside the buffer window. Creation and upload are
-	// blocked; existing materials accept shrinking edits only.
+	// the tier limit, still inside the buffer window. It behaves exactly like an
+	// active account at its hard quota: storage growth fails the quota check,
+	// the content it pays for is view-only (assertContentEditableTx) and
+	// everything else stays available.
 	AccountOverQuotaGrace AccountState = "over_quota_grace"
-	// AccountOverQuotaFrozen is the same restriction after the buffer expires.
-	// It persists until the user frees space or resubscribes. Nothing is ever
-	// deleted on reaching this state.
+	// AccountOverQuotaFrozen follows grace once the buffer expires. The account
+	// is read-only apart from reading, downloading, deleting, workspace chat,
+	// narrowing exposure, billing and account settings, in both directions: it
+	// edits nowhere, and nobody edits what it pays for. It persists until the
+	// user frees space or resubscribes. Nothing is ever deleted on reaching it.
 	AccountOverQuotaFrozen AccountState = "over_quota_frozen"
 	// AccountDeletionPending is a requested deletion inside its grace window.
 	// Authentication is refused and sessions are revoked. Content stays intact
@@ -85,12 +90,44 @@ type AccountStatus struct {
 	DeletionRequestedAt *time.Time   `json:"deletionRequestedAt,omitempty"`
 	PurgeAfter          *time.Time   `json:"purgeAfter,omitempty"`
 	SuspendedReason     string       `json:"suspendedReason,omitempty"`
-	// Set only for the over-quota states, so the UI can explain how much has to
-	// be freed before the account unlocks.
-	StorageUsedBytes  int64 `json:"storageUsedBytes"`
-	StorageLimitBytes int64 `json:"storageLimitBytes"`
+	// Stored plus reserved bytes against the current plan limit, and the level
+	// they reach. WithStorageUsage fills them; write gates skip those reads.
+	StorageUsedBytes  int64             `json:"storageUsedBytes"`
+	StorageLimitBytes int64             `json:"storageLimitBytes"`
+	StorageUsage      StorageUsageLevel `json:"storageUsage"`
 	// GraceEndsAt is when over_quota_grace becomes over_quota_frozen.
 	GraceEndsAt *time.Time `json:"graceEndsAt,omitempty"`
+}
+
+// StorageUsageLevel is how close an account is to its plan limit.
+type StorageUsageLevel string
+
+const (
+	StorageUsageOK        StorageUsageLevel = "ok"
+	StorageUsageNearLimit StorageUsageLevel = "near_limit"
+	StorageUsageFull      StorageUsageLevel = "full"
+)
+
+func (StorageUsageLevel) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "StorageUsageLevel", "ok", "near_limit", "full")
+}
+
+// StorageUsageLevelFor is the one place the usage level is decided: full at
+// 100% of the limit or more, near_limit from 95%.
+func StorageUsageLevelFor(usedBytes, limitBytes int64) StorageUsageLevel {
+	switch {
+	case usedBytes >= limitBytes:
+		return StorageUsageFull
+	case usedBytes*100 >= limitBytes*95:
+		return StorageUsageNearLimit
+	}
+	return StorageUsageOK
+}
+
+// Full reports stored plus reserved bytes at or over the limit (grace
+// included): the content the account pays for is view-only.
+func (u StorageUsage) Full() bool {
+	return StorageUsageLevelFor(u.UsedBytes+u.ReservedBytes, u.LimitBytes) == StorageUsageFull
 }
 
 // CanAuthenticate reports whether the identity may hold a session at all.
@@ -98,25 +135,19 @@ func (a AccountStatus) CanAuthenticate() bool {
 	return a.State == AccountActive || a.State == AccountOverQuotaGrace || a.State == AccountOverQuotaFrozen
 }
 
-// CanCreate reports whether new workspaces, files, materials, uploads or clones
-// are permitted.
-func (a AccountStatus) CanCreate() bool { return a.State == AccountActive }
+// CanEdit reports whether the account may create or edit anything. Grace
+// passes: its storage growth fails the ordinary quota check instead.
+func (a AccountStatus) CanEdit() bool {
+	return a.State == AccountActive || a.State == AccountOverQuotaGrace
+}
 
-// CanEdit reports whether existing content may be mutated in any direction.
-func (a AccountStatus) CanEdit() bool { return a.State == AccountActive }
-
-// ShrinkOnly reports whether existing material documents may only be edited in
-// the shrinking direction. An over-quota account has to stay able to delete
-// content, otherwise it can never recover.
-func (a AccountStatus) ShrinkOnly() bool {
+// OverQuota reports the lapsed, over-limit states that receive reminders.
+func (a AccountStatus) OverQuota() bool {
 	return a.State == AccountOverQuotaGrace || a.State == AccountOverQuotaFrozen
 }
 
-// CanMutate reports whether the account may delete content or apply shrink-only
-// material edits. Full edits still require CanEdit.
-func (a AccountStatus) CanMutate() bool { return a.CanEdit() || a.ShrinkOnly() }
-
-// Err returns the locked error for a state that forbids writes, or nil.
+// Err returns the locked error for a state that forbids creating and editing,
+// or nil.
 func (a AccountStatus) Err() error {
 	if a.CanEdit() {
 		return nil
@@ -124,17 +155,10 @@ func (a AccountStatus) Err() error {
 	return &AccountLockedError{UserID: a.UserID, State: a.State, Reason: a.SuspendedReason}
 }
 
-// CreateErr returns the locked error when creation is forbidden.
-func (a AccountStatus) CreateErr() error {
-	if a.CanCreate() {
-		return nil
-	}
-	return &AccountLockedError{UserID: a.UserID, State: a.State, Reason: a.SuspendedReason}
-}
-
-// MutateErr returns the locked error when deletes / shrink edits are forbidden.
+// MutateErr returns the locked error for a state that forbids even the actions
+// a frozen account keeps (deleting, narrowing exposure, account settings).
 func (a AccountStatus) MutateErr() error {
-	if a.CanMutate() {
+	if a.CanAuthenticate() {
 		return nil
 	}
 	return &AccountLockedError{UserID: a.UserID, State: a.State, Reason: a.SuspendedReason}
@@ -151,11 +175,8 @@ func (s *Store) AccountAccess(ctx context.Context, userID string) (AccountStatus
 }
 
 // MaterialOwnerAccess resolves the lifecycle state of the account charged for a
-// material's bytes, which is the account whose limits govern whether the
-// document may grow. Every byte a collaborator adds lands on owner_user_id, so
-// a write gate keyed on the connecting user answers the wrong question in both
-// directions: it restricts an over-quota editor inside a healthy owner's
-// workspace, and lets an active editor push an over-quota owner further over.
+// material's bytes. A frozen or locked owner makes the material read-only for
+// every collaborator, whatever their own state.
 func (s *Store) MaterialOwnerAccess(
 	ctx context.Context,
 	materialID string,
@@ -170,6 +191,70 @@ func (s *Store) MaterialOwnerAccess(
 		return AccountStatus{}, err
 	}
 	return s.accountAccess(ctx, s.pool, ownerID)
+}
+
+// WithStorageUsage fills the usage fields an account reports: stored plus
+// reserved bytes against the current plan limit (Free once a paid period has
+// lapsed, as the quota check applies it) and their level.
+func (s *Store) WithStorageUsage(ctx context.Context, status AccountStatus) (AccountStatus, error) {
+	usage, err := s.StorageUsage(ctx, status.UserID)
+	if err != nil {
+		return status, err
+	}
+	status.StorageUsedBytes = usage.UsedBytes + usage.ReservedBytes
+	status.StorageLimitBytes = usage.LimitBytes
+	status.StorageUsage = StorageUsageLevelFor(status.StorageUsedBytes, status.StorageLimitBytes)
+	return status, nil
+}
+
+// assertEditableTx refuses an edit when any of the accounts (the actor and
+// the storage owner) cannot edit: a frozen account edits nowhere, and nobody
+// edits what a frozen account pays for. Empty ids are skipped.
+func (s *Store) assertEditableTx(ctx context.Context, q rowQueryer, userIDs ...string) error {
+	for i, id := range userIDs {
+		if id == "" || slices.Contains(userIDs[:i], id) {
+			continue
+		}
+		status, err := s.accountAccess(ctx, q, id)
+		if err != nil {
+			return err
+		}
+		if err := status.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// assertContentEditableTx admits a content edit (edit mode, comments,
+// annotations): assertEditableTx, and the storage owner under its limit. At
+// or over it (full, grace included) every editable file and material is
+// view-only, while organizing (rename, move, reorder, delete) goes on.
+func (s *Store) assertContentEditableTx(ctx context.Context, q rowQueryer, ownerID, actorID string) error {
+	if err := s.assertEditableTx(ctx, q, ownerID, actorID); err != nil {
+		return err
+	}
+	return s.storageFullErr(ctx, q, ownerID)
+}
+
+// StorageFullErr is the account's QuotaExceededError while it is at or over
+// its storage limit (full, grace included), nil otherwise.
+func (s *Store) StorageFullErr(ctx context.Context, userID string) error {
+	return s.storageFullErr(ctx, s.pool, userID)
+}
+
+func (s *Store) storageFullErr(ctx context.Context, q rowQueryer, userID string) error {
+	usage, err := s.unlockedStorageUsage(ctx, q, userID)
+	if err != nil {
+		return err
+	}
+	if usage.Full() {
+		return &QuotaExceededError{
+			UserID: userID, UsedBytes: usage.UsedBytes, ReservedBytes: usage.ReservedBytes,
+			LimitBytes: usage.LimitBytes, PlanTier: usage.PlanTier,
+		}
+	}
+	return nil
 }
 
 // AccountSessionAllowed answers the auth middleware's narrower question without
@@ -405,6 +490,7 @@ func (s *Store) applyQuotaState(
 	}
 	status.StorageUsedBytes = usage.UsedBytes + usage.ReservedBytes
 	status.StorageLimitBytes = usage.LimitBytes
+	status.StorageUsage = StorageUsageFull
 
 	graceEnds := lapsedAt.AddDate(0, 0, overQuotaBufferDays)
 	status.GraceEndsAt = &graceEnds

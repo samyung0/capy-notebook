@@ -740,7 +740,7 @@ func TestSourceQuotaChargesEffectsAndStoredState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			// Room for exactly 100 bytes of growth; an empty effect list costs nothing.
+			// 100 bytes under the limit; an empty effect list costs nothing.
 			if _, err = s.pool.Exec(ctx, `UPDATE files SET size_bytes=size_bytes+$2 WHERE id=$1`, file.ID, usage.LimitBytes-usage.UsedBytes-100); err != nil {
 				t.Fatal(err)
 			}
@@ -758,12 +758,8 @@ func TestSourceQuotaChargesEffectsAndStoredState(t *testing.T) {
 				_, err := s.SaveSourceCheckpoint(ctx, file.ID, req)
 				return err
 			}
-			var quota *QuotaExceededError
-			if err = save(free + 101); !errors.As(err, &quota) {
-				t.Fatalf("growth past the quota: %v", err)
-			}
 			if err = save(free + 100); err != nil {
-				t.Fatalf("growth that fits exactly: %v", err)
+				t.Fatalf("a 100-byte save: %v", err)
 			}
 			if usage, err = s.StorageUsage(ctx, owner); err != nil || usage.UsedBytes != usage.LimitBytes {
 				t.Fatalf("after the first save: %+v %v", usage, err)

@@ -46,9 +46,6 @@ type Workspace struct {
 	// OwnerPlanTier is loaded only to resolve this process's startup plan
 	// snapshot. It is not exposed as workspace API data.
 	OwnerPlanTier PlanTier `json:"-"`
-	// OwnerName is that account's display name, so a member can be told whose
-	// limit is blocking them rather than a nameless "the owner".
-	OwnerName string `json:"ownerName"`
 	// MemberRole is the requester's persisted membership ("" for a visitor),
 	// filled by the listing queries so capabilities need no second lookup.
 	MemberRole     WorkspaceRole `json:"-"`
@@ -61,9 +58,13 @@ type Workspace struct {
 
 // AccessCapabilities is request-scoped authorization metadata. It is never
 // persisted and must be derived from the requester's workspace role.
+// CanEdit covers organizing (rename, move, reorder, delete) and creating;
+// CanEditContent is edit mode, comments and annotations, which the storage
+// owner at or over its limit also turns off.
 type AccessCapabilities struct {
 	CanView          bool `json:"canView"`
 	CanEdit          bool `json:"canEdit"`
+	CanEditContent   bool `json:"canEditContent"`
 	CanManageMembers bool `json:"canManageMembers"`
 }
 
@@ -145,8 +146,10 @@ type Quiz struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped capabilities, not persisted quiz
 	// attributes. Explicit workspace editors can edit without owning it.
-	IsOwner bool `json:"isOwner"`
-	CanEdit bool `json:"canEdit"`
+	// CanEditContent is CanEdit unless the storage owner is at its limit.
+	IsOwner        bool `json:"isOwner"`
+	CanEdit        bool `json:"canEdit"`
+	CanEditContent bool `json:"canEditContent"`
 }
 
 type Attempt struct {
@@ -189,8 +192,11 @@ type FlashcardSet struct {
 	Provenance *Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped capabilities. Explicit workspace
 	// editors can edit without owning it; link/public visitors cannot.
-	IsOwner bool `json:"isOwner"`
-	CanEdit bool `json:"canEdit"`
+	// CanEditContent (the cards) is CanEdit unless the storage owner is at its
+	// limit.
+	IsOwner        bool `json:"isOwner"`
+	CanEdit        bool `json:"canEdit"`
+	CanEditContent bool `json:"canEditContent"`
 }
 
 // Srs is the FSRS scheduling state persisted as jsonb; the shape mirrors

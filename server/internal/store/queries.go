@@ -184,13 +184,13 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 /* --------------------------------------------------------------- workspaces */
 
-// The owner name is a subselect rather than a join so every caller of wsCols
+// The owner plan is a subselect rather than a join so every caller of wsCols
 // keeps its existing FROM clause.
 const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', t.id, 'value', t.name) ORDER BY t.name)
 		FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 		WHERE et.workspace_id=w.id), '[]'::jsonb),
-	w.user_id, COALESCE((SELECT u.name FROM users u WHERE u.id=w.user_id), ''),
+	w.user_id,
 	(SELECT CASE
 			WHEN NOT EXISTS (SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id)
 				THEN u.plan_tier
@@ -213,7 +213,7 @@ const memberRoleCol = `CASE WHEN w.user_id=$1 THEN 'owner' ELSE COALESCE(me.role
 func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 	var w Workspace
 	dest := append([]any{&w.ID, &w.Name, &w.Description, &w.Privacy, &w.ShareRole, &w.Tags,
-		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
+		&w.OwnerUserID, &w.OwnerPlanTier, &w.ChapterCount,
 		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.AutoReparse, &w.AutoReindex, &w.IconID}, extra...)
 	err := row.Scan(dest...)
 	if err != nil {
@@ -376,7 +376,7 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID string, input Worksp
 	if err != nil {
 		return Workspace{}, err
 	}
-	if err := status.CreateErr(); err != nil {
+	if err := status.Err(); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1); err != nil {
@@ -550,6 +550,9 @@ func (s *Store) UpdateWorkspace(ctx context.Context, userID, id string, p Worksp
 	if err != nil {
 		return Workspace{}, err
 	}
+	if err := s.assertEditableTx(ctx, tx, ownerID, userID); err != nil {
+		return Workspace{}, err
+	}
 
 	ct, err := tx.Exec(ctx, `UPDATE workspaces SET
 		name=COALESCE($2,name), description=COALESCE($3,description),
@@ -588,8 +591,8 @@ func (s *Store) UpdateWorkspaceSharing(
 	if err != nil {
 		return Workspace{}, err
 	}
-	// Widening exposure of the owner's bytes is gated on the owner's lifecycle
-	// whoever clicks; narrowing is a recovery action and always allowed.
+	// Widening exposure is an edit, refused when the actor or the owner is
+	// frozen; narrowing is a recovery action and always allowed.
 	var current Privacy
 	var currentShare ShareRole
 	if err := tx.QueryRow(ctx, `SELECT privacy, share_role FROM workspaces WHERE id=$1`, id).
@@ -612,11 +615,7 @@ func (s *Store) UpdateWorkspaceSharing(
 	widens := roleRank(nonmemberGrant(next, nextShare)) > roleRank(nonmemberGrant(current, currentShare)) ||
 		(next == PrivacyPublic && current != PrivacyPublic)
 	if widens {
-		owner, err := s.accountAccess(ctx, tx, ownerID)
-		if err != nil {
-			return Workspace{}, err
-		}
-		if err := owner.Err(); err != nil {
+		if err := s.assertEditableTx(ctx, tx, ownerID, userID); err != nil {
 			return Workspace{}, err
 		}
 	}
@@ -930,7 +929,7 @@ func (s *Store) DeleteChapter(ctx context.Context, actorID, id string) error {
 		}
 		return err
 	}
-	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
+	if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
 		return err
 	}
 	ct, err := tx.Exec(ctx, `DELETE FROM chapters WHERE id=$1 AND workspace_id=$2`, id, wsID)
@@ -1495,7 +1494,7 @@ type MaterialPatch struct {
 func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) (Material, error) {
 	sets := []string{}
 	args := []any{}
-	var contentKind string
+	var contentKind, contentOwner string
 	var contentCardIDs []string
 	var contentBaseRevision int64
 	var currentContent string
@@ -1513,12 +1512,18 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		add("color", *p.Color)
 	}
 	if p.Content != nil {
-		if err := s.pool.QueryRow(ctx, `SELECT kind, revision, content
+		if err := s.pool.QueryRow(ctx, `SELECT kind, revision, content, owner_user_id
 			FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).
-			Scan(&contentKind, &contentBaseRevision, &currentContent); err != nil {
+			Scan(&contentKind, &contentBaseRevision, &currentContent, &contentOwner); err != nil {
 			if isNoRows(err) {
 				return Material{}, ErrNotFound
 			}
+			return Material{}, err
+		}
+		// Admitted before either write path (the collaboration command or the
+		// SQL update below): a frozen account or an owner at its storage limit
+		// makes the content view-only.
+		if err := s.assertContentEditableTx(ctx, s.pool, contentOwner, p.UpdatedBy); err != nil {
 			return Material{}, err
 		}
 		if err := materialdoc.ValidateKind(*p.Content, contentKind); err != nil {
@@ -1660,9 +1665,9 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		}
 	}
 	var lockedOwnerID string
-	var oldSize int64
-	if err := tx.QueryRow(ctx, `SELECT owner_user_id, size_bytes
-		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, id).Scan(&lockedOwnerID, &oldSize); err != nil {
+	var privacy Privacy
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id, privacy
+		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, id).Scan(&lockedOwnerID, &privacy); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
@@ -1671,28 +1676,14 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if lockedOwnerID != ownerID {
 		return Material{}, ErrConflict
 	}
-	if p.Content != nil || p.Privacy != nil {
-		ownerStatus, err := s.accountAccess(ctx, tx, ownerID)
-		if err != nil {
+	// The workspace lock already refused a frozen actor or owner. Standalone, a
+	// frozen owner keeps narrowing the material's privacy.
+	narrowsOnly := p.Privacy != nil && len(sets) == 1 &&
+		!(*p.Privacy == PrivacyPublic && privacy != PrivacyPublic) &&
+		!(*p.Privacy == PrivacyLink && privacy == PrivacyPrivate)
+	if workspaceID == nil && !narrowsOnly {
+		if err := s.assertEditableTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
 			return Material{}, err
-		}
-		if p.Privacy != nil {
-			if err := ownerStatus.Err(); err != nil {
-				return Material{}, err
-			}
-		}
-		if p.Content != nil {
-			newSize, err := storageJSONSizeTx(ctx, tx, *p.Content)
-			if err != nil {
-				return Material{}, err
-			}
-			if newSize > oldSize {
-				if err := ownerStatus.Err(); err != nil {
-					return Material{}, err
-				}
-			} else if err := ownerStatus.MutateErr(); err != nil {
-				return Material{}, err
-			}
 		}
 	}
 	ct, err := tx.Exec(ctx, `UPDATE materials SET `+strings.Join(sets, ", ")+where, args...)
@@ -1815,7 +1806,7 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 		ID:       mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
 		Chapters: chapters, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
 		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance,
-		IsOwner: mt.IsOwner, CanEdit: mt.Capabilities.CanEdit,
+		IsOwner: mt.IsOwner, CanEdit: mt.Capabilities.CanEdit, CanEditContent: mt.Capabilities.CanEditContent,
 	}, nil
 }
 
@@ -1847,7 +1838,7 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 		return Quiz{}, err
 	}
 	created.IsOwner = mt.OwnerUserID == q.UserID
-	created.CanEdit = true
+	created.CanEdit, created.CanEditContent = true, true
 	return created, nil
 }
 
@@ -2096,7 +2087,7 @@ func (s *Store) CreateFlashcardSetWithCards(
 		return FlashcardSet{}, err
 	}
 	created.IsOwner = mt.OwnerUserID == userID
-	created.CanEdit = true
+	created.CanEdit, created.CanEditContent = true, true
 	return created, nil
 }
 
@@ -2299,6 +2290,8 @@ func (s *Store) UpdateCardStudyState(ctx context.Context, id string, p CardStudy
 				return Flashcard{}, err
 			}
 		} else if err := s.lockAccountSessionsTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
+			return Flashcard{}, err
+		} else if err := s.assertEditableTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
 			return Flashcard{}, err
 		}
 		var srs []byte

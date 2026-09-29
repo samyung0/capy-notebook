@@ -2,14 +2,16 @@ import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { signInHref } from '@/features/auth/clerk';
 import { m } from '@/i18n';
+import { deferStorageRefusal } from '@/lib/errors';
 import { trackQuotaBlocked } from '@/lib/observability';
 
 export function toastCloneError(
   err: unknown,
   kind: 'workspace' | 'quiz' | 'flashcards' | 'material'
 ) {
+  if (isStorageQuotaError(err)) trackQuotaBlocked(err, 'clone');
+  if (deferStorageRefusal(err)) return;
   if (isStorageQuotaError(err)) {
-    trackQuotaBlocked(err, 'clone');
     userToast({
       description: m.clone_quota_body(),
       title: m.clone_quota_title(),

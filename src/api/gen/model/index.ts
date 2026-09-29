@@ -211,6 +211,7 @@ export * from './sourceUploadPolicy.ts';
 export * from './sourceUploadReservation.ts';
 export * from './sourceUploadReservationHeaders.ts';
 export * from './srsState.ts';
+export * from './storageUsageLevel.ts';
 export * from './subject.ts';
 export * from './subscriptionBlocker.ts';
 export * from './subscriptionStatus.ts';

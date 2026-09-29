@@ -1,8 +1,10 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
-import { api, isApiError } from '@/api/client';
+import { api, isApiError, qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
+import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
 import { m } from '@/i18n';
 import {
   clearSourceDrafts,
@@ -79,8 +81,17 @@ export function maintenancePaused(value: unknown): boolean {
   );
 }
 
-export function useSourceSession(fileId: string, enabled: boolean) {
+/** `onReadOnly` runs when the room turns read-only (a storage or frozen
+ * refusal) after the unsaved changes were discarded: the view leaves the
+ * session and drops to view mode. */
+export function useSourceSession(
+  fileId: string,
+  enabled: boolean,
+  onReadOnly?: () => void
+) {
   const { data: me } = useMe({ errorBoundary: false });
+  const readOnlyHandler = useRef(onReadOnly);
+  readOnlyHandler.current = onReadOnly;
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -116,6 +127,17 @@ export function useSourceSession(fileId: string, enabled: boolean) {
   // document means the pause refused the session before it opened.
   const [replaced, setReplaced] = useState(false);
   const [paused, setPaused] = useState(false);
+  // The room turned read-only (a frozen account or an owner at its storage
+  // limit): the unsaved changes are discarded and the view drops to view mode
+  // under the read-only strip.
+  const [readOnly, setReadOnly] = useState(false);
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!readOnly) return;
+    // Capabilities and the storage status follow from the refreshed reads.
+    void qc.invalidateQueries({ queryKey: qk.me });
+    void qc.invalidateQueries({ queryKey: ['workspace'] });
+  }, [readOnly, qc]);
   const flushHandler = useRef<((pause?: boolean) => Promise<void>) | null>(
     null
   );
@@ -203,6 +225,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     setHandoff(false);
     setReplaced(false);
     setPaused(false);
+    setReadOnly(false);
     setSynced(false);
     setError(null);
     setLoaded(null);
@@ -276,22 +299,40 @@ export function useSourceSession(fileId: string, enabled: boolean) {
         sequence: restoredDrafts.length ? 1 : 0,
       };
       const unsyncedWaiters: (() => void)[] = [];
-      const markSaved = () => {
-        setStatus('saved');
+      // Nothing local is pending any more: forget this session's drafts.
+      const settle = () => {
         setDirty(false);
         setError(null);
-        const acknowledgedDrafts = [
+        const settledDrafts = [
           ...restoredDrafts,
           ...(latestDraft ? [latestDraft] : []),
         ];
         restoredDrafts = [];
-        queueDraftWrite(() => clearSourceDrafts(acknowledgedDrafts));
+        queueDraftWrite(() => clearSourceDrafts(settledDrafts));
+      };
+      const markSaved = () => {
+        setStatus('saved');
+        settle();
       };
       // A newer version was published, or the maintenance pause closed the
       // room. A saved client keeps its view read-only under the reload
-      // banner; unsaved changes go to recovery.
-      const replace = (pause = false) => {
-        if (
+      // banner; unsaved changes go to recovery. A storage or frozen refusal
+      // (readOnly) discards the unsaved changes and their drafts instead, and
+      // the view drops to view mode (onReadOnly).
+      const replace = (
+        reason: 'paused' | 'readOnly' | 'replaced' = 'replaced'
+      ) => {
+        if (reason === 'readOnly') {
+          // Discarded, not saved: the status never reads Saved.
+          cancelled = true;
+          active.acknowledged = active.sequence;
+          pendingInput(false);
+          settle();
+          setLoaded(null);
+          setHandoff(false);
+          setReadOnly(true);
+          readOnlyHandler.current?.();
+        } else if (
           sourceChangesCovered(active, active.handedOff) &&
           !bufferDirtyRef.current
         ) {
@@ -299,7 +340,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           active.acknowledged = active.sequence;
           markSaved();
           setHandoff(false);
-          setPaused(pause);
+          setPaused(reason === 'paused');
           setReplaced(true);
         } else {
           active.recovery = true;
@@ -334,7 +375,11 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           if (active.recovery) return;
           // Paused before this client saw the room's paused message.
           if (maintenancePaused(reason)) {
-            replace(true);
+            replace('paused');
+            return;
+          }
+          if (reason === COLLABORATION_READ_ONLY_REASON) {
+            replace('readOnly');
             return;
           }
           fail(
@@ -365,13 +410,20 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             checkpointIds?: string[];
             message?: string;
             recoverable?: boolean;
+            room?: string;
           };
           try {
             event = JSON.parse(payload);
           } catch {
             return;
           }
-          if (event.fileId !== fileId || cancelled) return;
+          if (cancelled) return;
+          // The collaboration server names the room, not the file.
+          if (event.type === 'room-read-only') {
+            if (event.room === session.room) replace('readOnly');
+            return;
+          }
+          if (event.fileId !== fileId) return;
           if (event.type === 'source-handoff-cancel') {
             active.handedOff = -1;
             setHandoff(false);
@@ -423,7 +475,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
             return;
           }
           if (event.type === 'source-editing-paused') {
-            replace(true);
+            replace('paused');
             return;
           }
           if (
@@ -482,7 +534,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
               ));
           } catch (error) {
             // A reconnect during the maintenance pause.
-            if (!cancelled && maintenancePaused(error)) replace(true);
+            if (!cancelled && maintenancePaused(error)) replace('paused');
             throw error;
           }
           if (cancelled) throw new Error(m.source_edit_session_changed());
@@ -490,6 +542,11 @@ export function useSourceSession(fileId: string, enabled: boolean) {
           if (token.epoch !== session.epoch || token.room !== session.room) {
             replace();
             throw new Error(m.source_edit_session_changed());
+          }
+          // A reconnect after the account froze gets a read token.
+          if (token.access === 'read') {
+            replace('readOnly');
+            throw new Error(COLLABORATION_READ_ONLY_REASON);
           }
           return token.token;
         },
@@ -567,6 +624,7 @@ export function useSourceSession(fileId: string, enabled: boolean) {
     handoff,
     paused,
     pendingInput,
+    readOnly,
     replaced,
     save,
     status: status === 'saved' && bufferDirty ? ('saving' as const) : status,

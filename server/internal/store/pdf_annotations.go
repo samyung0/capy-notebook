@@ -88,10 +88,19 @@ func validatePDFAnnotation(in PDFAnnotationBody) error {
 	}
 	return nil
 }
-func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file string) (string, error) {
-	_, _, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false)
+
+// annotationLock admits any reader of the file. Saving or deleting a mark
+// (write) is a content edit, refused when the actor or the storage owner is
+// frozen or the owner is at its storage limit.
+func (s *Store) annotationLock(ctx context.Context, tx pgx.Tx, actor, file string, write bool) (string, error) {
+	_, owner, err := s.sourceLockTx(ctx, tx, file, []string{actor}, false)
 	if err != nil {
 		return "", err
+	}
+	if write {
+		if err := s.assertContentEditableTx(ctx, tx, owner, actor); err != nil {
+			return "", err
+		}
 	}
 	var kind string
 	var revision int64
@@ -127,7 +136,7 @@ func (s *Store) ListPDFAnnotations(ctx context.Context, actor, file string) ([]P
 		return nil, err
 	}
 	defer tx.Rollback(ctx)
-	identity, err := s.annotationLock(ctx, tx, actor, file)
+	identity, err := s.annotationLock(ctx, tx, actor, file, false)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +168,7 @@ func (s *Store) SavePDFAnnotation(ctx context.Context, actor, file, id string, i
 		return PDFAnnotation{}, err
 	}
 	defer tx.Rollback(ctx)
-	identity, err := s.annotationLock(ctx, tx, actor, file)
+	identity, err := s.annotationLock(ctx, tx, actor, file, true)
 	if err != nil {
 		return PDFAnnotation{}, err
 	}
@@ -195,7 +204,7 @@ func (s *Store) DeletePDFAnnotation(ctx context.Context, actor, file, id string)
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = s.annotationLock(ctx, tx, actor, file); err != nil {
+	if _, err = s.annotationLock(ctx, tx, actor, file, true); err != nil {
 		return err
 	}
 	result, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE id=$1 AND file_id=$2 AND author_id=$3`, id, file, actor)

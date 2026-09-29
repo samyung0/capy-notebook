@@ -7,6 +7,7 @@
 
 export interface AccessCapabilities {
   canEdit: boolean;
+  canEditContent: boolean;
   canManageMembers: boolean;
   canView: boolean;
 }

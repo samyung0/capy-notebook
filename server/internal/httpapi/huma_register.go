@@ -187,21 +187,9 @@ func mapHTTPError(err error) error {
 	}
 	var quota *store.QuotaExceededError
 	if errors.As(err, &quota) {
-		return &huma.ErrorModel{
-			Status: http.StatusForbidden,
-			Title:  http.StatusText(http.StatusForbidden),
-			Detail: "storage quota exceeded",
-			Errors: []*huma.ErrorDetail{{
-				Message: "storage_quota_exceeded",
-				Value: map[string]any{
-					"storageUsedBytes":      quota.UsedBytes,
-					"storageReservedBytes":  quota.ReservedBytes,
-					"storageRequestedBytes": quota.RequestedBytes,
-					"storageLimitBytes":     quota.LimitBytes,
-					"ownerUserId":           quota.UserID,
-				},
-			}},
-		}
+		// The code alone: reportHandlerError adds the numbers for the charged
+		// account (see quotaDetail).
+		return quotaError(nil)
 	}
 	var fileLimit *store.FileLimitExceededError
 	if errors.As(err, &fileLimit) {
@@ -323,6 +311,9 @@ func reportHandlerError(ctx context.Context, err error) error {
 	if mapped, ok := err.(*handlerError); ok {
 		cause, err = mapped.cause, mapped.error
 	}
+	if detail := quotaDetail(cause, userID(ctx)); detail != nil {
+		err = quotaError(detail)
+	}
 	var busy *providerBusyError
 	if errors.As(cause, &busy) {
 		cause = obs.ExpectedError(cause)
@@ -360,4 +351,30 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerShare(api)
 	a.registerWorkspaceSummary(api)
 	a.registerBillingIntegrations(api)
+}
+
+func quotaError(detail map[string]any) *huma.ErrorModel {
+	return &huma.ErrorModel{
+		Status: http.StatusForbidden,
+		Title:  http.StatusText(http.StatusForbidden),
+		Detail: "storage quota exceeded",
+		Errors: []*huma.ErrorDetail{{Message: "storage_quota_exceeded", Value: detail}},
+	}
+}
+
+// quotaDetail is a storage refusal's numbers, for the charged account only: a
+// member writing into the owner's workspace gets the code alone, since the
+// owner's byte counts and id are not theirs to see. nil for anything else.
+func quotaDetail(err error, requester string) map[string]any {
+	var quota *store.QuotaExceededError
+	if !errors.As(err, &quota) || requester == "" || quota.UserID != requester {
+		return nil
+	}
+	return map[string]any{
+		"storageUsedBytes":      quota.UsedBytes,
+		"storageReservedBytes":  quota.ReservedBytes,
+		"storageRequestedBytes": quota.RequestedBytes,
+		"storageLimitBytes":     quota.LimitBytes,
+		"ownerUserId":           quota.UserID,
+	}
 }

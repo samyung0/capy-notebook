@@ -7,11 +7,11 @@ import {
   documentContributors,
 } from './contributors.js';
 
-function origin(userId: string, access: 'shrink' | 'write' = 'write') {
+function origin(userId: string) {
   return {
     connection: {
       context: {
-        access,
+        access: 'write',
         expiresAt: Number.MAX_SAFE_INTEGER,
         tokenId: 'token',
         userId,

@@ -165,12 +165,6 @@ export function checkpointRoom(room: Room) {
   if (room.retired) return;
   const metrics =
     room.target.kind === 'material' ? persistMaterial(room) : undefined;
-  if (room.target.kind === 'source' && room.dirty && room.format === 'text') {
-    db.fileLinks[room.target.id] = {
-      ...db.fileLinks[room.target.id],
-      url: db.textUrl(room.document.getText('source').toString()),
-    };
-  }
   if (room.dirty) room.version += 1;
   rememberCheckpoint(room);
   room.dirty = false;
@@ -197,7 +191,26 @@ function rememberCheckpoint(room: Room) {
 }
 
 export function sourceRoomState(room: Room): string {
-  const bytes = Y.encodeStateAsUpdate(room.document);
+  return base64(Y.encodeStateAsUpdate(room.document));
+}
+
+/** A source's last saved state, as the server's lock-free viewer read
+ * (`source-session?view=true`) returns it: the latest epoch's checkpoint once
+ * a save landed, null while the published bytes are current. Saving does not
+ * publish: the file's link keeps its bytes. */
+export function savedSourceState(fileId: string): string | null {
+  let latest: { epoch: number; state: Uint8Array; version: number } | null =
+    null;
+  for (const [name, checkpoint] of checkpoints) {
+    const match = /^source:(.+):epoch:(\d+)$/.exec(name);
+    const epoch = Number(match?.[2]);
+    if (match?.[1] === fileId && (!latest || epoch > latest.epoch))
+      latest = { ...checkpoint, epoch };
+  }
+  return latest && latest.version > 0 ? base64(latest.state) : null;
+}
+
+function base64(bytes: Uint8Array): string {
   let binary = '';
   for (let offset = 0; offset < bytes.length; offset += 8192) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
@@ -354,6 +367,7 @@ class MockCollaborationProvider implements UnifiedProvider {
     if (this.isConnected) return;
     const room = materialRoom(this.options.name, this.options.initialValue);
     this.room = room;
+    materialProviders.add(this);
     this.leave = join(room, {
       awareness: this.awareness,
       document: this.document,
@@ -367,6 +381,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
   disconnect = () => {
     if (!this.isConnected) return;
+    materialProviders.delete(this);
     this.leave?.();
     this.leave = undefined;
     this.room = undefined;
@@ -377,6 +392,18 @@ class MockCollaborationProvider implements UnifiedProvider {
   };
 
   destroy = () => this.disconnect();
+
+  announceReadOnly() {
+    // The service refused this writer's pending update: nothing after the
+    // last checkpoint reaches the durable room.
+    if (this.room) this.room.retired = true;
+    this.options.onStateless?.({
+      payload: JSON.stringify({
+        room: this.options.name,
+        type: 'room-read-only',
+      }),
+    });
+  }
 
   private handleStateless(payload: string) {
     if (!this.room) return;
@@ -416,7 +443,7 @@ class MockCollaborationProvider implements UnifiedProvider {
 
 /** Source editing counterpart: the session handler seeded the room, so
  * connecting is a merge plus a `synced` on the next microtask. A checkpoint
- * writes the text back to the file's mock link so View shows the edit. */
+ * saves without publishing; View reads it through the viewer's session. */
 class MockSourceProvider implements SourceProvider {
   // The in-page room applies updates synchronously.
   readonly hasUnsyncedChanges = false;
@@ -485,6 +512,17 @@ class MockSourceProvider implements SourceProvider {
     if (this.isAuthenticated) this.disconnect();
   }
 
+  announceReadOnly() {
+    // As for a note: the refused update never reaches the durable room.
+    this.room.retired = true;
+    this.config.onStateless?.({
+      payload: JSON.stringify({
+        room: this.config.name,
+        type: 'room-read-only',
+      }),
+    });
+  }
+
   announceEpoch(fileId: string, newEpoch: number) {
     if (this.room.target.id !== fileId) return;
     this.room.retired = true;
@@ -499,6 +537,13 @@ class MockSourceProvider implements SourceProvider {
 }
 
 const sourceProviders = new Set<MockSourceProvider>();
+const materialProviders = new Set<MockCollaborationProvider>();
+/** The collaboration service's refusal once the account freezes: every open
+ * room turns read-only for its writer. */
+export function announceReadOnly() {
+  for (const provider of [...materialProviders, ...sourceProviders])
+    provider.announceReadOnly();
+}
 const failedSourceSaves = new Set<string>();
 export function failNextSourceSave(fileId: string) {
   failedSourceSaves.add(fileId);

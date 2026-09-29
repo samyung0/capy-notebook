@@ -45,6 +45,7 @@ import {
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { deferStorageRefusal } from '@/lib/errors';
 import { useEditorRuntime } from './EditorRuntime';
 import {
   acceptsPurpose,
@@ -142,7 +143,7 @@ export const MediaPlaceholderElement = withHOC(
           });
           api.placeholder.removeUploadingFile(element.id as string);
         } catch (cause) {
-          if (!controller.signal.aborted) {
+          if (!controller.signal.aborted && !deferStorageRefusal(cause)) {
             setError(
               isStorageQuotaError(cause)
                 ? m.editor_storage_quota()
@@ -338,6 +339,7 @@ function ImageToolbar({
       if (at)
         editor.tf.setNodes({ assetId, contentType, name, sizeBytes }, { at });
     } catch (cause) {
+      if (deferStorageRefusal(cause)) return;
       userToast({
         description: isStorageQuotaError(cause)
           ? m.editor_storage_quota()

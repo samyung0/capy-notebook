@@ -26,6 +26,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CardEditModal } from '@/features/flashcards/CardEditModal';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
@@ -79,6 +80,7 @@ export default function FlashcardStudy() {
     useCloneFlashcardSet({
       errorToast: false,
     });
+  const frozen = useAccountFrozen();
   const {
     isPending: updateFlashcardSetIsPending,
     mutateAsync: updateFlashcardSet,
@@ -86,6 +88,8 @@ export default function FlashcardStudy() {
   const navigate = useNavigate();
   const isOwner = flashcardSet?.isOwner === true;
   const canEdit = flashcardSet?.canEdit === true;
+  // Card edits are content, off while the storage owner is at its limit.
+  const canEditCards = flashcardSet?.canEditContent === true;
 
   const [queue, setQueue] = useState<string[] | null>(null);
   const [sessionTotal, setSessionTotal] = useState(0);
@@ -246,7 +250,7 @@ export default function FlashcardStudy() {
         </>
       ) : (
         <Button
-          disabled={cloneFlashcardSetIsPending}
+          disabled={frozen || cloneFlashcardSetIsPending}
           iconLeft="plus"
           onClick={() =>
             cloneFlashcardSet(flashcardSetId, {
@@ -291,7 +295,7 @@ export default function FlashcardStudy() {
               </p>
             )}
             <div className="mt-2 flex gap-3">
-              {canEdit && (
+              {canEditCards && (
                 <Button
                   iconLeft="plus"
                   onClick={() => void openEdit('new').catch(showErrorToast)}
@@ -312,7 +316,7 @@ export default function FlashcardStudy() {
             </div>
           </div>
         </div>
-        {canEdit && editing !== null && editRevision !== undefined && (
+        {canEditCards && editing !== null && editRevision !== undefined && (
           <CardEditModal
             card={editing === 'new' ? null : editing}
             expectedRevision={editRevision}
@@ -359,7 +363,7 @@ export default function FlashcardStudy() {
           </p>
         </button>
 
-        {canEdit && (
+        {canEditCards && (
           <div className="mt-3 flex items-center justify-center gap-4">
             <button
               className="flex items-center gap-1 text-fg-muted text-xs hover:text-fg"
@@ -407,7 +411,7 @@ export default function FlashcardStudy() {
         <MaterialAttributionFooter provenance={flashcardSet?.provenance} />
       </div>
 
-      {canEdit && editing !== null && editRevision !== undefined && (
+      {canEditCards && editing !== null && editRevision !== undefined && (
         <CardEditModal
           card={editing === 'new' ? null : editing}
           expectedRevision={editRevision}

@@ -8,6 +8,7 @@ import type { AccessCapabilities } from './accessCapabilities.ts';
 import type { AccountState } from './accountState.ts';
 import type { Privacy } from './privacy.ts';
 import type { ShareRole } from './shareRole.ts';
+import type { StorageUsageLevel } from './storageUsageLevel.ts';
 import type { Tag } from './tag.ts';
 import type { WorkspaceRole } from './workspaceRole.ts';
 
@@ -31,7 +32,7 @@ export interface PublicWorkspace {
   privacy: Privacy;
   role?: WorkspaceRole;
   shareRole: ShareRole;
-  storageOwnerName: string;
   storageOwnerState?: AccountState;
+  storageOwnerUsage?: StorageUsageLevel;
   tags: Tag[];
 }

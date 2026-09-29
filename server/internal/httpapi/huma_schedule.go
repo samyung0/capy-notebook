@@ -76,7 +76,7 @@ func (a *api) listEvents(ctx context.Context, _ *struct{}) (*eventsOutput, error
 }
 
 func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutput, error) {
-	if err := a.requireAccountCreate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	if !in.Body.End.After(in.Body.Start) {
@@ -93,11 +93,10 @@ func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutp
 	return &eventOutput{Body: res}, nil
 }
 
-// Events and tasks are not counted against the storage quota, so editing one
-// cannot grow usage. Creation still takes the strict gate, matching "no create"
-// for over-quota accounts.
+// A frozen account is read-only: it deletes planner items but neither creates
+// nor edits them.
 func (a *api) updateEvent(ctx context.Context, in *updateEventInput) (*eventOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	if in.Body.Start != nil && in.Body.End != nil && !in.Body.End.After(*in.Body.Start) {
@@ -133,7 +132,7 @@ func (a *api) listLabels(ctx context.Context, _ *struct{}) (*labelsOutput, error
 }
 
 func (a *api) updateLabel(ctx context.Context, in *updateLabelInput) (*labelOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	res, err := a.s.UpdateLabel(ctx, userID(ctx), in.ID, store.LabelPatch{Name: apimodel.Str(in.Body.Name), Color: in.Body.Color})
@@ -162,7 +161,7 @@ func (a *api) listTasks(ctx context.Context, _ *struct{}) (*tasksOutput, error) 
 }
 
 func (a *api) updateTask(ctx context.Context, in *updateTaskInput) (*taskOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	res, err := a.s.UpdateTask(ctx, userID(ctx), in.ID, store.TaskPatch{Title: apimodel.Str(in.Body.Title), Meta: in.Body.Meta, Done: in.Body.Done})

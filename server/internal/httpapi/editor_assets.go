@@ -163,7 +163,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		_ = a.blob.Delete(r.Context(), uploadPath)
-		a.fail(w, err)
+		a.failFor(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -273,7 +273,7 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err != nil {
-		a.fail(w, err)
+		a.failFor(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, asset)

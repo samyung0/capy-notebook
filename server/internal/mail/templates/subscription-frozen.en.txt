@@ -5,7 +5,7 @@ ACCOUNT FROZEN
 
 Hello,
 
-Your storage buffer has expired and your account is frozen. You cannot create new content until you free up space or resubscribe.
+Your storage buffer has expired and your account is read-only. Viewing, downloading and deleting still work. Free up space or resubscribe to edit again.
 
 Manage subscription {{.OpenURL}}
 

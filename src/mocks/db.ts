@@ -14,6 +14,7 @@ import type {
   FlashcardSet,
   Label,
   Material,
+  MaterialDiscussion,
   MaterialListItem,
   NotificationPrefs,
   PublicFlashcardSet,
@@ -192,6 +193,7 @@ export const workspaces: Workspace[] = [
     canClone: true,
     capabilities: {
       canEdit: true,
+      canEditContent: true,
       canManageMembers: true,
       canView: true,
     },
@@ -208,7 +210,8 @@ export const workspaces: Workspace[] = [
     privacy: 'private',
     role: 'owner',
     shareRole: 'viewer',
-    storageOwnerName: user.name,
+    storageOwnerState: 'active',
+    storageOwnerUsage: 'ok',
     tags: ct('tag_1', 'tag_2'),
   },
   {
@@ -217,6 +220,7 @@ export const workspaces: Workspace[] = [
     canClone: true,
     capabilities: {
       canEdit: true,
+      canEditContent: true,
       canManageMembers: true,
       canView: true,
     },
@@ -233,7 +237,8 @@ export const workspaces: Workspace[] = [
     privacy: 'private',
     role: 'owner',
     shareRole: 'viewer',
-    storageOwnerName: user.name,
+    storageOwnerState: 'active',
+    storageOwnerUsage: 'ok',
     tags: ct('tag_3', 'tag_4'),
   },
   {
@@ -242,6 +247,7 @@ export const workspaces: Workspace[] = [
     canClone: true,
     capabilities: {
       canEdit: true,
+      canEditContent: true,
       canManageMembers: true,
       canView: true,
     },
@@ -258,7 +264,8 @@ export const workspaces: Workspace[] = [
     privacy: 'link',
     role: 'owner',
     shareRole: 'viewer',
-    storageOwnerName: user.name,
+    storageOwnerState: 'active',
+    storageOwnerUsage: 'ok',
     tags: ct('tag_5', 'tag_6', 'tag_war'),
   },
   {
@@ -267,6 +274,7 @@ export const workspaces: Workspace[] = [
     canClone: true,
     capabilities: {
       canEdit: true,
+      canEditContent: true,
       canManageMembers: true,
       canView: true,
     },
@@ -283,7 +291,8 @@ export const workspaces: Workspace[] = [
     privacy: 'private',
     role: 'owner',
     shareRole: 'viewer',
-    storageOwnerName: user.name,
+    storageOwnerState: 'active',
+    storageOwnerUsage: 'ok',
     tags: ct('tag_7'),
   },
   {
@@ -292,6 +301,7 @@ export const workspaces: Workspace[] = [
     canClone: true,
     capabilities: {
       canEdit: true,
+      canEditContent: true,
       canManageMembers: true,
       canView: true,
     },
@@ -308,7 +318,8 @@ export const workspaces: Workspace[] = [
     privacy: 'public',
     role: 'owner',
     shareRole: 'viewer',
-    storageOwnerName: user.name,
+    storageOwnerState: 'active',
+    storageOwnerUsage: 'ok',
     tags: ct('tag_8', 'tag_9'),
   },
 ];
@@ -560,6 +571,7 @@ for (const workspace of workspaces) {
 const seedQuizzes: Quiz[] = [
   {
     canEdit: true,
+    canEditContent: true,
     chapters: ['Cell structure', 'Membranes & transport'],
     createdAt: days(4),
     id: 'qz_1',
@@ -830,6 +842,7 @@ const seedQuizzes: Quiz[] = [
   },
   {
     canEdit: true,
+    canEditContent: true,
     chapters: ['Genetics'],
     createdAt: days(2),
     id: 'qz_2',
@@ -1079,6 +1092,7 @@ const seedQuizzes: Quiz[] = [
   },
   {
     canEdit: true,
+    canEditContent: true,
     chapters: ['Techniques of integration'],
     createdAt: days(6),
     id: 'qz_3',
@@ -1404,6 +1418,7 @@ export const attempts: (Attempt & {
 const seedFlashcardSets: FlashcardSet[] = [
   {
     canEdit: true,
+    canEditContent: true,
     cardCount: 32,
     color: 'green',
     dueCount: 0,
@@ -1418,6 +1433,7 @@ const seedFlashcardSets: FlashcardSet[] = [
   },
   {
     canEdit: true,
+    canEditContent: true,
     cardCount: 24,
     color: 'purple',
     dueCount: 0,
@@ -1432,6 +1448,7 @@ const seedFlashcardSets: FlashcardSet[] = [
   },
   {
     canEdit: true,
+    canEditContent: true,
     cardCount: 40,
     color: 'amber',
     dueCount: 0,
@@ -1664,6 +1681,7 @@ export const accountStatus: AccountStatus = {
   planTier: 'pro',
   state: 'active',
   storageLimitBytes: PLAN_LIMITS.pro.storageLimitBytes,
+  storageUsage: 'ok',
   storageUsedBytes: 128 * 1024 * 1024,
   userId: user.id,
 };
@@ -1676,6 +1694,7 @@ export const canvases: ThinkingCanvas[] = [
 /* ---------------- study materials (mindmaps / diagrams) ---------------- */
 const ownerCapabilities = {
   canEdit: true,
+  canEditContent: true,
   canManageMembers: true,
   canView: true,
 };
@@ -2000,7 +2019,12 @@ export const publicWorkspaces: PublicWorkspace[] = [
     ...workspaces[2],
     author: 'historyhub',
     canClone: false,
-    capabilities: { canEdit: false, canManageMembers: false, canView: true },
+    capabilities: {
+      canEdit: false,
+      canEditContent: false,
+      canManageMembers: false,
+      canView: true,
+    },
     clones: 860,
     id: 'pub_ws_2',
     isOwner: false,
@@ -2058,6 +2082,9 @@ export const publicFlashcardSets: PublicFlashcardSet[] = [
 
 /** Per-card scheduling state, keyed by card id (the flashcards fence owns the
  * front/back; this owns FSRS + known). */
+/** Comment discussions on materials; the handlers own their writes. */
+export const discussions: MaterialDiscussion[] = [];
+
 export const cardStats: Record<
   string,
   { materialId: string; srs: SrsState; known: boolean }
@@ -2209,6 +2236,7 @@ export function quizFromMaterial(mt: Material): Quiz {
         );
   return {
     canEdit: true,
+    canEditContent: true,
     chapters: mt.scopeChapters,
     createdAt: mt.createdAt,
     id: mt.id,
@@ -2253,6 +2281,7 @@ export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
   const known = cs.filter((c) => c.known).length;
   return {
     canEdit: true,
+    canEditContent: true,
     cardCount: cs.length,
     color: mt.color ?? 'green',
     dueCount: cs.filter((c) => isDue(c.srs)).length,
@@ -2308,3 +2337,38 @@ export function materialListItem(mt: Material): MaterialListItem {
 export const quizMaterials = () => materials.filter((m) => m.kind === 'quiz');
 export const flashcardSetMaterials = () =>
   materials.filter((m) => m.kind === 'flashcards');
+
+/** GET /api/workspaces: search, tag filter and sort. */
+export function listWorkspaces(url: URL): Workspace[] {
+  const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
+  const tags = (url.searchParams.get('tag') ?? '')
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  let list = [...workspaces];
+  if (q)
+    list = list.filter(
+      (w) =>
+        w.name.toLowerCase().includes(q) ||
+        w.tags.some((t) => t.value.toLowerCase().includes(q))
+    );
+  if (tags.length) {
+    list = list.filter(
+      (w) => tags.length > 0 && w.tags.some((t) => tags.includes(t.value))
+    );
+  }
+  switch (url.searchParams.get('sort')) {
+    case 'created':
+      return list.sort(
+        (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+      );
+    case 'chapters':
+      return list.sort((a, b) => b.chapterCount - a.chapterCount);
+    case 'files':
+      return list.sort((a, b) => b.fileCount - a.fileCount);
+    default:
+      return list.sort(
+        (a, b) => +new Date(b.lastAccessedAt) - +new Date(a.lastAccessedAt)
+      );
+  }
+}

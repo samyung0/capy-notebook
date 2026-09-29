@@ -901,11 +901,8 @@ func TestLapsedSubscriptionOverQuotaFreezesButNeverDeletes(t *testing.T) {
 	if status.State != AccountOverQuotaGrace {
 		t.Fatalf("a fresh lapse should be in grace, got %s", status.State)
 	}
-	if status.CanCreate() {
-		t.Fatal("an over-quota account must not be able to add more data")
-	}
-	if !status.ShrinkOnly() {
-		t.Fatal("an over-quota account must stay able to shrink, or it can never recover")
+	if !status.CanEdit() {
+		t.Fatal("grace behaves like an active account at its hard quota")
 	}
 
 	// Past the buffer the account freezes and stays frozen. Nothing is deleted.
@@ -921,6 +918,9 @@ func TestLapsedSubscriptionOverQuotaFreezesButNeverDeletes(t *testing.T) {
 	}
 	if status.State != AccountOverQuotaFrozen {
 		t.Fatalf("expected frozen after the buffer, got %s", status.State)
+	}
+	if status.CanEdit() {
+		t.Fatal("a frozen account is read-only")
 	}
 	var files int
 	if err := s.pool.QueryRow(ctx,

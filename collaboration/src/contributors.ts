@@ -30,10 +30,7 @@ function writableContext(origin: unknown): CollaborationContext | null {
       : transactionOrigin.source === 'local'
         ? transactionOrigin.context
         : undefined;
-  if (
-    !context?.userId ||
-    (context.access !== 'write' && context.access !== 'shrink')
-  ) {
+  if (!context?.userId || context.access !== 'write') {
     return null;
   }
   return context;
@@ -48,7 +45,7 @@ function contributorValue(value: unknown): Omit<DocumentContributor, 'key'> {
   if (
     keys.length !== CONTRIBUTOR_MARKER_KEYS.length ||
     keys.some((key, index) => key !== CONTRIBUTOR_MARKER_KEYS[index]) ||
-    (marker.access !== 'write' && marker.access !== 'shrink') ||
+    marker.access !== 'write' ||
     typeof marker.nonce !== 'string' ||
     marker.nonce.length === 0 ||
     Buffer.byteLength(marker.nonce, 'utf8') > MAX_CONTRIBUTOR_NONCE_BYTES ||

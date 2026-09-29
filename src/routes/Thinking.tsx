@@ -9,23 +9,32 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
 
 export default function Thinking() {
   const { data, fetchStatus, isLoading } = useCanvases();
   const { mutateAsync: createCanvas } = useCreateCanvas();
   const [createOpen, setCreateOpen] = useState(false);
+  const frozen = useAccountFrozen();
 
   return (
     <PanelWithInvertedRadius>
       <PageHeader
         actions={
-          <IconButton
-            icon="plus"
-            label={m.thinking_new_canvas()}
-            onClick={() => setCreateOpen(true)}
-            variant="dark"
-          />
+          <>
+            <IconButton
+              disabled={frozen}
+              icon="plus"
+              label={m.thinking_new_canvas()}
+              onClick={() => setCreateOpen(true)}
+              variant="dark"
+            />
+            <AccountStatusButton />
+          </>
         }
         title={m.nav_thinking()}
       />

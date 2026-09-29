@@ -77,7 +77,7 @@ func (a *api) getMistakes(ctx context.Context, _ *struct{}) (*quizOutput, error)
 		return nil, hErr(err)
 	}
 	res.IsOwner = true
-	res.CanEdit = true
+	res.CanEdit, res.CanEditContent = true, true
 	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
 }
 
@@ -100,7 +100,9 @@ func (a *api) getQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error)
 	}
 	body := apimodel.FromQuiz(res)
 	body.IsOwner = role == store.RoleOwner
-	body.CanEdit = store.RoleCanEdit(role)
+	if body.CanEdit, body.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
+		return nil, hErr(err)
+	}
 	return &quizOutput{Body: body}, nil
 }
 
@@ -132,7 +134,7 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res.CanEdit = true
+	res.CanEdit, res.CanEditContent = true, true
 	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
 }
 
@@ -168,8 +170,10 @@ func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInpu
 	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 
+// Narrowing is a recovery action a frozen account keeps; the store refuses
+// widening.
 func (a *api) updateQuizSharing(ctx context.Context, in *updateQuizSharingInput) (*quizOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	material, err := a.s.UpdateStandaloneMaterialPrivacy(
@@ -191,7 +195,9 @@ func (a *api) quizOutputWithAccess(ctx context.Context, id string, res store.Qui
 		return nil, hErr(err)
 	}
 	res.IsOwner = role == store.RoleOwner
-	res.CanEdit = store.RoleCanEdit(role)
+	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, id, role); err != nil {
+		return nil, hErr(err)
+	}
 	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
 }
 

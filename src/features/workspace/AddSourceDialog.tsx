@@ -58,6 +58,7 @@ import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { deferStorageRefusal } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import {
   createGooglePicker,
@@ -710,10 +711,12 @@ function useSourceBatch(
   }
 
   function handleSubmitError(error: unknown, operation: 'import' | 'upload') {
+    trackQuotaBlocked(error, 'upload');
+    // A frozen or storage refusal shows as the workspace status instead.
+    if (deferStorageRefusal(error)) return;
     const fileToast = fileLimitToast(error);
     const importError =
       error instanceof SourceImportFailedError ? error : undefined;
-    trackQuotaBlocked(error, 'upload');
     userToast({
       description: isCreditsExhaustedError(error)
         ? m.error_credits_body()

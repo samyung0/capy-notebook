@@ -53,7 +53,7 @@ func (s *Store) gateOwnedWorkspacesTx(
 	if err != nil {
 		return planlimits.Limits{}, err
 	}
-	if err := status.CreateErr(); err != nil {
+	if err := status.Err(); err != nil {
 		return planlimits.Limits{}, err
 	}
 	tier, err := s.effectivePlanTierForUser(ctx, tx, userID)

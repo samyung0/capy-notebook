@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { isApiError } from '@/api/client';
 import { useAcceptWorkspaceInvite } from '@/api/hooks';
 import { AuthGate } from '@/components/app/AuthProvider';
 import { Panel } from '@/components/app/layout';
@@ -9,7 +10,11 @@ import { m } from '@/i18n';
 import { describeError, isNonDisclosing } from '@/lib/errors';
 
 export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
-  return isNonDisclosing(error);
+  // The reader's own frozen account is theirs to hear about.
+  return (
+    isNonDisclosing(error) &&
+    !(isApiError(error) && error.code === 'account_over_quota')
+  );
 }
 
 export default function WorkspaceInviteAccept() {

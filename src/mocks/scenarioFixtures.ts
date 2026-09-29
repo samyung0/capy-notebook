@@ -33,6 +33,7 @@ export const scenarioQuiz = 'mock-scenario-quiz';
 export const scenarioCards = 'mock-scenario-cards';
 export const scenarioPath = `/workspaces/${scenarioWorkspace}`;
 export const scenarioMarker = 'My unsaved scenario edit.';
+export const scenarioSavedMarker = 'My saved scenario edit.';
 const office = {
   docx: { kind: 'doc', sourceURL: docxURL, stateURL: docxStateURL },
   pptx: { kind: 'slides', sourceURL: pptxURL, stateURL: pptxStateURL },
@@ -375,5 +376,9 @@ if (
   sessionStorage.getItem(LAST_SCENARIO) === 'note-permission-lost'
 ) {
   const note = db.materials.find((row) => row.id === scenarioNote)!;
-  note.capabilities = { ...note.capabilities, canEdit: false };
+  note.capabilities = {
+    ...note.capabilities,
+    canEdit: false,
+    canEditContent: false,
+  };
 }

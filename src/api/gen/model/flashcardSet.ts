@@ -12,6 +12,7 @@ export interface FlashcardSet {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   canEdit: boolean;
+  canEditContent: boolean;
   cardCount: number;
   color: UserColor;
   dueCount: number;

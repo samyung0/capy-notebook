@@ -51,7 +51,14 @@ Owner and editor satisfy `canEdit`; only owner satisfies `canManageMembers`.
 The API returns these request-scoped capabilities on workspace and material
 responses. On a workspace response `role` is the persisted membership (absent
 for a share-role visitor) while `capabilities` follow the effective role, so a
-client keys settings on `role` and content controls on `capabilities`.
+client keys settings on `role` and content controls on `capabilities`. A
+frozen account turns `canEdit` off: the requester's own (everywhere, and
+`canClone` with it) and the storage owner's (for every role in that
+workspace); quiz and flashcard `canEdit` follow the same rule.
+`canEditContent` (edit mode, comments, annotations, quiz and card edits) is
+`canEdit` narrowed further by a storage owner at or over its limit (usage
+`full`, grace included), so organizing stays on while content is view-only.
+The client has no frozen or storage-limit logic of its own for these.
 
 Sources: [role definitions](../server/internal/store/enums.go#L62),
 [role resolution](../server/internal/store/share.go#L27), and
@@ -170,12 +177,14 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
 - **Owner and editor members** can rename/recolor/describe/tag the workspace,
   change private/link/public visibility or `shareRole`, and view workspace
   statistics. Tags land in the owner's tag namespace whoever edits them.
-  Sharing changes are gated on the **owner's** lifecycle, not the actor's.
+  Widening sharing is an edit, refused when the actor or the owner is
+  frozen; narrowing (privacy toward private, share role toward viewer) stays
+  open to both.
 - **Owner only** can invite a member, change a member's role, remove a member,
   and delete the workspace.
-- Over-quota owners cannot create invitations or promote an existing member,
+- Frozen owners cannot create invitations or promote an existing member,
   because either action widens exposure. They may demote or remove members as
-  recovery-safe mutations.
+  recovery-safe mutations. Grace owners invite and promote normally.
 - Ownership is not assigned through a normal role change. The owner must use
   **transfer ownership** and select an existing live member.
 - On transfer, the recipient becomes owner and assumes the complete storage
@@ -184,17 +193,18 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
 - Workspace creation, clone, and transfer-to-recipient all run the owned-workspace
   plan gate. Both current plans are unlimited (`owned_workspace_limit IS NULL`),
   but the gate is ready for a finite catalog value without changing those flows.
-- An over-quota owner may still transfer because giving away bytes is a recovery
-  action.
+- An over-quota owner (grace or frozen) may still transfer because giving away
+  bytes is a recovery action; the recipient must be able to edit.
 - Invite email delivery is intentionally independent of later workspace
   deletion. A message already queued may still send; its link is the authority.
   A live account without a nonblank email still receives the in-app invite or
   membership notification, but no email-outbox row is created.
   Invite acceptance joins the workspace owner lifecycle, so a missing,
-  over-quota, suspended, deletion-pending, deleted, expired, revoked, or
+  frozen, suspended, deletion-pending, deleted, expired, revoked, or
   otherwise invalid invite uses the same non-disclosing unavailable-workspace
-  response as a missing shared workspace. There is no separate email-job
-  retraction mechanism.
+  response as a missing shared workspace. A frozen recipient is refused with
+  `account_over_quota`, since joining is an edit. There is no separate
+  email-job retraction mechanism.
 - Acceptance locks the workspace first, then locks the owner and recipient
   accounts in canonical ID order. Reciprocal invitations therefore cannot take
   the same two account rows in opposite order.
@@ -262,23 +272,42 @@ and [material editor checks](../server/internal/store/share.go#L209).
   client does not resolve authorship against the current member list, so a
   contributor who has since left the workspace stays attributed and a reader
   without a roster still sees who wrote what.
-- Collaboration tokens encode `write` or quota-recovery `shrink` access; a
-  `read` token exists only as the downgrade an editor receives when the
-  storage owner's account is locked. A token's document growth rule follows the material's storage owner,
-  not the connecting editor. The collaboration server rechecks actor lifecycle,
+- Collaboration tokens encode `write` or `read` access; a `read` token exists
+  only as the downgrade an editor receives when the storage owner's account is
+  suspended, frozen or at its storage limit (`full`, grace included), or the
+  editor's own account is frozen. The collaboration
+  server rechecks actor lifecycle,
   current membership/share role, owner lifecycle, and current quota state when
   admitting a connection, synchronizing a refreshed token, and persisting each
   save. Server-owned provenance travels in the same Yjs transaction as each
-  edit, and the durable store rechecks every contributor in its exact debounced
-  snapshot. A rejected raced update is never committed; the room is evicted so
-  its unauthorized in-memory state cannot be retried later. Workspace saves
+  edit, and the durable store rechecks every contributor's role and account
+  lock in its exact debounced snapshot. A rejected raced update is never
+  committed; the room is evicted so its unauthorized in-memory state cannot be
+  retried later. Workspace saves
   lock workspace, ordered accounts, then material; standalone saves lock
   ordered accounts before material, matching the Go mutation order. The server
   treats Free-only subscription history as ordinary active Free access. It
-  restricts an over-limit owner to shrink-only editing only after an expired or
-  closed Pro boundary, including when a live Free row also exists. The server
-  also closes the connection when the short-lived token expires and checks
-  expiry on every inbound update or stateless event.
+  mirrors Go's frozen state (an expired or closed Pro boundary at least 14 days
+  old, including when a live Free row also exists, and usage over the Free
+  limit) for both the owner and the actor, and Go's storage limit
+  (`StorageUsage.Full`) for the owner. Frozen and the limit are enforced at
+  admission only: authentication and the room token give `read`, and a
+  writer's access is rechecked on its updates at most every 5 s
+  (`writerRecheck` in `collaboration/src/accessRecheck.ts`). A refused update
+  sends that writer a `room-read-only` stateless message and closes only its
+  connection; a reconnect is refused with reason `collaboration-read-only`.
+  Co-editors whose access still holds stay connected, while an owner at its
+  limit refuses every writer in its rooms, since they share it. The open
+  editor drops to view mode under a grey read-only strip and discards its
+  unsaved edits (notes and sources alike; network and other failures keep the
+  source recovery path). The store (and a source checkpoint, which takes
+  `sourceLockTx` without the content admission that `CheckSourceAccess` adds
+  for new edits) saves updates already admitted, so up to about 5 s of edits
+  may persist; neither refuses or evicts a room because a contributor froze or
+  the owner reached its limit. Removed members and locked
+  accounts still evict the whole room. The server also closes the connection
+  when the short-lived token expires and checks expiry on every inbound update
+  or stateless event.
 - ACL and lifecycle mutations enqueue room/user evictions transactionally in a
   database outbox. Redis delivery is retried with one stable eviction ID and is
   complete only after every active collaboration instance returns a positive
@@ -299,7 +328,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
   that unload succeeded.
 - Comment creation, replies, edits, and deletion also lock the
   workspace and re-evaluate actor lifecycle and effective role in the database
-  transaction that writes the row.
+  transaction that writes the row. Comments count as editing: creating,
+  replying and editing are refused when the actor or the storage owner is
+  frozen (`account_over_quota`) or the owner is at its storage limit
+  (`storage_quota_exceeded`); deleting is not.
 
 Sources: [collaboration token access](../server/internal/httpapi/huma_collaboration.go#L109),
 [discussion/comment authorization](../server/internal/httpapi/huma_collaboration.go#L195),
@@ -386,9 +418,19 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
   cancels the exact job attempt and reservation. These boundaries use the same
   lock order as workspace mutations: workspace, ordered accounts, membership,
   file, then job, followed by the exact attempt when provider admission needs
-  both. Over-quota actors may still process work in a
-  healthy owner's workspace, while suspended, deletion-pending, deleted, and
-  access-revoked actors cannot start or continue billed work.
+  both. Suspended, deletion-pending, deleted, and access-revoked actors cannot
+  start or continue billed work.
+- Workspace chat stays open to frozen accounts. A frozen actor or owner leaves
+  the agent its read and trash tools (no edit, create or restore tools, no
+  curate mode), creating a curate thread is refused with `account_over_quota`,
+  and generation refuses before spending credits.
+- An owner at or over its storage limit (full or grace) leaves the agent
+  without its create and edit tools (restoring from trash stays, since it
+  grows nothing), and generation is refused with `storage_quota_exceeded`
+  before any credits are reserved or spent. Curate is refused like frozen:
+  creating a curate thread with `storage_quota_exceeded`, a curate turn with
+  `curate_requires_editor` before any model runs, and the chat's curate
+  switch hides with `canEditContent`.
 
 Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 [chat stream admission](../server/internal/httpapi/server.go#L487), and
@@ -398,8 +440,15 @@ Sources: [chat effective-role guard](../server/internal/store/chat.go#L191),
 
 Events, tasks, labels, notifications, integrations, billing, search, quiz
 attempt history, and mistakes are scoped to the authenticated user's own rows,
-not to a workspace role. Over-quota users cannot create new calendar events but
-may update or delete existing events/tasks as recovery-compatible mutations.
+not to a workspace role. Frozen users delete events, tasks and labels but
+neither create nor edit them (the Schedule page hides event and label Edit),
+and cannot create or save thinking canvases (the Canvas page is read-only);
+account settings (profile, locale, model preferences, LLM keys, notification
+preferences, account deletion), notification read markers and quiz attempts
+stay open. A frozen account edits nothing: recording flashcard study
+progress, deleting a single flashcard and saving or deleting a PDF private
+annotation are edits and refused, while trashing whole files, materials and
+sets stays allowed.
 Planner, preference, credential, attempt, and canvas writes recheck account
 lifecycle under the user-row lock in the mutation transaction rather than
 relying only on middleware admission.
@@ -413,14 +462,15 @@ during a write. Severity is ordered as deleted, deletion pending, suspended,
 then storage state. The same boundary is enforced for Clerk, development, and
 E2E identities.
 
-| Account state       | Hold/use a session | Read          | Create/upload/clone                                                                   | Ordinary edits or publishing                     | Delete/rename/reorder | Material document editing                                |
-| ------------------- | ------------------ | ------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------ | --------------------- | -------------------------------------------------------- |
-| `active`            | Yes                | Yes           | Yes, subject to role and hard quota                                                   | Yes                                              | Yes                   | Full write                                               |
-| `over_quota_grace`  | Yes                | Yes           | No storage creation where this account pays; some non-storage create routes also gate | No exposure-widening or unrestricted actor edits | Yes, subject to role  | Shrink-only where this account owns the material storage |
-| `over_quota_frozen` | Yes                | Yes           | No storage creation where this account pays; some non-storage create routes also gate | No exposure-widening or unrestricted actor edits | Yes, subject to role  | Shrink-only where this account owns the material storage |
-| `deletion_pending`  | No                 | No API access | No                                                                                    | No                                               | No                    | No                                                       |
-| `suspended`         | No                 | No API access | No                                                                                    | No                                               | No                    | No                                                       |
-| `deleted`           | No                 | No API access | No                                                                                    | No                                               | No                    | No                                                       |
+| Account state       | Hold/use a session | Read, download, chat | Create/upload/clone                                                    | Edits, comments, widening exposure, deleting a card or PDF mark, curate threads      | Trash whole items, narrow exposure | Material document editing                          |
+| ------------------- | ------------------ | -------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------- | -------------------------------------------------- |
+| `active`            | Yes                | Yes                  | Yes, subject to role and hard quota                                    | Yes                                                                                  | Yes                                | Full write                                         |
+| `active` at `full`  | Yes                | Yes                  | Storage growth fails the hard quota                                    | Organizing, sharing and curate threads yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
+| `over_quota_grace`  | Yes                | Yes                  | Yes, but storage growth fails the hard quota against the Free limit    | Organizing, sharing and curate threads yes; content, comments, cards and PDF marks view-only where this account pays | Yes                                | View only where this account pays                  |
+| `over_quota_frozen` | Yes                | Yes                  | No                                                                     | No, nowhere for the actor, and for nobody where this account pays                    | Yes, subject to role               | Read only, as actor or as storage owner            |
+| `deletion_pending`  | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
+| `suspended`         | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
+| `deleted`           | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 
 Grace and frozen accounts may still open a Pro Checkout session: resubscribing
 is a recovery action, not content creation. Checkout completion retrieves the
@@ -428,12 +478,35 @@ full Stripe subscription when the event carries only its expandable ID before
 projecting paid entitlement. Deletion-pending, suspended, and deleted accounts
 remain ineligible, and a raced paid Checkout is compensated instead.
 
-`over_quota_grace` and `over_quota_frozen` currently have the same permission
-set. Grace lasts 14 days after a paid period lapses; frozen is the state after
-that window. Neither state deletes content. The states exist only when the paid
-period has lapsed **and** stored bytes exceed the applicable limit. A concurrent
-live Free subscription selects Free limits but does not erase the most recent
-expired Pro boundary used to derive grace or frozen.
+`over_quota_grace` behaves exactly like an active account at 100%: the lapse
+applies Free limits, stored bytes are over them, so every storage-creating
+write fails with `storage_quota_exceeded`, while sharing and invites keep
+working. An owner at or over its limit (usage level `full`, which grace always
+is) also makes everything it pays for view-only, for owner and members alike:
+edit mode, comments and annotations are off (refused with
+`storage_quota_exceeded`, capability `canEditContent`), while renaming,
+reordering, moving between chapters and trashing still work (`canEdit`). It is
+enforced at admission only, like frozen; see
+[backend-storage-quota.md](backend-storage-quota.md). `over_quota_frozen` is read-only apart from reading, downloading,
+trashing or deleting whole items, workspace chat, narrowing exposure, transfer,
+billing and account settings, in both directions: the frozen user edits nowhere, healthy
+owners' workspaces included, and every role is read-only in workspaces the
+frozen account pays for. Refusals use `account_over_quota`. Grace lasts 14 days
+after a paid period lapses; frozen is the state after that window. Neither
+state deletes content. The states exist only when the paid period has lapsed
+**and** stored bytes exceed the applicable limit. A concurrent live Free
+subscription selects Free limits but does not erase the most recent expired Pro
+boundary used to derive grace or frozen.
+
+Store-level enforcement sits in the workspace edit lock
+(`lockWorkspaceEditorMutationTx`, which checks both actor and owner; trash and
+chapter deletion use `lockWorkspaceEditorRecoveryTx` without the check), the
+settings and sharing writes, standalone material updates (privacy narrowing
+excepted), comment writes, source sessions and the storage gate. Content
+admission (`assertContentEditableTx`: material content, comments, PDF marks,
+source edits) adds the owner's storage limit to the frozen check. Handlers use
+`requireAccountEdit` for the actor's own create/edit routes and
+`requireAccountMutate` for the actions a frozen account keeps.
 
 Suspended, deletion-pending, and deleted identities are rejected by the auth
 middleware before resource roles are evaluated. Long-lived notification,
@@ -518,8 +591,9 @@ Sources: [auth landing](../src/features/auth/AuthLanding.tsx),
 [name endpoint](../server/internal/httpapi/huma_account.go).
 
 `GET /api/me` carries the resolved lifecycle as `account` (state, plan,
-storage used and limit, grace and purge dates), which the account banner reads;
-there is no separate status endpoint. A locked account never sees that body:
+storage used and limit for every account, the storage usage level, grace and
+purge dates), which the account banner reads; there is no separate status
+endpoint. A locked account never sees that body:
 the middleware refuses every route, `/me` included, with the lock code, and the
 banner reads the code off the error.
 
@@ -530,7 +604,8 @@ treated as an active account and is distinct from a real `403` account lock.
 Sources: [lifecycle states and gate methods](../server/internal/store/account_state.go#L11),
 [session rejection](../server/internal/store/account_state.go#L174),
 [middleware enforcement](../server/internal/auth/middleware.go#L174), and
-[over-quota API behavior test](../server/internal/httpapi/account_gates_test.go#L128).
+[over-quota API behavior test](../server/internal/httpapi/account_gates_test.go), and
+[frozen and grace store matrix](../server/internal/store/collaboration_owner_test.go).
 
 ## Storage quota and ownership
 
@@ -541,33 +616,39 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
 - A standalone material is charged to its creator/owner.
 - Editors can therefore add bytes to another user's bill only while that
   owner's account and quota permit it.
-- An editor's own over-quota state does not block storage creation inside a
-  healthy owner's workspace. Conversely, an active editor cannot grow content
-  owned by an over-quota workspace owner.
+- An editor in grace can still add to a healthy owner's workspace, since the
+  owner's quota pays. A frozen editor edits nowhere, and nobody edits a frozen
+  owner's workspace. Nobody edits the content of an owner at or over its limit
+  either, though organizing it still works.
 
 ### What the gate checks
 
 Every storage-**creating** transaction checks both conditions:
 
-1. the storage owner's lifecycle permits creation; and
-2. `used bytes + reserved bytes + requested bytes <= plan limit`.
+1. the storage owner's lifecycle permits editing (active or grace); and
+2. `used bytes + reserved bytes + requested bytes <= plan limit`, where a
+   lapsed Pro account's limit is the Free one.
 
 The current limits are 100 MB for free accounts and 1 GB for Pro accounts.
 Upload reservations count immediately so concurrent uploads cannot both spend
-the same remaining quota. Quota errors use `storage_quota_exceeded`; lifecycle
+the same remaining quota. Quota errors use `storage_quota_exceeded`, with the
+used, reserved, requested and limit bytes and the owner's user id only when the
+requester is the charged account (members get the code alone); lifecycle
 over-quota errors use `account_over_quota`.
 
-Growing an **existing** material does not re-run the plan-byte creation gate;
-it only appends size deltas. Over-quota owners are still limited to
-shrink-only document edits via collaboration token access (see account
-lifecycle gates above). Byte measurement, counters, and material shape bounds
-are documented in [storage accounting](backend-storage-quota.md).
+No save-time gate exists for existing materials or source checkpoints; growth
+only appends size deltas. Instead an owner at or over its limit (active at
+100% or grace) makes its content view-only at admission (collaboration tokens,
+edit sessions, the 5 s writer recheck and REST content writes), and a frozen
+owner's content is read-only (see account lifecycle gates above).
+Byte measurement, counters, and material shape bounds are documented in
+[storage accounting](backend-storage-quota.md).
 
-Deleting content, transferring a workspace away, and shrinking existing
-material content remain available to an over-quota owner so the account has a
-path back under the limit. Size-neutral metadata changes such as renaming,
-re-filing, and reordering also remain available. Publishing remains blocked
-because it widens exposure rather than helping storage recovery.
+Trashing or deleting whole items and transferring a workspace away remain
+available to a frozen owner so the account has a path back under the limit,
+as does narrowing exposure; deleting one flashcard or PDF mark does not.
+Renaming, re-filing, reordering and publishing are organizing edits, open in
+grace and at the limit and closed when frozen.
 
 Sources: [transactional storage gate](../server/internal/store/storage.go#L173),
 [storage-owner collaboration test](../server/internal/store/collaboration_owner_test.go#L33),

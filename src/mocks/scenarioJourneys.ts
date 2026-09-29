@@ -4,6 +4,7 @@ import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { MockDialogId } from '@/components/dev/mockDialogOptions';
 import { writeSourceDraft } from '@/features/files/sourceDraft';
+import { decodeSourceState } from '@/features/files/useSourceSession';
 import { m } from '@/i18n';
 import { features } from '@/lib/features';
 import { router } from '@/router';
@@ -11,9 +12,11 @@ import { worker } from './browser';
 import { setChaosPeers } from './chaosPeers';
 import { chatFixtureOptions } from './chatFixtures';
 import {
+  announceReadOnly,
   announceSourceEpoch,
   failNextSourceSave,
   rooms,
+  savedSourceState,
   sourceRoomName,
 } from './collaboration';
 import * as db from './db';
@@ -27,6 +30,7 @@ import {
   scenarioNote,
   scenarioPath,
   scenarioQuiz,
+  scenarioSavedMarker,
   scenarioSourceSession,
   scenarioText,
   scenarioWorkspace,
@@ -141,15 +145,25 @@ export async function runJourney(
     await editMode();
     await ui.button(m.action_save());
   };
-  const textEdit = async () => {
+  const textEdit = async (marker = scenarioMarker) => {
     const input = await ui.element<HTMLTextAreaElement>(
       `textarea[aria-label="${m.source_edit_raw()}"]`
     );
     await ui.wait(() => input.value.length > 0, 'source input binding ready');
     await ui.fill(
       `textarea[aria-label="${m.source_edit_raw()}"]`,
-      `${input.value}\n${scenarioMarker}`
+      `${input.value}\n${marker}`
     );
+  };
+  // The text a source's viewer read returns: its last saved checkpoint.
+  const savedText = (fileId: string) => {
+    const state = savedSourceState(fileId);
+    if (!state) return '';
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, decodeSourceState(state));
+    const text = doc.getText('source').toString();
+    doc.destroy();
+    return text;
   };
   const share = async () => {
     if (
@@ -228,11 +242,84 @@ export async function runJourney(
     await ui.element('[role="alert"]');
     return;
   }
+  const readOnlyStrip = () =>
+    ui.wait(
+      () => !!document.body.textContent?.includes(m.editor_read_only_strip()),
+      'read-only strip'
+    );
+  if (
+    id === 'note-frozen-while-editing' ||
+    id === 'note-storage-full-while-editing'
+  ) {
+    await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
+    const editable = await ui.element<HTMLElement>('[contenteditable="true"]');
+    // A normal typed edit, still inside the checkpoint debounce when the
+    // room turns read-only.
+    editable.focus();
+    getSelection()?.selectAllChildren(editable);
+    getSelection()?.collapseToEnd();
+    // Slate reads the DOM selection on a throttled selectionchange.
+    const since = performance.now();
+    await ui.wait(
+      () => performance.now() - since > 250,
+      'editor selection synced'
+    );
+    // Typed text as the browser delivers it; Slate applies it to the document.
+    editable.dispatchEvent(
+      new InputEvent('beforeinput', {
+        bubbles: true,
+        cancelable: true,
+        data: ` ${scenarioMarker}`,
+        inputType: 'insertText',
+      })
+    );
+    await ui.wait(
+      () =>
+        [...document.querySelectorAll('[role="status"]')].some(
+          (node) => node.textContent === m.editor_status_syncing()
+        ),
+      'note edit waiting for its checkpoint'
+    );
+    // The account freezes, or its storage fills up: the server's answers
+    // change, then the open room turns read-only.
+    fail();
+    announceReadOnly();
+    await readOnlyStrip();
+    return 'The open note drops to view mode under the read-only strip and discards the refused edit.';
+  }
+  if (id === 'source-frozen-while-editing') {
+    await sourceOpen();
+    await ui.wait(
+      () =>
+        [...document.querySelectorAll('[role="status"]')].some(
+          (node) => node.textContent === m.editor_status_saved()
+        ),
+      'initial source checkpoint'
+    );
+    // A saved edit, which is not published: View shows it all the same.
+    await textEdit(scenarioSavedMarker);
+    await ui.click(m.action_save());
+    await ui.wait(
+      () => savedText(scenarioText).includes(scenarioSavedMarker),
+      'saved source edit'
+    );
+    await textEdit();
+    // The account freezes: the server's answers change, then the open room
+    // refuses the pending edit and turns read-only.
+    fail();
+    announceReadOnly();
+    await readOnlyStrip();
+    return 'The source drops to view mode under the read-only strip, showing its saved edit and discarding the unsaved text.';
+  }
   if (id === 'note-permission-lost') {
     await go(`${scenarioPath}?material=${scenarioNote}&mode=edit`);
     await ui.element('[contenteditable="true"]');
     const note = db.materials.find((row) => row.id === scenarioNote)!;
-    note.capabilities = { ...note.capabilities, canEdit: false };
+    note.capabilities = {
+      ...note.capabilities,
+      canEdit: false,
+      canEditContent: false,
+    };
     await queryClient.invalidateQueries({
       queryKey: qk.material(scenarioNote),
     });
@@ -340,8 +427,16 @@ export async function runJourney(
   const readRoutes: Partial<Record<JourneyId, string>> = {
     'account-deleted': '/settings',
     'account-deletion-pending': '/settings',
+    'account-frozen-create': '/workspaces',
+    'account-frozen-member': scenarioPath,
+    'account-frozen-workspace': scenarioPath,
     'account-grace': '/',
+    'account-grace-workspace': scenarioPath,
     'account-over-quota': '/',
+    'account-storage-full': scenarioPath,
+    'account-storage-full-dashboard': '/',
+    'account-storage-near': scenarioPath,
+    'account-storage-near-dashboard': '/',
     'account-suspended': '/settings',
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
     'attempt-load': `/quizzes/attempts/${db.attempts[0].id}`,
@@ -375,6 +470,10 @@ export async function runJourney(
     'workspace-404': scenarioPath,
     'workspace-500': scenarioPath,
     'workspace-flaky': scenarioPath,
+    'workspace-owner-frozen': scenarioPath,
+    'workspace-owner-full': scenarioPath,
+    'workspace-owner-grace': scenarioPath,
+    'workspace-owner-near': scenarioPath,
     'workspace-timeout': scenarioPath,
   };
   const route = readRoutes[id];
@@ -410,17 +509,52 @@ export async function runJourney(
       {
         'account-deleted': m.account_blocked_deleted_title,
         'account-deletion-pending': m.account_blocked_deletion_pending_title,
+        'account-frozen-create': m.account_banner_frozen_title,
+        'account-frozen-member': m.account_banner_frozen_title,
+        'account-frozen-workspace': m.account_banner_frozen_title,
         'account-grace': m.account_banner_grace_title,
+        'account-grace-workspace': m.workspace_storage_owner_self_title,
         'account-over-quota': m.account_banner_frozen_title,
+        'account-storage-full': m.workspace_storage_owner_self_title,
+        'account-storage-full-dashboard': m.account_banner_full_title,
+        'account-storage-near': m.workspace_storage_near_self_title,
+        'account-storage-near-dashboard': m.account_banner_near_title,
         'account-suspended': m.account_blocked_suspended_title,
+        'workspace-owner-frozen': m.workspace_storage_owner_frozen_title,
+        'workspace-owner-full': m.workspace_storage_owner_full_title,
+        'workspace-owner-grace': m.workspace_storage_owner_full_title,
+        'workspace-owner-near': m.workspace_storage_owner_near_title,
       } as Partial<Record<JourneyId, () => string>>
     )[id];
     if (accountTitle) {
+      // The header triangle carries the title as its label; the entry toast
+      // may still be leaving from a previous run in this workspace.
       await ui.wait(
-        () => document.body.textContent?.includes(accountTitle()),
+        () =>
+          document.body.textContent?.includes(accountTitle()) ||
+          [...document.querySelectorAll('[data-storage-status]')].some(
+            (node) => node.getAttribute('aria-label') === accountTitle()
+          ),
         'account status displayed'
       );
-      return 'The dashboard banner slot or the blocked-account page shows the account status.';
+      if (id === 'account-frozen-create') {
+        await ui.wait(
+          () =>
+            [...document.querySelectorAll('button')].some(
+              (node) =>
+                node.textContent === m.action_new_workspace() && node.disabled
+            ),
+          'create control disabled'
+        );
+        return 'Create controls are disabled and the page header shows the frozen status triangle.';
+      }
+      if (id === 'account-frozen-member')
+        return "Your own frozen account keeps this healthy owner's workspace read-only; the header shows your status.";
+      if (id.startsWith('workspace-owner-'))
+        return 'The workspace header and entry toast show the owner status in member wording.';
+      return route === scenarioPath
+        ? 'The workspace header triangle and entry toast show your storage status.'
+        : 'The dashboard banner slot or the blocked-account page shows the account status.';
     }
     if (id === 'workspace-timeout')
       return 'The request remains pending; the application shows its loading state.';
@@ -465,6 +599,7 @@ export async function runJourney(
     case 'invite-success':
     case 'invite-unavailable':
     case 'invite-retry':
+    case 'invite-frozen':
       fail();
       await go('/workspace-invites/mock-scenario');
       await ui.click(m.invite_accept());

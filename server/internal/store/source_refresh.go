@@ -88,7 +88,7 @@ func (s *Store) refreshLockTx(ctx context.Context, tx pgx.Tx, fileID string, job
 	if job.system {
 		return s.maintenanceLockTx(ctx, tx, fileID)
 	}
-	return s.sourceLockTx(ctx, tx, fileID, []string{job.actor}, true)
+	return s.sourceEditLockTx(ctx, tx, fileID, job.actor)
 }
 
 // ClaimSourceRefresh serializes export across collaboration instances. The

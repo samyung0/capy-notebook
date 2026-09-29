@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { canManageWorkspaceSettings, isWorkspaceReadOnly } from './access';
 
-const viewer = { canEdit: false, canManageMembers: false, canView: true };
-const editor = { canEdit: true, canManageMembers: false, canView: true };
+const viewer = {
+  canEdit: false,
+  canEditContent: false,
+  canManageMembers: false,
+  canView: true,
+};
+const editor = {
+  canEdit: true,
+  canEditContent: true,
+  canManageMembers: false,
+  canView: true,
+};
 
 describe('workspace access helpers', () => {
   it('marks viewers read-only and editors editable', () => {

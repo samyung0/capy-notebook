@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-export type CollaborationAccess = 'read' | 'write' | 'shrink';
+export type CollaborationAccess = 'read' | 'write';
 
 export interface CollaborationClaims {
   access: CollaborationAccess;
@@ -140,12 +140,7 @@ export function verifyCollaborationToken(
     expectedSchema < 1 ||
     claims.aud !== 'capy-collaboration' ||
     claims.iss !== 'capy-api' ||
-    (claims.access !== 'write' &&
-      claims.access !== 'read' &&
-      claims.access !== 'shrink') ||
-    (SOURCE_ROOM_PATTERN.test(expectedRoom) &&
-      claims.access !== 'read' &&
-      claims.access !== 'write') ||
+    (claims.access !== 'write' && claims.access !== 'read') ||
     !claims.sub ||
     !claims.jti ||
     !Number.isSafeInteger(claims.iat) ||

@@ -57,7 +57,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
 
   async function save() {
     try {
-      if (revision.current === null || !quiz?.canEdit || updateIsPending)
+      if (revision.current === null || !quiz?.canEditContent || updateIsPending)
         return;
       const saved = await updateContent({
         expectedRevision: revision.current,
@@ -86,7 +86,9 @@ function QuizEditor({ quizId }: { quizId: string }) {
               {m.action_back()}
             </Button>
             <Button
-              disabled={updateIsPending || !seeded.current || !quiz?.canEdit}
+              disabled={
+                updateIsPending || !seeded.current || !quiz?.canEditContent
+              }
               iconLeft="check"
               onClick={save}
             >
@@ -105,7 +107,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
           <p role="alert">{m.quiz_unable_load()}</p>
         ) : isLoading || !seeded.current ? (
           <Skeleton className="h-64 w-full" />
-        ) : quiz?.canEdit ? (
+        ) : quiz?.canEditContent ? (
           <div className="mx-auto max-w-2xl">
             <QuizForm
               name={name}

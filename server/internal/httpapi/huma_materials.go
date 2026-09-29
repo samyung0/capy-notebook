@@ -105,25 +105,25 @@ func (a *api) assertMaterialOwner(ctx context.Context, matID string) error {
 	return err
 }
 
-func materialWithAccess(
+// materialResponse renders material for a caller holding role. readOnly (see
+// api.readOnly) strips editing where a frozen account makes it read-only, and
+// full (see api.ownerFull) strips content editing while the storage owner is
+// at its limit.
+func materialResponse(
 	material store.Material,
 	role store.WorkspaceRole,
-) (apimodel.Material, error) {
+	readOnly, full bool,
+) (*materialOutput, error) {
 	material.IsOwner = role == store.RoleOwner
 	material.Capabilities = store.CapabilitiesForRole(role, true)
+	material.Capabilities.CanEdit = material.Capabilities.CanEdit && !readOnly
+	material.Capabilities.CanEditContent = material.Capabilities.CanEdit && !full
 	if role == "" {
 		material.Role = nil
 	} else {
 		material.Role = &role
 	}
-	return apimodel.FromMaterial(material)
-}
-
-func materialResponse(
-	material store.Material,
-	role store.WorkspaceRole,
-) (*materialOutput, error) {
-	body, err := materialWithAccess(material, role)
+	body, err := apimodel.FromMaterial(material)
 	if err != nil {
 		return nil, materialContentError(err)
 	}
@@ -169,7 +169,7 @@ func (a *api) listOwnedMaterials(ctx context.Context, in *materialsListInput) (*
 // createStandaloneMaterial creates a note outside any workspace. Standalone
 // quizzes and flashcard sets keep their typed creation routes.
 func (a *api) createStandaloneMaterial(ctx context.Context, in *createStandaloneMaterialInput) (*materialOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	if in.Body.Kind != "note" {
@@ -196,7 +196,7 @@ func (a *api) createStandaloneMaterial(ctx context.Context, in *createStandalone
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(res, store.RoleOwner)
+	return materialResponse(res, store.RoleOwner, false, false)
 }
 
 func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*materialOutput, error) {
@@ -250,7 +250,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(res, role)
+	return materialResponse(res, role, false, false)
 }
 
 func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
@@ -265,17 +265,25 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(res, role)
+	readOnly, err := a.readOnly(ctx, res.OwnerUserID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	full, err := a.ownerFull(ctx, res.OwnerUserID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return materialResponse(res, role, readOnly, full)
 }
 
 func (a *api) updateMaterial(
 	ctx context.Context,
 	in *updateMaterialInput,
 ) (*materialUpdateOutput, error) {
-	// Metadata is size-neutral, so an over-quota account keeps it: renaming and
-	// filing are part of how such an account finds what to delete. Content goes
-	// through collaboration and sharing has its own fully-writable path.
-	if err := a.requireAccountMutate(ctx); err != nil {
+	// Metadata is an edit, refused for a frozen actor here and for a frozen
+	// owner by the store. Content goes through collaboration and sharing has
+	// its own path.
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
@@ -315,11 +323,13 @@ func (a *api) updateMaterial(
 	}}, nil
 }
 
+// updateMaterialSharing: narrowing is a recovery action a frozen account
+// keeps; the store refuses widening.
 func (a *api) updateMaterialSharing(
 	ctx context.Context,
 	in *updateMaterialSharingInput,
 ) (*materialOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	material, err := a.s.UpdateStandaloneMaterialPrivacy(
@@ -328,7 +338,15 @@ func (a *api) updateMaterialSharing(
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(material, store.RoleOwner)
+	readOnly, err := a.readOnly(ctx, material.OwnerUserID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	full, err := a.ownerFull(ctx, material.OwnerUserID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return materialResponse(material, store.RoleOwner, readOnly, full)
 }
 
 // deleteMaterial moves the material into the trash (see deleteFile).
@@ -354,7 +372,7 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(mt, role)
+	return materialResponse(mt, role, false, false)
 }
 
 func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empty, error) {

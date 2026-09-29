@@ -52,7 +52,7 @@ func (a *api) registerWorkspaces(api huma.API) {
 
 // workspaceOutputFor renders w with the requester's membership and effective
 // role, so an editor member or share-role editor gets the controls they hold,
-// and resolves the owner's storage state so the client can warn before the
+// and resolves the owner's storage status so the client can warn before the
 // next write is refused.
 func (a *api) workspaceOutputFor(
 	ctx context.Context,
@@ -62,11 +62,12 @@ func (a *api) workspaceOutputFor(
 	if err != nil {
 		return nil, hErr(err)
 	}
-	ownerState, err := a.workspaceOwnerState(ctx, w)
+	statuses, err := a.workspaceStatuses(ctx, w)
 	if err != nil {
 		return nil, err
 	}
-	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(w, member, effective, ownerState)}, nil
+	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(w, member, effective,
+		statuses[w.OwnerUserID], !statuses[userID(ctx)].CanEdit())}, nil
 }
 
 func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*workspacesOutput, error) {
@@ -74,14 +75,16 @@ func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*wor
 	if err != nil {
 		return nil, hErr(err)
 	}
-	ownerStates, err := a.workspaceOwnerStates(ctx, res...)
+	statuses, err := a.workspaceStatuses(ctx, res...)
 	if err != nil {
 		return nil, err
 	}
+	actorReadOnly := !statuses[userID(ctx)].CanEdit()
 	out := make([]apimodel.Workspace, len(res))
 	for i, workspace := range res {
 		effective := store.EffectiveRole(workspace.MemberRole, workspace.Privacy, workspace.ShareRole)
-		out[i] = apimodel.FromWorkspaceAccess(workspace, workspace.MemberRole, effective, ownerStates[workspace.OwnerUserID])
+		out[i] = apimodel.FromWorkspaceAccess(workspace, workspace.MemberRole, effective,
+			statuses[workspace.OwnerUserID], actorReadOnly)
 	}
 	return &workspacesOutput{Body: out}, nil
 }
@@ -120,12 +123,9 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 	return a.workspaceOutputFor(ctx, res)
 }
 
-// updateWorkspace changes descriptive metadata, none of which moves stored content bytes, so
-// an over-quota account keeps them. Owner and editor members only.
+// updateWorkspace changes descriptive metadata. Owner and editor members only;
+// the store refuses a frozen actor or owner.
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
-		return nil, err
-	}
 	p := store.WorkspacePatch{
 		Name: apimodel.Str(in.Body.Name), IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
 		AutoReparse: in.Body.AutoReparse, AutoReindex: in.Body.AutoReindex,
@@ -141,8 +141,8 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 	return a.workspaceOutputFor(ctx, res)
 }
 
-// updateWorkspaceSharing widens exposure of the owner's bytes, so the store
-// gates it on the owner's lifecycle; the actor only needs a mutating session.
+// updateWorkspaceSharing: narrowing is a recovery action a frozen account
+// keeps, so the store refuses only widening by a frozen actor or owner.
 func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSharingInput) (*workspaceOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err

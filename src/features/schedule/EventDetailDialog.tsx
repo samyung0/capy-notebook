@@ -25,14 +25,16 @@ export function EventDetailDialog({
             <DialogTitle className="pr-20 pb-4">
               <span className="min-w-0 truncate">{event.title}</span>
             </DialogTitle>
-            <IconButton
-              className="absolute top-4 right-14"
-              icon="write"
-              label={m.action_edit()}
-              onClick={() => onEdit?.(event)}
-              size="md"
-              variant="ghost-hover"
-            />
+            {onEdit && (
+              <IconButton
+                className="absolute top-4 right-14"
+                icon="write"
+                label={m.action_edit()}
+                onClick={() => onEdit(event)}
+                size="md"
+                variant="ghost-hover"
+              />
+            )}
 
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">

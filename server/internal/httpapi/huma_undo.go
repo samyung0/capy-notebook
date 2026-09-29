@@ -27,7 +27,7 @@ func (a *api) registerUndo(api huma.API) {
 // loads the stored inverse and guards (never a client-authored inverse) and
 // the authority refuses the whole Undo when any affected target changed.
 func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operationOutput, error) {
-	if err := a.requireAccountMutate(ctx); err != nil {
+	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
 	actor := userID(ctx)

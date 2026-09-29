@@ -308,16 +308,15 @@ type Workspace struct {
 	// listings, where the only action is a clone charged to the cloner. Absent
 	// therefore means "not applicable", not "healthy".
 	StorageOwnerState *store.AccountState `json:"storageOwnerState,omitempty"`
-	// StorageOwnerName names that account so a member sees whose limit is full
-	// rather than an anonymous "the owner". Empty when the owner has no display
-	// name; the client falls back to generic copy.
-	StorageOwnerName string `json:"storageOwnerName"`
+	// StorageOwnerUsage is the owner's storage usage level, reported wherever
+	// StorageOwnerState is. Members see the level only, never the byte counts.
+	StorageOwnerUsage *store.StorageUsageLevel `json:"storageOwnerUsage,omitempty"`
 }
 
-// FromWorkspace renders a workspace the requester owns. ownerState must be the
-// resolved state of w.OwnerUserID (see api.workspaceOwnerStates) or empty to
-// leave it unreported.
-func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
+// FromWorkspace renders a workspace the requester owns. owner must be the
+// resolved status of w.OwnerUserID with its storage usage (see
+// api.accountStatuses), or the zero value to leave it unreported.
+func FromWorkspace(w store.Workspace, owner store.AccountStatus) Workspace {
 	role := store.RoleOwner
 	out := Workspace{
 		AutoReparse: w.AutoReparse, AutoReindex: w.AutoReindex,
@@ -326,27 +325,43 @@ func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,
-		StorageOwnerName: w.OwnerName,
 	}
-	if ownerState != "" {
-		out.StorageOwnerState = &ownerState
+	if owner.State != "" {
+		out.StorageOwnerState = &owner.State
+		out.StorageOwnerUsage = &owner.StorageUsage
+		// Nobody edits what a frozen (or locked) account pays for.
+		out.Capabilities.CanEdit = owner.CanEdit()
 	}
+	out.Capabilities.CanEditContent = contentEditable(out.Capabilities.CanEdit, owner)
 	return out
+}
+
+// contentEditable narrows canEdit for content (edit mode, comments,
+// annotations): an owner at or over its storage limit (full, grace included)
+// makes every editable file and material view-only, while organizing goes on.
+func contentEditable(canEdit bool, owner store.AccountStatus) bool {
+	return canEdit && owner.StorageUsage != store.StorageUsageFull
 }
 
 // FromWorkspaceAccess renders a workspace for a requester. Role is their
 // persisted membership (nil for a link/public visitor) and Capabilities follow
 // their effective role, so a share-role editor sees content controls while
-// settings stay keyed on Role.
+// settings stay keyed on Role. A frozen requester (actorReadOnly) edits
+// nowhere and cannot clone, and a frozen owner makes the workspace read-only
+// for everyone.
 func FromWorkspaceAccess(
 	w store.Workspace,
 	member, effective store.WorkspaceRole,
-	ownerState store.AccountState,
+	owner store.AccountStatus,
+	actorReadOnly bool,
 ) Workspace {
-	out := FromWorkspace(w, ownerState)
+	out := FromWorkspace(w, owner)
 	out.IsOwner = member == store.RoleOwner
 	out.Capabilities = store.CapabilitiesForRole(effective, true)
-	out.CanClone = member != "" || store.RoleCanEdit(effective)
+	out.Capabilities.CanEdit = out.Capabilities.CanEdit && !actorReadOnly &&
+		(owner.State == "" || owner.CanEdit())
+	out.Capabilities.CanEditContent = contentEditable(out.Capabilities.CanEdit, owner)
+	out.CanClone = (member != "" || store.RoleCanEdit(effective)) && !actorReadOnly
 	if member == "" {
 		out.Role = nil
 	} else {
@@ -355,15 +370,15 @@ func FromWorkspaceAccess(
 	return out
 }
 
-// FromWorkspaces renders workspaces the requester owns. ownerStates is keyed by
+// FromWorkspaces renders workspaces the requester owns. owners is keyed by
 // owner user id so a mixed-ownership list resolves each owner once.
 func FromWorkspaces(
 	ws []store.Workspace,
-	ownerStates map[string]store.AccountState,
+	owners map[string]store.AccountStatus,
 ) []Workspace {
 	out := make([]Workspace, len(ws))
 	for i, w := range ws {
-		out[i] = FromWorkspace(w, ownerStates[w.OwnerUserID])
+		out[i] = FromWorkspace(w, owners[w.OwnerUserID])
 	}
 	return out
 }
@@ -378,12 +393,13 @@ type PublicWorkspace struct {
 // FromPublicWorkspaces leaves StorageOwnerState unreported: an Explore visitor
 // can only clone, which is charged to them, so the author's billing state is
 // both irrelevant here and none of the visitor's business. Capabilities and
-// canClone follow the caller's real grant, membership or share role.
-func FromPublicWorkspaces(ws []store.PublicWorkspace) []PublicWorkspace {
+// canClone follow the caller's real grant, membership or share role, and the
+// caller's own frozen account (actorReadOnly).
+func FromPublicWorkspaces(ws []store.PublicWorkspace, actorReadOnly bool) []PublicWorkspace {
 	out := make([]PublicWorkspace, len(ws))
 	for i, w := range ws {
 		effective := store.EffectiveRole(w.MemberRole, w.Privacy, w.ShareRole)
-		workspace := FromWorkspaceAccess(w.Workspace, w.MemberRole, effective, "")
+		workspace := FromWorkspaceAccess(w.Workspace, w.MemberRole, effective, store.AccountStatus{}, actorReadOnly)
 		out[i] = PublicWorkspace{Workspace: workspace, Author: w.Author, Clones: w.Clones}
 	}
 	return out
@@ -404,9 +420,11 @@ type Quiz struct {
 	// Provenance credits the library books the quiz was written from.
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped. Explicit workspace editors can
-	// edit while link/public visitors cannot.
-	IsOwner bool `json:"isOwner"`
-	CanEdit bool `json:"canEdit"`
+	// edit while link/public visitors cannot. CanEditContent is CanEdit unless
+	// the storage owner is at its limit.
+	IsOwner        bool `json:"isOwner"`
+	CanEdit        bool `json:"canEdit"`
+	CanEditContent bool `json:"canEditContent"`
 }
 
 func FromQuiz(q store.Quiz) Quiz {
@@ -415,7 +433,7 @@ func FromQuiz(q store.Quiz) Quiz {
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
 		Privacy: q.Privacy, Provenance: q.Provenance,
-		IsOwner: q.IsOwner, CanEdit: q.CanEdit,
+		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
 	if out.Chapters == nil {
 		out.Chapters = []string{}
@@ -460,7 +478,7 @@ func FromPublicQuizzes(qs []store.PublicQuiz) []PublicQuiz {
 	for i, q := range qs {
 		pq := PublicQuiz{Quiz: FromQuiz(q.Quiz), Author: q.Author, Clones: q.Clones}
 		pq.IsOwner = false
-		pq.CanEdit = false
+		pq.CanEdit, pq.CanEditContent = false, false
 		out[i] = pq
 	}
 	return out

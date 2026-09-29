@@ -2,6 +2,7 @@ import { slateNodesToInsertDelta } from '@slate-yjs/core';
 import type { Pool } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { accessRecheck } from './accessRecheck.js';
 import {
   attachDocumentContributorTracker,
   documentContributors,
@@ -9,6 +10,7 @@ import {
 import { MaterialDocumentValidationError } from './materialDocument.js';
 import {
   CollaborationAuthorizationError,
+  CollaborationReadOnlyError,
   roomSaveQueue,
   updateFitsRoom,
   YjsDocumentStore,
@@ -18,13 +20,15 @@ function liveRow(overrides: Record<string, unknown> = {}) {
   return {
     actor_deleted_at: null,
     actor_deletion_requested_at: null,
+    actor_frozen: false,
     actor_suspended_at: null,
     material_owner_id: 'u_owner',
     material_privacy: 'private',
     member_role: 'editor',
     owner_deleted_at: null,
     owner_deletion_requested_at: null,
-    owner_over_quota: false,
+    owner_frozen: false,
+    owner_full: false,
     owner_suspended_at: null,
     share_role: 'viewer',
     workspace_id: 'ws_1',
@@ -97,7 +101,6 @@ describe('authored content revision preconditions', () => {
                 deleted_at: null,
                 deletion_requested_at: null,
                 id: 'u_owner',
-                over_quota: false,
                 suspended_at: null,
               },
             ],
@@ -172,30 +175,6 @@ describe('live collaboration authorization', () => {
     expect(String(query.mock.calls[0]?.[0])).toContain(
       'AND stored_version >= $2'
     );
-  });
-
-  it('uses a paid-lapse boundary instead of any subscription row for quota access', async () => {
-    const query = vi.fn().mockResolvedValue({
-      rowCount: 1,
-      rows: [liveRow()],
-    });
-    const store = new YjsDocumentStore({ query } as unknown as Pool);
-
-    await expect(
-      store.assertConnectionAccess(
-        'material:mat_1:schema:1',
-        'u_editor',
-        'write'
-      )
-    ).resolves.toBeUndefined();
-
-    const sql = String(query.mock.calls[0]?.[0]);
-    expect(sql).toContain("paid_sub.plan_tier='pro'");
-    expect(sql).toContain('expired_sub.current_period_end <= now()');
-    expect(sql).toContain(
-      "closed_sub.status NOT IN ('active','trialing','past_due')"
-    );
-    expect(sql).not.toContain('any_sub');
   });
 
   it('resolves the current durable room epoch for eviction delivery', async () => {
@@ -309,19 +288,6 @@ describe('live collaboration authorization', () => {
         'read'
       )
     ).resolves.toBeUndefined();
-    for (const access of ['write', 'shrink'] as const) {
-      await expect(
-        store.assertConnectionAccess(
-          'material:mat_1:schema:1',
-          'u_editor',
-          access
-        )
-      ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
-    }
-  });
-
-  it('downgrades an over-quota editor from write to shrink', async () => {
-    const store = documentStore(liveRow({ owner_over_quota: true }));
     await expect(
       store.assertConnectionAccess(
         'material:mat_1:schema:1',
@@ -329,13 +295,52 @@ describe('live collaboration authorization', () => {
         'write'
       )
     ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
+  });
+
+  it.each([
+    ['the storage owner is frozen', { owner_frozen: true }],
+    ['the editor is frozen', { actor_frozen: true }],
+    ['the storage owner is at its limit', { owner_full: true }],
+  ])('makes the room read-only when %s', async (_, readOnly) => {
+    const store = documentStore(liveRow(readOnly));
     await expect(
       store.assertConnectionAccess(
         'material:mat_1:schema:1',
         'u_editor',
-        'shrink'
+        'write'
+      )
+    ).rejects.toBeInstanceOf(CollaborationReadOnlyError);
+    await expect(
+      store.assertConnectionAccess(
+        'material:mat_1:schema:1',
+        'u_editor',
+        'read'
       )
     ).resolves.toBeUndefined();
+  });
+
+  it('refuses an open writer within 5 s of its account freezing', async () => {
+    let now = 0;
+    const recheck = accessRecheck(5000, () => now);
+    const row = liveRow();
+    const store = documentStore(row);
+    const connection = {};
+    const update = () =>
+      recheck(connection, () =>
+        store.assertConnectionAccess(
+          'material:mat_1:schema:1',
+          'u_editor',
+          'write'
+        )
+      );
+    await update();
+    row.actor_frozen = true;
+    // Inside the interval the update is still admitted, and the store saves
+    // it: frozen is enforced at admission only.
+    now = 4999;
+    await expect(update()).resolves.toBeUndefined();
+    now = 5000;
+    await expect(update()).rejects.toBeInstanceOf(CollaborationReadOnlyError);
   });
 
   it('opens service commands with the current write direction', async () => {
@@ -346,10 +351,11 @@ describe('live collaboration authorization', () => {
       )
     ).resolves.toBe('write');
     await expect(
-      documentStore(
-        liveRow({ owner_over_quota: true })
-      ).commandConnectionAccess('material:mat_1:schema:1', 'u_editor')
-    ).resolves.toBe('shrink');
+      documentStore(liveRow({ owner_frozen: true })).commandConnectionAccess(
+        'material:mat_1:schema:1',
+        'u_editor'
+      )
+    ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
     await expect(
       documentStore(liveRow({ member_role: 'viewer' })).commandConnectionAccess(
         'material:mat_1:schema:1',
@@ -358,121 +364,136 @@ describe('live collaboration authorization', () => {
     ).rejects.toBeInstanceOf(CollaborationAuthorizationError);
   });
 
-  it('locks workspace sharing state before the final store authorization', async () => {
-    const statements: string[] = [];
-    let grantLocked = false;
-    const client = {
-      query: vi.fn(async (sql: string) => {
-        statements.push(sql);
-        if (
-          sql.includes(
-            'SELECT owner_user_id, workspace_id, kind FROM materials'
-          )
-        ) {
-          return {
-            rowCount: 1,
-            rows: [
-              { kind: 'note', owner_user_id: 'u_owner', workspace_id: 'ws_1' },
-            ],
-          };
-        }
-        if (sql.includes('SELECT id FROM workspaces')) {
-          grantLocked = true;
-          return { rowCount: 1, rows: [{ id: 'ws_1' }] };
-        }
-        if (sql.includes('FROM users u') && sql.includes('FOR SHARE OF u')) {
-          return {
-            rowCount: 2,
-            rows: [
-              {
-                deleted_at: null,
-                deletion_requested_at: null,
-                id: 'u_editor',
-                over_quota: false,
-                suspended_at: null,
-              },
-              {
-                deleted_at: null,
-                deletion_requested_at: null,
-                id: 'u_owner',
-                over_quota: false,
-                suspended_at: null,
-              },
-            ],
-          };
-        }
-        if (
-          sql.includes(
-            'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
-          )
-        ) {
-          return {
-            rowCount: 1,
-            rows: [
-              { kind: 'note', owner_user_id: 'u_owner', workspace_id: 'ws_1' },
-            ],
-          };
-        }
-        if (sql.includes('JOIN users owner')) {
-          expect(grantLocked).toBe(true);
-          return { rowCount: 1, rows: [liveRow()] };
-        }
-        if (sql.includes('FROM material_yjs_documents')) {
-          return { rowCount: 0, rows: [] };
-        }
-        return { rowCount: 1, rows: [] };
-      }),
-      release: vi.fn(),
-    };
-    const store = new YjsDocumentStore({
-      connect: vi.fn().mockResolvedValue(client),
-    } as unknown as Pool);
-    const document = new Y.Doc();
-    attachDocumentContributorTracker(document, 'test', () => 'nonce');
-    document.transact(
-      () =>
-        document
-          .get('content', Y.XmlText)
-          .applyDelta(
-            slateNodesToInsertDelta([
-              { children: [{ text: 'x' }], id: 'block_1', type: 'p' },
-            ] as never)
-          ),
-      {
-        connection: {
-          context: {
-            access: 'write',
-            expiresAt: Number.MAX_SAFE_INTEGER,
-            tokenId: 'token',
-            userId: 'u_editor',
+  it.each([
+    ['', {}],
+    [
+      ' and saves updates admitted before their writer froze',
+      { actor_frozen: true },
+    ],
+  ])(
+    'locks workspace sharing state before the final store authorization%s',
+    async (_, writer) => {
+      const statements: string[] = [];
+      let grantLocked = false;
+      const client = {
+        query: vi.fn(async (sql: string) => {
+          statements.push(sql);
+          if (
+            sql.includes(
+              'SELECT owner_user_id, workspace_id, kind FROM materials'
+            )
+          ) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  kind: 'note',
+                  owner_user_id: 'u_owner',
+                  workspace_id: 'ws_1',
+                },
+              ],
+            };
+          }
+          if (sql.includes('SELECT id FROM workspaces')) {
+            grantLocked = true;
+            return { rowCount: 1, rows: [{ id: 'ws_1' }] };
+          }
+          if (sql.includes('FROM users u') && sql.includes('FOR SHARE OF u')) {
+            return {
+              rowCount: 2,
+              rows: [
+                {
+                  deleted_at: null,
+                  deletion_requested_at: null,
+                  id: 'u_editor',
+                  suspended_at: null,
+                },
+                {
+                  deleted_at: null,
+                  deletion_requested_at: null,
+                  id: 'u_owner',
+                  suspended_at: null,
+                },
+              ],
+            };
+          }
+          if (
+            sql.includes(
+              'FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE'
+            )
+          ) {
+            return {
+              rowCount: 1,
+              rows: [
+                {
+                  kind: 'note',
+                  owner_user_id: 'u_owner',
+                  workspace_id: 'ws_1',
+                },
+              ],
+            };
+          }
+          if (sql.includes('JOIN users owner')) {
+            expect(grantLocked).toBe(true);
+            return { rowCount: 1, rows: [liveRow(writer)] };
+          }
+          if (sql.includes('FROM material_yjs_documents')) {
+            return { rowCount: 0, rows: [] };
+          }
+          return { rowCount: 1, rows: [] };
+        }),
+        release: vi.fn(),
+      };
+      const store = new YjsDocumentStore({
+        connect: vi.fn().mockResolvedValue(client),
+      } as unknown as Pool);
+      const document = new Y.Doc();
+      attachDocumentContributorTracker(document, 'test', () => 'nonce');
+      document.transact(
+        () =>
+          document
+            .get('content', Y.XmlText)
+            .applyDelta(
+              slateNodesToInsertDelta([
+                { children: [{ text: 'x' }], id: 'block_1', type: 'p' },
+              ] as never)
+            ),
+        {
+          connection: {
+            context: {
+              access: 'write',
+              expiresAt: Number.MAX_SAFE_INTEGER,
+              tokenId: 'token',
+              userId: 'u_editor',
+            },
           },
-        },
-        source: 'connection',
-      }
-    );
-    try {
-      const stored = await store.store('material:mat_1:schema:1', document);
-      expect(stored).toMatchObject({ version: 1 });
-      const durable = new Y.Doc();
+          source: 'connection',
+        }
+      );
       try {
-        Y.applyUpdate(durable, stored.state);
-        expect(documentContributors(durable)).toEqual([]);
+        const stored = await store.store('material:mat_1:schema:1', document);
+        expect(stored).toMatchObject({ version: 1 });
+        const durable = new Y.Doc();
+        try {
+          Y.applyUpdate(durable, stored.state);
+          expect(documentContributors(durable)).toEqual([]);
+        } finally {
+          durable.destroy();
+        }
       } finally {
-        durable.destroy();
+        document.destroy();
       }
-    } finally {
-      document.destroy();
-    }
 
-    const grantLock = statements.findIndex((sql) =>
-      sql.includes('SELECT id FROM workspaces')
-    );
-    const authorization = statements.findIndex((sql) =>
-      sql.includes('JOIN users owner')
-    );
-    expect(grantLock).toBeGreaterThan(-1);
-    expect(authorization).toBeGreaterThan(grantLock);
-  });
+      const grantLock = statements.findIndex((sql) =>
+        sql.includes('SELECT id FROM workspaces')
+      );
+      const authorization = statements.findIndex((sql) =>
+        sql.includes('JOIN users owner')
+      );
+      expect(grantLock).toBeGreaterThan(-1);
+      expect(authorization).toBeGreaterThan(grantLock);
+    }
+  );
 
   it('locks standalone accounts before the material row', async () => {
     const statements: string[] = [];
@@ -499,7 +520,6 @@ describe('live collaboration authorization', () => {
                 deleted_at: null,
                 deletion_requested_at: null,
                 id: 'u_owner',
-                over_quota: false,
                 suspended_at: null,
               },
             ],
@@ -580,7 +600,6 @@ describe('live collaboration authorization', () => {
                 deleted_at: null,
                 deletion_requested_at: null,
                 id: 'u_owner',
-                over_quota: false,
                 suspended_at: null,
               },
             ],
@@ -678,7 +697,6 @@ describe('live collaboration authorization', () => {
                 deleted_at: null,
                 deletion_requested_at: null,
                 id,
-                over_quota: false,
                 suspended_at: null,
               })),
             };
@@ -784,7 +802,6 @@ describe('live collaboration authorization', () => {
               deleted_at: null,
               deletion_requested_at: null,
               id,
-              over_quota: false,
               suspended_at: null,
             })),
           };

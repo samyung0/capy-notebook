@@ -686,7 +686,7 @@ func TestQueuedInviteEmailMaySendAfterWorkspaceDeletion(t *testing.T) {
 	}
 }
 
-func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
+func TestFrozenOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_over_quota_members_owner")
@@ -702,10 +702,10 @@ func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
 		ws.ID, viewerID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	pushOverQuota(t, s, ownerID, ws.ID)
+	pushFrozen(t, s, ownerID, ws.ID)
 
 	if err := s.CreateWorkspaceInvite(ctx, ws.ID, inviteeID, RoleViewer, ownerID); err == nil {
-		t.Fatal("over-quota owner created an invitation")
+		t.Fatal("frozen owner created an invitation")
 	} else {
 		var locked *AccountLockedError
 		if !errors.As(err, &locked) || locked.Code() != "account_over_quota" {
@@ -713,7 +713,7 @@ func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
 		}
 	}
 	if err := s.SetWorkspaceMemberRole(ctx, ownerID, ws.ID, viewerID, RoleEditor); err == nil {
-		t.Fatal("over-quota owner promoted a viewer")
+		t.Fatal("frozen owner promoted a viewer")
 	} else {
 		var locked *AccountLockedError
 		if !errors.As(err, &locked) || locked.Code() != "account_over_quota" {
@@ -721,12 +721,12 @@ func TestOverQuotaOwnerCannotInviteOrPromoteButCanDemote(t *testing.T) {
 		}
 	}
 	if err := s.SetWorkspaceMemberRole(ctx, ownerID, ws.ID, editorID, RoleViewer); err != nil {
-		t.Fatalf("over-quota demotion failed: %v", err)
+		t.Fatalf("frozen demotion failed: %v", err)
 	}
 }
 
 func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
-	for _, lifecycle := range []string{"over_quota", "suspended"} {
+	for _, lifecycle := range []string{"frozen", "suspended"} {
 		t.Run(lifecycle, func(t *testing.T) {
 			s := openAccessTestStore(t)
 			ctx := context.Background()
@@ -749,8 +749,8 @@ func TestOwnerLifecycleBlocksAcceptanceOfPreviouslyIssuedInvite(t *testing.T) {
 				t.Fatal(err)
 			}
 			switch lifecycle {
-			case "over_quota":
-				pushOverQuota(t, s, ownerID, ws.ID)
+			case "frozen":
+				pushFrozen(t, s, ownerID, ws.ID)
 			case "suspended":
 				if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),
 					suspended_reason='operator hold' WHERE id=$1`, ownerID); err != nil {
@@ -843,7 +843,7 @@ func TestCommentMutationsRecheckLifecycleAndCurrentRole(t *testing.T) {
 	}
 }
 
-func TestOverQuotaOwnerMayNarrowButNotWidenSharing(t *testing.T) {
+func TestFrozenOwnerMayNarrowButNotWidenSharing(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_share_gate_owner")
@@ -855,23 +855,23 @@ func TestOverQuotaOwnerMayNarrowButNotWidenSharing(t *testing.T) {
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, nil); err != nil {
 		t.Fatal(err)
 	}
-	pushOverQuota(t, s, ownerID, ws.ID)
+	pushFrozen(t, s, ownerID, ws.ID)
 
 	editor := ShareEditor
 	var locked *AccountLockedError
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, nil, &editor); !errors.As(err, &locked) {
-		t.Fatalf("widening share role while over quota = %v, want account lock", err)
+		t.Fatalf("widening share role while frozen = %v, want account lock", err)
 	}
 	private := PrivacyPrivate
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &private, nil); err != nil {
-		t.Fatalf("narrowing to private while over quota failed: %v", err)
+		t.Fatalf("narrowing to private while frozen failed: %v", err)
 	}
 	// A private workspace grants nothing, so its dormant share role may change.
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, nil, &editor); err != nil {
-		t.Fatalf("changing a dormant share role while over quota failed: %v", err)
+		t.Fatalf("changing a dormant share role while frozen failed: %v", err)
 	}
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, nil); !errors.As(err, &locked) {
-		t.Fatalf("republishing while over quota = %v, want account lock", err)
+		t.Fatalf("republishing while frozen = %v, want account lock", err)
 	}
 	// Link to public widens the audience (Explore) even with the same grant.
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link', share_role='viewer'
@@ -879,10 +879,10 @@ func TestOverQuotaOwnerMayNarrowButNotWidenSharing(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &public, nil); !errors.As(err, &locked) {
-		t.Fatalf("link to public while over quota = %v, want account lock", err)
+		t.Fatalf("link to public while frozen = %v, want account lock", err)
 	}
 	link := PrivacyLink
 	if _, err := s.UpdateWorkspaceSharing(ctx, ownerID, ws.ID, &link, nil); err != nil {
-		t.Fatalf("link to link while over quota failed: %v", err)
+		t.Fatalf("link to link while frozen failed: %v", err)
 	}
 }

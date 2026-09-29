@@ -10,6 +10,7 @@ import {
   vi,
 } from 'vitest';
 import { streamChat } from '@/api/chatStream';
+import { files, workspaces } from './db';
 import {
   getMockScenarioHandlers,
   humaCodedError,
@@ -190,5 +191,37 @@ describe('mock user scenarios', () => {
       status: 403,
       title: 'Forbidden',
     });
+  });
+
+  it("refuses a full viewer's content writes only where the viewer pays, leaving study progress open", async () => {
+    const shared = { ...workspaces[0], id: 'ws_shared_test', isOwner: false };
+    const own = files.find((row) => row.workspaceId === workspaces[0].id)!;
+    workspaces.push(shared);
+    files.push({ ...own, id: 'f_shared_test', workspaceId: shared.id });
+    try {
+      server.use(
+        http.all('*/api/*', () => new HttpResponse(null, { status: 204 }))
+      );
+      server.use(...getMockScenarioHandlers('account-storage-full'));
+      const write = (method: string, path: string) =>
+        fetch(`http://localhost/api/${path}`, { body: '{}', method });
+      const refused = await write('POST', `files/${own.id}/annotations`);
+      expect(refused.status).toBe(403);
+      expect((await refused.json()).errors[0].message).toBe(
+        'storage_quota_exceeded'
+      );
+      expect(
+        (await write('POST', 'files/f_shared_test/annotations')).status
+      ).toBe(204);
+      expect(
+        (await write('PATCH', 'flashcards/cards/c_any/study-state')).status
+      ).toBe(204);
+    } finally {
+      workspaces.splice(workspaces.indexOf(shared), 1);
+      files.splice(
+        files.findIndex((row) => row.id === 'f_shared_test'),
+        1
+      );
+    }
   });
 });

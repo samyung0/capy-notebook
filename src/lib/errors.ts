@@ -139,11 +139,19 @@ export function describeError(error: unknown): ErrorDescription {
         title: m.error_not_found_title(),
       };
     case 'quota':
-      return {
-        action: 'subscription',
-        description: m.error_quota_body(),
-        title: m.error_quota_title(),
-      };
+      // Outside a workspace an account refusal is the requester's own frozen
+      // account (inside one, deferStorageRefusal routes it to the status).
+      return isAccountRefusal(error)
+        ? {
+            action: 'subscription',
+            description: m.account_frozen_short(),
+            title: m.account_banner_frozen_title(),
+          }
+        : {
+            action: 'subscription',
+            description: m.error_quota_body(),
+            title: m.error_quota_title(),
+          };
     case 'files': {
       const limit =
         isFileLimitError(error) && typeof error.body?.filesLimit === 'number'
@@ -229,6 +237,58 @@ export function privateErrorDescription(): ErrorDescription {
     description: m.error_private_body(),
     title: m.error_private_title(),
   };
+}
+
+/** A frozen account refused the write (the requester's or the owner's). */
+export function isAccountRefusal(error: unknown): boolean {
+  return isApiError(error) && error.code === 'account_over_quota';
+}
+
+/** A frozen account or a storage limit refused the write. */
+export function isStorageRefusal(error: unknown): boolean {
+  return isAccountRefusal(error) || isStorageQuotaError(error);
+}
+
+let workspaceRefusals: {
+  handle: (error: unknown) => void;
+  isOwner: boolean;
+} | null = null;
+const deferred = new WeakSet<object>();
+
+/** Registered by WorkspaceHealth while a workspace is open: it refreshes the
+ * workspace and account and shows the workspace status instead. `isOwner`:
+ * the viewer pays for this workspace. */
+export function handleWorkspaceRefusals(
+  handle: (error: unknown) => void,
+  isOwner: boolean
+) {
+  const current = { handle, isOwner };
+  workspaceRefusals = current;
+  return () => {
+    if (workspaceRefusals === current) workspaceRefusals = null;
+  };
+}
+
+/** Inside a workspace, a frozen or storage refusal goes to the workspace
+ * status (owner or member wording); true when it did, so the caller (the
+ * mutation cache, or a surface with its own error toast) shows nothing of its
+ * own. The status shows once per refusal however many surfaces see it.
+ * Outside a workspace the caller keeps its own copy, and so does a member
+ * whose own quota refused (a clone): a quota refusal carries the numbers only
+ * for the charged account, and the workspace status speaks for its owner. */
+export function deferStorageRefusal(error: unknown): boolean {
+  if (!workspaceRefusals || !isStorageRefusal(error)) return false;
+  if (
+    isStorageQuotaError(error) &&
+    error.body?.ownerUserId &&
+    !workspaceRefusals.isOwner
+  )
+    return false;
+  if (!deferred.has(error as object)) {
+    deferred.add(error as object);
+    workspaceRefusals.handle(error);
+  }
+  return true;
 }
 
 export function toastKeyFor(error: unknown): string {

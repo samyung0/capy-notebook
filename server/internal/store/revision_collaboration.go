@@ -234,11 +234,14 @@ func (s *Store) lockCommentAccountsTx(
 // lockMaterialEditorTx serializes role/sharing changes with a comment
 // write, then rechecks both lifecycle and effective editor permission. This
 // closes the gap between the handler's initial access lookup and the INSERT or
-// UPDATE without changing link/public share-role behavior.
+// UPDATE without changing link/public share-role behavior. Writing a comment
+// (edit) is refused when the actor or the storage owner is frozen or the owner
+// is at its storage limit; deleting one is not.
 func (s *Store) lockMaterialEditorTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	materialID, actorID string,
+	edit bool,
 ) (WorkspaceRole, error) {
 	var materialOwner string
 	var workspaceID *string
@@ -273,6 +276,11 @@ func (s *Store) lockMaterialEditorTx(
 	}
 	if err := s.lockCommentAccountsTx(ctx, tx, ownerID, actorID); err != nil {
 		return "", err
+	}
+	if edit {
+		if err := s.assertContentEditableTx(ctx, tx, ownerID, actorID); err != nil {
+			return "", err
+		}
 	}
 	if workspaceID == nil {
 		var currentOwner string
@@ -333,7 +341,7 @@ func (s *Store) CreateCommentDiscussion(
 		return Discussion{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Discussion{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_discussions
@@ -383,7 +391,7 @@ func (s *Store) AddComment(
 		}
 		return Comment{}, err
 	}
-	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Comment{}, err
 	}
 	id := uid("com")
@@ -435,7 +443,7 @@ func (s *Store) EditOwnComment(
 		}
 		return Comment{}, err
 	}
-	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID); err != nil {
+	if _, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, true); err != nil {
 		return Comment{}, err
 	}
 	comment, err := scanRevisionComment(tx.QueryRow(ctx, `WITH edited AS (
@@ -477,7 +485,7 @@ func (s *Store) SoftDeleteComment(ctx context.Context, id, actorID string) error
 		}
 		return err
 	}
-	role, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID)
+	role, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, false)
 	if err != nil {
 		return err
 	}
@@ -511,7 +519,7 @@ func (s *Store) SoftDeleteDiscussion(ctx context.Context, id, actorID string) er
 		}
 		return err
 	}
-	role, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID)
+	role, err := s.lockMaterialEditorTx(ctx, tx, materialID, actorID, false)
 	if err != nil {
 		return err
 	}

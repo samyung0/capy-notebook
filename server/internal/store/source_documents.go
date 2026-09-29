@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -143,14 +144,21 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 			return "", "", ErrNotFound
 		}
 	}
-	if edit {
-		status, e := s.accountAccess(ctx, tx, owner)
-		if e != nil {
-			return "", "", e
-		}
-		if e = status.Err(); e != nil {
-			return "", "", e
-		}
+	return ws, owner, nil
+}
+
+// sourceEditLockTx admits an owner's refresh: sourceLockTx with edit access,
+// refused when the storage owner or an actor is frozen. Room edits are
+// admitted by CheckSourceAccess, which also refuses at the storage limit; a
+// checkpoint saves edits the room already admitted, so it takes sourceLockTx
+// alone (frozen and the limit are enforced at admission only).
+func (s *Store) sourceEditLockTx(ctx context.Context, tx pgx.Tx, fileID string, actor string) (string, string, error) {
+	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, true)
+	if err != nil {
+		return "", "", err
+	}
+	if err := s.assertEditableTx(ctx, tx, owner, actor); err != nil {
+		return "", "", err
 	}
 	return ws, owner, nil
 }
@@ -187,13 +195,16 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	if err != nil {
 		return out, err
 	}
-	ownerStatus, err := s.accountAccess(ctx, tx, owner)
-	if err != nil {
-		return out, err
-	}
 	out.Access = "read"
-	if canEdit && ownerStatus.CanEdit() {
-		out.Access = "write"
+	if canEdit {
+		var locked *AccountLockedError
+		var full *QuotaExceededError
+		switch err := s.assertContentEditableTx(ctx, tx, owner, actor); {
+		case err == nil:
+			out.Access = "write"
+		case !errors.As(err, &locked) && !errors.As(err, &full):
+			return out, err
+		}
 	}
 	return out, tx.Commit(ctx)
 }
@@ -229,7 +240,11 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, _, err = s.sourceLockTx(ctx, tx, fileID, []string{actor}, edit); err != nil {
+	_, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, edit)
+	if err == nil && edit {
+		err = s.assertContentEditableTx(ctx, tx, owner, actor)
+	}
+	if err != nil {
 		return err
 	}
 	var current bool
@@ -288,9 +303,9 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	}
 	// Sizes only: the stored state alone may reach 100 MB.
 	var format, sha string
-	var epoch, baseRevision, storageBytes, seedBytes int64
+	var epoch, baseRevision, seedBytes int64
 	var seeded bool
-	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,storage_bytes,seed_bytes,state IS NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &storageBytes, &seedBytes, &seeded); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,base_revision,base_source_sha256,seed_bytes,state IS NULL FROM source_documents WHERE file_id=$1`, fileID).Scan(&format, &epoch, &out.Checkpoint, &baseRevision, &sha, &seedBytes, &seeded); err != nil {
 		return out, err
 	}
 	if in.Operation != nil {
@@ -349,28 +364,6 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	// An Office state is stored as its change over seed(base); text is complete.
 	if text != (in.StateSeedSHA256 == "") || (!text && !sha256Hex(in.StateSeedSHA256)) {
 		return out, ErrConflict
-	}
-	var effectsBytes int64
-	// An empty list costs nothing (migration 0033's rule).
-	if err = tx.QueryRow(ctx, `SELECT COALESCE(octet_length(NULLIF($1::jsonb,'[]'::jsonb)::text),0)`, in.PendingEffects).Scan(&effectsBytes); err != nil {
-		return out, err
-	}
-	// storage_bytes after this save (migration 0039's rule) minus before: an
-	// Office state is charged as stored, a text state beyond its seed.
-	stateBytes := int64(len(in.State))
-	if text {
-		stateBytes = max(0, stateBytes-seedBytes)
-	}
-	growth := effectsBytes + stateBytes - storageBytes
-	if in.Operation != nil {
-		// The retained inverse is owner storage too: admit state and inverse
-		// growth together.
-		growth += int64(len(in.Operation.Inverse) + len(in.Operation.Guards))
-	}
-	if growth > 0 {
-		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
-			return out, err
-		}
 	}
 	// A refresh that captured the state being replaced keeps its own copy from
 	// now on; until a save lands, its NULL state reads this row's.
@@ -472,7 +465,7 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 	if system {
 		ws, owner, err = s.maintenanceLockTx(ctx, tx, fileID)
 	} else {
-		ws, owner, err = s.sourceLockTx(ctx, tx, fileID, []string{actor}, true)
+		ws, owner, err = s.sourceEditLockTx(ctx, tx, fileID, actor)
 	}
 	if err != nil {
 		return SourceProcessResult{}, err

@@ -198,13 +198,15 @@ async function lockMaterial(client: PoolClient, materialId: string) {
 type LiveAccessRow = {
   actor_deleted_at: Date | null;
   actor_deletion_requested_at: Date | null;
+  actor_frozen: boolean;
   actor_suspended_at: Date | null;
   material_owner_id: string;
   material_privacy: string;
   member_role: string;
   owner_deleted_at: Date | null;
   owner_deletion_requested_at: Date | null;
-  owner_over_quota: boolean;
+  owner_frozen: boolean;
+  owner_full: boolean;
   owner_suspended_at: Date | null;
   share_role: string | null;
   workspace_id: string | null;
@@ -220,43 +222,93 @@ const roleRank: Record<string, number> = {
   viewer: 1,
 };
 
-function paidLapseOverQuotaSQL(userAlias: 'owner' | 'u'): string {
-  return `EXISTS(SELECT 1 FROM user_subscriptions paid_sub
-        WHERE paid_sub.user_id=${userAlias}.id
-          AND paid_sub.plan_tier='pro')
-      AND NOT EXISTS(SELECT 1 FROM user_subscriptions live_sub
+// Mirrors Go's over_quota_frozen (store.applyQuotaState): no live Pro period,
+// the latest Pro period ended or closed at least 14 days ago, and stored plus
+// reserved bytes over the Free limit. A frozen account is read-only on both
+// sides: as the actor, and as the owner every collaborator writes into.
+function frozenSQL(userAlias: string, storageAlias: string): string {
+  return `NOT EXISTS(SELECT 1 FROM user_subscriptions live_sub
         WHERE live_sub.user_id=${userAlias}.id
           AND live_sub.plan_tier='pro'
           AND live_sub.status IN ('active','trialing','past_due')
           AND (live_sub.current_period_end IS NULL
             OR live_sub.current_period_end > now()))
-      AND (EXISTS(SELECT 1 FROM user_subscriptions expired_sub
+      AND GREATEST(
+        (SELECT max(expired_sub.current_period_end)
+          FROM user_subscriptions expired_sub
           WHERE expired_sub.user_id=${userAlias}.id
             AND expired_sub.plan_tier='pro'
             AND expired_sub.status IN ('active','trialing','past_due')
-            AND expired_sub.current_period_end <= now())
-        OR EXISTS(SELECT 1 FROM user_subscriptions closed_sub
+            AND expired_sub.current_period_end <= now()),
+        (SELECT max(LEAST(
+            COALESCE(closed_sub.current_period_end, closed_sub.ended_at,
+              closed_sub.canceled_at,
+              to_timestamp(NULLIF(closed_sub.stripe_event_created, 0)),
+              closed_sub.updated_at),
+            COALESCE(closed_sub.ended_at, closed_sub.canceled_at,
+              to_timestamp(NULLIF(closed_sub.stripe_event_created, 0)),
+              closed_sub.updated_at)))
+          FROM user_subscriptions closed_sub
           WHERE closed_sub.user_id=${userAlias}.id
             AND closed_sub.plan_tier='pro'
-            AND closed_sub.status NOT IN ('active','trialing','past_due')))
-      AND COALESCE(storage.used_bytes, 0)
-        + COALESCE(storage.reserved_bytes, 0)
+            AND closed_sub.status NOT IN ('active','trialing','past_due'))
+      ) <= now() - interval '14 days'
+      AND COALESCE(${storageAlias}.used_bytes, 0)
+        + COALESCE(${storageAlias}.reserved_bytes, 0)
         + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas delta
           WHERE delta.user_id=${userAlias}.id), 0)
         > (SELECT storage_limit_bytes FROM plan_limits WHERE plan_tier='free')`;
 }
 
+// Mirrors Go's StorageUsage.Full (store.unlockedStorageUsage): stored plus
+// reserved bytes at or over the current plan's limit, which is Free once a paid
+// period has lapsed, so grace counts. Everything an owner at its limit pays for
+// is view-only for every collaborator.
+function fullSQL(userAlias: string, storageAlias: string): string {
+  return `COALESCE(${storageAlias}.used_bytes, 0)
+        + COALESCE(${storageAlias}.reserved_bytes, 0)
+        + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas delta
+          WHERE delta.user_id=${userAlias}.id), 0)
+        >= (SELECT storage_limit_bytes FROM plan_limits WHERE plan_tier=CASE
+          WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
+            WHERE any_sub.user_id=${userAlias}.id) THEN ${userAlias}.plan_tier
+          ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
+            WHERE live.user_id=${userAlias}.id
+              AND live.status IN ('active','trialing','past_due')
+              AND (live.current_period_end IS NULL
+                OR live.current_period_end > now())
+            ORDER BY (live.plan_tier='pro') DESC,
+              live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
+          END)`;
+}
+
 export class CollaborationAuthorizationError extends Error {}
+
+export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
+
+/** A writer whose room turned read-only: the storage owner is suspended,
+ * frozen or at its storage limit, or the writer's own account is frozen. The
+ * editor drops to view. `reason` reaches the client when authentication
+ * refuses it. */
+export class CollaborationReadOnlyError extends CollaborationAuthorizationError {
+  readonly reason = COLLABORATION_READ_ONLY_REASON;
+}
 
 function denyCollaboration(message: string): never {
   throw new CollaborationAuthorizationError(message);
+}
+
+type LiveAccess = { frozen: boolean; full: boolean; suspended: boolean };
+
+function accessOf(live: LiveAccess): CollaborationAccess {
+  return live.suspended || live.frozen || live.full ? 'read' : 'write';
 }
 
 async function liveCollaborationAccess(
   queryable: Queryable,
   materialId: string,
   actorUserId: string
-): Promise<CollaborationAccess> {
+): Promise<LiveAccess> {
   const result = await queryable.query<LiveAccessRow>(
     `SELECT m.owner_user_id AS material_owner_id,
       m.privacy AS material_privacy, m.workspace_id,
@@ -268,14 +320,17 @@ async function liveCollaborationAccess(
       actor.suspended_at AS actor_suspended_at,
       w.user_id AS workspace_owner_id, w.privacy AS workspace_privacy,
       w.share_role, COALESCE(wm.role, '') AS member_role,
-      ${paidLapseOverQuotaSQL('owner')} AS owner_over_quota
+      ${frozenSQL('owner', 'owner_storage')} AS owner_frozen,
+      ${fullSQL('owner', 'owner_storage')} AS owner_full,
+      ${frozenSQL('actor', 'actor_storage')} AS actor_frozen
      FROM materials m
      JOIN users owner ON owner.id=m.owner_user_id
      JOIN users actor ON actor.id=$2
      LEFT JOIN workspaces w ON w.id=m.workspace_id
      LEFT JOIN workspace_members wm
        ON wm.workspace_id=w.id AND wm.user_id=$2
-     LEFT JOIN user_storage storage ON storage.user_id=owner.id
+     LEFT JOIN user_storage owner_storage ON owner_storage.user_id=owner.id
+     LEFT JOIN user_storage actor_storage ON actor_storage.user_id=actor.id
      WHERE m.id=$1 AND m.trashed_at IS NULL`,
     [materialId, actorUserId]
   );
@@ -316,17 +371,16 @@ async function liveCollaborationAccess(
         ? row.member_role
         : sharedRole;
   }
-  // Viewers never hold a room; editors are narrowed only by the storage
-  // owner's lifecycle.
+  // Viewers never hold a room; editors are narrowed to read by a suspended or
+  // frozen owner, an owner at its storage limit, or their own frozen account.
   if ((roleRank[effectiveRole] ?? 0) < roleRank.editor) {
     denyCollaboration('material access was revoked');
   }
-  const liveAccess: CollaborationAccess = row.owner_suspended_at
-    ? 'read'
-    : row.owner_over_quota
-      ? 'shrink'
-      : 'write';
-  return liveAccess;
+  return {
+    frozen: row.owner_frozen || row.actor_frozen,
+    full: row.owner_full,
+    suspended: row.owner_suspended_at !== null,
+  };
 }
 
 async function assertLiveCollaborationAccess(
@@ -335,23 +389,20 @@ async function assertLiveCollaborationAccess(
   actorUserId: string,
   requested: CollaborationAccess
 ) {
-  const liveAccess = await liveCollaborationAccess(
+  const live = await liveCollaborationAccess(
     queryable,
     materialId,
     actorUserId
   );
-  const allowed =
-    requested === 'read' ||
-    (requested === 'shrink' && liveAccess !== 'read') ||
-    (requested === 'write' && liveAccess === 'write');
-  if (!allowed) denyCollaboration('collaboration access changed');
+  if (requested === 'write' && accessOf(live) !== 'write') {
+    throw new CollaborationReadOnlyError('collaboration access changed');
+  }
 }
 
 type LockedAccount = {
   deleted_at: Date | null;
   deletion_requested_at: Date | null;
   id: string;
-  over_quota: boolean;
   suspended_at: Date | null;
 };
 
@@ -386,10 +437,8 @@ async function lockCollaborationBoundary(
     ...new Set([expected.owner_user_id, ...actorUserIds]),
   ].sort();
   const accounts = await client.query<LockedAccount>(
-    `SELECT u.id, u.deleted_at, u.deletion_requested_at, u.suspended_at,
-      ${paidLapseOverQuotaSQL('u')} AS over_quota
+    `SELECT u.id, u.deleted_at, u.deletion_requested_at, u.suspended_at
      FROM users u
-     LEFT JOIN user_storage storage ON storage.user_id=u.id
      WHERE u.id=ANY($1::text[])
      ORDER BY u.id
      FOR SHARE OF u`,
@@ -485,12 +534,7 @@ export class YjsDocumentStore {
    * Rejecting after the fact is not an option: Yjs has no notion of undoing a
    * peer's update, so the only remedy left would be discarding the whole room.
    */
-  validateUpdate(
-    room: string,
-    current: Y.Doc,
-    update: Uint8Array,
-    options?: { shrinkOnly?: boolean }
-  ) {
+  validateUpdate(room: string, current: Y.Doc, update: Uint8Array) {
     let validator = this.validators.get(room);
     if (!validator) {
       validator = new RoomValidator();
@@ -507,7 +551,7 @@ export class YjsDocumentStore {
       candidate.destroy();
       throw error;
     }
-    if (!validator.shouldMeasure() && !options?.shrinkOnly) {
+    if (!validator.shouldMeasure()) {
       candidate.destroy();
       return;
     }
@@ -526,14 +570,6 @@ export class YjsDocumentStore {
     const code = materialLimitCode(metrics);
     if (code && !recoversMaterialLimits(metrics, validator.metrics)) {
       throw new MaterialDocumentLimitError(code, metrics);
-    }
-    // Billing over-quota rooms reuse the same shrink-only rule: growth in any
-    // metric is rejected even when the document is still under the hard caps.
-    if (
-      options?.shrinkOnly &&
-      !recoversMaterialLimits(metrics, validator.metrics)
-    ) {
-      throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
     }
     validator.accept(metrics);
   }
@@ -558,16 +594,16 @@ export class YjsDocumentStore {
   async commandConnectionAccess(
     room: string,
     actorUserId: string
-  ): Promise<'shrink' | 'write'> {
-    const access = await liveCollaborationAccess(
+  ): Promise<'write'> {
+    const live = await liveCollaborationAccess(
       this.pool,
       materialIdFromRoom(room),
       actorUserId
     );
-    if (access === 'read') {
-      denyCollaboration('material access was revoked');
+    if (accessOf(live) === 'read') {
+      throw new CollaborationReadOnlyError('material access is read-only');
     }
-    return access;
+    return 'write';
   }
 
   async currentRoom(materialId: string): Promise<string | null> {
@@ -645,28 +681,22 @@ export class YjsDocumentStore {
     const materialId = materialIdFromRoom(room);
     const roomSchema = roomSchemaFromRoom(room);
     const contributors = documentContributors(current);
-    const accessByActor = new Map<string, CollaborationAccess>();
-    for (const contributor of contributors) {
-      const previous = accessByActor.get(contributor.userId);
-      if (contributor.access === 'write' || previous === undefined) {
-        accessByActor.set(contributor.userId, contributor.access);
-      }
-    }
+    const actors = [...new Set(contributors.map(({ userId }) => userId))];
     const client = await this.pool.connect();
     const merged = new Y.Doc({ gc: true });
     try {
       await client.query('BEGIN');
       await lockMaterial(client, materialId);
-      const boundary = await lockCollaborationBoundary(client, materialId, [
-        ...accessByActor.keys(),
-      ]);
-      for (const [actorUserId, actorAccess] of accessByActor) {
-        await assertLiveCollaborationAccess(
-          client,
-          materialId,
-          actorUserId,
-          actorAccess
-        );
+      const boundary = await lockCollaborationBoundary(
+        client,
+        materialId,
+        actors
+      );
+      // Frozen is enforced at admission (authentication, read tokens and the
+      // 5 s per-update recheck), so updates already admitted are saved even if
+      // their writer froze since. A writer must still hold its role.
+      for (const actorUserId of actors) {
+        await liveCollaborationAccess(client, materialId, actorUserId);
       }
       const lifecycle = boundary.accounts.get(boundary.ownerUserId);
       if (!lifecycle) throw new Error('material owner not found');
@@ -704,13 +734,6 @@ export class YjsDocumentStore {
         if (!recoversMaterialLimits(metrics, previous)) {
           throw new MaterialDocumentLimitError(limitCode, metrics);
         }
-      }
-      if (
-        lifecycle.over_quota &&
-        existing.rowCount &&
-        !recoversMaterialLimits(metrics, measureState(existing.rows[0].state))
-      ) {
-        throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
       }
       removeDocumentContributors(merged, contributors);
       const state = Y.encodeStateAsUpdate(merged);
@@ -816,9 +839,6 @@ export class YjsDocumentStore {
         lifecycle.suspended_at
       ) {
         denyCollaboration('material owner account is locked');
-      }
-      if (lifecycle.over_quota && !recoversMaterialLimits(metrics, previous)) {
-        throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
       }
       const { state, update } = durableCommit(merged, liveState);
       const version = Number(row.stored_version) + 1;
@@ -950,9 +970,6 @@ export class YjsDocumentStore {
       const limitCode = materialLimitCode(metrics);
       if (limitCode && !recoversMaterialLimits(metrics, previous)) {
         throw new MaterialDocumentLimitError(limitCode, metrics);
-      }
-      if (lifecycle.over_quota && !recoversMaterialLimits(metrics, previous)) {
-        throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
       }
       const { state, update } = durableCommit(merged, input.liveState);
       const version = Number(existing.rows[0].stored_version) + 1;

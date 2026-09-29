@@ -112,16 +112,20 @@ export function SourceBanners({
   error,
   paused,
   pausedAtOpen,
+  readOnly = false,
   replaced,
 }: {
   actions: FileBannerAction[];
   error: string | null;
   paused: boolean;
   pausedAtOpen: boolean;
+  /** The room turned read-only (a frozen account). */
+  readOnly?: boolean;
   replaced: boolean;
 }) {
   return (
     <>
+      {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
       {error && <FileBanner actions={actions} message={error} tone="error" />}
       {pausedAtOpen ? (
         <FileBanner message={m.source_edit_paused_error()} />

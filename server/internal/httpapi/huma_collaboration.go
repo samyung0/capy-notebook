@@ -49,9 +49,10 @@ type collaborationTokenResponse struct {
 	Token string `json:"token"`
 	Room  string `json:"room"`
 	URL   string `json:"url"`
-	// shrink is write access restricted to edits that reduce the document, which
-	// is how an over-quota account stays able to delete its way back under limit.
-	Access    string `json:"access" enum:"write,read,shrink"`
+	// read is the downgrade an editor gets when a frozen or locked account (their
+	// own, or the storage owner's) makes the material read-only, or the storage
+	// owner is at its limit (view-only).
+	Access    string `json:"access" enum:"write,read"`
 	ExpiresAt int64  `json:"expiresAt"`
 }
 
@@ -129,21 +130,23 @@ func (a *api) createMaterialCollaborationToken(
 	// a connection may do, so lifecycle restrictions have to be resolved here.
 	// Tokens are short-lived, which bounds how long a stale grant survives.
 	//
-	// The role above decided that this user may write; the material's storage
-	// owner decides which direction the document may move, because the bytes
-	// are charged to the owner and never to the actor. A locked owner leaves
-	// editors with read-only rooms. The actor's own lifecycle does not enter
-	// into it: suspended, deletion-pending and deleted users are refused a
-	// session by the auth middleware, and their storage state is irrelevant
-	// inside a workspace they do not pay for.
+	// The role above decided that this user may write. A frozen or locked
+	// account on either side leaves the room read-only: a frozen actor edits
+	// nowhere, and nobody edits what a frozen owner pays for. An owner at its
+	// storage limit makes the material view-only too.
 	owner, err := a.s.MaterialOwnerAccess(ctx, in.ID)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	switch {
-	case owner.ShrinkOnly():
-		access = "shrink"
-	case !owner.CanEdit():
+	actor, err := a.s.AccountAccess(ctx, uid)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	full, err := a.ownerFull(ctx, owner.UserID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	if !owner.CanEdit() || !actor.CanEdit() || full {
 		access = "read"
 	}
 	me, _ := a.s.Me(ctx, uid)

@@ -16,6 +16,10 @@ import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import { trackItemCloned } from '@/lib/observability';
@@ -41,13 +45,18 @@ export default function Explore() {
   const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
     useCloneWorkspace();
   const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
+  const frozen = useAccountFrozen();
   const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
     useCloneFlashcardSet();
   const navigate = useNavigate();
 
   return (
     <PanelWithInvertedRadius>
-      <PageHeader subtitle={m.explore_subtitle()} title={m.nav_explore()} />
+      <PageHeader
+        actions={<AccountStatusButton />}
+        subtitle={m.explore_subtitle()}
+        title={m.nav_explore()}
+      />
       <div className="px-6">
         <Tabs
           onChange={setTab}
@@ -140,7 +149,7 @@ export default function Explore() {
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={cloneQuizIsPending}
+                  disabled={frozen || cloneQuizIsPending}
                   iconLeft="plus"
                   onClick={() =>
                     cloneQuiz(q.id, {
@@ -183,7 +192,7 @@ export default function Explore() {
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={cloneFlashcardSetIsPending}
+                  disabled={frozen || cloneFlashcardSetIsPending}
                   iconLeft="plus"
                   onClick={() =>
                     cloneFlashcardSet(flashcardSet.id, {

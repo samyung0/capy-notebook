@@ -160,6 +160,7 @@ export {
   SearchKind,
   ShareRole,
   Slot,
+  StorageUsageLevel,
   SubscriptionStatus,
   UserColor,
   WorkspaceRole,

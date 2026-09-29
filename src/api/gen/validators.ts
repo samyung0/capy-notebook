@@ -34,6 +34,7 @@ export const GetDeletionPreflightResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -50,8 +51,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax)
@@ -64,6 +65,7 @@ export const GetDeletionPreflightResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -80,8 +82,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax)
@@ -112,6 +114,7 @@ export const RequestAccountDeletionResponse = zod.object({
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
   "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
   "storageLimitBytes": zod.int(),
+  "storageUsage": zod.enum(['ok', 'near_limit', 'full']),
   "storageUsedBytes": zod.int(),
   "suspendedReason": zod.string().optional(),
   "userId": zod.string()
@@ -762,6 +765,7 @@ export const UpdateEventResponse = zod.object({
 export const ExploreFlashcardSetsResponseItem = zod.object({
   "author": zod.string(),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "clones": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
@@ -798,6 +802,7 @@ export const ExploreFlashcardSetsResponse = zod.array(ExploreFlashcardSetsRespon
 export const ExploreQuizzesResponseItem = zod.object({
   "author": zod.string(),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "clones": zod.int(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -841,6 +846,7 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -858,8 +864,8 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(exploreWorkspacesResponseTagsItemValueMax)
@@ -1323,6 +1329,7 @@ export const CreateFlashcardSetBody = zod.object({
 export const CreateFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "dueCount": zod.int(),
@@ -1467,6 +1474,7 @@ export const GetFlashcardSetParams = zod.object({
 export const GetFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "dueCount": zod.int(),
@@ -1579,6 +1587,7 @@ export const CloneFlashcardSetParams = zod.object({
 export const CloneFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "dueCount": zod.int(),
@@ -1674,6 +1683,7 @@ export const UpdateFlashcardSetBody = zod.object({
 export const UpdateFlashcardSetResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "dueCount": zod.int(),
@@ -1716,6 +1726,7 @@ export const UpdateFlashcardSetSharingBody = zod.object({
 export const UpdateFlashcardSetSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "dueCount": zod.int(),
@@ -1901,6 +1912,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -1974,6 +1986,7 @@ export const GetMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -2029,6 +2042,7 @@ export const CloneMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -2082,7 +2096,7 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
 
 export const CreateMaterialCollaborationTokenResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "access": zod.enum(['write', 'read', 'shrink']),
+  "access": zod.enum(['write', 'read']),
   "expiresAt": zod.int(),
   "room": zod.string(),
   "token": zod.string(),
@@ -2206,6 +2220,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -2294,6 +2309,7 @@ export const UpdateMaterialSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -2351,6 +2367,7 @@ export const GetMeResponse = zod.object({
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
   "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
   "storageLimitBytes": zod.int(),
+  "storageUsage": zod.enum(['ok', 'near_limit', 'full']),
   "storageUsedBytes": zod.int(),
   "suspendedReason": zod.string().optional(),
   "userId": zod.string()
@@ -2403,6 +2420,7 @@ export const UpdateMeResponse = zod.object({
   "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
   "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
   "storageLimitBytes": zod.int(),
+  "storageUsage": zod.enum(['ok', 'near_limit', 'full']),
   "storageUsedBytes": zod.int(),
   "suspendedReason": zod.string().optional(),
   "userId": zod.string()
@@ -2522,6 +2540,7 @@ export const SetModelPrefsResponse = zod.void()
 export const GetMistakesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -2749,6 +2768,7 @@ export const CreateQuizBody = zod.object({
 export const CreateQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -2804,6 +2824,7 @@ export const GetQuizParams = zod.object({
 export const GetQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -2876,6 +2897,7 @@ export const CloneQuizParams = zod.object({
 export const CloneQuizResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -2921,6 +2943,7 @@ export const UpdateQuizContentBody = zod.object({
 export const UpdateQuizContentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -2967,6 +2990,7 @@ export const UpdateQuizMetadataBody = zod.object({
 export const UpdateQuizMetadataResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -3008,6 +3032,7 @@ export const UpdateQuizSharingBody = zod.object({
 export const UpdateQuizSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -3435,6 +3460,7 @@ export const ListWorkspacesResponseItem = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -3451,8 +3477,8 @@ export const ListWorkspacesResponseItem = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(listWorkspacesResponseTagsItemValueMax)
@@ -3498,6 +3524,7 @@ export const CreateWorkspaceResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -3514,8 +3541,8 @@ export const CreateWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(createWorkspaceResponseTagsItemValueMax)
@@ -3551,6 +3578,7 @@ export const GetWorkspaceResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -3567,8 +3595,8 @@ export const GetWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(getWorkspaceResponseTagsItemValueMax)
@@ -3619,6 +3647,7 @@ export const UpdateWorkspaceResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -3635,8 +3664,8 @@ export const UpdateWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(updateWorkspaceResponseTagsItemValueMax)
@@ -3724,6 +3753,7 @@ export const CloneWorkspaceResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -3740,8 +3770,8 @@ export const CloneWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(cloneWorkspaceResponseWorkspaceTagsItemValueMax)
@@ -3987,6 +4017,7 @@ export const CreateMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -4099,6 +4130,7 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -4115,8 +4147,8 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(updateWorkspaceSharingResponseTagsItemValueMax)
@@ -4394,6 +4426,7 @@ export const TransferWorkspaceResponse = zod.object({
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
+  "canEditContent": zod.boolean(),
   "canManageMembers": zod.boolean(),
   "canView": zod.boolean()
 }),
@@ -4410,8 +4443,8 @@ export const TransferWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']),
-  "storageOwnerName": zod.string(),
   "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
+  "storageOwnerUsage": zod.enum(['ok', 'near_limit', 'full']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)

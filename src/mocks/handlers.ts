@@ -52,7 +52,12 @@ import {
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
 import { mockChatStream } from './chatStream';
-import { sourceRoom, sourceRoomName, sourceRoomState } from './collaboration';
+import {
+  savedSourceState,
+  sourceRoom,
+  sourceRoomName,
+  sourceRoomState,
+} from './collaboration';
 import * as db from './db';
 import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
@@ -142,6 +147,7 @@ function mockCatalogModels() {
 const ownerMaterialAccess = {
   capabilities: {
     canEdit: true,
+    canEditContent: true,
     canManageMembers: true,
     canView: true,
   },
@@ -176,7 +182,7 @@ interface MockInviteCandidate {
   name: string;
 }
 
-const mockDiscussions: MaterialDiscussion[] = [];
+const mockDiscussions = db.discussions;
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
 export const mockWorkspaceMembers: WorkspaceMember[] = [
   {
@@ -327,24 +333,6 @@ function resolveTags(kind: string, refs: TagInput[] | null | undefined): Tag[] {
     out.push({ id: entry.id, value: entry.value });
   }
   return out;
-}
-
-function sortWorkspaces(list: Workspace[], sort: string | null): Workspace[] {
-  const copy = [...list];
-  switch (sort) {
-    case 'created':
-      return copy.sort(
-        (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
-      );
-    case 'chapters':
-      return copy.sort((a, b) => b.chapterCount - a.chapterCount);
-    case 'files':
-      return copy.sort((a, b) => b.fileCount - a.fileCount);
-    default:
-      return copy.sort(
-        (a, b) => +new Date(b.lastAccessedAt) - +new Date(a.lastAccessedAt)
-      );
-  }
 }
 
 interface MockSourceImport {
@@ -530,7 +518,22 @@ export const handlers = [
     '/__mock/preview/unavailable',
     () => new HttpResponse(null, { status: 503 })
   ),
-  http.get('/api/files/:id/source-session', async ({ params }) => {
+  http.get('/api/files/:id/source-session', async ({ params, request }) => {
+    const file = db.files.find((row) => row.id === params.id);
+    // The viewer's read of a text source is lock-free on the server: only the
+    // last saved state, while one is ahead of the published bytes.
+    if (
+      new URL(request.url).searchParams.get('view') === 'true' &&
+      file &&
+      !/\.(docx|xlsx|pptx)$/i.test(file.name)
+    )
+      return HttpResponse.json({
+        access: 'read',
+        fileId: file.id,
+        format: 'text',
+        pendingEffects: null,
+        state: savedSourceState(file.id),
+      });
     if (dialogFiles.some((file) => file.id === params.id)) {
       return HttpResponse.json(
         { detail: 'Mock source session unavailable.', status: 503 },
@@ -919,28 +922,9 @@ export const handlers = [
 
   /* ---------------- workspaces ---------------- */
   // TODO response/request/schema model is different
-  http.get('/api/workspaces', async ({ request }) => {
-    const url = new URL(request.url);
-    const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
-    const tags = (url.searchParams.get('tag') ?? '')
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-    const sort = url.searchParams.get('sort');
-    let list = [...db.workspaces];
-    if (q)
-      list = list.filter(
-        (w) =>
-          w.name.toLowerCase().includes(q) ||
-          w.tags.some((t) => t.value.toLowerCase().includes(q))
-      );
-    if (tags.length) {
-      list = list.filter(
-        (w) => tags.length > 0 && w.tags.some((t) => tags.includes(t.value))
-      );
-    }
-    return HttpResponse.json(sortWorkspaces(list, sort));
-  }),
+  http.get('/api/workspaces', async ({ request }) =>
+    HttpResponse.json(db.listWorkspaces(new URL(request.url)))
+  ),
   http.get('/api/workspaces/:id', async ({ params }) => {
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
@@ -995,6 +979,7 @@ export const handlers = [
       canClone: true,
       capabilities: {
         canEdit: true,
+        canEditContent: true,
         canManageMembers: true,
         canView: true,
       },
@@ -1013,7 +998,8 @@ export const handlers = [
       privacy: 'private',
       role: 'owner',
       shareRole: 'viewer',
-      storageOwnerName: db.user.name,
+      storageOwnerState: db.accountStatus.state,
+      storageOwnerUsage: db.accountStatus.storageUsage,
       tags: resolveTags('workspace', body.tags),
     };
     db.workspaces.unshift(ws);
@@ -1242,6 +1228,7 @@ export const handlers = [
     ws.role = 'editor';
     ws.capabilities = {
       canEdit: true,
+      canEditContent: true,
       canManageMembers: false,
       canView: true,
     };
@@ -2394,6 +2381,7 @@ export const handlers = [
   http.get('/api/mistakes', async () => {
     const quiz: Quiz = {
       canEdit: true,
+      canEditContent: true,
       chapters: [],
       createdAt: new Date().toISOString(),
       id: 'review_mistakes',
@@ -2411,6 +2399,7 @@ export const handlers = [
     if (params.id === 'review_mistakes') {
       return HttpResponse.json({
         canEdit: true,
+        canEditContent: true,
         chapters: [],
         createdAt: new Date().toISOString(),
         id: 'review_mistakes',

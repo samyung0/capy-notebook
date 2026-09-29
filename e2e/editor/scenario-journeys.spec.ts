@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 
 const marker = 'My unsaved scenario edit.';
+const savedMarker = 'My saved scenario edit.';
 async function launch(page: Page, id: string) {
   const panel = page.getByTestId('mock-scenario-panel');
   await panel.evaluate((node: HTMLDetailsElement) => {
@@ -117,6 +118,12 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await expect(page.getByRole('alert')).toContainText(
       'Changes could not be saved'
     );
+    // The strip sits directly under the file header, above the count row.
+    const strip = await page.getByRole('alert').boundingBox();
+    const count = await page
+      .getByText(/^\d+ (pages|sheets|slides)$/)
+      .boundingBox();
+    expect(strip!.y).toBeLessThan(count!.y);
     await page.getByRole('button', { exact: true, name: 'Save' }).click();
     await expect(page.getByRole('alert')).toHaveCount(0);
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
@@ -247,6 +254,208 @@ test('permanent account state survives reload until Reset without replaying the 
   await panel.getByRole('button', { exact: true, name: 'Reset' }).click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'idle');
   await expect(blocked).toHaveCount(0);
+});
+
+test('storage status: amber near the limit, full view-only and frozen read-only fall back to view', async ({
+  page,
+}) => {
+  await launch(page, 'account-storage-near');
+  const status = page.locator('[data-storage-status="near"]');
+  await expect(status).toHaveAccessibleName('Your storage is almost full');
+  await status.click();
+  await expect(page.getByRole('dialog')).toContainText(
+    "You've used over 95% of your storage."
+  );
+  await page.keyboard.press('Escape');
+  await page.goto('/');
+  await expect(page.getByTestId('storage-usage-meter')).toBeVisible();
+  await expect(
+    page.getByText('Storage almost full', { exact: true })
+  ).toBeVisible();
+
+  // Full storage: the note is view-only while organizing stays in its menu.
+  await launch(page, 'account-storage-full');
+  await page.goto(
+    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+  );
+  await expect(
+    page.getByText('A note for trying application errors.')
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Material mode' })).toHaveCount(
+    0
+  );
+  await page
+    .getByTestId('content-header')
+    .getByRole('button', { name: 'Open menu' })
+    .click();
+  await expect(page.getByRole('menuitem', { name: 'Rename' })).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await launch(page, 'account-over-quota');
+  await page.goto(
+    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+  );
+  await expect(page.locator('[data-storage-status="frozen-self"]')).toBeVisible(
+    { timeout: 30_000 }
+  );
+  await expect(
+    page.getByText('A note for trying application errors.')
+  ).toBeVisible();
+  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Material mode' })).toHaveCount(
+    0
+  );
+});
+
+test('storage status journeys reach the dashboard, own and shared workspaces', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  // Dashboard cards for the viewer's own account.
+  for (const [id, title] of [
+    ['account-storage-near-dashboard', 'Storage almost full'],
+    ['account-storage-full-dashboard', 'Storage full'],
+    ['account-grace', 'Storage over free limit'],
+    ['account-over-quota', 'Account frozen'],
+  ]) {
+    await launch(page, id);
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+  }
+  // The workspace header triangle: own workspace, then the member wording.
+  for (const [id, status, name] of [
+    ['account-storage-near', 'near', 'Your storage is almost full'],
+    ['account-storage-full', 'full', 'Your storage is full'],
+    ['account-grace-workspace', 'full', 'Your storage is full'],
+    ['account-frozen-workspace', 'frozen-self', 'Account frozen'],
+    ['account-frozen-member', 'frozen-self', 'Account frozen'],
+    [
+      'workspace-owner-near',
+      'near',
+      'Workspace owner is almost out of storage',
+    ],
+    ['workspace-owner-full', 'full', "Workspace owner's storage is full"],
+    ['workspace-owner-grace', 'full', "Workspace owner's storage is full"],
+    [
+      'workspace-owner-frozen',
+      'frozen-owner',
+      "Workspace owner's account is frozen",
+    ],
+  ]) {
+    await launch(page, id);
+    await expect(
+      page.locator(`[data-storage-status="${status}"]`)
+    ).toHaveAccessibleName(name);
+  }
+  // The frozen owner's workspace is read-only for its members too.
+  await page.goto(
+    '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+  );
+  await expect(
+    page.getByText('A note for trying application errors.')
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+
+  await launch(page, 'account-frozen-create');
+  await expect(
+    page.getByRole('button', { exact: true, name: 'New workspace' })
+  ).toBeDisabled();
+  await page.getByRole('button', { name: 'Open menu' }).first().click();
+  await expect(
+    page.getByRole('menuitem', { name: 'Clone workspace' })
+  ).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await page.locator('[data-storage-status="frozen-self"]').click();
+  await expect(page.getByRole('dialog')).toContainText('Account frozen');
+
+  // The invitation page speaks about the recipient's own frozen account.
+  await launch(page, 'invite-frozen');
+  await expect(page.getByTestId('invite-accept-error')).toContainText(
+    'Account frozen'
+  );
+});
+
+test('a frozen account or full storage mid-edit drops open editors to view and discards unsaved edits', async ({
+  page,
+}) => {
+  const strip = page.getByText(
+    'This file is read-only now. Viewing, downloading and deleting still work.'
+  );
+  for (const id of [
+    'note-frozen-while-editing',
+    'note-storage-full-while-editing',
+  ]) {
+    await launch(page, id);
+    await expect(strip).toBeVisible();
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+    // The refreshed note offers no Edit, and the refused edit is gone.
+    await expect(
+      page.getByRole('button', { name: 'Material mode' })
+    ).toHaveCount(0);
+    await expect(
+      page.getByText('A note for trying application errors.')
+    ).toBeVisible();
+    await expect(page.getByText(marker)).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { exact: true, name: 'Download draft' })
+    ).toHaveCount(0);
+  }
+
+  // Unsaved source text is discarded too, with no recovery path and no Saved
+  // state, while the view shows the saved but unpublished edit.
+  await launch(page, 'source-frozen-while-editing');
+  await expect(strip).toBeVisible();
+  await expect(
+    page.getByRole('textbox', { name: 'Edit source text' })
+  ).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByText(savedMarker)).toBeVisible();
+  await expect(page.getByText(marker)).toHaveCount(0);
+  await expect(page.locator('[data-source-status]')).not.toHaveAttribute(
+    'data-source-status',
+    'saved'
+  );
+});
+
+test('a text source in view mode shows its latest saved state, not only the published bytes', async ({
+  page,
+}) => {
+  // Leaving Edit: the saved edit stays in view.
+  await page.goto('/workspaces/ws_scenarios?file=mock-scenario-text&mode=edit');
+  const input = page.getByRole('textbox', { name: 'Edit source text' });
+  await expect(input).not.toHaveValue('', { timeout: 30_000 });
+  await input.fill(`${await input.inputValue()}\n${savedMarker}`);
+  await page.getByRole('button', { name: 'Material mode' }).click();
+  await expect(input).toHaveCount(0);
+  await expect(page.getByText(savedMarker)).toBeVisible();
+  // A fresh open in view mode reads the viewer session: saving did not
+  // publish, yet the edit shows.
+  await page.getByRole('button', { exact: true, name: 'Files' }).click();
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-pdf"]')
+    .click();
+  await expect(page.getByText(savedMarker)).toHaveCount(0);
+  await page
+    .locator('[data-workspace-file-tree] a[href*="file=mock-scenario-text"]')
+    .click();
+  await expect(page.getByText(savedMarker)).toBeVisible();
+});
+
+test('a failed annotation save shows its strip under the PDF toolbar', async ({
+  page,
+}) => {
+  await launch(page, 'annotations-save');
+  const strip = page.getByRole('alert').filter({
+    hasText: 'Your last annotation change could not be saved.',
+  });
+  await expect(strip).toBeInViewport();
+  const stripBox = await strip.boundingBox();
+  const toolbarBox = await page
+    .getByRole('toolbar', { name: 'Private annotations' })
+    .boundingBox();
+  const pageBox = await page.locator('[data-page="1"]').boundingBox();
+  expect(stripBox!.y).toBeGreaterThan(toolbarBox!.y);
+  expect(stripBox!.y).toBeLessThan(pageBox!.y);
 });
 
 test('pending import keeps polling until Reset closes the real dialog', async ({

@@ -1,7 +1,12 @@
 import { MutationCache, QueryClient } from '@tanstack/react-query';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
-import { describeError, isAbortError, toastKeyFor } from '@/lib/errors';
+import {
+  deferStorageRefusal,
+  describeError,
+  isAbortError,
+  toastKeyFor,
+} from '@/lib/errors';
 import { trackQuotaBlocked } from '@/lib/observability';
 import {
   isAccountBlockingError,
@@ -47,13 +52,19 @@ export const queryClient = new QueryClient({
   },
   mutationCache: new MutationCache({
     onError: (error, _variables, _context, mutation) => {
+      // Recorded before any deferral; a surface with its own message records
+      // its own quota blocks.
+      if (mutation.meta?.errorToast !== false)
+        trackQuotaBlocked(error, 'mutation');
+      // Before errorToast: a surface with its own message still defers a
+      // frozen or storage refusal to the workspace status.
+      if (deferStorageRefusal(error)) return;
       if (
         mutation.meta?.errorToast === false ||
         isAbortError(error) ||
         isAccountBlockingError(error)
       )
         return;
-      trackQuotaBlocked(error, 'mutation');
       showErrorToast(error);
     },
   }),

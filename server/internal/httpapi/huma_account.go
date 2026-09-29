@@ -138,6 +138,9 @@ func (a *api) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	if err != nil {
 		return nil, hErr(err)
 	}
+	if account, err = a.s.WithStorageUsage(ctx, account); err != nil {
+		return nil, hErr(err)
+	}
 	return &meOutput{Body: apimodel.User{User: u, Account: account}}, nil
 }
 
@@ -252,7 +255,11 @@ func (a *api) exploreWorkspaces(ctx context.Context, _ *struct{}) (*publicWorksp
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &publicWorkspacesOutput{Body: apimodel.FromPublicWorkspaces(res)}, nil
+	actor, err := a.s.AccountAccess(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &publicWorkspacesOutput{Body: apimodel.FromPublicWorkspaces(res, !actor.CanEdit())}, nil
 }
 
 func (a *api) exploreQuizzes(ctx context.Context, _ *struct{}) (*publicQuizzesOutput, error) {

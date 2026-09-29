@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -133,9 +134,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
-	// Curate reads the shared library to write materials. Without edit access
-	// the turn would run with no library tools and stall, so refuse it here.
-	if req.Curate && !access.canEdit {
+	// Curate reads the shared library to write materials. Without edit access,
+	// or with the owner at its storage limit (no create tool), the turn would
+	// stall, so refuse it here.
+	if req.Curate && (!access.canEdit || access.full) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"code": curateRequiresEditorCode, "message": curateRequiresEditorMessage,
 		})
@@ -246,6 +248,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	// library.read is granted per curate turn; the actor can edit, because a
 	// curate request from anyone else was refused above.
 	operations := agenttools.OperationsForRole(string(access.role))
+	if access.readOnly || access.full {
+		// A frozen actor or owner keeps reading and deleting, not creating,
+		// editing or restoring. An owner at its storage limit loses creating
+		// and editing; restoring grows nothing.
+		operations = slices.DeleteFunc(operations, func(op agenttools.Operation) bool {
+			return op == agenttools.OpMaterialCreate || op == agenttools.OpDocumentEdit ||
+				(access.readOnly && op == agenttools.OpTrashRestore)
+		})
+	}
 	if conv.Curate {
 		operations = append(operations, agenttools.OpLibraryRead)
 	}

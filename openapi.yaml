@@ -5,6 +5,8 @@ components:
       properties:
         canEdit:
           type: boolean
+        canEditContent:
+          type: boolean
         canManageMembers:
           type: boolean
         canView:
@@ -12,6 +14,7 @@ components:
       required:
         - canView
         - canEdit
+        - canEditContent
         - canManageMembers
       type: object
     AccessTokenResp:
@@ -62,6 +65,8 @@ components:
         storageLimitBytes:
           format: int64
           type: integer
+        storageUsage:
+          $ref: "#/components/schemas/StorageUsageLevel"
         storageUsedBytes:
           format: int64
           type: integer
@@ -75,6 +80,7 @@ components:
         - planTier
         - storageUsedBytes
         - storageLimitBytes
+        - storageUsage
       type: object
     ActivityBlock:
       additionalProperties: false
@@ -565,7 +571,6 @@ components:
           enum:
             - write
             - read
-            - shrink
           type: string
         expiresAt:
           format: int64
@@ -1499,6 +1504,8 @@ components:
           type: string
         canEdit:
           type: boolean
+        canEditContent:
+          type: boolean
         cardCount:
           format: int64
           type: integer
@@ -1540,6 +1547,7 @@ components:
         - dueCount
         - isOwner
         - canEdit
+        - canEditContent
       type: object
     GenerateDetail:
       enum:
@@ -2647,6 +2655,8 @@ components:
           type: string
         canEdit:
           type: boolean
+        canEditContent:
+          type: boolean
         cardCount:
           format: int64
           type: integer
@@ -2693,6 +2703,7 @@ components:
         - dueCount
         - isOwner
         - canEdit
+        - canEditContent
       type: object
     PublicQuiz:
       additionalProperties: false
@@ -2700,6 +2711,8 @@ components:
         author:
           type: string
         canEdit:
+          type: boolean
+        canEditContent:
           type: boolean
         chapters:
           items:
@@ -2747,6 +2760,7 @@ components:
         - privacy
         - isOwner
         - canEdit
+        - canEditContent
       type: object
     PublicWorkspace:
       additionalProperties: false
@@ -2795,10 +2809,10 @@ components:
           $ref: "#/components/schemas/WorkspaceRole"
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerName:
-          type: string
         storageOwnerState:
           $ref: "#/components/schemas/AccountState"
+        storageOwnerUsage:
+          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -2823,7 +2837,6 @@ components:
         - isOwner
         - capabilities
         - canClone
-        - storageOwnerName
       type: object
     Quiz:
       additionalProperties: false
@@ -2835,6 +2848,8 @@ components:
           readOnly: true
           type: string
         canEdit:
+          type: boolean
+        canEditContent:
           type: boolean
         chapters:
           items:
@@ -2877,6 +2892,7 @@ components:
         - privacy
         - isOwner
         - canEdit
+        - canEditContent
       type: object
     QuizGradeReq:
       additionalProperties: false
@@ -3855,6 +3871,12 @@ components:
         - lapses
         - state
       type: object
+    StorageUsageLevel:
+      enum:
+        - ok
+        - near_limit
+        - full
+      type: string
     Subject:
       additionalProperties: false
       properties:
@@ -4709,10 +4731,10 @@ components:
           $ref: "#/components/schemas/WorkspaceRole"
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerName:
-          type: string
         storageOwnerState:
           $ref: "#/components/schemas/AccountState"
+        storageOwnerUsage:
+          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -4735,7 +4757,6 @@ components:
         - isOwner
         - capabilities
         - canClone
-        - storageOwnerName
       type: object
     WorkspaceCollaborator:
       additionalProperties: false

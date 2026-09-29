@@ -5,7 +5,7 @@ import { type Document, Server } from '@hocuspocus/server';
 import { Redis as IORedis } from 'ioredis';
 import { Pool } from 'pg';
 import * as Y from 'yjs';
-import { accessRecheck } from './accessRecheck.js';
+import { readOnlyRefusal, writerRecheck } from './accessRecheck.js';
 import {
   assertAllowedOrigin,
   type CollaborationContext,
@@ -65,6 +65,7 @@ import {
 } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
+  CollaborationReadOnlyError,
   materialIdFromRoom,
   roomSaveQueue,
   updateFitsRoom,
@@ -136,10 +137,15 @@ const roomEvictions = new RoomEvictionState();
 // writing a marker into the Y.Doc, so acknowledging a save costs no Yjs update
 // and leaves nothing behind in the persisted document.
 const pendingCheckpoints = new Map<string, Set<string>>();
-// A source writer's access is revalidated at most this often per connection;
-// access and membership changes close its connection anyway (the eviction
-// outbox), and every checkpoint rechecks each writer.
-const recheckSourceAccess = accessRecheck(5000);
+// A writer's access is revalidated at most this often per connection; access
+// and membership changes close its connection anyway (the eviction outbox),
+// and every store or checkpoint rechecks each writer's role. Frozen and the
+// storage limit are enforced only here and at authentication: a writer whose
+// account or owner froze, or whose owner reached its limit, has its next
+// update refused and only its connection closed (after `room-read-only`); the
+// store saves what was already admitted. Co-editors keep writing until their
+// own recheck refuses them (an owner at its limit refuses every writer).
+const recheckWriterAccess = writerRecheck(5000);
 const MAX_PENDING_CHECKPOINTS = 64;
 const MAX_CHECKPOINT_ID_LENGTH = 128;
 const evictionWaiters = new Map<
@@ -564,8 +570,9 @@ const server = new Server<CollaborationContext>({
     if (SOURCE_ROOM_PATTERN.test(documentName)) sources.forget(documentName);
     else store.forgetRoom(documentName);
   },
-  // Runs per inbound message, so it must stay free of I/O. Distributed eviction
-  // always reaches this instance over Redis pub/sub and populates
+  // Runs per inbound message, so keep it cheap: the only I/O is the writer
+  // access recheck, at most once per connection every 5 s. Distributed
+  // eviction always reaches this instance over Redis pub/sub and populates
   // `evictingRooms`, so the local set is authoritative here.
   async beforeHandleMessage({ connection, document, update }) {
     assertRoomAvailable(document.name);
@@ -595,7 +602,7 @@ const server = new Server<CollaborationContext>({
       }
       assertUpdatePreservesContributors(document, yjsUpdate);
       if (SOURCE_ROOM_PATTERN.test(document.name)) {
-        await recheckSourceAccess(connection, () =>
+        await recheckWriterAccess(connection, document.name, () =>
           sources.assertConnectionAccess(
             document.name,
             context.userId,
@@ -639,8 +646,10 @@ const server = new Server<CollaborationContext>({
         }
         return;
       }
-      const shrinkOnly = context.access === 'shrink';
-      store.validateUpdate(document.name, document, yjsUpdate, { shrinkOnly });
+      await recheckWriterAccess(connection, document.name, () =>
+        store.assertConnectionAccess(document.name, context.userId, 'write')
+      );
+      store.validateUpdate(document.name, document, yjsUpdate);
     } catch (error) {
       // Throwing closes only this connection. Tell it why first so it can drop
       // its diverged Y.Doc instead of reconnecting and resending forever.
@@ -704,8 +713,6 @@ const server = new Server<CollaborationContext>({
         : store
       ).assertConnectionAccess(documentName, claims.sub, claims.access);
       connectionConfig.readOnly = readOnly;
-      // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
-      // the shrinking-direction rule for over-quota accounts.
       return claimsContext(claims);
     } catch (error) {
       authenticationFailures += 1;
@@ -714,6 +721,15 @@ const server = new Server<CollaborationContext>({
       log('warn', 'authentication rejected', {
         error: error instanceof Error ? error.message : String(error),
       });
+      // A writer whose room turned read-only learns why (its reason), so the
+      // editor drops to view instead of retrying.
+      if (
+        readOnlyRefusal(error) &&
+        !(error instanceof CollaborationReadOnlyError)
+      )
+        throw new CollaborationReadOnlyError('source access is read-only', {
+          cause: error,
+        });
       throw error;
     }
   },

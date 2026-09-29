@@ -6,6 +6,7 @@
  */
 import type { AccountState } from './accountState.ts';
 import type { PlanTier } from './planTier.ts';
+import type { StorageUsageLevel } from './storageUsageLevel.ts';
 
 export interface AccountStatus {
   /** A URL to the JSON Schema for this object. */
@@ -16,6 +17,7 @@ export interface AccountStatus {
   purgeAfter?: string;
   state: AccountState;
   storageLimitBytes: number;
+  storageUsage: StorageUsageLevel;
   storageUsedBytes: number;
   suspendedReason?: string;
   userId: string;

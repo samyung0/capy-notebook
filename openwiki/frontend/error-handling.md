@@ -116,19 +116,76 @@ does not also emit a global toast.
 ## Offline and paused work
 
 Nothing app-wide sits above the page, so connection and account state never
-shift the layout. The dashboard banner slot (`DashboardBanner`) shows one card
-at a time in place of the default banner: frozen, over-quota grace, offline,
-reconnecting (stream disconnected). The connection card carries
-`[data-connection-status="offline"]` or `"reconnecting"`. Suspended, deleted and
-deletion-pending accounts keep the full-screen `AccountBlockedScreen`.
+shift the layout. The dashboard banner slot (`DashboardBanner`) shows only the
+viewer's own account, one card at a time in place of the default banner:
+frozen, over-quota grace, storage full (red), storage near the limit (amber),
+offline, reconnecting (stream disconnected). The full and near cards read
+`account.storageUsage` from `/me` and show "You've used X of Y" (whole
+megabytes, "96 MB of 100 MB") with a usage
+meter (`[data-testid="storage-usage-meter"]`) above the Subscription and
+Settings links. The connection card carries `[data-connection-status="offline"]`
+or `"reconnecting"`. Suspended, deleted and deletion-pending accounts keep the
+full-screen `AccountBlockedScreen`.
 
-Inside a workspace, `WorkspaceHealth` raises one `userToast` per problem on
-arrival: offline (also whenever the browser goes offline there), the storage owner out
-of storage (worded for the owner or a member), or the reader's own frozen
-account when the owner is fine. The storage toast's Details action and the
-header's red triangle open the same details dialog. The file header status slot
-shows the triangle first, then a `wifiOff` icon while offline
-(`[data-connection-status="offline"]`), then the note save state.
+Inside a workspace, `WorkspaceHealth` raises one `userToast` per visit for the
+workspace storage status, and one while offline (also whenever the browser
+goes offline there). The status is ordered: the viewer's own frozen account,
+the owner's frozen account, the owner's storage full (grace counts as full),
+then the owner near the limit (`storageOwnerUsage`). The owner is never named:
+a member reads "Workspace owner is almost out of storage", "Workspace owner's
+storage is full" or "Workspace owner's account is frozen"; the owner reads
+"Your storage is almost full", "Your storage is full" or "Account frozen". Near
+uses the warning toast, full and frozen the error toast. The file header status
+slot shows the save state, or `wifiOff` while offline
+(`[data-connection-status="offline"]`) for every file type. The workspace
+status triangle (`[data-storage-status]`) sits to its right, amber near the
+limit and red when full or frozen; its tooltip is the status title and it
+opens the same details dialog as the toast's Details action. With no file
+open, the header shows both icons after the workspace picker and no strip.
+Frozen read-only and view-only at the storage limit need no client logic
+inside workspaces: the server's capabilities drop `canEdit` for a frozen
+account, so edit mode, comments, curate and create controls disappear, and
+drop only `canEditContent` while the owner is at or over its limit (full or
+grace), so edit mode, comments, PDF marks and quiz or card edits disappear
+while rename, move and delete stay. `?mode=edit` falls back to view in both.
+A write that still meets `account_over_quota` or `storage_quota_exceeded`
+inside a workspace (a stale capability, or creation at the limit) shows only
+the workspace status toast: `deferStorageRefusal` (in `src/lib/errors.ts`,
+called first by the mutation cache and by surfaces with their own error toast
+or strip: the upload dialog, sharing, clone, note media uploads, the PDF
+annotation strip and the generate panel) hands each refusal once to
+`WorkspaceHealth`. A quota refusal carries its numbers only for the charged
+account, so one with numbers seen by a member (a clone charged to the member)
+is about the member's own storage and keeps the surface's copy. The
+`quota_blocked` analytics event is recorded before the deferral (by the
+mutation cache, or by the upload and clone surfaces for their own). At the
+limit the chat's curate switch hides with `canEditContent`, since the server
+refuses curate there. Its `refusalHandler` refetches the workspace and
+`/me` and shows the status as a new toast (fresh id including the status
+kind, full timer), in own-account wording for the owner and owner wording for
+members. Refusals arriving while that refetch runs share its toast. If the
+refetch fails, react-query keeps the stale data and the plain toast for the
+error code shows (the offline toast when offline); a refetch that shows no
+status refusing writes (none, or near the limit) also shows the plain toast.
+Outside a workspace the toast keeps the
+own-account copy ("Account frozen"). Outside workspaces the pages read `/me`
+(`useAccountFrozen`): Workspaces, Create, Thinking, Schedule and Explore
+disable their create controls, Schedule hides event and label Edit, the Canvas
+page is read-only, the dashboard calendar stops creating slots, and their page
+headers show the same red triangle (`AccountStatusButton`) that opens the
+storage details dialog. Flashcard study and quiz attempts only disable
+cloning. A room that turns read-only while open for a storage or frozen
+refusal (`room-read-only`, or a `collaboration-read-only` refusal on
+reconnect) drops the note or source editor to view mode under a grey strip
+reading "This file is read-only now" and discards its unsaved edits (a source
+also clears its local drafts without ever reporting Saved, and shows its
+latest saved state through the viewer's session); what was saved before
+stays. Network and other failures keep the source recovery path.
+The frozen copy says the account is read-only, that viewing, downloading and
+deleting still work, and to free up space or resubscribe to edit again. The
+full copy, and the dashboard grace card's, says files are view-only and
+nothing new can be added until space is freed or the plan upgraded (grace:
+resubscribed), while renaming, moving and deleting still work.
 
 TanStack Query's `onlineManager` pauses network work until connectivity
 returns; loading UI should describe that it is waiting rather than escalating
@@ -167,7 +224,11 @@ maintenance pause) or red-tint (error) background, `role="status"` or
 changes or the page remounts it. Actions are small ghost underlined buttons on a
 new line, aligned right. An Office or text source opened in edit mode while the
 maintenance pause refuses the session falls back to view mode in the same frame
-and shows the pause as a grey strip.
+and shows the pause as a grey strip. Office recovery and pause strips render
+directly under the file header, above the page-count row. The PDF annotation
+write error renders under the PDF toolbar, outside the scrolling pages, through
+a portal target like the annotation toolbar's, the same toolbar-then-scroller
+layout the note editor uses.
 
 A signed-in tab holds `GET /api/stream` open for its whole life, with
 `?workspace=` set on the workspace page. It carries three named SSE events:
@@ -218,6 +279,31 @@ remain available. Artificial error-container and toast galleries have been
 removed. File/material buttons open the normal workspace header and viewer;
 Page not found navigates to an unmatched application URL. Auth uses the local
 MSW shim and does not send entered credentials or photos to Clerk.
+
+Storage status journeys set the account and workspace responses the server
+would send (`/me` and workspace `storageOwnerState` / `storageOwnerUsage`,
+workspace, material, quiz and flashcard `canEdit` / `canEditContent`,
+workspace `canClone`) and open the
+dashboard, the own workspace, a shared workspace as a member, `/workspaces`
+for the frozen create controls, or the invitation page. Frozen scenarios answer
+every write the server refuses with `account_over_quota` (`frozenWrites` in
+`src/mocks/scenarios.ts`: everything but reads, whole-item deletes, narrowing,
+transfer, chat, quiz attempts, notifications, billing, account settings and the
+question bank; a member of a frozen owner only on that owner's content).
+Full and grace scenarios answer content writes (comments, PDF marks, quiz and
+card content) and creation (materials, uploads, imports, editor assets,
+generation, embedded and standalone items, and the viewer's own clones) with
+`storage_quota_exceeded` only where the full account pays (the viewer's own
+workspaces and standalone items in the own-account scenarios), with the
+numbers only for the viewer's own account, and leave organizing and study
+progress open (`viewOnlyContent` in the same file). The two
+"frozen while editing" journeys and the "storage full while editing" journey
+type into an open note or text source (the source journey saves one edit
+first), switch the account to frozen or full and then send the collaboration
+service's `room-read-only` message, whose refused edit never reaches the mock
+room; the editor drops to view and discards the typed edit. Mock text saves do
+not publish: view mode reads them from `source-session?view=true`
+(`savedSourceState` in `src/mocks/collaboration.ts`).
 
 Offline and reconnecting buttons only preview application status. Real network
 loss requires Playwright browser offline emulation; public summary failures

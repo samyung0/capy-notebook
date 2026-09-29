@@ -1,10 +1,12 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import type { ViewableFile } from '@/api/types';
+import * as Y from 'yjs';
+import { api } from '@/api/client';
+import type { SourceSession, ViewableFile } from '@/api/types';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
-import { SourceBanners } from './FileStates';
+import { FileError, FileLoading, SourceBanners } from './FileStates';
 import { SourceTextEditor } from './SourceTextEditor';
-import { useSourceSession } from './useSourceSession';
+import { decodeSourceState, useSourceSession } from './useSourceSession';
 
 export function SourceTextView({
   file,
@@ -22,7 +24,12 @@ export function SourceTextView({
   const [joined, setJoined] = useState(editing);
   const [previewURL, setPreviewURL] = useState<string>();
   const [leaving, setLeaving] = useState(false);
-  const source = useSourceSession(file.id, joined);
+  // The room turned read-only (a storage or frozen refusal): the session
+  // discarded its unsaved edits, and the file drops to view mode.
+  const source = useSourceSession(file.id, joined, () => {
+    setJoined(false);
+    setMode('view');
+  });
   // The maintenance pause refused editing before the room opened.
   const pausedAtOpen = source.paused && !source.doc;
   useEffect(() => {
@@ -50,8 +57,44 @@ export function SourceTextView({
     return () => {
       text.unobserve(refresh);
       if (current) URL.revokeObjectURL(current);
+      setPreviewURL(undefined);
     };
   }, [editing, source.doc, source.status === 'recovery']);
+  // View mode without an open session (a fresh open, or the drop after a
+  // storage or frozen refusal) shows the latest saved state, as Office does:
+  // the view session carries it while a saved checkpoint is ahead of the
+  // indexed one, and the published bytes are current otherwise.
+  const [saved, setSaved] = useState<{ url?: string } | 'failed' | null>(null);
+  const [savedAttempt, setSavedAttempt] = useState(0);
+  useEffect(() => {
+    if (editing || source.doc) return;
+    let cancelled = false;
+    let url: string | undefined;
+    setSaved(null);
+    api.get<SourceSession>(`/files/${file.id}/source-session?view=true`).then(
+      (session) => {
+        if (cancelled) return;
+        if (session.state) {
+          const doc = new Y.Doc();
+          Y.applyUpdate(doc, decodeSourceState(session.state));
+          url = URL.createObjectURL(
+            new Blob([doc.getText('source').toString()], {
+              type: 'text/plain;charset=utf-8',
+            })
+          );
+          doc.destroy();
+        }
+        setSaved({ url });
+      },
+      () => {
+        if (!cancelled) setSaved('failed');
+      }
+    );
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [editing, source.doc, file.id, file.revision, savedAttempt]);
   const downloadDraft = () => {
     if (!source.doc) return;
     const url = URL.createObjectURL(
@@ -78,7 +121,10 @@ export function SourceTextView({
     }
   };
   return (
-    <div className="flex h-full min-h-[60vh] flex-col">
+    <div
+      className="flex h-full min-h-[60vh] flex-col"
+      data-source-status={source.status}
+    >
       <FileModeControl
         canEdit={canEdit}
         disabled={leaving || source.handoff || source.replaced}
@@ -132,6 +178,7 @@ export function SourceTextView({
         error={source.error}
         paused={source.paused}
         pausedAtOpen={pausedAtOpen}
+        readOnly={source.readOnly}
         replaced={source.replaced}
       />
       <div className="min-h-0 flex-1 overflow-auto">
@@ -152,8 +199,14 @@ export function SourceTextView({
           ) : (
             <p className="p-4">{m.common_loading()}</p>
           )
-        ) : (
+        ) : source.doc ? (
           renderPreview(previewURL)
+        ) : saved === 'failed' ? (
+          <FileError onRetry={() => setSavedAttempt((value) => value + 1)} />
+        ) : saved ? (
+          renderPreview(saved.url)
+        ) : (
+          <FileLoading />
         )}
       </div>
     </div>

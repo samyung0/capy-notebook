@@ -82,7 +82,17 @@ export function useOfficeRuntime({
   const [error, setError] = useState<string | null>(config.error);
   const [replicaReady, setReplicaReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const source = useSourceSession(file.id, joined);
+  // The room turned read-only (a storage or frozen refusal): the session
+  // discarded its unsaved edits, and the frame reloads the saved view.
+  const source = useSourceSession(file.id, joined, () => {
+    setJoined(false);
+    initializedFrame.current = -1;
+    setFrameLoaded(false);
+    setFrameGeneration((value) => value + 1);
+    setViewBytes(null);
+    setAnalysis(null);
+    setMode('view');
+  });
   // The maintenance pause refused editing before the room opened: show the
   // saved view instead. The frame was never loaded for editing, so view mode
   // loads into the same frame.
@@ -486,6 +496,7 @@ export function useOfficeRuntime({
     mode,
     paused: source.paused,
     pausedAtOpen,
+    readOnly: source.readOnly,
     ready: mode === 'view' ? !!analysis : replicaReady,
     replaced: source.replaced,
     retryView,

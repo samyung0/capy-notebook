@@ -22,21 +22,18 @@ function token(overrides: Record<string, unknown> = {}) {
 }
 
 describe('collaboration tokens', () => {
-  it.each(['write', 'read', 'shrink'])(
-    'accepts signed %s room claims',
-    (access) => {
-      const claims = verifyCollaborationToken(
-        token({ access }),
-        'secret',
-        'material:note_1:schema:1'
-      );
-      expect(claims).toMatchObject({ access, sub: 'user-1' });
-      expect(claimsContext(claims)).toMatchObject({
-        expiresAt: claims.exp,
-        userId: 'user-1',
-      });
-    }
-  );
+  it.each(['write', 'read'])('accepts signed %s room claims', (access) => {
+    const claims = verifyCollaborationToken(
+      token({ access }),
+      'secret',
+      'material:note_1:schema:1'
+    );
+    expect(claims).toMatchObject({ access, sub: 'user-1' });
+    expect(claimsContext(claims)).toMatchObject({
+      expiresAt: claims.exp,
+      userId: 'user-1',
+    });
+  });
 
   it('mints short-lived write tokens for a room', () => {
     const minted = mintCollaborationToken({

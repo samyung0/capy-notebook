@@ -26,7 +26,7 @@ Pending import scenarios keep their polling response until Reset.
 | --- | --- |
 | Authentication | Sign-in, sign-up, email verification/resend, breached-password step, password reset, session finalization, OAuth start/callback, pending auth requests. All use the real forms. |
 | Onboarding | Direct first-run dialog, profile save, photo upload and completion errors. |
-| Account | Suspended, deleted, deletion pending, quota grace/frozen/locked, deletion preflight failure/transfer requirement/submission failure. |
+| Account | Suspended, deleted, deletion pending, quota grace/frozen/locked, storage near/full/grace/frozen on the dashboard and in the own workspace, own frozen account in a healthy shared workspace, a member's view of an owner near/full/grace/frozen, an account freezing (or a note's storage filling up) while a note or text source is open, frozen create controls, a frozen recipient accepting an invitation, frozen writes refused like the server, full and grace content writes refused with organizing open, deletion preflight failure/transfer requirement/submission failure. |
 | Workspace | Primary reads, creation/edit/delete/clone, chapters, stats, members, invitations, sharing and ownership transfer failures. |
 | Source import | Upload policy, upload/storage/file/ingest limits, cloud inspection and rejected selections, analysis failure, import submission/status/failure/pending. |
 | Files | List/detail/link/rename/trash errors; dummy previews for missing bytes, failed ingest, unsupported legacy files, PDF/CSV/audio/image failures, text editing and DOCX/XLSX/PPTX session failures. |

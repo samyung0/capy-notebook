@@ -28,6 +28,10 @@ import { MiniCalendar } from '@/features/schedule/MiniCalendar';
 import { MonthView } from '@/features/schedule/MonthView';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { TimeGrid } from '@/features/schedule/TimeGrid';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';
 
@@ -43,6 +47,7 @@ export default function Schedule() {
   const { mutate: deleteLabel } = useDeleteLabel();
   const { mutateAsync: updateLabel } = useUpdateLabel();
   const { mutateAsync: createEvent } = useCreateEvent();
+  const frozen = useAccountFrozen();
   const { mutateAsync: updateEvent } = useUpdateEvent();
   const [labelEdit, setLabelEdit] = useState<Label | null>(null);
   const [labelToDelete, setLabelToDelete] = useState<Label | null>(null);
@@ -227,11 +232,16 @@ export default function Schedule() {
                       <HoverActions
                         className="absolute top-1/2 right-1 -translate-y-1/2"
                         items={[
-                          {
-                            icon: 'write',
-                            label: m.action_edit(),
-                            onClick: () => setLabelEdit(l),
-                          },
+                          // A frozen account deletes labels but does not edit them.
+                          ...(frozen
+                            ? []
+                            : [
+                                {
+                                  icon: 'write' as const,
+                                  label: m.action_edit(),
+                                  onClick: () => setLabelEdit(l),
+                                },
+                              ]),
                           {
                             danger: true,
                             icon: 'trash',
@@ -266,13 +276,17 @@ export default function Schedule() {
       <PanelWithInvertedRadius className="flex-1">
         <PageHeader
           actions={
-            <IconButton
-              icon="plus"
-              label={m.schedule_new_event()}
-              onClick={() => setEventForm({})}
-              size="lg"
-              variant="page"
-            />
+            <>
+              <IconButton
+                disabled={frozen}
+                icon="plus"
+                label={m.schedule_new_event()}
+                onClick={() => setEventForm({})}
+                size="lg"
+                variant="page"
+              />
+              <AccountStatusButton />
+            </>
           }
           showTopBar
           title={`${monthName(month)} ${month.getFullYear()}`}
@@ -303,7 +317,7 @@ export default function Schedule() {
                 events={visibleEvents}
                 labels={labels ?? []}
                 month={month}
-                onCreate={createOnDay}
+                onCreate={frozen ? undefined : createOnDay}
                 onSelectEvent={selectEvent}
               />
             </div>
@@ -314,7 +328,7 @@ export default function Schedule() {
               eventFormOpen={eventForm !== null}
               events={visibleEvents}
               labels={labels ?? []}
-              onCreateSlot={createAt}
+              onCreateSlot={frozen ? undefined : createAt}
               onSelectEvent={selectEvent}
               scrollContainerRef={scrollRef}
               selectedId={eventDetail?.id ?? null}
@@ -351,17 +365,21 @@ export default function Schedule() {
         event={eventDetail}
         labels={labels ?? []}
         onClose={() => setEventDetail(null)}
-        onEdit={(ev) => {
-          setEventDetail(null);
-          setEventForm({
-            end: ev.end,
-            id: ev.id,
-            labelIds: ev.labelIds,
-            location: ev.location,
-            start: ev.start,
-            title: ev.title,
-          });
-        }}
+        onEdit={
+          frozen
+            ? undefined
+            : (ev) => {
+                setEventDetail(null);
+                setEventForm({
+                  end: ev.end,
+                  id: ev.id,
+                  labelIds: ev.labelIds,
+                  location: ev.location,
+                  start: ev.start,
+                  title: ev.title,
+                });
+              }
+        }
       />
       <ConfirmDialog
         body={m.confirm_delete_body()}

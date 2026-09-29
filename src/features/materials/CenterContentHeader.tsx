@@ -44,12 +44,13 @@ import {
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
 import {
-  useStorageDialog,
-  useWorkspaceStatus,
+  OfflineStatus,
+  WorkspaceStatusButton,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { MaterialModeToggle } from './MaterialModeToggle';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
@@ -274,11 +275,7 @@ export function Header({
       ? materialMode
       : defaultMode;
   const statusLabel = noteEditorStatusLabel(editorStatus);
-  const { data: workspace } = useWorkspace(standalone ? '' : workspaceId, {
-    errorBoundary: false,
-  });
-  const workspaceStatus = useWorkspaceStatus(workspace);
-  const openStorageDialog = useStorageDialog((state) => state.setOpen);
+  const online = useOnlineStatus();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
   return (
@@ -300,32 +297,8 @@ export function Header({
         >
           {title ?? '--'}
         </h2>
-        {workspaceStatus === 'storage' && (
-          <ToolbarButton
-            className="ml-0.5 text-tint-error-fg hover:bg-tint-error/85 hover:text-tint-error-fg lg:[&_svg]:size-5"
-            label={m.workspace_storage_status()}
-            onClick={() => openStorageDialog(true)}
-          >
-            <Icon name="error" />
-          </ToolbarButton>
-        )}
-        {workspaceStatus === 'offline' && (
-          <Tooltip>
-            <TooltipTrigger
-              className="ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus"
-              data-connection-status="offline"
-              render={<span role="status" />}
-              tabIndex={0}
-            >
-              <Icon className="size-4 lg:size-5" name="wifiOff" />
-              <span className="sr-only">{m.connection_offline_title()}</span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {m.connection_offline_title()}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {!workspaceStatus && editorStatus && statusLabel && (
+        <OfflineStatus />
+        {online && editorStatus && statusLabel && (
           <Tooltip>
             <TooltipTrigger
               className={cn(
@@ -345,6 +318,7 @@ export function Header({
             <TooltipContent side="bottom">{statusLabel}</TooltipContent>
           </Tooltip>
         )}
+        <WorkspaceStatusButton workspaceId={standalone ? '' : workspaceId} />
       </div>
       <div className="ml-auto flex items-center gap-0">
         {item.kind === 'file' && fileControls}

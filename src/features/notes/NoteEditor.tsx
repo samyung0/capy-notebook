@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
-import { isMaterialContentUnreadable } from '@/api/client';
+import { isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useMaterial,
   useMaterialCollaborationToken,
@@ -30,10 +30,14 @@ export function NoteEditor({
   materialId,
   allowExternalAssets = false,
   onEditorStatusChange,
+  onReadOnly,
 }: {
   materialId: string;
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  /** The room turned read-only: the note drops to view mode and its unsaved
+   * edits are discarded. */
+  onReadOnly?: () => void;
 }) {
   const {
     data: material,
@@ -67,7 +71,7 @@ export function NoteEditor({
     );
   }
 
-  if (!material.capabilities.canEdit) {
+  if (!material.capabilities.canEditContent) {
     return (
       <FileError
         icon="securityWarning"
@@ -83,6 +87,7 @@ export function NoteEditor({
       key={material.id}
       material={material}
       onEditorStatusChange={onEditorStatusChange}
+      onReadOnly={onReadOnly}
     />
   );
 }
@@ -91,10 +96,12 @@ function CollaborativeNoteEditor({
   material,
   allowExternalAssets,
   onEditorStatusChange,
+  onReadOnly,
 }: {
   material: Material;
   allowExternalAssets: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
+  onReadOnly?: () => void;
 }) {
   const qc = useQueryClient();
   const {
@@ -123,6 +130,16 @@ function CollaborativeNoteEditor({
     },
     [qc, material.id]
   );
+  const reportReadOnly = useCallback(() => {
+    // Capabilities and the storage status follow from the refreshed reads.
+    void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+    void qc.invalidateQueries({ queryKey: qk.me });
+    if (material.workspaceId)
+      void qc.invalidateQueries({
+        queryKey: qk.workspace(material.workspaceId),
+      });
+    onReadOnly?.();
+  }, [qc, material.id, material.workspaceId, onReadOnly]);
   const role: WorkspaceRole | null =
     material.role ?? (material.isOwner ? 'owner' : null);
   const { data: discussionsData, isPending: discussionsIsPending } =
@@ -134,7 +151,7 @@ function CollaborativeNoteEditor({
   } = useMaterialCollaborationToken(material.id, true, {
     errorBoundary: false,
   });
-  const canEdit = material.capabilities.canEdit;
+  const canEdit = material.capabilities.canEditContent;
   // Identity matters more than the allocation: this context is read from inside
   // the document tree, so a fresh object on every render makes React walk every
   // node's fiber looking for consumers instead of bailing out at the top.
@@ -192,6 +209,7 @@ function CollaborativeNoteEditor({
             material={material}
             onDocumentRejected={onDocumentRejected}
             onEditorStatusChange={onEditorStatusChange}
+            onReadOnly={reportReadOnly}
           />
         </div>
       </EditorRuntimeProvider>

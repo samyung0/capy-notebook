@@ -113,6 +113,14 @@ on the exported bytes. With no unpublished edits the base opens directly and
 no editor engine loads. The view is not live: it reflects the state at open,
 and a reopen or revision change reads again.
 
+Text and CSV/TSV sources follow the same rule. With no open session (a fresh
+open in view mode, or the drop to view after a storage or frozen refusal)
+`SourceTextView` reads the same `source-session?view=true` and renders its
+text state when one is present, else the published bytes; leaving Edit keeps
+rendering the open session's shared text, whose edits the leave just saved.
+Every other editable type already views its latest state: materials render
+their projected content, and nothing else in a workspace is edited in place.
+
 Workspace and standalone file pages read `?mode=view|edit` on entry and update it after accepted toggles. Leaving Edit updates the URL only after checkpoint/export succeeds; failed saves keep Edit, its URL and the saved mode. PDFs and text/CSV sources use the same URL contract.
 
 View and edit use separate iframe lifetimes so the browser can reclaim each
@@ -569,6 +577,8 @@ while typing continues. Its published checkpoint may lag the current document,
 with exact residual edits retained in the same Y.Text lineage and Undo history.
 The text preview follows that current shared text after Done, including remote
 edits; publication metadata does not replace a mounted editor's newer state.
+Opened in view mode without a session, the preview reads the saved state from
+the viewer's session (see "Viewing shows the last saved state" above).
 
 The published file remains readable and cloneable while a candidate is being
 exported or processed. Clones copy its published source/index and caption

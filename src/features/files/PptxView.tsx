@@ -47,6 +47,36 @@ export default function PptxView({
   }
   return (
     <div className="flex h-full min-h-[60vh] flex-col">
+      <SourceBanners
+        actions={[
+          ...(runtime.mode === 'view'
+            ? [{ label: m.error_action_retry(), onClick: runtime.retryView }]
+            : [
+                {
+                  label: m.source_edit_download_draft(),
+                  onClick: () => {
+                    void runtime.downloadDraft().catch(() => {});
+                  },
+                },
+              ]),
+          ...(runtime.status === 'recovery'
+            ? [
+                {
+                  disabled: runtime.discarding,
+                  label: m.source_edit_discard_draft(),
+                  onClick: () => {
+                    void runtime.discardDraft();
+                  },
+                },
+              ]
+            : []),
+        ]}
+        error={runtime.error}
+        paused={runtime.paused}
+        pausedAtOpen={runtime.pausedAtOpen}
+        readOnly={runtime.readOnly}
+        replaced={runtime.replaced}
+      />
       <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
         <span className="t-meta flex-1 text-fg-muted">
           {runtime.analysis?.format === 'pptx'
@@ -84,35 +114,6 @@ export default function PptxView({
           }
         />
       </div>
-      <SourceBanners
-        actions={[
-          ...(runtime.mode === 'view'
-            ? [{ label: m.error_action_retry(), onClick: runtime.retryView }]
-            : [
-                {
-                  label: m.source_edit_download_draft(),
-                  onClick: () => {
-                    void runtime.downloadDraft().catch(() => {});
-                  },
-                },
-              ]),
-          ...(runtime.status === 'recovery'
-            ? [
-                {
-                  disabled: runtime.discarding,
-                  label: m.source_edit_discard_draft(),
-                  onClick: () => {
-                    void runtime.discardDraft();
-                  },
-                },
-              ]
-            : []),
-        ]}
-        error={runtime.error}
-        paused={runtime.paused}
-        pausedAtOpen={runtime.pausedAtOpen}
-        replaced={runtime.replaced}
-      />
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />

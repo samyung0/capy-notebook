@@ -564,6 +564,15 @@ func (s *Store) AcceptWorkspaceInviteWithResult(ctx context.Context, reference, 
 	if invite.InvitedUserID == "" || invite.InvitedUserID != userID {
 		return WorkspaceMember{}, "", ErrForbidden
 	}
+	// Accepting is an edit a frozen recipient does not keep; the refusal is
+	// theirs to hear about, so it stays account_over_quota.
+	recipientStatus, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return WorkspaceMember{}, "", err
+	}
+	if err := recipientStatus.Err(); err != nil {
+		return WorkspaceMember{}, "", err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
 		WHERE template IN ('workspace-role-changed','workspace-member-removed')
 			AND status='pending'

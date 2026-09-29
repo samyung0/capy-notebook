@@ -122,9 +122,12 @@ check the recipient plan's workspace-file cap. The workspace payload reports `fi
 
 `gateStorageTx` (creations, upload reservations, clones, transfers onto a
 recipient) locks the counter, unfolds pending deltas, checks the owner's
-lifecycle `CanCreate`, then enforces
-`used + reserved + requested <= plan limit`. Deletions and shrinks do not go
-through that gate; they adjust counters/triggers for accounting only.
+lifecycle `CanEdit` (active or grace), then enforces
+`used + reserved + requested <= plan limit`. The limit is the effective plan's,
+which is Free once a paid period has lapsed, so a grace account (over the Free
+limit by definition) fails this check exactly like an active account at 100%.
+Deletions and shrinks do not go through that gate; they adjust
+counters/triggers for accounting only.
 
 Reconciliation locks the counter plus authoritative resource rows, recomputes
 both counters from files / ready assets / materials, and deletes the folded
@@ -134,9 +137,28 @@ Accounting helpers no-op when the owner user row is already gone, because
 foreign-key cascades can fire resource delete triggers after the user is
 removed.
 
-Error codes: hard plan overflow → `storage_quota_exceeded` (with used /
-reserved / requested / limit); lifecycle over-quota → `account_over_quota`
-(see authorization doc).
+Error codes: hard plan overflow, or a content edit while the owner is at its
+limit → `storage_quota_exceeded` (with used /
+reserved / requested / limit and the owner's user id only when the requester is
+the charged account, attached by `reportHandlerError` and `failFor` in
+`server/internal/httpapi`; members get the code alone); frozen account →
+`account_over_quota` (see authorization doc).
+
+## Usage levels
+
+`StorageUsageLevelFor` in `server/internal/store/account_state.go` is the one
+place the level is decided, from stored plus reserved bytes against the
+current plan limit (the numbers the quota check uses): `full` at 100% or more,
+`near_limit` from 95%, `ok` otherwise. `WithStorageUsage` fills it for the
+reporting paths only; write gates skip those reads, except the content
+admission (`StorageUsage.Full`), which makes an owner's content view-only at
+`full` (see view-only at the limit).
+
+- `GET /api/me` → `account.storageUsage`, with `storageUsedBytes` (used plus
+  reserved) and `storageLimitBytes` filled for every account.
+- Workspace responses → `storageOwnerUsage`, the owner's level only (never byte
+  counts), on every endpoint that reports `storageOwnerState`, resolved once
+  per distinct owner.
 
 ## Material bytes vs plan quota
 
@@ -174,11 +196,33 @@ The browser applies its own, independent render threshold
 (`MATERIAL_RENDER_WARNING` in `src/lib/const.ts`) to decide when opening a
 document is worth a warning. It is deliberately not derived from these bounds.
 
-**Growing an existing material does not call `gateStorageTx`.** Size deltas
-only update the ledger. Separately, when the **storage owner** is in
-`over_quota_grace` / `over_quota_frozen`, collaboration tokens are mintable
-only as `shrink`, so the document cannot grow until the account recovers.
-Actor over-quota does not block edits inside a healthy owner's workspace.
+**View-only at the limit.** No save-time storage gate exists for materials
+or source checkpoints: growing an existing material or a source's editing
+state only updates the ledger. Instead, while the **storage owner** is at or
+over its limit (usage level `full`, grace included), everything it pays for is
+view-only for owner and members alike:
+
+- `assertContentEditableTx` (`server/internal/store/account_state.go`) refuses
+  REST content writes (quiz and flashcard content, cards), comments and PDF
+  marks with `storage_quota_exceeded`;
+- `SourceSession` and material collaboration tokens come back `read`, and
+  `CheckSourceAccess` refuses a source edit with the same code;
+- capabilities carry `canEditContent` (edit mode, comments, annotations)
+  beside `canEdit`, which keeps renaming, moving, reordering and trashing;
+- workspace chat drops the agent's create and edit tools and refuses curate
+  threads and turns, and generation is refused with `storage_quota_exceeded`
+  (`StorageFullErr`) before any credits are reserved or spent.
+
+Enforcement is at admission only, like frozen: the collaboration service's
+5 s writer recheck (`fullSQL` in `collaboration/src/persistence.ts`, mirrored
+by `StorageUsage.Full`) closes every writer in the owner's rooms with
+`room-read-only` once the owner crosses the limit, and up to about 5 s of
+edits admitted before that may save. The open editor drops to view mode under
+the read-only strip and discards its unsaved edits. When the storage owner or
+the actor is `over_quota_frozen`, the same admission points refuse with
+`account_over_quota` (see the authorization doc). Creation and upload
+reservations (`gateStorageTx`, `reserveStorageTx`) and the Office publication
+net-growth check stay.
 
 ## Reservations and clones
 
@@ -209,9 +253,10 @@ of the file's bytes and its source row. Before a parse is paid for, finalize
 refuses (except for system jobs) what publication would certainly refuse: the
 new bytes minus the old, plus a source row with no state or effects, minus
 the current row. Reconciliation sums the same columns. Owner changes
-transfer the charge with the file. Checkpoint growth and publication run under
-source/workspace/account locks. Negative changes remain negative ledger
-deltas.
+transfer the charge with the file. A checkpoint is not gated on quota (edits
+are admitted by the room, see view-only at the limit); finalize and
+publication run under source/workspace/account locks and gate the net growth.
+Negative changes remain negative ledger deltas.
 
 Maintenance-window publications (`paid_by='system'`, see the
 [deployment runbook](deployment-runbook.md#office-maintenance-window)) skip the
@@ -294,15 +339,18 @@ Plate content cannot become a durable state that projection will reject. The
 sidecar discards that in-memory room and reloads the last durable state instead
 of retrying an unsavable snapshot.
 
-Once a lapsed owner is over the Free limit, the next state must not grow in
-serialized size, node count, or depth. Structural validation does not apply
-those caps, so a valid document that starts over a limit can still shrink back
-towards it. The TypeScript and Go metric walks count every node through the
-shared structural depth ceiling, so growth below an already-over-limit deep
-branch cannot hide behind unrelated deletions. A live Free subscription by itself is an ordinary active account.
-The sidecar switches to shrink-only access only when it sees an expired or
-closed Pro boundary and usage exceeds the Free limit, matching Go's account
-resolver.
+A document over a product shape bound must not grow in serialized size, node
+count, or depth. Structural validation does not apply those caps, so a valid
+document that starts over a limit can still shrink back towards it. The
+TypeScript and Go metric walks count every node through the shared structural
+depth ceiling, so growth below an already-over-limit deep branch cannot hide
+behind unrelated deletions. A live Free subscription by itself is an ordinary
+active account. The sidecar treats an account as frozen, and its rooms as
+read-only, only when it sees an expired or closed Pro boundary at least 14
+days old and usage over the Free limit, matching Go's account resolver. It
+treats a material as view-only when its owner's stored plus reserved bytes
+reach the current plan's limit (`fullSQL`, matching `StorageUsage.Full`);
+`TestCollaborationFrozenSQLMatchesGo` runs both statements against Go.
 
 Sources: [storage gate and reconciliation](../server/internal/store/storage.go),
 [material bounds](../server/internal/materialdoc/document.go),

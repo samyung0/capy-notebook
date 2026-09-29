@@ -98,7 +98,7 @@ func (s *Store) TrashFile(ctx context.Context, actorID, fileID string, op AgentO
 		}
 		return AgentOperation{}, err
 	}
-	ownerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID)
+	ownerID, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID)
 	if err != nil {
 		return AgentOperation{}, err
 	}
@@ -163,7 +163,7 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 		return AgentOperation{}, ErrNotFound
 	}
 	if workspaceID != nil {
-		ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, actorID)
+		ownerID, err = s.lockWorkspaceEditorRecoveryTx(ctx, tx, *workspaceID, actorID)
 		if err != nil {
 			return AgentOperation{}, err
 		}
@@ -429,9 +429,9 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 }
 
 // assertOwnerCanRestoreTx applies the account gates a restore shares with any
-// other mutation by that owner: suspended, deletion-pending and deleted
-// accounts cannot restore. Over-quota owners may, because the bytes are
-// already charged and restore changes visibility only.
+// other edit by that owner: a grace owner may restore, because the bytes are
+// already charged; a frozen or locked owner may not, since restoring is not
+// one of the deletions a frozen account keeps.
 func (s *Store) assertOwnerCanRestoreTx(ctx context.Context, tx pgx.Tx, ownerID string) error {
 	status, err := s.accountAccess(ctx, tx, ownerID)
 	if err != nil {

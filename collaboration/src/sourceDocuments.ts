@@ -154,9 +154,13 @@ export interface RefreshCandidate {
 }
 export class SourceRequestError extends Error {
   readonly status: number;
-  constructor(status: number, message: string) {
+  /** The gateway's error code, e.g. `account_over_quota` for a frozen account
+   * or `storage_quota_exceeded` for an owner at its storage limit. */
+  readonly code?: string;
+  constructor(status: number, message: string, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -587,14 +591,19 @@ export class SourceDocumentStore {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(60_000),
     });
-    if (!response.ok)
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        errors?: { message?: string }[];
+      } | null;
       throw withEventId(
         new SourceRequestError(
           response.status,
-          `Source ${endpoint.split('?')[0]} failed (${response.status})`
+          `Source ${endpoint.split('?')[0]} failed (${response.status})`,
+          body?.errors?.[0]?.message
         ),
         response.headers.get(ERROR_EVENT_HEADER)
       );
+    }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
   }

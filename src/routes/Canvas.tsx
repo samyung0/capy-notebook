@@ -5,6 +5,10 @@ import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
 const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
@@ -14,6 +18,7 @@ export default function Canvas() {
   const canvasId = (params as { canvasId: string }).canvasId;
   const { data: canvas, fetchStatus, isLoading } = useCanvas(canvasId);
   const { isPending: saveIsPending, mutate: save } = useSaveCanvas(canvasId);
+  const frozen = useAccountFrozen();
 
   return (
     <PanelWithInvertedRadius>
@@ -29,6 +34,7 @@ export default function Canvas() {
         {saveIsPending && (
           <p className="t-meta text-fg-muted">{m.canvas_saving()}</p>
         )}
+        <AccountStatusButton />
       </div>
       <div className="min-h-0 flex-1">
         {fetchStatus === 'paused' ? (
@@ -41,7 +47,10 @@ export default function Canvas() {
           >
             <CanvasEditor
               initialScene={canvas?.scene}
-              onChange={(scene) => save({ scene })}
+              onChange={(scene) => {
+                if (!frozen) save({ scene });
+              }}
+              readOnly={frozen}
             />
           </Suspense>
         )}

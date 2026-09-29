@@ -84,11 +84,11 @@ func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPref
 	if err != nil {
 		return nil, hErr(err)
 	}
-	ownerStates, err := a.workspaceOwnerStates(ctx, doomed...)
+	owners, err := a.workspaceStatuses(ctx, doomed...)
 	if err != nil {
 		return nil, err
 	}
-	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed, ownerStates)
+	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed, owners)
 
 	out.Subscription, err = a.liveSubscriptionBlocker(ctx, uid)
 	if err != nil {
@@ -152,6 +152,9 @@ func (a *api) requestAccountDeletion(ctx context.Context, in *requestDeletionInp
 	}
 	if err := a.s.NotifyAccountDeletionRequested(ctx, uid); err != nil {
 		log.Printf("deletion: notify request for %s: %v", uid, err)
+	}
+	if status, err = a.s.WithStorageUsage(ctx, status); err != nil {
+		return nil, hErr(err)
 	}
 	return &accountStatusOutput{Body: status}, nil
 }

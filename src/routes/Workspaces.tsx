@@ -13,6 +13,10 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { track } from '@/lib/observability';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
@@ -58,15 +62,20 @@ export default function Workspaces() {
   const revealRef = useLoadingReveal(isLoading);
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const { mutateAsync: createWorkspace } = useCreateWorkspace();
+  const frozen = useAccountFrozen();
   const sortedWorkspaces = ascending ? data?.slice().reverse() : data;
 
   return (
     <PanelWithInvertedRadius>
-      <PageHeader title={m.workspaces_title()} />
+      <PageHeader
+        actions={<AccountStatusButton />}
+        title={m.workspaces_title()}
+      />
       <ListToolbar
         action={
           <Button
             className="rounded-card font-bold text-link"
+            disabled={frozen}
             iconLeft="plus"
             onClick={() => setCreateOpen(true)}
             size="md"

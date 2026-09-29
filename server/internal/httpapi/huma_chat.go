@@ -67,6 +67,18 @@ func (a *api) createConversation(ctx context.Context, in *createConversationInpu
 				Errors: []*huma.ErrorDetail{{Message: curateRequiresEditorCode}},
 			}
 		}
+		// Curating writes materials, which a frozen requester or owner cannot,
+		// nor an owner at its storage limit.
+		ownerID, err := a.s.WorkspaceOwnerID(ctx, in.ID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		if err := a.editErr(ctx, ownerID); err != nil {
+			return nil, hErr(err)
+		}
+		if err := a.s.StorageFullErr(ctx, ownerID); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	res, err := a.s.CreateConversation(ctx, userID(ctx), in.ID, string(in.Body.Title), in.Body.Curate)
 	if err != nil {

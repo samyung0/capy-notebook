@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCreateEvent, useEvents, useLabels } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
@@ -24,6 +25,7 @@ export function DashboardCalendar() {
   const { data: events } = useEvents({ errorBoundary: false });
   const { data: labels } = useLabels({ errorBoundary: false });
   const { mutateAsync: createEvent } = useCreateEvent();
+  const frozen = useAccountFrozen();
   const [eventForm, setEventForm] = useState<EventDraft | null>(null);
 
   const [now, setNow] = useState(() => new Date());
@@ -137,11 +139,14 @@ export function DashboardCalendar() {
           events={events ?? []}
           hideHeader
           labels={labels ?? []}
-          onCreateSlot={(start, end) =>
-            setEventForm({
-              end: end.toISOString(),
-              start: start.toISOString(),
-            })
+          onCreateSlot={
+            frozen
+              ? undefined
+              : (start, end) =>
+                  setEventForm({
+                    end: end.toISOString(),
+                    start: start.toISOString(),
+                  })
           }
           scrollContainerRef={scrollRef}
           selectedId={null}

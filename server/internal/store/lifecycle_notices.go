@@ -72,7 +72,7 @@ func (s *Store) SweepOverQuotaNotices(ctx context.Context) (int, error) {
 		if err != nil {
 			return sent, err
 		}
-		if !status.ShrinkOnly() {
+		if !status.OverQuota() {
 			continue
 		}
 		toEmail := ""
@@ -138,7 +138,7 @@ func (s *Store) sendLifecycleNotice(
 	if err != nil {
 		return false, err
 	}
-	if !current.ShrinkOnly() {
+	if !current.OverQuota() {
 		return false, nil
 	}
 	status = current

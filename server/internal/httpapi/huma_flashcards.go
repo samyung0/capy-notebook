@@ -96,7 +96,9 @@ func (a *api) getFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*fl
 		return nil, hErr(err)
 	}
 	res.IsOwner = role == store.RoleOwner
-	res.CanEdit = store.RoleCanEdit(role)
+	if res.CanEdit, res.CanEditContent, err = a.canEditMaterial(ctx, in.ID, role); err != nil {
+		return nil, hErr(err)
+	}
 	return &flashcardSetOutput{Body: res}, nil
 }
 
@@ -113,8 +115,10 @@ func (a *api) updateFlashcardSet(ctx context.Context, in *updateFlashcardSetInpu
 	return a.flashcardSetOutputWithAccess(ctx, in.ID, set)
 }
 
+// Narrowing is a recovery action a frozen account keeps; the store refuses
+// widening.
 func (a *api) updateFlashcardSetSharing(ctx context.Context, in *updateFlashcardSetSharingInput) (*flashcardSetOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	material, err := a.s.UpdateStandaloneMaterialPrivacy(
@@ -136,7 +140,9 @@ func (a *api) flashcardSetOutputWithAccess(ctx context.Context, id string, set s
 		return nil, hErr(err)
 	}
 	set.IsOwner = role == store.RoleOwner
-	set.CanEdit = store.RoleCanEdit(role)
+	if set.CanEdit, set.CanEditContent, err = a.canEditMaterial(ctx, id, role); err != nil {
+		return nil, hErr(err)
+	}
 	return &flashcardSetOutput{Body: set}, nil
 }
 

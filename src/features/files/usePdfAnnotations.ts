@@ -7,6 +7,7 @@ import {
 import { useRef, useState } from 'react';
 import { api } from '@/api/client';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
+import { isStorageRefusal } from '@/lib/errors';
 
 export type AnnotationChanges = {
   create?: (PDFAnnotationBody & { id?: string })[];
@@ -52,7 +53,7 @@ export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
   const {
     mutateAsync,
     isPending,
-    isError: writeError,
+    error: writeFailure,
   } = useMutation({
     mutationFn: async (changes: AnnotationChanges) => {
       let current = cache.getQueryData<PDFAnnotation[]>(queryKey) ?? [];
@@ -152,6 +153,7 @@ export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
       const action = history.current.undo.at(-1);
       if (action) void run(action, 'undo');
     },
-    writeError,
+    // A frozen or storage refusal shows as the workspace status, not a strip.
+    writeError: !!writeFailure && !isStorageRefusal(writeFailure),
   };
 }

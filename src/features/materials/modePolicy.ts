@@ -1,7 +1,9 @@
 export type MaterialMode = 'view' | 'edit';
 
 export interface MaterialModeCapabilities {
-  canEdit: boolean;
+  /** Edit mode (and comments): off for viewers, a frozen account and an
+   * owner at its storage limit. */
+  canEditContent: boolean;
 }
 
 export interface MaterialModePolicy {
@@ -14,7 +16,7 @@ export function materialModePolicy(
 ): MaterialModePolicy {
   const modes: MaterialMode[] = [];
 
-  if (capabilities.canEdit) modes.push('edit');
+  if (capabilities.canEditContent) modes.push('edit');
   modes.push('view');
 
   return {

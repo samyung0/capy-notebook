@@ -90,12 +90,12 @@ func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneW
 	if err != nil {
 		return nil, hErr(err)
 	}
-	ownerState, err := a.workspaceOwnerState(ctx, ws)
+	statuses, err := a.accountStatuses(ctx, ws.OwnerUserID)
 	if err != nil {
 		return nil, err
 	}
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws, ownerState),
+		Workspace: apimodel.FromWorkspace(ws, statuses[ws.OwnerUserID]),
 	}}, nil
 }
 
@@ -109,7 +109,7 @@ func (a *api) cloneQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, erro
 		return nil, hErr(err)
 	}
 	q.IsOwner = true
-	q.CanEdit = true
+	q.CanEdit, q.CanEditContent = true, true
 	return &quizOutput{Body: apimodel.FromQuiz(q)}, nil
 }
 
@@ -123,7 +123,7 @@ func (a *api) cloneFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*
 		return nil, hErr(err)
 	}
 	d.IsOwner = true
-	d.CanEdit = true
+	d.CanEdit, d.CanEditContent = true, true
 	return &flashcardSetOutput{Body: d}, nil
 }
 
@@ -132,7 +132,7 @@ func (a *api) cloneMaterial(ctx context.Context, in *materialIDInput) (*material
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return materialResponse(mt, store.RoleOwner)
+	return materialResponse(mt, store.RoleOwner, false, false)
 }
 
 /* ------------------------------------------------------------------ explore */

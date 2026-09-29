@@ -5,6 +5,9 @@ import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
  * Stateless room messages exchanged with the collaboration service.
  * IMPORTANT: KEEP IN SYNC WITH collaboration/src/server.ts.
  */
+/** Authentication refusal reason for a writer whose room turned read-only. */
+export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
+
 export interface MaterialDocumentStats {
   contentBytes: number;
   maxDepth: number;
@@ -39,7 +42,9 @@ export type CollaborationEvent =
       newRoom?: string;
       room?: string;
       type: 'compaction-complete' | 'compaction-evict';
-    };
+    }
+  /** The room turned read-only for this writer (a frozen account). */
+  | { room: string; type: 'room-read-only' };
 
 const LIMIT_CODES = new Set<string>([
   'document_depth_exceeded',
@@ -116,6 +121,10 @@ export function parseCollaborationEvent(
     case 'comments-invalidated':
     case 'projection-updated':
       return materialId ? { materialId, type: raw.type } : null;
+    case 'room-read-only':
+      return typeof raw.room === 'string'
+        ? { room: raw.room, type: 'room-read-only' }
+        : null;
     case 'compaction-complete':
     case 'compaction-evict':
       return {

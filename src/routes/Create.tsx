@@ -44,6 +44,10 @@ import {
   materialKindLabel,
 } from '@/features/materials/MaterialListCard';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
+import {
+  AccountStatusButton,
+  useAccountFrozen,
+} from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { trackItemCloned } from '@/lib/observability';
@@ -191,6 +195,7 @@ export default function Create() {
   const { mutate: createNote } = useCreateStandaloneNote();
   const { mutate: createQuiz } = useCreateQuiz();
   const { mutate: createFlashcardSet } = useCreateFlashcardSet();
+  const frozen = useAccountFrozen();
   const newMenu: MenuItem[] = [
     {
       icon: 'newNote',
@@ -355,6 +360,7 @@ export default function Create() {
       });
     }
     items.push({
+      disabled: frozen,
       icon: 'clone',
       label: m.action_clone(),
       onClick: () => clone(item),
@@ -372,7 +378,7 @@ export default function Create() {
 
   return (
     <PanelWithInvertedRadius>
-      <PageHeader title={m.nav_create()} />
+      <PageHeader actions={<AccountStatusButton />} title={m.nav_create()} />
       <ListToolbar
         action={
           <Menu
@@ -381,6 +387,7 @@ export default function Create() {
             trigger={
               <Button
                 className="rounded-card font-bold text-link"
+                disabled={frozen}
                 iconLeft="plus"
                 size="md"
                 variant="ghost-hover"

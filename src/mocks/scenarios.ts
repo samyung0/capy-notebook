@@ -2,7 +2,18 @@ import { delay, HttpResponse, http, type RequestHandler } from 'msw';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { chatFixtureOptions, chatFixtures } from './chatFixtures';
 import { mockChatStream } from './chatStream';
-import { accountStatus, user, workspaces } from './db';
+import {
+  accountStatus,
+  cardStats,
+  discussions,
+  files,
+  flashcardSetFromMaterial,
+  listWorkspaces,
+  materials,
+  quizFromMaterial,
+  user,
+  workspaces,
+} from './db';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
 
 export const authScenarios = [
@@ -92,7 +103,47 @@ export const mockScenarioOptions = [
   { id: 'auth-breached', label: 'Auth: require a new password' },
   { id: 'auth-busy', label: 'Auth: pending request for 15 seconds' },
   ...failureScenarios,
-  { id: 'account-grace', label: 'Account over quota: grace period' },
+  { id: 'account-grace', label: 'Grace period: dashboard' },
+  { id: 'account-grace-workspace', label: 'Grace period: own workspace' },
+  {
+    id: 'account-storage-near-dashboard',
+    label: 'Storage almost full (95%): dashboard',
+  },
+  {
+    id: 'account-storage-near',
+    label: 'Storage almost full (95%): own workspace',
+  },
+  { id: 'account-storage-full-dashboard', label: 'Storage full: dashboard' },
+  { id: 'account-storage-full', label: 'Storage full: own workspace' },
+  { id: 'account-frozen-workspace', label: 'Account frozen: own workspace' },
+  {
+    id: 'account-frozen-member',
+    label: "Account frozen: someone else's healthy workspace",
+  },
+  {
+    id: 'account-frozen-create',
+    label: 'Account frozen: create controls disabled',
+  },
+  { id: 'invite-frozen', label: 'Account frozen: accept an invitation' },
+  {
+    id: 'note-frozen-while-editing',
+    label: 'Note: account frozen while editing',
+  },
+  {
+    id: 'source-frozen-while-editing',
+    label: 'Text source: account frozen with unsaved edits',
+  },
+  {
+    id: 'note-storage-full-while-editing',
+    label: 'Note: storage full while editing',
+  },
+  {
+    id: 'workspace-owner-near',
+    label: 'Member: owner almost out of storage',
+  },
+  { id: 'workspace-owner-full', label: "Member: owner's storage full" },
+  { id: 'workspace-owner-grace', label: "Member: owner's grace period" },
+  { id: 'workspace-owner-frozen', label: "Member: owner's account frozen" },
   { id: 'account-deleted', label: 'Account deleted' },
   { id: 'account-deletion-pending', label: 'Account deletion pending' },
   { id: 'import-rejected', label: 'Cloud selection rejected' },
@@ -106,7 +157,7 @@ export const mockScenarioOptions = [
   { id: 'workspace-timeout', label: 'Workspace GET timeout' },
   { id: 'storage-quota', label: 'Upload storage quota 403' },
   { id: 'account-suspended', label: 'Account suspended' },
-  { id: 'account-over-quota', label: 'Account over quota' },
+  { id: 'account-over-quota', label: 'Account frozen: dashboard' },
   { id: 'workspace-flaky', label: 'Workspace: intermittent request failed' },
   { id: 'chat-sse-error', label: 'Chat SSE error frame' },
   { id: 'chat-stream-close', label: 'Chat stream closes early' },
@@ -130,7 +181,23 @@ export const permanentScenarios: readonly string[] = [
   'account-deleted',
   'account-deletion-pending',
   'account-over-quota',
+  'account-frozen-workspace',
+  'account-frozen-member',
+  'account-frozen-create',
+  'invite-frozen',
+  'note-frozen-while-editing',
+  'source-frozen-while-editing',
+  'note-storage-full-while-editing',
   'account-grace',
+  'account-grace-workspace',
+  'account-storage-near',
+  'account-storage-near-dashboard',
+  'account-storage-full',
+  'account-storage-full-dashboard',
+  'workspace-owner-near',
+  'workspace-owner-full',
+  'workspace-owner-grace',
+  'workspace-owner-frozen',
 ];
 
 export function humaCodedError(
@@ -336,27 +403,104 @@ export function getMockScenarioHandlers(
         }),
       ];
     case 'account-grace':
+    case 'account-grace-workspace':
     case 'account-deleted':
     case 'account-deletion-pending':
       return [
         // The account lifecycle rides on /me, as it does on the server.
+        ...(scenario.startsWith('account-grace')
+          ? [
+              ownWorkspaces({
+                storageOwnerState: 'over_quota_grace',
+                storageOwnerUsage: 'full',
+              }),
+              ...viewOnlyContent('own'),
+            ]
+          : []),
         http.get('/api/me', () =>
           HttpResponse.json({
             ...user,
             account: {
               ...accountStatus,
               graceEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-              state:
-                scenario === 'account-grace'
-                  ? 'over_quota_grace'
-                  : scenario === 'account-deleted'
-                    ? 'deleted'
-                    : 'deletion_pending',
+              state: scenario.startsWith('account-grace')
+                ? 'over_quota_grace'
+                : scenario === 'account-deleted'
+                  ? 'deleted'
+                  : 'deletion_pending',
+              storageUsage: 'full',
               userId: user.id,
             },
           })
         ),
       ];
+    case 'account-storage-near':
+    case 'account-storage-near-dashboard':
+    case 'account-storage-full':
+    case 'account-storage-full-dashboard':
+    case 'note-storage-full-while-editing': {
+      // The viewer's own account on /me, and the same level as the owner of
+      // the workspaces they own.
+      const storageUsage = scenario.includes('storage-full')
+        ? 'full'
+        : 'near_limit';
+      const limit = PLAN_LIMITS.free.storageLimitBytes;
+      return [
+        http.get('/api/me', () =>
+          HttpResponse.json({
+            ...user,
+            account: {
+              ...accountStatus,
+              planTier: 'free',
+              storageLimitBytes: limit,
+              storageUsage,
+              storageUsedBytes:
+                storageUsage === 'full' ? limit : Math.round(limit * 0.96),
+              userId: user.id,
+            },
+          })
+        ),
+        ownWorkspaces({ storageOwnerUsage: storageUsage }),
+        ...(storageUsage === 'full' ? viewOnlyContent('own') : []),
+      ];
+    }
+    case 'workspace-owner-near':
+    case 'workspace-owner-full':
+    case 'workspace-owner-grace':
+    case 'workspace-owner-frozen': {
+      // The viewer as an editor member of someone else's workspace.
+      const frozen = scenario === 'workspace-owner-frozen';
+      const near = scenario === 'workspace-owner-near';
+      return [
+        http.get('/api/workspaces/:id', ({ params }) => {
+          const workspace = workspaces.find((row) => row.id === params.id);
+          if (!workspace) return new HttpResponse(null, { status: 404 });
+          return HttpResponse.json({
+            ...workspace,
+            capabilities: {
+              ...workspace.capabilities,
+              canEdit: !frozen,
+              canEditContent: near,
+              canManageMembers: false,
+            },
+            isOwner: false,
+            role: 'editor',
+            storageOwnerState: frozen
+              ? 'over_quota_frozen'
+              : scenario === 'workspace-owner-grace'
+                ? 'over_quota_grace'
+                : 'active',
+            storageOwnerUsage:
+              scenario === 'workspace-owner-near' ? 'near_limit' : 'full',
+          });
+        }),
+        ...(frozen
+          ? [...frozenMaterialHandlers(), frozenWrites('owner')]
+          : near
+            ? []
+            : viewOnlyContent('member')),
+      ];
+    }
     case 'import-rejected':
       return [
         http.post('/api/workspaces/:id/sources/import-inspect', () =>
@@ -472,30 +616,32 @@ export function getMockScenarioHandlers(
           )
         ),
       ];
-    case 'account-over-quota':
+    case 'account-frozen-member':
+      // The viewer's own frozen account in a healthy owner's workspace: read
+      // only there too.
       return [
-        http.get('/api/me', () =>
-          HttpResponse.json({
-            ...user,
-            account: {
-              planTier: 'free',
-              state: 'over_quota_frozen',
-              storageLimitBytes: 1024,
-              storageUsedBytes: 2048,
-              userId: user.id,
-            },
-          })
-        ),
-        http.post('/api/workspaces/:id/materials', () =>
-          HttpResponse.json(
-            humaCodedError(
-              'account_over_quota',
-              'This mock account is over quota.'
-            ),
-            { status: 403 }
-          )
-        ),
+        http.get('/api/workspaces/:id', ({ params }) => {
+          const workspace = workspaces.find((row) => row.id === params.id);
+          if (!workspace) return new HttpResponse(null, { status: 404 });
+          const readOnly = readOnlyWorkspace(workspace);
+          return HttpResponse.json({
+            ...readOnly,
+            capabilities: { ...readOnly.capabilities, canManageMembers: false },
+            isOwner: false,
+            role: 'editor',
+            storageOwnerState: 'active',
+            storageOwnerUsage: 'ok',
+          });
+        }),
+        ...frozenAccount(),
       ];
+    case 'account-over-quota':
+    case 'account-frozen-workspace':
+    case 'account-frozen-create':
+    case 'invite-frozen':
+    case 'note-frozen-while-editing':
+    case 'source-frozen-while-editing':
+      return frozenAccount();
     case 'workspace-flaky': {
       let requestCount = 0;
       return [
@@ -564,4 +710,269 @@ export function getMockScenarioHandlers(
       ];
   }
   return [];
+}
+
+/** A frozen account's materials, as the server returns them: read-only. */
+function frozenMaterialHandlers(): RequestHandler[] {
+  return [
+    http.get('/api/materials/:id', ({ params }) => {
+      const material = materials.find((row) => row.id === params.id);
+      if (!material) return new HttpResponse(null, { status: 404 });
+      return HttpResponse.json({
+        ...material,
+        capabilities: {
+          ...material.capabilities,
+          canEdit: false,
+          canEditContent: false,
+        },
+      });
+    }),
+  ];
+}
+
+/** A frozen requester as the server answers them: its own state on /me,
+ * read-only workspaces (no Clone) and materials, and every write refused. */
+function frozenAccount(): RequestHandler[] {
+  return [
+    http.get('/api/me', () =>
+      HttpResponse.json({
+        ...user,
+        account: {
+          planTier: 'free',
+          state: 'over_quota_frozen',
+          storageLimitBytes: 1024,
+          storageUsage: 'full',
+          storageUsedBytes: 2048,
+          userId: user.id,
+        },
+      })
+    ),
+    http.get('/api/workspaces', ({ request }) =>
+      HttpResponse.json(
+        listWorkspaces(new URL(request.url)).map(readOnlyWorkspace)
+      )
+    ),
+    http.get('/api/workspaces/:id', ({ params }) => {
+      const workspace = workspaces.find((row) => row.id === params.id);
+      if (!workspace) return new HttpResponse(null, { status: 404 });
+      return HttpResponse.json({
+        ...readOnlyWorkspace(workspace),
+        ...(workspace.isOwner && {
+          storageOwnerState: 'over_quota_frozen',
+          storageOwnerUsage: 'full',
+        }),
+      });
+    }),
+    ...frozenMaterialHandlers(),
+    frozenWrites('account'),
+  ];
+}
+
+const readOnlyWorkspace = (workspace: (typeof workspaces)[number]) => ({
+  ...workspace,
+  canClone: false,
+  capabilities: {
+    ...workspace.capabilities,
+    canEdit: false,
+    canEditContent: false,
+  },
+});
+
+// What a frozen account keeps: reading, deleting whole items, narrowing
+// exposure, transfer, chat, quiz attempts, notifications, billing, account
+// settings and the question bank. Deleting one flashcard or PDF mark is an
+// edit.
+const keptWhenFrozen = [
+  /^DELETE \/api\/(?!files\/[^/]+\/annotations\/|flashcards\/cards\/)/,
+  /^PATCH \/api\/[a-z]+\/[^/]+\/sharing$/,
+  /^POST \/api\/workspaces\/[^/]+\/(transfer|chat\/stream)$/,
+  /^POST \/api\/(materials|files)\/[^/]+\/collaboration-token$/,
+  /^POST \/api\/(quizzes\/[^/]+\/attempts|quiz-grade)$/,
+  /^POST \/api\/(notifications|billing|account)\//,
+  /^(PATCH|PUT|DELETE) \/api\/(me|notification-prefs)(\/|$)/,
+  /^[A-Z]+ \/api\/bank\//,
+];
+// A frozen owner's content (for a healthy member only these writes fail).
+const ownerContent =
+  /^\/api\/(workspaces\/[^/]+|materials\/[^/]+|files|quizzes\/[^/]+|flashcards\/[^/]+|chapters|comments|discussions|trash)(\/|$)/;
+
+/** The server's `account_over_quota` for every write it refuses: anything a
+ * frozen `account` does apart from what it keeps, or writes into a frozen
+ * `owner`'s content. A curate thread counts; an ordinary chat thread does not. */
+function frozenWrites(scope: 'account' | 'owner'): RequestHandler {
+  return http.all('/api/*', async ({ request }) => {
+    if (request.method === 'GET' || request.method === 'HEAD') return;
+    const path = new URL(request.url).pathname;
+    if (path.endsWith('/conversations')) {
+      const body = (await request
+        .clone()
+        .json()
+        .catch(() => null)) as { curate?: boolean } | null;
+      if (!body?.curate) return;
+    } else if (
+      keptWhenFrozen.some((rule) => rule.test(`${request.method} ${path}`)) ||
+      (scope === 'owner' && !ownerContent.test(path))
+    )
+      return;
+    return HttpResponse.json(
+      humaCodedError('account_over_quota', 'This account is frozen.'),
+      { status: 403 }
+    );
+  });
+}
+
+/** The viewer's own storage status on the workspaces they own; at the limit
+ * their content is view-only. */
+function ownWorkspaces(owner: {
+  storageOwnerState?: 'over_quota_grace';
+  storageOwnerUsage: 'full' | 'near_limit';
+}) {
+  return http.get('/api/workspaces/:id', ({ params }) => {
+    const workspace = workspaces.find((row) => row.id === params.id);
+    if (!workspace) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json(
+      workspace.isOwner
+        ? {
+            ...workspace,
+            ...owner,
+            capabilities: {
+              ...workspace.capabilities,
+              canEditContent: owner.storageOwnerUsage !== 'full',
+            },
+          }
+        : workspace
+    );
+  });
+}
+
+// What the server refuses with the storage code while the owner is at or over
+// its limit, with the workspace that pays for the target (null: standalone):
+// content edits, comments and PDF marks. Organizing (rename, move, reorder,
+// trash), study progress and deleting a comment stay open.
+const materialWorkspace = (id: string | undefined) =>
+  materials.find((row) => row.id === id)?.workspaceId || null;
+const contentWrites: [RegExp, (id: string) => string | null][] = [
+  [/^POST \/api\/materials\/([^/]+)\/discussions$/, materialWorkspace],
+  [
+    /^POST \/api\/discussions\/([^/]+)\/comments$/,
+    (id) =>
+      materialWorkspace(discussions.find((row) => row.id === id)?.materialId),
+  ],
+  [
+    /^PATCH \/api\/comments\/([^/]+)$/,
+    (id) =>
+      materialWorkspace(
+        discussions.find((row) => row.comments.some((c) => c.id === id))
+          ?.materialId
+      ),
+  ],
+  [
+    /^(?:POST|PATCH|DELETE) \/api\/files\/([^/]+)\/annotations(?:\/|$)/,
+    (id) => files.find((row) => row.id === id)?.workspaceId || null,
+  ],
+  [
+    /^PATCH \/api\/(?:quizzes|flashcards)\/([^/]+)\/content$/,
+    materialWorkspace,
+  ],
+  [/^POST \/api\/flashcards\/([^/]+)\/cards$/, materialWorkspace],
+  [
+    /^(?:PATCH \/api\/flashcards\/cards\/([^/]+)\/content|DELETE \/api\/flashcards\/cards\/([^/]+))$/,
+    (id) => materialWorkspace(cardStats[id]?.materialId),
+  ],
+];
+
+/** An owner at or over its storage limit (full, grace included) as the server
+ * answers: what it pays for is view-only while organizing works, and creating
+ * or uploading into it fails the quota. `own` is the viewer's own workspaces,
+ * standalone items and clones (charged to the viewer, who then gets the
+ * numbers), `member` every workspace (the viewer as a member of the owner's,
+ * who gets the code alone). */
+function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
+  const limit = PLAN_LIMITS.free.storageLimitBytes;
+  const detail =
+    scope === 'own'
+      ? {
+          ownerUserId: user.id,
+          storageLimitBytes: limit,
+          storageUsedBytes: limit,
+        }
+      : {};
+  const paysFor = (workspaceId: string | null | undefined) =>
+    scope === 'member'
+      ? !!workspaceId
+      : !workspaceId ||
+        !!workspaces.find((row) => row.id === workspaceId)?.isOwner;
+  const find = (id: unknown, kind?: string) =>
+    materials.find((row) => row.id === id && (!kind || row.kind === kind));
+  return [
+    http.get('/api/materials/:id', ({ params }) => {
+      const material = find(params.id);
+      if (!material || !paysFor(material.workspaceId)) return;
+      return HttpResponse.json({
+        ...material,
+        capabilities: { ...material.capabilities, canEditContent: false },
+      });
+    }),
+    http.get('/api/quizzes/:id', ({ params }) => {
+      const material = find(params.id, 'quiz');
+      if (!material || !paysFor(material.workspaceId)) return;
+      return HttpResponse.json({
+        ...quizFromMaterial(material),
+        canEditContent: false,
+      });
+    }),
+    http.get('/api/flashcards/:id', ({ params }) => {
+      const material = find(params.id, 'flashcards');
+      if (!material || !paysFor(material.workspaceId)) return;
+      return HttpResponse.json({
+        ...flashcardSetFromMaterial(material),
+        canEditContent: false,
+      });
+    }),
+    http.all('/api/*', async ({ request }) => {
+      const route = `${request.method} ${new URL(request.url).pathname}`;
+      const into =
+        /^POST \/api\/workspaces\/([^/]+)\/(materials|sources|sources\/import|editor-assets\/uploads|generate)$/.exec(
+          route
+        )?.[1];
+      const embedded = /^POST \/api\/materials\/([^/]+)\/embedded$/.exec(
+        route
+      )?.[1];
+      const standalone = /^POST \/api\/(materials|quizzes|flashcards)$/.test(
+        route
+      );
+      const content = contentWrites
+        .map(([rule, target]) => {
+          const match = rule.exec(route);
+          return match && { workspaceId: target(match[1] ?? match[2]) };
+        })
+        .find(Boolean);
+      const refused =
+        (!!content && paysFor(content.workspaceId)) ||
+        (into !== undefined && paysFor(into)) ||
+        (embedded !== undefined && paysFor(find(embedded)?.workspaceId)) ||
+        (standalone &&
+          paysFor(
+            (
+              (await request
+                .clone()
+                .json()
+                .catch(() => null)) as { workspaceId?: string } | null
+            )?.workspaceId
+          )) ||
+        (scope === 'own' &&
+          /^POST \/api\/(workspaces|quizzes|flashcards|materials)\/[^/]+\/clone$/.test(
+            route
+          ));
+      if (!refused) return;
+      return HttpResponse.json(
+        humaCodedError(
+          'storage_quota_exceeded',
+          'The storage limit is reached.',
+          detail
+        ),
+        { status: 403 }
+      );
+    }),
+  ];
 }

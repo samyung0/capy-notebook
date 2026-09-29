@@ -46,6 +46,7 @@ import {
   resolveCommentDecorations,
 } from './Collaboration';
 import {
+  COLLABORATION_READ_ONLY_REASON,
   type MaterialDocumentStats,
   materialLimitMessage,
   parseCollaborationEvent,
@@ -300,6 +301,7 @@ export function NoteEditorCore({
   collaborationToken,
   onEditorStatusChange,
   onDocumentRejected,
+  onReadOnly,
 }: {
   material: Material;
   allowExternalAssets: boolean;
@@ -309,6 +311,9 @@ export function NoteEditorCore({
   collaborationToken: MaterialCollaborationToken;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   onDocumentRejected?: (message: string, stats: MaterialDocumentStats) => void;
+  /** The room turned read-only (a frozen account or an owner at its storage
+   * limit): the caller drops to view, discarding unsaved edits. */
+  onReadOnly?: () => void;
 }) {
   const qc = useQueryClient();
   const ydoc = useMemo(
@@ -374,6 +379,8 @@ export function NoteEditorCore({
   const saveNow = useRef(() => {});
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
+  // Set once the editor exists; reports a room that turned read-only once.
+  const readOnlyNow = useRef(() => {});
   const projectionStale = useRef(false);
 
   useEffect(
@@ -427,6 +434,13 @@ export function NoteEditorCore({
           materialLimitMessage(event.code),
           event.metrics
         );
+        return;
+      }
+      if (
+        event.type === 'room-read-only' &&
+        event.room === collaborationToken.room
+      ) {
+        readOnlyNow.current();
         return;
       }
       if (
@@ -518,11 +532,28 @@ export function NoteEditorCore({
               : {
                   options: {
                     name: collaborationToken.room,
+                    onAuthenticationFailed: ({
+                      reason,
+                    }: {
+                      reason: string;
+                    }) => {
+                      if (reason === COLLABORATION_READ_ONLY_REASON)
+                        readOnlyNow.current();
+                    },
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
-                    token: async () =>
-                      (await getMaterialCollaborationToken(material.id)).token,
+                    token: async () => {
+                      const token = await getMaterialCollaborationToken(
+                        material.id
+                      );
+                      // A reconnect after the account froze gets a read token.
+                      if (token.access === 'read') {
+                        readOnlyNow.current();
+                        throw new Error(COLLABORATION_READ_ONLY_REASON);
+                      }
+                      return token.token;
+                    },
                     url: collaborationToken.url,
                   },
                   type: 'hocuspocus' as const,
@@ -652,9 +683,20 @@ export function NoteEditorCore({
 
   useEffect(() => {
     reportRejection.current = onDocumentRejected;
+    let reported = false;
+    readOnlyNow.current = () => {
+      if (reported) return;
+      reported = true;
+      onReadOnly?.();
+    };
     resendCheckpoints.current = resendPendingCheckpoints;
     saveNow.current = saveImmediately;
-  }, [onDocumentRejected, resendPendingCheckpoints, saveImmediately]);
+  }, [
+    onDocumentRejected,
+    onReadOnly,
+    resendPendingCheckpoints,
+    saveImmediately,
+  ]);
 
   return (
     <NoteBlockDialogsProvider noteId={material.id}>

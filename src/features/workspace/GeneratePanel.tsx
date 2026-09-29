@@ -15,7 +15,7 @@ import { ButtonCard } from '@/components/ui/ButtonCard';
 import { FileIcon } from '@/components/ui/FileIcon';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
-import { describeError } from '@/lib/errors';
+import { deferStorageRefusal, describeError } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
 import type { TabAction } from './PanelTabRow';
@@ -108,7 +108,9 @@ export function GeneratePanel({
             )
             .map((file) => file.id)
         );
-      } else setFailure(describeError(error).description);
+      } else if (!deferStorageRefusal(error))
+        // A frozen or storage refusal shows as the workspace status instead.
+        setFailure(describeError(error).description);
     } finally {
       onGeneratingChange?.(null);
     }

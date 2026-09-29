@@ -2,17 +2,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { fileLinksQuery, useFileLinks, useWorkspace } from '@/api/hooks';
-import type {
-  Region,
-  SourceFile,
-  ViewableFile,
-  WorkspaceRole,
+import {
+  AccountState,
+  type Region,
+  type SourceFile,
+  StorageUsageLevel,
+  type ViewableFile,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { FileEmpty, FileError, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
@@ -144,6 +146,7 @@ function FileViewerContent({
   const { data: workspace } = useWorkspace(file?.workspaceId ?? '', {
     errorBoundary: false,
   });
+  const frozen = useAccountFrozen();
   // The row only says bytes exist; B2 needs a presigned link the
   // bearer-authenticated API hands out per file.
   const {
@@ -205,6 +208,12 @@ function FileViewerContent({
   }
   return (
     <ResolvedFileView
+      annotationsReadOnly={
+        frozen ||
+        workspace?.storageOwnerState === AccountState.over_quota_frozen ||
+        workspace?.storageOwnerUsage === StorageUsageLevel.full
+      }
+      canEdit={!!workspace?.capabilities.canEditContent}
       citation={citation}
       file={{ ...file, url: links.url }}
       imageZoom={imageZoom}
@@ -213,12 +222,13 @@ function FileViewerContent({
       onRetryLinks={() => refetchLinks()}
       page={page}
       regions={regions}
-      workspaceRole={workspace?.role}
     />
   );
 }
 
 function ResolvedFileView({
+  annotationsReadOnly,
+  canEdit,
   file,
   imageZoom,
   onDirtyChange,
@@ -227,12 +237,17 @@ function ResolvedFileView({
   page,
   regions,
   citation,
-  workspaceRole,
 }: Omit<FileViewerProps, 'file' | 'imageZoom'> & {
+  /** PDF marks are open to every reader but not to a frozen account or while
+   * the owner is at its storage limit. */
+  annotationsReadOnly: boolean;
+  /** Content controls follow the workspace capabilities, which a frozen
+   * account (the reader's or the owner's) or an owner at its storage limit
+   * turns off. */
+  canEdit: boolean;
   file: ViewableFile;
   imageZoom: number;
   onRetryLinks: () => Promise<unknown>;
-  workspaceRole?: WorkspaceRole;
 }) {
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const retryPreview = async () => {
@@ -240,7 +255,6 @@ function ResolvedFileView({
     // Restart even when the signer returns the same URL. Keep source editors mounted.
     setPreviewAttempt((attempt) => attempt + 1);
   };
-  const canEdit = workspaceRole === 'owner' || workspaceRole === 'editor';
   const ext = fileExt(file.name);
   const officeRuntimeIdentity = officeRuntimeKey(file, file.revision);
 
@@ -248,6 +262,7 @@ function ResolvedFileView({
     return lazyView(
       <PdfView
         annotationFile={file}
+        annotationsReadOnly={annotationsReadOnly}
         onDirtyChange={onDirtyChange}
         onRetry={onRetryLinks}
         page={page}

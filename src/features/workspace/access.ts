@@ -1,7 +1,9 @@
 import type { AccessCapabilities, Workspace } from '@/api/types';
 
-/** Workspace content is editable when the API grants canEdit: owner, editor
- * member, or a link/public share-role editor. */
+/** The workspace can be organized and added to when the API grants canEdit:
+ * owner, editor member, or a link/public share-role editor. Edit mode,
+ * comments and annotations follow canEditContent, which an owner at its
+ * storage limit also turns off. */
 export function isWorkspaceReadOnly(
   capabilities: AccessCapabilities | undefined | null
 ): boolean {

@@ -509,7 +509,7 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 	if err != nil {
 		return err
 	}
-	if err := status.CreateErr(); err != nil {
+	if err := status.Err(); err != nil {
 		var locked *AccountLockedError
 		if errors.As(err, &locked) {
 			return nil
