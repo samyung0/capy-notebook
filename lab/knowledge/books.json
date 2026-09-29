@@ -7912,7 +7912,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "philosophy"
+      "subject_id": "philosophy",
+      "version": 1
     },
     {
       "id": "introduction-to-mips-assembly-language-programming",
@@ -8254,6 +8255,30 @@
       "version": 3
     },
     {
+      "id": "lessons-in-industrial-instrumentation",
+      "title": "Lessons In Industrial Instrumentation",
+      "authors": [
+        "Tony R. Kuphaldt"
+      ],
+      "edition": "Version 3.01",
+      "source_url": "http://www.ibiblio.org/kuphaldt/socratic/sinst/",
+      "download_url": "http://www.ibiblio.org/kuphaldt/socratic/sinst/book/liii.pdf",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "http://www.ibiblio.org/kuphaldt/socratic/sinst/",
+      "license_evidence_quote": "These worksheets, the Lessons In Industrial Instrumentation textbook, and files on this site created by Tony Kuphaldt are licensed under the Creative Commons Attribution 4.0 International Public License.",
+      "attribution_reviewed": false,
+      "attribution": "Lessons In Industrial Instrumentation, Tony R. Kuphaldt, Version 3.01. CC BY 4.0. http://www.ibiblio.org/kuphaldt/socratic/sinst/",
+      "pdf_path": "data/knowledge-base/sources/22256a8f4e25cbc973bcbd0764e98450b391f55268a0fafcf41a417c2e0d9724.pdf",
+      "sha256": "22256a8f4e25cbc973bcbd0764e98450b391f55268a0fafcf41a417c2e0d9724",
+      "bytes": 103240098,
+      "pages": 3311,
+      "first_content_page": 32,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "industrial-systems-engineering"
+    },
+    {
       "id": "liquidity-markets-and-trading-in-action",
       "title": "Liquidity, Markets and Trading in Action",
       "authors": [
@@ -8461,7 +8486,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "industrial-systems-engineering"
+      "subject_id": "industrial-systems-engineering",
+      "version": 1
     },
     {
       "id": "marine-ecology-notes-2nd-edition",
@@ -11074,9 +11100,287 @@
       "bytes": 11540574,
       "pages": 244,
       "first_content_page": 1,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 10,
+          "bbox": [
+            132.353,
+            152.71,
+            867.647,
+            514.452
+          ],
+          "figure": "“Rialto Theater” (Unit I opener)",
+          "figure_id": "fig_561f07aea67806_48",
+          "credit": "Chris Smith/Out of Chicago, CC BY-NC-SA 2.0"
+        },
+        {
+          "page": 24,
+          "bbox": [
+            252.451,
+            259.082,
+            747.549,
+            514.133
+          ],
+          "figure": "View of the Roman Theatre in Orange (France)",
+          "figure_id": "fig_561f07aea67806_183",
+          "credit": "“Roman theatre at Orange | wide view” by FlickrDelusions, CC BY-NC-SA 2.0"
+        },
+        {
+          "page": 25,
+          "bbox": [
+            257.353,
+            418.173,
+            742.647,
+            668.173
+          ],
+          "figure": "The stage of Globe Theatre in London",
+          "figure_id": "fig_561f07aea67806_194",
+          "credit": "“The Globe Theatre” by simpologist, CC BY-NC 2.0"
+        },
+        {
+          "page": 36,
+          "bbox": [
+            251.838,
+            71.582,
+            748.162,
+            359.223
+          ],
+          "figure": "View of a Thrust Stage. Guthrie Theatre in Minneapolis",
+          "figure_id": "fig_561f07aea67806_273",
+          "credit": "“Thrust stage” by Max Sparber, CC BY-NC 2.0"
+        },
+        {
+          "page": 53,
+          "bbox": [
+            257.353,
+            71.582,
+            742.647,
+            352.832
+          ],
+          "figure": "“Mosaic depicting theater masks Roman 2nd century CE” by mharrsch is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_394",
+          "credit": "mharrsch, CC BY-NC-SA 2.0"
+        },
+        {
+          "page": 60,
+          "bbox": [
+            256.127,
+            71.582,
+            743.873,
+            319.076
+          ],
+          "figure": "FERRUCCIO SOLERI as ARLEQUIN. “1. Retratos de la Commedia dell’Arte” by Luigi Lunari/Festival de Almagro is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_442",
+          "credit": "Luigi Lunari/Festival de Almagro, CC BY-NC-SA 2.0"
+        },
+        {
+          "page": 63,
+          "bbox": [
+            256.74,
+            71.582,
+            743.26,
+            315.947
+          ],
+          "figure": "“Ionesco” by UMTAD is licensed under CC BY-NC 2.0.",
+          "figure_id": "fig_561f07aea67806_469",
+          "credit": "UMTAD, CC BY-NC 2.0"
+        },
+        {
+          "page": 106,
+          "bbox": [
+            92.636,
+            315.539,
+            324.253,
+            564.119
+          ],
+          "figure": "“Tony Award” by rocor is licensed under CC BY-NC 2.0.",
+          "figure_id": "fig_561f07aea67806_792",
+          "credit": "“Tony Award” by rocor is licensed under CC BY-NC 2.0."
+        },
+        {
+          "page": 170,
+          "bbox": [
+            251.838,
+            434.63,
+            748.162,
+            691.591
+          ],
+          "figure": "“Brand Upon the Brain Foley Artist” by Steve Rhodes is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1380",
+          "credit": "“Brand Upon the Brain Foley Artist” by Steve Rhodes is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 197,
+          "bbox": [
+            254.902,
+            622.26,
+            745.098,
+            882.361
+          ],
+          "figure": "“augusto-boal11” by Tio Palhaço Ribeirinho is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1604",
+          "credit": "“augusto-boal11” by Tio Palhaço Ribeirinho is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 208,
+          "bbox": [
+            193.015,
+            71.582,
+            806.985,
+            381.544
+          ],
+          "figure": "“‘My Egyptian Maids’, B.E. Forrester presents Yorke & Adams in the musical comedy success Bankers and brokers by Aaron Hoffman, 1906.” by Halloween HJB is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1688",
+          "credit": "“‘My Egyptian Maids’, B.E. Forrester presents Yorke & Adams in the musical comedy success Bankers and brokers by Aaron Hoffman, 1906.” by Halloween HJB is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 209,
+          "bbox": [
+            253.676,
+            71.582,
+            746.324,
+            325.116
+          ],
+          "figure": "Sutton Foster in Anything Goes, 2011 Revival “anything goes curtain call 080411” by Findstories is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1694",
+          "credit": "“anything goes curtain call 080411” by Findstories is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 211,
+          "bbox": [
+            255.515,
+            71.582,
+            744.485,
+            323.598
+          ],
+          "figure": "“Phantom of the Opera at MasterCard Theaters 2013” by SUPERADRIANME is licensed under CC BY-NC 2.0.",
+          "figure_id": "fig_561f07aea67806_1706",
+          "credit": "“Phantom of the Opera at MasterCard Theaters 2013” by SUPERADRIANME is licensed under CC BY-NC 2.0."
+        },
+        {
+          "page": 212,
+          "bbox": [
+            254.289,
+            71.582,
+            745.711,
+            297.144
+          ],
+          "figure": "“Spamalot comes to Chicago” by feastoffun.com is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1711",
+          "credit": "“Spamalot comes to Chicago” by feastoffun.com is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 213,
+          "bbox": [
+            251.225,
+            418.787,
+            748.775,
+            679.355
+          ],
+          "figure": "“The Dream Ballet in Oklahoma!” by Portland Center Stage at The Armory is licensed under CC BY-NC 2.0",
+          "figure_id": "fig_561f07aea67806_1723",
+          "credit": "“The Dream Ballet in Oklahoma!” by Portland Center Stage at The Armory is licensed under CC BY-NC 2.0"
+        },
+        {
+          "page": 215,
+          "bbox": [
+            272.672,
+            71.582,
+            727.328,
+            540.016
+          ],
+          "figure": "Maria and Tony perform “‘Tonight’”. Portland Center Stage at The Armory is licensed under CC BY-NC 2.0.",
+          "figure_id": "fig_561f07aea67806_1733",
+          "credit": "Maria and Tony perform “‘Tonight’”. Portland Center Stage at The Armory is licensed under CC BY-NC 2.0. In-image credit: photo by Owen Carey."
+        },
+        {
+          "page": 216,
+          "bbox": [
+            255.515,
+            71.582,
+            744.485,
+            374.61
+          ],
+          "figure": "“West Side Story Suite” by PacificNorthwestBallet is licensed under CC BY-ND 2.0.",
+          "figure_id": "fig_561f07aea67806_1737",
+          "credit": "“West Side Story Suite” by PacificNorthwestBallet is licensed under CC BY-ND 2.0. In-image mark: ©Angela Sterling."
+        },
+        {
+          "page": 218,
+          "bbox": [
+            253.064,
+            71.582,
+            746.936,
+            331.716
+          ],
+          "figure": "“Manhattan, New York 1985, Broadway, Shubert theatre, A Chorus Line” by Hellebardius is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1748",
+          "credit": "“Manhattan, New York 1985, Broadway, Shubert theatre, A Chorus Line” by Hellebardius is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 219,
+          "bbox": [
+            92.636,
+            77.264,
+            488.469,
+            485.092
+          ],
+          "figure": "“Musical ~ Rent” by TeresaHsu is licensed under CC BY-NC-ND 2.0.",
+          "figure_id": "fig_561f07aea67806_1754",
+          "credit": "“Musical ~ Rent” by TeresaHsu is licensed under CC BY-NC-ND 2.0."
+        },
+        {
+          "page": 219,
+          "bbox": [
+            255.515,
+            642.271,
+            744.485,
+            894.288
+          ],
+          "figure": "“NYC – UES: MCNY – Rent” by wallyg is licensed under CC BY-NC-ND 2.0.",
+          "figure_id": "fig_561f07aea67806_1758",
+          "credit": "“NYC – UES: MCNY – Rent” by wallyg is licensed under CC BY-NC-ND 2.0."
+        },
+        {
+          "page": 224,
+          "bbox": [
+            130.515,
+            71.582,
+            869.485,
+            562.862
+          ],
+          "figure": "“Banraku Sanbaso” by K. Roberts Photography is licensed under CC BY-NC-SA 2.0.",
+          "figure_id": "fig_561f07aea67806_1793",
+          "credit": "“Banraku Sanbaso” by K. Roberts Photography is licensed under CC BY-NC-SA 2.0."
+        },
+        {
+          "page": 236,
+          "bbox": [
+            194.24,
+            71.582,
+            805.76,
+            418.231
+          ],
+          "figure": "“Waiting for Godot” by UMTAD is licensed under CC BY-NC 2.0.",
+          "figure_id": "fig_561f07aea67806_1879",
+          "credit": "“Waiting for Godot” by UMTAD is licensed under CC BY-NC 2.0."
+        },
+        {
+          "page": 237,
+          "bbox": [
+            207.721,
+            71.582,
+            792.279,
+            411.005
+          ],
+          "figure": "“Empty set no.13” by angus mcdiarmid is licensed under CC BY-NC 2.0.",
+          "figure_id": "fig_561f07aea67806_1884",
+          "credit": "“Empty set no.13” by angus mcdiarmid is licensed under CC BY-NC 2.0."
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "theatre-film"
+      "subject_id": "theatre-film",
+      "version": 1
     },
     {
       "id": "torts-cases-and-contexts-volume-1",
