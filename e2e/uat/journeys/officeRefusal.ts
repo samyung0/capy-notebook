@@ -68,16 +68,19 @@ export async function heldPublication(run: UatRun, fileId: string) {
 
 /**
  * The edit the publication rebase refuses (e2e/fixtures/files/toc/README.md):
- * one character typed after "Intro" in the first TOC entry's link. A click on
- * the link follows it to its heading, so the caret starts on the "Contents"
- * label and arrows into the link. Typing at the entry's start, Backspace,
- * Delete or Enter would land instead. Returns the text the published
- * document.xml contains once a fresh publication captures the edit.
+ * one character typed after "Intro" in the first TOC entry's link. The editor
+ * mirrors text one element per glyph, each with its document position; the
+ * entry's glyphs are anchors to its heading's bookmark (`#_Toc1`), and a click
+ * on one follows it there. So the caret is placed on the first glyph of the
+ * paragraph's plain "Contents" label and arrows to five glyphs into the link.
+ * Typing at the entry's start, Backspace, Delete or Enter would land instead.
+ * Returns the text the published document.xml contains once a fresh
+ * publication captures the edit.
  */
 export async function editTocLink(page: Page, frame: FrameLocator) {
-  const toc = frame.getByRole('paragraph').filter({ hasText: 'Contents' });
-  const label = toc.getByText('Contents', { exact: true });
-  const link = toc.getByText('Introduction', { exact: true });
+  const toc = frame.locator('[role="paragraph"]:has(a[href="#_Toc1"])');
+  const label = toc.locator('span[data-doc-start]:not(:empty)').first();
+  const link = toc.locator('a[href="#_Toc1"]').first();
   const input = frame.getByRole('textbox', { name: 'Document input' });
   const head = async () =>
     Number(await input.getAttribute('data-selection-head'));
@@ -98,8 +101,9 @@ export async function editTocLink(page: Page, frame: FrameLocator) {
     expect(caret).toBeLessThanOrEqual(
       Number(await label.getAttribute('data-doc-end'))
     );
-  }).toPass({ timeout: 60_000 });
-  const target = Number(await link.getAttribute('data-doc-start')) + 5;
+  }).toPass({ timeout: 20_000 });
+  const target =
+    Number(await link.getAttribute('data-doc-start')) + 'Intro'.length;
   for (let caret = await head(); caret !== target; caret = await head()) {
     assert(caret < target, `the caret passed "Intro" (${caret} > ${target})`);
     await input.press('ArrowRight');
