@@ -1,95 +1,199 @@
 /* ============================================================
-   THEME: NOTION  (SCAFFOLD — draft values)
-   Implements the full semantic-role contract so the theme
-   switcher works end-to-end, but the palette is intentionally
-   minimal: sharp corners, visible dividers, more muted text —
-   the inverse of the classroom house rules. Tune later.
+   STYLE: notion  (latte + macchiato + mocha)
+   Clean, professional, document-first. Neutral warm grays,
+   blue accent, restrained type scale, low radii (rounded but
+   not bubbly). Maps the same TIER-2 role-token contract as
+   classroom; components read ONLY these role tokens.
    ============================================================ */
 
-/* ---------------- NOTION · LIGHT ---------------- */
+[data-style="notion"] {
+  --font-sans:
+    ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+
+  --display-font-size: 2rem;
+  --display-font-weight: 700;
+  --display-line-height: 1.2;
+  --display-letter-spacing: -0.01rem;
+
+  --page-title-font-size: 1.5rem;
+  --page-title-font-weight: 700;
+  --page-title-line-height: 1.2;
+  --page-title-letter-spacing: -0.01rem;
+
+  --large-card-title-font-size: 1.25rem;
+  --large-card-title-font-weight: 600;
+  --large-card-title-line-height: 1.35;
+  --large-card-title-letter-spacing: 0;
+
+  --card-title-font-size: 1rem;
+  --card-title-font-weight: 600;
+  --card-title-line-height: 1.35;
+
+  --subtitle-font-size: 0.875rem;
+  --subtitle-font-weight: 600;
+  --subtitle-line-height: 1.45;
+
+  --body-font-size: 0.875rem;
+  --body-font-weight: 400;
+  --body-line-height: 1.5;
+
+  --meta-font-size: 0.8125rem;
+  --meta-font-weight: 500;
+  --meta-line-height: 1.35;
+
+  --label-font-size: 0.6875rem;
+  --label-font-weight: 600;
+  --label-line-height: 1;
+  --label-letter-spacing: 0.04rem;
+
+  /* Low radii — rounded corners, not bubbles */
+  --radius-input: 6px;
+  --radius-button: 6px;
+  --radius-row: 6px;
+  --radius-card: 8px;
+  --radius-card-lg: 10px;
+  --radius-card-xl: 12px;
+
+  /* Top inset bar geometry (notion edition) */
+  --top-inset-bar-radius: 8px;
+  --top-inset-bar-height: 52px;
+  --top-inset-bar-width: 100%;
+  --top-inset-bar-inverted-radius-gap: 12px;
+}
+
+@media (min-width: 1024px) {
+  [data-style="notion"] {
+    --top-inset-bar-width: 330px;
+  }
+}
+
+@media (min-width: 1280px) {
+  [data-style="notion"] {
+    --top-inset-bar-width: 360px;
+    --top-inset-bar-radius: 10px;
+  }
+}
+
+/* Dial the type scale down on phones so dense screens stay readable. */
+@media (max-width: 767px) {
+  [data-style="notion"] {
+    --display-font-size: 1.75rem;
+    --page-title-font-size: 1.25rem;
+    --large-card-title-font-size: 1.125rem;
+    --card-title-font-size: 0.9375rem;
+    --subtitle-font-size: 0.8125rem;
+    --body-font-size: 0.8125rem;
+    --meta-font-size: 0.75rem;
+    --label-font-size: 0.625rem;
+  }
+}
+
+/* ---------------- notion · LATTE ---------------- */
 [data-style="notion"][data-theme="latte"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #4a3aa7;
-  --chart-2: #eb6834;
-  --chart-3: #1baf7a;
-  --chart-4: #2a78d6;
-  --chart-5: #eda100;
-  --chart-6: #e87ba4;
-  --surface-page: #ffffff;
+  --chart-1: #9065b0;
+  --chart-2: #d9730d;
+  --chart-3: #448361;
+  --chart-4: #337ea9;
+  --chart-5: #cb912f;
+  --chart-6: #c14c8a;
+
+  /* Surfaces: off-white frame, white content, gray dim surface */
+  --surface-page: #f7f7f5; /* outer sidebar/frame */
+  --surface-page-hover: #efeeec;
   --surface-canvas: #ffffff;
   --surface-card-bg: #ffffff;
-  --surface-card-fg: #37352f;
-  --surface-card-fg-muted: #9b9a97;
-  --surface-card-border: #e9e9e7;
-  --surface-inset-bg: #f7f7f5;
-  --surface-inset-fg: #37352f;
-  --surface-inset-border: #e9e9e7;
-  --surface-topbar-bg: #f7f7f5;
+  --surface-card-hover-bg: #f7f7f6;
+  --surface-card-dark-bg: #f1f1ef; /* gray "dim" card / table header */
+  --surface-card-dark-hover-bg: #ececeb;
+  --surface-topbar-bg: #f1f1ef;
   --surface-topbar-fg: #37352f;
 
-  --text-primary: #37352f;
-  --text-secondary: #6b6a65;
-  --text-muted: #9b9a97;
-  --text-placeholder: #c2c1bd;
-  --text-link: #2e6bb0;
-  --text-link-hover: #1f4f87;
+  --color-scrollbar: #d3d1cb;
 
+  /* Text roles */
+  --text-primary: #37352f;
+  --text-secondary: #787774;
+  --text-muted: #9b9a97;
+  --text-placeholder: #a2a19c;
+  --text-link: #337ea9;
+  --text-link-hover: #29567a;
+
+  /* Borders & lines */
   --border-default: #e9e9e7;
   --border-strong: #d9d9d6;
-  --divider: #ededec;
+  --divider: #ececea;
 
+  /* Actions (pairs) */
   --action-primary-bg: #37352f;
   --action-primary-fg: #ffffff;
-  --action-primary-hover: #000000;
+  --action-primary-hover: #0f0e0c;
   --action-accent-bg: #2383e2;
   --action-accent-fg: #ffffff;
   --action-accent-hover: #1a6fc4;
-  --action-outline-bg: #ffffff;
-  --action-outline-fg: #37352f;
-  --action-outline-border: #d9d9d6;
-  --action-ghost-fg: #6b6a65;
 
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors (Notion bg/text pairs) */
   --tint-success-bg: #edf3ec;
   --tint-success-fg: #448361;
-  --solid-success: #448361;
   --tint-info-bg: #e7f3f8;
   --tint-info-fg: #337ea9;
-  --solid-info: #337ea9;
-  --tint-warning-bg: #faf3dd;
+  --tint-warning-bg: #fbf3db;
   --tint-warning-fg: #cb912f;
-  --solid-warning: #cb912f;
-  --tint-error-bg: #fbecec;
+  --tint-error-bg: #fbe4e4;
   --tint-error-fg: #d44c47;
-  --solid-error: #d44c47;
-  --tint-accent-1-bg: #f4f0f7;
+  --tint-accent-1-bg: #f6f3f9;
   --tint-accent-1-fg: #6940a5;
-  --solid-purple: #9065b0;
-  --solid-accent-1: #9065b0;
+  --tint-accent-dark-bg: #37352f;
+  --tint-accent-dark-fg: #ffffff;
   --tint-accent-2-bg: #edf3ec;
   --tint-accent-2-fg: #448361;
-  --solid-green: #448361;
+  --solid-accent-1: #9065b0;
+  --solid-accent-2: #448361;
+  --solid-success: #448361;
+  --solid-info: #337ea9;
+  --solid-warning: #cb912f;
+  --solid-error: #d44c47;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #9065b0;
+  --tint-purple-fg: #ffffff;
+  --tint-green: #448361;
+  --tint-green-fg: #ffffff;
+  --tint-blue: #337ea9;
+  --tint-blue-fg: #ffffff;
+  --tint-amber: #cb912f;
+  --tint-amber-fg: #ffffff;
+  --tint-coral: #d44c47;
+  --tint-coral-fg: #ffffff;
+  --tint-graphite: #37352f;
+  --tint-graphite-fg: #ffffff;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #f1f1ef;
+  --tint-graphite-dark-fg: #37352f;
 
+  /* Sticky-note surfaces */
   --note-green-bg: #edf3ec;
   --note-green-fg: #1c3b29;
   --note-green-fg-muted: #448361;
-  --note-purple-bg: #f4f0f7;
+  --note-purple-bg: #f6f3f9;
   --note-purple-fg: #46295f;
   --note-purple-fg-muted: #6940a5;
   --note-green-soft-bg: #edf3ec;
   --note-green-soft-fg: #448361;
-  --note-purple-soft-bg: #f4f0f7;
+  --note-purple-soft-bg: #f6f3f9;
   --note-purple-soft-fg: #6940a5;
 
-  /* Sharp corners — Notion house style */
-  --radius-input: 4px;
-  --radius-button: 4px;
-  --radius-row: 4px;
-  --radius-card: 5px;
-  --radius-card-lg: 6px;
-  --radius-panel: 6px;
-  --radius-frame: 8px;
-  --radius-pill: 999px;
-
+  /* Shadows — minimal, Notion style */
   --shadow-xs: 0 1px 2px rgba(15, 15, 15, 0.08);
   --shadow-card: 0 1px 2px rgba(15, 15, 15, 0.1);
   --shadow-raised: 0 2px 6px rgba(15, 15, 15, 0.12);
@@ -98,162 +202,213 @@
   color-scheme: light;
 }
 
-/* ---------------- NOTION · DARK ---------------- */
-[data-style="notion"][data-theme="mocha"] {
+/* ---------------- notion · MACCHI (lighter dark) ---------------- */
+[data-style="notion"][data-theme="macchiato"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #9085e9;
-  --chart-2: #d95926;
-  --chart-3: #199e70;
-  --chart-4: #3987e5;
-  --chart-5: #c98500;
-  --chart-6: #d55181;
-  --surface-page: #191919;
-  --surface-canvas: #191919;
-  --surface-card-bg: #202020;
-  --surface-card-fg: #d4d4d2;
-  --surface-card-fg-muted: #797874;
-  --surface-card-border: #2f2f2f;
-  --surface-inset-bg: #262626;
-  --surface-inset-fg: #d4d4d2;
-  --surface-inset-border: #2f2f2f;
-  --surface-topbar-bg: #262626;
-  --surface-topbar-fg: #d4d4d2;
+  --chart-1: #9a6ec3;
+  --chart-2: #e07f24;
+  --chart-3: #529e72;
+  --chart-4: #529cca;
+  --chart-5: #d9ad5f;
+  --chart-6: #d16296;
 
-  --text-primary: #d4d4d2;
-  --text-secondary: #9b9a97;
-  --text-muted: #797874;
-  --text-placeholder: #5a5a57;
+  /* Surfaces */
+  --surface-page: #1d1d1f;
+  --surface-page-hover: #28282b;
+  --surface-canvas: #151517;
+  --surface-card-bg: #222225;
+  --surface-card-hover-bg: #2a2a2e;
+  --surface-card-dark-bg: #303034; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #38383d;
+  --surface-topbar-bg: #28282b;
+  --surface-topbar-fg: #d8d7d5;
 
-  --text-link: #5b9bd5;
-  --text-link-hover: #7db0e0;
+  --color-scrollbar: #4a4a4f;
 
-  --border-default: #2f2f2f;
-  --border-strong: #3d3d3d;
-  --divider: #2a2a2a;
+  /* Text roles */
+  --text-primary: #d8d7d5;
+  --text-secondary: #a3a2a0;
+  --text-muted: #83827f;
+  --text-placeholder: #6b6a68;
+  --text-link: #529cca;
+  --text-link-hover: #6cb1da;
 
-  --action-primary-bg: #d4d4d2;
-  --action-primary-fg: #202020;
-  --action-primary-hover: #ffffff;
+  /* Borders & lines */
+  --border-default: #303034;
+  --border-strong: #3d3d43;
+  --divider: #2a2a2e;
+
+  /* Actions (pairs) — near-white primary on dark */
+  --action-primary-bg: #d8d7d5;
+  --action-primary-fg: #222225;
+  --action-primary-hover: #f2f1ef;
   --action-accent-bg: #2383e2;
   --action-accent-fg: #ffffff;
-  --action-accent-hover: #4a9aea;
-  --action-outline-bg: transparent;
-  --action-outline-fg: #d4d4d2;
-  --action-outline-border: #3d3d3d;
-  --action-ghost-fg: #9b9a97;
+  --action-accent-hover: #3d8fe9;
 
-  --tint-success-bg: #1c2b21;
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
+  --tint-success-bg: #1f2d24;
   --tint-success-fg: #6cae8a;
-  --solid-success: #6cae8a;
-  --tint-info-bg: #18262f;
-  --tint-info-fg: #6aa6c8;
-  --solid-info: #6aa6c8;
-  --tint-warning-bg: #2c2515;
+  --tint-info-bg: #1c2831;
+  --tint-info-fg: #529cca;
+  --tint-warning-bg: #2e2a1e;
   --tint-warning-fg: #d9ad5f;
-  --solid-warning: #d9ad5f;
-  --tint-error-bg: #2e1c1b;
+  --tint-error-bg: #301f1e;
   --tint-error-fg: #df7773;
-  --solid-error: #df7773;
-  --tint-accent-1-bg: #261f30;
+  --tint-accent-1-bg: #292432;
   --tint-accent-1-fg: #b18ad0;
-  --solid-purple: #b18ad0;
-  --solid-accent-1: #b18ad0;
-  --tint-accent-2-bg: #1c2b21;
+  --tint-accent-dark-bg: #0e0e10; /* tooltip — near-black on dark */
+  --tint-accent-dark-fg: #f2f1ef;
+  --tint-accent-2-bg: #1f2d24;
   --tint-accent-2-fg: #6cae8a;
-  --solid-green: #6cae8a;
+  --solid-accent-1: #b18ad0;
+  --solid-accent-2: #6cae8a;
+  --solid-success: #6cae8a;
+  --solid-info: #529cca;
+  --solid-warning: #d9ad5f;
+  --solid-error: #df7773;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #b18ad0;
+  --tint-purple-fg: #2a2135;
+  --tint-green: #6cae8a;
+  --tint-green-fg: #1c2b21;
+  --tint-blue: #529cca;
+  --tint-blue-fg: #182733;
+  --tint-amber: #d9ad5f;
+  --tint-amber-fg: #2e2515;
+  --tint-coral: #df7773;
+  --tint-coral-fg: #341d1b;
+  --tint-graphite: #47474c;
+  --tint-graphite-fg: #f2f1ef;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #303034;
+  --tint-graphite-dark-fg: #d8d7d5;
 
-  --note-green-bg: #1c2b21;
+  /* Sticky-note surfaces */
+  --note-green-bg: #1f2d24;
   --note-green-fg: #a9d4ba;
   --note-green-fg-muted: #6cae8a;
-  --note-purple-bg: #261f30;
+  --note-purple-bg: #292432;
   --note-purple-fg: #cdb4e3;
   --note-purple-fg-muted: #b18ad0;
-  --note-green-soft-bg: #1c2b21;
+  --note-green-soft-bg: #1f2d24;
   --note-green-soft-fg: #6cae8a;
-  --note-purple-soft-bg: #261f30;
+  --note-purple-soft-bg: #292432;
   --note-purple-soft-fg: #b18ad0;
 
-  --radius-input: 4px;
-  --radius-button: 4px;
-  --radius-row: 4px;
-  --radius-card: 5px;
-  --radius-card-lg: 6px;
-  --radius-panel: 6px;
-  --radius-frame: 8px;
-  --radius-pill: 999px;
-
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-raised: 0 2px 8px rgba(0, 0, 0, 0.55);
-  --shadow-pop: 0 4px 18px rgba(0, 0, 0, 0.65);
-  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
 
-/* ---------------- NOTION · MACCHIATO (starts as a copy of mocha; tune independently) ---------------- */
-[data-style="notion"][data-theme="macchiato"] {
+/* ---------------- notion · MOCHA (darkest) ---------------- */
+[data-style="notion"][data-theme="mocha"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #9085e9;
-  --chart-2: #d95926;
-  --chart-3: #199e70;
-  --chart-4: #3987e5;
-  --chart-5: #c98500;
-  --chart-6: #d55181;
-  --surface-page: #191919;
-  --surface-canvas: #191919;
-  --surface-card-bg: #202020;
-  --surface-card-fg: #d4d4d2;
-  --surface-card-fg-muted: #797874;
-  --surface-card-border: #2f2f2f;
-  --surface-inset-bg: #262626;
-  --surface-inset-fg: #d4d4d2;
-  --surface-inset-border: #2f2f2f;
-  --surface-topbar-bg: #262626;
+  --chart-1: #9a6ec3;
+  --chart-2: #e07f24;
+  --chart-3: #529e72;
+  --chart-4: #529cca;
+  --chart-5: #d9ad5f;
+  --chart-6: #d16296;
+
+  /* Surfaces */
+  --surface-page: #171717;
+  --surface-page-hover: #232323;
+  --surface-canvas: #111111;
+  --surface-card-bg: #1d1d1d;
+  --surface-card-hover-bg: #252525;
+  --surface-card-dark-bg: #2a2a2a; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #313131;
+  --surface-topbar-bg: #232323;
   --surface-topbar-fg: #d4d4d2;
 
+  --color-scrollbar: #444444;
+
+  /* Text roles */
   --text-primary: #d4d4d2;
   --text-secondary: #9b9a97;
   --text-muted: #797874;
-  --text-placeholder: #5a5a57;
+  --text-placeholder: #61605d;
+  --text-link: #529cca;
+  --text-link-hover: #6cb1da;
 
-  --text-link: #5b9bd5;
-  --text-link-hover: #7db0e0;
+  /* Borders & lines */
+  --border-default: #2b2b2b;
+  --border-strong: #383838;
+  --divider: #262626;
 
-  --border-default: #2f2f2f;
-  --border-strong: #3d3d3d;
-  --divider: #2a2a2a;
-
+  /* Actions (pairs) — near-white primary on dark */
   --action-primary-bg: #d4d4d2;
-  --action-primary-fg: #202020;
-  --action-primary-hover: #ffffff;
+  --action-primary-fg: #1d1d1d;
+  --action-primary-hover: #eeedeb;
   --action-accent-bg: #2383e2;
   --action-accent-fg: #ffffff;
-  --action-accent-hover: #4a9aea;
-  --action-outline-bg: transparent;
-  --action-outline-fg: #d4d4d2;
-  --action-outline-border: #3d3d3d;
-  --action-ghost-fg: #9b9a97;
+  --action-accent-hover: #3d8fe9;
 
+  /* Tinted containers (bg + fg) + solid signal color */
+  /* system colors */
   --tint-success-bg: #1c2b21;
   --tint-success-fg: #6cae8a;
-  --solid-success: #6cae8a;
   --tint-info-bg: #18262f;
-  --tint-info-fg: #6aa6c8;
-  --solid-info: #6aa6c8;
+  --tint-info-fg: #529cca;
   --tint-warning-bg: #2c2515;
   --tint-warning-fg: #d9ad5f;
-  --solid-warning: #d9ad5f;
   --tint-error-bg: #2e1c1b;
   --tint-error-fg: #df7773;
-  --solid-error: #df7773;
   --tint-accent-1-bg: #261f30;
   --tint-accent-1-fg: #b18ad0;
-  --solid-purple: #b18ad0;
-  --solid-accent-1: #b18ad0;
+  --tint-accent-dark-bg: #0c0c0c; /* tooltip — near-black on dark */
+  --tint-accent-dark-fg: #f0efed;
   --tint-accent-2-bg: #1c2b21;
   --tint-accent-2-fg: #6cae8a;
-  --solid-green: #6cae8a;
+  --solid-accent-1: #b18ad0;
+  --solid-accent-2: #6cae8a;
+  --solid-success: #6cae8a;
+  --solid-info: #529cca;
+  --solid-warning: #d9ad5f;
+  --solid-error: #df7773;
+  /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
+  --tint-purple: #b18ad0;
+  --tint-purple-fg: #261e30;
+  --tint-green: #6cae8a;
+  --tint-green-fg: #1a2a20;
+  --tint-blue: #529cca;
+  --tint-blue-fg: #152530;
+  --tint-amber: #d9ad5f;
+  --tint-amber-fg: #2c2413;
+  --tint-coral: #df7773;
+  --tint-coral-fg: #311b19;
+  --tint-graphite: #414141;
+  --tint-graphite-fg: #f0efed;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
+  --tint-graphite-dark: #2a2a2a;
+  --tint-graphite-dark-fg: #d4d4d2;
 
+  /* Sticky-note surfaces */
   --note-green-bg: #1c2b21;
   --note-green-fg: #a9d4ba;
   --note-green-fg-muted: #6cae8a;
@@ -265,19 +420,12 @@
   --note-purple-soft-bg: #261f30;
   --note-purple-soft-fg: #b18ad0;
 
-  --radius-input: 4px;
-  --radius-button: 4px;
-  --radius-row: 4px;
-  --radius-card: 5px;
-  --radius-card-lg: 6px;
-  --radius-panel: 6px;
-  --radius-frame: 8px;
-  --radius-pill: 999px;
-
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-raised: 0 2px 8px rgba(0, 0, 0, 0.55);
-  --shadow-pop: 0 4px 18px rgba(0, 0, 0, 0.65);
-  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }

@@ -292,7 +292,11 @@ function GeneralTab() {
                 onClick={() => setTheme(t.value)}
                 type="button"
               >
-                {t.value === 'latte' ? m.mode_light() : m.mode_dark()}
+                {t.value === 'latte'
+                  ? m.mode_light()
+                  : t.value === 'mocha'
+                    ? m.mode_dark()
+                    : t.label}
               </button>
             ))}
           </div>
