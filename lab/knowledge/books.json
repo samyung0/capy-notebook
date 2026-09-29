@@ -816,6 +816,31 @@
       "version": 4
     },
     {
+      "id": "british-literature-i-anthology-from-the-middle-ages-to-neocl",
+      "title": "British Literature I Anthology: From the Middle Ages to Neoclassicism and the Eighteenth Century",
+      "authors": [
+        "Bonnie J. Robinson",
+        "Laura J. Getty"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/british-literature-i-anthology-from-the-middle-ages-to-neoclassicism-and-the-eighteenth-century",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1100",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/british-literature-i-anthology-from-the-middle-ages-to-neoclassicism-and-the-eighteenth-century",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "British Literature I Anthology: From the Middle Ages to Neoclassicism and the Eighteenth Century, Bonnie J. Robinson, Laura J. Getty. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/british-literature-i-anthology-from-the-middle-ages-to-neoclassicism-and-the-eighteenth-century",
+      "pdf_path": "data/knowledge-base/sources/6fd28e695547273b42b55986bfbbd82899853e45284c1394f350dae90a528695.pdf",
+      "sha256": "6fd28e695547273b42b55986bfbbd82899853e45284c1394f350dae90a528695",
+      "bytes": 42133571,
+      "pages": 2982,
+      "first_content_page": 1064,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "literature"
+    },
+    {
       "id": "business-ethics",
       "title": "Business Ethics",
       "authors": [
@@ -7911,7 +7936,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "programming"
+      "subject_id": "programming",
+      "version": 1
     },
     {
       "id": "introduction-to-school-leadership",
@@ -9170,6 +9196,31 @@
       "version": 2
     },
     {
+      "id": "nursing-mental-health-and-community-concepts-2e",
+      "title": "Nursing Mental Health and Community Concepts - 2e",
+      "authors": [
+        "Elizabeth Christman",
+        "Kimberly Ernstmeyer"
+      ],
+      "edition": "2nd Edition",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/nursing-mental-health-and-community-concepts",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3072",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/495e82ffa997b74d5870432a09921a1747da6ebc4e7f6d3550657ed774a9bfc7.pdf#page=4",
+      "license_evidence_quote": "Nursing Mental Health and Community Concepts 2e Copyright © 2025 by WisTech Open is licensed under a Creative Commons Attribution 4.0 International License, except where otherwise noted.",
+      "attribution_reviewed": false,
+      "attribution": "Nursing Mental Health and Community Concepts - 2e, Elizabeth Christman, Kimberly Ernstmeyer, 2nd Edition. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/nursing-mental-health-and-community-concepts",
+      "pdf_path": "data/knowledge-base/sources/495e82ffa997b74d5870432a09921a1747da6ebc4e7f6d3550657ed774a9bfc7.pdf",
+      "sha256": "495e82ffa997b74d5870432a09921a1747da6ebc4e7f6d3550657ed774a9bfc7",
+      "bytes": 35166435,
+      "pages": 1470,
+      "first_content_page": 35,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "nursing"
+    },
+    {
       "id": "online-statistics-education-an-interactive-multimedia-course",
       "title": "Online Statistics Education: An Interactive Multimedia Course of Study",
       "authors": [
@@ -10086,7 +10137,8 @@
       "first_content_page": 9,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "accounting"
+      "subject_id": "accounting",
+      "version": 1
     },
     {
       "id": "principles-of-object-oriented-programming",
@@ -10139,6 +10191,30 @@
       "rights_notes": [],
       "subject_id": "aerospace-engineering",
       "version": 2
+    },
+    {
+      "id": "producing-open-source-software-how-to-run-a-successful-free-",
+      "title": "Producing Open Source Software: How to Run a Successful Free Software Project",
+      "authors": [
+        "Karl Fogel"
+      ],
+      "edition": "2nd Edition",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/producing-open-source-software-how-to-run-a-successful-free-software-project",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3495",
+      "license": "CC BY-SA",
+      "license_url": "https://producingoss.com/en/copyright.html",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/producing-open-source-software-how-to-run-a-successful-free-software-project",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Producing Open Source Software: How to Run a Successful Free Software Project, Karl Fogel, 2nd Edition. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/producing-open-source-software-how-to-run-a-successful-free-software-project",
+      "pdf_path": "data/knowledge-base/sources/55c912bfb9412ec87f9af05e827865ebaa6adb6f20d928685eda559269568403.pdf",
+      "sha256": "55c912bfb9412ec87f9af05e827865ebaa6adb6f20d928685eda559269568403",
+      "bytes": 1171593,
+      "pages": 233,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "programming"
     },
     {
       "id": "programming-fundamentals-a-modular-structured-approach-using",
