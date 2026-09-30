@@ -21,9 +21,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/Popover';
-import { Tabs } from '@/components/ui/Tabs';
 import { ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { userToast } from '@/components/ui/userToast';
+import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { BlockEditor, type UploadQuestionAsset } from './BlockEditor';
@@ -35,11 +36,7 @@ import {
   StringList,
 } from './editorFields';
 import { renderGraphSvg } from './graph';
-import {
-  type BlockSection,
-  QuestionBlockView,
-  QuestionView,
-} from './QuestionView';
+import { type BlockSection, QuestionBlockView } from './QuestionView';
 import { TextView } from './TextView';
 import {
   blankQuestion,
@@ -85,7 +82,6 @@ export interface QuestionDialogProps {
   open: boolean;
   policy?: 'quiz' | 'bank';
   question: Question;
-  questionCount?: number;
   questionNumber?: number;
   uploadAsset?: UploadQuestionAsset;
 }
@@ -173,7 +169,6 @@ function QuestionDialogSession({
   onReload,
   context,
   questionNumber,
-  questionCount,
   policy = 'quiz',
   bankAssetsUrl,
   uploadAsset,
@@ -346,11 +341,17 @@ function QuestionDialogSession({
         );
         onClose();
       } catch (error) {
-        setError(
+        const message =
           error instanceof Error
             ? error.message
-            : m.question_ui_could_not_save_question()
-        );
+            : m.question_ui_could_not_save_question();
+        // The inline message keeps the conflict reload next to it.
+        setError(message);
+        userToast({
+          description: message,
+          title: m.question_ui_could_not_save_question(),
+          variant: 'error',
+        });
       }
     },
     (errors) => {
@@ -409,7 +410,13 @@ function QuestionDialogSession({
       setSelected({ kind: 'block', location: { ...target.location, index } });
     }
   };
-  const row = (item: Row, label: string, indent = false) => {
+  // Part labels only mean something when a question has several parts.
+  const labelled = draft.parts.length > 1;
+  const row = (
+    item: Row,
+    label: string,
+    { mark, meta }: { mark?: string; meta?: string } = {}
+  ) => {
     const key = rowKey(item);
     const part =
       item.kind === 'block'
@@ -424,10 +431,7 @@ function QuestionDialogSession({
     return (
       <div
         className={cn(
-          'group relative flex min-w-0 items-center gap-1 rounded-sm',
-          indent && 'ml-4',
-          item.kind === 'part' && 'mt-3',
-          item.kind === 'solution' && 'text-fg-muted',
+          'group relative flex min-w-0 items-center gap-1 rounded-button hover:bg-surface-hover-bg',
           selected && rowKey(selected) === key && 'bg-tint-accent-1',
           drop?.key === key &&
             (drop.after
@@ -460,7 +464,10 @@ function QuestionDialogSession({
       >
         <button
           aria-expanded={item.kind === 'solution' ? expanded : undefined}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm"
+          className={cn(
+            'grid min-w-0 flex-1 px-2 py-1.5 text-left text-sm',
+            labelled ? 'grid-cols-[1.75rem_minmax(0,1fr)]' : 'grid-cols-1'
+          )}
           onClick={() => {
             setSelected(item);
             if (item.kind === 'block') openBlock(item.location);
@@ -475,37 +482,32 @@ function QuestionDialogSession({
           }}
           type="button"
         >
-          {block && (
-            <Icon
-              className="size-4 shrink-0 text-fg-muted"
-              name={block.type === 'graph' ? 'image' : block.type}
-            />
-          )}
-          {item.kind === 'solution' && (
-            <Icon
-              className="size-3 shrink-0"
-              name={expanded ? 'chevronDown' : 'chevronRight'}
-            />
-          )}
-          <span className="min-w-0 truncate">
-            {block?.type === 'text' ? (
-              <TextView
-                className="whitespace-nowrap [&>span]:inline"
-                text={label}
+          {labelled && <strong>{mark}</strong>}
+          <span className="flex min-w-0 items-center gap-1.5">
+            {item.kind === 'solution' && (
+              <Icon
+                className="size-3 shrink-0 text-fg-muted"
+                name={expanded ? 'chevronDown' : 'chevronRight'}
               />
-            ) : item.kind === 'part' ? (
-              <strong>{label}</strong>
-            ) : (
-              label
             )}
-            {part && item.kind === 'part' && (
-              <span className="text-fg-muted">
-                {' '}
-                {marksLabel(part.markscheme.length)} ·{' '}
-                {answerLabels[part.answer.type]()}
-              </span>
-            )}
+            <span className="min-w-0 truncate">
+              {block?.type === 'text' ? (
+                <TextView
+                  className="whitespace-nowrap [&>span]:inline"
+                  text={label}
+                />
+              ) : (
+                label
+              )}
+            </span>
           </span>
+          {meta && (
+            <span
+              className={cn('text-fg-muted text-xs', labelled && 'col-start-2')}
+            >
+              {meta}
+            </span>
+          )}
         </button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -692,69 +694,65 @@ function QuestionDialogSession({
   };
   return (
     <SimpleDialog
-      cardClassName="h-full min-h-0 rounded-none sm:h-auto sm:rounded-card-lg"
-      cardScrollContainerClassName="max-h-dvh overflow-hidden px-4 py-5 sm:max-h-[88dvh] sm:px-5.5 sm:py-6.5 [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
-      className="top-0 left-0 h-dvh max-h-dvh translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[88dvh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
+      cardClassName="min-h-0 rounded-t-card-xl rounded-b-none sm:rounded-card-lg"
+      cardScrollContainerClassName="max-h-[92dvh] overflow-hidden px-4 py-5 sm:max-h-[88dvh] sm:px-5.5 sm:py-6.5 [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
+      className="top-auto bottom-0 left-0 max-h-[92dvh] translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[88dvh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
       footer={
-        <>
-          <span className="mr-auto self-center text-fg-muted text-sm">
-            {questionNumber != null &&
-              (questionCount == null
-                ? m.question_ui_question_number({ number: questionNumber })
-                : m.question_ui_question_number_of({
-                    number: questionNumber,
-                    total: questionCount,
-                  }))}
-          </span>
-          {editing ? (
-            <>
-              <Button
-                disabled={
-                  pending ||
-                  (editing.kind === 'part' && draft.parts.length <= 1)
-                }
-                onClick={() =>
-                  editing.kind === 'block'
-                    ? removeBlock(editing.location)
-                    : removePart(editing.part.id)
-                }
-                type="button"
-                variant="danger-light"
-              >
-                {editing.kind === 'part'
-                  ? m.question_ui_remove_part()
-                  : m.question_ui_remove_block()}
-              </Button>
-              <Button
-                disabled={pending}
-                onClick={() => void saveInner()}
-                type="button"
-                variant="accent"
-              >
-                {m.question_ui_save()}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button
-                disabled={pending}
-                onClick={onClose}
-                type="button"
-                variant="ghost"
-              >
-                {m.question_ui_cancel()}
-              </Button>
-              <Button
-                disabled={pending}
-                onClick={() => void saveQuestion()}
-                type="button"
-                variant="accent"
-              >
-                {m.question_ui_save()}
-              </Button>
-            </>
-          )}
-        </>
+        editing ? (
+          <>
+            <Button
+              className="rounded-input"
+              disabled={
+                pending || (editing.kind === 'part' && draft.parts.length <= 1)
+              }
+              onClick={() =>
+                editing.kind === 'block'
+                  ? removeBlock(editing.location)
+                  : removePart(editing.part.id)
+              }
+              size="lg"
+              type="button"
+              variant="danger-light"
+            >
+              {editing.kind === 'part'
+                ? m.question_ui_remove_part()
+                : m.question_ui_remove_block()}
+            </Button>
+            <Button
+              className="rounded-input"
+              disabled={pending}
+              onClick={() => void saveInner()}
+              size="lg"
+              type="button"
+              variant="accent"
+            >
+              {m.question_ui_save()}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              className="rounded-input"
+              disabled={pending}
+              onClick={onClose}
+              size="lg"
+              type="button"
+              variant="ghost-hover"
+            >
+              {m.question_ui_cancel()}
+            </Button>
+            <Button
+              className="rounded-input"
+              disabled={pending}
+              onClick={() => void saveQuestion()}
+              size="lg"
+              type="button"
+              variant="accent"
+            >
+              {m.question_ui_save()}
+            </Button>
+          </>
+        )
       }
       onClose={() => {
         if (!pending) onClose();
@@ -768,7 +766,7 @@ function QuestionDialogSession({
           )}
         </div>
       }
-      width={1100}
+      width={920}
     >
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
         {error && (
@@ -865,130 +863,146 @@ function QuestionDialogSession({
             )}
           </div>
         ) : (
-          <>
-            <Tabs
-              className="mb-3 md:hidden"
-              onChange={(tab) => setMobileTab(tab as 'outline' | 'preview')}
-              tabs={[
-                { label: m.question_ui_outline(), value: 'outline' },
-                { label: m.question_ui_preview(), value: 'preview' },
-              ]}
-              value={mobileTab}
-            />
-            <div className="grid min-h-72 min-w-0 gap-5 md:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.7fr)]">
-              <div
-                className={cn(
-                  'min-w-0 space-y-1 md:block md:border-divider md:border-r md:pr-4',
-                  mobileTab !== 'outline' && 'hidden'
-                )}
-              >
-                <div className="flex items-center gap-1">
-                  <span className="mr-auto px-2 font-semibold">
-                    {m.question_ui_question()}
-                  </span>
-                  <Popover onOpenChange={setAddOpen} open={addOpen}>
-                    <PopoverTrigger asChild>
-                      <ToolbarButton label={m.question_ui_add_block_or_part()}>
-                        <Icon name="plus" />
-                      </ToolbarButton>
-                    </PopoverTrigger>
-                    <PopoverContent>
-                      {(
-                        [
-                          'text',
-                          'chart',
-                          'graph',
-                          'table',
-                          ...(policy === 'bank' ? ['image' as const] : []),
-                          'part',
-                        ] as const
-                      ).map((type) => (
-                        <Button
-                          key={type}
-                          onClick={() => add(type)}
-                          type="button"
-                          variant="ghost"
-                        >
-                          {blockLabels[type]()}
-                        </Button>
-                      ))}
-                    </PopoverContent>
-                  </Popover>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <ToolbarButton label={m.question_ui_question_settings()}>
-                        <Icon name="moreVertical" />
-                      </ToolbarButton>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent>
-                      <div className="space-y-3 p-2">
-                        <SelectField
-                          label={m.question_ui_layout()}
-                          onChange={(layout) =>
-                            setDraft({
-                              ...draft,
-                              layout: layout as Question['layout'],
-                            })
-                          }
-                          options={[
-                            {
-                              label: m.question_ui_exam_paper(),
-                              value: 'paper',
-                            },
-                            {
-                              label: m.question_ui_split_view(),
-                              value: 'split',
-                            },
-                          ]}
-                          value={draft.layout}
-                        />
-                        <SelectField
-                          label={m.question_ui_part_labels()}
-                          onChange={(labels) =>
-                            setDraft({
-                              ...draft,
-                              labels: labels as Question['labels'],
-                            })
-                          }
-                          options={[
-                            { label: '(a), (b)', value: 'letters' },
-                            { label: '1, 2', value: 'numbers' },
-                          ]}
-                          value={draft.labels}
-                        />
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                {draft.stem.map((block, index) =>
-                  row(
-                    { kind: 'block', location: { index } },
-                    blockSummary(block)
-                  )
-                )}
-                {draft.parts.map((part, i) => (
-                  <div key={part.id}>
-                    {row(
-                      { kind: 'part', partId: part.id },
-                      draft.labels === 'letters'
-                        ? `(${String.fromCharCode(97 + i)})`
-                        : `${i + 1}.`
-                    )}
+          <div className="grid min-h-72 min-w-0 gap-5 md:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.7fr)]">
+            <div
+              className={cn(
+                'min-w-0 space-y-1 md:block md:border-divider md:border-r md:pr-4',
+                mobileTab !== 'outline' && 'hidden'
+              )}
+            >
+              <div className="flex items-center gap-1">
+                <span className="mr-auto px-2 font-semibold">
+                  {questionNumber == null
+                    ? m.question_ui_question()
+                    : m.question_ui_question_number({
+                        number: questionNumber,
+                      })}
+                </span>
+                <Popover onOpenChange={setAddOpen} open={addOpen}>
+                  <PopoverTrigger asChild>
+                    <ToolbarButton label={m.question_ui_add_block_or_part()}>
+                      <Icon name="plus" />
+                    </ToolbarButton>
+                  </PopoverTrigger>
+                  <PopoverContent>
+                    {(
+                      [
+                        'text',
+                        'chart',
+                        'graph',
+                        'table',
+                        ...(policy === 'bank' ? ['image' as const] : []),
+                        'part',
+                      ] as const
+                    ).map((type) => (
+                      <Button
+                        key={type}
+                        onClick={() => add(type)}
+                        type="button"
+                        variant="ghost"
+                      >
+                        {blockLabels[type]()}
+                      </Button>
+                    ))}
+                  </PopoverContent>
+                </Popover>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <ToolbarButton label={m.question_ui_question_settings()}>
+                      <Icon name="moreVertical" />
+                    </ToolbarButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <div className="space-y-3 p-2">
+                      <SelectField
+                        label={m.question_ui_layout()}
+                        onChange={(layout) =>
+                          setDraft({
+                            ...draft,
+                            layout: layout as Question['layout'],
+                          })
+                        }
+                        options={[
+                          {
+                            label: m.question_ui_exam_paper(),
+                            value: 'paper',
+                          },
+                          {
+                            label: m.question_ui_split_view(),
+                            value: 'split',
+                          },
+                        ]}
+                        value={draft.layout}
+                      />
+                      <SelectField
+                        label={m.question_ui_part_labels()}
+                        onChange={(labels) =>
+                          setDraft({
+                            ...draft,
+                            labels: labels as Question['labels'],
+                          })
+                        }
+                        options={[
+                          { label: '(a), (b)', value: 'letters' },
+                          { label: '1, 2', value: 'numbers' },
+                        ]}
+                        value={draft.labels}
+                      />
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              {draft.stem.map((block, index) =>
+                row(
+                  { kind: 'block', location: { index } },
+                  blockSummary(block),
+                  { meta: blockLabels[block.type]() }
+                )
+              )}
+              {draft.parts.map((part, i) => {
+                // The part label sits on the part's first row: its first
+                // block, or its answer row when it has no blocks.
+                const mark =
+                  draft.labels === 'letters'
+                    ? `(${String.fromCharCode(97 + i)})`
+                    : `${i + 1}.`;
+                return (
+                  <div
+                    className={cn(labelled && i > 0 && 'mt-2')}
+                    key={part.id}
+                  >
                     {part.blocks.map((block, index) =>
                       row(
-                        { kind: 'block', location: { index, partId: part.id } },
+                        {
+                          kind: 'block',
+                          location: { index, partId: part.id },
+                        },
                         blockSummary(block),
-                        true
+                        {
+                          mark: index === 0 ? mark : undefined,
+                          meta: blockLabels[block.type](),
+                        }
                       )
                     )}
                     {row(
+                      { kind: 'part', partId: part.id },
+                      m.question_ui_answer_and_marking_scheme(),
+                      {
+                        mark: part.blocks.length ? undefined : mark,
+                        meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.markscheme.length)}`,
+                      }
+                    )}
+                    {row(
                       { kind: 'solution', partId: part.id },
-                      part.solution.length === 1
-                        ? m.question_ui_solution_one_block()
-                        : m.question_ui_solution_blocks({
-                            count: part.solution.length,
-                          }),
-                      true
+                      m.question_ui_worked_solution(),
+                      {
+                        meta:
+                          part.solution.length === 1
+                            ? m.question_ui_one_block()
+                            : m.question_ui_block_count({
+                                count: part.solution.length,
+                              }),
+                      }
                     )}
                     {expandedSolutions.includes(part.id) &&
                       part.solution.map((block, index) =>
@@ -1002,40 +1016,61 @@ function QuestionDialogSession({
                             },
                           },
                           blockSummary(block),
-                          true
+                          { meta: blockLabels[block.type]() }
                         )
                       )}
                   </div>
-                ))}
-              </div>
-              <div
-                className={cn(
-                  'min-w-0 px-1.5 md:block',
-                  mobileTab !== 'preview' && 'hidden'
-                )}
+                );
+              })}
+              {/* Phones show the outline first; the preview is one step in. */}
+              <button
+                className="mt-3 flex w-full items-center justify-between rounded-input border border-line px-3.5 py-3 text-left font-semibold md:hidden"
+                onClick={() => setMobileTab('preview')}
+                type="button"
               >
-                <QuestionView
-                  question={draft}
-                  questionNumber={questionNumber}
-                  renderBlock={previewBlock}
-                />
-                {selected?.kind === 'block' && selected.location.solution && (
-                  <section className="mt-8">
-                    <h3 className="mb-4 font-semibold">
-                      {m.question_ui_worked_solution()}
-                    </h3>
-                    {sectionBlocks(draft, selected.location).map(
-                      (block, index) => (
-                        <div key={index}>
-                          {previewBlock(block, index, selected.location)}
-                        </div>
-                      )
-                    )}
-                  </section>
-                )}
-              </div>
+                {m.question_ui_preview_question()}
+                <Icon name="navigationForward" size={16} />
+              </button>
             </div>
-          </>
+            <div
+              className={cn(
+                'min-w-0 px-1.5 md:block',
+                mobileTab !== 'preview' && 'hidden'
+              )}
+            >
+              <Button
+                className="mb-4 md:hidden"
+                iconLeft="navigationBack"
+                onClick={() => setMobileTab('outline')}
+                size="sm"
+                type="button"
+                variant="ghost-hover"
+              >
+                {m.question_ui_back_to_outline()}
+              </Button>
+              <QuestionRunner
+                answers={{}}
+                disabled
+                question={draft}
+                questionNumber={questionNumber}
+                renderBlock={previewBlock}
+              />
+              {selected?.kind === 'block' && selected.location.solution && (
+                <section className="mt-8">
+                  <h3 className="mb-4 font-semibold">
+                    {m.question_ui_worked_solution()}
+                  </h3>
+                  {sectionBlocks(draft, selected.location).map(
+                    (block, index) => (
+                      <div key={index}>
+                        {previewBlock(block, index, selected.location)}
+                      </div>
+                    )
+                  )}
+                </section>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </SimpleDialog>

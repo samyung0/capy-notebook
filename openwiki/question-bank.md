@@ -2,8 +2,14 @@
 
 The bank is a separate syllabus and question database. Signed-in learners read
 question content; granted bank editors can edit, mark reviewed, upload figures
-and send a comment. The bank page is unlisted at `/bank`. Studying directly from
-the bank and production Jev grading remain in `todo-question-bank.md`.
+and send a comment. The bank page is unlisted at `/bank`, inside the app shell:
+the main panel shows every question of the chosen topic (one detail request per
+question), and a dashboard-style right column holds exams and topics, swapping
+to the topic's question list; on phones that column becomes a floating bar and
+bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
+the answer key and a review bar (review status, Mark reviewed/Undo review,
+Comment, Edit) under each question. Studying directly from the bank and
+production Jev grading remain in `todo-question-bank.md`.
 
 ## Shared question format
 
@@ -72,24 +78,31 @@ current-part, figure-description, table and chart context. Jev integration,
 per-item decisions and the review computation classifier are deferred.
 
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
-Completion and saved attempt pages share the part review renderer: score in the
-marks column, marking scheme, submitted answer, then collapsed worked solution.
-Closed parts show item awards from their deterministic result; open parts keep
-their part award without inventing per-item scores.
+Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
+question dialog preview) use `QuestionRunner`; a quiz shows all its questions on
+one page (`QuizQuestionList`) with one Submit. Completion and saved attempt pages
+share the part review renderer: "You scored" with one green/red square per
+question (blank answers are wrong; grey is reserved for a future Skip), marks in
+tint-fg colours, the submitted answer, then one collapsed disclosure holding the
+marking scheme and worked solution. Closed parts show item awards from their
+deterministic result; open parts keep their part award without inventing
+per-item scores.
 
 Answer areas span the text and marks columns of a part row; phones use 16px
-pane padding and a 1.5rem number column. Choice letters sit in bordered 26px
-keys; matching letters and ordering numbers use the same box without a border.
-Selected and result rows reuse the editor callout variants (tip, success,
-danger, warning). After checking, choices tag "Your answer" and "Correct
-answer", true/false shows two result rows, a short answer marks its field and
-lists every accepted answer with its unit, an open answer shows the judge's
-reason after a full/half/no marks lead, matching rows show the chosen letter
-and the correct one above the option list, and wrong ordering rows show their
-right position.
-Matching dropdowns list letters in stored option order; only ordering starts
-shuffled. The static view numbers matching items above the lettered options on
-phones and beside them from md.
+pane padding and a 1.5rem number column. Every answer item is a fully rounded
+bordered row keyed by a dotted letter or number (A., 1.); matching items stay
+borderless because their shared `Select` carries the border. Selected and result
+rows reuse the editor callout variants (tip, success, danger, warning). True /
+false and text inputs span the row. After checking, choices tag "Your answer"
+and "Correct answer", true/false shows two result rows, a short answer marks its
+field and lists every accepted answer with its unit, an open answer shows the
+judge's reason after a full/half/no marks lead, matching rows show the chosen
+letter and the correct one beside the option list, and wrong ordering rows show
+their right position.
+Matching dropdowns list letters in stored option order. Ordering starts
+shuffled and the shown order is committed as the answer as soon as it renders.
+The static view numbers matching items above the lettered options on phones and
+beside them from md.
 Review batches respect the existing 200-question and 2 MiB bounds, namespace
 their part IDs without changing stored source IDs, and remove only questions
 answered correctly in that batch. Unattempted mistakes remain.

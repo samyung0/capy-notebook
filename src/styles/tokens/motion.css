@@ -327,3 +327,37 @@
     filter: none;
   }
 }
+
+/* Quiz result: the party popper pops, then its confetti flies out and settles. */
+@keyframes motion-confetti-pop {
+  0% {
+    transform: scale(0.3) rotate(-25deg);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.18) rotate(8deg);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+@utility motion-confetti-pop {
+  animation: motion-confetti-pop 700ms cubic-bezier(0.2, 1.2, 0.4, 1) 150ms both;
+}
+@keyframes motion-confetti-burst {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+}
+/* Each piece sets --dx, --dy and --r; its resting transform is the end frame. */
+@utility motion-confetti-burst {
+  transform: translate(calc(var(--dx) - 50%), calc(var(--dy) - 50%))
+    rotate(var(--r));
+  animation: motion-confetti-burst 900ms cubic-bezier(0.15, 0.8, 0.3, 1) 300ms
+    backwards;
+}

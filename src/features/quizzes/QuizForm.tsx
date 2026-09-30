@@ -1,11 +1,10 @@
 import { lazy, Suspense, useState } from 'react';
 import type { Question } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { QuestionView } from '@/features/questions/QuestionView';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
+import { QuizQuestionList } from './QuizPage';
 
 const QuestionDialog = lazy(() =>
   import('@/features/questions/QuestionDialog').then((module) => ({
@@ -22,56 +21,55 @@ export function isCompleteQuestion(question: Question): boolean {
     return false;
   }
 }
+/** The quiz editor's question list: each question as learners see it, with
+ * Remove and Edit under it, then Add question. */
 export function QuizForm({
   name,
   questions,
-  onNameChange,
   onQuestionsChange,
-  showName = true,
 }: {
   name: string;
   questions: Question[];
-  onNameChange: (name: string) => void;
   onQuestionsChange: (questions: Question[]) => void;
-  showName?: boolean;
 }) {
   const [editing, setEditing] = useState<Question | null>(null);
   return (
-    <div className="flex flex-col gap-6">
-      {showName && (
-        <Input
-          aria-label={m.common_name()}
-          onChange={(event) => onNameChange(event.target.value)}
-          value={name}
-        />
-      )}
-      {questions.map((question, index) => (
-        <section className="border-divider border-b pb-6" key={question.id}>
-          <div className="mb-3 flex justify-end gap-2">
+    <div className="grid gap-10">
+      <QuizQuestionList
+        disabled
+        questions={questions}
+        renderAfter={(question) => (
+          <div className="flex justify-end gap-0.5 sm:gap-1.5">
             <Button
+              className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+              iconLeft="trash"
+              iconLeftClassName="size-3.5 sm:size-3.75"
               onClick={() =>
                 onQuestionsChange(questions.filter((q) => q.id !== question.id))
               }
               size="sm"
               type="button"
-              variant="ghost"
+              variant="danger-light"
             >
               {m.action_remove()}
             </Button>
             <Button
+              className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="pencil"
+              iconLeftClassName="size-3.5 sm:size-3.75"
               onClick={() => setEditing(question)}
               size="sm"
               type="button"
-              variant="ghost"
+              variant="ghost-hover"
             >
               {m.action_edit()}
             </Button>
           </div>
-          <QuestionView question={question} questionNumber={index + 1} />
-        </section>
-      ))}
+        )}
+      />
       <Button
+        className="rounded-input"
+        fullWidth
         iconLeft="plus"
         onClick={() => setEditing(blankQuestion())}
         type="button"
@@ -95,10 +93,6 @@ export function QuizForm({
             }}
             open
             question={editing}
-            questionCount={
-              questions.length +
-              (questions.some((q) => q.id === editing.id) ? 0 : 1)
-            }
             questionNumber={
               questions.some((q) => q.id === editing.id)
                 ? questions.findIndex((q) => q.id === editing.id) + 1

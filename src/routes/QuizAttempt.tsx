@@ -1,22 +1,29 @@
-import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import {
+  Link,
+  useCanGoBack,
+  useNavigate,
+  useParams,
+  useRouter,
+} from '@tanstack/react-router';
+import { type ReactNode, useCallback, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
-import { Panel } from '@/components/app/layout';
+import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { TabContent } from '@/components/app/tabPanel';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
-import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
+import { type Answer, scoreQuestion } from '@/features/quizzes/grade';
+import { isAnswered } from '@/features/quizzes/QuestionRunner';
 import {
-  type Answer,
-  formatPoints,
-  scoreQuestion,
-} from '@/features/quizzes/grade';
-import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+  QuizPageHeader,
+  QuizQuestionList,
+  QuizScore,
+  quizMeta,
+} from '@/features/quizzes/QuizPage';
 import { gradeAttemptQuestions } from '@/features/quizzes/scoreAttempt';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -26,12 +33,26 @@ import { describeError, llmKeyUserMessage } from '@/lib/errors';
 import { track } from '@/lib/observability';
 
 export default function QuizAttempt() {
-  const params = useParams({ strict: false });
-  const quizId = (params as { quizId: string }).quizId;
-  return <Attempt key={quizId} quizId={quizId} />;
+  return <QuizAttemptPage shared={false} />;
 }
 
-function Attempt({ quizId }: { quizId: string }) {
+/** A shared link renders outside the app shell, so it brings the shell's
+ * padding and has nowhere to go back to. */
+export function SharedQuizAttempt() {
+  return (
+    <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
+      <QuizAttemptPage shared />
+    </div>
+  );
+}
+
+function QuizAttemptPage({ shared }: { shared: boolean }) {
+  const params = useParams({ strict: false });
+  const quizId = (params as { quizId: string }).quizId;
+  return <Attempt key={quizId} quizId={quizId} shared={shared} />;
+}
+
+function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
   const {
     data: quiz,
     error,
@@ -51,44 +72,41 @@ function Attempt({ quizId }: { quizId: string }) {
   });
   const frozen = useAccountFrozen();
   const navigate = useNavigate();
+  const router = useRouter();
+  const canGoBack = useCanGoBack();
 
-  const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [done, setDone] = useState(false);
   const [graded, setGraded] = useState<Awaited<
     ReturnType<typeof gradeAttemptQuestions>
   > | null>(null);
   const [grading, setGrading] = useState(false);
+  const setAnswer = useCallback(
+    (partId: string, value: Answer) =>
+      setAnswers((current) => ({ ...current, [partId]: value })),
+    []
+  );
 
-  const liveScore = useMemo(() => {
-    if (!quiz) return { awarded: 0, max: 0 };
-    return quiz.questions
-      .map((q) => scoreQuestion(q, answers))
-      .reduce(
-        (acc, s) => ({
-          awarded: acc.awarded + s.awarded,
-          max: acc.max + s.max,
-        }),
-        { awarded: 0, max: 0 }
-      );
-  }, [quiz, answers]);
-  const score = graded ?? liveScore;
+  const back = shared
+    ? undefined
+    : () =>
+        canGoBack ? router.history.back() : void navigate({ to: '/create' });
 
   if (fetchStatus === 'paused') {
     return (
-      <Panel sectionClassName="h-full">
+      <PanelWithInvertedRadius>
         <QueryPausedState className="h-full" />
-      </Panel>
+      </PanelWithInvertedRadius>
     );
   }
 
   if (isLoading || (!isFetchedAfterMount && !isError)) {
     return (
-      <Panel sectionClassName="h-full">
+      <PanelWithInvertedRadius>
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </Panel>
+      </PanelWithInvertedRadius>
     );
   }
 
@@ -104,23 +122,35 @@ function Attempt({ quizId }: { quizId: string }) {
     );
   }
 
+  const header = (actions?: ReactNode) => (
+    <QuizPageHeader
+      actions={actions}
+      meta={quizMeta(quiz.questions)}
+      onBack={back}
+      title={quiz.name}
+      trail={
+        shared
+          ? [m.quiz_shared()]
+          : [quiz.workspaceName || m.nav_create(), m.quiz_quizzes()]
+      }
+    />
+  );
+
   if (!quiz.questions.length) {
     return (
-      <Panel sectionClassName="h-full">
-        <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-6 text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
-            <Icon className="non-scaling-svg" name="check" size={30} />
-          </span>
-          <p className="t-large-card-title">{m.quiz_no_questions()}</p>
-          <Link preload="intent" to="/create">
-            <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
+      <PanelWithInvertedRadius>
+        {header()}
+        <TabContent>
+          <p className="text-fg-muted">{m.quiz_no_questions()}</p>
+          <Link className="mt-6 inline-flex" preload="intent" to="/create">
+            <Button className="rounded-input" iconLeft="navigationBack">
+              {m.quiz_back()}
+            </Button>
           </Link>
-        </div>
-      </Panel>
+        </TabContent>
+      </PanelWithInvertedRadius>
     );
   }
-
-  const q = quiz.questions[idx];
 
   async function finish() {
     if (!quiz) return;
@@ -181,133 +211,102 @@ function Attempt({ quizId }: { quizId: string }) {
     }
   }
 
-  if (done) {
-    const pct = Math.round((score.awarded / Math.max(0.5, score.max)) * 100);
+  if (done && graded) {
     return (
-      <Panel sectionClassName="h-full">
-        <div className="mx-auto flex h-full w-full max-w-2xl flex-col items-center gap-5 overflow-auto px-4 py-6 text-center md:px-6">
-          <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-accent-1 text-tint-accent-1-fg">
-            <Icon className="non-scaling-svg" name="quiz" size={30} />
-          </span>
-          <p className="t-page-title">
-            {formatPoints(score.awarded)} / {formatPoints(score.max)}
-          </p>
-          <p className="t-body text-fg-muted">
-            {m.quiz_you_scored({ name: quiz.name, pct: String(pct) })}
-          </p>
-          <p className="t-meta text-fg-muted">{m.quiz_score_reference()}</p>
-          <div className="w-full max-w-sm">
-            <ProgressBar
-              height={8}
-              tone={pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral'}
-              value={pct}
+      // A fresh panel so the result opens at the top, not at the quiz's scroll.
+      <PanelWithInvertedRadius key="result">
+        {header()}
+        <TabContent>
+          <QuizScore
+            answers={answers}
+            awarded={graded.awarded}
+            confetti
+            max={graded.max}
+            questions={graded.questions}
+          />
+          <div className="mt-12">
+            <QuizQuestionList
+              answers={answers}
+              questions={graded.questions}
+              review
             />
           </div>
-          <div className="mt-4 w-full space-y-6 text-left">
-            {(graded?.questions ?? quiz.questions).map((question, i) => (
-              <div className="border-divider border-b pb-6" key={question.id}>
-                <QuestionRunner
-                  answers={answers}
-                  onChange={() => {}}
-                  question={question}
-                  questionNumber={i + 1}
-                  review
-                />
-              </div>
-            ))}
-          </div>
-          <Link preload="intent" to="/create">
-            <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
-          </Link>
-        </div>
-      </Panel>
+          <Button
+            className="mt-12 rounded-input"
+            iconLeft="refresh"
+            onClick={() => {
+              setAnswers({});
+              setGraded(null);
+              setDone(false);
+            }}
+            size="lg"
+            variant="outline"
+          >
+            {m.quiz_redo()}
+          </Button>
+          <MaterialAttributionFooter provenance={quiz.provenance} />
+        </TabContent>
+      </PanelWithInvertedRadius>
     );
   }
 
+  const partCount = quiz.questions.reduce((n, q) => n + q.parts.length, 0);
+  const answered = quiz.questions
+    .flatMap((q) => q.parts)
+    .filter((part) => isAnswered(answers[part.id])).length;
+
   return (
-    <Panel sectionClassName="h-full">
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-4 py-6 md:px-6">
-        <div className="mb-4 flex items-center gap-3">
-          <Link
-            className="text-fg-muted hover:text-fg"
-            preload="intent"
-            to="/create"
-          >
-            <Icon name="x" size={20} />
-          </Link>
-          <div className="flex-1">
-            <ProgressBar
-              tone="purple"
-              value={((idx + 1) / quiz.questions.length) * 100}
-            />
-          </div>
-          <p className="t-meta text-fg-muted tabular-nums">
-            {idx + 1} / {quiz.questions.length}
-          </p>
-          {!quiz.canEdit && (
-            <Button
-              disabled={frozen || cloneQuizIsPending}
-              iconLeft="plus"
-              onClick={() =>
-                cloneQuiz(quizId, {
-                  onError: (err) => toastCloneError(err, 'quiz'),
-                  onSuccess: (copy) => {
-                    navigate({
-                      params: { quizId: copy.id },
-                      to: '/quizzes/$quizId/attempt',
-                    });
-                  },
-                })
-              }
-              size="sm"
-            >
-              {cloneQuizIsPending ? m.action_cloning() : m.action_clone()}
-            </Button>
-          )}
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto py-4">
-          <QuestionRunner
-            answers={answers}
-            onChange={(partId, a) => setAnswers((s) => ({ ...s, [partId]: a }))}
-            question={q}
-            questionNumber={idx + 1}
-          />
-        </div>
-
-        <div className="flex items-center justify-between pt-4">
+    <PanelWithInvertedRadius>
+      {header(
+        !quiz.canEdit && (
           <Button
-            disabled={idx === 0}
-            iconLeft="navigationBack"
-            onClick={() => setIdx((i) => i - 1)}
-            variant="ghost"
+            className="rounded-input"
+            disabled={frozen || cloneQuizIsPending}
+            iconLeft="plus"
+            onClick={() =>
+              cloneQuiz(quizId, {
+                onError: (err) => toastCloneError(err, 'quiz'),
+                onSuccess: (copy) => {
+                  navigate({
+                    params: { quizId: copy.id },
+                    to: '/quizzes/$quizId/attempt',
+                  });
+                },
+              })
+            }
+            size="sm"
+            variant="outline"
           >
-            {m.action_previous()}
+            {cloneQuizIsPending ? m.action_cloning() : m.quiz_clone()}
           </Button>
-          {idx < quiz.questions.length - 1 ? (
-            <Button
-              iconRight="navigationForward"
-              onClick={() => setIdx((i) => i + 1)}
-            >
-              {m.action_next()}
-            </Button>
-          ) : (
-            <Button
-              disabled={submitIsPending || grading}
-              iconRight="check"
-              onClick={() => void finish()}
-              variant="accent"
-            >
-              {grading
-                ? m.quiz_grading()
-                : submitIsPending
-                  ? m.canvas_saving()
-                  : m.action_finish()}
-            </Button>
-          )}
+        )
+      )}
+      <TabContent>
+        <QuizQuestionList
+          answers={answers}
+          onChange={setAnswer}
+          questions={quiz.questions}
+        />
+        <div className="mt-12 grid gap-3">
+          <p className="t-meta text-fg-muted">
+            {m.quiz_answered_count({ answered, total: partCount })}
+          </p>
+          <Button
+            className="rounded-input"
+            disabled={submitIsPending || grading}
+            fullWidth
+            onClick={() => void finish()}
+            size="lg"
+          >
+            {grading
+              ? m.quiz_grading()
+              : submitIsPending
+                ? m.canvas_saving()
+                : m.quiz_submit()}
+          </Button>
         </div>
         <MaterialAttributionFooter provenance={quiz.provenance} />
-      </div>
-    </Panel>
+      </TabContent>
+    </PanelWithInvertedRadius>
   );
 }
