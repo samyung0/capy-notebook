@@ -14,7 +14,8 @@
 -- editing paused, no Office source with unpublished edits, and no Office
 -- publication or reprocess work in flight. The guard below is the only
 -- protection: no dropped state is kept, so it refuses while editing is live or
--- any file of the reset formats is unpublished or has a refresh in flight,
+-- any file of the reset formats is unpublished, has a refresh in flight or
+-- waits for its rebuild onto a deferred publication (rebuild_pending),
 -- under a lock that holds writers off until the migration's transaction ends
 -- (the pattern of 0015_source_semantic_baseline.sql). A fresh database has no
 -- rows and passes. A file that cannot publish keeps the pause on until an operator
@@ -22,8 +23,8 @@
 LOCK TABLE source_documents IN SHARE ROW EXCLUSIVE MODE;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM source_documents WHERE format IN ({{FORMATS}})
-      AND (checkpoint > indexed_checkpoint OR pending_effects <> '[]'::jsonb OR running_job_id IS NOT NULL)) THEN
-    RAISE EXCEPTION 'Office reset refused: unpublished edits or a refresh in flight; run office-maintenance publish-all until status prints zero';
+      AND (checkpoint > indexed_checkpoint OR pending_effects <> '[]'::jsonb OR running_job_id IS NOT NULL OR rebuild_pending)) THEN
+    RAISE EXCEPTION 'Office reset refused: unpublished edits, a refresh in flight or a rebuild pending; run office-maintenance publish-all until status prints zero';
   END IF;
   IF EXISTS (SELECT 1 FROM source_documents WHERE format IN ({{FORMATS}}))
       AND NOT EXISTS (SELECT 1 FROM office_editing_pause) THEN

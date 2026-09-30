@@ -297,9 +297,10 @@ func (s *Store) publishExportTx(ctx context.Context, tx pgx.Tx, fileID, sourcePa
 // charged as the first parse, stays the way in), it is marked for reprocessing
 // at platform cost. The job is done; nothing else finishes it.
 func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublication) error {
-	var oldSHA string
-	// Deferred, the base stays: the bytes this replaces are the file's own.
-	if err := tx.QueryRow(ctx, `SELECT CASE WHEN $2 THEN COALESCE(f.source_sha256,'') ELSE d.base_source_sha256 END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID, p.deferred).Scan(&oldSHA); err != nil {
+	// The bytes this replaces: the file's own, and (unless deferred, when the
+	// base stays) the old base.
+	var fileSHA, baseSHA string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.source_sha256,''),d.base_source_sha256 FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&fileSHA, &baseSHA); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, fileID); err != nil {
@@ -326,8 +327,10 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 			return err
 		}
 	}
-	if err := releaseArtifactCacheTx(ctx, tx, oldSHA, p.sha); err != nil {
-		return err
+	for _, old := range []string{fileSHA, baseSHA} {
+		if err := releaseArtifactCacheTx(ctx, tx, old, p.sha); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, fileID); err != nil {
 		return err

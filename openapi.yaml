@@ -3397,6 +3397,10 @@ components:
           minItems: 1
           nullable: true
           type: array
+        baseRevision:
+          format: int64
+          minimum: 1
+          type: integer
         baseSourceSHA256:
           type: string
         epoch:
@@ -3427,6 +3431,7 @@ components:
         - actorIds
         - epoch
         - expectedCheckpoint
+        - baseRevision
         - state
         - pendingEffects
         - netTokens

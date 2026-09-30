@@ -71,7 +71,7 @@ func TestOfficeEditingPause(t *testing.T) {
 	sourceTestEdit(t, s, owner, doc, "flushed-state")
 	// An agent edit that passed the gateway's check just before the pause is
 	// refused where it commits.
-	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
+	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
 	if !errors.Is(err, ErrOfficeEditingPaused) {
 		t.Fatalf("agent edit commit during the pause: %v", err)
 	}

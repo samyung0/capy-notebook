@@ -637,7 +637,9 @@ swaps the file's bytes and index, and editing stays on the old base and epoch
 (`rebuild_pending`, `published_state`: the published capture as its change over
 seed(base), migration 0045). Edits saved after the capture stay pending,
 measured against that capture on the old base (the engine's `compare`, XLSX
-included), which gives the same text effects the rebuild later reports. The
+included), which gives the same text effects the rebuild later reports. A
+save carries the base revision its effects were measured under, so one
+measured before a publication is refused and retried. The
 viewer reads the old base plus the state while the rebuild waits. Nothing is
 charged for the kept capture or the old base.
 
@@ -645,8 +647,11 @@ charged for the kept capture or the old base.
 editing onto the published file (`SourceHandoff.rebuild`): it rebases the edits
 saved after the capture onto seed(published) first (nothing saved since: the
 state is seed(published)), then locks the room, asks every instance whether
-the room is in use (a connection, a document loading, or a socket still
-authenticating from before the lock check), and on all idle sends the gateway
+the room is in use (the document still loaded, so a connection or a store
+before it unloads; a store running or waiting for its retry; a document
+loading; a socket still authenticating from before the lock check; during the
+maintenance pause only writers count, since the pause saved the room), and on
+all idle sends the gateway
 a compare-and-swap (`POST /internal/collaboration/files/{id}/rebuild`: epoch,
 latest checkpoint and published bytes unchanged, no refresh in flight) that
 opens a new epoch on the published base and releases the old one. The lock

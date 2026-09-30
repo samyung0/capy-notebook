@@ -379,10 +379,8 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	var captured []byte
 	var capturedSeed *string
 	var replacedSHA string
-	if in.Deferred {
-		if err = tx.QueryRow(ctx, `SELECT CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,COALESCE(f.source_sha256,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2`, fileID, in.JobID).Scan(&captured, &capturedSeed, &replacedSHA); err != nil {
-			return doc, err
-		}
+	if err = tx.QueryRow(ctx, `SELECT CASE WHEN c.checkpoint=d.checkpoint THEN d.state ELSE c.state END,CASE WHEN c.checkpoint=d.checkpoint THEN d.state_seed_sha256 ELSE c.state_seed_sha256 END,COALESCE(f.source_sha256,'') FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id JOIN files f ON f.id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2`, fileID, in.JobID).Scan(&captured, &capturedSeed, &replacedSHA); err != nil {
+		return doc, err
 	}
 	if job.exportOnly {
 		if err = applyExportTx(ctx, tx, fileID, exportPublication{jobID: in.JobID, sourcePath: source, sha: sha, etag: in.SourceETag, size: size, checkpoint: in.Checkpoint, attemptID: in.AttemptID, state: state, stateSeed: stateSeed, effects: effects, netTokens: netTokens, deferred: in.Deferred, captured: captured, capturedSeed: capturedSeed}); err != nil {
@@ -438,8 +436,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return doc, err
 	}
 	if !in.Deferred {
-		if err = releaseArtifactCacheTx(ctx, tx, doc.BaseSourceSHA256, sha); err != nil {
-			return doc, err
+		// The old base, and the file's bytes a pending rebuild had published.
+		for _, old := range []string{doc.BaseSourceSHA256, replacedSHA} {
+			if err = releaseArtifactCacheTx(ctx, tx, old, sha); err != nil {
+				return doc, err
+			}
 		}
 	}
 	if _, err = tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, fileID); err != nil {

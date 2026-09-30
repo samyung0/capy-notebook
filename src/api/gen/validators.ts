@@ -4618,6 +4618,7 @@ export const CheckpointSourceDocumentHeader = zod.object({
 
 
 
+
 export const checkpointSourceDocumentBodyExpectedCheckpointMin = 0;
 
 export const checkpointSourceDocumentBodyNetTokensMin = 0;
@@ -4628,6 +4629,7 @@ export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 export const CheckpointSourceDocumentBody = zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
+  "baseRevision": zod.int().min(1),
   "baseSourceSHA256": zod.string().optional(),
   "epoch": zod.int().min(1),
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),

@@ -53,12 +53,16 @@ type SourceSession struct {
 }
 
 type SourceCheckpoint struct {
-	ActorIDs           []string        `json:"actorIds" minItems:"1"`
-	Epoch              int64           `json:"epoch" minimum:"1"`
-	ExpectedCheckpoint int64           `json:"expectedCheckpoint" minimum:"0"`
-	State              []byte          `json:"state"`
-	PendingEffects     json.RawMessage `json:"pendingEffects"`
-	NetTokens          int64           `json:"netTokens" minimum:"0"`
+	ActorIDs           []string `json:"actorIds" minItems:"1"`
+	Epoch              int64    `json:"epoch" minimum:"1"`
+	ExpectedCheckpoint int64    `json:"expectedCheckpoint" minimum:"0"`
+	// The base revision the effects were measured under: a publication in
+	// between (which keeps epoch and checkpoint) refuses the save, whose
+	// effects are then stale.
+	BaseRevision   int64           `json:"baseRevision" minimum:"1"`
+	State          []byte          `json:"state"`
+	PendingEffects json.RawMessage `json:"pendingEffects"`
+	NetTokens      int64           `json:"netTokens" minimum:"0"`
 	// Required for an Office state, which is its change over seed(base): the
 	// seed's SHA-256.
 	StateSeedSHA256 string `json:"stateSeedSHA256,omitempty"`
@@ -353,7 +357,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision); err != nil {
 		return out, err
 	}
-	if revision != baseRevision {
+	if revision != baseRevision || in.BaseRevision != baseRevision {
 		return out, ErrConflict
 	}
 	// The first save over seed(base) binds the source SHA once, and a text

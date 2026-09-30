@@ -101,6 +101,7 @@ export class SourceHandoff {
   private readonly persist: (document: Document) => Promise<void>;
   private readonly publicationHold: boolean;
   private readonly onError: (error: unknown) => void;
+  private readonly pendingStore: (room: string) => boolean;
   constructor(
     instanceId: string,
     redis: Redis,
@@ -111,7 +112,9 @@ export class SourceHandoff {
     persist: (document: Document) => Promise<void>,
     publicationHold: boolean,
     onError: (error: unknown) => void = (error) =>
-      console.warn('source rebuild failed:', error)
+      console.warn('source rebuild failed:', error),
+    /** A store of the room still running or waiting for its retry. */
+    pendingStore: (room: string) => boolean = () => false
   ) {
     this.instanceId = instanceId;
     this.redis = redis;
@@ -122,6 +125,7 @@ export class SourceHandoff {
     this.persist = persist;
     this.publicationHold = publicationHold;
     this.onError = onError;
+    this.pendingStore = pendingStore;
   }
 
   ready(
@@ -192,10 +196,13 @@ export class SourceHandoff {
     if (!event.id || !event.room || !event.fileId) return;
     if (event.type === 'probe') {
       const key = `capy:source-handoff:${event.id}`;
+      const writersOnly = (event as { writersOnly?: unknown }).writersOnly;
       await this.redis.hset(
         key,
         this.instanceId,
-        this.busy(event.room) || this.joiningRoom(event.room) ? 'busy' : 'idle'
+        this.busy(event.room) || this.occupied(event.room, writersOnly === true)
+          ? 'busy'
+          : 'idle'
       );
       await this.redis.expire(key, 30);
       return;
@@ -334,10 +341,21 @@ export class SourceHandoff {
     };
   }
 
-  /** Whether this instance has anyone in the room: a connection, a document
-   * still loading for one, or a socket authenticating for it. */
-  private joiningRoom(room: string) {
-    if ((this.host.documents.get(room)?.getConnections().length ?? 0) > 0)
+  /**
+   * Whether this instance still has the room in use: a store running or
+   * waiting for its retry (its edits are not saved yet), the document loaded
+   * (a connection, or a store before it unloads), a document loading, or a
+   * socket authenticating for it. During the maintenance pause (`writersOnly`)
+   * a loaded room with only viewers left is free: the pause saved it.
+   */
+  private occupied(room: string, writersOnly = false) {
+    if (this.pendingStore(room)) return true;
+    const document = this.host.documents.get(room);
+    if (
+      document &&
+      (!writersOnly ||
+        document.getConnections().some((connection) => !connection.readOnly))
+    )
       return true;
     if (this.host.loadingDocuments?.has(room)) return true;
     const sockets = this.joining.get(room);
@@ -459,7 +477,13 @@ export class SourceHandoff {
     if (!pending.rows[0]?.pending) return false;
     const session = await this.current(fileId);
     if (!session.rebuildPending || session.format === 'text') return false;
-    if (this.joiningRoom(session.room)) return false;
+    // The pause closed every writer; a viewer left open must not hold the
+    // maintenance window (it reconnects to the new epoch).
+    const paused = await this.pool.query<{ paused: boolean }>(
+      'SELECT EXISTS(SELECT 1 FROM office_editing_pause) AS paused'
+    );
+    const writersOnly = paused.rows[0]?.paused === true;
+    if (this.occupied(session.room, writersOnly)) return false;
     const rebase = await this.sources.rebuildPublication(session);
     const id = `rebuild:${randomUUID()}`;
     const room = session.room;
@@ -467,7 +491,7 @@ export class SourceHandoff {
     if ((await this.redis.set(lock, id, 'PX', REBUILD_LOCK_MS, 'NX')) !== 'OK')
       return false;
     try {
-      if (!(await this.roomEmpty(session, id))) return false;
+      if (!(await this.roomEmpty(session, id, writersOnly))) return false;
       try {
         await this.sources.request(fileId, 'rebuild', {
           epoch: session.epoch,
@@ -512,7 +536,11 @@ export class SourceHandoff {
   }
 
   /** Every live instance answers the probe: idle, or busy with the room. */
-  private async roomEmpty(session: SourceSession, id: string) {
+  private async roomEmpty(
+    session: SourceSession,
+    id: string,
+    writersOnly: boolean
+  ) {
     const instances = await this.activeInstances();
     await this.redis.publish(
       SOURCE_HANDOFF_CHANNEL,
@@ -522,6 +550,7 @@ export class SourceHandoff {
         id,
         room: session.room,
         type: 'probe',
+        writersOnly,
       })
     );
     const deadline = Date.now() + PROBE_WAIT_MS;

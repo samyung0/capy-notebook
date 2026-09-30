@@ -1047,6 +1047,7 @@ export class SourceDocumentStore {
               ...(await this.seedReport(session)),
               ...stored,
               actorIds: actors,
+              baseRevision: session.baseRevision,
               epoch,
               expectedCheckpoint: session.checkpoint,
               netTokens: effectTokens(effects),
@@ -1216,6 +1217,7 @@ export class SourceDocumentStore {
               ...(await this.seedReport(current)),
               ...stored,
               actorIds: [input.actorUserId],
+              baseRevision: current.baseRevision,
               epoch: current.epoch,
               expectedCheckpoint: current.checkpoint,
               netTokens: effectTokens(effects),
@@ -1465,10 +1467,11 @@ export class SourceDocumentStore {
   }
 
   /** Files published while editing stayed on the old base, with no refresh
-   * in flight, oldest first. */
-  async pendingRebuilds() {
+   * in flight, oldest first, except `skip`. */
+  async pendingRebuilds(skip: string[] = []) {
     const { rows } = await this.pool.query<{ file_id: string }>(
-      'SELECT d.file_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.rebuild_pending AND d.running_job_id IS NULL AND f.trashed_at IS NULL ORDER BY d.updated_at LIMIT 32'
+      'SELECT d.file_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.rebuild_pending AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND NOT d.file_id=ANY($1::text[]) ORDER BY d.updated_at LIMIT 32',
+      [skip]
     );
     return rows.map((row) => row.file_id);
   }

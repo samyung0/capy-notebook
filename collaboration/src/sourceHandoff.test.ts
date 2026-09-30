@@ -921,3 +921,79 @@ test('the probe answers busy while a socket authenticates for the room', async (
     'idle'
   );
 });
+
+test('a room still saving is in use: loaded with no connection, or a store pending here', async () => {
+  // Loaded with nobody left: a store may still be running before it unloads.
+  let f = rebuildSetup();
+  f.host.documents.set(f.session.room, {
+    ...f.document,
+    getConnections: () => [],
+  } as unknown as Document);
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+  expect(f.order).toEqual([]);
+  // A failed store waiting for its retry holds edits nobody saved yet.
+  f = rebuildSetup();
+  const pending = new SourceHandoff(
+    'instance',
+    f.redis as unknown as Redis,
+    f.pool as unknown as Pool,
+    f.host as unknown as Hocuspocus,
+    f.sources,
+    async () => new Set(['instance']),
+    f.persist,
+    false,
+    () => undefined,
+    (room) => room === f.session.room
+  );
+  await expect(pending.rebuild('f')).resolves.toBe(false);
+  await pending.handle(
+    JSON.stringify({
+      fileId: 'f',
+      id: 'store',
+      room: f.session.room,
+      type: 'probe',
+    })
+  );
+  expect(f.redis.hset).toHaveBeenLastCalledWith(
+    'capy:source-handoff:store',
+    'instance',
+    'busy'
+  );
+});
+
+test('during the maintenance pause a viewer left in the room does not hold the rebuild', async () => {
+  const f = rebuildSetup();
+  const viewer = { ...f.connection, readOnly: true };
+  f.host.documents.set(f.session.room, {
+    ...f.document,
+    getConnections: () => [viewer],
+  } as unknown as Document);
+  const query = f.pool.query.getMockImplementation();
+  f.pool.query.mockImplementation(async (sql: string, ...rest: unknown[]) =>
+    sql.includes('office_editing_pause')
+      ? { rows: [{ paused: true }] }
+      : query?.(sql, ...rest)
+  );
+  // Every instance answers the pause's writers-only probe.
+  f.redis.publish.mockImplementation(async (_channel: string, raw: string) => {
+    const event = JSON.parse(raw);
+    f.order.push(event.type);
+    if (event.type === 'probe') {
+      expect(event.writersOnly).toBe(true);
+      await f.handoff.handle(raw);
+    }
+    return 1;
+  });
+  Object.assign(f.redis, {
+    hgetall: vi.fn(async () => {
+      const [, , answer] = f.redis.hset.mock.lastCall ?? [];
+      return { instance: answer };
+    }),
+  });
+  await expect(f.handoff.rebuild('f')).resolves.toBe(true);
+  expect(f.redis.hset).toHaveBeenLastCalledWith(
+    expect.any(String),
+    'instance',
+    'idle'
+  );
+});

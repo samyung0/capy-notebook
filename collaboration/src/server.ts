@@ -564,12 +564,24 @@ async function withDistributedEviction<T>(
   }
 }
 
-// Sockets authenticating for a source room, from before the publication lock
-// check until they connect or fail: a rebuild counts them as in the room.
-const sourceJoins = new Map<string, () => void>();
-function endSourceJoin(socketId: string) {
-  sourceJoins.get(socketId)?.();
-  sourceJoins.delete(socketId);
+// Sockets authenticating for a source room, by socket and room (one socket
+// multiplexes rooms), from before the publication lock check until they
+// connect or fail: a rebuild counts them as in the room. One that closed in
+// between is dropped after a minute (the handoff forgets it after 30 s).
+const sourceJoins = new Map<string, { done: () => void; since: number }>();
+function startSourceJoin(socketId: string, room: string) {
+  const now = Date.now();
+  for (const [key, join] of sourceJoins)
+    if (now - join.since > 60_000) sourceJoins.delete(key);
+  sourceJoins.set(`${socketId}\u0000${room}`, {
+    done: sourceHandoff.join(room, socketId),
+    since: now,
+  });
+}
+function endSourceJoin(socketId: string, room: string) {
+  const key = `${socketId}\u0000${room}`;
+  sourceJoins.get(key)?.done();
+  sourceJoins.delete(key);
 }
 
 const server = new Server<CollaborationContext>({
@@ -675,8 +687,8 @@ const server = new Server<CollaborationContext>({
       throw error;
     }
   },
-  async connected({ connection }) {
-    endSourceJoin(connection.socketId);
+  async connected({ connection, documentName }) {
+    endSourceJoin(connection.socketId, documentName);
     armTokenExpiry(connection);
     connection.onClose(() => clearTokenExpiry(connection));
   },
@@ -699,7 +711,7 @@ const server = new Server<CollaborationContext>({
     token,
   }) {
     if (SOURCE_ROOM_PATTERN.test(documentName))
-      sourceJoins.set(socketId, sourceHandoff.join(documentName, socketId));
+      startSourceJoin(socketId, documentName);
     try {
       assertAllowedOrigin(request, config.allowedOrigins);
       assertRoomAvailable(documentName);
@@ -734,7 +746,7 @@ const server = new Server<CollaborationContext>({
       connectionConfig.readOnly = readOnly;
       return claimsContext(claims);
     } catch (error) {
-      endSourceJoin(socketId);
+      endSourceJoin(socketId, documentName);
       authenticationFailures += 1;
       // Expected and high volume (expired tokens, stale tabs); logged, not
       // reported, or the error stream is nothing but this.
@@ -1083,7 +1095,8 @@ const sourceHandoff = new SourceHandoff(
   activeInstanceIds,
   persistSource,
   config.uatPublicationHold,
-  (error) => captureError(error, { stage: 'source_rebuild' })
+  (error) => captureError(error, { stage: 'source_rebuild' }),
+  (room) => failedStores.has(room) || (activeStores.get(room)?.size ?? 0) > 0
 );
 
 async function handleHttpRequest(
@@ -1885,8 +1898,11 @@ const rebuildTimer = setInterval(() => {
     const now = Date.now();
     for (const [fileId, until] of rebuildBackoff)
       if (until <= now) rebuildBackoff.delete(fileId);
-    for (const fileId of await sources.pendingRebuilds()) {
-      if (rebuildBackoff.has(fileId)) continue;
+    // Files waiting out a backoff are left out of the query, so they never
+    // fill its batch.
+    for (const fileId of await sources.pendingRebuilds([
+      ...rebuildBackoff.keys(),
+    ])) {
       try {
         if (!(await sourceHandoff.rebuild(fileId)))
           rebuildBackoff.set(fileId, now + 5 * 60_000);
