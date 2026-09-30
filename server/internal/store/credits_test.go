@@ -283,19 +283,48 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 		call.CallID).Scan(&version, &credits); err != nil {
 		t.Fatal(err)
 	}
-	// Billing renders "<surface> · <kind> · <providerSlug>/<modelSlug>" from
-	// these rows and buckets by kind.
-	report, err := s.UserUsageReport(ctx, userID, 5)
+	// Detailed usage renders each row's kind and providerSlug/modelSlug.
+	page, err := s.ListUsageEvents(ctx, userID, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Recent) != 1 || version != 1 || credits != 0 ||
-		report.Recent[0].Kind != KindRerank ||
-		report.Recent[0].ProviderSlug != "deepinfra" ||
-		report.Recent[0].ModelSlug != "Qwen/Qwen3-Reranker-4B" ||
-		len(report.ByKind) != 1 || report.ByKind[0].Key != KindRerank {
-		t.Fatalf("rerank usage = v%d %d credits, recent %#v, by kind %#v",
-			version, credits, report.Recent, report.ByKind)
+	if len(page.Items) != 1 || version != 1 || credits != 0 ||
+		page.Items[0].Kind != KindRerank ||
+		page.Items[0].ProviderSlug != "deepinfra" ||
+		page.Items[0].ModelSlug != "Qwen/Qwen3-Reranker-4B" {
+		t.Fatalf("rerank usage = v%d %d credits, events %#v", version, credits, page.Items)
+	}
+}
+
+func TestListUsageEventsPagesNewestFirst(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	// Two rows share a timestamp so the id tiebreak is what keeps paging exact.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO usage_events (actor_user_id, kind, surface, credit_micros, created_at) VALUES
+		($1, 'llm', 'chat', 1, '2026-09-01T00:00:00Z'),
+		($1, 'llm', 'chat', 2, '2026-09-02T00:00:00Z'),
+		($1, 'llm', 'generate', 3, '2026-09-02T00:00:00Z')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.ListUsageEvents(ctx, userID, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.ListUsageEvents(ctx, userID, 2, first.Next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []int64
+	for _, ev := range append(first.Items, second.Items...) {
+		got = append(got, ev.CreditMicros)
+	}
+	if fmt.Sprint(got) != "[3 2 1]" || first.Next == "" || second.Next != "" {
+		t.Fatalf("pages = %v, next %q then %q", got, first.Next, second.Next)
+	}
+	if _, err := s.ListUsageEvents(ctx, userID, 2, "not-a-cursor"); !errors.Is(err, ErrInvalidCursor) {
+		t.Fatalf("bad cursor error = %v", err)
 	}
 }
 
@@ -841,24 +870,16 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report, err := s.UserUsageReport(ctx, userID, 10)
+	report, err := s.UserUsageReport(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Recent) != 2 {
-		t.Fatalf("recent=%d, want 2 (other actor excluded)", len(report.Recent))
+	page, err := s.ListUsageEvents(ctx, userID, 0, "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	var llm, embed int64
-	for _, b := range report.ByKind {
-		switch b.Key {
-		case KindLLM:
-			llm = b.CreditMicros
-		case KindEmbedding:
-			embed = b.CreditMicros
-		}
-	}
-	if llm != 1_000_000 || embed != 200_000 {
-		t.Fatalf("byKind llm=%d embed=%d", llm, embed)
+	if len(page.Items) != 2 {
+		t.Fatalf("events=%d, want 2 (other actor excluded)", len(page.Items))
 	}
 	var chat, ingest int64
 	for _, b := range report.BySurface {
@@ -872,8 +893,8 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 	if chat != 1_000_000 || ingest != 200_000 {
 		t.Fatalf("bySurface chat=%d ingest=%d", chat, ingest)
 	}
-	if report.Recent[0].CreditMicros == 0 && report.Recent[1].CreditMicros == 0 {
-		t.Fatal("recent rows should include credit micros, not USD")
+	if page.Items[0].CreditMicros == 0 && page.Items[1].CreditMicros == 0 {
+		t.Fatal("event rows should include credit micros, not USD")
 	}
 }
 

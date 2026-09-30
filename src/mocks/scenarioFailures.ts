@@ -23,7 +23,7 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Change the name in Settings or the onboarding preview, then save.',
+    hint: 'Change the name in Settings → Account or the onboarding preview, then save.',
     id: 'profile-save',
     label: 'Profile save 500',
     method: 'patch',
@@ -513,9 +513,9 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Settings → Subscription.',
+    hint: 'Open Billing & usage.',
     id: 'billing-load',
-    label: 'Subscription GET 500',
+    label: 'Billing GET 500',
     method: 'get',
     paths: ['/api/billing', '/api/usage'],
     status: 500,
@@ -586,7 +586,7 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Change a notification preference in Settings.',
+    hint: 'Change a notification preference in Settings → Notifications.',
     id: 'notification-prefs',
     label: 'Notification preferences save 500',
     method: 'patch',
@@ -602,7 +602,7 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open account deletion in Settings.',
+    hint: 'Open Settings → Danger → Delete.',
     id: 'deletion-check',
     label: 'Account deletion check 503',
     method: 'get',
@@ -610,7 +610,7 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Confirm account deletion in Settings.',
+    hint: 'Confirm account deletion in Settings → Danger.',
     id: 'deletion-submit',
     label: 'Account deletion submit 500',
     method: 'post',
@@ -718,7 +718,7 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Settings → General.',
+    hint: 'Open Settings → Notifications.',
     id: 'notification-prefs-load',
     label: 'Notification preferences GET 500',
     method: 'get',

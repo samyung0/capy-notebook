@@ -60,6 +60,7 @@ import type {
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
+  InvoiceList,
   Label,
   LLMCredentialsResponse,
   Material,
@@ -113,6 +114,7 @@ import type {
   UpdateWorkspaceSharingReq,
   UpsertLLMCredentialReq,
   URLResp,
+  UsageEventPage,
   UsageReport,
   User,
   WireMessage,
@@ -579,6 +581,28 @@ export const usageQuery = () =>
   });
 export const useUsage = (options?: QueryUiOptions) =>
   useQuery({ ...usageQuery(), meta: queryMeta(options) });
+
+/** Detailed usage: this actor's ledger rows, newest first, one page per fetch.
+ * Secondary query, so the tab renders its own error state. */
+export const useUsageEvents = () =>
+  useInfiniteQuery({
+    getNextPageParam: (last: UsageEventPage) => last.next || undefined,
+    initialPageParam: '',
+    meta: { errorBoundary: false },
+    queryFn: ({ pageParam }) =>
+      api.get<UsageEventPage>(
+        `/usage/events${pageParam ? `?before=${encodeURIComponent(pageParam)}` : ''}`
+      ),
+    queryKey: qk.usageEvents,
+  });
+
+/** Stripe invoices, read live by the gateway. Secondary query. */
+export const useInvoices = () =>
+  useQuery({
+    meta: { errorBoundary: false },
+    queryFn: () => api.get<InvoiceList>('/billing/invoices'),
+    queryKey: qk.invoices,
+  });
 
 export function useBillingCheckout() {
   return useMutation({

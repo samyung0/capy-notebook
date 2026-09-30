@@ -106,6 +106,7 @@ type api struct {
 	modelReg           *models.Registry
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
+	stripeInvoices     func(string) ([]*stripe.Invoice, error)
 	streamMu           sync.Mutex
 	streamByUser       map[string]int
 	streamTotal        int
@@ -137,6 +138,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
+		stripeInvoices:     billing.ListInvoices,
 		streamByUser:       make(map[string]int),
 	}
 	if rdb != nil {

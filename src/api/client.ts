@@ -376,6 +376,7 @@ export const qk = {
   flashcardSet: (id: string) => ['flashcardSet', id] as const,
   ingestSlots: ['me', 'ingest-slots'] as const,
   integrations: ['integrations'] as const,
+  invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
   llmCredentials: ['llm-credentials'] as const,
   material: (id: string) => ['material', id] as const,
@@ -402,6 +403,7 @@ export const qk = {
   thinking: ['thinking'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
+  usageEvents: ['usage', 'events'] as const,
   workspace: (id: string) => ['workspace', id] as const,
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,

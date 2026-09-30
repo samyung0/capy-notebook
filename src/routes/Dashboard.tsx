@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
-import { useMe, useWorkspaces } from '@/api/hooks';
+import { useWorkspaces } from '@/api/hooks';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -16,16 +16,10 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-function StreakHeading() {
-  const { data: me } = useMe({ errorBoundary: false });
-  const streak = me?.streak ?? 0;
+function Greeting() {
   return (
     <div>
-      <h2 className="t-page-title">
-        {streak > 0
-          ? m.dashboard_streak_days({ count: streak })
-          : m.dashboard_streak_none()}
-      </h2>
+      <h2 className="t-page-title">{m.dashboard_learn_today()}</h2>
       <p className="t-subtitle mt-1 text-fg-muted">
         {m.dashboard_empty_intro()}
       </p>
@@ -112,7 +106,7 @@ export default function Dashboard() {
         className="order-last min-h-0 flex-1 rounded-button lg:order-first lg:rounded-card-xl"
         sectionClassName="gap-5 2xl:gap-6 p-4 sm:p-6"
       >
-        <StreakHeading />
+        <Greeting />
         {/* <CloudConnectBanner /> */}
         <DashboardBanner />
         <WorkspacesSection />

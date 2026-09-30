@@ -1834,6 +1834,54 @@ components:
         - microsoft
         - microsoftFilesRead
       type: object
+    Invoice:
+      additionalProperties: false
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        currency:
+          type: string
+        dueAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        status:
+          enum:
+            - open
+            - paid
+            - uncollectible
+            - void
+          type: string
+        total:
+          format: int64
+          type: integer
+        url:
+          type: string
+      required:
+        - id
+        - createdAt
+        - total
+        - currency
+        - status
+      type: object
+    InvoiceList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/InvoiceList.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Invoice"
+          type: array
+      required:
+        - items
+      type: object
     LLMCredential:
       additionalProperties: false
       properties:
@@ -4550,6 +4598,24 @@ components:
         - events
         - creditMicros
       type: object
+    UsageEventPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UsageEventPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/UsageEventView"
+          type: array
+        next:
+          type: string
+      required:
+        - items
+      type: object
     UsageEventView:
       additionalProperties: false
       properties:
@@ -4599,22 +4665,12 @@ components:
           format: uri
           readOnly: true
           type: string
-        byKind:
-          items:
-            $ref: "#/components/schemas/UsageBucket"
-          type: array
         bySurface:
           items:
             $ref: "#/components/schemas/UsageBucket"
           type: array
-        recent:
-          items:
-            $ref: "#/components/schemas/UsageEventView"
-          type: array
       required:
-        - byKind
         - bySurface
-        - recent
       type: object
     User:
       additionalProperties: false
@@ -5257,6 +5313,25 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Start checkout
+      tags:
+        - Billing & integrations
+  /api/billing/invoices:
+    get:
+      operationId: listInvoices
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceList"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Stripe invoices
       tags:
         - Billing & integrations
   /api/billing/portal:
@@ -7958,6 +8033,40 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Current-period AI usage
+      tags:
+        - Billing & integrations
+  /api/usage/events:
+    get:
+      operationId: listUsageEvents
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 20
+            format: int64
+            maximum: 20
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: before
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageEventPage"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Usage events, newest first
       tags:
         - Billing & integrations
   /api/workspace-invites/{token}/accept:

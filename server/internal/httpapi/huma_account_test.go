@@ -56,3 +56,14 @@ func TestCheckoutEntitlementGateRejectsLiveSubscription(t *testing.T) {
 		t.Fatalf("live entitlement = %v, want 409", err)
 	}
 }
+
+func TestInvoicesFromStripeKeepsDueDateOptional(t *testing.T) {
+	got := invoicesFromStripe([]*stripe.Invoice{
+		{ID: "in_paid", Created: 1_790_000_000, Total: 800, Currency: "usd", Status: stripe.InvoiceStatusPaid, HostedInvoiceURL: "https://pay.stripe.com/i"},
+		{ID: "in_open", Created: 1_790_100_000, DueDate: 1_790_200_000, Total: 800, Currency: "usd", Status: stripe.InvoiceStatusOpen},
+	})
+	if len(got) != 2 || got[0].DueAt != nil || got[0].Total != 800 || got[0].URL == "" ||
+		got[1].DueAt == nil || got[1].DueAt.Unix() != 1_790_200_000 || got[1].Status != "open" {
+		t.Fatalf("invoices = %#v", got)
+	}
+}

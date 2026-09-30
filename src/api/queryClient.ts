@@ -78,7 +78,7 @@ export function showErrorToast(error: unknown) {
       ? {
           label: m.account_banner_subscription(),
           onClick: () => {
-            window.location.href = '/settings?tab=subscription';
+            window.location.href = '/billing?tab=subscription';
           },
         }
       : description.action === 'signIn'

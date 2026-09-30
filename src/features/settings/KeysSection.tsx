@@ -7,7 +7,7 @@ import {
 } from '@/api/hooks';
 import type { LLMCredentialProvider } from '@/api/types';
 import { Button, ErrorAction } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { Input, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { providerLabel } from './ModelPicker';
 
@@ -33,29 +33,36 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
       : provider.reason || provider.providerSlug;
 
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="font-medium text-fg">{label}</p>
+    <div className="flex min-w-0 flex-col gap-2.5">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div className="flex min-w-0 flex-col gap-1">
+          <InputTitle>
+            {m.settings_llm_key_label({ provider: label })}
+          </InputTitle>
+          <p className="t-meta text-fg-muted">{unlocks}</p>
+        </div>
         {provider.last4 ? (
-          <p className="text-fg-muted text-sm">
+          <p className="t-meta text-fg-muted">
             {m.settings_llm_key_saved({ last4: provider.last4 })}
           </p>
         ) : null}
       </div>
-      <p className="text-fg-muted text-sm">{unlocks}</p>
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
+      <div className="flex min-w-0 items-center gap-3.5">
         <Input
           aria-label={label}
           autoComplete="off"
-          className="max-w-sm"
           disabled={!provider.eligible && !provider.last4}
           onChange={(event) => setValue(event.target.value)}
           placeholder={m.settings_llm_key_placeholder()}
           spellCheck={false}
           type="password"
           value={value}
+          wrapperClassName="flex-1"
         />
+        {/* md buttons with rounded-input match the input height, as in the
+            sharing dialog's link row. */}
         <Button
+          className="rounded-input"
           disabled={saving || !value.trim() || !provider.eligible}
           onClick={() => {
             save(
@@ -63,16 +70,16 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
               { onSuccess: () => setValue('') }
             );
           }}
-          size="sm"
+          variant="dark"
         >
           {m.settings_llm_key_save()}
         </Button>
         {provider.last4 ? (
           <Button
+            className="rounded-input"
             disabled={removing}
             onClick={() => remove(provider.providerSlug)}
-            size="sm"
-            variant="ghost"
+            variant="danger"
           >
             {m.settings_llm_key_remove()}
           </Button>
@@ -94,13 +101,9 @@ export function KeysSection() {
   const providers = data?.providers ?? [];
 
   return (
-    <div className="rounded-card border border-line bg-surface px-5 py-4">
-      <p className="t-subtitle">{m.settings_llm_keys()}</p>
-      <p className="mt-1 text-fg-secondary text-sm">
-        {m.settings_llm_keys_hint()}
-      </p>
+    <div className="flex flex-col gap-6">
       {isError ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm text-tint-error-fg">
             {error && isApiError(error) && error.status === 503
               ? credentialError(error)
@@ -117,11 +120,9 @@ export function KeysSection() {
           </ErrorAction>
         </div>
       ) : null}
-      <div className="mt-4 flex flex-col gap-5">
-        {providers.map((provider) => (
-          <ProviderRow key={provider.providerSlug} provider={provider} />
-        ))}
-      </div>
+      {providers.map((provider) => (
+        <ProviderRow key={provider.providerSlug} provider={provider} />
+      ))}
     </div>
   );
 }

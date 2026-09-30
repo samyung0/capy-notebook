@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -107,12 +110,16 @@ type UsageEventView struct {
 	CreditMicros int64     `json:"creditMicros"`
 }
 
-// UsageReport is the actor's current-period spend plus a recent event list.
+// UsageReport is the actor's current-period spend grouped by product surface.
 // It reads the append-only usage_events ledger for this user.
 type UsageReport struct {
-	ByKind    []UsageBucket    `json:"byKind" nullable:"false"`
-	BySurface []UsageBucket    `json:"bySurface" nullable:"false"`
-	Recent    []UsageEventView `json:"recent" nullable:"false"`
+	BySurface []UsageBucket `json:"bySurface" nullable:"false"`
+}
+
+// UsageEventPage is one newest-first page of the actor's ledger rows.
+type UsageEventPage struct {
+	Items []UsageEventView `json:"items" nullable:"false"`
+	Next  string           `json:"next,omitempty"`
 }
 
 // UsageEvent is one metered consumption. Token fields are provider-reported;
@@ -1027,74 +1034,84 @@ func (s *Store) RecordUsage(ctx context.Context, events ...UsageEvent) error {
 	return tx.Commit(ctx)
 }
 
-const defaultUsageRecentLimit = 50
-
-// UserUsageReport is the product usage page: this actor's current month,
-// grouped, plus the most recent ledger rows.
-func (s *Store) UserUsageReport(ctx context.Context, userID string, recentLimit int) (UsageReport, error) {
-	out := UsageReport{
-		ByKind:    []UsageBucket{},
-		BySurface: []UsageBucket{},
-		Recent:    []UsageEventView{},
-	}
+// UserUsageReport is the Usage tab: this actor's current month by surface.
+func (s *Store) UserUsageReport(ctx context.Context, userID string) (UsageReport, error) {
+	out := UsageReport{BySurface: []UsageBucket{}}
 	if userID == "" {
 		return out, ErrNotFound
 	}
-	if recentLimit <= 0 || recentLimit > 100 {
-		recentLimit = defaultUsageRecentLimit
-	}
-	period := monthStart()
-
-	kindRows, err := s.pool.Query(ctx, `
-		SELECT kind, count(*), COALESCE(sum(credit_micros), 0)
-		FROM usage_events
-		WHERE actor_user_id = $1 AND created_at >= $2
-		GROUP BY kind
-		ORDER BY sum(credit_micros) DESC, kind`, userID, period)
-	if err != nil {
-		return out, err
-	}
-	out.ByKind, err = scanUsageBuckets(kindRows)
-	if err != nil {
-		return out, err
-	}
-
-	surfaceRows, err := s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		SELECT surface, count(*), COALESCE(sum(credit_micros), 0)
 		FROM usage_events
 		WHERE actor_user_id = $1 AND created_at >= $2
 		GROUP BY surface
-		ORDER BY sum(credit_micros) DESC, surface`, userID, period)
+		ORDER BY sum(credit_micros) DESC, surface`, userID, monthStart())
 	if err != nil {
 		return out, err
 	}
-	out.BySurface, err = scanUsageBuckets(surfaceRows)
-	if err != nil {
-		return out, err
-	}
+	out.BySurface, err = scanUsageBuckets(rows)
+	return out, err
+}
 
-	recentRows, err := s.pool.Query(ctx, `
-		SELECT created_at, kind, surface, catalog_provider_slug, catalog_model_slug,
+const usageEventPageMax = 20
+
+// ListUsageEvents keyset-pages this actor's ledger rows newest first for the
+// Detailed usage tab. before is the opaque Next of the previous page.
+func (s *Store) ListUsageEvents(ctx context.Context, userID string, limit int, before string) (UsageEventPage, error) {
+	page := UsageEventPage{Items: []UsageEventView{}}
+	if userID == "" {
+		return page, ErrNotFound
+	}
+	if limit <= 0 || limit > usageEventPageMax {
+		limit = usageEventPageMax
+	}
+	var cursorAt *time.Time
+	var cursorID int64
+	if before != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(before)
+		at, id, ok := strings.Cut(string(raw), "|")
+		parsedAt, atErr := time.Parse(time.RFC3339Nano, at)
+		parsedID, idErr := strconv.ParseInt(id, 10, 64)
+		if err != nil || !ok || atErr != nil || idErr != nil {
+			return page, ErrInvalidCursor
+		}
+		cursorAt, cursorID = &parsedAt, parsedID
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, created_at, kind, surface, catalog_provider_slug, catalog_model_slug,
 		       input_tokens, output_tokens, units, unit, credit_micros
 		FROM usage_events
 		WHERE actor_user_id = $1
+		  AND ($2::timestamptz IS NULL OR (created_at, id) < ($2::timestamptz, $3::bigint))
 		ORDER BY created_at DESC, id DESC
-		LIMIT $2`, userID, recentLimit)
+		LIMIT $4`, userID, cursorAt, cursorID, limit+1)
 	if err != nil {
-		return out, err
+		return page, err
 	}
-	defer recentRows.Close()
-	for recentRows.Next() {
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
 		var ev UsageEventView
-		if err := recentRows.Scan(
-			&ev.CreatedAt, &ev.Kind, &ev.Surface, &ev.ProviderSlug, &ev.ModelSlug,
+		if err := rows.Scan(
+			&id, &ev.CreatedAt, &ev.Kind, &ev.Surface, &ev.ProviderSlug, &ev.ModelSlug,
 			&ev.InputTokens, &ev.OutputTokens, &ev.Units, &ev.Unit, &ev.CreditMicros,
 		); err != nil {
-			return out, err
+			return page, err
 		}
-		out.Recent = append(out.Recent, ev)
+		ids = append(ids, id)
+		page.Items = append(page.Items, ev)
 	}
-	return out, recentRows.Err()
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	if len(page.Items) > limit {
+		last := page.Items[limit-1]
+		page.Items = page.Items[:limit]
+		page.Next = base64.RawURLEncoding.EncodeToString(
+			[]byte(last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + strconv.FormatInt(ids[limit-1], 10)))
+	}
+	return page, nil
 }
 
 func scanUsageBuckets(rows pgx.Rows) ([]UsageBucket, error) {

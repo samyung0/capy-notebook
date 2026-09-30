@@ -4,10 +4,10 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { UsageBucket } from './usageBucket.ts';
+import type { Invoice } from './invoice.ts';
 
-export interface UsageReport {
+export interface InvoiceList {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  bySurface: UsageBucket[];
+  items: Invoice[];
 }

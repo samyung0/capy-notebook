@@ -3,11 +3,14 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	clerkuser "github.com/clerk/clerk-sdk-go/v2/user"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/stripe/stripe-go/v82"
 
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
@@ -58,6 +61,16 @@ type billingOutput struct {
 }
 type usageOutput struct {
 	Body apimodel.UsageReport
+}
+type usageEventsInput struct {
+	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"20"`
+	Before string `query:"before"`
+}
+type usageEventsOutput struct {
+	Body apimodel.UsageEventPage
+}
+type invoicesOutput struct {
+	Body apimodel.InvoiceList
 }
 type ingestSlotsOutput struct {
 	Body apimodel.IngestSlots
@@ -112,6 +125,8 @@ func (a *api) registerBillingIntegrations(api huma.API) {
 	const tag = "Billing & integrations"
 	reg(api, http.MethodGet, "/api/billing", "getBilling", tag, "Billing info", http.StatusOK, a.getBilling)
 	reg(api, http.MethodGet, "/api/usage", "getUsage", tag, "Current-period AI usage", http.StatusOK, a.getUsage)
+	reg(api, http.MethodGet, "/api/usage/events", "listUsageEvents", tag, "Usage events, newest first", http.StatusOK, a.listUsageEvents)
+	reg(api, http.MethodGet, "/api/billing/invoices", "listInvoices", tag, "Stripe invoices", http.StatusOK, a.listInvoices)
 	reg(api, http.MethodPost, "/api/billing/checkout", "billingCheckout", tag, "Start checkout", http.StatusOK, a.billingCheckout)
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
 	reg(api, http.MethodGet, "/api/integrations", "getIntegrations", tag, "Integration status", http.StatusOK, a.getIntegrations)
@@ -279,11 +294,59 @@ func (a *api) getBilling(ctx context.Context, _ *struct{}) (*billingOutput, erro
 }
 
 func (a *api) getUsage(ctx context.Context, _ *struct{}) (*usageOutput, error) {
-	report, err := a.s.UserUsageReport(ctx, userID(ctx), 0)
+	report, err := a.s.UserUsageReport(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
 	return &usageOutput{Body: report}, nil
+}
+
+func (a *api) listUsageEvents(ctx context.Context, in *usageEventsInput) (*usageEventsOutput, error) {
+	page, err := a.s.ListUsageEvents(ctx, userID(ctx), in.Limit, in.Before)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &usageEventsOutput{Body: page}, nil
+}
+
+// listInvoices reads Stripe live; a user who never checked out has no
+// customer and so no invoices.
+func (a *api) listInvoices(ctx context.Context, _ *struct{}) (*invoicesOutput, error) {
+	out := &invoicesOutput{Body: apimodel.InvoiceList{Items: []apimodel.Invoice{}}}
+	customerID, err := a.s.GetStripeCustomerID(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if customerID == "" {
+		return out, nil
+	}
+	invoices, err := a.stripeInvoices(customerID)
+	if err != nil {
+		log.Printf("list invoices: stripe lookup for %s: %v", customerID, err)
+		return nil, huma.Error503ServiceUnavailable("cannot load invoices from Stripe right now; try again shortly")
+	}
+	out.Body.Items = invoicesFromStripe(invoices)
+	return out, nil
+}
+
+func invoicesFromStripe(invoices []*stripe.Invoice) []apimodel.Invoice {
+	out := make([]apimodel.Invoice, 0, len(invoices))
+	for _, inv := range invoices {
+		item := apimodel.Invoice{
+			ID:        inv.ID,
+			CreatedAt: time.Unix(inv.Created, 0).UTC(),
+			Total:     inv.Total,
+			Currency:  string(inv.Currency),
+			Status:    string(inv.Status),
+			URL:       inv.HostedInvoiceURL,
+		}
+		if inv.DueDate > 0 {
+			due := time.Unix(inv.DueDate, 0).UTC()
+			item.DueAt = &due
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (a *api) checkoutEntitlementError(customerID string) error {
@@ -326,8 +389,8 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 	if err := a.checkoutEntitlementError(customerID); err != nil {
 		return nil, err
 	}
-	successURL := a.cfg.AppURL + "/settings?tab=subscription"
-	cancelURL := a.cfg.AppURL + "/settings?tab=subscription"
+	successURL := a.cfg.AppURL + "/billing?tab=subscription"
+	cancelURL := a.cfg.AppURL + "/billing?tab=subscription"
 	reservationID, status, err := a.s.ReserveStripeCheckout(
 		ctx,
 		uid,
@@ -405,7 +468,7 @@ func (a *api) billingPortal(ctx context.Context, _ *struct{}) (*urlOutput, error
 	if customerID == "" {
 		return nil, huma.Error400BadRequest("no billing account")
 	}
-	url, err := billing.CreatePortalSession(customerID, a.cfg.AppURL+"/billing")
+	url, err := billing.CreatePortalSession(customerID, a.cfg.AppURL+"/billing?tab=subscription")
 	if err != nil {
 		return nil, hErr(err)
 	}

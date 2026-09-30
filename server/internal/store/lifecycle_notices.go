@@ -176,7 +176,7 @@ func (s *Store) sendLifecycleNotice(
 		Locale:         locale,
 		Kind:           NotifSystem,
 		Data:           data,
-		Href:           "/settings",
+		Href:           "/billing?tab=subscription",
 		Template:       template,
 		Category:       "billing",
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", kind, userID, periodEnd.Unix()),

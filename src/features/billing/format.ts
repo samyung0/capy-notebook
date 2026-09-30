@@ -39,3 +39,13 @@ export function storageLimitLabel(bytes: number): string {
   const divisor = unit === 'GB' ? 1_000_000_000 : 1_000_000;
   return `${Math.round(bytes / divisor)} ${unit}`;
 }
+
+/** Stripe amounts arrive in the currency's smallest unit (cents, yen). */
+export function formatMoney(minor: number, currency: string): string {
+  const format = new Intl.NumberFormat(localeTag(), {
+    currency: currency.toUpperCase(),
+    style: 'currency',
+  });
+  const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
+  return format.format(minor / 10 ** digits);
+}

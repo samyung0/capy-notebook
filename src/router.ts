@@ -54,8 +54,8 @@ import {
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
 import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
-import { parseSettingsSearch } from '@/features/settings/settingsSearch';
 import { features } from '@/lib/features';
+import { parseBillingSearch, parseSettingsSearch } from '@/lib/tabSearch';
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -362,14 +362,13 @@ const appRoutes = [
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(modelsQuery('chat'));
       qc.prefetchQuery(modelsQuery('generate'));
-      qc.prefetchQuery(billingQuery());
     },
     path: '/settings',
     validateSearch: parseSettingsSearch,
   }),
   createRoute({
     beforeLoad: () => {
-      throw redirect({ search: { tab: 'general' }, to: '/settings' });
+      throw redirect({ search: { tab: 'account' }, to: '/settings' });
     },
     component: () => null,
     getParentRoute: () => authShellRoute,
@@ -377,20 +376,22 @@ const appRoutes = [
   }),
   createRoute({
     beforeLoad: () => {
-      throw redirect({ search: { tab: 'subscription' }, to: '/settings' });
+      throw redirect({ search: { tab: 'subscription' }, to: '/billing' });
     },
     component: () => null,
     getParentRoute: () => authShellRoute,
     path: '/subscription',
   }),
-  page(
-    '/billing',
-    () => import('@/routes/Billing'),
-    ({ context: { queryClient: qc } }) => {
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/Billing')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(billingQuery());
       qc.prefetchQuery(usageQuery());
-    }
-  ),
+    },
+    path: '/billing',
+    validateSearch: parseBillingSearch,
+  }),
 ];
 
 const routeTree = rootRoute.addChildren([

@@ -33,7 +33,7 @@ export function ProgressBar({
               className="h-full"
               key={segment.label}
               style={{
-                backgroundColor: userColorPair(segment.tone)?.fg,
+                backgroundColor: userColorPair(segment.tone)?.bg,
                 width: `${Math.max(0, Math.min(100, segment.value))}%`,
               }}
               title={segment.label}

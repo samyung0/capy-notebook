@@ -10,6 +10,7 @@ import (
 	bportalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
+	"github.com/stripe/stripe-go/v82/invoice"
 	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/subscription"
 
@@ -246,6 +247,23 @@ func ListEntitlingSubscriptions(customerID string) ([]*stripe.Subscription, erro
 		return nil, err
 	}
 	return out, nil
+}
+
+// ListInvoices returns the customer's latest invoices, newest first, for the
+// Subscription tab. One page is enough there; the portal has the full history.
+func ListInvoices(customerID string) ([]*stripe.Invoice, error) {
+	params := &stripe.InvoiceListParams{Customer: stripe.String(customerID)}
+	params.Limit = stripe.Int64(12)
+	params.Single = true
+	var out []*stripe.Invoice
+	iter := invoice.List(params)
+	for iter.Next() {
+		// Drafts are not final and have no hosted page to open.
+		if iter.Invoice().Status != stripe.InvoiceStatusDraft {
+			out = append(out, iter.Invoice())
+		}
+	}
+	return out, iter.Err()
 }
 
 // SubscriptionRecord maps a Stripe subscription onto our record. The period

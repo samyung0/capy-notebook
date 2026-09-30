@@ -444,10 +444,17 @@ if a delayed webhook has not yet changed `users.plan_tier`.
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
 period start) next to storage. `GET /api/usage` groups this actor's current
-month by `kind` (`llm`, `embedding`, `rerank`, `audio`, `parse`, `email`, and
-historical `caption`) and `surface` and returns recent `usage_events` rows. It does
-not use a separate analytics table. The page shows credits, tokens, the catalog
-provider/model slugs, and `paidBy`. It does not show USD. The operator dashboard
+month by `surface`, which the Usage tab draws as one credit bar coloured by area
+(chat, generate, ingest, editor, everything else as Other) with reserved credits
+faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
+rows newest first (`before` cursor from the previous page's `next`, 20 rows at
+most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`, `audio`,
+`parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
+tokens and credits. It does not use a separate analytics table and does not show
+USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
+invoices live for the Subscription tab (a user with no Stripe customer gets an
+empty list; a Stripe failure is a 503 the tab shows with Retry). Checkout and the
+billing portal return to `/billing?tab=subscription`. The operator dashboard
 also reads bounded
 `usage_events` ranges directly; there is no periodic usage rollup while the
 ledger is small enough for indexed live queries.

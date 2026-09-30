@@ -65,6 +65,7 @@ import type {
   InspectSourceImportsReq,
   InspectSourceImportsResponse,
   IntegrationsStatus,
+  InvoiceList,
   LLMCredentialsResponse,
   Label,
   ListModelsParams,
@@ -73,6 +74,7 @@ import type {
   ListOwnedMaterialsParams,
   ListTagsParams,
   ListTrashParams,
+  ListUsageEventsParams,
   ListWorkspacesParams,
   LocaleInputBody,
   Material,
@@ -148,6 +150,7 @@ import type {
   UploadBankAssetBody,
   UploadSourceBody,
   UpsertLLMCredentialReq,
+  UsageEventPage,
   UsageReport,
   User,
   Workspace,
@@ -844,6 +847,56 @@ export const billingCheckout = async (billingCheckoutReq: NonReadonly<BillingChe
 
   const data: billingCheckoutResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as billingCheckoutResponse
+}
+
+
+
+export type listInvoicesResponse200 = {
+  data: InvoiceList
+  status: 200
+}
+
+export type listInvoicesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listInvoicesResponseSuccess = (listInvoicesResponse200) & {
+  headers: Headers;
+};
+export type listInvoicesResponseError = (listInvoicesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listInvoicesResponse = (listInvoicesResponseSuccess | listInvoicesResponseError)
+
+export const getListInvoicesUrl = () => {
+
+
+
+
+  return `/api/billing/invoices`
+}
+
+/**
+ * @summary Stripe invoices
+ */
+export const listInvoices = async ( options?: RequestInit): Promise<listInvoicesResponse> => {
+
+  const res = await fetch(getListInvoicesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listInvoicesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listInvoicesResponse
 }
 
 
@@ -5988,6 +6041,63 @@ export const getUsage = async ( options?: RequestInit): Promise<getUsageResponse
 
   const data: getUsageResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getUsageResponse
+}
+
+
+
+export type listUsageEventsResponse200 = {
+  data: UsageEventPage
+  status: 200
+}
+
+export type listUsageEventsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listUsageEventsResponseSuccess = (listUsageEventsResponse200) & {
+  headers: Headers;
+};
+export type listUsageEventsResponseError = (listUsageEventsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listUsageEventsResponse = (listUsageEventsResponseSuccess | listUsageEventsResponseError)
+
+export const getListUsageEventsUrl = (params?: ListUsageEventsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/usage/events?${stringifiedParams}` : `/api/usage/events`
+}
+
+/**
+ * @summary Usage events, newest first
+ */
+export const listUsageEvents = async (params?: ListUsageEventsParams, options?: RequestInit): Promise<listUsageEventsResponse> => {
+
+  const res = await fetch(getListUsageEventsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listUsageEventsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listUsageEventsResponse
 }
 
 

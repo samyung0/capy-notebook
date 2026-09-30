@@ -97,7 +97,7 @@ part of adding development tools.
   that opt out of boundaries and omit a local error state. Depending on cache
   state they can show empty, disabled or apparently healthy content. See
   `src/routes/Dashboard.tsx`, `src/components/app/TopInsetBar.tsx`,
-  `src/features/notification/NotificationBell.tsx`, `src/routes/Billing.tsx`,
+  `src/features/notification/NotificationBell.tsx`, `src/features/billing/UsageTab.tsx`,
   `src/features/settings/ModelPicker.tsx`,
   `src/features/workspace/WorkspaceMemberManager.tsx` and
   `src/features/workspace/ChatPanel.tsx`.
@@ -113,8 +113,6 @@ part of adding development tools.
   subsequent export can leave the host warning visible because its local error
   state is separate from the source checkpoint error. The draft remains
   downloadable. See `src/features/files/useOfficeRuntime.ts`.
-- **Checkout rejection:** the checkout failure shows its toast but also rejects
-  an unhandled promise in the click handler. See `src/routes/Billing.tsx`.
 - **Source collaboration:** the in-page provider can fail the next checkpoint
   and announce a new source epoch. Journeys wait for a successful open, make a
   real edit, then trigger the failure. Failed saves keep the mounted editor;

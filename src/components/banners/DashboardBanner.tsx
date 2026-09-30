@@ -49,7 +49,7 @@ export default function DashboardBanner() {
         size="sm"
         variant="ghost"
       >
-        <Link search={{ tab: 'subscription' }} to="/settings">
+        <Link search={{ tab: 'subscription' }} to="/billing">
           {m.account_banner_subscription()}
         </Link>
       </Button>

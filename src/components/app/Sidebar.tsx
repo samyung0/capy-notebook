@@ -21,6 +21,7 @@ interface NavItem {
 function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
   return {
     bottom: [
+      { icon: 'settings', label: m.profile_menu_settings(), to: '/settings' },
       { icon: 'book', label: m.nav_help_legal(), to: '/help-and-legal' },
     ],
     general: [
@@ -209,7 +210,7 @@ export function Sidebar({
         </div>
 
         <div className="mt-auto" />
-        <div className="mt-3 border-divider border-t pt-2">
+        <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
           {nav.bottom.map((i) => (
             <Row
               active={isActive(pathname, i)}

@@ -231,7 +231,7 @@ function StorageDialog({
               <Link to="/settings">{m.account_banner_settings()}</Link>
             </Button>
             <Button asChild className="rounded-input" size="md">
-              <Link search={{ tab: 'subscription' }} to="/settings">
+              <Link search={{ tab: 'subscription' }} to="/billing">
                 {m.account_banner_subscription()}
               </Link>
             </Button>

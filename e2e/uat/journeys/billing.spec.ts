@@ -109,7 +109,7 @@ test('application Checkout creates the exact sandbox session and reservation', a
   });
   expect(row.price_id).toBe(run.env.stripePriceId);
   expect(row.status).toBe('open');
-  const returnURL = `${run.env.appUrl.replace(/\/$/, '')}/settings?tab=subscription`;
+  const returnURL = `${run.env.appUrl.replace(/\/$/, '')}/billing?tab=subscription`;
   expect(session.success_url).toBe(returnURL);
   expect(session.cancel_url).toBe(returnURL);
   expect(row.success_url).toBe(returnURL);

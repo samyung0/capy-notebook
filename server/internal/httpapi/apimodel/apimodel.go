@@ -92,6 +92,7 @@ type (
 	BillingInfo        = store.BillingInfo
 	IngestSlots        = store.IngestSlots
 	UsageReport        = store.UsageReport
+	UsageEventPage     = store.UsageEventPage
 	IntegrationsStatus = store.IntegrationsStatus
 	Conversation       = store.Conversation
 	Message            = store.Message
@@ -541,4 +542,20 @@ type FileLinks struct {
 	// PreviewURL is the paginated PDF whose coordinates citation regions use.
 	PreviewURL *string   `json:"previewUrl,omitempty"`
 	ExpiresAt  time.Time `json:"expiresAt"`
+}
+
+// Invoice is one Stripe invoice on the Subscription tab. Total is in the
+// currency's smallest unit, as Stripe reports it.
+type Invoice struct {
+	ID        string     `json:"id"`
+	CreatedAt time.Time  `json:"createdAt"`
+	DueAt     *time.Time `json:"dueAt,omitempty"`
+	Total     int64      `json:"total"`
+	Currency  string     `json:"currency"`
+	Status    string     `json:"status" enum:"open,paid,uncollectible,void"`
+	URL       string     `json:"url,omitempty"`
+}
+
+type InvoiceList struct {
+	Items []Invoice `json:"items" nullable:"false"`
 }

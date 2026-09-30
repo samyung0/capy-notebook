@@ -16,7 +16,7 @@ import { useUser } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import { clerkMessage } from './clerk';
-import { PROFILE_PHOTO_ACCEPT, profilePhotoError } from './profile-photo';
+import { useProfilePhoto } from './useProfilePhoto';
 
 const NAME_MAX = UpdateMeBody.shape.name.maxLength ?? 60;
 
@@ -29,18 +29,10 @@ export function OnboardingDialog() {
   const qc = useQueryClient();
   const { mutateAsync: updateMe } = useUpdateMe({ errorToast: false });
   const [dismissed, setDismissed] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const preview = useMemo(
-    () => (file ? URL.createObjectURL(file) : undefined),
-    [file]
-  );
-  useEffect(() => {
-    if (preview) return () => URL.revokeObjectURL(preview);
-  }, [preview]);
+  const photo = useProfilePhoto();
+  const { file } = photo;
 
   const schema = useMemo(
     () =>
@@ -113,21 +105,6 @@ export function OnboardingDialog() {
     }
   });
 
-  const pickFile = (picked: File | null) => {
-    if (!picked) return;
-    const error = profilePhotoError(picked);
-    if (error) {
-      setFileError(
-        error === 'size'
-          ? m.onboarding_image_too_large()
-          : m.onboarding_image_type()
-      );
-      return;
-    }
-    setFileError(null);
-    setFile(picked);
-  };
-
   return (
     <SimpleDialog
       footer={
@@ -175,7 +152,8 @@ export function OnboardingDialog() {
             className="size-20"
             name={me.name}
             src={
-              preview ?? (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)
+              photo.preview ??
+              (avatarIconId ? iconUrl(avatarIconId) : me.avatarUrl)
             }
           />
           <div className="translate-y-1">
@@ -188,9 +166,7 @@ export function OnboardingDialog() {
                     disabled={busy}
                     onChange={(id) => {
                       field.onChange(id);
-                      setFile(null);
-                      setFileError(null);
-                      if (inputRef.current) inputRef.current.value = '';
+                      photo.clear();
                     }}
                     value={field.value}
                   />
@@ -199,7 +175,7 @@ export function OnboardingDialog() {
               <Button
                 disabled={busy}
                 iconLeft="upload"
-                onClick={() => inputRef.current?.click()}
+                onClick={photo.open}
                 size="sm"
                 type="button"
                 variant="outline"
@@ -208,20 +184,10 @@ export function OnboardingDialog() {
               </Button>
             </div>
             <p className="mt-1.5 text-fg-muted">{m.onboarding_upload_hint()}</p>
-            <input
-              accept={PROFILE_PHOTO_ACCEPT}
-              disabled={busy}
-              hidden
-              onChange={(event) => {
-                pickFile(event.target.files?.[0] ?? null);
-                event.target.value = '';
-              }}
-              ref={inputRef}
-              type="file"
-            />
+            <input {...photo.inputProps} disabled={busy} />
           </div>
         </div>
-        {fileError && <InputError errors={[{ message: fileError }]} />}
+        {photo.error && <InputError errors={[{ message: photo.error }]} />}
       </div>
       <Controller
         control={control}

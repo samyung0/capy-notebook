@@ -4,10 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { UsageBucket } from './usageBucket.ts';
+import type { UsageEventView } from './usageEventView.ts';
 
-export interface UsageReport {
+export interface UsageEventPage {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  bySurface: UsageBucket[];
+  items: UsageEventView[];
+  next?: string;
 }

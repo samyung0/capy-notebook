@@ -453,6 +453,49 @@ export function resetScenarioHandlerState(workspaceId: string) {
     if (job.workspaceId === workspaceId) sourceImports.delete(id);
 }
 
+const MOCK_USAGE_EVENT_SHAPES = [
+  {
+    kind: 'llm',
+    modelSlug: 'deepseek-flash',
+    providerSlug: 'deepseek',
+    surface: 'chat',
+  },
+  {
+    kind: 'rerank',
+    modelSlug: 'Qwen/Qwen3-Reranker-4B',
+    providerSlug: 'deepinfra',
+    surface: 'chat',
+  },
+  {
+    kind: 'embedding',
+    modelSlug: 'Qwen/Qwen3-Embedding-4B',
+    providerSlug: 'deepinfra',
+    surface: 'ingest',
+  },
+  {
+    kind: 'llm',
+    modelSlug: 'deepseek-flash',
+    providerSlug: 'deepseek',
+    surface: 'generate',
+  },
+  { kind: 'email', modelSlug: '', providerSlug: '', surface: 'system' },
+] as const;
+
+/** 45 ledger rows, newest first, so Detailed usage has three pages. */
+const MOCK_USAGE_EVENTS = Array.from({ length: 45 }, (_, i) => {
+  const shape = MOCK_USAGE_EVENT_SHAPES[i % MOCK_USAGE_EVENT_SHAPES.length];
+  const llm = shape.kind === 'llm';
+  return {
+    ...shape,
+    createdAt: new Date(Date.now() - i * 2 * 3_600_000).toISOString(),
+    creditMicros: llm ? 120_000 + i * 1000 : 20_000,
+    inputTokens: llm ? 800 + i * 10 : 0,
+    outputTokens: llm ? 240 + i * 5 : 0,
+    unit: shape.kind === 'email' ? 'emails' : 'tokens',
+    units: llm ? 0 : 1,
+  };
+});
+
 export const handlers = [
   ...questionBankHandlers,
   ...editorAssetHandlers,
@@ -2901,7 +2944,7 @@ export const handlers = [
       creditsPeriodStart: new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
       ).toISOString(),
-      creditsReservedMicros: 0,
+      creditsReservedMicros: 40 * 1_000_000,
       creditsUsedMicros: 1250 * 1_000_000,
       planTier: db.user.planTier,
       storageLimitBytes: db.accountStatus.storageLimitBytes,
@@ -2919,52 +2962,51 @@ export const handlers = [
   ),
   http.get('/api/usage', async () =>
     HttpResponse.json({
-      byKind: [
-        { creditMicros: 1000 * 1_000_000, events: 12, key: 'llm' },
-        { creditMicros: 180 * 1_000_000, events: 4, key: 'embedding' },
-        { creditMicros: 70 * 1_000_000, events: 2, key: 'parse' },
-      ],
       bySurface: [
         { creditMicros: 820 * 1_000_000, events: 9, key: 'chat' },
         { creditMicros: 250 * 1_000_000, events: 3, key: 'generate' },
-        { creditMicros: 180 * 1_000_000, events: 6, key: 'ingest' },
+        { creditMicros: 150 * 1_000_000, events: 6, key: 'ingest' },
+        { creditMicros: 20 * 1_000_000, events: 4, key: 'editor' },
+        { creditMicros: 10 * 1_000_000, events: 1, key: 'system' },
       ],
-      recent: [
-        {
-          createdAt: new Date().toISOString(),
-          creditMicros: 120_000,
-          inputTokens: 800,
-          kind: 'llm',
-          modelSlug: 'deepseek-flash',
-          outputTokens: 240,
-          providerSlug: 'deepseek',
-          surface: 'chat',
-          unit: 'tokens',
-          units: 0,
-        },
-        {
-          createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-          creditMicros: 80_000,
-          inputTokens: 0,
-          kind: 'embedding',
-          modelSlug: 'Qwen/Qwen3-Embedding-4B',
-          outputTokens: 0,
-          providerSlug: 'deepinfra',
-          surface: 'ingest',
-          unit: 'tokens',
-          units: 1200,
-        },
-      ],
+    })
+  ),
+  http.get('/api/usage/events', async ({ request }) => {
+    // Enough rows for three pages; the cursor is just the next offset here.
+    const before = new URL(request.url).searchParams.get('before');
+    const start = before ? Number(before) : 0;
+    const page = MOCK_USAGE_EVENTS.slice(start, start + 20);
+    const next =
+      start + 20 < MOCK_USAGE_EVENTS.length ? String(start + 20) : undefined;
+    return HttpResponse.json({ items: page, next });
+  }),
+  http.get('/api/billing/invoices', async () =>
+    HttpResponse.json({
+      items:
+        db.user.planTier === 'pro'
+          ? [0, 1, 2].map((months) => {
+              const at = new Date();
+              at.setUTCMonth(at.getUTCMonth() - months, 1);
+              return {
+                createdAt: at.toISOString(),
+                currency: 'usd',
+                id: `in_mock_${months}`,
+                status: 'paid',
+                total: 800,
+                url: 'https://invoice.stripe.com/i/mock',
+              };
+            })
+          : [],
     })
   ),
   http.post('/api/billing/checkout', async ({ request }) => {
     const body = (await request.json()) as { planTier: string };
     return HttpResponse.json({
-      url: `/settings?tab=subscription&mock_checkout=${body.planTier}`,
+      url: `/billing?tab=subscription&mock_checkout=${body.planTier}`,
     });
   }),
   http.post('/api/billing/portal', async () =>
-    HttpResponse.json({ url: '/billing?mock_portal=1' })
+    HttpResponse.json({ url: '/billing?tab=subscription&mock_portal=1' })
   ),
 
   /* ---------------- integrations ---------------- */

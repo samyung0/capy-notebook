@@ -440,12 +440,12 @@ export async function runJourney(
     'account-suspended': '/settings',
     'annotations-load': `${scenarioPath}?file=mock-scenario-pdf`,
     'attempt-load': `/quizzes/attempts/${db.attempts[0].id}`,
-    'billing-load': '/settings?tab=subscription',
+    'billing-load': '/billing',
     'chapters-load': scenarioPath,
     'collaboration-token': `${scenarioPath}?material=${scenarioNote}&mode=edit`,
     'credentials-load': '/settings?tab=llm',
-    'deletion-check': '/settings',
-    'deletion-transfer-required': '/settings',
+    'deletion-check': '/settings?tab=danger',
+    'deletion-transfer-required': '/settings?tab=danger',
     explore: '/explore',
     'file-detail': `${scenarioPath}?file=${scenarioText}`,
     'file-links': `${scenarioPath}?file=${scenarioText}`,
@@ -458,7 +458,7 @@ export async function runJourney(
     'materials-load': scenarioPath,
     'models-load': '/settings?tab=llm',
     'notification-count': '/',
-    'notification-prefs-load': '/settings',
+    'notification-prefs-load': '/settings?tab=notifications',
     'profile-load': '/settings',
     'quiz-load': `/quizzes/${scenarioQuiz}/attempt`,
     schedule: '/schedule',
@@ -486,6 +486,9 @@ export async function runJourney(
   if (route) {
     fail();
     await go(route);
+    // The deletion preflight loads only once its dialog opens.
+    if (id === 'deletion-check' || id === 'deletion-transfer-required')
+      await ui.click(m.action_delete());
     if (
       [
         'billing-load',
@@ -829,11 +832,11 @@ export async function runJourney(
     case 'billing-portal':
       if (id === 'billing-portal') fail();
       else fail('checkout-free');
-      await go('/settings?tab=subscription');
+      await go('/billing?tab=subscription');
       await ui.click(
         id === 'billing-portal'
           ? m.subscription_manage()
-          : m.subscription_upgrade()
+          : m.billing_upgrade_pro()
       );
       return;
     case 'models-save':
@@ -861,7 +864,7 @@ export async function runJourney(
       );
       return 'The provider key error is displayed beside the input.';
     case 'notification-prefs':
-      await go('/settings');
+      await go('/settings?tab=notifications');
       fail();
       (await ui.element('[role="switch"]:not(:disabled)')).click();
       return;
@@ -874,7 +877,8 @@ export async function runJourney(
         await ui.click(m.notifications_mark_all_read());
       return 'This notification request currently has no local error display.';
     case 'deletion-submit':
-      await go('/settings');
+      await go('/settings?tab=danger');
+      await ui.click(m.action_delete());
       await ui.fill('input[name="confirmEmail"]', db.user.email);
       fail();
       await ui.click(m.settings_deletion_request());

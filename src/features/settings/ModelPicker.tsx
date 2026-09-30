@@ -83,7 +83,7 @@ export function ModelPicker({
   );
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <div className="flex min-w-0 flex-wrap items-start gap-2">
+      <div className="flex min-w-0 items-start gap-2">
         <Select
           disabled={isPending || models.length === 0}
           onValueChange={(value) => {
@@ -95,7 +95,7 @@ export function ModelPicker({
         >
           <SelectTrigger
             aria-label={SLOT_LABEL[slot]()}
-            className="w-full max-w-sm"
+            className="w-full sm:w-64"
           >
             <SelectValue placeholder={m.model_picker_label()} />
           </SelectTrigger>

@@ -181,9 +181,10 @@ func sendOutboxEmail(
 		// Account is locked; Settings is unreachable. Point at the marketing
 		// site / app root where support contact lives.
 		data["OpenURL"] = appURL
-	case "account-deletion-cancelled",
-		"subscription-over-quota", "subscription-frozen":
+	case "account-deletion-cancelled":
 		data["OpenURL"] = appURL + "/settings"
+	case "subscription-over-quota", "subscription-frozen":
+		data["OpenURL"] = appURL + "/billing?tab=subscription"
 	case "model-deprecated":
 		data["OpenURL"] = appURL + "/settings?tab=llm"
 	default:
@@ -203,7 +204,7 @@ func sendOutboxEmail(
 		// Lifecycle mail is non-optional: no unsubscribe token.
 		category = ""
 	}
-	unsubscribeURL := appURL + "/settings"
+	unsubscribeURL := appURL + "/settings?tab=notifications"
 	if category != "" {
 		if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
 			unsubscribeURL += "?unsubscribe=" + url.QueryEscape(token)

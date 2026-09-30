@@ -408,6 +408,23 @@ export const BillingCheckoutResponse = zod.object({
 
 
 /**
+ * @summary Stripe invoices
+ */
+export const ListInvoicesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "currency": zod.string(),
+  "dueAt": zod.iso.datetime({"offset":true}).optional(),
+  "id": zod.string(),
+  "status": zod.enum(['open', 'paid', 'uncollectible', 'void']),
+  "total": zod.int(),
+  "url": zod.string().optional()
+}))
+})
+
+
+/**
  * @summary Open billing portal
  */
 export const BillingPortalResponse = zod.object({
@@ -3397,17 +3414,30 @@ export const RestoreTrashedResponse = zod.object({
  */
 export const GetUsageResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "byKind": zod.array(zod.object({
-  "creditMicros": zod.int(),
-  "events": zod.int(),
-  "key": zod.string()
-})),
   "bySurface": zod.array(zod.object({
   "creditMicros": zod.int(),
   "events": zod.int(),
   "key": zod.string()
-})),
-  "recent": zod.array(zod.object({
+}))
+})
+
+
+/**
+ * @summary Usage events, newest first
+ */
+export const listUsageEventsQueryLimitDefault = 20;
+export const listUsageEventsQueryLimitMax = 20;
+
+
+
+export const ListUsageEventsQueryParams = zod.object({
+  "limit": zod.int().min(1).max(listUsageEventsQueryLimitMax).default(listUsageEventsQueryLimitDefault),
+  "before": zod.string().optional()
+})
+
+export const ListUsageEventsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "creditMicros": zod.int(),
   "inputTokens": zod.int(),
@@ -3418,7 +3448,8 @@ export const GetUsageResponse = zod.object({
   "surface": zod.string(),
   "unit": zod.string(),
   "units": zod.int()
-}))
+})),
+  "next": zod.string().optional()
 })
 
 
