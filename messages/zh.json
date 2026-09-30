@@ -1191,8 +1191,6 @@
   "quiz_item_n": "项目 {n}",
   "summary_open": "打开工作区",
   "summary_title": "工作区概览",
-  "summary_public": "公开工作区",
-  "summary_link": "通过链接分享",
   "summary_unfiled": "未归类文件",
   "summary_empty": "尚未添加文件。",
   "summary_error_title": "无法加载工作区",

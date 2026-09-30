@@ -42,7 +42,6 @@
   font-size: 14px;
   font-weight: 650;
 }
-.summary-login,
 .summary-signup {
   display: inline-flex;
   align-items: center;
@@ -52,9 +51,6 @@
   white-space: nowrap;
   text-decoration: none;
   border-radius: var(--radius-button);
-}
-.summary-login:hover {
-  background: var(--surface-card-bg);
 }
 .summary-signup {
   min-width: 96px;

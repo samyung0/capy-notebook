@@ -195,7 +195,8 @@ export const workspaces: Workspace[] = [
     },
     chapterCount: 0,
     createdAt: days(40),
-    description: '',
+    description:
+      'Explore how cells work, how substances move across membranes, and how traits pass from one generation to the next. Lecture readings, revision notes and practice materials for our introductory biology course.',
     fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-01',

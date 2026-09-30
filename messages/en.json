@@ -1191,8 +1191,6 @@
   "quiz_item_n": "Item {n}",
   "summary_open": "Open workspace",
   "summary_title": "Workspace summary",
-  "summary_public": "Public workspace",
-  "summary_link": "Shared by link",
   "summary_unfiled": "Unfiled files",
   "summary_empty": "No files have been added yet.",
   "summary_error_title": "Unable to load workspace",

@@ -31,9 +31,9 @@ export function PublicNavigation() {
       className="summary-actions"
     >
       <PublicThemeToggle locale={locale} />
-      <a className="summary-login" href={signInURL}>
-        {m.action_sign_in({}, options)}
-      </a>
+      <Button asChild variant="ghost-hover">
+        <a href={signInURL}>{m.action_sign_in({}, options)}</a>
+      </Button>
       <Button asChild size="lg">
         <a href={signUpURL}>{m.summary_sign_up({}, options)}</a>
       </Button>

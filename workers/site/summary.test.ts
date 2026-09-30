@@ -58,7 +58,7 @@ describe('public workspace SSR', () => {
     expect(response.headers.get('Cache-Control')).toBe(SHARED_CACHE);
     expect(html).toContain('<h1>Biology</h1>');
     expect(html).toContain('src="/icons/waves-03.svg"');
-    expect(html).toContain('Mia · Public workspace');
+    expect(html).toContain('<p class="summary-byline">Mia</p>');
     expect(html).toContain(
       'href="/sign-up?redirect_url=%2Fworkspaces%2Fws_0123456789"'
     );
@@ -116,7 +116,9 @@ describe('public workspace SSR', () => {
     const fetcher = upstream({ ...summary, privacy: 'link' });
     const response = await handleSiteRequest(request(), env, fetcher);
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
-    expect(await response.text()).toContain('Shared by link');
+    expect(await response.text()).toContain(
+      '<p class="summary-byline">Mia</p>'
+    );
     fetcher.mockResolvedValue(new Response(null, { status: 404 }));
     const revoked = await handleSiteRequest(request(), env, fetcher);
     expect(revoked.status).toBe(404);
