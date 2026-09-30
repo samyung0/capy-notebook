@@ -1,4 +1,4 @@
-import { HttpResponse, http } from 'msw';
+import { delay, HttpResponse, http } from 'msw';
 import type {
   BankDetail,
   BankRow,
@@ -52,8 +52,28 @@ samples[1].parts[0].markscheme = [
 samples[1].parts[0].solution = [
   { text: 'A summarizes paragraph 1. B summarizes paragraph 2.', type: 'text' },
 ];
-const details = new Map(
-  samples.map((question, index): [string, BankDetail] => [
+// A long topic, so the page loads in steps and jumps to unloaded questions.
+const practice = Array.from({ length: 34 }, (_, index) => {
+  const a = index + 2;
+  const question = exampleQuestion(`bank-practice-${index + 1}`, {
+    accepted: [String(a * 3)],
+    type: 'short',
+  });
+  question.stem = [
+    {
+      text: `A rectangle has width $${a}$ cm and length $3$ cm.`,
+      type: 'text',
+    },
+  ];
+  question.parts[0].blocks = [{ text: 'Find its area in cm².', type: 'text' }];
+  question.parts[0].markscheme = [`Multiplies to obtain ${a * 3} cm².`];
+  question.parts[0].solution = [
+    { text: `$${a}\\times 3=${a * 3}$`, type: 'text' },
+  ];
+  return question;
+});
+const details = new Map([
+  ...samples.map((question, index): [string, BankDetail] => [
     question.id,
     {
       editor: true,
@@ -69,8 +89,25 @@ const details = new Map(
       topicLabel: index === 0 ? 'Mensuration' : 'Matching headings',
       updatedAt: new Date().toISOString(),
     },
-  ])
-);
+  ]),
+  ...practice.map((question, index): [string, BankDetail] => [
+    question.id,
+    {
+      editor: true,
+      examLabel: 'HKDSE',
+      position: index + 1,
+      question,
+      reviewedAt: index % 3 ? null : new Date().toISOString(),
+      reviewedBy: '',
+      reviewerName: index % 3 ? '' : 'You',
+      sources: [],
+      subjectLabel: 'Mathematics',
+      topicId: 'practice',
+      topicLabel: 'Area practice',
+      updatedAt: new Date().toISOString(),
+    },
+  ]),
+]);
 const topicRows = (id: string): BankRow[] =>
   [...details.values()]
     .filter((detail) => detail.topicId === id)
@@ -108,6 +145,14 @@ export const questionBankHandlers = [
                   ).length,
                   total: 1,
                 },
+                {
+                  id: 'practice',
+                  label: 'Area practice',
+                  reviewed: topicRows('practice').filter(
+                    (row) => row.reviewedAt
+                  ).length,
+                  total: practice.length,
+                },
               ],
             },
           ],
@@ -139,6 +184,15 @@ export const questionBankHandlers = [
   http.get('/api/bank/topics/:topicId/questions', ({ params }) =>
     HttpResponse.json({ questions: topicRows(String(params.topicId)) })
   ),
+  http.get('/api/bank/questions', async ({ request }) => {
+    const ids = new URL(request.url).searchParams.get('ids')?.split(',') ?? [];
+    const found = ids.flatMap((id) => details.get(id) ?? []);
+    // A short delay makes the loading steps visible in dev.
+    await delay(400);
+    return found.length === ids.length
+      ? HttpResponse.json({ questions: found })
+      : new HttpResponse(null, { status: 404 });
+  }),
   http.get('/api/bank/questions/:id', ({ params }) =>
     details.has(String(params.id))
       ? HttpResponse.json(details.get(String(params.id)))

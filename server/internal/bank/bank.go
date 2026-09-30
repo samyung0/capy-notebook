@@ -295,6 +295,38 @@ func (s *Store) Get(ctx context.Context, id string) (Detail, error) {
 	return out, dbError(err)
 }
 
+// GetMany reads questions in the requested order; any unknown id fails the batch.
+func (s *Store) GetMany(ctx context.Context, ids []string) ([]Detail, error) {
+	p, err := s.pool(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := p.Query(ctx, `SELECT q.content,q.sources,q.updated_at,q.reviewed_at,COALESCE(q.reviewed_by,''),q.topic_id,q.position,e.label,s.label,t.label
+ FROM unnest($1::text[]) WITH ORDINALITY AS w(id,n) JOIN questions q ON q.id=w.id JOIN topics t ON t.id=q.topic_id JOIN subjects s ON s.id=t.subject_id JOIN exams e ON e.id=s.exam_id ORDER BY w.n`, ids)
+	if err != nil {
+		return nil, dbError(err)
+	}
+	defer rows.Close()
+	out := []Detail{}
+	for rows.Next() {
+		var d Detail
+		if err := rows.Scan(&d.Question, &d.Sources, &d.UpdatedAt, &d.ReviewedAt, &d.ReviewedBy, &d.TopicID, &d.Position, &d.ExamLabel, &d.SubjectLabel, &d.TopicLabel); err != nil {
+			return nil, dbError(err)
+		}
+		if s.Validate(d.Question) != nil {
+			return nil, fmt.Errorf("%w: stored question is invalid", ErrUnavailable)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, dbError(err)
+	}
+	if len(out) != len(ids) {
+		return nil, ErrNotFound
+	}
+	return out, nil
+}
+
 // Provenance resolves the referenced historical edition, never the current pointer.
 func (s *Store) Provenance(ctx context.Context, sources []Source) (*store.Provenance, error) {
 	if len(sources) == 0 {

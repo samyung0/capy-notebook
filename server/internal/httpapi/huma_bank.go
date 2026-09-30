@@ -20,6 +20,9 @@ import (
 type bankQuestionInput struct {
 	ID string `path:"id"`
 }
+type bankBatchInput struct {
+	IDs []string `query:"ids" required:"true" minItems:"1" maxItems:"50" uniqueItems:"true" doc:"Comma-separated question ids, returned in this order"`
+}
 type bankTopicInput struct {
 	TopicID string `path:"topicId"`
 }
@@ -29,6 +32,10 @@ type bankListBody struct {
 }
 type bankListOutput struct{ Body bankListBody }
 type bankDetailOutput struct{ Body bank.Detail }
+type bankBatchBody struct {
+	Questions []bank.Detail `json:"questions"`
+}
+type bankBatchOutput struct{ Body bankBatchBody }
 type bankSaveInput struct {
 	ID   string `path:"id"`
 	Body struct {
@@ -104,6 +111,7 @@ func (a *api) registerBank(api huma.API) {
 	tag := "Question bank"
 	reg(api, "GET", "/api/bank/syllabus", "bankSyllabus", tag, "Read the exam syllabus", 200, a.bankSyllabus)
 	reg(api, "GET", "/api/bank/topics/{topicId}/questions", "bankQuestions", tag, "List topic questions", 200, a.bankList)
+	reg(api, "GET", "/api/bank/questions", "bankQuestionBatch", tag, "Read bank questions by id", 200, a.bankBatch)
 	reg(api, "GET", "/api/bank/questions/{id}", "bankQuestion", tag, "Read a bank question", 200, a.bankQuestion)
 	regWithMaxBody(api, "PUT", "/api/bank/questions/{id}", "saveBankQuestion", tag, "Edit a bank question", 200, materialRequestMaxBytes, a.bankSave)
 	reg(api, "PUT", "/api/bank/questions/{id}/review", "reviewBankQuestion", tag, "Set the review marker", 200, a.bankReview)
@@ -162,27 +170,61 @@ func (a *api) bankDetail(ctx context.Context, id string, editor bool) (*bankDeta
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
-	body.Editor = editor
-	body.Provenance, err = a.cfg.Bank.Provenance(ctx, body.Sources)
+	details := []bank.Detail{body}
+	if err := a.bankPresent(ctx, details, editor); err != nil {
+		return nil, err
+	}
+	return &bankDetailOutput{Body: details[0]}, nil
+}
+
+// bankPresent adds attribution and reviewer names, and hides answers from learners.
+func (a *api) bankPresent(ctx context.Context, details []bank.Detail, editor bool) error {
+	ids := []string{}
+	for i := range details {
+		body := &details[i]
+		body.Editor = editor
+		var err error
+		body.Provenance, err = a.cfg.Bank.Provenance(ctx, body.Sources)
+		if err != nil {
+			return bankHTTPError(err)
+		}
+		if body.Provenance != nil {
+			if _, err := validateStoredProvenance(body.Provenance); err != nil {
+				return bankHTTPError(bank.ErrUnavailable)
+			}
+		}
+		if !editor {
+			body.Question = questions.LearnerView(body.Question)
+		}
+		if body.ReviewedBy != "" {
+			ids = append(ids, body.ReviewedBy)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	names, err := a.s.BankUserNames(ctx, ids)
+	if err != nil {
+		return hErr(err)
+	}
+	for i := range details {
+		details[i].ReviewerName = names[details[i].ReviewedBy]
+	}
+	return nil
+}
+func (a *api) bankBatch(ctx context.Context, in *bankBatchInput) (*bankBatchOutput, error) {
+	editor, err := a.bankAccess(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	details, err := a.cfg.Bank.GetMany(ctx, in.IDs)
 	if err != nil {
 		return nil, bankHTTPError(err)
 	}
-	if body.Provenance != nil {
-		if _, err := validateStoredProvenance(body.Provenance); err != nil {
-			return nil, bankHTTPError(bank.ErrUnavailable)
-		}
+	if err := a.bankPresent(ctx, details, editor); err != nil {
+		return nil, err
 	}
-	if !editor {
-		body.Question = questions.LearnerView(body.Question)
-	}
-	if body.ReviewedBy != "" {
-		names, err := a.s.BankUserNames(ctx, []string{body.ReviewedBy})
-		if err != nil {
-			return nil, hErr(err)
-		}
-		body.ReviewerName = names[body.ReviewedBy]
-	}
-	return &bankDetailOutput{Body: body}, nil
+	return &bankBatchOutput{Body: bankBatchBody{Questions: details}}, nil
 }
 func (a *api) bankQuestion(ctx context.Context, in *bankQuestionInput) (*bankDetailOutput, error) {
 	editor, err := a.bankAccess(ctx, false)
