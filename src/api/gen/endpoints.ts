@@ -2338,6 +2338,56 @@ export const getFileLinks = async (id: string, options?: RequestInit): Promise<g
 
 
 
+export type cancelSourceChangesResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelSourceChangesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type cancelSourceChangesResponseSuccess = (cancelSourceChangesResponse204) & {
+  headers: Headers;
+};
+export type cancelSourceChangesResponseError = (cancelSourceChangesResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelSourceChangesResponse = (cancelSourceChangesResponseSuccess | cancelSourceChangesResponseError)
+
+export const getCancelSourceChangesUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/process-changes`
+}
+
+/**
+ * @summary Cancel queued processing of source changes
+ */
+export const cancelSourceChanges = async (id: string, options?: RequestInit): Promise<cancelSourceChangesResponse> => {
+
+  const res = await fetch(getCancelSourceChangesUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelSourceChangesResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as cancelSourceChangesResponse
+}
+
+
+
 export type processSourceChangesResponse202 = {
   data: SourceProcessResult
   status: 202

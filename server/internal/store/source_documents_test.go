@@ -670,8 +670,68 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Indexed != 1 || stats.NotIndexed != 1 || stats.NotIndexable != 1 || stats.PendingReparse != 1 || stats.PendingReindex != 0 {
+	if stats.Indexed != 1 || stats.NotIndexed != 1 || stats.NotIndexable != 1 || len(stats.FileChanges) != 1 || stats.FileChanges[0].FileID != file.ID || stats.FileChanges[0].State != "waiting" {
 		t.Fatalf("wrong partition: %+v", stats)
+	}
+}
+
+func TestFileChangesQueueAndCancel(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "file_changes_owner")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "queued-state")
+	state := func() string {
+		t.Helper()
+		stats, err := s.WorkspaceStats(ctx, owner, ws.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(stats.FileChanges) != 1 {
+			t.Fatalf("file changes = %+v", stats.FileChanges)
+		}
+		return stats.FileChanges[0].State
+	}
+	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := state(); got != "queued" {
+		t.Fatalf("requested refresh is %s", got)
+	}
+	if err = s.CancelSourceRefresh(ctx, owner, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	var manual bool
+	if err = s.pool.QueryRow(ctx, `SELECT j.status,d.desired_manual FROM jobs j,source_documents d WHERE j.id=$1 AND d.file_id=$2`, job.JobID, file.ID).Scan(&status, &manual); err != nil || status != "failed" || manual {
+		t.Fatalf("cancel left job %s manual=%v err=%v", status, manual, err)
+	}
+	if got := state(); got != "waiting" {
+		t.Fatalf("cancelled refresh is %s", got)
+	}
+	if job, err = s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1 WHERE id=$1`, job.JobID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.CancelSourceRefresh(ctx, owner, file.ID); !errors.Is(err, ErrProcessingStarted) {
+		t.Fatalf("cancel of a started refresh: %v", err)
+	}
+	if got := state(); got != "processing" {
+		t.Fatalf("started refresh is %s", got)
+	}
+	if _, err = s.pool.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','source_refresh','source_refresh_failed','boom')`, job.JobID); err != nil {
+		t.Fatal(err)
+	}
+	if got := state(); got != "failed" {
+		t.Fatalf("failed refresh is %s", got)
 	}
 }
 

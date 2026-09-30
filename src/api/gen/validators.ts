@@ -1331,6 +1331,16 @@ export const GetFileLinksResponse = zod.object({
 
 
 /**
+ * @summary Cancel queued processing of source changes
+ */
+export const CancelSourceChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const CancelSourceChangesResponse = zod.void()
+
+
+/**
  * @summary Process the latest saved source changes
  */
 export const ProcessSourceChangesParams = zod.object({
@@ -4470,13 +4480,18 @@ export const GetWorkspaceStatsResponse = zod.object({
   "attempts": zod.int(),
   "avgScore": zod.int(),
   "chapters": zod.int(),
+  "fileChanges": zod.array(zod.object({
+  "fileId": zod.string(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lastEditedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "state": zod.enum(['waiting', 'queued', 'processing', 'failed'])
+})),
   "files": zod.int(),
   "indexed": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
   "pendingNotes": zod.int(),
-  "pendingReindex": zod.int(),
-  "pendingReparse": zod.int(),
   "quizzes": zod.int()
 })
 

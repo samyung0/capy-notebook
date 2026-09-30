@@ -69,6 +69,9 @@ var (
 	ErrSubscriptionExists = fmt.Errorf("%w: a subscription already exists", ErrConflict)
 	// ErrCloneSourceChanged means the item changed while it was being copied.
 	ErrCloneSourceChanged = fmt.Errorf("%w: the source changed while it was copied", ErrConflict)
+	// ErrProcessingStarted means a file's processing left the queue, so it
+	// can no longer be cancelled.
+	ErrProcessingStarted = fmt.Errorf("%w: processing has already started", ErrConflict)
 )
 
 // ErrNothingToProcess means a file has no saved source edits to process.

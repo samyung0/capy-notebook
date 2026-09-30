@@ -82,6 +82,8 @@ export * from './errorModel.ts';
 export * from './event.ts';
 export * from './exam.ts';
 export * from './file.ts';
+export * from './fileChange.ts';
+export * from './fileChangeState.ts';
 export * from './fileKind.ts';
 export * from './fileLinks.ts';
 export * from './filePage.ts';

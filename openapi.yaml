@@ -1402,6 +1402,32 @@ components:
         - hasBytes
         - revision
       type: object
+    FileChange:
+      additionalProperties: false
+      properties:
+        fileId:
+          type: string
+        kind:
+          $ref: "#/components/schemas/FileKind"
+        lastEditedAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        state:
+          enum:
+            - waiting
+            - queued
+            - processing
+            - failed
+          type: string
+      required:
+        - fileId
+        - name
+        - kind
+        - state
+        - lastEditedAt
+      type: object
     FileKind:
       enum:
         - pdf
@@ -4897,6 +4923,10 @@ components:
         chapters:
           format: int64
           type: integer
+        fileChanges:
+          items:
+            $ref: "#/components/schemas/FileChange"
+          type: array
         files:
           format: int64
           type: integer
@@ -4912,12 +4942,6 @@ components:
         pendingNotes:
           format: int64
           type: integer
-        pendingReindex:
-          format: int64
-          type: integer
-        pendingReparse:
-          format: int64
-          type: integer
         quizzes:
           format: int64
           type: integer
@@ -4925,8 +4949,7 @@ components:
         - indexed
         - notIndexed
         - notIndexable
-        - pendingReparse
-        - pendingReindex
+        - fileChanges
         - pendingNotes
         - chapters
         - files
@@ -6133,6 +6156,26 @@ paths:
       tags:
         - Content
   /api/files/{id}/process-changes:
+    delete:
+      operationId: cancelSourceChanges
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cancel queued processing of source changes
+      tags:
+        - Source collaboration
     post:
       operationId: processSourceChanges
       parameters:

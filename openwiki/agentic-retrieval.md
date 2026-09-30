@@ -2578,6 +2578,17 @@ coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
 state intact and exposes manual processing.
 
+The workspace stats (`fileChanges`) list each file with unprocessed saved edits
+(the scheduler's predicate) or a refresh in flight, as the settings Indexing
+tab shows them: waiting, queued (a `source_refresh` job not yet claimed:
+pending with no attempts), processing (claimed, exporting, parsing or
+indexing) or failed (`refresh_error`). A maintenance republish is left out.
+`DELETE /api/files/{id}/process-changes` lets the owner take a queued refresh
+back out of the queue (`CancelSourceRefresh`: the job is superseded, its
+reservation released and `desired_manual` cleared); a claimed refresh answers
+`processing_started` and runs to the end. The edits stay, so automatic
+processing may queue them again; the switches turn that off.
+
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
 publication URL and omits it from the strict JSON body for Office, text and

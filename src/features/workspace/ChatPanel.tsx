@@ -411,7 +411,7 @@ export function ChatPanel({
     markUndone,
   } = useChatStream(workspaceId);
   const { mutate: processChanges, isPending: processingChanges } =
-    useProcessFileChanges();
+    useProcessFileChanges(workspaceId);
   const { data: conversations } = useConversations(workspaceId, {
     errorBoundary: false,
   });

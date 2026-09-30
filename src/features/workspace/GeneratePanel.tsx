@@ -70,7 +70,7 @@ export function GeneratePanel({
   const [failure, setFailure] = useState<string | null>(null);
   const [pendingFileIds, setPendingFileIds] = useState<string[] | null>(null);
   const { mutate: processChanges, isPending: processingChanges } =
-    useProcessFileChanges();
+    useProcessFileChanges(workspaceId);
   const [mode, setMode] = useState<GenerateMode | null>(null);
   const [result, setResult] = useState<GenerateResultData | null>(null);
 

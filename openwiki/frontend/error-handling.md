@@ -369,8 +369,13 @@ warns that source information may be outdated and offers Process file changes.
 Generation returns `pending_sources_too_large` with the edited file ids instead
 of silently using incomplete pending evidence, and offers the same action for
 exactly those files; a plain `context_too_large` is an ordinary failure. The action toasts that processing started,
-or that it could not start with the reason (`useProcessFileChanges`); the
-processing itself shows no progress.
+or that it could not start with the reason (`useProcessFileChanges`).
+Processing shows no progress anywhere else; the workspace settings Indexing
+tab lists every file with unprocessed edits as waiting, queued, processing
+(a spinner) or failed (an alert icon), polling the stats every 3 s while any
+is queued or processing. The owner processes a waiting or failed file, or all
+of them, and cancels a queued one; a file whose processing started refuses
+with `processing_started`. Editors see the list without actions.
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.

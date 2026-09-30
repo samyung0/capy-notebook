@@ -82,6 +82,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	reg(api, http.MethodGet, "/api/files/{id}/source-session", "getSourceSession", tag, "Read source editing session", http.StatusOK, a.getSourceSession)
 	reg(api, http.MethodPost, "/api/files/{id}/collaboration-token", "createSourceCollaborationToken", tag, "Create source room token", http.StatusCreated, a.createSourceCollaborationToken)
 	reg(api, http.MethodPost, "/api/files/{id}/process-changes", "processSourceChanges", tag, "Process the latest saved source changes", http.StatusAccepted, a.processSourceChanges)
+	reg(api, http.MethodDelete, "/api/files/{id}/process-changes", "cancelSourceChanges", tag, "Cancel queued processing of source changes", http.StatusNoContent, a.cancelSourceChanges)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/bootstrap", "bootstrapSourceDocument", tag, "Bootstrap an authorized source room", http.StatusOK, a.bootstrapSourceDocument)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/access", "checkSourceAccess", tag, "Revalidate source room access", http.StatusNoContent, a.checkSourceAccess)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/checkpoint", "checkpointSourceDocument", tag, "Persist an authorized source checkpoint", http.StatusOK, 150<<20, a.checkpointSourceDocument)
@@ -190,6 +191,9 @@ func (a *api) processSourceChanges(ctx context.Context, in *collaborationTokenIn
 		return nil, hErr(err)
 	}
 	return &sourceProcessOutput{Body: out}, nil
+}
+func (a *api) cancelSourceChanges(ctx context.Context, in *collaborationTokenInput) (*struct{}, error) {
+	return nil, hErr(a.s.CancelSourceRefresh(ctx, userID(ctx), in.ID))
 }
 func (a *api) requestSourceRefresh(ctx context.Context, in *sourceRefreshInput) (*sourceProcessOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {

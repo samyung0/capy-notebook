@@ -490,15 +490,15 @@ func (s *Store) FailSourceRefresh(ctx context.Context, fileID, jobID, lease, det
 // WorkspaceIndexCounts partitions logical files by their current searchable
 // alias and the canonical upload route, independent of a transient job status.
 func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *WorkspaceStats) error {
-	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready'),COALESCE(d.net_tokens>0 OR d.pending_effects<>'[]'::jsonb,false),COALESCE(d.format,'') FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
+	rows, err := s.pool.Query(ctx, `SELECT f.name,f.kind,EXISTS(SELECT 1 FROM rag_file_contents a JOIN rag_contents c ON c.id=a.content_id WHERE a.file_id=f.id AND c.status='ready') FROM files f WHERE f.workspace_id=$1 AND f.trashed_at IS NULL`, ws)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name, kind, format string
-		var indexed, pending bool
-		if err = rows.Scan(&name, &kind, &indexed, &pending, &format); err != nil {
+		var name, kind string
+		var indexed bool
+		if err = rows.Scan(&name, &kind, &indexed); err != nil {
 			return err
 		}
 		plan, e := sourceupload.BuildProcessingPlan(name, kind, "fast")
@@ -510,18 +510,76 @@ func (s *Store) workspaceIndexCounts(ctx context.Context, ws string, stats *Work
 		default:
 			stats.NotIndexable++
 		}
-		if pending {
-			if format == "text" {
-				stats.PendingReindex++
-			} else {
-				stats.PendingReparse++
-			}
-		}
 	}
 	if err := rows.Err(); err != nil {
+		return err
+	}
+	if stats.FileChanges, err = s.workspaceFileChanges(ctx, ws); err != nil {
 		return err
 	}
 	return s.pool.QueryRow(ctx, `SELECT count(*) FROM materials
 		WHERE workspace_id=$1 AND kind='note' AND trashed_at IS NULL
 		  AND (index_dirty_at IS NOT NULL OR index_job_id IS NOT NULL)`, ws).Scan(&stats.PendingNotes)
+}
+
+// workspaceFileChanges lists files with unprocessed saved edits (the
+// scheduler's predicate in collaboration/src/sourceDocuments.ts) or a refresh
+// in flight. A refresh stays queued until its first claim; a maintenance
+// republish is the system's own and is left out.
+func (s *Store) workspaceFileChanges(ctx context.Context, ws string) ([]FileChange, error) {
+	rows, err := s.pool.Query(ctx, `SELECT f.id,f.name,f.kind,d.last_edited_at,
+		CASE WHEN j.id IS NOT NULL THEN CASE WHEN j.type='source_refresh' AND j.status='pending' AND j.attempts=0 THEN 'queued' ELSE 'processing' END
+		  WHEN d.refresh_error IS NOT NULL THEN 'failed' ELSE 'waiting' END
+		FROM source_documents d JOIN files f ON f.id=d.file_id LEFT JOIN jobs j ON j.id=d.running_job_id
+		WHERE f.workspace_id=$1 AND f.trashed_at IS NULL AND COALESCE(j.payload->>'paidBy','')<>'system'
+		  AND (j.id IS NOT NULL OR d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
+		ORDER BY d.last_edited_at,f.id`, ws)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (FileChange, error) {
+		var change FileChange
+		err := row.Scan(&change.FileID, &change.Name, &change.Kind, &change.LastEditedAt, &change.State)
+		return change, err
+	})
+}
+
+// CancelSourceRefresh takes a queued refresh back out of the queue; once it
+// has been claimed it runs to the end. The saved edits stay, and automatic
+// processing may queue them again. Owner-only, like requesting one.
+func (s *Store) CancelSourceRefresh(ctx context.Context, actor, fileID string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	_, owner, err := s.sourceEditLockTx(ctx, tx, fileID, actor)
+	if err != nil {
+		return err
+	}
+	if actor != owner {
+		return ErrForbidden
+	}
+	var jobID string
+	var queued bool
+	err = tx.QueryRow(ctx, `SELECT j.id,j.type='source_refresh' AND j.status='pending' AND j.attempts=0 FROM source_documents d JOIN jobs j ON j.id=d.running_job_id WHERE d.file_id=$1 AND COALESCE(j.payload->>'paidBy','')<>'system' FOR UPDATE OF d,j`, fileID).Scan(&jobID, &queued)
+	if isNoRows(err) {
+		return ErrNothingToProcess
+	}
+	if err != nil {
+		return err
+	}
+	if !queued {
+		return ErrProcessingStarted
+	}
+	// Superseded: no refresh_error, so the file is waiting again rather than
+	// failed. Dropping desired_manual keeps the scheduler from re-admitting it
+	// as a manual request at once.
+	if _, err = tx.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'superseded','source_refresh','source_refresh_cancelled','Cancelled by the owner')`, jobID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET desired_manual=false WHERE file_id=$1`, fileID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

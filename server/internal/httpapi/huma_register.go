@@ -151,6 +151,9 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrCloneSourceChanged) {
 		return conflictError("clone_source_changed", "the source changed while it was copied")
 	}
+	if errors.Is(err, store.ErrProcessingStarted) {
+		return conflictError("processing_started", "processing has already started")
+	}
 	if errors.Is(err, store.ErrConflict) {
 		return conflictError("revision_conflict", "someone else changed this first")
 	}

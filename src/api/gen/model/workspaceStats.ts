@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { FileChange } from './fileChange.ts';
 
 export interface WorkspaceStats {
   /** A URL to the JSON Schema for this object. */
@@ -11,12 +12,11 @@ export interface WorkspaceStats {
   attempts: number;
   avgScore: number;
   chapters: number;
+  fileChanges: FileChange[];
   files: number;
   indexed: number;
   notIndexable: number;
   notIndexed: number;
   pendingNotes: number;
-  pendingReindex: number;
-  pendingReparse: number;
   quizzes: number;
 }

@@ -202,6 +202,11 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_nothing_to_process_body(),
         title: m.error_nothing_to_process_title(),
       };
+    case 'processing_started':
+      return {
+        description: m.error_processing_started_body(),
+        title: m.error_processing_started_title(),
+      };
     case 'bank_unavailable':
     case 'bank_read_only':
     case 'bank_unconfigured':
