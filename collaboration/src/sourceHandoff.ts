@@ -25,13 +25,16 @@ const READY_WINDOW_MS = 10_000;
 const ACK_WAIT_MS = 60_000;
 const LOCK_MS = ACK_WAIT_MS + CALL_TIMEOUT_MS;
 const WATCHDOG_MS = LOCK_MS + 5000;
-// A rebuild locks the room only to confirm nobody has it open and to swap:
-// every instance answers the probe within PROBE_WAIT_MS, and the gateway's
-// compare-and-swap is abandoned after REBUILD_REQUEST_MS (a later attempt
-// retries), so the lock outlasts both and no writer joins the old epoch
-// while a swap can still land.
+// A rebuild locks the room only to confirm nobody has it open and to swap.
+// Every step runs against one deadline, the lock's expiry: probe answers
+// count only within PROBE_WAIT_MS, and the gateway's compare-and-swap is sent
+// only while REBUILD_REQUEST_MS plus REBUILD_MARGIN_MS remain, and abandoned
+// after REBUILD_REQUEST_MS (the gateway ends it sooner). So no swap lands
+// once a writer could join the old epoch; a late step gives up and a later
+// attempt retries.
 const PROBE_WAIT_MS = 2000;
 const REBUILD_REQUEST_MS = 15_000;
+const REBUILD_MARGIN_MS = 3000;
 const REBUILD_LOCK_MS = 30_000;
 // A socket that passed the lock check while authenticating counts as in the
 // room until it connects or fails, and at most this long.
@@ -491,10 +494,14 @@ export class SourceHandoff {
     const id = `rebuild:${randomUUID()}`;
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;
+    // Read before the lock is set, so the lock outlives it.
+    const expiry = Date.now() + REBUILD_LOCK_MS;
     if ((await this.redis.set(lock, id, 'PX', REBUILD_LOCK_MS, 'NX')) !== 'OK')
       return false;
     try {
       if (!(await this.roomEmpty(session, id, writersOnly))) return false;
+      if (Date.now() + REBUILD_REQUEST_MS + REBUILD_MARGIN_MS > expiry)
+        return false;
       try {
         await this.sources.request(
           fileId,
@@ -549,6 +556,7 @@ export class SourceHandoff {
     id: string,
     writersOnly: boolean
   ) {
+    const deadline = Date.now() + PROBE_WAIT_MS;
     const instances = await this.activeInstances();
     await this.redis.publish(
       SOURCE_HANDOFF_CHANNEL,
@@ -561,13 +569,14 @@ export class SourceHandoff {
         writersOnly,
       })
     );
-    const deadline = Date.now() + PROBE_WAIT_MS;
     while (true) {
       const answers = await this.redis.hgetall(`capy:source-handoff:${id}`);
+      // A reply read after the deadline counts for nothing: the rest of the
+      // lock's time belongs to the swap.
+      if (Date.now() >= deadline) return false;
       if (Object.values(answers).includes('busy')) return false;
       if ([...instances].every((instance) => answers[instance] === 'idle'))
         return true;
-      if (Date.now() >= deadline) return false;
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
   }

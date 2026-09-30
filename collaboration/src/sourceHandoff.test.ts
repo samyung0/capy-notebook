@@ -891,6 +891,22 @@ test('a rebuild rebases first, then locks only to confirm the room is empty and 
   expect(timeout + 2000).toBeLessThan(f.lockMs());
 });
 
+test('a probe answer read late gives the rebuild up before the swap', async () => {
+  vi.useFakeTimers();
+  // Past the probe window, and past the lock itself.
+  for (const lateMs of [3000, 31_000]) {
+    const f = rebuildSetup();
+    Object.assign(f.redis, {
+      hgetall: vi.fn(async () => {
+        vi.setSystemTime(Date.now() + lateMs);
+        return { instance: 'idle' };
+      }),
+    });
+    await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+    expect(f.order).toEqual(['rebase', 'lock', 'probe', 'unlock']);
+  }
+});
+
 test('a rebuild waits while anyone has the room open, here or elsewhere', async () => {
   // Open on this instance: no rebase, no lock.
   let f = rebuildSetup();

@@ -656,9 +656,12 @@ a compare-and-swap (`POST /internal/collaboration/files/{id}/rebuild`: epoch,
 latest checkpoint and published bytes unchanged, no refresh in flight) that
 opens a new epoch on the published base and releases the old one. The lock
 (30 s) covers only the probe (2 s) and the swap, so a connect in that moment
-waits one silent 3-second retry. The service abandons the swap request after
-15 s and the gateway ends its transaction after 10 s, so a swap never commits
-after the lock lapses, when a writer could have joined the old epoch. A room in
+waits one silent 3-second retry. Every locked step runs against the lock's
+expiry: a probe answer read after the 2 s window counts for nothing, the swap
+is sent only while its 15 s request plus a 3 s margin still fit, the service
+abandons it after 15 s and the gateway ends its transaction after 10 s. So a
+swap never commits after the lock lapses, when a writer could have joined the
+old epoch; a late step gives up and a later attempt retries. A room in
 use, a save or a publication in between leaves it for later. It runs when a
 room unloads on an instance and from a sweep every minute (a room found in use
 waits five minutes, an error ten). A room that never empties keeps the old
