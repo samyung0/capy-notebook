@@ -27,6 +27,7 @@ import { userToast } from '@/components/ui/userToast';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { CopyError, errorCopy } from '@/lib/errors';
 import { BlockEditor, type UploadQuestionAsset } from './BlockEditor';
 import {
   AnswerEditor,
@@ -310,7 +311,9 @@ function QuestionDialogSession({
         }
         if (policy === 'bank') {
           if (!uploadAsset)
-            throw new Error(m.question_ui_bank_image_uploads_are_unavailable());
+            throw new CopyError(
+              m.question_ui_bank_image_uploads_are_unavailable()
+            );
           const asset = await uploadAsset(
             new File([svg], 'graph.svg', { type: 'image/svg+xml' })
           );
@@ -323,11 +326,7 @@ function QuestionDialogSession({
       setDraft(changeBlocks(draft, editing.location, blocks));
       setEditing(null);
     } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : m.question_ui_could_not_save_block()
-      );
+      setError(errorCopy(error, m.question_ui_could_not_save_block()));
     } finally {
       setSavingBlock(false);
     }
@@ -335,23 +334,35 @@ function QuestionDialogSession({
   const saveQuestion = handleSubmit(
     async ({ draft: value }) => {
       setError('');
-      try {
-        await onSave(
-          validateQuestion(value, { bank: policy === 'bank', bankAssetsUrl })
-        );
-        onClose();
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : m.question_ui_could_not_save_question();
-        // The inline message keeps the conflict reload next to it.
+      // The inline message keeps the conflict reload next to it.
+      const fail = (message: string) => {
         setError(message);
         userToast({
           description: message,
           title: m.question_ui_could_not_save_question(),
           variant: 'error',
         });
+      };
+      let question: Question;
+      try {
+        question = validateQuestion(value, {
+          bank: policy === 'bank',
+          bankAssetsUrl,
+        });
+      } catch (error) {
+        // validateQuestion's own checks carry copy; a schema failure does not.
+        fail(
+          error instanceof Error && !(error instanceof z.ZodError)
+            ? error.message
+            : m.question_ui_could_not_save_question()
+        );
+        return;
+      }
+      try {
+        await onSave(question);
+        onClose();
+      } catch (error) {
+        fail(errorCopy(error, m.question_ui_could_not_save_question()));
       }
     },
     (errors) => {
@@ -785,9 +796,10 @@ function QuestionDialogSession({
                     setError('');
                   } catch (failure) {
                     setError(
-                      failure instanceof Error
-                        ? failure.message
-                        : m.question_ui_could_not_save_question()
+                      errorCopy(
+                        failure,
+                        m.question_ui_could_not_save_question()
+                      )
                     );
                   } finally {
                     setReloading(false);

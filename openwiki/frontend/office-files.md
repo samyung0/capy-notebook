@@ -589,8 +589,9 @@ eviction outbox; anything else (such as the owner's account state for a
 collaborator) takes effect within those 5 s, and every checkpoint rechecks each
 writer. Only when the estimate passes the 100 MB cap is the
 exact size computed; an update over the cap gets an unrecoverable
-`source-checkpoint-failed` message, so the client goes to recovery instead of
-reconnecting and resending. The exact limit at save still applies.
+`source-checkpoint-failed` message, so the client resets to the last saved
+version instead of reconnecting and resending. The exact limit at save still
+applies and is final too (a 413 `SourceRequestError`, never retried).
 
 The browser retains unacknowledged edits in an IndexedDB draft for each actor,
 file and editing session. The draft is encoded and written at most every 250 ms,
@@ -601,7 +602,10 @@ removed with the last draft that uses it. Reopening merges compatible drafts; a
 receipt removes only the exact draft versions it covers. Another tab's newer
 draft remains available. Save, export and handoff first commit open spreadsheet
 inputs and wait for active composition or gestures. Pending input counts as
-unsaved even before it reaches the shared document.
+unsaved even before it reaches the shared document. Draft storage that fails
+(private mode, a full disk, a draft whose base is gone) is skipped, never an
+editing error. A save refused for good clears the session's drafts before it
+resets the editor.
 Network and recoverable save failures leave drafts available. Before sending
 buffered updates after reconnect, the parent verifies the current epoch. An old
 epoch with unsaved changes enters recovery and permits draft download instead
@@ -685,8 +689,9 @@ engine refusals such as `stale_target` are ordinary results. wasm-bindgen's
 broken-object errors (for example "attempted to take ownership of Rust value
 while it was borrowed") count as traps, because the engine's cleanup throws
 them in place of the trap. A save that fails
-inside the engine reports the failure to its clients, who keep their drafts,
-and is not queued for the failed-store retry.
+inside the engine is not queued for the failed-store retry: the room is
+discarded and its clients reset to the last saved version (see
+[error handling](error-handling.md#collaborative-source-failures)).
 
 ## Maintenance window
 

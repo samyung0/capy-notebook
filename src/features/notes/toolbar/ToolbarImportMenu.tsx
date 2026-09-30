@@ -33,27 +33,22 @@ const IMPORT_OPTIONS: Record<
   },
 };
 
-function validateImportFile(file: File, kind: ImportKind) {
+function importFileIssue(file: File, kind: ImportKind): string | null {
   const option = IMPORT_OPTIONS[kind];
   const name = file.name.toLowerCase();
 
   if (!option.extensions.some((extension) => name.endsWith(extension))) {
-    throw new Error(
-      m.editor_import_wrong_type({
-        extensions: option.extensions.join(' or '),
-      })
-    );
+    return m.editor_import_wrong_type({
+      extensions: option.extensions.join(' or '),
+    });
   }
-  if (file.size === 0) {
-    throw new Error(m.editor_import_empty());
-  }
+  if (file.size === 0) return m.editor_import_empty();
   if (file.size > option.maxBytes) {
-    throw new Error(
-      m.editor_import_too_large({
-        mb: String(option.maxBytes / 1024 / 1024),
-      })
-    );
+    return m.editor_import_too_large({
+      mb: String(option.maxBytes / 1024 / 1024),
+    });
   }
+  return null;
 }
 
 export function ImportMenu({
@@ -84,16 +79,22 @@ export function ImportMenu({
     event.target.value = '';
     if (!file) return;
 
-    try {
-      validateImportFile(file, kind);
-      await importFile(file, kind);
-    } catch (cause) {
+    const fail = (description: string) =>
       userToast({
-        description:
-          cause instanceof Error ? cause.message : m.editor_import_unreadable(),
+        description,
         title: m.editor_import_failed(),
         variant: 'error',
       });
+    const issue = importFileIssue(file, kind);
+    if (issue) {
+      fail(issue);
+      return;
+    }
+    try {
+      await importFile(file, kind);
+    } catch {
+      // Parser text is not copy.
+      fail(m.editor_import_unreadable());
     }
   };
 

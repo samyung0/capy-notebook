@@ -328,9 +328,20 @@ Playwright tests should use `expectErrorSurface(page, variant, text?)` from
 
 ## Collaborative source failures
 
-Source editors expose connecting, saving, saved, offline, error and recovery
-states. Saved requires an explicit durable checkpoint receipt. Recoverable
-failures retain the mounted editor and actor-specific local draft. An epoch
+Source editors expose connecting, reconnecting, saving, saved, offline,
+unsaved, error and recovery states, shown in the header like the note editor's
+(see [plate-editor.md](plate-editor.md#connection-lifetime-and-refusals)).
+Saved requires an explicit durable checkpoint receipt. A failed save the
+server retries keeps the mounted editor and its pending receipts, shows Not
+saved and raises the failed-save toast; the retry's receipt brings Saved back.
+A save refused for good (an engine failure, a 401/403/404/409/413/422 from the
+gateway, the byte limit) discards the room and resets the editor to the last
+saved version with the "couldn't be saved and were undone" toast, clearing its
+drafts; a storage or frozen refusal at save drops every writer to view under
+the read-only strip. A trashed or deleted file, or lost access, replaces the
+editor with the file-missing or no-access panel. Draft storage failures
+(private mode, a full disk, a missing draft base) never block editing. Error
+strips carry localized copy only. An epoch
 change reloads a fully acknowledged editor; unacknowledged edits instead enter
 recovery with draft download and explicit discard of the displayed draft group.
 Discard checks versions, preserves newer writes from another tab and advances

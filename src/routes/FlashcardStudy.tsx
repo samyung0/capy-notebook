@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { userToast } from '@/components/ui/userToast';
 import { CardEditModal } from '@/features/flashcards/CardEditModal';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
@@ -73,7 +74,7 @@ export default function FlashcardStudy() {
     isError: cardsError,
     error: cardsErr,
   } = useCards(flashcardSetId, { errorBoundary: false, fresh: true });
-  const { mutate: reviewCard } = useReviewCard(flashcardSetId);
+  const { mutateAsync: reviewCard } = useReviewCard(flashcardSetId);
   const { mutateAsync: deleteCard } = useDeleteCard(flashcardSetId);
   const queryClient = useQueryClient();
   const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
@@ -198,7 +199,19 @@ export default function FlashcardStudy() {
   function rate(rating: SrsRating) {
     if (!card) return;
     const srs = reviewSrs(card.srs, rating);
-    if (canEdit) reviewCard({ id: card.id, known: isKnown(srs), srs });
+    // One toast however many ratings fail in a row.
+    if (canEdit)
+      reviewCard({ id: card.id, known: isKnown(srs), srs }).catch(() =>
+        userToast({
+          button: {
+            label: m.error_action_reload(),
+            onClick: () => window.location.reload(),
+          },
+          id: 'flashcard-review-failed',
+          title: m.flashcards_review_failed(),
+          variant: 'error',
+        })
+      );
     setFlipped(false);
     setQueue((q) => {
       if (!q) return q;

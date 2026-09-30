@@ -17,7 +17,7 @@ import {
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { Field, SelectField } from './editorFields';
-import { createGraphBoard } from './graph';
+import { createGraphBoard, GraphError } from './graph';
 import type { GraphBlock, GraphElement } from './types';
 
 const graphLabels = {
@@ -67,7 +67,7 @@ export function GraphEditor({
       .catch((error: unknown) => {
         if (!cancelled)
           setError(
-            error instanceof Error
+            error instanceof GraphError
               ? error.message
               : m.question_ui_graph_could_not_load()
           );

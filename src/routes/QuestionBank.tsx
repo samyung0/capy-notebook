@@ -50,6 +50,7 @@ import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { CopyError, describeError } from '@/lib/errors';
 
 const QuestionDialog = lazy(() =>
   import('@/features/questions/QuestionDialog').then((module) => ({
@@ -419,7 +420,7 @@ export default function QuestionBank() {
                   void client.invalidateQueries({
                     queryKey: bankQuestionQuery(question.id).queryKey,
                   });
-                  throw new Error(m.question_ui_conflict_message(), {
+                  throw new CopyError(m.question_ui_conflict_message(), {
                     cause: error,
                   });
                 }
@@ -984,7 +985,7 @@ function ReviewBar({
 function BankError({ error, onRetry }: { error: Error; onRetry: () => void }) {
   return (
     <div className="space-y-3" role="alert">
-      <p>{error.message}</p>
+      <p>{describeError(error).description}</p>
       <Button onClick={onRetry} variant="ghost-hover">
         {m.question_ui_try_again()}
       </Button>

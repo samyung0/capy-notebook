@@ -7,8 +7,9 @@
  */
 
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 import { authHeaders } from './auth';
-import { API_BASE } from './client';
+import { API_BASE, ApiError, parseErrorBody } from './client';
 import { consumeSSE } from './sse';
 import type {
   ChatPhase,
@@ -69,34 +70,48 @@ export interface ChatStreamBody {
   text: string;
 }
 
+/** Chat failure copy chosen by error code; server and pipeline text never
+ * renders. */
 export function chatErrorMessage(payload: unknown, fallback: string): string {
-  if (!payload || typeof payload !== 'object') return fallback;
-  const body = payload as {
-    code?: unknown;
-    detail?: unknown;
-    error?: { message?: unknown };
-    message?: unknown;
-  };
-  if (body.code === 'source_changed') return m.error_source_changed_body();
-  if (body.code === 'response_flagged') return m.chat_response_flagged();
-  if (body.code === 'agent_failed' || body.code === 'invalid_answer')
-    return m.chat_failed();
-  if (body.code === 'curate_mismatch') return m.chat_curate_locked();
-  if (body.code === 'curate_requires_editor') {
-    return m.chat_curate_requires_editor();
+  switch (parseErrorBody(payload)?.code) {
+    case 'source_changed':
+      return m.error_source_changed_body();
+    case 'response_flagged':
+      return m.chat_response_flagged();
+    case 'agent_failed':
+    case 'invalid_answer':
+      return m.chat_failed();
+    case 'curate_mismatch':
+      return m.chat_curate_locked();
+    case 'curate_requires_editor':
+      return m.chat_curate_requires_editor();
+    case 'model_unavailable':
+      return m.chat_model_unavailable();
+    case 'provider_busy':
+      return m.error_provider_busy_body();
+    case 'invalid_llm_key':
+    case 'invalid_key':
+      return m.settings_llm_key_invalid();
+    case 'llm_key_failed':
+    case 'key_failed':
+      return m.settings_llm_key_failed();
+    case 'context_too_large':
+      return m.chat_context_too_large();
+    case 'compaction_failed':
+      return m.chat_compaction_failed();
+    case 'query_too_long':
+      return m.chat_query_too_long();
+    case 'invalid_scope':
+      return m.chat_invalid_scope();
+    case 'ai_unavailable':
+      return m.error_ai_unavailable_body();
+    case 'too_many_streams':
+      return m.error_too_many_streams_body();
+    case 'llm_credits_exhausted':
+      return m.error_credits_body();
+    default:
+      return fallback;
   }
-  if (body.code === 'model_unavailable') return m.chat_model_unavailable();
-  if (body.code === 'provider_busy') return m.error_provider_busy_body();
-  if (body.code === 'invalid_llm_key' || body.code === 'invalid_key') {
-    return m.settings_llm_key_invalid();
-  }
-  if (body.code === 'llm_key_failed' || body.code === 'key_failed') {
-    return m.settings_llm_key_failed();
-  }
-  if (typeof body.error?.message === 'string') return body.error.message;
-  if (typeof body.message === 'string') return body.message;
-  if (typeof body.detail === 'string') return body.detail;
-  return fallback;
 }
 
 /** POST to the workspace chat stream and dispatch parsed SSE events. Resolves
@@ -128,15 +143,23 @@ export async function streamChat(
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
-    reportError((e as Error).message);
+    reportError(errorCopy(e, m.chat_failed()));
     return;
   }
 
   if (!res.ok || !res.body) {
-    const fallback = res.ok
-      ? 'The chat connection could not be opened.'
-      : `${res.status} ${res.statusText}`;
     const payload = res.ok ? null : await res.json().catch(() => null);
+    const fallback = res.ok
+      ? m.chat_failed()
+      : errorCopy(
+          new ApiError(
+            res.status,
+            res.statusText,
+            undefined,
+            parseErrorBody(payload)
+          ),
+          m.chat_failed()
+        );
     reportError(chatErrorMessage(payload, fallback));
     return;
   }
@@ -244,10 +267,7 @@ export async function streamChat(
         });
         break;
       case 'error':
-        reportError(
-          chatErrorMessage(ev, ev.message ?? 'stream error'),
-          ev.code
-        );
+        reportError(chatErrorMessage(ev, m.chat_failed()), ev.code);
         break;
     }
   };
@@ -255,10 +275,11 @@ export async function streamChat(
   try {
     await consumeSSE(res.body, dispatch);
   } catch (e) {
-    if ((e as Error).name !== 'AbortError') reportError((e as Error).message);
+    if ((e as Error).name !== 'AbortError')
+      reportError(errorCopy(e, m.chat_failed()));
     return;
   }
   if (!terminal && !signal?.aborted) {
-    reportError('The chat connection closed before the response finished.');
+    reportError(m.chat_failed());
   }
 }

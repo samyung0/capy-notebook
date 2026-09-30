@@ -3,9 +3,11 @@ import type { ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileModeControl } from './FileModeControl';
-import { FileError, SourceBanners } from './FileStates';
+import { FileError, FileUnavailable, SourceBanners } from './FileStates';
+import { useReportEditorStatus } from './fileModeContext';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
+import { sourceHeaderStatus } from './useSourceSession';
 
 export default function DocxView({
   canEdit,
@@ -39,6 +41,16 @@ export default function DocxView({
     },
     [onDirtyChange]
   );
+
+  useReportEditorStatus(
+    sourceHeaderStatus(runtime.status, {
+      busy: runtime.saving || runtime.handoff,
+      editing: runtime.mode === 'edit',
+    })
+  );
+
+  if (runtime.unavailable)
+    return <FileUnavailable kind={runtime.unavailable} />;
 
   if (runtime.error && !runtime.analysis && runtime.mode === 'view') {
     return (
@@ -99,19 +111,6 @@ export default function DocxView({
             void runtime.save().catch(() => {});
           }}
           saveDisabled={!runtime.ready || runtime.handoff || runtime.replaced}
-          status={
-            runtime.saving
-              ? m.files_office_saving()
-              : runtime.mode === 'edit'
-                ? runtime.status === 'saved'
-                  ? m.editor_status_saved()
-                  : runtime.handoff
-                    ? m.source_edit_handoff()
-                    : runtime.status === 'offline'
-                      ? m.source_edit_offline()
-                      : undefined
-                : undefined
-          }
         />
       </div>
       <div className="relative min-h-0 flex-1">

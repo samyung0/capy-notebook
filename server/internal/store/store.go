@@ -58,6 +58,9 @@ var ErrLLMKeyFailed = errors.New("llm credential failed")
 // ErrConflict reports a failed optimistic revision comparison.
 var ErrConflict = errors.New("revision conflict")
 
+// ErrNothingToProcess means a file has no saved source edits to process.
+var ErrNothingToProcess = errors.New("nothing to process")
+
 // ErrAccountLifecycleChanged means an account-deletion confirmation was based
 // on a preflight taken before support restored the account.
 var ErrAccountLifecycleChanged = errors.New("account lifecycle changed")

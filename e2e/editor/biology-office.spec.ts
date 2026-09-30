@@ -176,7 +176,7 @@ for (const [format, name] of [
           )
           .toBeGreaterThan(0);
         await expect(
-          page.getByRole('status').filter({ hasText: /^Saving/ })
+          page.getByRole('status').filter({ hasText: /^Syncing/ })
         ).toBeVisible();
         const blocksUnload = () =>
           page.evaluate(() => {

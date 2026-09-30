@@ -65,6 +65,7 @@ import {
 } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
+  CollaborationNotFoundError,
   CollaborationReadOnlyError,
   materialIdFromRoom,
   roomSaveQueue,
@@ -93,6 +94,7 @@ import {
   SourcePublishingError,
 } from './sourceHandoff.js';
 import { handlePermanentStoreFailure } from './storeFailure.js';
+import { armTokenExpiry, clearTokenExpiry } from './tokenExpiry.js';
 import {
   inboundYjsUpdate,
   yjsUpdateContainsChanges,
@@ -490,11 +492,14 @@ function rejectInvalidDocumentRoom(room: string) {
   if (roomEvictions.isRejected(room)) return;
   roomEvictions.reject(room);
   const evictionId = randomUUID();
+  // `document-rejected` makes each editor drop its copy and reload the last
+  // valid state instead of reconnecting and resending the invalid one.
   const payload = JSON.stringify({
+    code: 'invalid_document',
     evictionId,
     materialId: materialIdFromRoom(room),
     room,
-    type: 'compaction-evict',
+    type: 'document-rejected',
   });
   setTimeout(() => {
     void (async () => {
@@ -638,7 +643,6 @@ const server = new Server<CollaborationContext>({
               type: 'source-checkpoint-failed',
               ...sourceRoom(document.name),
               checkpointIds: [],
-              message: refusal,
               recoverable: false,
             })
           );
@@ -659,15 +663,9 @@ const server = new Server<CollaborationContext>({
       throw error;
     }
   },
-  async connected({ connection, context }) {
-    const delay = Math.max(0, context.expiresAt * 1000 - Date.now());
-    const timer = setTimeout(() => {
-      connection.close({
-        code: 4401,
-        reason: 'collaboration token expired',
-      } as CloseEvent);
-    }, delay);
-    connection.onClose(() => clearTimeout(timer));
+  async connected({ connection }) {
+    armTokenExpiry(connection);
+    connection.onClose(() => clearTokenExpiry(connection));
   },
   debounce: config.debounceMs,
   extensions: [
@@ -728,6 +726,15 @@ const server = new Server<CollaborationContext>({
         !(error instanceof CollaborationReadOnlyError)
       )
         throw new CollaborationReadOnlyError('source access is read-only', {
+          cause: error,
+        });
+      // The gateway's source access answer carries no reason: a missing or
+      // trashed file and lost access get theirs, so the editor shows a panel
+      // instead of retrying.
+      if (error instanceof SourceRequestError && error.status === 404)
+        throw new CollaborationNotFoundError(error.message, { cause: error });
+      if (error instanceof SourceRequestError && error.status === 403)
+        throw new CollaborationAuthorizationError(error.message, {
           cause: error,
         });
       throw error;
@@ -849,6 +856,13 @@ const server = new Server<CollaborationContext>({
               !handleRejectedStore(documentName, error, document) &&
               !roomEvictions.isDiscarding(documentName)
             ) {
+              // Retried below; the editors keep their edits and show it.
+              document.broadcastStateless(
+                JSON.stringify({
+                  materialId: materialIdFromRoom(documentName),
+                  type: 'checkpoint-failed',
+                })
+              );
               const eventId = reportFailedStore(
                 failedStores.get(documentName),
                 error,
@@ -923,6 +937,7 @@ const server = new Server<CollaborationContext>({
     ).assertConnectionAccess(documentName, claims.sub, claims.access);
     connection.context = claimsContext(claims);
     connection.readOnly = claims.access === 'read';
+    armTokenExpiry(connection);
   },
   quiet: true,
   stopOnSignals: false,
@@ -990,21 +1005,32 @@ async function storeSource(document: Document) {
       room,
       (storeFailureGenerations.get(room) ?? 0) + 1
     );
+    // A storage or frozen refusal drops every writer to view (their unsaved
+    // edits are discarded); a state the engine failed on or the gateway
+    // refused for good cannot be retried, so the room is discarded and its
+    // clients reload the last saved version. Anything else is retried here
+    // while the clients keep editing.
+    const readOnly = readOnlyRefusal(error);
     const recoverable =
-      !(error instanceof SourceRequestError) ||
-      ![401, 403, 404, 409, 413, 422].includes(error.status);
+      !(readOnly || error instanceof OfficeEngineError) &&
+      (!(error instanceof SourceRequestError) ||
+        ![401, 403, 404, 409, 413, 422].includes(error.status));
     document.broadcastStateless(
-      JSON.stringify({
-        type: 'source-checkpoint-failed',
-        ...sourceRoom(room),
-        checkpointIds: claimed,
-        message: error instanceof Error ? error.message : 'Source save failed',
-        recoverable,
-      })
+      JSON.stringify(
+        readOnly
+          ? { room, type: 'room-read-only' }
+          : {
+              type: 'source-checkpoint-failed',
+              ...sourceRoom(room),
+              checkpointIds: claimed,
+              recoverable,
+            }
+      )
     );
     if (error instanceof OfficeEngineError) {
-      // Retrying a state the engine failed on cannot help; clients keep drafts.
       reportFailedStore(undefined, error, room);
+      failedStores.delete(room);
+      rejectAuthorizationRoom(room);
     } else if (recoverable && !roomEvictions.isDiscarding(room)) {
       const eventId = reportFailedStore(failedStores.get(room), error, room);
       failedStores.set(room, {

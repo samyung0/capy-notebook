@@ -1,3 +1,5 @@
+import { m } from '@/i18n';
+
 export type GradeAward = 0 | 0.5 | 1;
 
 export type OpenGradeInput = {
@@ -52,7 +54,7 @@ export function parseGradeResponse(text: string): OpenGradeResult {
   const start = trimmed.indexOf('{');
   const end = trimmed.lastIndexOf('}');
   if (start < 0 || end <= start) {
-    return { award: 0, reason: 'The judge did not return a score.' };
+    return { award: 0, reason: m.quiz_judge_no_score() };
   }
   try {
     const raw = JSON.parse(trimmed.slice(start, end + 1)) as {
@@ -61,7 +63,7 @@ export function parseGradeResponse(text: string): OpenGradeResult {
     };
     const score = typeof raw.score === 'number' ? raw.score : Number(raw.score);
     if (!Number.isFinite(score)) {
-      return { award: 0, reason: 'The judge did not return a score.' };
+      return { award: 0, reason: m.quiz_judge_no_score() };
     }
     const reason =
       typeof raw.reason === 'string' && raw.reason.trim()
@@ -69,7 +71,7 @@ export function parseGradeResponse(text: string): OpenGradeResult {
         : '';
     return { award: snapAward(score), reason };
   } catch {
-    return { award: 0, reason: 'The judge did not return a score.' };
+    return { award: 0, reason: m.quiz_judge_no_score() };
   }
 }
 

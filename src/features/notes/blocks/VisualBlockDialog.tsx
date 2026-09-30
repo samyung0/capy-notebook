@@ -14,6 +14,7 @@ import type {
 } from '@/features/questions/types';
 import { questionBlockSchema } from '@/features/questions/validation';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 
 export type NoteVisualBlock = ChartBlock | GraphBlock;
 
@@ -53,8 +54,7 @@ export default function VisualBlockDialog({
       onClose();
     } catch (error) {
       setError('root', {
-        message:
-          error instanceof Error ? error.message : m.editor_embed_save_failed(),
+        message: errorCopy(error, m.editor_embed_save_failed()),
       });
     }
   });

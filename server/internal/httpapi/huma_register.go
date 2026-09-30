@@ -131,6 +131,25 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrTitleTaken) {
 		return huma.Error409Conflict("a material with this name already exists in this workspace")
 	}
+	if errors.Is(err, store.ErrConflict) {
+		return &huma.ErrorModel{
+			Status: http.StatusConflict,
+			Title:  http.StatusText(http.StatusConflict),
+			Detail: "someone else changed this first",
+			Errors: []*huma.ErrorDetail{{Message: "revision_conflict"}},
+		}
+	}
+	if errors.Is(err, store.ErrNothingToProcess) {
+		return &huma.ErrorModel{
+			Status: http.StatusConflict,
+			Title:  http.StatusText(http.StatusConflict),
+			Detail: "no saved changes to process",
+			Errors: []*huma.ErrorDetail{{Message: "nothing_to_process"}},
+		}
+	}
+	if errors.Is(err, store.ErrInvalidPDFAnnotation) {
+		return huma.Error400BadRequest("invalid annotation")
+	}
 	if errors.Is(err, errAIUnavailable) {
 		return &huma.ErrorModel{
 			Status: http.StatusServiceUnavailable,

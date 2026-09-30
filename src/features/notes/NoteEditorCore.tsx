@@ -48,6 +48,7 @@ import {
 import {
   COLLABORATION_READ_ONLY_REASON,
   type MaterialDocumentStats,
+  type MaterialLimitCode,
   materialLimitMessage,
   parseCollaborationEvent,
 } from './collaborationEvents';
@@ -66,14 +67,32 @@ import {
   remoteCursorRangesForEntry,
   useRemoteCursorDecorations,
 } from './RemoteCursors';
+import {
+  type RoomReconnector,
+  roomReconnector,
+  roomRefusal,
+  socketOpen,
+} from './roomConnection';
 
-const COLLABORATION_ROOM_ERROR = /room|schema|stale/i;
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 
 interface StatelessProviderWrapper {
   isConnected: boolean;
-  provider: { sendStateless: (payload: string) => void };
+  isSynced: boolean;
+  provider: {
+    connect(): unknown;
+    disconnect(): void;
+    sendStateless: (payload: string) => void;
+  };
   type: string;
+}
+
+function roomProvider(editor: PlateEditor) {
+  return editor
+    .getOptions(YjsPlugin)
+    ._providers.find((candidate) =>
+      USE_MSW ? candidate.type === 'mock' : candidate.type === 'hocuspocus'
+    ) as StatelessProviderWrapper | undefined;
 }
 
 /**
@@ -82,11 +101,7 @@ interface StatelessProviderWrapper {
  * right, so acknowledging it would dirty the room and trigger a second store.
  */
 function sendCheckpointRequest(editor: PlateEditor, id: string) {
-  const provider = editor
-    .getOptions(YjsPlugin)
-    ._providers.find((candidate) =>
-      USE_MSW ? candidate.type === 'mock' : candidate.type === 'hocuspocus'
-    ) as StatelessProviderWrapper | undefined;
+  const provider = roomProvider(editor);
   if (!provider?.isConnected) return;
   provider.provider.sendStateless(
     JSON.stringify({ id, type: 'checkpoint-request' })
@@ -302,6 +317,8 @@ export function NoteEditorCore({
   onEditorStatusChange,
   onDocumentRejected,
   onReadOnly,
+  onSaveFailed,
+  onUnavailable,
 }: {
   material: Material;
   allowExternalAssets: boolean;
@@ -310,10 +327,20 @@ export function NoteEditorCore({
   currentUserName: string;
   collaborationToken: MaterialCollaborationToken;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
-  onDocumentRejected?: (message: string, stats: MaterialDocumentStats) => void;
+  /** The room refused this editor's copy for good (a limit, an invalid
+   * document, or an update from a writer who lost access): the caller
+   * remounts onto the last saved version. `lostEdits`: unsaved work went. */
+  onDocumentRejected?: (
+    code: MaterialLimitCode | 'invalid_document' | 'revoked',
+    lostEdits: boolean
+  ) => void;
   /** The room turned read-only (a frozen account or an owner at its storage
    * limit): the caller drops to view, discarding unsaved edits. */
   onReadOnly?: () => void;
+  /** Saving failed and the server (or the reconnect) is retrying. */
+  onSaveFailed?: () => void;
+  /** The note was trashed or deleted, or this user lost access to it. */
+  onUnavailable?: (kind: 'notFound' | 'forbidden') => void;
 }) {
   const qc = useQueryClient();
   const ydoc = useMemo(
@@ -326,6 +353,12 @@ export function NoteEditorCore({
   const pendingCheckpoints = useRef(new Set<string>());
   const unsavedChanges = useRef(false);
   const rejected = useRef(false);
+  // After the first sync a dropped connection keeps the editor on screen.
+  const hasSynced = useRef(false);
+  const reconnector = useRef<RoomReconnector | null>(null);
+  // The token request that failed, if one did: the provider only reports its
+  // own "Failed to get token" text.
+  const tokenError = useRef<unknown>(null);
   // Parsing normalizes and copies every node, so on a near-limit document this
   // costs seconds. It is the *initial* value — the room is authoritative from
   // sync onwards — so it is computed once per mount rather than on every
@@ -374,11 +407,22 @@ export function NoteEditorCore({
     }
   }, [setStatus]);
 
+  const hasUnsavedWork = useCallback(
+    () => unsavedChanges.current || pendingCheckpoints.current.size > 0,
+    []
+  );
+  const connecting = useCallback(
+    () => setStatus(hasSynced.current ? 'reconnecting' : 'connecting'),
+    [setStatus]
+  );
+
   // Plugin options are captured before the editor exists, so the handlers they
   // fire are reached through refs instead of becoming plugin dependencies.
   const saveNow = useRef(() => {});
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
+  const reportSaveFailed = useRef(onSaveFailed);
+  const reportUnavailable = useRef(onUnavailable);
   // Set once the editor exists; reports a room that turned read-only once.
   const readOnlyNow = useRef(() => {});
   const projectionStale = useRef(false);
@@ -416,23 +460,36 @@ export function NoteEditorCore({
           acknowledged &&
           pendingCheckpoints.current.size === 0 &&
           !unsavedChanges.current &&
-          reportedStatus.current === 'syncing'
+          (reportedStatus.current === 'syncing' ||
+            reportedStatus.current === 'unsaved')
         ) {
           setStatus('saved');
         }
         return;
       }
       if (
-        event.type === 'document-rejected' &&
+        event.type === 'checkpoint-failed' &&
         event.materialId === material.id
+      ) {
+        // The receipts stay pending: the server's retry answers them.
+        setStatus('unsaved');
+        reportSaveFailed.current?.();
+        return;
+      }
+      if (
+        (event.type === 'document-rejected' &&
+          event.materialId === material.id) ||
+        (event.type === 'authorization-revoked' &&
+          event.room === collaborationToken.room)
       ) {
         if (rejected.current) return;
         rejected.current = true;
+        const lostEdits = hasUnsavedWork();
         pendingCheckpoints.current.clear();
         setStatus('error');
         reportRejection.current?.(
-          materialLimitMessage(event.code),
-          event.metrics
+          event.type === 'document-rejected' ? event.code : 'revoked',
+          lostEdits
         );
         return;
       }
@@ -478,7 +535,7 @@ export function NoteEditorCore({
         });
       }
     },
-    [collaborationToken.room, qc, material.id, setStatus]
+    [collaborationToken.room, hasUnsavedWork, qc, material.id, setStatus]
   );
 
   const plugins = useMemo(
@@ -492,22 +549,20 @@ export function NoteEditorCore({
               name,
             },
           },
-          onConnect: () => setStatus('connecting'),
-          onDisconnect: () => setStatus('offline'),
+          onConnect: connecting,
+          onDisconnect: () => {
+            reconnector.current?.disconnected();
+            if (navigator.onLine) connecting();
+            else setStatus('offline');
+          },
           onError: ({ error }) => {
             console.warn('Yjs collaboration provider error:', error);
-            if (
-              error instanceof Error &&
-              COLLABORATION_ROOM_ERROR.test(error.message)
-            ) {
-              void qc.invalidateQueries({
-                queryKey: ['material', material.id, 'collaboration-token'],
-              });
-            }
             setStatus('error');
           },
           onSyncChange: ({ isSynced }) => {
             if (!isSynced || rejected.current) return;
+            hasSynced.current = true;
+            reconnector.current?.connected();
             setStatus(
               unsavedChanges.current || pendingCheckpoints.current.size > 0
                 ? 'syncing'
@@ -537,16 +592,31 @@ export function NoteEditorCore({
                     }: {
                       reason: string;
                     }) => {
-                      if (reason === COLLABORATION_READ_ONLY_REASON)
-                        readOnlyNow.current();
+                      const refusal = roomRefusal(reason, tokenError.current);
+                      tokenError.current = null;
+                      if (refusal === 'readOnly') readOnlyNow.current();
+                      else if (refusal === 'retry')
+                        reconnector.current?.refused();
+                      else reportUnavailable.current?.(refusal);
+                    },
+                    onClose: () => {
+                      reconnector.current?.closed(
+                        socketOpen(roomProvider(editorRef.current)?.provider)
+                      );
                     },
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
                     token: async () => {
-                      const token = await getMaterialCollaborationToken(
-                        material.id
-                      );
+                      let token: MaterialCollaborationToken;
+                      try {
+                        token = await getMaterialCollaborationToken(
+                          material.id
+                        );
+                      } catch (error) {
+                        tokenError.current = error;
+                        throw error;
+                      }
                       // A reconnect after the account froze gets a read token.
                       if (token.access === 'read') {
                         readOnlyNow.current();
@@ -575,13 +645,13 @@ export function NoteEditorCore({
       allowExternalAssets,
       collaborationToken.room,
       collaborationToken.url,
+      connecting,
       currentUserId,
       discussions,
       handleStatelessEvent,
       material.id,
       material.workspaceId,
       name,
-      qc,
       setStatus,
       ydoc,
     ]
@@ -599,6 +669,24 @@ export function NoteEditorCore({
     plugins,
     value: initialValue,
   });
+  // Provider callbacks are configured before the editor exists.
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+
+  useEffect(() => {
+    const current = roomReconnector({
+      onStuck: () => {
+        setStatus('error');
+        if (hasUnsavedWork()) reportSaveFailed.current?.();
+      },
+      provider: () => roomProvider(editor)?.provider,
+    });
+    reconnector.current = current;
+    return () => {
+      current.dispose();
+      if (reconnector.current === current) reconnector.current = null;
+    };
+  }, [editor, hasUnsavedWork, setStatus]);
 
   useEffect(() => {
     let active = true;
@@ -630,7 +718,14 @@ export function NoteEditorCore({
   }, [collaborationToken.room, editor, onEditorStatusChange, setStatus]);
 
   useEffect(() => {
-    const online = () => setStatus('connecting');
+    // A blip the socket survived brings no provider event, so the status comes
+    // back from the provider's own state; a dropped one reconnects by itself.
+    const online = () => {
+      if (reportedStatus.current !== 'offline') return;
+      if (roomProvider(editor)?.isSynced)
+        setStatus(hasUnsavedWork() ? 'syncing' : 'synced');
+      else connecting();
+    };
     const offline = () => setStatus('offline');
     window.addEventListener('online', online);
     window.addEventListener('offline', offline);
@@ -638,7 +733,7 @@ export function NoteEditorCore({
       window.removeEventListener('online', online);
       window.removeEventListener('offline', offline);
     };
-  }, [setStatus]);
+  }, [connecting, editor, hasUnsavedWork, setStatus]);
 
   const requestCheckpoint = useCallback(() => {
     if (rejected.current) return;
@@ -683,6 +778,8 @@ export function NoteEditorCore({
 
   useEffect(() => {
     reportRejection.current = onDocumentRejected;
+    reportSaveFailed.current = onSaveFailed;
+    reportUnavailable.current = onUnavailable;
     let reported = false;
     readOnlyNow.current = () => {
       if (reported) return;
@@ -694,6 +791,8 @@ export function NoteEditorCore({
   }, [
     onDocumentRejected,
     onReadOnly,
+    onSaveFailed,
+    onUnavailable,
     resendPendingCheckpoints,
     saveImmediately,
   ]);

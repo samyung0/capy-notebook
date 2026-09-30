@@ -46,6 +46,7 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { errorCopy } from '@/lib/errors';
 import { firstLineMiddle } from './BlockInteractions';
 import { useEditorRuntime } from './EditorRuntime';
 
@@ -325,7 +326,7 @@ export function CollaborationProvider({
     deleteCommentIsPending;
 
   const fail = (cause: unknown, fallback: string) =>
-    setError(cause instanceof Error ? cause.message : fallback);
+    setError(errorCopy(cause, fallback));
 
   async function submitNewComment() {
     const text = comment.trim();

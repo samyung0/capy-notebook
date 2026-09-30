@@ -954,7 +954,10 @@ export class SourceDocumentStore {
           return { checkpoint: session.checkpoint, contributors };
         const state = Y.encodeStateAsUpdate(merged);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
-          throw new Error('Source checkpoint exceeds byte limit');
+          throw new SourceRequestError(
+            413,
+            'Source checkpoint exceeds byte limit'
+          );
         const effects = await this.effects(session, state);
         const stored = await this.storedState(session, state);
         try {
@@ -1120,7 +1123,10 @@ export class SourceDocumentStore {
         }
         const { state, update } = durableCommit(document, live);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
-          throw new Error('Source checkpoint exceeds byte limit');
+          throw new SourceRequestError(
+            413,
+            'Source checkpoint exceeds byte limit'
+          );
         const effects = await this.effects(current, state);
         const stored = await this.storedState(current, state);
         try {

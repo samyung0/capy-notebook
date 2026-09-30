@@ -49,7 +49,6 @@ export function FileModeControl({
   canEdit,
   disabled,
   onChange,
-  status,
   onSave,
   saveDisabled,
 }: {
@@ -57,7 +56,6 @@ export function FileModeControl({
   canEdit: boolean;
   disabled?: boolean;
   onChange: (mode: FileMode) => void | Promise<boolean>;
-  status?: string;
   onSave?: () => void;
   saveDisabled?: boolean;
 }) {
@@ -76,11 +74,6 @@ export function FileModeControl({
   }, [context, canEdit, disabled, mode, onChange, isMounted]);
   const controls = (
     <div className="flex items-center gap-2">
-      {status && (
-        <span className="t-meta text-fg-muted" role="status">
-          {status}
-        </span>
-      )}
       {mode === 'edit' && onSave && (
         <Button
           disabled={saveDisabled}

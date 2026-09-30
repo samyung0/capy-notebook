@@ -31,6 +31,7 @@ import {
   m,
   setLocale as setParaglideLocale,
 } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 
 const NAME_MAX = UpdateMeBody.shape.name.maxLength ?? 60;
@@ -96,8 +97,12 @@ function AccountForm({ user }: { user?: ClerkUser }) {
       reset({ avatarIconId: photo.file ? undefined : avatarIconId, name });
       photo.clear();
     } catch (error) {
+      // Clerk's own messages are user-facing; our API's never are.
       setFormError(
-        clerkMessage(error as { message: string; longMessage?: string })
+        errorCopy(
+          error,
+          clerkMessage(error as { message: string; longMessage?: string })
+        )
       );
     }
   });

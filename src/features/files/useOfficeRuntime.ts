@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 import { useFileMode } from './FileModeControl';
 import {
   isOfficeRuntimeMessage,
@@ -17,6 +18,7 @@ import { getOfficeRuntimeConfig } from './officeRuntimeConfig';
 import {
   decodeSourceState,
   SOURCE_IFRAME_ORIGIN,
+  sessionReported,
   useSourceSession,
 } from './useSourceSession';
 
@@ -84,15 +86,20 @@ export function useOfficeRuntime({
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
   // discarded its unsaved edits, and the frame reloads the saved view.
-  const source = useSourceSession(file.id, joined, () => {
-    setJoined(false);
-    initializedFrame.current = -1;
-    setFrameLoaded(false);
-    setFrameGeneration((value) => value + 1);
-    setViewBytes(null);
-    setAnalysis(null);
-    setMode('view');
-  });
+  const source = useSourceSession(
+    file.id,
+    joined,
+    () => {
+      setJoined(false);
+      initializedFrame.current = -1;
+      setFrameLoaded(false);
+      setFrameGeneration((value) => value + 1);
+      setViewBytes(null);
+      setAnalysis(null);
+      setMode('view');
+    },
+    file.workspaceId
+  );
   // The maintenance pause refused editing before the room opened: show the
   // saved view instead. The frame was never loaded for editing, so view mode
   // loads into the same frame.
@@ -164,6 +171,11 @@ export function useOfficeRuntime({
   const checkpoint = useCallback(async () => {
     await sourceRef.current.save();
   }, [request]);
+
+  // A save that went through supersedes an earlier editing error.
+  useEffect(() => {
+    if (mode === 'edit' && source.status === 'saved') setError(null);
+  }, [mode, source.status]);
 
   useEffect(() => {
     source.flushHandler.current =
@@ -245,7 +257,8 @@ export function useOfficeRuntime({
           setViewBytes({ bytes, checkpoint, checkpointSeedSHA256 });
       })
       .catch((value: unknown) => {
-        if (!controller.signal.aborted) setError(toError(value).message);
+        if (!controller.signal.aborted)
+          setError(errorCopy(value, m.error_file_body()));
       });
     return () => controller.abort();
   }, [file.id, revision, mode, config.error, viewBytes, frameGeneration]);
@@ -383,7 +396,8 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'error') {
-        setError(message.message);
+        // The runtime's own text is English engine detail; the host owns copy.
+        setError(m.error_file_body());
         for (const waiter of frameRequests.current.values())
           waiter.reject(new Error(message.message));
         frameRequests.current.clear();
@@ -428,9 +442,10 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'checkpoint' || message.type === 'save')
-        void checkpoint().catch((value: unknown) =>
-          setError(toError(value).message)
-        );
+        void checkpoint().catch((value: unknown) => {
+          if (!sessionReported(value))
+            setError(errorCopy(value, m.source_edit_save_failed()));
+        });
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
@@ -457,7 +472,8 @@ export function useOfficeRuntime({
           const bytes = await request('export');
           setViewBytes({ bytes });
         } catch (value) {
-          setError(toError(value).message);
+          if (!sessionReported(value))
+            setError(errorCopy(value, m.source_edit_save_failed()));
           setLeaving(false);
           return false;
         }
@@ -505,9 +521,6 @@ export function useOfficeRuntime({
     setFrameLoaded,
     setRuntimeMode,
     status: source.status,
+    unavailable: source.unavailable,
   };
-}
-
-function toError(value: unknown) {
-  return value instanceof Error ? value : new Error(String(value));
 }

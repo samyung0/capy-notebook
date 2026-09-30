@@ -5,6 +5,7 @@ import { USE_MSW } from '@/api/auth';
 /** The slice of HocuspocusProvider that source editing drives. Under MSW an
  * in-page provider registered by the mocks stands in for the sidecar. */
 export interface SourceProvider {
+  connect(): unknown;
   destroy(): void;
   disconnect(): void;
   /** Updates sent that the server has not yet acknowledged as applied. */
@@ -17,6 +18,8 @@ export interface SourceProviderConfig {
   document: Y.Doc;
   name: string;
   onAuthenticationFailed?: (event: { reason: string }) => void;
+  /** The room closed; on an open socket the server closed only this room. */
+  onClose?: () => void;
   onDisconnect?: () => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;

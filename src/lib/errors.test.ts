@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError } from '@/api/client';
+import { ApiError, api } from '@/api/client';
 import { m } from '@/i18n';
 import {
   deferStorageRefusal,
   describeError,
+  errorCopy,
   errorKind,
   handleWorkspaceRefusals,
   isAbortError,
@@ -35,6 +36,37 @@ describe('frontend error normalization', () => {
       icon: 'fileError',
       title: m.error_source_changed_title(),
     });
+  });
+
+  it('reads any Huma error code and gives it its own copy', async () => {
+    const reply = (code: string, status: number) =>
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            detail: 'raw server text',
+            errors: [{ message: code }],
+            status,
+            title: 'Conflict',
+          }),
+          { status }
+        )
+      );
+    vi.stubGlobal('fetch', reply('revision_conflict', 409));
+    const stale = await api.patch('/quizzes/q/content', {}).catch((e) => e);
+    vi.stubGlobal('fetch', reply('workspace_limit_exceeded', 403));
+    const workspaces = await api.post('/workspaces', {}).catch((e) => e);
+    vi.unstubAllGlobals();
+
+    expect(stale).toMatchObject({ code: 'revision_conflict', status: 409 });
+    expect(describeError(stale)).toEqual({
+      action: 'reload',
+      description: m.error_revision_conflict_body(),
+      title: m.error_revision_conflict_title(),
+    });
+    expect(errorCopy(stale, 'fallback')).not.toContain('raw server text');
+    expect(describeError(workspaces).title).toBe(
+      m.error_workspace_limit_title()
+    );
   });
 
   it('classifies coded quota failures independently of status', () => {

@@ -2,7 +2,7 @@ import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { signInHref } from '@/features/auth/clerk';
 import { m } from '@/i18n';
-import { deferStorageRefusal } from '@/lib/errors';
+import { deferStorageRefusal, errorCopy } from '@/lib/errors';
 import { trackQuotaBlocked } from '@/lib/observability';
 
 export function toastCloneError(
@@ -40,7 +40,7 @@ export function toastCloneError(
     return;
   }
   userToast({
-    description: err instanceof Error ? err.message : m.source_try_again(),
+    description: errorCopy(err, m.source_try_again()),
     title: m.clone_failed(),
     variant: 'error',
   });

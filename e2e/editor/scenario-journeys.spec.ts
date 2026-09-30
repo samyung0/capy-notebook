@@ -35,8 +35,12 @@ test('one click fails a real source save and retry preserves the mounted editor'
   expect(current).toBeTruthy();
   const input = page.getByRole('textbox', { exact: true, name: current! });
   await expect(input).toHaveValue(new RegExp(marker));
-  await expect(page.getByRole('alert')).toContainText(
-    'Changes could not be saved'
+  // A failed save toasts and marks the header; the editor keeps its edits.
+  await expect(page.locator('[data-sonner-toast]')).toContainText(
+    'Failed to save'
+  );
+  await expect(page.getByTestId('editor-save-state')).toHaveText(
+    'Not saved. Retrying…'
   );
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const mounted = await input.elementHandle();
@@ -49,7 +53,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
   await expect(page).toHaveURL(currentURL);
   await expect(input).toHaveValue(new RegExp(marker));
   await page.getByRole('button', { exact: true, name: 'Save' }).click();
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
   await expect(input).toHaveValue(new RegExp(marker));
   expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
   await launch(page, 'source-save-failed');
@@ -115,17 +119,14 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await launch(page, `office-${format}-save`);
     const frame = page.locator('iframe[src*="office-runtime"]');
     const mounted = await frame.elementHandle();
-    await expect(page.getByRole('alert')).toContainText(
-      'Changes could not be saved'
+    await expect(page.locator('[data-sonner-toast]')).toContainText(
+      'Failed to save'
     );
-    // The strip sits directly under the file header, above the count row.
-    const strip = await page.getByRole('alert').boundingBox();
-    const count = await page
-      .getByText(/^\d+ (pages|sheets|slides)$/)
-      .boundingBox();
-    expect(strip!.y).toBeLessThan(count!.y);
+    await expect(page.getByTestId('editor-save-state')).toHaveText(
+      'Not saved. Retrying…'
+    );
     await page.getByRole('button', { exact: true, name: 'Save' }).click();
-    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
     const mode = page.getByRole('button', { name: 'Material mode' });
     await expect(page).toHaveURL(/mode=edit/);

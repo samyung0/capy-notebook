@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -45,45 +46,48 @@ type PDFAnnotation struct {
 
 var annotationColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
+// ErrInvalidPDFAnnotation rejects a mark whose shape the schema cannot express.
+var ErrInvalidPDFAnnotation = errors.New("invalid pdf annotation")
+
 func validatePDFAnnotation(in PDFAnnotationBody) error {
 	if in.Page < 1 || !annotationColor.MatchString(in.Color) || len(in.Rects) < 1 || len(in.Rects) > 1000 {
-		return ErrConflict
+		return ErrInvalidPDFAnnotation
 	}
 	if in.Kind != "highlight" && in.Kind != "rectangle" && in.Kind != "ellipse" && in.Kind != "pen" && in.Kind != "text" {
-		return ErrConflict
+		return ErrInvalidPDFAnnotation
 	}
 	if in.Kind != "highlight" && len(in.Rects) != 1 {
-		return ErrConflict
+		return ErrInvalidPDFAnnotation
 	}
 	if in.Kind == "pen" {
 		if len(in.Points) < 2 || len(in.Points) > 4096 {
-			return ErrConflict
+			return ErrInvalidPDFAnnotation
 		}
 		for _, point := range in.Points {
 			for _, v := range []float64{point.X, point.Y} {
 				if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1000 {
-					return ErrConflict
+					return ErrInvalidPDFAnnotation
 				}
 			}
 		}
 	} else if len(in.Points) != 0 {
-		return ErrConflict
+		return ErrInvalidPDFAnnotation
 	}
 	if in.Kind == "text" {
 		if strings.TrimSpace(in.Text) == "" || utf8.RuneCountInString(in.Text) > fieldlimits.PDFAnnotationText {
-			return ErrConflict
+			return ErrInvalidPDFAnnotation
 		}
 	} else if in.Text != "" {
-		return ErrConflict
+		return ErrInvalidPDFAnnotation
 	}
 	for _, r := range in.Rects {
 		for _, v := range []float64{r.X, r.Y, r.Width, r.Height} {
 			if math.IsNaN(v) || math.IsInf(v, 0) {
-				return ErrConflict
+				return ErrInvalidPDFAnnotation
 			}
 		}
 		if r.X < 0 || r.Y < 0 || r.Width <= 0 || r.Height <= 0 || r.X+r.Width > 1000 || r.Y+r.Height > 1000 {
-			return ErrConflict
+			return ErrInvalidPDFAnnotation
 		}
 	}
 	return nil

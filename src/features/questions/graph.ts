@@ -1,14 +1,18 @@
 import type { BoardAttributes, Point, TextAttributes } from 'jsxgraph';
 import { m } from '@/i18n';
+import { CopyError } from '@/lib/errors';
 import type { GraphBlock, GraphElement } from './types';
 
 import { validGraphTerm } from './validation';
+
+/** A graph that cannot be drawn; its message is localized copy. */
+export class GraphError extends CopyError {}
 
 const LOCAL_SVG_URL = /url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/g;
 
 export function validateGraphTerm(term: string): void {
   if (!validGraphTerm(term))
-    throw new Error(
+    throw new GraphError(
       m.question_ui_use_a_supported_mathematical_expression_in_x()
     );
 }
@@ -24,9 +28,13 @@ export function validateGraphRecipe(graph: GraphBlock): void {
     graph.width <= 0 ||
     graph.height <= 0
   )
-    throw new Error(m.question_ui_enter_valid_graph_bounds_and_dimensions());
+    throw new GraphError(
+      m.question_ui_enter_valid_graph_bounds_and_dimensions()
+    );
   if (graph.elements.length > 60)
-    throw new Error(m.question_ui_a_graph_can_contain_at_most_60_elements());
+    throw new GraphError(
+      m.question_ui_a_graph_can_contain_at_most_60_elements()
+    );
   const ids = new Set<string>();
   const points = new Set(
     graph.elements
@@ -35,7 +43,9 @@ export function validateGraphRecipe(graph: GraphBlock): void {
   );
   for (const element of graph.elements) {
     if (!element.id || ids.has(element.id))
-      throw new Error(m.question_ui_graph_elements_need_unique_identifiers());
+      throw new GraphError(
+        m.question_ui_graph_elements_need_unique_identifiers()
+      );
     ids.add(element.id);
     if (element.type === 'functiongraph') {
       validateGraphTerm(element.term);
@@ -44,26 +54,30 @@ export function validateGraphRecipe(graph: GraphBlock): void {
         (!element.domain.every(Number.isFinite) ||
           element.domain[0] >= element.domain[1])
       )
-        throw new Error(m.question_ui_enter_a_valid_function_domain());
+        throw new GraphError(m.question_ui_enter_a_valid_function_domain());
     }
     if (
       (element.type === 'point' || element.type === 'text') &&
       !element.coords.every(Number.isFinite)
     )
-      throw new Error(m.question_ui_enter_valid_coordinates());
+      throw new GraphError(m.question_ui_enter_valid_coordinates());
     if (
       (element.type === 'line' || element.type === 'segment') &&
       (element.points[0] === element.points[1] ||
         element.points.some((id) => !points.has(id)))
     )
-      throw new Error(m.question_ui_select_two_different_points_for_the_line());
+      throw new GraphError(
+        m.question_ui_select_two_different_points_for_the_line()
+      );
     if (
       element.type === 'circle' &&
       (!points.has(element.center) ||
         !Number.isFinite(element.radius) ||
         element.radius <= 0)
     )
-      throw new Error(m.question_ui_select_a_center_and_a_positive_radius());
+      throw new GraphError(
+        m.question_ui_select_a_center_and_a_positive_radius()
+      );
   }
 }
 
@@ -168,7 +182,7 @@ export async function createGraphBoard(
     exportSvg() {
       const original = container.querySelector('svg');
       if (!original)
-        throw new Error(m.question_ui_the_graph_could_not_be_exported());
+        throw new GraphError(m.question_ui_the_graph_could_not_be_exported());
       const svg = original.cloneNode(true) as SVGSVGElement;
       svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
       svg.setAttribute('width', String(graph.width));

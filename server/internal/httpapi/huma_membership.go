@@ -55,9 +55,6 @@ func collaborationError(err error) error {
 	if errors.Is(err, store.ErrForbidden) {
 		return huma.Error403Forbidden("insufficient workspace role")
 	}
-	if errors.Is(err, store.ErrConflict) {
-		return huma.Error409Conflict("material revision is stale")
-	}
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return huma.Error400BadRequest(err.Error())
 	}

@@ -1805,7 +1805,6 @@ export function useMaterialCollaborationToken(
     meta: queryMeta(options),
     queryFn: () => getMaterialCollaborationToken(materialId),
     queryKey: ['material', materialId, 'collaboration-token'],
-    refetchInterval: 4 * 60 * 1000,
     staleTime: 3 * 60 * 1000,
   });
 }

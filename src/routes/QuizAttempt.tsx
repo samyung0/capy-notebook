@@ -29,7 +29,7 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { scoreBucket } from '@/lib/analytics';
 import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
-import { describeError, llmKeyUserMessage } from '@/lib/errors';
+import { describeError, errorCopy, llmKeyUserMessage } from '@/lib/errors';
 import { track } from '@/lib/observability';
 
 export default function QuizAttempt() {
@@ -185,10 +185,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
               return;
             }
             userToast({
-              description:
-                err instanceof Error
-                  ? err.message
-                  : m.quiz_save_attempt_retry(),
+              description: errorCopy(err, m.quiz_save_attempt_retry()),
               title: m.quiz_save_attempt_failed(),
               variant: 'error',
             });
@@ -200,9 +197,7 @@ function Attempt({ quizId, shared }: { quizId: string; shared: boolean }) {
       const keyMessage = llmKeyUserMessage(err);
       const described = keyMessage ? describeError(err) : null;
       userToast({
-        description:
-          keyMessage ??
-          (err instanceof Error ? err.message : m.quiz_grade_failed_body()),
+        description: keyMessage ?? errorCopy(err, m.quiz_grade_failed_body()),
         title: described?.title ?? m.quiz_grade_failed(),
         variant: 'error',
       });

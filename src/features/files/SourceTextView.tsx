@@ -4,9 +4,19 @@ import { api } from '@/api/client';
 import type { SourceSession, ViewableFile } from '@/api/types';
 import { m } from '@/i18n';
 import { FileModeControl, useFileMode } from './FileModeControl';
-import { FileError, FileLoading, SourceBanners } from './FileStates';
+import {
+  FileError,
+  FileLoading,
+  FileUnavailable,
+  SourceBanners,
+} from './FileStates';
+import { useReportEditorStatus } from './fileModeContext';
 import { SourceTextEditor } from './SourceTextEditor';
-import { decodeSourceState, useSourceSession } from './useSourceSession';
+import {
+  decodeSourceState,
+  sourceHeaderStatus,
+  useSourceSession,
+} from './useSourceSession';
 
 export function SourceTextView({
   file,
@@ -26,10 +36,15 @@ export function SourceTextView({
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
   // discarded its unsaved edits, and the file drops to view mode.
-  const source = useSourceSession(file.id, joined, () => {
-    setJoined(false);
-    setMode('view');
-  });
+  const source = useSourceSession(
+    file.id,
+    joined,
+    () => {
+      setJoined(false);
+      setMode('view');
+    },
+    file.workspaceId
+  );
   // The maintenance pause refused editing before the room opened.
   const pausedAtOpen = source.paused && !source.doc;
   useEffect(() => {
@@ -108,6 +123,12 @@ export function SourceTextView({
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  useReportEditorStatus(
+    sourceHeaderStatus(source.status, {
+      busy: leaving || source.handoff,
+      editing,
+    })
+  );
   const done = async () => {
     setLeaving(true);
     try {
@@ -120,6 +141,7 @@ export function SourceTextView({
       setLeaving(false);
     }
   };
+  if (source.unavailable) return <FileUnavailable kind={source.unavailable} />;
   return (
     <div
       className="flex h-full min-h-[60vh] flex-col"
@@ -139,19 +161,6 @@ export function SourceTextView({
           void source.save().catch(() => {});
         }}
         saveDisabled={source.handoff || source.replaced}
-        status={
-          editing
-            ? source.handoff
-              ? m.source_edit_handoff()
-              : source.status === 'saved'
-                ? m.editor_status_saved()
-                : source.status === 'saving'
-                  ? m.files_office_saving()
-                  : source.status === 'offline'
-                    ? m.source_edit_offline()
-                    : undefined
-            : undefined
-        }
       />
       <SourceBanners
         actions={[

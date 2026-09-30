@@ -39,6 +39,7 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { getLocale, m } from '@/i18n';
+import { describeError } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
@@ -447,7 +448,7 @@ function TrashTab({
         role="alert"
       >
         <p>{m.trash_load_failed()}</p>
-        <p className="t-meta">{error?.message}</p>
+        <p className="t-meta">{describeError(error).description}</p>
         <ErrorAction
           iconLeftClassName="me-1"
           onClick={() => refetch()}

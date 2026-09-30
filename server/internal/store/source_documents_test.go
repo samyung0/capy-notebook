@@ -509,7 +509,7 @@ func TestPDFAnnotationsArePrivateAndBoundToSource(t *testing.T) {
 		t.Fatal("private source disclosed")
 	}
 	body.Rects[0].Width = 1001
-	if _, err = s.SavePDFAnnotation(ctx, viewer, file.ID, row.ID, body); !errors.Is(err, ErrConflict) {
+	if _, err = s.SavePDFAnnotation(ctx, viewer, file.ID, row.ID, body); !errors.Is(err, ErrInvalidPDFAnnotation) {
 		t.Fatalf("invalid geometry accepted: %v", err)
 	}
 	body.Rects[0].Width = 100

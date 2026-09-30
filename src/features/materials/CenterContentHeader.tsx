@@ -60,9 +60,11 @@ const STATUS_ICON = {
   connecting: 'cloudSync',
   error: 'cloudAlert',
   offline: 'cloudOff',
+  reconnecting: 'cloudSync',
   saved: 'cloudCheck',
   synced: 'cloudSavingDone',
   syncing: 'cloudSync',
+  unsaved: 'cloudAlert',
 } satisfies Record<NoteEditorSaveState, IconName>;
 
 function useHeader(
@@ -303,7 +305,9 @@ export function Header({
             <TooltipTrigger
               className={cn(
                 'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus',
-                editorStatus.saveState === 'error' && 'text-solid-error'
+                (editorStatus.saveState === 'error' ||
+                  editorStatus.saveState === 'unsaved') &&
+                  'text-solid-error'
               )}
               data-testid="editor-save-state"
               render={<span role="status" />}
