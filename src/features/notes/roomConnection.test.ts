@@ -25,10 +25,13 @@ describe('roomReconnector', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.stubGlobal('navigator', { onLine: true });
+    // No jitter: factor 1.
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   function setup() {
@@ -44,6 +47,25 @@ describe('roomReconnector', () => {
     reconnector.closed(true);
     expect(provider.disconnect).toHaveBeenCalledTimes(1);
     vi.advanceTimersByTime(500);
+    expect(provider.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('connects only once the old socket has closed', () => {
+    const socket = { status: 'connected' };
+    const provider = {
+      configuration: { websocketProvider: socket },
+      connect: vi.fn(),
+      disconnect: vi.fn(),
+    };
+    const reconnector = roomReconnector({
+      onStuck: vi.fn(),
+      provider: () => provider,
+    });
+    reconnector.refused();
+    vi.advanceTimersByTime(1000);
+    expect(provider.connect).not.toHaveBeenCalled();
+    socket.status = 'disconnected';
+    vi.advanceTimersByTime(250);
     expect(provider.connect).toHaveBeenCalledTimes(1);
   });
 

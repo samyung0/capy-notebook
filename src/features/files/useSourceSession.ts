@@ -378,13 +378,21 @@ export function useSourceSession(
       // The token request that failed, if one did (the provider only reports
       // its own text for it).
       let tokenError: unknown = null;
+      // Toast a failure once per episode: the server rebroadcasts each failed
+      // store and a lost connection is re-reported while it stays lost.
+      let lost = false;
+      // Set by reset(): later typing and the unmount flush write no draft of
+      // the refused state.
+      let discarded = false;
       const reconnect = roomReconnector({
         onStuck: () => {
-          if (cancelled || active.recovery) return;
+          if (cancelled || active.recovery || lost) return;
+          lost = true;
           setStatus('error');
           if (!sourceChangesCovered(active)) saveFailed.current('retrying');
         },
-        provider: () => provider,
+        // A closed session never reconnects (replaced, paused, reset).
+        provider: () => (cancelled || active.recovery ? null : provider),
       });
       // A save the server refused for good: go back to the last saved
       // version, dropping this session's drafts so they cannot come back.
@@ -393,8 +401,10 @@ export function useSourceSession(
         if (!sourceChangesCovered(active) || bufferDirtyRef.current)
           saveFailed.current('undone');
         cancelled = true;
+        discarded = true;
         draftDue = false;
         clearTimeout(timer);
+        provider?.disconnect();
         rejectWaiters(new SourceSessionError(m.editor_save_failed_undone()));
         void (async () => {
           await draftWrites;
@@ -420,6 +430,7 @@ export function useSourceSession(
         queueDraftWrite(() => clearSourceDrafts(settledDrafts));
       };
       const markSaved = () => {
+        lost = false;
         setStatus('saved');
         settle();
       };
@@ -481,7 +492,7 @@ export function useSourceSession(
         name: session.room,
         // A publication's first refusal never gets here (sourceProvider.ts).
         onAuthenticationFailed: ({ reason }) => {
-          if (active.recovery) return;
+          if (cancelled || active.recovery) return;
           // Paused before this client saw the room's paused message.
           if (maintenancePaused(reason)) {
             replace('paused');
@@ -609,7 +620,10 @@ export function useSourceSession(
             // checkpoint ids, so they stay pending.
             setStatus('unsaved');
             rejectWaiters(new SourceSessionError(m.editor_save_failed()));
-            saveFailed.current('retrying');
+            if (!(lost || sourceChangesCovered(active))) {
+              lost = true;
+              saveFailed.current('retrying');
+            }
             return;
           }
           if (
@@ -631,6 +645,7 @@ export function useSourceSession(
         onSynced: ({ state }) => {
           if (state && !cancelled && !active.recovery) {
             reconnect.connected();
+            lost = false;
             if (everSynced) setStatus('saving');
             everSynced = true;
             setLoaded({ bytes, doc: shared, session });
@@ -693,11 +708,13 @@ export function useSourceSession(
         return latestDraft;
       };
       flushDraft = () => {
+        if (discarded) return;
         const next = draftDue ? takeDraft() : undefined;
         if (next) queueDraftWrite(() => writeSourceDraft(next, bytes));
       };
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
-        if (origin === provider || origin === RESTORE_ORIGIN) return;
+        if (origin === provider || origin === RESTORE_ORIGIN || discarded)
+          return;
         active.sequence++;
         setDirty(true);
         setStatus(active.recovery ? 'recovery' : 'saving');
@@ -705,7 +722,7 @@ export function useSourceSession(
           draftDue = true;
           queueDraftWrite(async () => {
             await new Promise((resolve) => setTimeout(resolve, DRAFT_WRITE_MS));
-            const next = draftDue ? takeDraft() : undefined;
+            const next = draftDue && !discarded ? takeDraft() : undefined;
             if (next) await writeSourceDraft(next, bytes);
           });
         }

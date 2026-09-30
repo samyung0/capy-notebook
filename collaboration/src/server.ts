@@ -937,7 +937,11 @@ const server = new Server<CollaborationContext>({
     ).assertConnectionAccess(documentName, claims.sub, claims.access);
     connection.context = claimsContext(claims);
     connection.readOnly = claims.access === 'read';
-    armTokenExpiry(connection);
+    // It may have closed during the checks above; its timers are gone then.
+    if (
+      server.hocuspocus.documents.get(documentName)?.hasConnection(connection)
+    )
+      armTokenExpiry(connection);
   },
   quiet: true,
   stopOnSignals: false,
@@ -1485,16 +1489,32 @@ const failedStoreRetries = new FailedStoreRetryRunner(
     } catch (error) {
       storeFailures += 1;
       if (SOURCE_ROOM_PATTERN.test(room)) {
+        // As in storeSource: a refusal for good tells the clients (read-only,
+        // or reset to the last saved version) and discards the room.
+        const readOnly = readOnlyRefusal(error);
         if (
-          error instanceof SourceRequestError &&
-          [401, 403, 404, 409, 413, 422].includes(error.status)
+          readOnly ||
+          error instanceof OfficeEngineError ||
+          (error instanceof SourceRequestError &&
+            [401, 403, 404, 409, 413, 422].includes(error.status))
         ) {
+          if (error instanceof OfficeEngineError)
+            reportFailedStore(failed, error, room);
+          server.hocuspocus.documents.get(room)?.broadcastStateless(
+            JSON.stringify(
+              readOnly
+                ? { room, type: 'room-read-only' }
+                : {
+                    type: 'source-checkpoint-failed',
+                    ...sourceRoom(room),
+                    checkpointIds: failed.checkpointIds,
+                    recoverable: false,
+                  }
+            )
+          );
           clearIfCurrent();
           rejectAuthorizationRoom(room);
-        } else {
-          reportFailedStore(failed, error, room);
-          if (error instanceof OfficeEngineError) clearIfCurrent();
-        }
+        } else reportFailedStore(failed, error, room);
         return;
       }
       if (

@@ -15,7 +15,9 @@ export type RoomRefusal = 'readOnly' | 'notFound' | 'forbidden' | 'retry';
  * being reset or compacted) is worth retrying with a fresh token.
  */
 export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
-  if (reason === COLLABORATION_READ_ONLY_REASON) return 'readOnly';
+  // A read token on reconnect is thrown by the token function itself, so the
+  // provider wraps the reason in its own text.
+  if (reason.includes(COLLABORATION_READ_ONLY_REASON)) return 'readOnly';
   const status = isApiError(tokenError) ? tokenError.status : undefined;
   if (reason === COLLABORATION_NOT_FOUND_REASON || status === 404)
     return 'notFound';
@@ -26,6 +28,7 @@ export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
 
 const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 30_000;
+const CLOSE_POLL_MS = 250;
 /** How long a lost room connection may keep failing before the editor says it
  * cannot save. */
 export const RECONNECT_GRACE_MS = 30_000;
@@ -64,18 +67,25 @@ export function roomReconnector({
       else watch();
     }, RECONNECT_GRACE_MS);
   };
+  // `connect()` is a no-op until the old socket has finished closing, so it
+  // waits for that instead of stranding the provider disconnected.
+  const connectWhenClosed = (current: ReconnectableProvider) => {
+    retry = undefined;
+    if (disposed || provider() !== current) return;
+    if (socketOpen(current))
+      retry = setTimeout(() => connectWhenClosed(current), CLOSE_POLL_MS);
+    else void current.connect();
+  };
   const reconnect = () => {
     const current = provider();
     if (disposed || retry || !current) return;
     watch();
     current.disconnect();
-    retry = setTimeout(
-      () => {
-        retry = undefined;
-        if (!disposed) void current.connect();
-      },
-      Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempts++)
-    );
+    // Jittered, so a room's clients do not all return at the same instant.
+    const delay =
+      Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempts++) *
+      (0.5 + Math.random());
+    retry = setTimeout(() => connectWhenClosed(current), delay);
   };
   return {
     /** The provider's `close`. A socket close reconnects by itself. */

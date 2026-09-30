@@ -471,9 +471,11 @@ export function NoteEditorCore({
         event.type === 'checkpoint-failed' &&
         event.materialId === material.id
       ) {
-        // The receipts stay pending: the server's retry answers them.
+        // The receipts stay pending: the server's retry answers them. Every
+        // failed store is rebroadcast; toast once, and only for lost work.
+        if (reportedStatus.current === 'unsaved') return;
         setStatus('unsaved');
-        reportSaveFailed.current?.();
+        if (hasUnsavedWork()) reportSaveFailed.current?.();
         return;
       }
       if (
@@ -617,6 +619,15 @@ export function NoteEditorCore({
                         tokenError.current = error;
                         throw error;
                       }
+                      // The room was compacted while this tab was away: the
+                      // new room in the cache remounts the editor onto it.
+                      if (token.room !== collaborationToken.room) {
+                        qc.setQueryData(
+                          ['material', material.id, 'collaboration-token'],
+                          token
+                        );
+                        throw new Error('collaboration room moved');
+                      }
                       // A reconnect after the account froze gets a read token.
                       if (token.access === 'read') {
                         readOnlyNow.current();
@@ -652,6 +663,7 @@ export function NoteEditorCore({
       material.id,
       material.workspaceId,
       name,
+      qc,
       setStatus,
       ydoc,
     ]
@@ -676,10 +688,12 @@ export function NoteEditorCore({
   useEffect(() => {
     const current = roomReconnector({
       onStuck: () => {
+        if (reportedStatus.current === 'error') return;
         setStatus('error');
         if (hasUnsavedWork()) reportSaveFailed.current?.();
       },
-      provider: () => roomProvider(editor)?.provider,
+      provider: () =>
+        rejected.current ? null : roomProvider(editor)?.provider,
     });
     reconnector.current = current;
     return () => {
