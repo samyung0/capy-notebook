@@ -1,8 +1,16 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import type { Question, QuestionPart } from '@/api/types';
-import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import { Input, InputError } from '@/components/ui/Input';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import { Textarea } from '@/components/ui/TextArea';
 import {
   AnswerView,
@@ -12,9 +20,14 @@ import {
   optionLetter,
   QuestionReview,
   QuestionView,
+  type QuestionViewProps,
   TextView,
 } from '@/features/questions/QuestionView';
-import { partMarks } from '@/features/questions/types';
+import {
+  type LearnerPart,
+  type LearnerQuestion,
+  partMarks,
+} from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
@@ -28,55 +41,88 @@ import {
 
 const NON_QUANTITY_CHAR = /[^\d\s+\-./eE]/;
 
+/** Whether a learner has given an answer for a part (ordering always has one). */
+export function isAnswered(value: Answer | undefined): boolean {
+  if (value == null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
+/**
+ * One question in the shared quiz look, used for taking, reviewing and every
+ * read-only view (quiz preview, quiz editor, question bank, question dialog).
+ */
 export function QuestionRunner({
   question,
   answers,
   onChange,
   review = false,
+  disabled = false,
+  showAnswerKey = false,
   questionNumber,
+  renderBlock,
 }: {
-  question: Question;
+  /** Learner questions (no answer key) only render without `review`. */
+  question: Question | LearnerQuestion;
   answers: Answers;
-  onChange: (partId: string, value: Answer) => void;
+  onChange?: (partId: string, value: Answer) => void;
   review?: boolean;
+  /** Read-only preview: the answer controls show but take no input. */
+  disabled?: boolean;
+  /** Editors: list the answer, marking scheme and worked solution under each part. */
+  showAnswerKey?: boolean;
   questionNumber?: number;
+  renderBlock?: QuestionViewProps['renderBlock'];
 }) {
-  const View = review ? QuestionReview : QuestionView;
-  const displayedQuestion = review
-    ? {
-        ...question,
-        parts: question.parts.map((part) => ({
+  const answer = (part: QuestionPart | LearnerPart) => (
+    <div className="col-[2/-1] min-w-0">
+      <PartRunner
+        disabled={disabled}
+        key={part.id}
+        onChange={(value) => onChange?.(part.id, value)}
+        part={part}
+        review={review}
+        value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
+      />
+    </div>
+  );
+  if (!review)
+    return (
+      <QuestionView
+        question={question}
+        questionNumber={questionNumber}
+        renderAnswer={answer}
+        renderBlock={renderBlock}
+        review={showAnswerKey}
+      />
+    );
+  const graded = question as Question;
+  return (
+    <QuestionReview
+      question={{
+        ...graded,
+        parts: graded.parts.map((part) => ({
           ...part,
           awarded: scorePart(part, answers[part.id]).awarded,
         })),
-      }
-    : question;
-  return (
-    <View
-      question={displayedQuestion}
+      }}
       questionNumber={questionNumber}
-      renderAnswer={(part) => (
-        <div className="col-[2/-1] min-w-0">
-          <PartRunner
-            key={part.id}
-            onChange={(value) => onChange(part.id, value)}
-            part={part as QuestionPart}
-            review={review}
-            value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
-          />
-        </div>
-      )}
+      renderAnswer={answer}
+      renderBlock={renderBlock}
     />
   );
 }
 
-/** A choice as a callout row: tip when selected; after checking, success or danger with a tag. */
+/** A choice as a bordered row: tip when selected; after checking, success or danger with a tag. */
 function ChoiceRow({
   label,
   text,
   selected,
   correct,
   review,
+  disabled,
   onClick,
 }: {
   label: ReactNode;
@@ -84,15 +130,17 @@ function ChoiceRow({
   selected: boolean;
   correct: boolean;
   review: boolean;
+  disabled: boolean;
   onClick?: () => void;
 }) {
   const result = review && (selected || correct);
+  const icon = review && selected;
   return (
     <button
       aria-pressed={selected}
       className={cn(
         answerRowClass(
-          result
+          review && selected
             ? correct
               ? 'success'
               : 'danger'
@@ -101,43 +149,34 @@ function ChoiceRow({
               : undefined
         ),
         'w-full text-left disabled:cursor-default',
-        !(review || selected) && 'hover:bg-surface-hover-bg'
+        review && !selected && correct && 'border-solid-success/45',
+        !(review || disabled || selected) && 'hover:bg-surface-hover-bg'
       )}
-      disabled={review}
+      disabled={review || disabled}
       onClick={onClick}
       type="button"
     >
       <OptionKey
         className={cn(
-          !review &&
-            selected &&
-            'border-action-accent bg-action-accent text-action-accent-fg',
-          review &&
-            selected &&
-            (correct
-              ? 'border-tint-success-fg bg-tint-success-fg text-surface'
-              : 'border-tint-error-fg bg-tint-error-fg text-surface'),
-          review &&
-            !selected &&
-            correct &&
-            'border-tint-success-fg text-tint-success-fg'
+          !review && selected && 'text-tint-accent-1-fg',
+          icon &&
+            cn(
+              'rounded-full text-surface',
+              correct ? 'bg-tint-success-fg' : 'bg-tint-error-fg'
+            ),
+          review && !selected && correct && 'text-tint-success-fg'
         )}
       >
-        {review && selected ? (
-          <Icon name={correct ? 'check' : 'x'} size={14} />
-        ) : (
-          label
-        )}
+        {icon ? <Icon name={correct ? 'check' : 'x'} size={13} /> : label}
       </OptionKey>
-      <span className="min-w-0 flex-1 pt-px text-fg">{text}</span>
+      <span className="min-w-0 flex-1 text-fg">{text}</span>
       {result && (
         <span
           className={cn(
-            'inline-flex shrink-0 items-center gap-1 self-center whitespace-nowrap font-bold text-xs',
+            'inline-flex shrink-0 items-center gap-1 whitespace-nowrap font-bold text-xs',
             correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
           )}
         >
-          {selected && <Icon name={correct ? 'check' : 'x'} size={12} />}
           {selected
             ? m.question_ui_your_answer()
             : m.question_ui_correct_answer()}
@@ -152,28 +191,39 @@ function PartRunner({
   value,
   onChange,
   review,
+  disabled,
 }: {
-  part: QuestionPart;
+  part: QuestionPart | LearnerPart;
   value: Answer;
   onChange: (value: Answer) => void;
   review: boolean;
+  disabled: boolean;
 }) {
   const answer = part.answer;
-  // Ordering starts shuffled; matching letters follow the stored option order.
-  const [order] = useState(() =>
-    shuffledIndices(answer.type === 'ordering' ? answer.items.length : 0)
-  );
+  // Learner questions carry no key; only a graded review reads it.
+  const key = 'markscheme' in part ? part.answer : undefined;
+  // Ordering starts shuffled and the shown order is the answer, so it is
+  // committed as soon as a learner sees it. Matching letters follow the
+  // stored option order.
+  // Keyed on the item count so an edited question never keeps a stale index.
+  const itemCount = answer.type === 'ordering' ? answer.items.length : 0;
+  const order = useMemo(() => shuffledIndices(itemCount), [itemCount]);
+  const taking = !(review || disabled);
+  useEffect(() => {
+    if (taking && answer.type === 'ordering' && value === null) onChange(order);
+  }, [taking, answer.type, value, onChange, order]);
   const [unitError, setUnitError] = useState(false);
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <div className="grid gap-1">
+      <div className="grid gap-2">
         {answer.options.map((option, i) => {
           const selected = Array.isArray(value) && value.includes(i);
           return (
             <ChoiceRow
-              correct={answer.correct.includes(i)}
+              correct={key?.type === answer.type && key.correct.includes(i)}
+              disabled={disabled}
               key={i}
-              label={optionLetter(i)}
+              label={`${optionLetter(i)}.`}
               onClick={() =>
                 onChange(
                   answer.type === 'mcq'
@@ -193,10 +243,11 @@ function PartRunner({
     );
   if (answer.type === 'boolean')
     return review ? (
-      <div className="grid gap-1">
+      <div className="grid gap-2">
         {[true, false].map((option) => (
           <ChoiceRow
-            correct={answer.correct === option}
+            correct={key?.type === 'boolean' && key.correct === option}
+            disabled
             key={String(option)}
             label={null}
             review
@@ -206,28 +257,34 @@ function PartRunner({
         ))}
       </div>
     ) : (
-      <div className="flex gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {[true, false].map((option) => (
-          <Button
+          <button
             aria-pressed={value === option}
+            className={cn(
+              answerRowClass(value === option ? 'tip' : undefined),
+              'justify-center font-semibold disabled:cursor-default',
+              value !== option && !disabled && 'hover:bg-surface-hover-bg'
+            )}
+            disabled={disabled}
             key={String(option)}
             onClick={() => onChange(option)}
-            variant={value === option ? 'accent' : 'outline'}
+            type="button"
           >
             {option ? m.question_ui_true() : m.question_ui_false()}
-          </Button>
+          </button>
         ))}
       </div>
     );
   if (answer.type === 'short') {
-    const right = part.awarded === partMarks(part);
+    const right = 'awarded' in part && part.awarded === partMarks(part);
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-3">
-          <div className="relative w-44 min-w-0">
+          <div className="relative min-w-0 flex-1">
             <Input
               aria-label={m.question_ui_your_answer()}
-              disabled={review}
+              disabled={review || disabled}
               onBlur={() =>
                 setUnitError(
                   Boolean(
@@ -247,8 +304,10 @@ function PartRunner({
                 setUnitError(false);
                 onChange(next);
               }}
+              placeholder={m.question_ui_type_answer()}
               value={typeof value === 'string' ? value : ''}
               wrapperClassName={cn(
+                'w-full',
                 review &&
                   (right
                     ? 'border-solid-success pr-10'
@@ -275,7 +334,7 @@ function PartRunner({
             {m.question_ui_value_only({ unit: answer.unit })}
           </InputError>
         )}
-        {review && (
+        {review && 'markscheme' in part && (
           <p className="mt-2 text-sm">
             <span className="mr-1.5 font-bold text-tint-success-fg text-xs">
               {m.question_ui_accepted_answers()}
@@ -290,8 +349,9 @@ function PartRunner({
     return (
       <Textarea
         aria-label={m.question_ui_your_answer()}
-        disabled={review}
+        disabled={review || disabled}
         onChange={(event) => onChange(event.target.value)}
+        placeholder={m.question_ui_type_answer()}
         value={typeof value === 'string' ? value : ''}
       />
     );
@@ -300,62 +360,64 @@ function PartRunner({
       value !== null && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
+    // Borderless rows: the Select carries the only border.
     const rows = (
-      <ol className="grid content-start gap-1">
-        {answer.pairs.map((pair, i) => {
+      <ol className="grid content-start gap-2">
+        {('left' in answer
+          ? answer.left
+          : answer.pairs.map((pair) => pair.left)
+        ).map((left, i) => {
           const chosen = choices[String(i)];
-          const correct = chosen === pair.right;
+          const right =
+            key?.type === 'matching' ? key.pairs[i]?.right : undefined;
+          const correct = chosen === right;
           return (
-            <li
-              className={cn(
-                answerRowClass(
-                  review ? (correct ? 'success' : 'danger') : undefined
-                ),
-                'items-baseline'
-              )}
-              key={i}
-            >
-              <span className="w-5 shrink-0 font-bold text-fg md:w-6">
-                {i + 1}.
-              </span>
-              <TextView className="min-w-0 flex-1 text-fg" text={pair.left} />
+            <li className="flex min-h-11 items-center gap-3" key={i}>
+              <OptionKey>{i + 1}.</OptionKey>
+              <TextView className="min-w-0 flex-1 text-fg" text={left} />
               {review ? (
-                <span className="flex shrink-0 items-center gap-2 self-center">
-                  <OptionKey
-                    bare
-                    className={
-                      correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
-                    }
-                  >
-                    {chosen === undefined ? '–' : optionLetter(chosen)}
-                  </OptionKey>
-                  {!correct && (
-                    <span className="whitespace-nowrap font-bold text-tint-success-fg text-xs">
+                <span
+                  className={cn(
+                    'flex shrink-0 items-center gap-2 whitespace-nowrap font-bold text-xs',
+                    correct ? 'text-tint-success-fg' : 'text-tint-error-fg'
+                  )}
+                >
+                  {chosen === undefined ? '–' : optionLetter(chosen)}
+                  {!correct && right !== undefined && (
+                    <span className="text-tint-success-fg">
                       {m.question_ui_correct_letter({
-                        letter: optionLetter(pair.right),
+                        letter: optionLetter(right),
                       })}
                     </span>
                   )}
                 </span>
               ) : (
-                <select
-                  aria-label={pair.left}
-                  className="w-16 shrink-0 self-center rounded-xl border border-line bg-surface py-1.25 pr-2 pl-3 font-bold"
-                  onChange={(event) => {
-                    const next = { ...choices };
-                    if (event.target.value === '') delete next[String(i)];
-                    else next[String(i)] = Number(event.target.value);
-                    onChange(next);
-                  }}
-                  value={chosen ?? ''}
-                >
-                  <option value="">–</option>
-                  {answer.options.map((_, index) => (
-                    <option key={index} value={index}>
-                      {optionLetter(index)}
-                    </option>
-                  ))}
-                </select>
+                <div className="w-22 shrink-0">
+                  <Select
+                    disabled={disabled}
+                    onValueChange={(next) =>
+                      onChange({ ...choices, [String(i)]: Number(next) })
+                    }
+                    value={chosen === undefined ? '' : String(chosen)}
+                  >
+                    <SelectTrigger aria-label={left} size="sm">
+                      <SelectValue placeholder="–" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {answer.options.map((option, index) => (
+                          <SelectItem
+                            hint={<TextView text={option} />}
+                            key={index}
+                            value={String(index)}
+                          >
+                            {optionLetter(index)}.
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
             </li>
           );
@@ -377,29 +439,27 @@ function PartRunner({
       onChange(next);
     }
     return (
-      <div className="flex flex-col gap-1">
+      <div className="grid gap-2">
         {current.map((item, i) => (
           <div
             className={cn(
               answerRowClass(
                 review ? (item === i ? 'success' : 'danger') : undefined
               ),
-              'items-center py-1.25'
+              !review && 'py-1 pr-1.5'
             )}
             key={item}
           >
             <OptionKey
-              bare
               className={cn(
-                'mt-px self-start',
                 review &&
                   (item === i ? 'text-tint-success-fg' : 'text-tint-error-fg')
               )}
             >
-              {i + 1}
+              {i + 1}.
             </OptionKey>
             <TextView
-              className="min-w-0 flex-1 pt-px text-fg"
+              className="min-w-0 flex-1 text-fg"
               text={answer.items[item]}
             />
             {review ? (
@@ -409,37 +469,27 @@ function PartRunner({
                 </span>
               )
             ) : (
-              <>
-                <Button
-                  aria-label={m.question_ui_move_up()}
-                  disabled={i === 0}
-                  iconLeft="chevronUp"
+              <span className="flex shrink-0 items-center">
+                <IconButton
+                  disabled={disabled || i === 0}
+                  icon="chevronUp"
+                  label={m.question_ui_move_up()}
                   onClick={() => move(i, -1)}
                   size="sm"
-                  variant="ghost"
+                  variant="ghost-hover"
                 />
-                <Button
-                  aria-label={m.question_ui_move_down()}
-                  disabled={i === current.length - 1}
-                  iconLeft="chevronDown"
+                <IconButton
+                  disabled={disabled || i === current.length - 1}
+                  icon="chevronDown"
+                  label={m.question_ui_move_down()}
                   onClick={() => move(i, 1)}
                   size="sm"
-                  variant="ghost"
+                  variant="ghost-hover"
                 />
-              </>
+              </span>
             )}
           </div>
         ))}
-        {!review && value === null && (
-          <Button
-            className="self-start"
-            onClick={() => onChange(current)}
-            size="sm"
-            variant="ghost"
-          >
-            {m.question_ui_use_this_order()}
-          </Button>
-        )}
       </div>
     );
   }

@@ -73,6 +73,9 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q','t',1,$1,'test')`, q); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q2','t',2,$1,'test')`, strings.Replace(q, `"id":"q"`, `"id":"q2"`, 1)); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, `CREATE TABLE library_books(id text,title text,authors jsonb,edition text,license text,license_url text,source_url text);
  CREATE TABLE library_book_versions(book_id text,version int,content_id text);
  CREATE TABLE library_excerpts(id text,book_id text,content_id text);
@@ -113,6 +116,20 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	get = request(learnerHandler, "GET", "/api/bank/questions/q", "")
 	if get.Code != 200 || strings.Contains(get.Body.String(), "secret-") {
 		t.Fatalf("learner leak: %d %s", get.Code, get.Body.String())
+	}
+	batch := request(handler, "GET", "/api/bank/questions?ids=q2,q", "")
+	var page struct{ Questions []bank.Detail }
+	if err := json.Unmarshal(batch.Body.Bytes(), &page); err != nil || batch.Code != 200 {
+		t.Fatalf("batch: %d %s", batch.Code, batch.Body.String())
+	}
+	if len(page.Questions) != 2 || page.Questions[0].Question["id"] != "q2" || page.Questions[1].Provenance == nil || !strings.Contains(batch.Body.String(), "secret-answer") {
+		t.Fatalf("batch order or attribution: %s", batch.Body.String())
+	}
+	if batch = request(learnerHandler, "GET", "/api/bank/questions?ids=q,q2", ""); batch.Code != 200 || strings.Contains(batch.Body.String(), "secret-") {
+		t.Fatalf("learner batch leak: %d %s", batch.Code, batch.Body.String())
+	}
+	if batch = request(handler, "GET", "/api/bank/questions?ids=q,missing", ""); batch.Code != 404 {
+		t.Fatalf("batch with unknown id: %d", batch.Code)
 	}
 	denied := request(learnerHandler, "PUT", "/api/bank/questions/q/review", `{"reviewed":true}`)
 	if denied.Code != 404 {

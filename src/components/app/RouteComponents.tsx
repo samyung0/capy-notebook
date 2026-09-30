@@ -4,7 +4,10 @@ import { AnalyticsRoot } from './AnalyticsRoot';
 import { AppShell } from './AppShell';
 import { AuthGate } from './AuthProvider';
 
-const SharedQuiz = lazyRouteComponent(() => import('@/routes/QuizAttempt'));
+const SharedQuiz = lazyRouteComponent(
+  () => import('@/routes/QuizAttempt'),
+  'SharedQuizAttempt'
+);
 const SharedFlashcards = lazyRouteComponent(
   () => import('@/routes/FlashcardStudy')
 );

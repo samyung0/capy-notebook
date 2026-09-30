@@ -384,7 +384,6 @@ export const qk = {
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
   me: ['me'] as const,
   messages: (convId: string) => ['conversation', convId, 'messages'] as const,
-  mistakes: ['mistakes'] as const,
   models: (surface: string) => ['models', surface] as const,
   notificationPrefs: ['notification-prefs'] as const,
   notifications: ['notifications'] as const,

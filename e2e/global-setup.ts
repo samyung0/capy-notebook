@@ -98,7 +98,9 @@ export default async function globalSetup() {
 
   console.log('[e2e] starting docker compose…');
   try {
-    compose(['up', '--build', '-d']);
+    // CI loads both images from its layer cache before this runs.
+    const prebuilt = process.env.E2E_PREBUILT_IMAGES === 'true';
+    compose(['up', prebuilt ? '--no-build' : '--build', '-d']);
     await Promise.all([waitForHealth(), waitForHealth(collaborationUrl)]);
     console.log('[e2e] applying seed…');
     applySeed();

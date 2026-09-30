@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Icon } from '@/components/ui/Icon';
 import {
-  CALLOUT_CONTAINER_CLASS,
   CALLOUT_VARIANT_CLASS,
   type CalloutVariant,
 } from '@/features/notes/richBlockConfig';
@@ -171,23 +170,18 @@ export function AnswerView({ part }: { part: QuestionPart }) {
 
 export const optionLetter = (index: number) => String.fromCharCode(65 + index);
 
-/** 26px option label: bordered for choice letters, `bare` for matching letters and ordering numbers. */
+/** Option label column: a dotted letter or number (A., 1.), or a result icon. */
 export function OptionKey({
-  bare = false,
   className,
   children,
 }: {
-  bare?: boolean;
   className?: string;
   children?: ReactNode;
 }) {
   return (
     <span
       className={cn(
-        'grid size-6.5 shrink-0 place-items-center rounded-lg border-[1.5px] font-bold text-fg-secondary tabular-nums leading-none',
-        bare
-          ? 'border-transparent text-[13.5px]'
-          : 'border-line-strong text-[12.5px]',
+        'grid size-6 shrink-0 place-items-center font-bold text-[13px] text-fg-secondary tabular-nums leading-none',
         className
       )}
     >
@@ -196,12 +190,13 @@ export function OptionKey({
   );
 }
 
-/** Answer row shaped like an editor callout; tip marks a selection, success/danger/warning a result. Row content keeps `text-fg` itself. */
+/** Answer item: a fully rounded bordered row. tip marks a selection;
+ * success/danger/warning a result, tinted like editor callouts. Row content
+ * keeps `text-fg` itself. */
 export function answerRowClass(variant?: CalloutVariant) {
   return cn(
-    'flex items-start gap-3 px-2.5 py-[7px]',
-    CALLOUT_CONTAINER_CLASS,
-    variant ? CALLOUT_VARIANT_CLASS[variant] : 'border-transparent'
+    'flex min-h-11 items-center gap-3 rounded-input border px-3.5 py-2',
+    variant ? CALLOUT_VARIANT_CLASS[variant] : 'border-line'
   );
 }
 
@@ -223,11 +218,11 @@ export function MatchingLayout({
       )}
     >
       {items}
-      <ol className="grid content-start gap-2">
+      <ol className="grid content-start gap-2 md:pt-2.5">
         {options.map((text, i) => (
-          <li className="flex items-start gap-2.5 md:gap-3" key={i}>
-            <OptionKey bare>{optionLetter(i)}</OptionKey>
-            <TextView className="min-w-0 pt-px" text={text} />
+          <li className="flex items-baseline gap-3" key={i}>
+            <OptionKey className="h-auto">{optionLetter(i)}.</OptionKey>
+            <TextView className="min-w-0" text={text} />
           </li>
         ))}
       </ol>
@@ -240,11 +235,11 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
   const answer = part.answer;
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <ol className="col-[2/-1] grid min-w-0 gap-1">
+      <ol className="col-[2/-1] grid min-w-0 gap-2">
         {answer.options.map((text, i) => (
           <li className={answerRowClass()} key={i}>
-            <OptionKey>{optionLetter(i)}</OptionKey>
-            <TextView className="min-w-0 flex-1 pt-px" text={text} />
+            <OptionKey>{optionLetter(i)}.</OptionKey>
+            <TextView className="min-w-0 flex-1" text={text} />
           </li>
         ))}
       </ol>
@@ -259,8 +254,8 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
               ? answer.left
               : answer.pairs.map((pair) => pair.left)
             ).map((text, i) => (
-              <li className="flex items-baseline gap-2 md:gap-3" key={i}>
-                <span className="w-5 shrink-0 font-bold md:w-6">{i + 1}.</span>
+              <li className="flex min-h-11 items-center gap-3" key={i}>
+                <OptionKey>{i + 1}.</OptionKey>
                 <TextView className="min-w-0" text={text} />
               </li>
             ))}
@@ -271,13 +266,14 @@ function Choices({ part }: { part: QuestionPart | LearnerPart }) {
     );
   if (answer.type === 'ordering')
     return (
-      <ul className="col-[2/-1] min-w-0">
+      <ol className="col-[2/-1] grid min-w-0 gap-2">
         {answer.items.map((text, i) => (
-          <li key={i}>
-            <TextView text={text} />
+          <li className={answerRowClass()} key={i}>
+            <OptionKey>{i + 1}.</OptionKey>
+            <TextView className="min-w-0 flex-1" text={text} />
           </li>
         ))}
-      </ul>
+      </ol>
     );
   return null;
 }
@@ -446,6 +442,7 @@ export function QuestionView({
 export function QuestionReview({
   question,
   renderAnswer,
+  renderBlock,
   questionNumber,
 }: Omit<QuestionViewProps, 'question' | 'review'> & { question: Question }) {
   return (
@@ -464,37 +461,6 @@ export function QuestionReview({
               : 'danger';
         return (
           <>
-            <div className="col-start-2 min-w-0 space-y-1">
-              <h4 className="font-semibold text-fg-muted text-xs">
-                {m.question_ui_marking_scheme()}
-              </h4>
-              <ul className="space-y-1 text-sm">
-                {part.markscheme.map((item, i) => (
-                  <li className="flex items-baseline gap-4" key={i}>
-                    <TextView className="min-w-0 flex-1" text={item} />
-                    {part.answer.type !== 'open' && part.awarded != null && (
-                      <span
-                        className={cn(
-                          'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
-                          part.awarded === max
-                            ? 'text-solid-success'
-                            : 'text-solid-error'
-                        )}
-                      >
-                        <Icon
-                          name={part.awarded === max ? 'check' : 'x'}
-                          size={12}
-                        />
-                        {part.awarded === max ? '1' : '0'}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <h4 className="pt-2 font-semibold text-fg-muted text-xs">
-                {m.question_ui_your_answer()}
-              </h4>
-            </div>
             {renderAnswer?.(part)}
             {part.awardReason && (
               <p className={cn(answerRowClass(verdict), 'col-[2/-1] text-sm')}>
@@ -510,26 +476,63 @@ export function QuestionReview({
                 </span>
               </p>
             )}
-            {part.solution.length > 0 && (
-              <details className="col-start-2 min-w-0">
-                <summary className="cursor-pointer font-semibold text-fg-secondary text-sm">
-                  {m.question_ui_worked_solution()}
-                </summary>
-                <div className="space-y-3 pt-3">
-                  {part.solution.map((block, i) => (
-                    <QuestionBlockView block={block} key={i} />
+            <details className="col-start-2 min-w-0 text-sm">
+              <summary className="cursor-pointer font-semibold text-fg-secondary">
+                {part.solution.length > 0
+                  ? m.question_ui_scheme_and_solution()
+                  : m.question_ui_marking_scheme()}
+              </summary>
+              <div className="grid gap-3 pt-3 text-fg-secondary">
+                <ul className="space-y-1">
+                  {part.markscheme.map((item, i) => (
+                    <li className="flex items-baseline gap-4" key={i}>
+                      <TextView className="min-w-0 flex-1" text={item} />
+                      {part.answer.type !== 'open' && part.awarded != null && (
+                        <span
+                          className={cn(
+                            'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
+                            part.awarded === max
+                              ? 'text-tint-success-fg'
+                              : 'text-tint-error-fg'
+                          )}
+                        >
+                          <Icon
+                            name={part.awarded === max ? 'check' : 'x'}
+                            size={12}
+                          />
+                          {part.awarded === max ? '1' : '0'}
+                        </span>
+                      )}
+                    </li>
                   ))}
-                </div>
-              </details>
-            )}
+                </ul>
+                {part.solution.map((block, i) => (
+                  <QuestionBlockView block={block} key={i} />
+                ))}
+              </div>
+            </details>
           </>
         );
       }}
-      renderMarks={(part) => (
-        <>
-          {'awarded' in part ? (part.awarded ?? '—') : '—'} / {partMarks(part)}
-        </>
-      )}
+      renderBlock={renderBlock}
+      renderMarks={(part) => {
+        const awarded = 'awarded' in part ? part.awarded : undefined;
+        const max = partMarks(part);
+        return (
+          <span
+            className={cn(
+              'font-semibold tabular-nums',
+              awarded == null
+                ? 'text-fg-muted'
+                : awarded === max
+                  ? 'text-tint-success-fg'
+                  : 'text-tint-error-fg'
+            )}
+          >
+            {awarded ?? '—'} / {max}
+          </span>
+        );
+      }}
       showTotalMarks={false}
     />
   );

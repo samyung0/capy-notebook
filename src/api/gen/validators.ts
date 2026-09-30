@@ -176,6 +176,55 @@ export const UploadBankAssetResponse = zod.object({
 
 
 /**
+ * @summary Read bank questions by id
+ */
+export const bankQuestionBatchQueryIdsMax = 50;
+
+
+
+export const BankQuestionBatchQueryParams = zod.object({
+  "ids": zod.array(zod.string()).min(1).max(bankQuestionBatchQueryIdsMax).nullable().describe('Comma-separated question ids, returned in this order')
+})
+
+export const BankQuestionBatchResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "questions": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "editor": zod.boolean(),
+  "examLabel": zod.string(),
+  "position": zod.int(),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
+  "question": zod.record(zod.string(), zod.unknown()),
+  "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
+  "reviewedBy": zod.string(),
+  "reviewerName": zod.string(),
+  "sources": zod.array(zod.object({
+  "bookId": zod.string(),
+  "excerptId": zod.string(),
+  "version": zod.int()
+})).nullable(),
+  "subjectLabel": zod.string(),
+  "topicId": zod.string(),
+  "topicLabel": zod.string(),
+  "updatedAt": zod.iso.datetime({"offset":true})
+})).nullable()
+})
+
+
+/**
  * @summary Read a bank question
  */
 export const BankQuestionParams = zod.object({

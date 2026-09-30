@@ -34,7 +34,10 @@ services:
       timeout: 3s
       retries: 20
 
+  # Fixed tags let CI prebuild both images with a layer cache and start the
+  # stack without rebuilding them (E2E_PREBUILT_IMAGES in e2e/global-setup.ts).
   collaboration:
+    image: capy-e2e-collaboration:local
     build:
       context: ..
       dockerfile: collaboration/Dockerfile
@@ -61,6 +64,7 @@ services:
         condition: service_healthy
 
   server:
+    image: capy-e2e-server:local
     build:
       context: ../server
     environment:

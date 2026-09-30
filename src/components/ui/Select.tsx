@@ -169,6 +169,7 @@ function SelectItem({
   disabled,
   size = 'md',
   iconAndValue,
+  hint,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item> &
   VariantProps<typeof selectItemVariants> & {
@@ -176,6 +177,8 @@ function SelectItem({
       icon: IconName;
       label: string;
     };
+    /** Shown in the list only; the trigger shows just the item text. */
+    hint?: React.ReactNode;
   }) {
   return (
     <SelectPrimitive.Item
@@ -207,6 +210,7 @@ function SelectItem({
           children
         )}
       </SelectPrimitive.ItemText>
+      {hint && <span className="ml-2 text-fg-muted">{hint}</span>}
     </SelectPrimitive.Item>
   );
 }

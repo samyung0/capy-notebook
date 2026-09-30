@@ -1884,15 +1884,6 @@ export const attemptQuery = (id: string) =>
 export const useAttempt = (id: string, options?: QueryUiOptions) =>
   useQuery({ ...attemptQuery(id), meta: queryMeta(options) });
 
-/** Ad-hoc quiz built from recently-missed questions. */
-export const mistakesQuery = () =>
-  queryOptions({
-    queryFn: () => api.get<Quiz>('/mistakes'),
-    queryKey: qk.mistakes,
-  });
-export const useMistakes = (options?: QueryUiOptions) =>
-  useQuery({ ...mistakesQuery(), meta: queryMeta(options) });
-
 /** Invalidate every workspace's materials list (quiz/flashcardSet edits change titles
  * shown in the left panel but don't carry a workspace id). */
 function invalidateAllMaterials(qc: ReturnType<typeof useQueryClient>) {
@@ -1970,7 +1961,6 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
       api.post<Attempt>(`/quizzes/${quizId}/attempts`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.attempts });
-      qc.invalidateQueries({ queryKey: qk.mistakes });
     },
   });
 }
