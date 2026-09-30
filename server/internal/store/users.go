@@ -50,14 +50,12 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE('/icons/' || NULLIF(avatar_icon_id,'') || '.svg', avatar_url,''), COALESCE(avatar_icon_id,''),
 		COALESCE(class_label,''), streak, locale,
 		chat_model_provider_slug, chat_model_slug,
-		generate_model_provider_slug, generate_model_slug,
 		editor_model_provider_slug, editor_model_slug,
 		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.AvatarIconID, &u.ClassLabel, &u.Streak,
 		&u.Locale,
 		&u.ChatModel.ProviderSlug, &u.ChatModel.ModelSlug,
-		&u.GenerateModel.ProviderSlug, &u.GenerateModel.ModelSlug,
 		&u.EditorModel.ProviderSlug, &u.EditorModel.ModelSlug,
 		&u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
@@ -123,14 +121,12 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 
 // ModelPrefsPatch updates one or more slot preferences. Nil fields stay.
 type ModelPrefsPatch struct {
-	ChatModel        *models.Ref
-	GenerateModel    *models.Ref
-	EditorModel      *models.Ref
-	ChatThinking     *string
-	GenerateThinking *string
+	ChatModel    *models.Ref
+	EditorModel  *models.Ref
+	ChatThinking *string
 }
 
-// SetModelPrefs stores the user's chat/generate/editor preference. Omitted
+// SetModelPrefs stores the user's chat/editor preference. Omitted
 // fields are left unchanged so a picker on one slot cannot wipe another.
 // Thinking is stored per (user, model, slot): switching models must
 // not reuse another model's level. Empty model refs are rejected: every
@@ -143,7 +139,6 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		slot string
 	}{
 		{patch.ChatModel, models.SlotChat},
-		{patch.GenerateModel, models.SlotGenerate},
 		{patch.EditorModel, models.SlotEditor},
 	}
 	for _, pref := range prefs {
@@ -166,11 +161,9 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	var current UserLLMPrefs
 	if err := tx.QueryRow(ctx, `
 		SELECT chat_model_provider_slug, chat_model_slug,
-		       generate_model_provider_slug, generate_model_slug,
 		       editor_model_provider_slug, editor_model_slug
 		  FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(
 		&current.ChatModel.ProviderSlug, &current.ChatModel.ModelSlug,
-		&current.GenerateModel.ProviderSlug, &current.GenerateModel.ModelSlug,
 		&current.EditorModel.ProviderSlug, &current.EditorModel.ModelSlug,
 	); err != nil {
 		if isNoRows(err) {
@@ -195,14 +188,11 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	if _, err := tx.Exec(ctx, `UPDATE users SET
 		chat_model_provider_slug = CASE WHEN $2 THEN $3 ELSE chat_model_provider_slug END,
 		chat_model_slug = CASE WHEN $2 THEN $4 ELSE chat_model_slug END,
-		generate_model_provider_slug = CASE WHEN $5 THEN $6 ELSE generate_model_provider_slug END,
-		generate_model_slug = CASE WHEN $5 THEN $7 ELSE generate_model_slug END,
-		editor_model_provider_slug = CASE WHEN $8 THEN $9 ELSE editor_model_provider_slug END,
-		editor_model_slug = CASE WHEN $8 THEN $10 ELSE editor_model_slug END,
+		editor_model_provider_slug = CASE WHEN $5 THEN $6 ELSE editor_model_provider_slug END,
+		editor_model_slug = CASE WHEN $5 THEN $7 ELSE editor_model_slug END,
 		updated_at = now()
 		WHERE id=$1`, userID,
 		patch.ChatModel != nil, deref(patch.ChatModel).ProviderSlug, deref(patch.ChatModel).ModelSlug,
-		patch.GenerateModel != nil, deref(patch.GenerateModel).ProviderSlug, deref(patch.GenerateModel).ModelSlug,
 		patch.EditorModel != nil, deref(patch.EditorModel).ProviderSlug, deref(patch.EditorModel).ModelSlug); err != nil {
 		return err
 	}
@@ -210,14 +200,7 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	if patch.ChatModel != nil {
 		chatModel = *patch.ChatModel
 	}
-	generateModel := current.GenerateModel
-	if patch.GenerateModel != nil {
-		generateModel = *patch.GenerateModel
-	}
 	if err := upsertModelThinking(ctx, tx, userID, chatModel, models.SlotChat, patch.ChatThinking); err != nil {
-		return err
-	}
-	if err := upsertModelThinking(ctx, tx, userID, generateModel, models.SlotGenerate, patch.GenerateThinking); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -300,10 +283,9 @@ func (s *Store) assertModelRef(ctx context.Context, q rowQueryer, userID string,
 }
 
 type UserLLMPrefs struct {
-	ChatModel     models.Ref
-	GenerateModel models.Ref
-	EditorModel   models.Ref
-	thinking      map[modelThinkingRef]string
+	ChatModel   models.Ref
+	EditorModel models.Ref
+	thinking    map[modelThinkingRef]string
 }
 
 type modelThinkingRef struct {
@@ -315,11 +297,9 @@ func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, 
 	var p UserLLMPrefs
 	err := s.pool.QueryRow(ctx, `
 		SELECT chat_model_provider_slug, chat_model_slug,
-		       generate_model_provider_slug, generate_model_slug,
 		       editor_model_provider_slug, editor_model_slug
 		  FROM users WHERE id=$1`, userID).Scan(
 		&p.ChatModel.ProviderSlug, &p.ChatModel.ModelSlug,
-		&p.GenerateModel.ProviderSlug, &p.GenerateModel.ModelSlug,
 		&p.EditorModel.ProviderSlug, &p.EditorModel.ModelSlug,
 	)
 	if isNoRows(err) {
@@ -351,8 +331,6 @@ func (p UserLLMPrefs) Model(slot string) models.Ref {
 	switch slot {
 	case models.SlotChat:
 		return p.ChatModel
-	case models.SlotGenerate:
-		return p.GenerateModel
 	case models.SlotEditor:
 		return p.EditorModel
 	}
@@ -369,22 +347,22 @@ func (p UserLLMPrefs) Thinking(slot string) string {
 
 // accountModelPrefs is the set written onto a brand-new user row. The registry
 // slot default is the only source of truth.
-func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor models.Ref, err error) {
+func (s *Store) accountModelPrefs(ctx context.Context) (chat, editor models.Ref, err error) {
 	if s.registry == nil {
-		return models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
+		return models.Ref{}, models.Ref{}, ErrModelUnavailable
 	}
-	refs := make([]models.Ref, 0, 3)
-	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor} {
+	refs := make([]models.Ref, 0, 2)
+	for _, slot := range []string{models.SlotChat, models.SlotEditor} {
 		pin, err := s.registry.DefaultPin(slot)
 		if err != nil {
-			return models.Ref{}, models.Ref{}, models.Ref{}, err
+			return models.Ref{}, models.Ref{}, err
 		}
 		if pin.Ref.Zero() {
-			return models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
+			return models.Ref{}, models.Ref{}, ErrModelUnavailable
 		}
 		refs = append(refs, pin.Ref)
 	}
-	return refs[0], refs[1], refs[2], nil
+	return refs[0], refs[1], nil
 }
 
 // UpsertUserFromClerk inserts or refreshes a user. The Clerk name seeds the
@@ -449,16 +427,15 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		return false, nil
 	}
 
-	chatModel, genModel, editorModel, err := s.accountModelPrefs(ctx)
+	chatModel, editorModel, err := s.accountModelPrefs(ctx)
 	if err != nil {
 		return false, err
 	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO users
 			(id, name, email, avatar_url, avatar_icon_id,
 			 chat_model_provider_slug, chat_model_slug,
-			 generate_model_provider_slug, generate_model_slug,
 			 editor_model_provider_slug, editor_model_slug)
-			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$11,$5,$6,$7,$8,$9,$10)
+			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$9,$5,$6,$7,$8)
 		ON CONFLICT (id) DO UPDATE SET
 			email=COALESCE(EXCLUDED.email, users.email),
 			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
@@ -470,7 +447,6 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		RETURNING starter_workspace_provisioned_at IS NULL`,
 		id, name, email, avatarURL,
 		chatModel.ProviderSlug, chatModel.ModelSlug,
-		genModel.ProviderSlug, genModel.ModelSlug,
 		editorModel.ProviderSlug, editorModel.ModelSlug, defaultIcon).Scan(&needsDefaultWorkspace)
 	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
 	// not an error: the account exists and stays scrubbed.

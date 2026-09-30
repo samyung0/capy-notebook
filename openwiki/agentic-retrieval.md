@@ -2389,8 +2389,9 @@ is fixed, and the gateway must persist a parseable artifact.
    the request, and a valid scope with no indexed content fails before a model
    call. `gather_context` samples chunks evenly across every document in scope (equal
    share per file, not proportional to length). The gateway resolves the user's
-   **Settings → LLM** generate preference (`ratesForSlot`) and forwards that
-   exact pin; the browser `model` field is ignored. An unresolvable preference
+   **Settings → LLM** chat preference and chat thinking (`resolveLLM` on the
+   `chat` slot; migration `0044` merged the generate slot into chat) and
+   forwards that exact pin; the browser `model` field is ignored. An unresolvable preference
    fails as `model_unavailable`.
 2. One `produce` call receives the bounded, evenly sampled context. There is no
    unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy,

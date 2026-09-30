@@ -8,7 +8,6 @@ import (
 func TestAllSlotsAndParsingStayInSync(t *testing.T) {
 	want := []Slot{
 		SlotChat,
-		SlotGenerate,
 		SlotEditor,
 		SlotQuiz,
 		SlotIngest,
@@ -45,7 +44,7 @@ func TestSlotRequirements(t *testing.T) {
 		{SlotCaptioning, []string{CapabilityPDF}, false, CapabilityVision},
 		{SlotRerank, []string{CapabilityRerank}, false, ""},
 		{SlotRerank, []string{CapabilityEmbedding}, false, CapabilityRerank},
-		{SlotGenerate, nil, false, ""},
+		{SlotQuiz, nil, false, ""},
 		{SlotIngest, nil, false, ""},
 	}
 	for _, tc := range cases {

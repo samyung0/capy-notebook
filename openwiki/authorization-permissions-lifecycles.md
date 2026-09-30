@@ -71,7 +71,7 @@ Sources: [role definitions](../server/internal/store/enums.go#L62),
 `GET /api/public/workspaces/{id}/summary` reads live metadata for link/public
 workspaces. `HEAD` checks the same visibility without returning a body. Existing
 `ws_` identifiers remain the link identity. The response contains the workspace
-name, description, tags, privacy, owner display name, chapter names and,
+name, stored `iconId`, description, tags, privacy, owner display name, chapter names and,
 for every file including unfiled ones, its name, `sizeBytes` and `addedAt`. It
 contains no material content, extracted text, internal content IDs, blob keys,
 download URLs, member details or account email. This is a metadata projection, not an AI-generated content summary.
@@ -83,6 +83,22 @@ exclusion. Over-quota owners retain summary reads under the existing read policy
 Success and failure responses use `Cache-Control: no-store`; no summary cache,
 queue, R2 or KV invalidation is involved. More than 1000 chapters or a projection
 larger than 256 KiB returns `422` rather than a truncated outline.
+
+The summary uses one full-width panel with a centered reading column, including
+its 404 and loading-error states. The header sits inside the panel with text-only branding on the left and a sun/moon theme
+toggle, sign-in link and large sign-up button on the right. The toggle switches
+between Light (Latte) and Dark (Mocha), and is also used on authentication pages. Signed-in summary visitors retain their
+profile menu and theme drawer. The workspace uses its stored icon and displays
+the owner's name without a prefix. Chapter and file rows use the file panel's
+Catppuccin sprite and filename icon mapping; the client supplies its hashed asset URL. Workspace Share and Settings → Sharing put
+Preview beside Copy for link/public workspaces; it opens the summary in a new
+tab. Private workspaces still have no anonymous or owner-bypass summary.
+
+Local MSW development renders `/w/{id}` from the server's seed data, since
+browser MSW cannot intercept the server-side fetch. World History (`ws_hist`)
+has four chapters and twelve readable source files for previewing the outline.
+Biology 101 (`ws_bio`) is also shared by link in the seed for immediate preview.
+Browser-only changes to MSW records do not update this server seed snapshot.
 
 Workspace POST accepts optional `iconId` and `description`, with the same catalog
 validation and 500-character description limit as PATCH. Omitting the icon keeps

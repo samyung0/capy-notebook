@@ -118,7 +118,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		) VALUES ($2, 'DeepSeek', 'New Flash version', 'deepseek', 'deepseek-flash',
 			true, true, 1000000,
 			ARRAY['low','mid','high','max']::text[], 'high',
-			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams, nextVersion)
+			$1::jsonb, ARRAY['chat','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams, nextVersion)
 	if err != nil {
 		t.Fatal(err)
 	}

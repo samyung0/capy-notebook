@@ -19,7 +19,6 @@ export interface User {
   classLabel?: string;
   editorModel: Ref;
   email: string;
-  generateModel: Ref;
   id: string;
   locale: string;
   name: string;

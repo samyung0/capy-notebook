@@ -33,7 +33,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	}
 	exec(`INSERT INTO users (id,name,email) VALUES ($1,'Summary author','summary@example.test')`, owner)
 	defer pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, owner)
-	exec(`INSERT INTO workspaces (id,user_id,name,description,privacy) VALUES ($1,$2,'<script>title</script>','Only metadata','public')`, ws, owner)
+	exec(`INSERT INTO workspaces (id,user_id,name,description,privacy,icon_id) VALUES ($1,$2,'<script>title</script>','Only metadata','public','waves-03')`, ws, owner)
 	exec(`INSERT INTO chapters (id,workspace_id,name) VALUES ($1,$2,'Chapter A')`, chapter, ws)
 	exec(`INSERT INTO files (id,workspace_id,user_id,name,kind,chapter_id) VALUES ($1,$2,$3,'Source.pdf','pdf',$4)`, file, ws, owner, chapter)
 	path := "/api/public/workspaces/" + ws + "/summary"
@@ -56,7 +56,10 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	delete(keys, "$schema") // Huma adds its standard schema link.
-	if len(keys) != 7 {
+	if summary.IconID != "waves-03" {
+		t.Fatalf("summary icon = %q", summary.IconID)
+	}
+	if len(keys) != 8 {
 		t.Fatalf("unexpected projection keys: %v", keys)
 	}
 	for _, secret := range []string{owner, ws, chapter, file, "summary@example.test", "workspaceId", "content", "blob"} {

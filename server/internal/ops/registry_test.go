@@ -130,15 +130,13 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			}
 		}
 	}
-	var beforePreferences [6]string
+	var beforePreferences [4]string
 	if err := tx.QueryRow(ctx,
 		`SELECT chat_model_provider_slug, chat_model_slug,
-			generate_model_provider_slug, generate_model_slug,
 			editor_model_provider_slug, editor_model_slug
 		 FROM users WHERE id='u_1'`,
 	).Scan(
 		&beforePreferences[0], &beforePreferences[1], &beforePreferences[2], &beforePreferences[3],
-		&beforePreferences[4], &beforePreferences[5],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -204,15 +202,13 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			t.Fatalf("slot %s has %d defaults after Save", slot, defaults)
 		}
 	}
-	var afterPreferences [6]string
+	var afterPreferences [4]string
 	if err := tx.QueryRow(ctx,
 		`SELECT chat_model_provider_slug, chat_model_slug,
-			generate_model_provider_slug, generate_model_slug,
 			editor_model_provider_slug, editor_model_slug
 		 FROM users WHERE id='u_1'`,
 	).Scan(
 		&afterPreferences[0], &afterPreferences[1], &afterPreferences[2], &afterPreferences[3],
-		&afterPreferences[4], &afterPreferences[5],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +371,7 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 			1, 'Retired', 'Model', $1, $2,
 			true, false, 100000,
 			ARRAY['high']::text[], 'high', '{}'::jsonb,
-			ARRAY['chat','generate','editor','quiz'], 1, 1, 1, true, '{}'
+			ARRAY['chat','editor','quiz'], 1, 1, 1, true, '{}'
 		)`, retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
@@ -384,9 +380,8 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 		INSERT INTO users (
 			id, name, email,
 			chat_model_provider_slug, chat_model_slug,
-			generate_model_provider_slug, generate_model_slug,
 			editor_model_provider_slug, editor_model_slug
-		) VALUES ($1, 'All Prefs', $2, $3, $4, $3, $4, $3, $4)`,
+		) VALUES ($1, 'All Prefs', $2, $3, $4, $3, $4)`,
 		userID, userID+"@example.test", retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
@@ -408,25 +403,22 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemappedUsers != 3 || result.DisabledRows < 1 {
+	if result.RemappedUsers != 2 || result.DisabledRows < 1 {
 		t.Fatalf("unexpected all-slot remap result: %+v", result)
 	}
-	var preferences [3]models.Ref
+	var preferences [2]models.Ref
 	if err := tx.QueryRow(ctx, `
 		SELECT chat_model_provider_slug, chat_model_slug,
-			generate_model_provider_slug, generate_model_slug,
 			editor_model_provider_slug, editor_model_slug
 		FROM users WHERE id=$1`, userID,
 	).Scan(
 		&preferences[0].ProviderSlug, &preferences[0].ModelSlug,
 		&preferences[1].ProviderSlug, &preferences[1].ModelSlug,
-		&preferences[2].ProviderSlug, &preferences[2].ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
-	// Each slot lands on its own default: chat on GLM, the others on Flash.
-	flash := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}
-	want := [3]models.Ref{{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}, flash, flash}
+	// Each slot lands on its own default: chat on GLM, editor on Flash.
+	want := [2]models.Ref{{ProviderSlug: "zai", ModelSlug: "glm-5.3-flash"}, {ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}}
 	if preferences != want {
 		t.Fatalf("preferences = %q, want %q", preferences, want)
 	}
@@ -861,7 +853,7 @@ func TestBindEliteLLMDraftAppliesAgenticLoopSlotPolicy(t *testing.T) {
 	if err := bindEliteLLMDraft(&draft, []string{models.SlotChat}); err == nil {
 		t.Fatal("already-on-chat re-save bypassed certification")
 	}
-	if err := bindEliteLLMDraft(&draft, []string{models.SlotGenerate}); err != nil {
+	if err := bindEliteLLMDraft(&draft, []string{models.SlotQuiz}); err != nil {
 		t.Fatalf("non-agentic slot required certification: %v", err)
 	}
 }

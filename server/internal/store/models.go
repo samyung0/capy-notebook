@@ -23,7 +23,6 @@ type User struct {
 	Streak             int                `json:"streak"`
 	Locale             string             `json:"locale"`
 	ChatModel          models.Ref         `json:"chatModel"`
-	GenerateModel      models.Ref         `json:"generateModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`

@@ -10,7 +10,6 @@ export type Slot = typeof Slot[keyof typeof Slot];
 
 export const Slot = {
   chat: 'chat',
-  generate: 'generate',
   editor: 'editor',
   quiz: 'quiz',
   ingest: 'ingest',

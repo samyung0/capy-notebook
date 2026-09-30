@@ -531,7 +531,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         req.providerSlug,
         req.modelSlug,
         req.configVersion,
-        slot=registry.Slot.GENERATE,
+        slot=registry.Slot.CHAT,
     )
     chapters = req.chapters or []
     file_ids = req.fileIds or []

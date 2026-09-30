@@ -16,6 +16,7 @@ export interface WorkspaceSummary {
   description: string;
   /** Unfiled files */
   files: WorkspaceSummaryFile[];
+  iconId: string;
   name: string;
   privacy: Privacy;
   tags: string[];

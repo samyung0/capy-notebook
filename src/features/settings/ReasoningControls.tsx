@@ -1,5 +1,5 @@
 import { useSetModelPrefs } from '@/api/hooks';
-import type { ModelOption, ModelSlot } from '@/api/types';
+import type { ModelOption } from '@/api/types';
 import {
   Select,
   SelectContent,
@@ -8,7 +8,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { m } from '@/i18n';
-import { hasThinkingControls, thinkingField } from './llmOptions';
+import { hasThinkingControls } from './llmOptions';
 
 const THINKING_LABEL: Record<string, () => string> = {
   high: () => m.settings_llm_thinking_high(),
@@ -22,12 +22,10 @@ export function ReasoningControls({
   disabled,
   selected,
   stored,
-  slot,
 }: {
   disabled?: boolean;
   selected: ModelOption | undefined;
   stored: string;
-  slot: Exclude<ModelSlot, 'editor' | 'quiz'>;
 }) {
   const { isPending, mutate } = useSetModelPrefs();
   if (!hasThinkingControls(selected?.thinking)) return null;
@@ -38,7 +36,7 @@ export function ReasoningControls({
     <Select
       disabled={busy}
       onValueChange={(next) => {
-        mutate({ [thinkingField(slot)]: next });
+        mutate({ chatThinking: next });
       }}
       value={stored}
     >

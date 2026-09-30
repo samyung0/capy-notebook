@@ -511,12 +511,13 @@ export function useMarkNotificationsRead() {
   });
 }
 
-export const useNotificationPrefs = (options?: QueryUiOptions) =>
-  useQuery({
-    meta: queryMeta(options),
+export const notificationPrefsQuery = () =>
+  queryOptions({
     queryFn: () => api.get<NotificationPrefs>('/notification-prefs'),
     queryKey: qk.notificationPrefs,
   });
+export const useNotificationPrefs = (options?: QueryUiOptions) =>
+  useQuery({ ...notificationPrefsQuery(), meta: queryMeta(options) });
 
 export function useSetNotificationPrefs() {
   const qc = useQueryClient();

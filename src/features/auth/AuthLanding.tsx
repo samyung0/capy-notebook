@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Panel } from '@/components/app/layout';
+import { PublicThemeToggle } from '@/components/app/PublicThemeToggle';
 import { GoogleIcon, MicrosoftIcon } from '@/components/ui/BrandIcons';
 import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
@@ -27,6 +28,9 @@ export function AuthPage({ children }: { children: React.ReactNode }) {
         sectionClassName="h-full w-full min-h-full flex flex-row"
       >
         <div className="flex flex-1 flex-col gap-4 p-6 md:p-8">
+          <div className="self-start">
+            <PublicThemeToggle />
+          </div>
           <div className="flex flex-1 items-center justify-center">
             <div className="w-sm">{children}</div>
           </div>

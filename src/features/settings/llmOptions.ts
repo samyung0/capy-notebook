@@ -53,12 +53,6 @@ export function sortModelOptions(models: ModelOption[]): ModelOption[] {
   });
 }
 
-export function thinkingField(
-  slot: 'chat' | 'generate'
-): 'chatThinking' | 'generateThinking' {
-  return slot === 'chat' ? 'chatThinking' : 'generateThinking';
-}
-
 export function hasThinkingControls(
   spec: ModelThinking | undefined
 ): spec is ModelThinking {

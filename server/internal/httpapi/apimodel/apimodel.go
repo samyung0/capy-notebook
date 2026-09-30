@@ -127,11 +127,9 @@ type ModelsResponse struct {
 // SetModelPrefsReq patches one or more slot preferences. Omitted fields are
 // left as they are, so a picker on one slot cannot reset another.
 type SetModelPrefsReq struct {
-	ChatModel        *models.Ref `json:"chatModel,omitempty"`
-	GenerateModel    *models.Ref `json:"generateModel,omitempty"`
-	EditorModel      *models.Ref `json:"editorModel,omitempty"`
-	ChatThinking     *string     `json:"chatThinking,omitempty"`
-	GenerateThinking *string     `json:"generateThinking,omitempty"`
+	ChatModel    *models.Ref `json:"chatModel,omitempty"`
+	EditorModel  *models.Ref `json:"editorModel,omitempty"`
+	ChatThinking *string     `json:"chatThinking,omitempty"`
 }
 
 type LLMCredential struct {

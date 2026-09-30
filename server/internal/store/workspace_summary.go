@@ -11,6 +11,7 @@ import (
 // It deliberately does not embed Workspace or any content-bearing model.
 type WorkspaceSummary struct {
 	Name        string                    `json:"name"`
+	IconID      string                    `json:"iconId"`
 	Author      string                    `json:"author"`
 	Description string                    `json:"description"`
 	Privacy     Privacy                   `json:"privacy"`
@@ -40,7 +41,7 @@ func (s *Store) PublicWorkspaceSummary(ctx context.Context, id string) (Workspac
 	var body []byte
 	err := s.pool.QueryRow(ctx, `
  SELECT jsonb_build_object(
-   'name', w.name, 'author', COALESCE(owner.name, ''), 'description', w.description, 'privacy', w.privacy,
+   'name', w.name, 'iconId', w.icon_id, 'author', COALESCE(owner.name, ''), 'description', w.description, 'privacy', w.privacy,
    'tags', COALESCE((SELECT jsonb_agg(t.name ORDER BY t.name)
      FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id), '[]'::jsonb),
    'chapters', COALESCE((SELECT jsonb_agg(jsonb_build_object('name', c.name,
