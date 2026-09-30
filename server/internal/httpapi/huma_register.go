@@ -192,6 +192,18 @@ func mapHTTPError(err error) error {
 			Errors: []*huma.ErrorDetail{{Message: "context_too_large"}},
 		}
 	}
+	var pendingTooLarge *pendingSourcesTooLargeError
+	if errors.As(err, &pendingTooLarge) {
+		return &huma.ErrorModel{
+			Status: http.StatusBadRequest,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Detail: pendingTooLarge.Error(),
+			Errors: []*huma.ErrorDetail{{
+				Message: "pending_sources_too_large",
+				Value:   map[string]any{"fileIds": pendingTooLarge.FileIDs},
+			}},
+		}
+	}
 	if errors.Is(err, errSourceChanged) {
 		return &huma.ErrorModel{
 			Status: http.StatusConflict,

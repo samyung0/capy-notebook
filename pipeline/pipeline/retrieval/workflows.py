@@ -36,7 +36,12 @@ class GenerateNoContent(ValueError):
 
 
 class PendingSourceContextTooLarge(ValueError):
-    """Generation cannot include the complete current source evidence."""
+    """Generation cannot include the complete current source evidence. Carries
+    the edited files, so the owner can process exactly those."""
+
+    def __init__(self, file_ids: list[str]):
+        super().__init__(pending.NOTICE)
+        self.file_ids = file_ids
 
 
 async def generation_context(
@@ -65,7 +70,9 @@ async def generation_context(
     )
     if remaining < 0:
         if changes.files:
-            raise PendingSourceContextTooLarge(pending.NOTICE)
+            raise PendingSourceContextTooLarge(
+                [str(file["fileId"]) for file in changes.files]
+            )
         raise compact.ContextTooLarge(
             "Generation instructions exceed the selected model's input limit."
         )

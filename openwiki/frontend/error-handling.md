@@ -366,8 +366,9 @@ and credits are required for processing rather than persistence.
 Chat `pending_sources` events show when edited source evidence is awaiting
 processing. If exact pending evidence exceeds the request budget, the message
 warns that source information may be outdated and offers Process file changes.
-Generation returns `context_too_large` with the same action instead of silently
-using incomplete pending evidence. The action toasts that processing started,
+Generation returns `pending_sources_too_large` with the edited file ids instead
+of silently using incomplete pending evidence, and offers the same action for
+exactly those files; a plain `context_too_large` is an ordinary failure. The action toasts that processing started,
 or that it could not start with the reason (`useProcessFileChanges`); the
 processing itself shows no progress.
 If a published source changes while an answer or generation request gathers

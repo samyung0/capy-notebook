@@ -114,8 +114,9 @@ async def test_generation_accepts_pending_only_sources_and_refuses_oversized_evi
     }
     assert (await workflows.generation_context(**args))[2] is changes
     changes.files = _sources("exact" * 2000).files
-    with pytest.raises(workflows.PendingSourceContextTooLarge):
+    with pytest.raises(workflows.PendingSourceContextTooLarge) as raised:
         await workflows.generation_context(**args)
+    assert raised.value.file_ids == ["f_1"]
 
 
 @pytest.mark.parametrize("with_pending", [False, True])

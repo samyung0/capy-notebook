@@ -291,17 +291,28 @@ func pipelineGenerateError(err error) error {
 	if !errors.As(err, &pe) {
 		return nil
 	}
-	switch pe.Decode().Code {
+	body := pe.Decode()
+	switch body.Code {
 	case "generate_empty":
 		return obs.WithEventID(errGenerateEmpty, obs.ErrorEventID(err))
 	case "scope_has_no_indexed_content":
 		return errScopeNoIndexedContent
 	case "context_too_large":
 		return errContextTooLarge
+	case "pending_sources_too_large":
+		return &pendingSourcesTooLargeError{FileIDs: body.FileIDs}
 	case "source_changed":
 		return errSourceChanged
 	}
 	return nil
+}
+
+// pendingSourcesTooLargeError: the scope's unprocessed edits do not fit the
+// request. FileIDs names the edited files, which Process file changes sends.
+type pendingSourcesTooLargeError struct{ FileIDs []string }
+
+func (e *pendingSourcesTooLargeError) Error() string {
+	return "unprocessed file changes exceed the selected model's input limit"
 }
 
 func keyErrorFromEvent(code, message string) error {

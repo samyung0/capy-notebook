@@ -2620,7 +2620,8 @@ model's window and the 250k effective ceiling, including output and safety
 allowances. If complete pending evidence cannot fit, chat omits that evidence,
 keeps it durably and explicitly tells both the model and user; the UI offers
 Process file changes. Generation uses the same evidence and returns
-`context_too_large` with that action when it cannot include it.
+`pending_sources_too_large` with the edited file ids when it cannot include it,
+so Process file changes sends exactly the files chat would.
 
 Text refresh uses normal full-file normalization and chunking with parsing
 skipped. A small lookup reuses embeddings only for exact indexed input and the

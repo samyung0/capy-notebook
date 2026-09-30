@@ -55,6 +55,9 @@ type ErrorBody struct {
 	// RetryAfterSeconds accompanies provider_busy: how long the pipeline's
 	// own retry budget wants the caller to wait before trying again.
 	RetryAfterSeconds int `json:"retryAfterSeconds"`
+	// FileIDs accompanies pending_sources_too_large: the edited files whose
+	// unprocessed changes do not fit the request.
+	FileIDs []string `json:"fileIds"`
 }
 
 func (e *Error) Decode() ErrorBody {
@@ -78,7 +81,15 @@ func errorBodyFrom(raw map[string]any) ErrorBody {
 	code, _ := raw["code"].(string)
 	message, _ := raw["message"].(string)
 	seconds, _ := raw["retryAfterSeconds"].(float64)
-	return ErrorBody{Code: code, Message: message, RetryAfterSeconds: int(seconds)}
+	var fileIDs []string
+	if ids, ok := raw["fileIds"].([]any); ok {
+		for _, id := range ids {
+			if id, ok := id.(string); ok {
+				fileIDs = append(fileIDs, id)
+			}
+		}
+	}
+	return ErrorBody{Code: code, Message: message, RetryAfterSeconds: int(seconds), FileIDs: fileIDs}
 }
 
 func (c *Client) applyHeaders(req *http.Request) {

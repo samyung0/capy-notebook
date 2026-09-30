@@ -91,17 +91,14 @@ export function GeneratePanel({
             : r.material?.id;
       if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
     } catch (error) {
-      if (isApiError(error) && error.code === 'context_too_large') {
+      if (isApiError(error) && error.code === 'pending_sources_too_large') {
+        // The edited files whose unprocessed changes do not fit, as chat's
+        // pending-source notice names them.
+        const ids = error.body?.fileIds;
         setPendingFileIds(
-          files
-            .filter(
-              (file) =>
-                (!opts.fileIds.length && !opts.chapters.length) ||
-                opts.fileIds.includes(file.id) ||
-                (file.chapterId !== null &&
-                  opts.chapters.includes(file.chapterId))
-            )
-            .map((file) => file.id)
+          Array.isArray(ids)
+            ? ids.filter((id): id is string => typeof id === 'string')
+            : []
         );
       } else if (!deferStorageRefusal(error))
         // A frozen or storage refusal shows as the workspace status instead.
@@ -144,7 +141,7 @@ export function GeneratePanel({
             role="status"
           >
             <p>{m.source_pending_context()}</p>
-            {canReprocess && (
+            {canReprocess && pendingFileIds.length > 0 && (
               <Button
                 disabled={processingChanges}
                 onClick={() => processChanges(pendingFileIds)}
