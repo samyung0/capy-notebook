@@ -127,11 +127,11 @@ View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
 shared changes and previews the exported current replica. Saving requests a database
 checkpoint receipt and keeps the editor mounted. Ordinary metadata refetches do
-not recreate an active editor, and neither does a completed Office base
-handoff: a saved editor keeps its current view read-only under a persistent
-banner that says a newer version is available and its changes were saved; the
-banner's Reload button reloads the page, which opens the new epoch with empty
-Undo/Redo. Starting Edit from a PDF citation creates the editor directly
+not recreate an active editor, and a publication leaves it alone (Deferred
+publication below). Only a maintenance handoff replaces its base: a saved
+editor keeps its current view read-only under a persistent banner that says a
+newer version is available and its changes were saved; the banner's Reload
+button reloads the page, which opens the new epoch with empty Undo/Redo. Starting Edit from a PDF citation creates the editor directly
 without warming the native Office viewer.
 
 The parent owns the Hocuspocus provider and Y.Doc. The isolated iframe exchanges
@@ -625,35 +625,60 @@ side; a move (text that only changed position, as every later paragraph does
 when one is inserted) carries no text and counts 0 tokens, so a pure reorder
 publishes through the 7-day rule. Manual processing bypasses the threshold. A
 store-only Office file (never processed) publishes export-only under the same
-trigger, whatever the workspace's auto-process setting, through the same
-handoff: the saved state becomes the file's bytes with no parser or provider
-call and no charge (see Maintenance window below). The owner's Process stays
-the opt-in first parse; pressed while such an export runs, it turns that job
-into the owner-paid parse of the same capture. Editing continues during
-processing. A newer
-saved checkpoint is rebound to the candidate's exported source. A started
-handoff always completes. Each connected writer goes read-only, flushes pending
-input into the document, waits until its provider has nothing unsent, and
-reports ready; it does not wait for its own checkpoint receipt. After 10
-seconds the service disconnects writers that have not answered (they reconnect
-into the new epoch, where unsaved changes go to recovery); a writer that
-disconnects is no longer waited for. The service then persists the room once.
-The publishing coordinator waits up to 60 seconds for every instance's
-acknowledgement, since that persist can queue behind a running save, and then
-publishes the source, index and rebased current state (its change over
-seed(export)) atomically. The room lock covers that wait plus one Office engine
-call (3 minutes), and each instance's recovery watchdog outlasts the lock.
-While the room is locked, a reconnecting editor's authentication is refused
-with the distinct reason `source-publishing`; the editor reconnects once after
-3 seconds without showing an error, and only a second refusal before it
-authenticates shows one. Other authentication failures show at once. The
+trigger, whatever the workspace's auto-process setting: the saved state
+becomes the file's bytes with no parser or provider call and no charge (see
+Maintenance window below). The owner's Process stays the opt-in first parse;
+pressed while such an export runs, it turns that job into the owner-paid parse
+of the same capture. Editing continues during processing.
+
+**Deferred publication.** An Office publication of the owner's or automatic
+work (every one but a maintenance publication) never touches open editors: it
+swaps the file's bytes and index, and editing stays on the old base and epoch
+(`rebuild_pending`, `published_state`: the published capture as its change over
+seed(base), migration 0045). Edits saved after the capture stay pending,
+measured against that capture on the old base (the engine's `compare`, XLSX
+included), which gives the same text effects the rebuild later reports. The
+viewer reads the old base plus the state while the rebuild waits. Nothing is
+charged for the kept capture or the old base.
+
+**Rebuild.** Once nobody has the room open, the collaboration service moves
+editing onto the published file (`SourceHandoff.rebuild`): it rebases the edits
+saved after the capture onto seed(published) first (nothing saved since: the
+state is seed(published)), then locks the room, asks every instance whether
+the room is in use (a connection, a document loading, or a socket still
+authenticating from before the lock check), and on all idle sends the gateway
+a compare-and-swap (`POST /internal/collaboration/files/{id}/rebuild`: epoch,
+latest checkpoint and published bytes unchanged, no refresh in flight) that
+opens a new epoch on the published base and releases the old one. The lock
+covers only the probe (2 s) and the swap, so a connect in that moment waits one
+silent 3-second retry. A room in use, a save or a publication in between leaves
+it for later. It runs when a room unloads on an instance and from a sweep
+every minute (a room found in use waits five minutes, an error ten). A room
+that never empties keeps the old base, and the kept capture, until it does.
+
+The immediate handoff remains for a maintenance publication, where editing is
+paused anyway. A started handoff always completes. Each connected writer goes
+read-only, flushes pending input into the document, waits until its provider
+has nothing unsent, and reports ready; it does not wait for its own checkpoint
+receipt. After 10 seconds the service disconnects writers that have not
+answered (they reconnect into the new epoch, where unsaved changes go to
+recovery); a writer that disconnects is no longer waited for. The service then
+persists the room once. The publishing coordinator waits up to 60 seconds for
+every instance's acknowledgement, since that persist can queue behind a running
+save, and then publishes the source, index and rebased current state (its
+change over seed(export)) atomically. The room lock covers that wait plus one
+Office engine call (3 minutes), and each instance's recovery watchdog outlasts
+the lock. While the room is locked, a reconnecting editor's authentication is
+refused with the distinct reason `source-publishing`; the editor reconnects
+once after 3 seconds without showing an error, and only a second refusal before
+it authenticates shows one. Other authentication failures show at once. The
 current checkpoint can remain ahead of the indexed checkpoint, with later edits
-retained as pending effects. A concurrent save
-retries only the local rebase against the same parsed candidate. A connected
-editor that answered ready counts as saved and keeps its view under the
-newer-version banner; a disconnect clears that, so an editor that loses its
-connection before the completion goes to recovery. The new epoch starts with
-empty Undo/Redo.
+retained as pending effects. A concurrent save retries only the local rebase
+against the same parsed candidate. A connected editor that answered ready
+counts as saved and keeps its view under the newer-version banner; a disconnect
+clears that, so an editor that loses its connection before the completion goes
+to recovery. The new epoch starts with empty Undo/Redo, as it does after a
+rebuild.
 
 Export finalization compares the B2 object's size and unquoted ETag with the
 gateway's HEAD result. Rejected exports send a complete failure receipt so the
@@ -738,11 +763,11 @@ returns the state to NULL (seed(export), whose baseline derives from the
 export), empties pending effects, drops the file's index and caption
 associations and evicts the old room. A save after the capture supersedes the
 job and a later run exports again. The automatic export of a store-only file
-instead keeps the finalized candidate and publishes it through the handoff,
-like a refresh after its parse: editors flush, saves made after the capture
-are rebased onto the export and stay pending, and open editors get the
-newer-version banner. Its storage is gated on the net change at publication,
-and finalize renews its job lease for the handoff. A publication refused for
+instead keeps the finalized candidate and publishes it deferred, like a
+refresh after its parse: open editors keep their document, saves made after
+the capture stay pending against it, and the rebuild moves editing onto the
+export once the room is empty. Its storage is gated on the net change at
+publication, and finalize renews its job lease for the publication. A publication refused for
 any reason but a superseded candidate (409) or a refused rebase (422
 `Office rebase:`) parks the file until its next save.
 Unless the file never parsed successfully (then its owner's Process, charged as
@@ -817,8 +842,9 @@ OOXML export. See [the test catalog](../test-catalog.md) for entry points.
 
 The source comparison baseline is separate from the editable Yjs state. It holds
 text and stable positions, image hashes and references, and hashes of visual
-metadata and is derived from the base, never stored. Office handoff publishes
-the rebased saved state as its change over seed(export); open editors show the
-newer-version banner. The maintenance window's reset migration
+metadata and is derived from the base, never stored (while a rebuild is
+pending, from the published capture on the old base). A rebuild, or a
+maintenance handoff, stores the rebased saved state as its change over
+seed(export); only the handoff shows open editors the newer-version banner. The maintenance window's reset migration
 (`0034_office_window_reset.sql`, from the template) drops every Office state
 of the old engine so rooms reseed on the new one.

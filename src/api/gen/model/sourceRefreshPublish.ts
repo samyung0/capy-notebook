@@ -13,6 +13,7 @@ export interface SourceRefreshPublish {
   checkpoint: number;
   contentHash: string;
   contentId: string;
+  deferred?: boolean;
   epoch: number;
   expectedLatestCheckpoint: number;
   jobId: string;

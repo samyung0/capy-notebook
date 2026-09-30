@@ -339,6 +339,8 @@ func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {
 	}
 }
 
+// A maintenance (system) publication rebases the editing state onto the
+// export at once; owner and automatic ones defer that (TestDeferredOffice...).
 func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -350,7 +352,7 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "candidate-state")
-	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+	job, err := s.requestSourceRefresh(ctx, owner, file.ID, false, models.PaidBySystem, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,6 +485,196 @@ func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
 		t.Fatalf("old epoch accepted: %v", err)
 	}
 }
+
+// An owner's Office publication swaps the file and its index while editing
+// stays on its base and epoch; the rebuild later moves editing onto the
+// published file with a compare-and-swap.
+func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "deferred_publish_owner")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "captured-state")
+	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	export := strings.Repeat("b", 64)
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-b"}); err != nil {
+		t.Fatal(err)
+	}
+	captured := doc.Checkpoint
+	doc = sourceTestEdit(t, s, owner, doc, "later-state")
+	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
+		t.Fatal(err)
+	}
+	contentID := uid("rc")
+	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'hash-b','ready')`, contentID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='hash-b' WHERE file_id=$1`, file.ID, contentID); err != nil {
+		t.Fatal(err)
+	}
+	var oldBase, newBase string
+	if err = s.pool.QueryRow(ctx, `SELECT d.base_blob_path,c.source_blob_path FROM source_documents d JOIN source_refresh_candidates c ON c.file_id=d.file_id WHERE d.file_id=$1`, file.ID).Scan(&oldBase, &newBase); err != nil {
+		t.Fatal(err)
+	}
+	oldRefs, newRefs := blobRefCount(t, s, oldBase), blobRefCount(t, s, newBase)
+	residual := json.RawMessage(`[{"id":"p2","kind":"text","operation":"replace","before":"a","after":"b"}]`)
+	publish := SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: captured, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, PendingEffects: residual, NetTokens: 2}
+	// The owner's work defers, and a deferred publication carries no rebase.
+	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
+		t.Fatalf("owner publication without deferral: %v", err)
+	}
+	publish.Deferred = true
+	publish.RebasedState, publish.RebasedStateSeedSHA256 = []byte("rebased"), sourceTestStateSeed
+	if _, err = s.PublishSourceRefresh(ctx, file.ID, publish); !errors.Is(err, ErrConflict) {
+		t.Fatalf("deferred publication with a rebase: %v", err)
+	}
+	publish.RebasedState, publish.RebasedStateSeedSHA256 = nil, ""
+	published, err := s.PublishSourceRefresh(ctx, file.ID, publish)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Epoch != 1 || string(published.State) != "later-state" || published.BaseBlobPath != oldBase || published.IndexedCheckpoint != captured || published.BaseRevision != 2 || !published.RebuildPending || string(published.PublishedState) != "captured-state" || published.PublishedSourceSHA256 != export || published.PublishedBlobPath != newBase || published.NetTokens != 2 {
+		t.Fatalf("deferred publication: %+v", published)
+	}
+	// The file names the export; the source row still names the old base.
+	if got := blobRefCount(t, s, oldBase); got != oldRefs-1 {
+		t.Fatalf("old base references = %d, want %d", got, oldRefs-1)
+	}
+	if got := blobRefCount(t, s, newBase); got != newRefs {
+		t.Fatalf("export references = %d, want %d", got, newRefs)
+	}
+	current, err := s.GetFile(ctx, file.ID)
+	if err != nil || current.Revision != 2 || !current.Indexed {
+		t.Fatalf("published file: %+v %v", current, err)
+	}
+	// Editing goes on in the same epoch.
+	if err = s.CheckSourceAccess(ctx, owner, file.ID, 1, true); err != nil {
+		t.Fatalf("access after a deferred publication: %v", err)
+	}
+	doc = sourceTestEdit(t, s, owner, published, "newest-state")
+	// Maintenance waits for the rebuild.
+	ready, err := s.OfficeReadiness(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed bool
+	for _, u := range ready.Unpublished {
+		listed = listed || (u.FileID == file.ID && u.RebuildPending)
+	}
+	if !listed {
+		t.Fatalf("pending rebuild not listed: %+v", ready.Unpublished)
+	}
+	rebuild := SourceRebuild{Epoch: 1, ExpectedCheckpoint: doc.Checkpoint, PublishedSourceSHA256: export, State: []byte("rebased-newest"), StateSeedSHA256: sourceTestStateSeed, PendingEffects: json.RawMessage(`[]`)}
+	for name, bad := range map[string]func(*SourceRebuild){
+		"stale epoch":          func(r *SourceRebuild) { r.Epoch = 2 },
+		"stale checkpoint":     func(r *SourceRebuild) { r.ExpectedCheckpoint-- },
+		"other published":      func(r *SourceRebuild) { r.PublishedSourceSHA256 = strings.Repeat("f", 64) },
+		"no state after edits": func(r *SourceRebuild) { r.State, r.StateSeedSHA256 = nil, "" },
+		"state without seed":   func(r *SourceRebuild) { r.StateSeedSHA256 = "" },
+	} {
+		attempt := rebuild
+		bad(&attempt)
+		if err = s.RebuildSource(ctx, file.ID, attempt); !errors.Is(err, ErrConflict) {
+			t.Fatalf("%s rebuilt: %v", name, err)
+		}
+	}
+	// Never under a refresh in flight: its capture belongs to this epoch.
+	if _, err = s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RebuildSource(ctx, file.ID, rebuild); !errors.Is(err, ErrConflict) {
+		t.Fatalf("rebuilt under a refresh: %v", err)
+	}
+	if err = s.CancelSourceRefresh(ctx, owner, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RebuildSource(ctx, file.ID, rebuild); err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := s.SourceSession(ctx, owner, file.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rebuilt.Epoch != 2 || rebuilt.BaseBlobPath != newBase || rebuilt.BaseSourceSHA256 != export || string(rebuilt.State) != "rebased-newest" || rebuilt.StateSeedSHA256 == nil || *rebuilt.StateSeedSHA256 != sourceTestStateSeed || rebuilt.RebuildPending || rebuilt.PublishedState != nil || string(rebuilt.PendingEffects) != "[]" {
+		t.Fatalf("rebuild: %+v", rebuilt)
+	}
+	if got := blobRefCount(t, s, oldBase); got != oldRefs-2 {
+		t.Fatalf("old base references after the rebuild = %d, want %d", got, oldRefs-2)
+	}
+	if err = s.RebuildSource(ctx, file.ID, SourceRebuild{Epoch: 2, ExpectedCheckpoint: rebuilt.Checkpoint, PublishedSourceSHA256: export, PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("second rebuild: %v", err)
+	}
+	if _, err = s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, owner, "old-epoch")); !errors.Is(err, ErrConflict) {
+		t.Fatalf("old epoch accepted after the rebuild: %v", err)
+	}
+}
+
+// Nothing saved after the capture: the viewer still reads the published edits
+// (the old base plus the state), and the rebuild lands on seed(published).
+func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "deferred_clean_owner")
+	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "captured-state")
+	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	export := strings.Repeat("b", 64)
+	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: 1, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-b"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
+		t.Fatal(err)
+	}
+	contentID := uid("rc")
+	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'hash-b','ready')`, contentID, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='hash-b' WHERE file_id=$1`, file.ID, contentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, PendingEffects: json.RawMessage(`[]`), Deferred: true}); err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.ViewSourceSession(ctx, file.ID)
+	if err != nil || string(view.State) != "captured-state" || view.Checkpoint != view.IndexedCheckpoint {
+		t.Fatalf("view while the rebuild is pending: %+v %v", view, err)
+	}
+	if err = s.RebuildSource(ctx, file.ID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: doc.Checkpoint, PublishedSourceSHA256: export, State: []byte("x"), StateSeedSHA256: sourceTestStateSeed, PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a rebased state with no later edits: %v", err)
+	}
+	if err = s.RebuildSource(ctx, file.ID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: doc.Checkpoint, PublishedSourceSHA256: export, PendingEffects: json.RawMessage(`[]`)}); err != nil {
+		t.Fatal(err)
+	}
+	view, err = s.ViewSourceSession(ctx, file.ID)
+	if err != nil || view.State != nil || view.Epoch != 2 || view.BaseSourceSHA256 != export {
+		t.Fatalf("view after the rebuild: %+v %v", view, err)
+	}
+}
+
 func TestPDFAnnotationsArePrivateAndBoundToSource(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import type { Pool } from 'pg';
 import { CALL_TIMEOUT_MS } from './officeRuntime.js';
 import {
+  CAPTURED_STATE_SEED_SQL,
   CAPTURED_STATE_SQL,
   effectTokens,
   type SourceDocumentStore,
@@ -24,6 +25,14 @@ const READY_WINDOW_MS = 10_000;
 const ACK_WAIT_MS = 60_000;
 const LOCK_MS = ACK_WAIT_MS + CALL_TIMEOUT_MS;
 const WATCHDOG_MS = LOCK_MS + 5000;
+// A rebuild locks the room only to confirm nobody has it open and to swap:
+// every instance answers the probe within PROBE_WAIT_MS, and the lock
+// outlasts that plus the gateway's compare-and-swap.
+const PROBE_WAIT_MS = 2000;
+const REBUILD_LOCK_MS = 30_000;
+// A socket that passed the lock check while authenticating counts as in the
+// room until it connects or fails, and at most this long.
+const JOIN_WINDOW_MS = 30_000;
 
 /**
  * UAT only (COLLABORATION_UAT_PUBLICATION_HOLD): an Office publication waits
@@ -91,6 +100,7 @@ export class SourceHandoff {
   private readonly activeInstances: () => Promise<Set<string>>;
   private readonly persist: (document: Document) => Promise<void>;
   private readonly publicationHold: boolean;
+  private readonly onError: (error: unknown) => void;
   constructor(
     instanceId: string,
     redis: Redis,
@@ -99,7 +109,9 @@ export class SourceHandoff {
     sources: SourceDocumentStore,
     activeInstances: () => Promise<Set<string>>,
     persist: (document: Document) => Promise<void>,
-    publicationHold: boolean
+    publicationHold: boolean,
+    onError: (error: unknown) => void = (error) =>
+      console.warn('source rebuild failed:', error)
   ) {
     this.instanceId = instanceId;
     this.redis = redis;
@@ -109,6 +121,7 @@ export class SourceHandoff {
     this.activeInstances = activeInstances;
     this.persist = persist;
     this.publicationHold = publicationHold;
+    this.onError = onError;
   }
 
   ready(
@@ -169,7 +182,7 @@ export class SourceHandoff {
     const event = JSON.parse(raw) as
       | Prepare
       | {
-          type: 'cancel' | 'complete';
+          type: 'cancel' | 'complete' | 'probe';
           id: string;
           room: string;
           fileId: string;
@@ -177,6 +190,16 @@ export class SourceHandoff {
           newEpoch?: number;
         };
     if (!event.id || !event.room || !event.fileId) return;
+    if (event.type === 'probe') {
+      const key = `capy:source-handoff:${event.id}`;
+      await this.redis.hset(
+        key,
+        this.instanceId,
+        this.busy(event.room) || this.joiningRoom(event.room) ? 'busy' : 'idle'
+      );
+      await this.redis.expire(key, 30);
+      return;
+    }
     const document = this.host.documents.get(event.room);
     if (event.type === 'complete') {
       document?.broadcastStateless(
@@ -296,6 +319,34 @@ export class SourceHandoff {
     return this.local.has(room);
   }
 
+  private readonly joining = new Map<string, Map<string, number>>();
+
+  /** A socket authenticating for `room` (from before the lock check); `done`
+   * once it connected or failed. */
+  join(room: string, socketId: string) {
+    const sockets = this.joining.get(room) ?? new Map<string, number>();
+    sockets.set(socketId, Date.now());
+    this.joining.set(room, sockets);
+    return () => {
+      sockets.delete(socketId);
+      if (!sockets.size && this.joining.get(room) === sockets)
+        this.joining.delete(room);
+    };
+  }
+
+  /** Whether this instance has anyone in the room: a connection, a document
+   * still loading for one, or a socket authenticating for it. */
+  private joiningRoom(room: string) {
+    if ((this.host.documents.get(room)?.getConnections().length ?? 0) > 0)
+      return true;
+    if (this.host.loadingDocuments?.has(room)) return true;
+    const sockets = this.joining.get(room);
+    if (!sockets) return false;
+    for (const [socketId, since] of sockets)
+      if (Date.now() - since > JOIN_WINDOW_MS) sockets.delete(socketId);
+    return sockets.size > 0;
+  }
+
   private async runPause(document: Document) {
     const { epoch, fileId } = sourceRoom(document.name);
     const event: Prepare = {
@@ -327,6 +378,161 @@ export class SourceHandoff {
     if (this.local.get(document.name)?.id === event.id)
       this.reset(document.name);
     return saved;
+  }
+
+  /**
+   * A deferred publication: the file and its index change while every editor
+   * keeps its document. Pending effects are the latest save measured against
+   * the capture on the same base; the rebuild onto the published file waits
+   * until the room is empty.
+   */
+  private async publishDeferred(
+    input: SourcePublish,
+    publication: Omit<SourcePublish, 'fileId'>,
+    session: SourceSession
+  ) {
+    const candidate = await this.pool.query<{
+      state: Buffer | null;
+      state_seed_sha256: string | null;
+    }>(
+      `SELECT ${CAPTURED_STATE_SQL} AS state,${CAPTURED_STATE_SEED_SQL} AS state_seed_sha256 FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id WHERE c.file_id=$1 AND c.job_id=$2 AND c.lease_token=$3 AND c.checkpoint=$4`,
+      [input.fileId, input.jobId, input.leaseToken, input.checkpoint]
+    );
+    if (!candidate.rows[0])
+      throw new SourceRequestError(409, 'Source candidate changed');
+    const published = {
+      publishedState: candidate.rows[0].state?.toString('base64'),
+      publishedStateSeedSHA256:
+        candidate.rows[0].state_seed_sha256 ?? undefined,
+      rebuildPending: true,
+    };
+    for (let attempt = 0; ; attempt++) {
+      const latest = attempt ? await this.current(input.fileId) : session;
+      if (latest.epoch !== input.epoch)
+        throw new SourceRequestError(409, 'Source epoch changed');
+      const effects =
+        latest.checkpoint === input.checkpoint
+          ? []
+          : await this.sources.effects(
+              { ...latest, ...published },
+              await this.sources.stateOf(latest)
+            );
+      try {
+        const result = await this.sources.request(input.fileId, 'publish', {
+          ...publication,
+          deferred: true,
+          expectedLatestCheckpoint: latest.checkpoint,
+          netTokens: effectTokens(effects),
+          pendingEffects: effects,
+        });
+        this.scheduleRebuild(input.fileId);
+        return result;
+      } catch (error) {
+        if (
+          !(error instanceof SourceRequestError) ||
+          error.status !== 409 ||
+          attempt === 3
+        )
+          throw error;
+      }
+    }
+  }
+
+  /** A rebuild attempt in the background; a failure waits for the sweep. */
+  scheduleRebuild(fileId: string) {
+    void this.rebuild(fileId).catch((error) => this.onError(error));
+  }
+
+  /**
+   * Moves editing onto the published file after a deferred publication, once
+   * nobody has the room open on any instance. The rebase runs first, so the
+   * room is locked only while every instance confirms it is empty and the
+   * gateway swaps (a compare-and-swap on epoch, checkpoint and the published
+   * bytes). A room in use, a save or a publication in between leaves it for
+   * a later attempt.
+   */
+  async rebuild(fileId: string) {
+    const pending = await this.pool.query<{ pending: boolean }>(
+      'SELECT rebuild_pending AS pending FROM source_documents WHERE file_id=$1',
+      [fileId]
+    );
+    if (!pending.rows[0]?.pending) return false;
+    const session = await this.current(fileId);
+    if (!session.rebuildPending || session.format === 'text') return false;
+    if (this.joiningRoom(session.room)) return false;
+    const rebase = await this.sources.rebuildPublication(session);
+    const id = `rebuild:${randomUUID()}`;
+    const room = session.room;
+    const lock = `capy:collaboration:evicting:${room}`;
+    if ((await this.redis.set(lock, id, 'PX', REBUILD_LOCK_MS, 'NX')) !== 'OK')
+      return false;
+    try {
+      if (!(await this.roomEmpty(session, id))) return false;
+      try {
+        await this.sources.request(fileId, 'rebuild', {
+          epoch: session.epoch,
+          expectedCheckpoint: session.checkpoint,
+          netTokens: rebase.netTokens,
+          pendingEffects: rebase.pendingEffects,
+          publishedSourceSHA256: session.publishedSourceSHA256,
+          ...(rebase.rebasedState
+            ? {
+                state: rebase.rebasedState,
+                stateSeedSHA256: rebase.rebasedStateSeedSHA256,
+              }
+            : {}),
+        });
+      } catch (error) {
+        if (error instanceof SourceRequestError && error.status === 409)
+          return false;
+        throw error;
+      }
+      // A connection that slipped in meanwhile learns of the new epoch.
+      await this.redis.publish(
+        SOURCE_HANDOFF_CHANNEL,
+        JSON.stringify({
+          epoch: session.epoch,
+          fileId,
+          id,
+          newEpoch: session.epoch + 1,
+          room,
+          type: 'complete',
+        })
+      );
+      return true;
+    } finally {
+      await this.redis.eval(
+        "if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end",
+        1,
+        lock,
+        id
+      );
+      await this.redis.del(`capy:source-handoff:${id}`);
+    }
+  }
+
+  /** Every live instance answers the probe: idle, or busy with the room. */
+  private async roomEmpty(session: SourceSession, id: string) {
+    const instances = await this.activeInstances();
+    await this.redis.publish(
+      SOURCE_HANDOFF_CHANNEL,
+      JSON.stringify({
+        epoch: session.epoch,
+        fileId: session.fileId,
+        id,
+        room: session.room,
+        type: 'probe',
+      })
+    );
+    const deadline = Date.now() + PROBE_WAIT_MS;
+    while (true) {
+      const answers = await this.redis.hgetall(`capy:source-handoff:${id}`);
+      if (Object.values(answers).includes('busy')) return false;
+      if ([...instances].every((instance) => answers[instance] === 'idle'))
+        return true;
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
   }
 
   private async hold(fileId: string) {
@@ -420,6 +626,14 @@ export class SourceHandoff {
     }
     // Editors stay writable during the hold: their saves land after the capture.
     if (this.publicationHold) await this.hold(input.fileId);
+    // The owner's and automatic work publishes without touching editing; only
+    // a maintenance (system) publication rebases open editors at once.
+    const job = await this.pool.query<{ system: boolean }>(
+      `SELECT COALESCE(payload->>'paidBy','')='system' AS system FROM jobs WHERE id=$1 AND payload->>'fileId'=$2`,
+      [input.jobId, input.fileId]
+    );
+    if (!job.rows[0]?.system)
+      return this.publishDeferred(input, publication, session);
     const id = randomUUID();
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;

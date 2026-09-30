@@ -117,6 +117,7 @@ import type {
   SourceFailureInputBody,
   SourceImportStatus,
   SourceProcessResult,
+  SourceRebuild,
   SourceRefreshFinalize,
   SourceRefreshInputBody,
   SourceRefreshPublish,
@@ -8032,6 +8033,57 @@ export const publishSourceRefresh = async (id: string,
 
   const data: publishSourceRefreshResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as publishSourceRefreshResponse
+}
+
+
+
+export type rebuildSourceResponse204 = {
+  data: void
+  status: 204
+}
+
+export type rebuildSourceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type rebuildSourceResponseSuccess = (rebuildSourceResponse204) & {
+  headers: Headers;
+};
+export type rebuildSourceResponseError = (rebuildSourceResponseDefault) & {
+  headers: Headers;
+};
+
+export type rebuildSourceResponse = (rebuildSourceResponseSuccess | rebuildSourceResponseError)
+
+export const getRebuildSourceUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/rebuild`
+}
+
+/**
+ * @summary Move editing onto the published file
+ */
+export const rebuildSource = async (id: string,
+    sourceRebuild: NonReadonly<SourceRebuild>, options?: RequestInit): Promise<rebuildSourceResponse> => {
+
+  const res = await fetch(getRebuildSourceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceRebuild)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: rebuildSourceResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as rebuildSourceResponse
 }
 
 

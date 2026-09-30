@@ -41,7 +41,7 @@ function engine() {
 export async function savedState(run: UatRun, fileId: string) {
   const rows = await run.query(
     `SELECT format,checkpoint,indexed_checkpoint,epoch,base_blob_path,base_source_sha256,
-    encode(state,'base64') AS state,state_seed_sha256 FROM source_documents WHERE file_id=%s`,
+    encode(state,'base64') AS state,state_seed_sha256,rebuild_pending FROM source_documents WHERE file_id=%s`,
     [fileId]
   );
   assert.equal(rows.length, 1, `missing source state for ${fileId}`);
@@ -184,9 +184,10 @@ export async function saved(page: Page) {
 
 /**
  * Waits for the automatic publication while `actor` keeps the file open in
- * Edit (records 19 and 20): the editor stays mounted and read-only under the
- * banner, which says its changes were saved, and the banner's button reloads
- * the whole page. Call it inside the 60 s idle window after the last save.
+ * Edit (records 19 and 20): the file's bytes change, but the editor keeps its
+ * document, stays editable and shows no reload banner; editing stays on the
+ * old base (rebuild_pending) until everyone leaves (rebuiltAfterLeaving).
+ * Call it inside the 60 s idle window after the last save.
  */
 export async function publishWhileEditing(
   run: UatRun,
@@ -206,29 +207,48 @@ export async function publishWhileEditing(
   await page.evaluate(() => {
     Object.assign(window, { uatPage: true });
   });
+  const before = await savedState(run, fileId);
   const published = await automaticPublication(run, fileId);
-  // A neutral FileBanner is a status; only error banners are alerts.
-  const banner = page
-    .getByRole('status')
-    .filter({ hasText: 'A newer version of this file is available.' });
+  const row = await savedState(run, fileId);
+  assert.equal(row.rebuild_pending, true);
+  assert.equal(row.epoch, before.epoch);
+  // A reload banner would follow the publication at once; none comes.
+  await page.waitForTimeout(5000);
   await expect(
-    banner.getByText(
-      'A newer version of this file is available. Your changes were saved.',
-      { exact: true }
-    )
-  ).toBeVisible({ timeout: 60_000 });
+    page.getByText('A newer version of this file is available.')
+  ).toHaveCount(0);
   await saved(page);
-  await expect(
-    page.getByRole('button', { exact: true, name: 'Save' })
-  ).toBeDisabled();
   assert(await mounted.evaluate((node) => node.isConnected));
   assert(await runtime.evaluate(() => 'uatMounted' in window));
-  await Promise.all([
-    page.waitForEvent('load'),
-    banner.getByRole('button', { exact: true, name: 'Reload' }).click(),
-  ]);
-  assert(!(await page.evaluate(() => 'uatPage' in window)));
+  assert(await page.evaluate(() => 'uatPage' in window));
   return published;
+}
+
+/**
+ * Everyone leaves the file: once its room is empty the collaboration service
+ * moves editing onto the published file, a new epoch whose base is the
+ * published bytes.
+ */
+export async function rebuiltAfterLeaving(
+  run: UatRun,
+  actors: Actor[],
+  workspaceId: string,
+  fileId: string
+) {
+  const before = await savedState(run, fileId);
+  for (const actor of actors)
+    await actor.page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
+  const row = await run.poll(
+    `rebuilt ${fileId}`,
+    () => savedState(run, fileId),
+    (state) =>
+      state.rebuild_pending === false &&
+      Number(state.epoch) > Number(before.epoch),
+    180_000
+  );
+  const file = await fileRow(run, fileId);
+  assert.equal(row.base_blob_path, file.blob_path);
+  return row;
 }
 
 export async function savedFacts(run: UatRun, fileId: string, facts: string[]) {

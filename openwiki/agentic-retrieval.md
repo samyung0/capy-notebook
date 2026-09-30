@@ -2594,13 +2594,19 @@ processing may queue them again; the switches turn that off.
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
 publication URL and omits it from the strict JSON body for Office, text and
-already-published receipt recovery. Office coordinates connected clients, rebases the
-latest saved state onto seed(export) of the captured export, and compares-and-swaps that saved
+already-published receipt recovery. An owner's or automatic Office publication
+is deferred: the file and index change, editing stays on the old base with
+later edits pending against the capture, and the collaboration service
+rebuilds editing onto the export once the room is empty (see
+[Office files](frontend/office-files.md)). A maintenance publication
+coordinates connected clients, rebases the latest saved state onto
+seed(export) of the captured export, and compares-and-swaps that saved
 checkpoint. A newer save retries local rebase with the same completed parse. A
 rebase the engine refuses answers 422, which ends the refresh job without a
 retry (see [Office files](frontend/office-files.md)).
-Publication advances the indexed checkpoint, retains the current checkpoint and
-residual changes, increments the editing epoch and clears Undo/Redo. The
+Publication advances the indexed checkpoint and retains the current checkpoint
+and residual changes; the rebuild (or a maintenance handoff) increments the
+editing epoch and clears Undo/Redo. The
 rebased state keeps no package parts of the old base, which is released.
 Text retains exact residual changes and its Y.Text lineage. Once all processing
 finishes, `sourcePublicationReady` marks the job for publication-only retries;

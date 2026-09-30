@@ -110,6 +110,17 @@ export interface SourceSession {
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: NetEffect[];
+  publishedSourceSHA256?: string;
+  publishedSourceURL?: string;
+  publishedState?: string;
+  publishedStateSeedSHA256?: string;
+  /**
+   * The file and its index were published while editing stayed on this base
+   * (Office only): pending effects are measured against publishedState, the
+   * published capture stored like `state` (absent: seed(base)), and the
+   * rebuild lands editing on the published bytes once the room is empty.
+   */
+  rebuildPending?: boolean;
   room: string;
   sourceURL: string;
   /** Null: seed(base) until the first save (SourceDocumentStore.seed). */
@@ -151,6 +162,14 @@ export interface RefreshCandidate {
   stateSeedSHA256: string | null;
   uploadHeaders: Record<string, string>;
   uploadURL: string;
+}
+/** A rebase onto new bytes: none (no save after the capture) leaves the
+ * state seed(new bytes), with no effects. */
+export interface SourceRebase {
+  netTokens: number;
+  pendingEffects: NetEffect[];
+  rebasedState?: string;
+  rebasedStateSeedSHA256?: string;
 }
 export class SourceRequestError extends Error {
   readonly status: number;
@@ -540,9 +559,24 @@ export class SourceDocumentStore {
   /**
    * The indexed baseline, derived from the base: the decoded text, or the
    * baseline of seed(base). XLSX keeps none; its effects come from its
-   * overrides.
+   * overrides. While a rebuild is pending it is the published capture's
+   * baseline on the same base, XLSX included.
    */
   private async indexedBaseline(session: SourceSession) {
+    if (session.rebuildPending && session.format !== 'text') {
+      const published = await this.stateOf({
+        ...session,
+        state: session.publishedState ?? null,
+        stateSeedSHA256: session.publishedStateSeedSHA256 ?? null,
+      });
+      const key = `published:${session.format}:${session.baseSourceSHA256}:${createHash('sha256').update(published).digest('hex')}`;
+      let baseline = this.baselines.get(key);
+      if (!baseline) {
+        baseline = await this.baseline(session, published);
+        this.baselines.set(key, baseline, JSON.stringify(baseline).length);
+      }
+      return baseline;
+    }
     const bytes = await this.base(session.sourceURL, session.baseSourceSHA256);
     if (session.format === 'text')
       return { format: 'text', text: decodeText(bytes), version: 1 } as const;
@@ -778,7 +812,7 @@ export class SourceDocumentStore {
     from?: SourceBaseline
   ) {
     let effects: NetEffect[];
-    if (session.format === 'xlsx') {
+    if (session.format === 'xlsx' && !session.rebuildPending && !from) {
       const bytes = await this.base(
         session.sourceURL,
         session.baseSourceSHA256
@@ -831,7 +865,7 @@ export class SourceDocumentStore {
       epoch: number;
       checkpoint: number;
     }
-  ) {
+  ): Promise<SourceRebase> {
     if (session.format === 'text')
       throw new Error('Office rebase requires an Office source');
     const result = await this.pool.query<{
@@ -855,14 +889,63 @@ export class SourceDocumentStore {
     // the baseline is derived from the export.
     if (session.checkpoint === input.checkpoint)
       return { netTokens: 0, pendingEffects: [] };
-    if (!session.state) throw new Error('Source state is missing after a save');
     const link = await this.request<{ sourceURL: string }>(
       session.fileId,
       `refresh-source?jobId=${encodeURIComponent(input.jobId)}&leaseToken=${encodeURIComponent(input.leaseToken)}`
     );
-    const [oldSource, exported] = await Promise.all([
+    return this.rebaseOnto(
+      session,
+      {
+        state: candidate.state?.toString('base64') ?? null,
+        stateSeedSHA256: candidate.state_seed_sha256,
+      },
+      { sha256: candidate.source_sha256, url: link.sourceURL }
+    );
+  }
+
+  /**
+   * The rebuild after a deferred publication: the edits saved after the
+   * published capture, landed on seed(published) (rebaseOnto). Nothing saved
+   * since: the state is seed(published), with no effects.
+   */
+  async rebuildPublication(session: SourceSession): Promise<SourceRebase> {
+    if (
+      !session.rebuildPending ||
+      !session.publishedSourceURL ||
+      !session.publishedSourceSHA256
+    )
+      throw new Error('Source has no pending rebuild');
+    if (session.checkpoint === session.indexedCheckpoint)
+      return { netTokens: 0, pendingEffects: [] };
+    return this.rebaseOnto(
+      session,
+      {
+        state: session.publishedState ?? null,
+        stateSeedSHA256: session.publishedStateSeedSHA256 ?? null,
+      },
+      {
+        sha256: session.publishedSourceSHA256,
+        url: session.publishedSourceURL,
+      }
+    );
+  }
+
+  /**
+   * The edits saved after `captured` (both on the session's base) landed on
+   * seed(exported), stored as their change over that seed with its SHA-256,
+   * and their effects against the export.
+   */
+  private async rebaseOnto(
+    session: SourceSession,
+    captured: { state: string | null; stateSeedSHA256: string | null },
+    exported: { url: string; sha256: string }
+  ): Promise<SourceRebase> {
+    if (session.format === 'text')
+      throw new Error('Office rebase requires an Office source');
+    if (!session.state) throw new Error('Source state is missing after a save');
+    const [oldSource, exportedSource] = await Promise.all([
       this.base(session.sourceURL, session.baseSourceSHA256),
-      this.base(link.sourceURL, candidate.source_sha256),
+      this.base(exported.url, exported.sha256),
     ]);
     const checkpoint = {
       baseSha256: session.baseSourceSHA256,
@@ -874,14 +957,10 @@ export class SourceDocumentStore {
       oldSource,
       {
         ...checkpoint,
-        state: await this.stateOf({
-          ...session,
-          state: candidate.state?.toString('base64') ?? null,
-          stateSeedSHA256: candidate.state_seed_sha256,
-        }),
+        state: await this.stateOf({ ...session, ...captured }),
       },
       { ...checkpoint, state: await this.stateOf(session) },
-      exported
+      exportedSource
     ).catch((error: unknown) => {
       // The engine refused the rebase, as it would every retry of this parse,
       // so the refresh job ends (a 4xx the ingest worker treats as terminal).
@@ -901,9 +980,9 @@ export class SourceDocumentStore {
     // The rebase lands on seed(export): stored as its change over that seed,
     // and the baseline derives from the export.
     const { seed, seedSHA256, seedVector } = await this.seed({
-      baseSourceSHA256: candidate.source_sha256,
+      baseSourceSHA256: exported.sha256,
       format: session.format,
-      sourceURL: link.sourceURL,
+      sourceURL: exported.url,
     });
     return {
       netTokens: effectTokens(pendingEffects),
@@ -1383,6 +1462,15 @@ export class SourceDocumentStore {
     } catch (error) {
       console.warn('note index scheduling failed:', error);
     }
+  }
+
+  /** Files published while editing stayed on the old base, with no refresh
+   * in flight, oldest first. */
+  async pendingRebuilds() {
+    const { rows } = await this.pool.query<{ file_id: string }>(
+      'SELECT d.file_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.rebuild_pending AND d.running_job_id IS NULL AND f.trashed_at IS NULL ORDER BY d.updated_at LIMIT 32'
+    );
+    return rows.map((row) => row.file_id);
   }
 
   /** Dirty workspace notes that sat idle become one ingest job each. Go admits

@@ -38,6 +38,18 @@ type SourceSession struct {
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
 	Access            string          `json:"access" enum:"write,read"`
+	// RebuildPending: the file and its index were published while editing
+	// stayed on this base; the collaboration service rebuilds the editing
+	// state onto the published file once the room is empty. PublishedState is
+	// the published (captured) state as its change over seed(base) (nil:
+	// seed(base)), which pending effects are measured against meanwhile.
+	// Collaboration service only; the browser never sees these.
+	RebuildPending           bool    `json:"rebuildPending,omitempty"`
+	PublishedState           []byte  `json:"publishedState,omitempty"`
+	PublishedStateSeedSHA256 *string `json:"publishedStateSeedSHA256,omitempty"`
+	PublishedSourceSHA256    string  `json:"publishedSourceSHA256,omitempty"`
+	PublishedSourceURL       string  `json:"publishedSourceURL,omitempty"`
+	PublishedBlobPath        string  `json:"-"`
 }
 
 type SourceCheckpoint struct {
@@ -212,11 +224,13 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 // ViewSourceSession is the viewer's read: authorization is the caller's
 // (fileRead), so it takes no locks, inserts no row and never consults account
 // state. State rides along only when a saved checkpoint is ahead of the
-// indexed one; a file nobody has edited answers with its blob alone.
+// indexed one, or while a rebuild is pending (the base is the old file, the
+// published edits live in the state); a file nobody has edited answers with
+// its blob alone.
 func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, Access: "read"}
 	var name, kind string
-	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state_seed_sha256 END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256)
+	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256)
 	if isNoRows(err) {
 		return out, ErrNotFound
 	}
@@ -259,7 +273,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,state_seed_sha256,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.PendingEffects, &out.NetTokens)
+	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err

@@ -564,6 +564,14 @@ async function withDistributedEviction<T>(
   }
 }
 
+// Sockets authenticating for a source room, from before the publication lock
+// check until they connect or fail: a rebuild counts them as in the room.
+const sourceJoins = new Map<string, () => void>();
+function endSourceJoin(socketId: string) {
+  sourceJoins.get(socketId)?.();
+  sourceJoins.delete(socketId);
+}
+
 const server = new Server<CollaborationContext>({
   address: config.host,
   // A message dropped for a resync (resyncOfficeConnection) is behind us.
@@ -572,8 +580,12 @@ const server = new Server<CollaborationContext>({
   },
   async afterUnloadDocument({ documentName }) {
     pendingCheckpoints.delete(documentName);
-    if (SOURCE_ROOM_PATTERN.test(documentName)) sources.forget(documentName);
-    else store.forgetRoom(documentName);
+    if (SOURCE_ROOM_PATTERN.test(documentName)) {
+      sources.forget(documentName);
+      // The last editor here left: a deferred publication can move editing
+      // onto the published file if no other instance has the room open.
+      sourceHandoff.scheduleRebuild(sourceRoom(documentName).fileId);
+    } else store.forgetRoom(documentName);
   },
   // Runs per inbound message, so keep it cheap: the only I/O is the writer
   // access recheck, at most once per connection every 5 s. Distributed
@@ -664,6 +676,7 @@ const server = new Server<CollaborationContext>({
     }
   },
   async connected({ connection }) {
+    endSourceJoin(connection.socketId);
     armTokenExpiry(connection);
     connection.onClose(() => clearTokenExpiry(connection));
   },
@@ -678,7 +691,15 @@ const server = new Server<CollaborationContext>({
   maxPendingDocuments: 8,
   maxUnauthenticatedQueueMessages: 64,
   maxUnauthenticatedQueueSize: 512 * 1024,
-  async onAuthenticate({ connectionConfig, documentName, request, token }) {
+  async onAuthenticate({
+    connectionConfig,
+    documentName,
+    request,
+    socketId,
+    token,
+  }) {
+    if (SOURCE_ROOM_PATTERN.test(documentName))
+      sourceJoins.set(socketId, sourceHandoff.join(documentName, socketId));
     try {
       assertAllowedOrigin(request, config.allowedOrigins);
       assertRoomAvailable(documentName);
@@ -713,6 +734,7 @@ const server = new Server<CollaborationContext>({
       connectionConfig.readOnly = readOnly;
       return claimsContext(claims);
     } catch (error) {
+      endSourceJoin(socketId);
       authenticationFailures += 1;
       // Expected and high volume (expired tokens, stale tabs); logged, not
       // reported, or the error stream is nothing but this.
@@ -1060,7 +1082,8 @@ const sourceHandoff = new SourceHandoff(
   sources,
   activeInstanceIds,
   persistSource,
-  config.uatPublicationHold
+  config.uatPublicationHold,
+  (error) => captureError(error, { stage: 'source_rebuild' })
 );
 
 async function handleHttpRequest(
@@ -1850,6 +1873,36 @@ const sourceRefreshTimer = setInterval(() => {
 }, 5000);
 sourceRefreshTimer.unref();
 
+// Rebuilds a room-unload trigger missed (another instance still had the room,
+// a restart): every minute, files with a pending rebuild and no refresh in
+// flight, skipping one found in use for five minutes.
+const rebuildBackoff = new Map<string, number>();
+let sweepingRebuilds = false;
+const rebuildTimer = setInterval(() => {
+  if (sweepingRebuilds) return;
+  sweepingRebuilds = true;
+  void (async () => {
+    const now = Date.now();
+    for (const [fileId, until] of rebuildBackoff)
+      if (until <= now) rebuildBackoff.delete(fileId);
+    for (const fileId of await sources.pendingRebuilds()) {
+      if (rebuildBackoff.has(fileId)) continue;
+      try {
+        if (!(await sourceHandoff.rebuild(fileId)))
+          rebuildBackoff.set(fileId, now + 5 * 60_000);
+      } catch (error) {
+        rebuildBackoff.set(fileId, now + 10 * 60_000);
+        captureError(error, { stage: 'source_rebuild' });
+      }
+    }
+  })()
+    .catch((error) => captureError(error, { stage: 'source_rebuild' }))
+    .finally(() => {
+      sweepingRebuilds = false;
+    });
+}, 60_000);
+rebuildTimer.unref();
+
 // The maintenance pause (office_editing_pause, set by operators) reaches this
 // instance within 5 s: each loaded Office room flushes, persists and closes
 // its writers once. A room that loads later, or is mid-publication, follows on
@@ -1898,6 +1951,7 @@ async function shutdown(signal: string) {
   clearInterval(compactionTimer);
   clearInterval(heartbeatTimer);
   clearInterval(sourceRefreshTimer);
+  clearInterval(rebuildTimer);
   clearInterval(officePauseTimer);
   projections.stop();
   server.hocuspocus.flushPendingStores();

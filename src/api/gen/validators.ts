@@ -1376,6 +1376,11 @@ export const GetSourceSessionResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
@@ -4586,6 +4591,11 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
@@ -4699,6 +4709,7 @@ export const PublishSourceRefreshBody = zod.object({
   "checkpoint": zod.int(),
   "contentHash": zod.string(),
   "contentId": zod.string(),
+  "deferred": zod.boolean().optional(),
   "epoch": zod.int(),
   "expectedLatestCheckpoint": zod.int(),
   "jobId": zod.string(),
@@ -4722,6 +4733,11 @@ export const PublishSourceRefreshResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
@@ -4729,6 +4745,37 @@ export const PublishSourceRefreshResponse = zod.object({
   "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
+
+
+/**
+ * @summary Move editing onto the published file
+ */
+export const RebuildSourceParams = zod.object({
+  "id": zod.string()
+})
+
+export const RebuildSourceHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+export const rebuildSourceBodyExpectedCheckpointMin = 0;
+
+export const rebuildSourceBodyNetTokensMin = 0;
+
+
+
+export const RebuildSourceBody = zod.object({
+  "epoch": zod.int().min(1),
+  "expectedCheckpoint": zod.int().min(rebuildSourceBodyExpectedCheckpointMin),
+  "netTokens": zod.int().min(rebuildSourceBodyNetTokensMin),
+  "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string(),
+  "state": zod.string().optional(),
+  "stateSeedSHA256": zod.string().optional()
+})
+
+export const RebuildSourceResponse = zod.void()
 
 
 /**

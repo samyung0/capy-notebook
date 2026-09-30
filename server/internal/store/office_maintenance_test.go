@@ -233,9 +233,10 @@ func TestExportOnlyPublication(t *testing.T) {
 }
 
 // Store-only files publish export-only under the automatic trigger whatever
-// auto-process says, through the handoff: finalize keeps the candidate, and the
-// publication takes the collaboration service's rebase of a save made after
-// the capture. The file stays unmarked and its room is left to the handoff.
+// auto-process says: finalize keeps the candidate, and the publication is
+// deferred like any owner's Office publication (the file's bytes change,
+// editing stays on its base until the rebuild). The file stays unmarked and
+// its room is left alone.
 func TestStoreOnlyAutomaticExport(t *testing.T) {
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
@@ -280,7 +281,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	}
 	doc = sourceTestEdit(t, s, owner, doc, "later-state")
 	residual := json.RawMessage(`[{"id":"p","kind":"text","label":"Paragraph","operation":"replace","before":"a","after":"b"}]`)
-	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-d", PendingEffects: residual, NetTokens: 1, RebasedState: []byte("rebased-later"), RebasedStateSeedSHA256: sourceTestStateSeed, ExpectedLatestCheckpoint: doc.Checkpoint - 1}
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-d", PendingEffects: residual, NetTokens: 1, Deferred: true, ExpectedLatestCheckpoint: doc.Checkpoint - 1}
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
 		t.Fatalf("publication missing the later save: %v", err)
 	}
@@ -289,7 +290,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "rebased-later" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.NetTokens != 1 || published.BaseRevision != 2 {
+	if published.Epoch != 1 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "later-state" || !published.RebuildPending || string(published.PublishedState) != string(candidate.State) || published.PublishedSourceSHA256 != strings.Repeat("d", 64) || published.NetTokens != 1 || published.BaseRevision != 2 {
 		t.Fatalf("export publication: %+v", published)
 	}
 	var marked, indexed bool
@@ -301,7 +302,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if marked || indexed || blobPath != candidate.SourceBlobPath || status != "done" || evictions != 0 {
 		t.Fatalf("marked=%v indexed=%v blob=%s job=%s evictions=%d", marked, indexed, blobPath, status, evictions)
 	}
-	if again, err := s.PublishSourceRefresh(ctx, file, publish); err != nil || again.Epoch != 2 {
+	if again, err := s.PublishSourceRefresh(ctx, file, publish); err != nil || again.Epoch != 1 || !again.RebuildPending {
 		t.Fatalf("publication receipt replay: %+v %v", again, err)
 	}
 }
@@ -347,19 +348,20 @@ func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
-	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), RebasedState: []byte(strings.Repeat("r", 2000+len("seed-f"))), RebasedStateSeedSHA256: sourceTestStateSeed, ExpectedLatestCheckpoint: candidate.Checkpoint}
-	// With no save after the capture the state returns to seed(export): a
-	// rebased state is refused.
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), RebasedState: []byte("rebased"), RebasedStateSeedSHA256: sourceTestStateSeed, Deferred: true, ExpectedLatestCheckpoint: candidate.Checkpoint}
+	// A deferred publication carries no rebased state.
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
-		t.Fatalf("rebased state without a later save: %v", err)
+		t.Fatalf("deferred publication with a rebased state: %v", err)
 	}
-	// A save lands during the export; its rebase, 2,000 bytes past the export's
-	// seed, does not fit.
+	publish.RebasedState, publish.RebasedStateSeedSHA256 = nil, ""
+	// A save lands during the export; its pending effects, 2,000 bytes on top
+	// of the 500-byte larger export, do not fit.
 	doc, err := s.SourceSession(ctx, owner, file)
 	if err != nil {
 		t.Fatal(err)
 	}
 	publish.ExpectedLatestCheckpoint = sourceTestEdit(t, s, owner, doc, "later-state").Checkpoint
+	publish.PendingEffects = json.RawMessage(`[{"id":"p","kind":"text","operation":"replace","before":"a","after":"` + strings.Repeat("x", 2000) + `"}]`)
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.As(err, &quota) {
 		t.Fatalf("export past the quota: %v", err)
 	}

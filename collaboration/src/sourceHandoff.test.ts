@@ -28,6 +28,10 @@ const publicationSchema = parse(
   required: string[];
 };
 
+const rebuildSchema = parse(
+  readFileSync(new URL('../../openapi.yaml', import.meta.url), 'utf8')
+).components.schemas.SourceRebuild as typeof publicationSchema;
+
 function assertPublicationFields(body: unknown) {
   expect(body).toBeTypeOf('object');
   const fields = Object.keys(body as Record<string, unknown>);
@@ -85,11 +89,12 @@ function setup(publicationHold = false) {
     hset: vi.fn().mockResolvedValue(1),
     publish: vi.fn().mockResolvedValue(1),
   };
+  // A maintenance (system) job: its Office publication hands the room off.
   const pool = {
     query: vi.fn().mockImplementation(async (sql: string) => ({
       rows: sql.includes('FROM files')
         ? [{ user_id: 'u' }]
-        : [{ published: false }],
+        : [{ published: false, system: true }],
     })),
   };
   const sources = new SourceDocumentStore(
@@ -638,7 +643,7 @@ test.each([
     return {
       rows: sql.includes('FROM files')
         ? [{ user_id: 'u' }]
-        : [{ published: false }],
+        : [{ published: false, system: true }],
     };
   });
   // The handoff lock is taken only once the hold ends.
@@ -677,4 +682,242 @@ test.each([
     expect(held.every((name) => name.includes(PUBLICATION_HOLD_MARKER))).toBe(
       true
     );
+});
+
+const owner = (f: ReturnType<typeof setup>, extra: Record<string, unknown>) =>
+  f.pool.query.mockImplementation(async (sql: string) => {
+    if (sql.includes('FROM files')) return { rows: [{ user_id: 'u' }] };
+    if (sql.includes("'paidBy'")) return { rows: [{ system: false }] };
+    if (sql.includes('rebuild_pending AS pending'))
+      return { rows: [{ pending: extra.pending ?? false }] };
+    if (sql.includes('source_refresh_candidates'))
+      return {
+        rows: [
+          { state: Buffer.from('captured'), state_seed_sha256: 'a'.repeat(64) },
+        ],
+      };
+    return { rows: [{ published: false }] };
+  });
+
+const publicationInput = {
+  attemptId: 1,
+  checkpoint: 7,
+  contentHash: 'hash',
+  contentId: 'content',
+  epoch: 1,
+  fileId: 'f',
+  jobId: 'job',
+  leaseToken: 'lease',
+  sourceETag: 'etag',
+};
+
+test('an owner Office publication defers: no lock or handoff, effects against the capture', async () => {
+  const f = setup();
+  owner(f, {});
+  f.session.checkpoint = 8;
+  vi.mocked(f.sources.session).mockImplementation(async () => ({
+    ...f.session,
+  }));
+  const lock = vi.fn();
+  Object.assign(f.redis, { set: lock });
+  vi.spyOn(f.sources, 'stateOf').mockResolvedValue(new Uint8Array([1]));
+  const effects = vi
+    .spyOn(f.sources, 'effects')
+    .mockImplementation(async (session) => [
+      {
+        after: `after${session.checkpoint}`,
+        before: 'a',
+        id: 'p',
+        kind: 'text',
+        label: 'Paragraph',
+        operation: 'replace',
+      },
+    ]);
+  const publish = vi
+    .spyOn(f.sources, 'request')
+    .mockImplementation(async (_file, _endpoint, body) => {
+      assertPublicationFields(body);
+      if (
+        (body as { expectedLatestCheckpoint: number })
+          .expectedLatestCheckpoint === 8
+      ) {
+        f.session.checkpoint = 9;
+        throw new SourceRequestError(409, 'Source checkpoint changed');
+      }
+      return { epoch: 1 };
+    });
+  await expect(f.handoff.publish(publicationInput)).resolves.toEqual({
+    epoch: 1,
+  });
+  // Editors keep their document: no room lock, no prepare, no epoch change.
+  expect(lock).not.toHaveBeenCalled();
+  expect(f.document.broadcastStateless).not.toHaveBeenCalled();
+  expect(
+    effects.mock.calls.map(([session]) => [
+      session.checkpoint,
+      session.rebuildPending,
+      session.publishedState,
+      session.publishedStateSeedSHA256,
+    ])
+  ).toEqual([
+    [8, true, Buffer.from('captured').toString('base64'), 'a'.repeat(64)],
+    [9, true, Buffer.from('captured').toString('base64'), 'a'.repeat(64)],
+  ]);
+  const { fileId: _fileId, ...receipt } = publicationInput;
+  expect(publish.mock.calls.map((call) => call[2])).toEqual([
+    expect.objectContaining({
+      ...receipt,
+      deferred: true,
+      expectedLatestCheckpoint: 8,
+    }),
+    expect.objectContaining({
+      ...receipt,
+      deferred: true,
+      expectedLatestCheckpoint: 9,
+      pendingEffects: [expect.objectContaining({ after: 'after9' })],
+    }),
+  ]);
+});
+
+test('a deferred publication with no later save carries no effects', async () => {
+  const f = setup();
+  owner(f, {});
+  const effects = vi.spyOn(f.sources, 'effects');
+  const publish = vi.spyOn(f.sources, 'request').mockResolvedValue({});
+  await f.handoff.publish(publicationInput);
+  expect(effects).not.toHaveBeenCalled();
+  expect(publish.mock.calls[0][2]).toMatchObject({
+    deferred: true,
+    netTokens: 0,
+    pendingEffects: [],
+  });
+});
+
+function rebuildSetup() {
+  const f = setup();
+  // Nobody has the room open on this instance.
+  f.host.documents.clear();
+  owner(f, { pending: true });
+  Object.assign(f.session, {
+    checkpoint: 9,
+    indexedCheckpoint: 7,
+    publishedSourceSHA256: 'b'.repeat(64),
+    publishedSourceURL: 'https://published',
+    rebuildPending: true,
+  });
+  const order: string[] = [];
+  let lockId = '';
+  Object.assign(f.redis, {
+    del: vi.fn(),
+    eval: vi.fn(async () => {
+      order.push('unlock');
+    }),
+    hgetall: vi.fn(async () => ({ instance: 'idle' })),
+    set: vi.fn(async (_key: string, id: string) => {
+      order.push('lock');
+      lockId = id;
+      return 'OK';
+    }),
+  });
+  f.redis.publish.mockImplementation(async (_channel: string, raw: string) => {
+    order.push(JSON.parse(raw).type);
+    return 1;
+  });
+  const rebase = vi
+    .spyOn(f.sources, 'rebuildPublication')
+    .mockImplementation(async () => {
+      order.push('rebase');
+      return {
+        netTokens: 1,
+        pendingEffects: [],
+        rebasedState: 'rebased',
+        rebasedStateSeedSHA256: 'c'.repeat(64),
+      };
+    });
+  const request = vi
+    .spyOn(f.sources, 'request')
+    .mockImplementation(async (_file, endpoint) => {
+      order.push(endpoint);
+    });
+  return { ...f, lockId: () => lockId, order, rebase, request };
+}
+
+test('a rebuild rebases first, then locks only to confirm the room is empty and swap', async () => {
+  const f = rebuildSetup();
+  await expect(f.handoff.rebuild('f')).resolves.toBe(true);
+  expect(f.order).toEqual([
+    'rebase',
+    'lock',
+    'probe',
+    'rebuild',
+    'complete',
+    'unlock',
+  ]);
+  // The body the gateway's strict schema takes.
+  const body = f.request.mock.calls[0][2] as Record<string, unknown>;
+  expect(Object.keys(body)).toEqual(
+    expect.arrayContaining(rebuildSchema.required)
+  );
+  expect(
+    Object.keys(body).filter(
+      (field) => !Object.hasOwn(rebuildSchema.properties, field)
+    )
+  ).toEqual([]);
+  expect(f.request).toHaveBeenCalledWith('f', 'rebuild', {
+    epoch: 1,
+    expectedCheckpoint: 9,
+    netTokens: 1,
+    pendingEffects: [],
+    publishedSourceSHA256: 'b'.repeat(64),
+    state: 'rebased',
+    stateSeedSHA256: 'c'.repeat(64),
+  });
+});
+
+test('a rebuild waits while anyone has the room open, here or elsewhere', async () => {
+  // Open on this instance: no rebase, no lock.
+  let f = rebuildSetup();
+  f.host.documents.set(f.session.room, f.document);
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+  expect(f.order).toEqual([]);
+  // Open on another instance: it answers busy and nothing swaps.
+  f = rebuildSetup();
+  Object.assign(f.redis, {
+    hgetall: vi.fn(async () => ({ instance: 'idle', other: 'busy' })),
+  });
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+  expect(f.order).toEqual(['rebase', 'lock', 'probe', 'unlock']);
+  // A save or publication in between: the gateway refuses the swap.
+  f = rebuildSetup();
+  f.request.mockRejectedValue(new SourceRequestError(409, 'stale'));
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+  expect(f.order).toEqual(['rebase', 'lock', 'probe', 'unlock']);
+  // Nothing pending: not even a session read.
+  f = rebuildSetup();
+  owner(f, { pending: false });
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+  expect(f.sources.session).not.toHaveBeenCalled();
+});
+
+test('the probe answers busy while a socket authenticates for the room', async () => {
+  const f = setup();
+  f.host.documents.clear();
+  const probe = (id: string) =>
+    f.handoff.handle(
+      JSON.stringify({ fileId: 'f', id, room: f.session.room, type: 'probe' })
+    );
+  const done = f.handoff.join(f.session.room, 'joining');
+  await probe('first');
+  expect(f.redis.hset).toHaveBeenLastCalledWith(
+    'capy:source-handoff:first',
+    'instance',
+    'busy'
+  );
+  done();
+  await probe('second');
+  expect(f.redis.hset).toHaveBeenLastCalledWith(
+    'capy:source-handoff:second',
+    'instance',
+    'idle'
+  );
 });

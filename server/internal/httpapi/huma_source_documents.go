@@ -79,6 +79,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-candidate", "finalizeSourceRefresh", tag, "Enqueue an uploaded candidate", http.StatusNoContent, 150<<20, a.finalizeSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/publish", "publishSourceRefresh", tag, "Publish a processed source checkpoint", http.StatusOK, 150<<20, a.publishSourceRefresh)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-failure", "failSourceRefresh", tag, "Discard an unsuccessful candidate", http.StatusNoContent, a.failSourceRefresh)
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild", "rebuildSource", tag, "Move editing onto the published file", http.StatusNoContent, 150<<20, a.rebuildSource)
 	reg(api, http.MethodGet, "/api/files/{id}/source-session", "getSourceSession", tag, "Read source editing session", http.StatusOK, a.getSourceSession)
 	reg(api, http.MethodPost, "/api/files/{id}/collaboration-token", "createSourceCollaborationToken", tag, "Create source room token", http.StatusCreated, a.createSourceCollaborationToken)
 	reg(api, http.MethodPost, "/api/files/{id}/process-changes", "processSourceChanges", tag, "Process the latest saved source changes", http.StatusAccepted, a.processSourceChanges)
@@ -108,6 +109,11 @@ func (a *api) sourceSessionResponse(ctx context.Context, session store.SourceSes
 		return nil, hErr(err)
 	}
 	session.SourceURL = url
+	if session.RebuildPending {
+		if session.PublishedSourceURL, err = a.blob.PresignGet(ctx, session.PublishedBlobPath); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	return &sourceSessionOutput{Body: session}, nil
 }
 func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*sourceSessionOutput, error) {
@@ -132,6 +138,8 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	// Effects stay server-side. The browser opens a text state; an Office
 	// editor takes its document from the room's sync.
 	session.PendingEffects = nil
+	// A pending rebuild is the collaboration service's.
+	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
 	if session.Format != "text" {
 		session.State, session.StateSeedSHA256 = nil, nil
 	}
@@ -191,6 +199,19 @@ func (a *api) processSourceChanges(ctx context.Context, in *collaborationTokenIn
 		return nil, hErr(err)
 	}
 	return &sourceProcessOutput{Body: out}, nil
+}
+
+type sourceRebuildInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+	Body   store.SourceRebuild
+}
+
+func (a *api) rebuildSource(ctx context.Context, in *sourceRebuildInput) (*struct{}, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	return nil, hErr(a.s.RebuildSource(ctx, in.ID, in.Body))
 }
 func (a *api) cancelSourceChanges(ctx context.Context, in *collaborationTokenInput) (*struct{}, error) {
 	return nil, hErr(a.s.CancelSourceRefresh(ctx, userID(ctx), in.ID))
