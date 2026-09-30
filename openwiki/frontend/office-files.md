@@ -229,7 +229,10 @@ follows breaks that open a paragraph after another paragraph and the rebased
 state reads those breaks as leading it while the latest state does not
 (`assertBreaksLead`, aligning the two afresh): the capture's save can write a
 comment's reference after such breaks, so landing there would differ from a
-direct save. Any failure while landing the later
+direct save (`bun run test:matrix` in BetterOffice classifies these
+rebase outcomes across breaks, comments next to breaks, fields and Accept/Reject
+all against a committed baseline; run it before landing Office changes). Any
+failure while landing the later
 edits is a refusal (`RebaseError`). A refusal (an error the engine raises
 with the `Office rebase:` prefix, including XLSX's) is terminal: the
 collaboration service answers the publication with 422, and the ingest worker
