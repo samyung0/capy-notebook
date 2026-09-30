@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
-import { CopyError } from '@/lib/errors';
+import { CopyError } from '@/lib/copyError';
 import type { Question } from './types';
 
 const letterStart = /^[A-Za-z]/;

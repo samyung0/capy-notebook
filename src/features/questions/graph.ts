@@ -1,6 +1,6 @@
 import type { BoardAttributes, Point, TextAttributes } from 'jsxgraph';
 import { m } from '@/i18n';
-import { CopyError } from '@/lib/errors';
+import { CopyError } from '@/lib/copyError';
 import type { GraphBlock, GraphElement } from './types';
 
 import { validGraphTerm } from './validation';

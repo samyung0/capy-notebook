@@ -221,7 +221,10 @@ test('Office export failure retains the editable iframe and draft download works
   await launch(page, 'office-runtime-error');
   const frame = page.locator('iframe[src*="office-runtime"]');
   const mounted = await frame.elementHandle();
-  await expect(page.getByRole('alert')).toContainText('could not be exported');
+  // The iframe's own error text never renders; the host shows its copy.
+  await expect(page.getByRole('alert')).toContainText(
+    'Changes could not be saved. Your draft is still here.'
+  );
   const downloadReady = page.waitForEvent('download');
   await page
     .getByRole('button', { exact: true, name: 'Download draft' })

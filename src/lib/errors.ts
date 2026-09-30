@@ -13,6 +13,7 @@ import {
 } from '@/api/client';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
+import { CopyError } from './copyError';
 
 export type ErrorKind =
   | 'offline'
@@ -351,8 +352,7 @@ export function describeError(error: unknown): ErrorDescription {
   }
 }
 
-/** Thrown with localized copy as its message, which errorCopy shows. */
-export class CopyError extends Error {}
+export { CopyError } from './copyError';
 
 /** Copy for a caught failure: a CopyError's own copy, API and connection
  * failures by their code, anything else (an exception) as `fallback`, never
