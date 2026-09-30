@@ -45,6 +45,77 @@ jobs:
             git log --oneline --no-decorate "$previous..$pin" || true
           fi
 
+  # The DOCX regression matrix (vendor/betteroffice/shared/matrix) gates a
+  # commit that moves the BetterOffice pin, so a regressing pin never reaches
+  # UAT; promotion inherits it through CI. Other commits skip it.
+  office_matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check whether the pin moved
+        id: pin
+        env:
+          BEFORE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          pin=$(git ls-tree HEAD vendor/betteroffice | awk '{print $3}')
+          previous=""
+          if [ -n "${BEFORE:-}" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            previous=$(git ls-tree "$BEFORE" vendor/betteroffice | awk '{print $3}')
+          fi
+          if [ "$pin" = "$previous" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            echo "vendor/betteroffice pin unchanged ($pin); skipping the matrix."
+          else
+            echo "moved=true" >> "$GITHUB_OUTPUT"
+            echo "vendor/betteroffice pin ${previous:-(none)} -> $pin"
+          fi
+      - if: steps.pin.outputs.moved == 'true'
+        run: git submodule update --init --recursive vendor/betteroffice
+      - if: steps.pin.outputs.moved == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - if: steps.pin.outputs.moved == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - if: steps.pin.outputs.moved == 'true'
+        uses: ./vendor/betteroffice/.github/actions/wasm-toolchain
+      - if: steps.pin.outputs.moved == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
+      - if: steps.pin.outputs.moved == 'true'
+        uses: ./.github/actions/cache-betteroffice
+      - if: steps.pin.outputs.moved == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.pin.outputs.moved == 'true'
+        uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+      - if: steps.pin.outputs.moved == 'true'
+        run: pnpm install --frozen-lockfile
+      # Builds the WASM cores and the checkpoint runtime the matrix loads.
+      - if: steps.pin.outputs.moved == 'true'
+        run: pnpm office:prepare
+      - if: steps.pin.outputs.moved == 'true'
+        working-directory: vendor/betteroffice
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: bun install --frozen-lockfile && bun run test:matrix
+      - if: always() && steps.pin.outputs.moved == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: docx-matrix-report
+          path: ${{ runner.temp }}/docx-matrix-*/report.txt
+          retention-days: 7
+
   frontend_check:
     runs-on: ubuntu-latest
     steps:
