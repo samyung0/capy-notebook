@@ -266,7 +266,19 @@ list item before a leading break keeps its number. Tracked breaks keep
 headers, footers and notes, as in Word; breaks the file has there are kept.
 An AI `replace_text` treats the breaks a paragraph opens with as outside its
 replaceable text: inspect lists the paragraph with the text after them, and
-the replacement lands after them.
+the replacement lands after them. A comment over a heading its break opens
+keeps covering that break after the heading's text is deleted, in the direct,
+rebased and publish-then-edit saves alike, and a comment ending before or at
+a leading break keeps every break in place: when such a comment has no
+reference mark yet, the save writes its reference after the breaks, so Word
+anchors its note on the heading's page.
+
+BetterOffice builds with a patched yrs 0.27.3 (`third_party/yrs`, through
+`[patch.crates-io]`): its `clean_format_gap` counts a map embed (a field,
+paragraph mark or break) as content, as JS Yjs does, so a delete before a
+field no longer spreads the deleted text's link and field marker onto the
+field. Without it, one Backspace at the end of a table of contents' first
+entry removed the whole TOC field from the saved file.
 
 The DOCX editor never puts paragraph text ahead of a table, block content
 control or page or column break in one paragraph slot, as in Word (the render
