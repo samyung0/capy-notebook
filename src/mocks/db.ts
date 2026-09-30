@@ -1321,34 +1321,30 @@ const seedQuizzes: Quiz[] = [
   },
 ];
 
+/** Seed answers are written per question; grading reads them per part. */
+const byPart = (answers: Record<string, unknown>) =>
+  Object.fromEntries(
+    Object.entries(answers).map(([id, a]) => [`${id}:part`, a])
+  );
+
 export const attempts: (Attempt & {
   answers?: Record<string, unknown>;
   questions?: Question[];
 })[] = [
   {
-    answers: {
+    answers: byPart({
       q1: [1],
       q2: true,
       q3: [1, 2],
       q4: 'osmosis',
-      q5: [
-        'Ribosome',
-        'Rough ER',
-        'Golgi apparatus',
-        'Vesicle',
-        'Cell membrane',
-      ],
+      q5: [0, 1, 2, 3, 4],
       // Wrong: swapped Nucleus/Mitochondria functions.
-      q6: {
-        Mitochondria: 'Stores DNA',
-        Nucleus: 'Makes ATP',
-        Ribosome: 'Builds proteins',
-      },
+      q6: { 0: 1, 1: 0, 2: 2 },
       q11: [1],
       q12: true, // Wrong: correct answer is false.
       q13: 'mitochondria',
       q14: 'cellular respiration',
-    },
+    }),
     chapters: ['Cell structure'],
     correct: 8,
     id: 'at_1',
@@ -1361,7 +1357,7 @@ export const attempts: (Attempt & {
     workspaceName: 'Biology 101',
   },
   {
-    answers: {
+    answers: byPart({
       q9: [1],
       q10: true,
       q23: [0],
@@ -1370,14 +1366,9 @@ export const attempts: (Attempt & {
       q26: [0],
       q27: false, // Wrong: correct answer is true.
       q28: [0], // Wrong: correct is [0, 1].
-      q29: [
-        'Apply the formula',
-        'Choose u and dv',
-        'Integrate dv',
-        'Differentiate u',
-      ], // Wrong order.
-      q30: '', // Blank: unanswered.
-    },
+      q29: [3, 0, 2, 1], // Wrong order.
+      q30: '', // Blank: wrong.
+    }),
     chapters: ['Techniques of integration'],
     correct: 6,
     id: 'at_2',
@@ -1390,18 +1381,18 @@ export const attempts: (Attempt & {
     workspaceName: 'Calculus II',
   },
   {
-    answers: {
+    answers: byPart({
       q7: [0],
-      q8: '', // Blank: unanswered.
+      q8: '', // Blank: wrong.
       q15: [0],
       q16: true, // Wrong: correct answer is false.
       q17: [0], // Wrong: correct is [0, 2].
       q18: 'Punnett',
       q19: true,
       q20: [1], // Wrong: correct is [0].
-      q21: ['Telophase', 'Anaphase', 'Metaphase', 'Prophase'], // Wrong order.
-      q22: '', // Blank: unanswered.
-    },
+      q21: [3, 2, 1, 0], // Wrong order.
+      q22: '', // Blank: wrong.
+    }),
     chapters: ['Genetics'],
     correct: 4,
     id: 'at_3',
