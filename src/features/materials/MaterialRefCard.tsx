@@ -28,15 +28,10 @@ export function MaterialRefCard({
   const hasQueries = useContext(QueryClientContext) !== undefined;
   return (
     <div
-      className={cn(
-        'flex items-center gap-3 rounded-card border border-line bg-surface p-3',
-        className
-      )}
+      className={cn('flex min-w-0 items-center gap-3 py-1.5', className)}
       contentEditable={false}
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-card bg-surface-hover-bg">
-        <FileIcon className="size-5" name={materialIconName(refKind)} />
-      </span>
+      <FileIcon className="size-6 shrink-0" name={materialIconName(refKind)} />
       {materialId && hasQueries ? (
         refKind === 'quiz' ? (
           <QuizRefBody materialId={materialId} onEdit={onEdit} />
@@ -76,13 +71,20 @@ function RefBody({
         <p className="t-subtitle truncate">{title}</p>
         <p className="t-meta text-fg-muted">{meta}</p>
       </div>
-      <div className="flex shrink-0 items-center gap-1">
-        {onEdit && (
-          <Button onClick={onEdit} size="sm" variant="ghost">
+      {/* Edit mode offers only Edit; view mode starts or studies the set. */}
+      <div className="shrink-0">
+        {onEdit ? (
+          <Button
+            iconLeft="pencil"
+            onClick={onEdit}
+            size="sm"
+            variant="outline"
+          >
             {m.action_edit()}
           </Button>
+        ) : (
+          action
         )}
-        {action}
       </div>
     </>
   );

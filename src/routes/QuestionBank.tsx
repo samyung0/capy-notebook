@@ -1,37 +1,43 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearch,
-} from '@tanstack/react-router';
-import { lazy, Suspense, useState } from 'react';
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { api, isApiError } from '@/api/client';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
+import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
-import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { userToast } from '@/components/ui/userToast';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { relativeTime } from '@/features/materials/MaterialListCard';
-import { MaterialModeToggle } from '@/features/materials/MaterialModeToggle';
 import {
   type BankDetail,
   type BankRow,
+  type BankSyllabus,
   bankQuestionQuery,
   bankQuestionsQuery,
   bankSyllabusQuery,
   uploadBankAsset,
 } from '@/features/questions/bank';
-import { QuestionView, TextView } from '@/features/questions/QuestionView';
+import { TextView } from '@/features/questions/QuestionView';
 import type { Question } from '@/features/questions/types';
+import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { QuizPageHeader } from '@/features/quizzes/QuizPage';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -41,6 +47,12 @@ const QuestionDialog = lazy(() =>
   }))
 );
 const commentSchema = z.object({ text: z.string().trim().min(1).max(2000) });
+
+/**
+ * Question bank: every question of the chosen topic in the main panel; exams,
+ * topics and the topic's question list in the right column (a floating bar
+ * and bottom sheet on phones).
+ */
 export default function QuestionBank() {
   const { topicId = '', questionId = '' } = useParams({ strict: false }) as {
     topicId?: string;
@@ -49,28 +61,14 @@ export default function QuestionBank() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const search = useSearch({ strict: false });
-  function setMode(next: 'view' | 'edit') {
-    const options = {
-      replace: true,
-      search: { mode: next === 'edit' ? ('edit' as const) : undefined },
-    };
-    if (questionId)
-      void navigate({
-        ...options,
-        params: { questionId, topicId },
-        to: '/bank/$topicId/$questionId',
-      });
-    else if (topicId)
-      void navigate({ ...options, params: { topicId }, to: '/bank/$topicId' });
-    else void navigate({ ...options, to: '/bank' });
-  }
-  const [showTopics, setShowTopics] = useState(false);
+  const [showTopics, setShowTopics] = useState(!topicId);
+  const [navOpen, setNavOpen] = useState(false);
   const [topicFilter, setTopicFilter] = useState('');
   const [filter, setFilter] = useState('');
   const [unreviewed, setUnreviewed] = useState(false);
   const [editing, setEditing] = useState<BankDetail | null>(null);
   const [conflict, setConflict] = useState(false);
-  const [commentOpen, setCommentOpen] = useState(false);
+  const [commentFor, setCommentFor] = useState('');
   const {
     data: syllabus,
     error: syllabusError,
@@ -86,13 +84,17 @@ export default function QuestionBank() {
     ...bankQuestionsQuery(topicId),
     meta: { errorBoundary: false },
   });
-  const {
-    data: detail,
-    error: detailError,
-    isPending: detailPending,
-  } = useQuery({
-    ...bankQuestionQuery(questionId),
-    meta: { errorBoundary: false },
+  const rows = (list?.questions ?? []).filter(
+    (row) =>
+      (mode !== 'edit' || !unreviewed || !row.reviewedAt) &&
+      row.preview.toLowerCase().includes(filter.toLowerCase())
+  );
+  // One request per question; each detail is cached for revisits and edits.
+  const details = useQueries({
+    queries: rows.map((row) => ({
+      ...bankQuestionQuery(row.id),
+      meta: { errorBoundary: false },
+    })),
   });
   const { mutateAsync: saveQuestion } = useMutation({
     mutationFn: ({
@@ -127,386 +129,294 @@ export default function QuestionBank() {
       void client.invalidateQueries({ queryKey: bankSyllabusQuery().queryKey });
     },
   });
+
+  // A question in the URL scrolls into view once it and every question above
+  // it have loaded, so later loads cannot push it off screen.
+  const target = rows.findIndex((row) => row.id === questionId);
+  const targetReady =
+    target >= 0 && details.slice(0, target + 1).every((query) => query.data);
+  useEffect(() => {
+    if (targetReady) scrollToQuestion(questionId);
+  }, [questionId, targetReady]);
+
+  const modeSearch = {
+    mode: search.mode === 'edit' ? ('edit' as const) : undefined,
+  };
+  function setMode(next: 'view' | 'edit') {
+    const options = {
+      replace: true,
+      search: { mode: next === 'edit' ? ('edit' as const) : undefined },
+    };
+    if (topicId)
+      void navigate({ ...options, params: { topicId }, to: '/bank/$topicId' });
+    else void navigate({ ...options, to: '/bank' });
+  }
   function topic(id: string) {
     setShowTopics(false);
+    setNavOpen(false);
     setFilter('');
     void navigate({
       params: { topicId: id },
-      search: { mode: search.mode === 'edit' ? 'edit' : undefined },
+      search: modeSearch,
       to: '/bank/$topicId',
     });
   }
   function select(id: string) {
-    setShowTopics(false);
+    setNavOpen(false);
+    // The URL does not change for the current question, so scroll directly.
+    if (id === questionId) scrollToQuestion(id);
     void navigate({
       params: { questionId: id, topicId },
-      search: { mode: search.mode === 'edit' ? 'edit' : undefined },
+      replace: true,
+      search: modeSearch,
       to: '/bank/$topicId/$questionId',
     });
   }
-  const rows = (list?.questions ?? []).filter(
-    (row) =>
-      (mode !== 'edit' || !unreviewed || !row.reviewedAt) &&
-      row.preview.toLowerCase().includes(filter.toLowerCase())
-  );
-  const selectedTopic = syllabus?.exams
-    .flatMap((exam) => exam.subjects.flatMap((subject) => subject.topics))
-    .find((item) => item.id === topicId);
-  const selectedIndex = rows.findIndex((row) => row.id === questionId);
-  const topicSearch = topicFilter.trim().toLocaleLowerCase();
-  const exams = (syllabus?.exams ?? [])
-    .map((exam) => ({
-      ...exam,
-      subjects: exam.subjects
-        .map((subject) => ({
-          ...subject,
-          topics: subject.topics.filter((item) =>
-            [exam.label, subject.label, item.label].some((label) =>
-              label.toLocaleLowerCase().includes(topicSearch)
-            )
-          ),
-        }))
-        .filter((subject) => subject.topics.length > 0),
-    }))
-    .filter((exam) => exam.subjects.length > 0);
-  return (
-    <PanelWithInvertedRadius>
-      <PageHeader
-        actions={
-          syllabus?.editor && (
-            <MaterialModeToggle mode={mode} onChange={setMode} />
-          )
-        }
-        className="shrink-0 flex-wrap gap-3 px-4 sm:px-6 lg:gap-6"
-        title={
-          <div className="flex items-center gap-3 whitespace-nowrap">
-            <Link aria-label={m.action_back()} to="/create">
-              <Icon name="navigationBack" size={20} />
-            </Link>
-            <h1 className="t-large-card-title">
-              {m.question_ui_question_bank()}
-            </h1>
-          </div>
-        }
-        titleClassName="shrink-0"
+
+  const place = syllabus?.exams
+    .flatMap((exam) =>
+      exam.subjects.flatMap((subject) =>
+        subject.topics.map((item) => ({ exam, item, subject }))
+      )
+    )
+    .find(({ item }) => item.id === topicId);
+
+  const nav = syllabus ? (
+    showTopics || !topicId ? (
+      <TopicTree
+        edit={mode === 'edit'}
+        filter={topicFilter}
+        onFilter={setTopicFilter}
+        onTopic={topic}
+        syllabus={syllabus}
+        topicId={topicId}
       />
-      {fetchStatus === 'paused' ? (
-        <QueryPausedState />
-      ) : syllabusPending ? (
-        <p className="p-6" role="status">
-          {m.question_ui_loading_question_bank()}
+    ) : (
+      <TopicQuestions
+        edit={mode === 'edit'}
+        filter={filter}
+        label={place?.item.label ?? ''}
+        list={list}
+        onBack={() => setShowTopics(true)}
+        onFilter={setFilter}
+        onQuestion={select}
+        onUnreviewed={setUnreviewed}
+        questionId={questionId}
+        rows={rows}
+        unreviewed={unreviewed}
+      />
+    )
+  ) : null;
+
+  let body: ReactNode;
+  if (fetchStatus === 'paused') body = <QueryPausedState />;
+  else if (syllabusPending)
+    body = <p role="status">{m.question_ui_loading_question_bank()}</p>;
+  else if (syllabusError)
+    body = (
+      <BankError
+        error={syllabusError}
+        onRetry={() =>
+          void client.invalidateQueries({
+            queryKey: bankSyllabusQuery().queryKey,
+          })
+        }
+      />
+    );
+  else if (!topicId)
+    body = (
+      <>
+        {/* Phones pick a topic in the page; wide screens use the side panel. */}
+        <div className="lg:hidden">{nav}</div>
+        <p className="hidden text-fg-muted lg:block">
+          {m.question_ui_choose_a_topic()}
         </p>
-      ) : syllabusError ? (
-        <BankError
-          error={syllabusError}
-          onRetry={() =>
-            void client.invalidateQueries({
-              queryKey: bankSyllabusQuery().queryKey,
-            })
-          }
-        />
-      ) : (
-        <div className="flex min-h-0 flex-1">
-          <aside
-            aria-label={m.question_ui_topics()}
-            className={cn(
-              'w-full shrink-0 overflow-auto border-divider px-4 py-5 md:w-72 md:border-r xl:block',
-              !topicId || showTopics ? 'block' : 'hidden'
-            )}
-          >
-            <h2 className="t-subtitle mb-3">{m.question_ui_syllabus()}</h2>
-            <Input
-              aria-label={m.question_ui_find_a_topic()}
-              onChange={(event) => setTopicFilter(event.target.value)}
-              placeholder={m.question_ui_find_a_topic()}
-              value={topicFilter}
-              wrapperClassName="mb-5"
-            />
-            {exams.map((exam) => (
-              <div className="mb-4" key={exam.id}>
-                <h3 className="px-1.5 pt-3 pb-1 font-bold text-fg-muted text-xs">
-                  {exam.label}
-                </h3>
-                {exam.subjects.map((subject) => (
-                  <details className="group" key={subject.id} open>
-                    <summary className="flex cursor-pointer list-none items-center gap-2 px-1.5 py-2.5 font-bold [&::-webkit-details-marker]:hidden">
-                      <Icon
-                        className="-rotate-90 text-fg-muted transition-transform group-open:rotate-0"
-                        name="chevronDown"
-                        size={14}
-                      />
-                      {subject.label}
-                    </summary>
-                    <ul>
-                      {subject.topics.map((item) => (
-                        <li key={item.id}>
-                          <button
-                            aria-current={
-                              item.id === topicId ? 'page' : undefined
-                            }
-                            className={cn(
-                              'flex min-h-11 w-full items-center justify-between gap-3 rounded-input py-2 pr-2.5 pl-6 text-left hover:bg-surface-hover-bg',
-                              item.id === topicId &&
-                                'bg-tint-accent-1 text-tint-accent-1-fg'
-                            )}
-                            onClick={() => topic(item.id)}
-                            type="button"
-                          >
-                            <span>{item.label}</span>
-                            <span className="shrink-0 text-fg-muted text-xs tabular-nums">
-                              {mode === 'edit' ? item.reviewed + '/' : ''}
-                              {item.total}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                ))}
-              </div>
-            ))}
-            {!exams.length && (
-              <p className="text-fg-muted">
-                {syllabus?.exams.length
-                  ? m.question_ui_no_topics_match()
-                  : m.question_ui_no_syllabi_have_been_published_yet()}
-              </p>
-            )}
-          </aside>
-          <section
-            aria-label={m.question_ui_questions()}
-            className={cn(
-              'flex w-full shrink-0 flex-col border-divider md:w-80 md:border-r xl:w-88',
-              !topicId || showTopics
-                ? 'hidden xl:flex'
-                : questionId
-                  ? 'hidden md:flex'
-                  : 'flex'
-            )}
-          >
-            <div className="space-y-3 border-divider border-b p-4">
-              <Button
-                className="-ml-4 xl:hidden"
-                iconLeft="navigationBack"
-                onClick={() => setShowTopics(true)}
-                size="sm"
-                variant="ghost"
-              >
-                {m.question_ui_topics()}
-              </Button>
-              <div>
-                <h2 className="t-subtitle">
-                  {selectedTopic?.label ?? m.question_ui_choose_a_topic()}
-                </h2>
-                {topicId && list && (
-                  <p className="mt-0.5 text-fg-muted text-xs">
-                    {list.questions.length === 1
-                      ? m.question_ui_one_question()
-                      : m.question_ui_question_count({
-                          count: list.questions.length,
-                        })}
-                  </p>
-                )}
-              </div>
-              {topicId && (
-                <Input
-                  aria-label={m.question_ui_find_a_question()}
-                  onChange={(event) => setFilter(event.target.value)}
-                  placeholder={m.question_ui_find_a_question()}
-                  value={filter}
-                />
-              )}
-              {mode === 'edit' && (
-                <div className="flex gap-1">
-                  <Button
-                    aria-pressed={!unreviewed}
-                    onClick={() => setUnreviewed(false)}
-                    size="sm"
-                    variant={unreviewed ? 'ghost' : 'gray'}
-                  >
-                    {m.action_all()} {list?.questions.length ?? 0}
-                  </Button>
-                  <Button
-                    aria-pressed={unreviewed}
-                    onClick={() => setUnreviewed(true)}
-                    size="sm"
-                    variant={unreviewed ? 'gray' : 'ghost'}
-                  >
-                    {m.question_ui_unreviewed()}{' '}
-                    {list?.questions.filter((row) => !row.reviewedAt).length ??
-                      0}
-                  </Button>
-                </div>
-              )}
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto">
-              {topicId &&
-                (listError ? (
-                  <BankError
-                    error={listError}
-                    onRetry={() =>
-                      void client.invalidateQueries({
-                        queryKey: bankQuestionsQuery(topicId).queryKey,
-                      })
-                    }
-                  />
-                ) : listPending ? (
-                  <p className="p-4">{m.question_ui_loading_questions()}</p>
-                ) : rows.length ? (
-                  rows.map((row) => (
-                    <QuestionRow
-                      edit={mode === 'edit'}
-                      key={row.id}
-                      onClick={() => select(row.id)}
-                      row={row}
-                      selected={row.id === questionId}
-                    />
-                  ))
-                ) : (
-                  <p className="p-4 text-fg-muted">
-                    {m.question_ui_no_questions_match()}
-                  </p>
-                ))}
-            </div>
-          </section>
-          <section
-            aria-label={m.question_ui_question()}
-            className={cn(
-              'min-w-0 flex-1 flex-col',
-              questionId && !showTopics ? 'flex' : 'hidden md:flex'
-            )}
-          >
-            {questionId ? (
-              detailError ? (
+      </>
+    );
+  else if (listError)
+    body = (
+      <BankError
+        error={listError}
+        onRetry={() =>
+          void client.invalidateQueries({
+            queryKey: bankQuestionsQuery(topicId).queryKey,
+          })
+        }
+      />
+    );
+  else if (listPending) body = <Skeleton className="h-64 w-full" />;
+  else if (rows.length)
+    body = (
+      <ol className="grid gap-12">
+        {rows.map((row, i) => {
+          const query = details[i];
+          const detail = query?.data;
+          return (
+            <li
+              className="grid scroll-mt-6 gap-4"
+              data-question-id={row.id}
+              key={row.id}
+            >
+              {query?.error ? (
                 <BankError
-                  error={detailError}
-                  onRetry={() =>
-                    void client.invalidateQueries({
-                      queryKey: bankQuestionQuery(questionId).queryKey,
-                    })
-                  }
+                  error={query.error}
+                  onRetry={() => void query.refetch()}
                 />
-              ) : detailPending ? (
-                <p className="p-6">{m.question_ui_loading_question()}</p>
+              ) : detail ? (
+                <>
+                  <QuestionRunner
+                    answers={{}}
+                    disabled
+                    question={detail.question}
+                    questionNumber={row.position}
+                    showAnswerKey={mode === 'edit' && detail.editor}
+                  />
+                  {mode === 'edit' && detail.editor && (
+                    <ReviewBar
+                      detail={detail}
+                      onComment={() => setCommentFor(detail.question.id)}
+                      onEdit={() => setEditing(structuredClone(detail))}
+                      onReview={() =>
+                        setReviewed({
+                          id: detail.question.id,
+                          reviewed: !detail.reviewedAt,
+                        })
+                      }
+                      reviewing={reviewing}
+                    />
+                  )}
+                  <MaterialAttributionFooter provenance={detail.provenance} />
+                </>
               ) : (
-                detail && (
-                  <>
-                    <Toolbar className="scroll-fade-x min-w-0 gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                      <ToolbarGroup className="md:hidden">
-                        <ToolbarButton
-                          label={m.question_ui_questions()}
-                          onClick={() => topic(topicId)}
-                        >
-                          <Icon name="navigationBack" />
-                        </ToolbarButton>
-                      </ToolbarGroup>
-                      <ToolbarGroup>
-                        <ToolbarButton
-                          disabled={selectedIndex <= 0}
-                          label={m.question_ui_previous_question()}
-                          onClick={() => select(rows[selectedIndex - 1].id)}
-                        >
-                          <Icon name="navigationBack" />
-                        </ToolbarButton>
-                        <ToolbarButton
-                          disabled={
-                            selectedIndex < 0 ||
-                            selectedIndex >= rows.length - 1
-                          }
-                          label={m.question_ui_next_question()}
-                          onClick={() => select(rows[selectedIndex + 1].id)}
-                        >
-                          <Icon name="navigationForward" />
-                        </ToolbarButton>
-                      </ToolbarGroup>
-                    </Toolbar>
-                    <div className="min-h-0 flex-1 overflow-auto px-4 py-6 md:px-5 lg:px-8 lg:py-7">
-                      <div className="mx-auto max-w-180">
-                        <QuestionView
-                          question={detail.question}
-                          questionNumber={detail.position}
-                          review={mode === 'edit' && detail.editor}
-                        />
-                        <MaterialAttributionFooter
-                          provenance={detail.provenance}
-                        />
-                      </div>
-                    </div>
-                    {mode === 'edit' && detail.editor && (
-                      <footer className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 border-divider border-t px-4 py-3 md:px-5 lg:px-8">
-                        <p className="mr-auto flex items-center gap-1.5 text-fg-muted text-sm">
-                          {detail.reviewedAt ? (
-                            <>
-                              <Icon
-                                className="shrink-0 text-solid-success"
-                                name="circleCheck"
-                                size={14}
-                              />
-                              <span>
-                                {detail.reviewerName
-                                  ? m.question_ui_reviewed_by({
-                                      name: detail.reviewerName,
-                                    })
-                                  : m.question_ui_reviewed()}
-                                {' · '}
-                                <time dateTime={detail.reviewedAt}>
-                                  {new Date(
-                                    detail.reviewedAt
-                                  ).toLocaleDateString(getLocale())}
-                                </time>
-                              </span>
-                            </>
-                          ) : (
-                            m.question_ui_not_reviewed()
-                          )}
-                        </p>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            disabled={reviewing}
-                            onClick={() =>
-                              setReviewed({
-                                id: detail.question.id,
-                                reviewed: !detail.reviewedAt,
-                              })
-                            }
-                            size="sm"
-                            variant="ghost-hover"
-                          >
-                            {detail.reviewedAt
-                              ? m.question_ui_undo_review()
-                              : m.question_ui_mark_reviewed()}
-                          </Button>
-                          <Button
-                            iconLeft="comment"
-                            onClick={() => setCommentOpen(true)}
-                            size="sm"
-                            variant="ghost-hover"
-                          >
-                            {m.question_ui_comment()}
-                          </Button>
-                          <Button
-                            aria-label={m.question_ui_edit_question()}
-                            iconLeft="pencil"
-                            onClick={() => setEditing(structuredClone(detail))}
-                            size="sm"
-                            variant="accent"
-                          >
-                            {m.question_ui_edit()}
-                          </Button>
-                        </div>
-                      </footer>
-                    )}
-                  </>
-                )
+                <Skeleton className="h-40 w-full" />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    );
+  else
+    body = (
+      <p className="text-fg-muted">{m.question_ui_no_questions_match()}</p>
+    );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
+      <div className="order-first flex shrink-0 flex-col gap-2.5 lg:order-last lg:h-full lg:w-(--top-inset-bar-width)">
+        <TopInsetBar />
+        <Panel
+          className="hidden min-h-0 flex-1 lg:flex"
+          sectionClassName="h-full p-2.5"
+        >
+          {nav}
+        </Panel>
+      </div>
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <Panel
+          className="min-h-0 flex-1 rounded-button lg:rounded-card-xl"
+          sectionClassName="h-full gap-0"
+        >
+          <QuizPageHeader
+            actions={
+              syllabus?.editor && (
+                <Button
+                  className="rounded-input"
+                  iconLeft={mode === 'edit' ? 'view' : 'pencil'}
+                  onClick={() => setMode(mode === 'edit' ? 'view' : 'edit')}
+                  size="sm"
+                >
+                  {mode === 'edit'
+                    ? m.question_ui_view_mode()
+                    : m.question_ui_edit_mode()}
+                </Button>
               )
-            ) : (
-              <p className="m-auto p-6 text-fg-muted">
-                {m.question_ui_choose_a_question()}
-              </p>
-            )}
-          </section>
-        </div>
-      )}
+            }
+            meta={
+              topicId &&
+              list &&
+              [
+                list.questions.length === 1
+                  ? m.question_ui_one_question()
+                  : m.question_ui_question_count({
+                      count: list.questions.length,
+                    }),
+                mode === 'edit' &&
+                  m.question_ui_reviewed_count({
+                    count: list.questions.filter((row) => row.reviewedAt)
+                      .length,
+                  }),
+              ]
+                .filter(Boolean)
+                .join(' · ')
+            }
+            onBack={() => void navigate({ to: '/create' })}
+            title={place?.item.label ?? m.question_ui_question_bank()}
+            topBar={false}
+            trail={
+              place
+                ? [
+                    m.question_ui_question_bank(),
+                    place.exam.label,
+                    place.subject.label,
+                  ]
+                : []
+            }
+          />
+          <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16">
+            <div className="max-w-3xl">{body}</div>
+          </div>
+        </Panel>
+        {/* Phones: the side panel becomes a floating bar and a bottom sheet,
+            as in WorkspaceOpen's single-column layout. */}
+        {topicId && syllabus && (
+          <FloatingToolbar
+            aria-label={m.question_ui_bank_navigation()}
+            className="gap-1 rounded-full! px-2 py-1 lg:hidden"
+            open={!navOpen}
+            positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 lg:hidden"
+          >
+            <ToolbarButton
+              className="h-10 w-auto gap-2 rounded-card-xl px-3 [&_svg]:size-5"
+              label={m.question_ui_topics()}
+              onClick={() => {
+                setShowTopics(true);
+                setNavOpen(true);
+              }}
+              tooltipSide="top"
+            >
+              <Icon name="book" />
+              <span>{m.question_ui_topics()}</span>
+            </ToolbarButton>
+            <ToolbarButton
+              className="h-10 w-auto gap-2 rounded-card-xl px-3 [&_svg]:size-5"
+              label={m.question_ui_questions()}
+              onClick={() => {
+                setShowTopics(false);
+                setNavOpen(true);
+              }}
+              tooltipSide="top"
+            >
+              <Icon name="list" />
+              <span>{m.question_ui_questions()}</span>
+            </ToolbarButton>
+          </FloatingToolbar>
+        )}
+      </div>
+      <Drawer
+        onOpenChange={setNavOpen}
+        open={navOpen}
+        showSwipeHandle
+        swipeDirection="down"
+      >
+        <DrawerContent
+          style={{ '--drawer-height': '70dvh' } as React.CSSProperties}
+        >
+          <DrawerTitle className="sr-only">
+            {m.question_ui_bank_navigation()}
+          </DrawerTitle>
+          <div className="min-h-0 overflow-auto px-3 pb-6">{nav}</div>
+        </DrawerContent>
+      </Drawer>
       {editing && (
         <Suspense fallback={null}>
           <QuestionDialog
@@ -555,81 +465,352 @@ export default function QuestionBank() {
           />
         </Suspense>
       )}
-      {commentOpen && (
-        <BankComment id={questionId} onClose={() => setCommentOpen(false)} />
+      {commentFor && (
+        <BankComment id={commentFor} onClose={() => setCommentFor('')} />
       )}
-    </PanelWithInvertedRadius>
+    </div>
   );
 }
-function QuestionRow({
-  row,
-  selected,
-  edit,
-  onClick,
+
+function scrollToQuestion(id: string) {
+  document
+    .querySelector(`[data-question-id="${CSS.escape(id)}"]`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** Title with a search icon that expands into a full-width field. */
+function PanelHeading({
+  title,
+  leading,
+  filter,
+  onFilter,
+  searchLabel,
 }: {
-  row: BankRow;
-  selected: boolean;
+  title: string;
+  leading?: ReactNode;
+  filter: string;
+  onFilter: (value: string) => void;
+  searchLabel: string;
+}) {
+  const [searching, setSearching] = useState(filter !== '');
+  return (
+    <div className="flex h-10 items-center gap-1 pl-1">
+      {searching ? (
+        <Input
+          actionCallback={() => {
+            onFilter('');
+            setSearching(false);
+          }}
+          actionIcon="x"
+          actionLabel={m.question_ui_close_search()}
+          aria-label={searchLabel}
+          autoFocus
+          leftIcon="search"
+          onChange={(event) => onFilter(event.target.value)}
+          placeholder={searchLabel}
+          size="sm"
+          value={filter}
+          wrapperClassName="w-full"
+        />
+      ) : (
+        <>
+          {leading}
+          <h2 className="t-subtitle mr-auto min-w-0 truncate pl-1">{title}</h2>
+          <ToolbarButton label={searchLabel} onClick={() => setSearching(true)}>
+            <Icon name="search" />
+          </ToolbarButton>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Exams and topics in the FilesPanel rhythm: exam label, subject row, indented topics. */
+function TopicTree({
+  syllabus,
+  topicId,
+  edit,
+  filter,
+  onFilter,
+  onTopic,
+}: {
+  syllabus: BankSyllabus;
+  topicId: string;
   edit: boolean;
-  onClick: () => void;
+  filter: string;
+  onFilter: (value: string) => void;
+  onTopic: (id: string) => void;
+}) {
+  const needle = filter.trim().toLocaleLowerCase();
+  const exams = syllabus.exams
+    .map((exam) => ({
+      ...exam,
+      subjects: exam.subjects
+        .map((subject) => ({
+          ...subject,
+          topics: subject.topics.filter((item) =>
+            [exam.label, subject.label, item.label].some((label) =>
+              label.toLocaleLowerCase().includes(needle)
+            )
+          ),
+        }))
+        .filter((subject) => subject.topics.length > 0),
+    }))
+    .filter((exam) => exam.subjects.length > 0);
+  return (
+    <nav aria-label={m.question_ui_topics()} className="flex flex-col gap-3">
+      <PanelHeading
+        filter={filter}
+        onFilter={onFilter}
+        searchLabel={m.question_ui_find_a_topic()}
+        title={m.question_ui_exams_and_topics()}
+      />
+      {exams.map((exam) => (
+        <div key={exam.id}>
+          <div className="t-label px-2 py-1.5 text-fg-muted">{exam.label}</div>
+          {exam.subjects.map((subject) => (
+            <details className="group" key={subject.id} open>
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-button px-2 py-1.5 hover:bg-surface-hover-bg [&::-webkit-details-marker]:hidden">
+                <Icon
+                  className="shrink-0 -rotate-90 text-fg-muted transition-transform group-open:rotate-0"
+                  name="chevronDown"
+                  size={13}
+                />
+                <span className="translate-y-px truncate font-semibold">
+                  {subject.label}
+                </span>
+              </summary>
+              <ul className="flex flex-col pl-5">
+                {subject.topics.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      aria-current={item.id === topicId ? 'page' : undefined}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+                        item.id === topicId && 'bg-surface-hover-bg font-bold'
+                      )}
+                      onClick={() => onTopic(item.id)}
+                      type="button"
+                    >
+                      <span className="min-w-0 flex-1 translate-y-px truncate">
+                        {item.label}
+                      </span>
+                      <span className="shrink-0 font-semibold text-fg-muted text-xs tabular-nums">
+                        {edit ? `${item.reviewed}/${item.total}` : item.total}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ))}
+        </div>
+      ))}
+      {!exams.length && (
+        <p className="px-2 text-fg-muted">
+          {syllabus.exams.length
+            ? m.question_ui_no_topics_match()
+            : m.question_ui_no_syllabi_have_been_published_yet()}
+        </p>
+      )}
+    </nav>
+  );
+}
+
+/** The chosen topic's question list; a row scrolls the page to its question. */
+function TopicQuestions({
+  label,
+  list,
+  rows,
+  questionId,
+  edit,
+  filter,
+  unreviewed,
+  onBack,
+  onFilter,
+  onUnreviewed,
+  onQuestion,
+}: {
+  label: string;
+  list?: { questions: BankRow[] };
+  rows: BankRow[];
+  questionId: string;
+  edit: boolean;
+  filter: string;
+  unreviewed: boolean;
+  onBack: () => void;
+  onFilter: (value: string) => void;
+  onUnreviewed: (value: boolean) => void;
+  onQuestion: (id: string) => void;
 }) {
   return (
-    <button
-      aria-current={selected ? 'page' : undefined}
-      className={cn(
-        'flex w-full gap-2 border-divider border-b px-4 py-3.5 text-left text-sm hover:bg-surface-hover-bg',
-        selected && 'bg-surface-hover-bg'
+    <nav aria-label={m.question_ui_questions()} className="flex flex-col gap-3">
+      <PanelHeading
+        filter={filter}
+        leading={
+          <ToolbarButton
+            label={m.question_ui_back_to_topics()}
+            onClick={onBack}
+          >
+            <Icon name="navigationBack" />
+          </ToolbarButton>
+        }
+        onFilter={onFilter}
+        searchLabel={m.question_ui_find_a_question()}
+        title={label}
+      />
+      {edit && (
+        <div className="flex gap-1 px-1">
+          <Button
+            aria-pressed={!unreviewed}
+            className="rounded-input"
+            onClick={() => onUnreviewed(false)}
+            size="sm"
+            variant={unreviewed ? 'ghost-hover' : 'gray'}
+          >
+            {m.action_all()} {list?.questions.length ?? 0}
+          </Button>
+          <Button
+            aria-pressed={unreviewed}
+            className="rounded-input"
+            onClick={() => onUnreviewed(true)}
+            size="sm"
+            variant={unreviewed ? 'gray' : 'ghost-hover'}
+          >
+            {m.question_ui_unreviewed()}{' '}
+            {list?.questions.filter((row) => !row.reviewedAt).length ?? 0}
+          </Button>
+        </div>
       )}
-      onClick={onClick}
-      type="button"
-    >
-      <span className="w-6 shrink-0 font-bold">{row.position}.</span>
-      <span className="min-w-0 flex-1">
-        <span className="line-clamp-2">
-          {row.preview ? (
-            <TextView text={row.preview} />
-          ) : (
-            m.question_ui_question_number({ number: row.position })
-          )}
-        </span>
-        <span className="mt-1 flex items-center gap-2 text-fg-muted text-xs">
-          {row.marks === 1
-            ? m.question_ui_one_mark()
-            : m.question_ui_marks({ count: row.marks })}
-          {row.hasFigure && <Icon name="image" size={13} />}
-          {row.hasTable && <Icon name="table" size={13} />}
-        </span>
-        {edit && row.reviewedAt && (
-          <span className="mt-1 block text-fg-muted text-xs">
-            {row.reviewerName
-              ? m.question_ui_reviewed_by({ name: row.reviewerName })
-              : m.question_ui_reviewed()}
-            {' · '}
-            <time dateTime={row.reviewedAt}>
-              {relativeTime(row.reviewedAt)}
-            </time>
-          </span>
-        )}
-      </span>
-      {edit && row.reviewedAt && (
-        <Icon
-          className="mt-0.5 shrink-0 text-action-accent"
-          name="circleCheck"
-          size={16}
-        />
-      )}
-    </button>
+      <ol className="grid gap-0.5">
+        {rows.map((row) => (
+          <li key={row.id}>
+            <button
+              aria-current={row.id === questionId ? 'true' : undefined}
+              className={cn(
+                'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button px-2 py-2 text-left text-sm hover:bg-surface-hover-bg',
+                row.id === questionId && 'bg-surface-hover-bg'
+              )}
+              onClick={() => onQuestion(row.id)}
+              type="button"
+            >
+              <span className="font-bold">{row.position}.</span>
+              <span className="line-clamp-2">
+                {row.preview ? (
+                  <TextView text={row.preview} />
+                ) : (
+                  m.question_ui_question_number({ number: row.position })
+                )}
+              </span>
+              <span className="col-start-2 mt-0.5 flex items-center gap-2 text-fg-muted text-xs">
+                {row.marks === 1
+                  ? m.question_ui_one_mark()
+                  : m.question_ui_marks({ count: row.marks })}
+                {row.hasFigure && <Icon name="image" size={13} />}
+                {row.hasTable && <Icon name="table" size={13} />}
+                {edit && row.reviewedAt && (
+                  <span className="font-semibold text-tint-success-fg">
+                    {m.question_ui_reviewed()} · {relativeTime(row.reviewedAt)}
+                  </span>
+                )}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
+
+/** Review status, then Undo review or Mark reviewed, Comment and Edit on one row. */
+function ReviewBar({
+  detail,
+  reviewing,
+  onReview,
+  onComment,
+  onEdit,
+}: {
+  detail: BankDetail;
+  reviewing: boolean;
+  onReview: () => void;
+  onComment: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <div className="grid gap-2 border-divider border-t pt-3 sm:flex sm:items-center">
+      <p className="t-meta flex items-center gap-1.5 text-fg-muted sm:mr-auto">
+        {detail.reviewedAt ? (
+          <>
+            <Icon
+              className="shrink-0 text-solid-success"
+              name="circleCheck"
+              size={14}
+            />
+            <span>
+              {detail.reviewerName
+                ? m.question_ui_reviewed_by({ name: detail.reviewerName })
+                : m.question_ui_reviewed()}
+              {' · '}
+              <time dateTime={detail.reviewedAt}>
+                {new Date(detail.reviewedAt).toLocaleDateString(getLocale())}
+              </time>
+            </span>
+          </>
+        ) : (
+          m.question_ui_not_reviewed()
+        )}
+      </p>
+      <div className="flex justify-end gap-0.5 sm:gap-1.5">
+        <Button
+          className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+          disabled={reviewing}
+          iconLeft={detail.reviewedAt ? 'x' : 'check'}
+          iconLeftClassName="size-3.5 sm:size-3.75"
+          onClick={onReview}
+          size="sm"
+          variant={detail.reviewedAt ? 'danger-light' : 'ghost-hover'}
+        >
+          {detail.reviewedAt
+            ? m.question_ui_undo_review()
+            : m.question_ui_mark_reviewed()}
+        </Button>
+        <Button
+          className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+          iconLeft="comment"
+          iconLeftClassName="size-3.5 sm:size-3.75"
+          onClick={onComment}
+          size="sm"
+          variant="ghost-hover"
+        >
+          {m.question_ui_comment()}
+        </Button>
+        <Button
+          aria-label={m.question_ui_edit_question()}
+          className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
+          iconLeft="pencil"
+          iconLeftClassName="size-3.5 sm:size-3.75"
+          onClick={onEdit}
+          size="sm"
+          variant="accent"
+        >
+          {m.question_ui_edit()}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function BankError({ error, onRetry }: { error: Error; onRetry: () => void }) {
   return (
-    <div className="space-y-3 p-6" role="alert">
+    <div className="space-y-3" role="alert">
       <p>{error.message}</p>
-      <Button onClick={onRetry} variant="ghost">
+      <Button onClick={onRetry} variant="ghost-hover">
         {m.question_ui_try_again()}
       </Button>
     </div>
   );
 }
+
 function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
   const {
     register,
@@ -639,7 +820,7 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
     defaultValues: { text: '' },
     resolver: zodResolver(commentSchema),
   });
-  const { mutateAsync, isPending, error } = useMutation({
+  const { mutateAsync, isPending } = useMutation({
     mutationFn: (body: z.infer<typeof commentSchema>) =>
       api.post<void>(
         '/bank/questions/' + encodeURIComponent(id) + '/comments',
@@ -649,7 +830,13 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <SimpleDialog
       footer={
-        <Button disabled={isPending} type="submit">
+        <Button
+          className="rounded-input"
+          disabled={isPending}
+          size="lg"
+          type="submit"
+          variant="accent"
+        >
           {m.question_ui_send_comment()}
         </Button>
       }
@@ -658,8 +845,13 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
         try {
           await mutateAsync(body);
           onClose();
-        } catch {
-          // Keep the comment and the mutation's error visible for a manual retry.
+        } catch (error) {
+          // The comment stays in the field for a manual retry.
+          userToast({
+            description: error instanceof Error ? error.message : undefined,
+            title: m.question_ui_comment_failed(),
+            variant: 'error',
+          });
         }
       })}
       open
@@ -670,7 +862,7 @@ function BankComment({ id, onClose }: { id: string; onClose: () => void }) {
         {...register('text')}
         maxLength={2000}
       />
-      <InputError>{errors.text?.message ?? error?.message}</InputError>
+      <InputError>{errors.text?.message}</InputError>
     </SimpleDialog>
   );
 }

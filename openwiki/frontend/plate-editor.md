@@ -235,8 +235,8 @@ flashcard block inside a note does not render the note title.
 A note never inlines a quiz or flashcard set. Both are material rows of their
 own with `parent_material_id` set, sharing the note's workspace, private and
 unfiled, and the note stores a void `material_ref` block
-(`{materialId, refKind}`) rendered as a compact card by `MaterialRefCard` in
-every mode. Inserting through the slash command or toolbar opens the existing
+(`{materialId, refKind}`) rendered as a borderless row by `MaterialRefCard`:
+Start quiz / Study in view mode, only an outline Edit in edit mode. Inserting through the slash command or toolbar opens the existing
 dialog, creates the row through `POST /api/materials/{noteId}/embedded`, then
 inserts the reference at the top level; nothing is inserted when creation
 fails, and with the caret inside a callout, column, table or other container

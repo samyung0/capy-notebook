@@ -5,7 +5,7 @@ import { applyOpenAward } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 import { gradeAttemptQuestions } from './scoreAttempt';
 
-it('reviews the graded snapshot with marks, scheme, fixed-unit answer and collapsed solution', async () => {
+it('reviews the graded snapshot with marks, the answer before a collapsed scheme, and a fixed unit', async () => {
   const question = exampleQuestion('quantity', {
     accepted: ['2'],
     type: 'short',
@@ -20,25 +20,22 @@ it('reviews the graded snapshot with marks, scheme, fixed-unit answer and collap
   const html = renderToStaticMarkup(
     <QuestionRunner
       answers={answers}
-      onChange={() => {}}
       question={graded.questions[0]}
       questionNumber={1}
       review
     />
   );
   expect(html).toContain('2 / 2');
-  expect(html.match(/text-solid-success/g)).toHaveLength(2);
-  expect(html.indexOf('Marking scheme')).toBeLessThan(
-    html.indexOf('Your answer')
+  expect(html.indexOf('value="2"')).toBeLessThan(
+    html.indexOf('Divides the length by two.')
   );
   expect(html).toContain('disabled=""');
-  expect(html).toContain('value="2"');
   expect(html).toContain('>cm</span>');
   // Collapsed: no `open` attribute after the class.
-  expect(html).toContain('<details class="col-start-2 min-w-0">');
+  expect(html).toContain('<details class="col-start-2 min-w-0 text-sm">');
 });
 
-it('letters matching options in stored order and keeps option indices as answers', () => {
+it('letters matching options with a dot and reviews the chosen letter', () => {
   const question = exampleQuestion('match', {
     options: ['Stores DNA', 'Makes ATP', 'Unused choice'],
     pairs: [{ left: 'Mitochondria', right: 1 }],
@@ -48,16 +45,15 @@ it('letters matching options in stored order and keeps option indices as answers
     renderToStaticMarkup(
       <QuestionRunner
         answers={{ 'match-part': { '0': 2 } }}
-        onChange={() => {}}
         question={question}
         review={review}
       />
     );
-  expect(render(false)).toContain(
-    '<option value="0">A</option><option value="1">B</option><option value="2" selected="">C</option>'
-  );
+  const taking = render(false);
+  expect(taking).toContain('aria-label="Mitochondria"');
+  for (const letter of ['A.', 'B.', 'C.']) expect(taking).toContain(letter);
   const reviewed = render(true);
-  expect(reviewed).toContain('>C</span>');
+  expect(reviewed).toContain('>C<');
   expect(reviewed).toContain('Correct: B');
 });
 
@@ -71,7 +67,6 @@ it('shows an open part award without inventing per-item marks or an unanswered o
   const html = renderToStaticMarkup(
     <QuestionRunner
       answers={{ 'open-part': 'Some evidence' }}
-      onChange={() => {}}
       question={question}
       review
     />
@@ -84,12 +79,7 @@ it('shows an open part award without inventing per-item marks or an unanswered o
     type: 'ordering',
   });
   const unanswered = renderToStaticMarkup(
-    <QuestionRunner
-      answers={{}}
-      onChange={() => {}}
-      question={ordering}
-      review
-    />
+    <QuestionRunner answers={{}} question={ordering} review />
   );
   expect(unanswered).toContain('0 / 1');
   expect(unanswered).toContain('<p>—</p>');

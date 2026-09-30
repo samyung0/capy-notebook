@@ -4,6 +4,7 @@ import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
+import { TabContent } from '@/components/app/tabPanel';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -20,6 +21,7 @@ import {
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import {
   OfflineStatus,
@@ -28,6 +30,11 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
+import {
+  type MaterialDocument,
+  type QuizElement,
+  quizElementToBlock,
+} from './document';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
 import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import { MaterialAttributionFooter } from './MaterialAttributionFooter';
@@ -289,14 +296,18 @@ export function MaterialContent({
       <div className="min-h-0 flex-1">
         {activeMode === 'view' && (
           <div className="h-full min-h-0 overflow-auto">
-            <Suspense fallback={<FileLoading />}>
-              <MaterialPreview
-                content={material.content}
-                isStandalone={!material.workspaceId}
-                kind={material.kind}
-                title={material.title}
-              />
-            </Suspense>
+            {material.kind === 'quiz' ? (
+              <QuizPreview content={material.content} />
+            ) : (
+              <Suspense fallback={<FileLoading />}>
+                <MaterialPreview
+                  content={material.content}
+                  isStandalone={!material.workspaceId}
+                  kind={material.kind}
+                  title={material.title}
+                />
+              </Suspense>
+            )}
           </div>
         )}
         {activeMode === 'edit' && (
@@ -315,6 +326,22 @@ export function MaterialContent({
       </div>
       <MaterialAttributionFooter provenance={material.provenance} />
     </div>
+  );
+}
+
+/** A quiz reads exactly like the quiz page, without taking answers. Its
+ * questions come from the material already loaded, so this works offline. */
+function QuizPreview({ content }: { content: MaterialDocument }) {
+  const quiz = content.value.find(
+    (node): node is QuizElement => node.type === 'quiz'
+  );
+  return (
+    <TabContent>
+      <QuizQuestionList
+        disabled
+        questions={quiz ? quizElementToBlock(quiz).questions : []}
+      />
+    </TabContent>
   );
 }
 

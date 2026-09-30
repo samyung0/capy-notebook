@@ -1,25 +1,24 @@
-import { Link, useParams } from '@tanstack/react-router';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useAttempt, useQuiz } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
-import { Panel } from '@/components/app/layout';
+import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { Badge } from '@/components/ui/Badge';
+import { TabContent } from '@/components/app/tabPanel';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
-import { ProgressBar } from '@/components/ui/ProgressBar';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
-import { type Answer, formatPoints } from '@/features/quizzes/grade';
-import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { m } from '@/i18n';
-
-function scoreTone(pct: number): 'green' | 'amber' | 'coral' {
-  return pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral';
-}
+import type { Answer } from '@/features/quizzes/grade';
+import {
+  QuizPageHeader,
+  QuizQuestionList,
+  QuizScore,
+} from '@/features/quizzes/QuizPage';
+import { getLocale, m } from '@/i18n';
 
 export default function AttemptResult() {
   const params = useParams({ strict: false });
   const attemptId = (params as { attemptId: string }).attemptId;
+  const navigate = useNavigate();
   const {
     data: attempt,
     fetchStatus,
@@ -38,25 +37,25 @@ export default function AttemptResult() {
 
   if (fetchStatus === 'paused') {
     return (
-      <Panel sectionClassName="h-full">
+      <PanelWithInvertedRadius>
         <QueryPausedState className="h-full" />
-      </Panel>
+      </PanelWithInvertedRadius>
     );
   }
 
   if (isLoading) {
     return (
-      <Panel sectionClassName="h-full">
+      <PanelWithInvertedRadius>
         <div className="h-full p-6">
           <Skeleton className="h-full w-full" />
         </div>
-      </Panel>
+      </PanelWithInvertedRadius>
     );
   }
 
   if (isError || !attempt) {
     return (
-      <Panel sectionClassName="h-full">
+      <PanelWithInvertedRadius>
         <ErrorState
           action={
             <ErrorAction
@@ -72,7 +71,7 @@ export default function AttemptResult() {
           title={m.quiz_attempt_unavailable()}
           variant="page"
         />
-      </Panel>
+      </PanelWithInvertedRadius>
     );
   }
 
@@ -80,75 +79,61 @@ export default function AttemptResult() {
   const hasBreakdown = attempt.questions.length > 0;
 
   return (
-    <Panel sectionClassName="h-full">
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-auto px-4 py-6 md:px-6">
-        <div className="mb-4 flex items-center gap-3">
-          <Link
-            className="text-fg-muted hover:text-fg"
-            preload="intent"
-            to="/learning"
-          >
-            <Icon name="navigationBack" size={20} />
-          </Link>
-          <div className="flex-1">
-            <h2 className="t-large-card-title">{attempt.quizName}</h2>
-            <p className="t-meta text-fg-muted">
-              {attempt.workspaceName} ·{' '}
-              {new Date(attempt.takenAt).toLocaleString()}
-            </p>
-          </div>
-          <Badge
-            tone={
-              attempt.pct >= 70
-                ? 'success'
-                : attempt.pct >= 55
-                  ? 'warning'
-                  : 'error'
-            }
-          >
-            {formatPoints(attempt.correct)}/{formatPoints(attempt.total)} ·{' '}
-            {attempt.pct}%
-          </Badge>
-        </div>
-
-        <div className="mb-6">
-          <ProgressBar
-            height={8}
-            tone={scoreTone(attempt.pct)}
-            value={attempt.pct}
-          />
-          <p className="t-meta mt-2 text-fg-muted">
-            {m.quiz_score_reference()}
-          </p>
-        </div>
-
+    <PanelWithInvertedRadius>
+      <QuizPageHeader
+        meta={[
+          new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric',
+          }),
+          attempt.workspaceName,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+        onBack={() => void navigate({ to: '/learning' })}
+        title={attempt.quizName}
+        trail={[m.nav_learning(), m.learning_tab_results()]}
+      />
+      <TabContent>
         {hasBreakdown ? (
-          <div className="flex flex-col gap-4">
-            {attempt.questions.map((question, i) => (
-              <div className="border-divider border-b pb-6" key={question.id}>
-                <QuestionRunner
-                  answers={answers}
-                  onChange={() => {}}
-                  question={question}
-                  questionNumber={i + 1}
-                  review
-                />
-              </div>
-            ))}
-          </div>
+          <>
+            <QuizScore
+              answers={answers}
+              awarded={attempt.correct}
+              max={attempt.total}
+              questions={attempt.questions}
+            />
+            <div className="mt-12">
+              <QuizQuestionList
+                answers={answers}
+                questions={attempt.questions}
+                review
+              />
+            </div>
+          </>
         ) : (
-          <p className="py-8 text-center text-fg-muted">
-            {m.quiz_no_breakdown()}
-          </p>
+          <p className="text-fg-muted">{m.quiz_no_breakdown()}</p>
         )}
-
-        <div className="mt-6">
-          <Link preload="intent" to="/learning">
-            <Button iconLeft="navigationBack">{m.quiz_back()}</Button>
-          </Link>
-        </div>
+        {attempt.materialId && (
+          <Button
+            asChild
+            className="mt-12 rounded-input"
+            iconLeft="refresh"
+            size="lg"
+            variant="outline"
+          >
+            <Link
+              params={{ quizId: attempt.materialId }}
+              preload="intent"
+              to="/quizzes/$quizId/attempt"
+            >
+              {m.quiz_redo()}
+            </Link>
+          </Button>
+        )}
         <MaterialAttributionFooter provenance={quiz?.provenance} />
-      </div>
-    </Panel>
+      </TabContent>
+    </PanelWithInvertedRadius>
   );
 }

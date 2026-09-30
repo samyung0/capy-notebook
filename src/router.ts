@@ -163,7 +163,6 @@ const bankPage = <const T extends string>(path: T) =>
     component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
     getParentRoute: () => authShellRoute,
     path,
-    staticData: { hideSidebar: true },
     validateSearch: (search: Record<string, unknown>): { mode?: 'edit' } => ({
       mode: search.mode === 'edit' ? 'edit' : undefined,
     }),
@@ -261,7 +260,6 @@ const appRoutes = [
       void qc.prefetchQuery(quizQuery(params.quizId));
     },
     path: '/quizzes/$quizId/edit',
-    staticData: { hideSidebar: true },
     validateSearch: parseQuizEditSearch,
   }),
   page(
