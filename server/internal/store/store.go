@@ -58,6 +58,19 @@ var ErrLLMKeyFailed = errors.New("llm credential failed")
 // ErrConflict reports a failed optimistic revision comparison.
 var ErrConflict = errors.New("revision conflict")
 
+// Conflicts that are not stale revisions. They wrap ErrConflict, so internal
+// callers still see a conflict, and answer their own code over HTTP.
+var (
+	// ErrAccountDeletionBusy means a deletion cancellation or session
+	// revocation is still running with Stripe.
+	ErrAccountDeletionBusy = fmt.Errorf("%w: account deletion is still being processed", ErrConflict)
+	// ErrSubscriptionExists means the user already has an entitling
+	// subscription or a checkout in progress.
+	ErrSubscriptionExists = fmt.Errorf("%w: a subscription already exists", ErrConflict)
+	// ErrCloneSourceChanged means the item changed while it was being copied.
+	ErrCloneSourceChanged = fmt.Errorf("%w: the source changed while it was copied", ErrConflict)
+)
+
 // ErrNothingToProcess means a file has no saved source edits to process.
 var ErrNothingToProcess = errors.New("nothing to process")
 

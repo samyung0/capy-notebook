@@ -63,6 +63,20 @@ normal must use:
 meta: { errorToast: false }
 ```
 
+Copy comes from paraglide only, chosen by error code: the browser keeps any
+snake_case code Huma sends in `errors[].message` (`parseErrorBody`), and
+`describeError` maps known codes before falling back to the status class.
+`errorCopy(error, fallback)` never returns an error's own text; `CopyError`
+carries already-localized copy. A 409 always names its conflict:
+`revision_conflict` (a stale revision: someone else changed it first, with
+Reload) is distinct from `account_deletion_busy`, `subscription_exists`,
+`subscription_active`, `account_state_changed`, `clone_source_changed`,
+`title_taken`, `transfer_self` and `nothing_to_process`. The Go store's
+specific conflicts wrap `ErrConflict`, so internal callers still see a
+conflict. Zod's own messages follow the UI locale (`z.config` in
+`src/i18n/index.ts`), and question validation throws or reports paraglide
+copy.
+
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
 and `too_many_streams`. The add-source dialog toasts it and keeps the unsent
 tail. Do not map it onto credits or the file-cap copy.
@@ -353,7 +367,9 @@ Chat `pending_sources` events show when edited source evidence is awaiting
 processing. If exact pending evidence exceeds the request budget, the message
 warns that source information may be outdated and offers Process file changes.
 Generation returns `context_too_large` with the same action instead of silently
-using incomplete pending evidence.
+using incomplete pending evidence. The action toasts that processing started,
+or that it could not start with the reason (`useProcessFileChanges`); the
+processing itself shows no progress.
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.

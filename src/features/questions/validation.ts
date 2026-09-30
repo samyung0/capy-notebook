@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import * as limits from '@/api/limits.generated';
+import { m } from '@/i18n';
+import { CopyError } from '@/lib/errors';
 import type { Question } from './types';
 
 const letterStart = /^[A-Za-z]/;
@@ -24,24 +26,23 @@ const text = z
   .string()
   .trim()
   .min(1)
-  .refine(
-    (value) => [...value].length <= limits.QUESTION_TEXT_MAX,
-    'Text is too long.'
-  );
+  .refine((value) => [...value].length <= limits.QUESTION_TEXT_MAX, {
+    error: () => m.question_validation_text_too_long(),
+  });
 const identifier = z
   .string()
   .min(1)
-  .refine((value) => value.trim().length > 0, 'An ID is required.')
-  .refine(
-    (value) => [...value].length <= limits.QUESTION_ID_MAX,
-    'Text is too long.'
-  );
+  .refine((value) => value.trim().length > 0, {
+    error: () => m.question_validation_id_required(),
+  })
+  .refine((value) => [...value].length <= limits.QUESTION_ID_MAX, {
+    error: () => m.question_validation_text_too_long(),
+  });
 const meta = z
   .string()
-  .refine(
-    (value) => [...value].length <= limits.QUESTION_METADATA_MAX,
-    'Text is too long.'
-  );
+  .refine((value) => [...value].length <= limits.QUESTION_METADATA_MAX, {
+    error: () => m.question_validation_text_too_long(),
+  });
 const finite = z.number().finite();
 const index = z.number().int().nonnegative();
 const coords = z.tuple([finite, finite]);
@@ -138,9 +139,9 @@ const graphElement = z.discriminatedUnion('type', [
   z.strictObject({
     domain: coords.optional(),
     id: identifier,
-    term: z
-      .string()
-      .refine(validGraphTerm, 'Use a supported mathematical expression.'),
+    term: z.string().refine(validGraphTerm, {
+      error: () => m.question_validation_graph_term(),
+    }),
     type: z.literal('functiongraph'),
     ...style,
   }),
@@ -186,7 +187,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
                 .string()
                 .refine(
                   (value) => [...value].length <= limits.QUESTION_TEXT_MAX,
-                  'Text is too long.'
+                  { error: () => m.question_validation_text_too_long() }
                 )
             )
             .min(1)
@@ -196,10 +197,9 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         .max(limits.QUESTION_TABLE_ROWS_MAX),
       type: z.literal('table'),
     })
-    .refine(
-      (v) => v.rows.every((row) => row.length === v.rows[0].length),
-      'Table rows must have the same number of cells.'
-    ),
+    .refine((v) => v.rows.every((row) => row.length === v.rows[0].length), {
+      error: () => m.question_validation_table_rows(),
+    }),
   z
     .strictObject({
       gridlines: z.enum(['normal', 'fine']).optional(),
@@ -228,7 +228,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       if (v.series.some((s) => s.values.length !== v.labels.length))
         ctx.addIssue({
           code: 'custom',
-          message: 'Each series needs a value for every label.',
+          message: m.question_validation_series_values(),
         });
       if (
         ['pie', 'stacked'].includes(v.kind) &&
@@ -238,8 +238,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       )
         ctx.addIssue({
           code: 'custom',
-          message:
-            'Pie and stacked charts need one nonnegative series with a positive total.',
+          message: m.question_validation_pie_series(),
         });
     }),
   z.strictObject({
@@ -260,9 +259,9 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       image: z.union([
         z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
         z.strictObject({
-          svg: z
-            .string()
-            .refine(validGraphSvg, 'Graph SVG contains unsupported content.'),
+          svg: z.string().refine(validGraphSvg, {
+            error: () => m.question_validation_graph_svg(),
+          }),
         }),
       ]),
       type: z.literal('graph'),
@@ -275,7 +274,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       if (left >= right || bottom >= top)
         ctx.addIssue({
           code: 'custom',
-          message: 'Graph bounds must have positive width and height.',
+          message: m.question_validation_graph_bounds(),
         });
       const ids = new Set<string>();
       const points = new Set(
@@ -285,18 +284,18 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         if (ids.has(element.id))
           ctx.addIssue({
             code: 'custom',
-            message: 'Graph element IDs must be unique.',
+            message: m.question_validation_graph_ids(),
           });
         ids.add(element.id);
         if ('points' in element && element.points.some((id) => !points.has(id)))
           ctx.addIssue({
             code: 'custom',
-            message: 'Lines must refer to existing points.',
+            message: m.question_validation_graph_lines(),
           });
         if (element.type === 'circle' && !points.has(element.center))
           ctx.addIssue({
             code: 'custom',
-            message: 'Circle centers must refer to existing points.',
+            message: m.question_validation_graph_circles(),
           });
         if (
           element.type === 'functiongraph' &&
@@ -305,7 +304,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         )
           ctx.addIssue({
             code: 'custom',
-            message: 'Function domain must be increasing.',
+            message: m.question_validation_graph_domain(),
           });
       }
     }),
@@ -326,7 +325,7 @@ const answerSchema = z.discriminatedUnion('type', [
       )
         ctx.addIssue({
           code: 'custom',
-          message: 'Choose valid, distinct correct options.',
+          message: m.question_validation_correct_options(),
         });
     }),
   z.strictObject({ correct: z.boolean(), type: z.literal('boolean') }),
@@ -338,16 +337,14 @@ const answerSchema = z.discriminatedUnion('type', [
         .string()
         .trim()
         .min(1)
-        .refine(
-          (value) => [...value].length <= limits.QUESTION_UNIT_MAX,
-          'Text is too long.'
-        )
+        .refine((value) => [...value].length <= limits.QUESTION_UNIT_MAX, {
+          error: () => m.question_validation_text_too_long(),
+        })
         .optional(),
     })
-    .refine(
-      (v) => !v.unit || v.accepted.every((a) => validQuantityValue(a)),
-      'Accepted answers must contain values only, in the required unit.'
-    ),
+    .refine((v) => !v.unit || v.accepted.every((a) => validQuantityValue(a)), {
+      error: () => m.question_validation_unit_answers(),
+    }),
   z
     .strictObject({
       options: list,
@@ -357,10 +354,9 @@ const answerSchema = z.discriminatedUnion('type', [
         .max(limits.QUESTION_ANSWERS_MAX),
       type: z.literal('matching'),
     })
-    .refine(
-      (v) => v.pairs.every((p) => p.right < v.options.length),
-      'Every pair needs a choice from the pool.'
-    ),
+    .refine((v) => v.pairs.every((p) => p.right < v.options.length), {
+      error: () => m.question_validation_matching_pairs(),
+    }),
   z.strictObject({ items: list.min(2), type: z.literal('ordering') }),
   z.strictObject({
     accepted: list,
@@ -393,7 +389,7 @@ export const questionSchema = z.strictObject({
               .min(1)
               .refine(
                 (value) => [...value].length <= limits.QUESTION_MARK_ITEM_MAX,
-                'Text is too long.'
+                { error: () => m.question_validation_text_too_long() }
               )
           )
           .min(1)
@@ -429,22 +425,20 @@ export function validateQuestion(
   const question = questionSchema.parse(value);
   const ids = new Set<string>();
   for (const part of question.parts) {
-    if (ids.has(part.id)) throw new Error('Part IDs must be unique.');
+    if (ids.has(part.id)) throw new CopyError(m.question_validation_part_ids());
     ids.add(part.id);
     if (
       !policy.snapshot &&
       (part.awarded !== undefined || part.awardReason !== undefined)
     )
-      throw new Error('Authored questions cannot contain awarded marks.');
+      throw new CopyError(m.question_validation_awarded_marks());
     if (
       part.awarded !== undefined &&
       (part.awarded > part.markscheme.length || (part.awarded * 2) % 1 !== 0)
     )
-      throw new Error(
-        'Awarded marks exceed the marking scheme or are not half marks.'
-      );
+      throw new CopyError(m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
-      throw new Error('Bank questions need a worked solution for every part.');
+      throw new CopyError(m.question_validation_bank_solution());
   }
   for (const block of [
     ...question.stem,
@@ -461,10 +455,10 @@ export function validateQuestion(
             ? block.image.url
             : '';
       if (!policy.bank || !hostedAsset(url, policy.bankAssetsUrl))
-        throw new Error('Figures must use the configured bank asset host.');
+        throw new CopyError(m.question_validation_asset_host());
     }
     if (policy.bank && block.type === 'graph' && 'svg' in block.image)
-      throw new Error('Upload bank graphs before saving the question.');
+      throw new CopyError(m.question_validation_upload_graphs());
   }
   return question;
 }
@@ -481,11 +475,12 @@ export function validateQuestions(
   const ids = new Set<string>();
   const partIds = new Set<string>();
   for (const question of questions) {
-    if (ids.has(question.id)) throw new Error('Question IDs must be unique.');
+    if (ids.has(question.id))
+      throw new CopyError(m.question_validation_question_ids());
     ids.add(question.id);
     for (const part of question.parts) {
       if (partIds.has(part.id))
-        throw new Error('Part IDs must be unique throughout the quiz.');
+        throw new CopyError(m.question_validation_quiz_part_ids());
       partIds.add(part.id);
     }
   }

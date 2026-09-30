@@ -584,7 +584,7 @@ func lockCloneBlobPathsTx(
 		return err
 	}
 	if locked != len(ordered) {
-		return ErrConflict
+		return ErrCloneSourceChanged
 	}
 	return nil
 }
@@ -1313,7 +1313,7 @@ func (s *Store) cloneMaterialKindOnce(
 	if src.OwnerUserID != sourceOwnerID ||
 		(sourceWorkspaceID == nil) != (src.WorkspaceID == "") ||
 		(sourceWorkspaceID != nil && src.WorkspaceID != *sourceWorkspaceID) {
-		return Material{}, ErrConflict
+		return Material{}, ErrCloneSourceChanged
 	}
 	if _, err := materialEffectiveAccess(ctx, tx, userID, matID); err != nil {
 		return Material{}, err

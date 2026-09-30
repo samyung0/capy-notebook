@@ -55,6 +55,8 @@ describe('frontend error normalization', () => {
     const stale = await api.patch('/quizzes/q/content', {}).catch((e) => e);
     vi.stubGlobal('fetch', reply('workspace_limit_exceeded', 403));
     const workspaces = await api.post('/workspaces', {}).catch((e) => e);
+    vi.stubGlobal('fetch', reply('account_deletion_busy', 409));
+    const busy = await api.post('/account/restore', {}).catch((e) => e);
     vi.unstubAllGlobals();
 
     expect(stale).toMatchObject({ code: 'revision_conflict', status: 409 });
@@ -66,6 +68,10 @@ describe('frontend error normalization', () => {
     expect(errorCopy(stale, 'fallback')).not.toContain('raw server text');
     expect(describeError(workspaces).title).toBe(
       m.error_workspace_limit_title()
+    );
+    // A conflict that is not a stale revision keeps its own copy.
+    expect(describeError(busy).title).toBe(
+      m.error_account_deletion_busy_title()
     );
   });
 

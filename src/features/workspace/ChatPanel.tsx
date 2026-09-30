@@ -1,7 +1,6 @@
-import { useMutation } from '@tanstack/react-query';
 import type React from 'react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { api, isApiError } from '@/api/client';
+import { isApiError } from '@/api/client';
 import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type {
@@ -35,6 +34,7 @@ import { curateToggleDisabled, curateToggleVisible } from './curateToggle';
 import type { TabAction } from './PanelTabRow';
 import { toolErrorMessage } from './toolErrorMessage';
 import { toChatMessage, useChatStream } from './useChatStream';
+import { useProcessFileChanges } from './useProcessFileChanges';
 
 /** Page label for a citation, absent for sources with no page model (txt/md
  * and anything stored without parsing). */
@@ -410,13 +410,8 @@ export function ChatPanel({
     hydrate,
     markUndone,
   } = useChatStream(workspaceId);
-  const { mutate: processChanges, isPending: processingChanges } = useMutation({
-    mutationFn: async (fileIds: string[]) => {
-      await Promise.all(
-        fileIds.map((id) => api.post(`/files/${id}/process-changes`, {}))
-      );
-    },
-  });
+  const { mutate: processChanges, isPending: processingChanges } =
+    useProcessFileChanges();
   const { data: conversations } = useConversations(workspaceId, {
     errorBoundary: false,
   });

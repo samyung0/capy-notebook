@@ -360,7 +360,7 @@ func (a *api) checkoutEntitlementError(customerID string) error {
 		)
 	}
 	if len(entitlements) > 0 {
-		return huma.Error409Conflict("an active subscription already exists")
+		return conflictError("subscription_exists", "an active subscription already exists")
 	}
 	return nil
 }
@@ -372,7 +372,7 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 		return nil, hErr(err)
 	}
 	if current != nil {
-		return nil, huma.Error409Conflict("an active subscription already exists")
+		return nil, conflictError("subscription_exists", "an active subscription already exists")
 	}
 	u, err := a.s.Me(ctx, uid)
 	if err != nil {

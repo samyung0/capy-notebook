@@ -123,13 +123,14 @@ func (a *api) requestAccountDeletion(ctx context.Context, in *requestDeletionInp
 			return nil, huma.Error503ServiceUnavailable(
 				"cannot confirm subscription state with Stripe right now; try again shortly")
 		}
-		return nil, huma.Error409Conflict("cancel your subscription before deleting your account")
+		return nil, conflictError("subscription_active", "cancel your subscription before deleting your account")
 	}
 	status, err := a.s.RequestAccountDeletionAtGenerationWithSessionRevocation(
 		ctx, uid, false, in.Body.LifecycleGeneration,
 	)
 	if errors.Is(err, store.ErrAccountLifecycleChanged) {
-		return nil, huma.Error409Conflict(
+		return nil, conflictError(
+			"account_state_changed",
 			"account state changed after deletion preflight; review and try again",
 		)
 	}

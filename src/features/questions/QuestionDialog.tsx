@@ -351,11 +351,7 @@ function QuestionDialogSession({
         });
       } catch (error) {
         // validateQuestion's own checks carry copy; a schema failure does not.
-        fail(
-          error instanceof Error && !(error instanceof z.ZodError)
-            ? error.message
-            : m.question_ui_could_not_save_question()
-        );
+        fail(errorCopy(error, m.question_ui_could_not_save_question()));
         return;
       }
       try {

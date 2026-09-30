@@ -19,6 +19,10 @@ func TestMapHTTPErrorCodes(t *testing.T) {
 	}{
 		{fmt.Errorf("quiz: %w", store.ErrConflict), http.StatusConflict, "revision_conflict"},
 		{store.ErrNothingToProcess, http.StatusConflict, "nothing_to_process"},
+		{store.ErrAccountDeletionBusy, http.StatusConflict, "account_deletion_busy"},
+		{store.ErrSubscriptionExists, http.StatusConflict, "subscription_exists"},
+		{fmt.Errorf("clone: %w", store.ErrCloneSourceChanged), http.StatusConflict, "clone_source_changed"},
+		{store.ErrTitleTaken, http.StatusConflict, "title_taken"},
 		{store.ErrInvalidPDFAnnotation, http.StatusBadRequest, ""},
 	} {
 		var model *huma.ErrorModel

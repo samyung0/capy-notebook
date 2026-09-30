@@ -169,7 +169,7 @@ func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput)
 	}
 	ws, err := a.s.TransferWorkspace(ctx, userID(ctx), in.ID, in.Body.RecipientID)
 	if errors.Is(err, store.ErrTransferSelf) {
-		return nil, huma.Error409Conflict(err.Error())
+		return nil, conflictError("transfer_self", err.Error())
 	}
 	if err != nil {
 		return nil, collaborationError(err)

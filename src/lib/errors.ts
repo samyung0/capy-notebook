@@ -116,6 +116,43 @@ function codeCopy(code: string): ErrorDescription | null {
         description: m.error_revision_conflict_body(),
         title: m.error_revision_conflict_title(),
       };
+    case 'account_deletion_busy':
+      return {
+        description: m.error_account_deletion_busy_body(),
+        title: m.error_account_deletion_busy_title(),
+      };
+    case 'subscription_exists':
+      return {
+        description: m.error_subscription_exists_body(),
+        title: m.error_subscription_exists_title(),
+      };
+    case 'subscription_active':
+      return {
+        description: m.error_subscription_active_body(),
+        title: m.error_subscription_active_title(),
+      };
+    case 'account_state_changed':
+      return {
+        action: 'reload',
+        description: m.error_account_state_changed_body(),
+        title: m.error_account_state_changed_title(),
+      };
+    case 'clone_source_changed':
+      return {
+        action: 'retry',
+        description: m.error_clone_source_changed_body(),
+        title: m.error_clone_source_changed_title(),
+      };
+    case 'title_taken':
+      return {
+        description: m.error_title_taken_body(),
+        title: m.error_title_taken_title(),
+      };
+    case 'transfer_self':
+      return {
+        description: m.error_transfer_self_body(),
+        title: m.error_transfer_self_title(),
+      };
     case 'workspace_limit_exceeded':
       return {
         action: 'subscription',

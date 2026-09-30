@@ -237,7 +237,7 @@ func (s *Store) CancelAccountDeletion(ctx context.Context, userID string) (Accou
 		return AccountStatus{}, err
 	}
 	if providerCancellationStarted || sessionRevocationPending {
-		return AccountStatus{}, ErrConflict
+		return AccountStatus{}, ErrAccountDeletionBusy
 	}
 	tag, err := tx.Exec(ctx, `UPDATE users SET
 			deletion_requested_at = NULL,

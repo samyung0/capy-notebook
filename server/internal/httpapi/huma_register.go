@@ -53,6 +53,16 @@ func hErr(err error) error {
 	return &handlerError{error: mapHTTPError(err), cause: err}
 }
 
+// conflictError is a 409 carrying a machine code the browser maps to copy.
+func conflictError(code, detail string) error {
+	return &huma.ErrorModel{
+		Status: http.StatusConflict,
+		Title:  http.StatusText(http.StatusConflict),
+		Detail: detail,
+		Errors: []*huma.ErrorDetail{{Message: code}},
+	}
+}
+
 func mapHTTPError(err error) error {
 	if err == nil {
 		return nil
@@ -129,23 +139,23 @@ func mapHTTPError(err error) error {
 		}
 	}
 	if errors.Is(err, store.ErrTitleTaken) {
-		return huma.Error409Conflict("a material with this name already exists in this workspace")
+		return conflictError("title_taken", "a material with this name already exists in this workspace")
+	}
+	// The specific conflicts wrap ErrConflict, so they come first.
+	if errors.Is(err, store.ErrAccountDeletionBusy) {
+		return conflictError("account_deletion_busy", "account deletion is still being processed")
+	}
+	if errors.Is(err, store.ErrSubscriptionExists) {
+		return conflictError("subscription_exists", "an active subscription already exists")
+	}
+	if errors.Is(err, store.ErrCloneSourceChanged) {
+		return conflictError("clone_source_changed", "the source changed while it was copied")
 	}
 	if errors.Is(err, store.ErrConflict) {
-		return &huma.ErrorModel{
-			Status: http.StatusConflict,
-			Title:  http.StatusText(http.StatusConflict),
-			Detail: "someone else changed this first",
-			Errors: []*huma.ErrorDetail{{Message: "revision_conflict"}},
-		}
+		return conflictError("revision_conflict", "someone else changed this first")
 	}
 	if errors.Is(err, store.ErrNothingToProcess) {
-		return &huma.ErrorModel{
-			Status: http.StatusConflict,
-			Title:  http.StatusText(http.StatusConflict),
-			Detail: "no saved changes to process",
-			Errors: []*huma.ErrorDetail{{Message: "nothing_to_process"}},
-		}
+		return conflictError("nothing_to_process", "no saved changes to process")
 	}
 	if errors.Is(err, store.ErrInvalidPDFAnnotation) {
 		return huma.Error400BadRequest("invalid annotation")

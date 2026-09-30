@@ -116,7 +116,7 @@ func (s *Store) ReserveStripeCheckout(
 		return "", AccountStatus{}, err
 	}
 	if subscribed {
-		return "", status, ErrConflict
+		return "", status, ErrSubscriptionExists
 	}
 	reservationID := uid("checkout")
 	if _, err := tx.Exec(ctx, `INSERT INTO stripe_checkout_sessions
@@ -124,7 +124,7 @@ func (s *Store) ReserveStripeCheckout(
 		VALUES ($1,$2,$3,$4,$5,$6,'creating')`, reservationID, userID,
 		customerID, priceID, successURL, cancelURL); err != nil {
 		if isUniqueViolation(err) {
-			return "", status, ErrConflict
+			return "", status, ErrSubscriptionExists
 		}
 		return "", AccountStatus{}, err
 	}
