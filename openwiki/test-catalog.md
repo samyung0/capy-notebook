@@ -444,7 +444,10 @@ The manual [external-search spot-check](../bench/rag/reports/2026-09-15-external
 
 ## Playwright e2e — real stack (`e2e/errors/`, `e2e/sharing/`)
 
-Real stack via Docker (`pnpm e2e`). Editor specs are ignored by the root Playwright config.
+Real stack via Docker (`pnpm e2e`). Editor specs are ignored by the root Playwright config. CI runs it as
+its own job (`e2e_stack`) and prebuilds the collaboration and server images
+with the GitHub Actions layer cache, so `E2E_PREBUILT_IMAGES=true` starts the
+stack with `--no-build`; locally the setup still runs `up --build`.
 
 E2E tests check functional outcomes and may select individual UI elements. They
 do not enforce UI layout, DOM wrapper structure, or section/menu organization.
@@ -543,7 +546,8 @@ records the fixes and their verification.
 
 `floating-toolbar.spec.ts` checks that selection and link actions move with their text synchronously during scrolling, before Floating UI or React position updates can run; top-toolbar formatting keeps the selection toolbar mounted and open without restarting its animation, while collapsed selections still dismiss it.
 
-MSW + Vite only (`pnpm e2e:msw:editor`); no Docker. The editor project uses
+MSW + Vite only (`pnpm e2e:msw:editor`); no Docker. CI runs it in two shards
+(`e2e_editor`, `--shard=N/2`) in parallel with the real-stack job. The editor project uses
 full Chromium's headless mode because the separate headless shell can strand
 modified-click tabs ([Playwright #42142](https://github.com/microsoft/playwright/issues/42142)).
 
