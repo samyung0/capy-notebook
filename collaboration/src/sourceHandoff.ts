@@ -26,9 +26,12 @@ const ACK_WAIT_MS = 60_000;
 const LOCK_MS = ACK_WAIT_MS + CALL_TIMEOUT_MS;
 const WATCHDOG_MS = LOCK_MS + 5000;
 // A rebuild locks the room only to confirm nobody has it open and to swap:
-// every instance answers the probe within PROBE_WAIT_MS, and the lock
-// outlasts that plus the gateway's compare-and-swap.
+// every instance answers the probe within PROBE_WAIT_MS, and the gateway's
+// compare-and-swap is abandoned after REBUILD_REQUEST_MS (a later attempt
+// retries), so the lock outlasts both and no writer joins the old epoch
+// while a swap can still land.
 const PROBE_WAIT_MS = 2000;
+const REBUILD_REQUEST_MS = 15_000;
 const REBUILD_LOCK_MS = 30_000;
 // A socket that passed the lock check while authenticating counts as in the
 // room until it connects or fails, and at most this long.
@@ -493,19 +496,24 @@ export class SourceHandoff {
     try {
       if (!(await this.roomEmpty(session, id, writersOnly))) return false;
       try {
-        await this.sources.request(fileId, 'rebuild', {
-          epoch: session.epoch,
-          expectedCheckpoint: session.checkpoint,
-          netTokens: rebase.netTokens,
-          pendingEffects: rebase.pendingEffects,
-          publishedSourceSHA256: session.publishedSourceSHA256,
-          ...(rebase.rebasedState
-            ? {
-                state: rebase.rebasedState,
-                stateSeedSHA256: rebase.rebasedStateSeedSHA256,
-              }
-            : {}),
-        });
+        await this.sources.request(
+          fileId,
+          'rebuild',
+          {
+            epoch: session.epoch,
+            expectedCheckpoint: session.checkpoint,
+            netTokens: rebase.netTokens,
+            pendingEffects: rebase.pendingEffects,
+            publishedSourceSHA256: session.publishedSourceSHA256,
+            ...(rebase.rebasedState
+              ? {
+                  state: rebase.rebasedState,
+                  stateSeedSHA256: rebase.rebasedStateSeedSHA256,
+                }
+              : {}),
+          },
+          REBUILD_REQUEST_MS
+        );
       } catch (error) {
         if (error instanceof SourceRequestError && error.status === 409)
           return false;

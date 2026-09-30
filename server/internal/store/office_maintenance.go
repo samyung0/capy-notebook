@@ -91,8 +91,11 @@ func (s *Store) maintenanceLockTx(ctx context.Context, tx pgx.Tx, fileID string)
 type OfficePublication struct {
 	FileID     string
 	ExportOnly bool
-	JobID      string
-	Err        error
+	// Rebuilt: a trashed file's editing moved onto its deferred publication
+	// here, with no job (JobID empty).
+	Rebuilt bool
+	JobID   string
+	Err     error
 }
 
 // PublishAllOfficeSources requests a maintenance publication of every Office
@@ -109,6 +112,10 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 	}
 	if !paused {
 		return nil, ErrOfficeEditingNotPaused
+	}
+	out, err := s.rebuildTrashedOfficeSources(ctx)
+	if err != nil {
+		return nil, err
 	}
 	// ponytail: the failed-republish lookup scans failed jobs per file; index
 	// jobs by payload fileId if a window ever holds thousands of files.
@@ -142,10 +149,44 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	out := make([]OfficePublication, 0, len(files))
 	for _, d := range files {
 		result, err := s.requestSourceRefresh(ctx, d.owner, d.file, false, models.PaidBySystem, d.exportOnly)
 		out = append(out, OfficePublication{FileID: d.file, ExportOnly: d.exportOnly, JobID: result.JobID, Err: err})
+	}
+	return out, nil
+}
+
+// rebuildTrashedOfficeSources moves editing onto the deferred publication of
+// each trashed Office file with nothing saved since. The collaboration service
+// never rebuilds a trashed file, so readiness would wait on it until a restore
+// or the trash purge. Nobody can open or save a trashed file, so no room holds
+// edits to wait for, and with nothing saved after the publication the rebuild
+// is the published file itself: no state, no pending effects.
+func (s *Store) rebuildTrashedOfficeSources(ctx context.Context) ([]OfficePublication, error) {
+	rows, err := s.pool.Query(ctx, `SELECT d.file_id,d.epoch,d.checkpoint,f.source_sha256 FROM source_documents d JOIN files f ON f.id=d.file_id
+		WHERE d.format<>'text' AND d.rebuild_pending AND d.checkpoint=d.indexed_checkpoint AND d.pending_effects='[]'::jsonb
+		AND d.running_job_id IS NULL AND f.trashed_at IS NOT NULL AND f.source_sha256 IS NOT NULL ORDER BY d.file_id`)
+	if err != nil {
+		return nil, err
+	}
+	var due []SourceRebuild
+	var ids []string
+	for rows.Next() {
+		in := SourceRebuild{PendingEffects: json.RawMessage(`[]`)}
+		var id string
+		if err = rows.Scan(&id, &in.Epoch, &in.ExpectedCheckpoint, &in.PublishedSourceSHA256); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		due, ids = append(due, in), append(ids, id)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]OfficePublication, 0, len(due))
+	for i, in := range due {
+		out = append(out, OfficePublication{FileID: ids[i], Rebuilt: true, Err: s.RebuildSource(ctx, ids[i], in)})
 	}
 	return out, nil
 }

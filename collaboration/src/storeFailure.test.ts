@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MaterialDocumentLimitError } from './limits.js';
 import { MaterialDocumentValidationError } from './materialDocument.js';
+import { OfficeEngineError } from './officeRuntime.js';
 import { CollaborationAuthorizationError } from './persistence.js';
-import { handlePermanentStoreFailure } from './storeFailure.js';
+import {
+  ENGINE_ATTEMPTS,
+  engineFailures,
+  engineRefused,
+  handlePermanentStoreFailure,
+} from './storeFailure.js';
 
 function actions() {
   return {
@@ -56,5 +62,27 @@ describe('permanent store failures', () => {
     for (const callback of Object.values(callbacks)) {
       expect(callback).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('Office engine store failures', () => {
+  it('retries timeouts and lost workers until ENGINE_ATTEMPTS in a row', () => {
+    const timeout = new OfficeEngineError('Office stateOf timed out', true);
+    let failures = 0;
+    for (let attempt = 1; attempt < ENGINE_ATTEMPTS; attempt++) {
+      failures = engineFailures(timeout, failures);
+      expect(engineRefused(timeout, failures)).toBe(false);
+    }
+    failures = engineFailures(timeout, failures);
+    expect(engineRefused(timeout, failures)).toBe(true);
+    // Any other failure breaks the run.
+    expect(engineFailures(new Error('gateway 503'), failures)).toBe(0);
+  });
+
+  it('refuses a refusal or trap at once', () => {
+    const refusal = new OfficeEngineError('stale_target: changed');
+    expect(engineRefused(refusal, engineFailures(refusal, undefined))).toBe(
+      true
+    );
   });
 });

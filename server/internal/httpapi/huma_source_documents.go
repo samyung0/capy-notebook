@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -211,6 +212,11 @@ func (a *api) rebuildSource(ctx context.Context, in *sourceRebuildInput) (*struc
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
 		return nil, err
 	}
+	// The collaboration service holds the room lock for 30 s and abandons this
+	// request after 15 s. Ending the swap sooner means it never commits after
+	// the caller stopped waiting; a rolled-back swap is retried later.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	return nil, hErr(a.s.RebuildSource(ctx, in.ID, in.Body))
 }
 func (a *api) cancelSourceChanges(ctx context.Context, in *collaborationTokenInput) (*struct{}, error) {

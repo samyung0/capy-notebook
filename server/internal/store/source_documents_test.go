@@ -628,10 +628,12 @@ func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
 
 // Nothing saved after the capture: the viewer still reads the published edits
 // (the old base plus the state), and the rebuild lands on seed(published).
-func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
-	s := openAccessTestStore(t)
+// sourceTestDeferredPublication is a DOCX whose saved edits (state
+// "captured-state") published deferred with nothing saved since: its rebuild
+// is pending onto the export it returns.
+func sourceTestDeferredPublication(t *testing.T, s *Store, owner string) (fileID string, checkpoint int64, export string) {
+	t.Helper()
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "deferred_clean_owner")
 	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 	reg, err := models.New(ctx, s.Pool())
 	if err != nil {
@@ -647,7 +649,7 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	export := strings.Repeat("b", 64)
+	export = strings.Repeat("b", 64)
 	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: 1, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-b"}); err != nil {
 		t.Fatal(err)
 	}
@@ -664,17 +666,24 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 	if _, err = s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, PendingEffects: json.RawMessage(`[]`), Deferred: true}); err != nil {
 		t.Fatal(err)
 	}
-	view, err := s.ViewSourceSession(ctx, file.ID)
+	return file.ID, doc.Checkpoint, export
+}
+
+func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	fileID, checkpoint, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "deferred_clean_owner"))
+	view, err := s.ViewSourceSession(ctx, fileID)
 	if err != nil || string(view.State) != "captured-state" || view.Checkpoint != view.IndexedCheckpoint {
 		t.Fatalf("view while the rebuild is pending: %+v %v", view, err)
 	}
-	if err = s.RebuildSource(ctx, file.ID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: doc.Checkpoint, PublishedSourceSHA256: export, State: []byte("x"), StateSeedSHA256: sourceTestStateSeed, PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
+	if err = s.RebuildSource(ctx, fileID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: checkpoint, PublishedSourceSHA256: export, State: []byte("x"), StateSeedSHA256: sourceTestStateSeed, PendingEffects: json.RawMessage(`[]`)}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("a rebased state with no later edits: %v", err)
 	}
-	if err = s.RebuildSource(ctx, file.ID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: doc.Checkpoint, PublishedSourceSHA256: export, PendingEffects: json.RawMessage(`[]`)}); err != nil {
+	if err = s.RebuildSource(ctx, fileID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: checkpoint, PublishedSourceSHA256: export, PendingEffects: json.RawMessage(`[]`)}); err != nil {
 		t.Fatal(err)
 	}
-	view, err = s.ViewSourceSession(ctx, file.ID)
+	view, err = s.ViewSourceSession(ctx, fileID)
 	if err != nil || view.State != nil || view.Epoch != 2 || view.BaseSourceSHA256 != export {
 		t.Fatalf("view after the rebuild: %+v %v", view, err)
 	}

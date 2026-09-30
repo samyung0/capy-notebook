@@ -348,8 +348,10 @@ unsaved, error and recovery states, shown in the header like the note editor's
 Saved requires an explicit durable checkpoint receipt. A failed save the
 server retries keeps the mounted editor and its pending receipts, shows Not
 saved and raises the failed-save toast; the retry's receipt brings Saved back.
-A save refused for good (an engine failure, a 401/403/404/409/413/422 from the
-gateway, the byte limit) discards the room and resets the editor to the last
+An Office engine timeout or lost worker is retried like a gateway 5xx, up to
+three in a row (`ENGINE_ATTEMPTS`, `collaboration/src/storeFailure.ts`). A save
+refused for good (an engine refusal or trap, the third engine timeout in a
+row, a 401/403/404/409/413/422 from the gateway, the byte limit) discards the room and resets the editor to the last
 saved version with the "couldn't be saved and were undone" toast, clearing its
 drafts; a storage or frozen refusal at save drops every writer to view under
 the read-only strip. A trashed or deleted file, or lost access, replaces the

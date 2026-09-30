@@ -807,15 +807,17 @@ function rebuildSetup() {
   });
   const order: string[] = [];
   let lockId = '';
+  let lockMs = 0;
   Object.assign(f.redis, {
     del: vi.fn(),
     eval: vi.fn(async () => {
       order.push('unlock');
     }),
     hgetall: vi.fn(async () => ({ instance: 'idle' })),
-    set: vi.fn(async (_key: string, id: string) => {
+    set: vi.fn(async (_key: string, id: string, _px: 'PX', ms: number) => {
       order.push('lock');
       lockId = id;
+      lockMs = ms;
       return 'OK';
     }),
   });
@@ -839,7 +841,14 @@ function rebuildSetup() {
     .mockImplementation(async (_file, endpoint) => {
       order.push(endpoint);
     });
-  return { ...f, lockId: () => lockId, order, rebase, request };
+  return {
+    ...f,
+    lockId: () => lockId,
+    lockMs: () => lockMs,
+    order,
+    rebase,
+    request,
+  };
 }
 
 test('a rebuild rebases first, then locks only to confirm the room is empty and swap', async () => {
@@ -863,15 +872,23 @@ test('a rebuild rebases first, then locks only to confirm the room is empty and 
       (field) => !Object.hasOwn(rebuildSchema.properties, field)
     )
   ).toEqual([]);
-  expect(f.request).toHaveBeenCalledWith('f', 'rebuild', {
-    epoch: 1,
-    expectedCheckpoint: 9,
-    netTokens: 1,
-    pendingEffects: [],
-    publishedSourceSHA256: 'b'.repeat(64),
-    state: 'rebased',
-    stateSeedSHA256: 'c'.repeat(64),
-  });
+  expect(f.request).toHaveBeenCalledWith(
+    'f',
+    'rebuild',
+    {
+      epoch: 1,
+      expectedCheckpoint: 9,
+      netTokens: 1,
+      pendingEffects: [],
+      publishedSourceSHA256: 'b'.repeat(64),
+      state: 'rebased',
+      stateSeedSHA256: 'c'.repeat(64),
+    },
+    expect.any(Number)
+  );
+  // The swap is abandoned while the room is still locked.
+  const timeout = f.request.mock.calls[0][3] as number;
+  expect(timeout + 2000).toBeLessThan(f.lockMs());
 });
 
 test('a rebuild waits while anyone has the room open, here or elsewhere', async () => {

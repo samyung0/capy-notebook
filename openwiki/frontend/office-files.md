@@ -655,11 +655,18 @@ all idle sends the gateway
 a compare-and-swap (`POST /internal/collaboration/files/{id}/rebuild`: epoch,
 latest checkpoint and published bytes unchanged, no refresh in flight) that
 opens a new epoch on the published base and releases the old one. The lock
-covers only the probe (2 s) and the swap, so a connect in that moment waits one
-silent 3-second retry. A room in use, a save or a publication in between leaves
-it for later. It runs when a room unloads on an instance and from a sweep
-every minute (a room found in use waits five minutes, an error ten). A room
-that never empties keeps the old base, and the kept capture, until it does.
+(30 s) covers only the probe (2 s) and the swap, so a connect in that moment
+waits one silent 3-second retry. The service abandons the swap request after
+15 s and the gateway ends its transaction after 10 s, so a swap never commits
+after the lock lapses, when a writer could have joined the old epoch. A room in
+use, a save or a publication in between leaves it for later. It runs when a
+room unloads on an instance and from a sweep every minute (a room found in use
+waits five minutes, an error ten). A room that never empties keeps the old
+base, and the kept capture, until it does. The service never rebuilds a
+trashed file; a restore returns it to the sweep, and maintenance `publish-all`
+performs the swap for a trashed file with nothing saved since its publication
+(nobody can open or save it, and the rebuilt state is the published file), so
+readiness does not wait on it until the trash purge.
 
 The immediate handoff remains for a maintenance publication, where editing is
 paused anyway. A started handoff always completes. Each connected writer goes

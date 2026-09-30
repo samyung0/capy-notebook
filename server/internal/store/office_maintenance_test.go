@@ -162,6 +162,47 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 	}
 }
 
+// A trashed file's rebuild never runs in the collaboration service, so
+// publish-all performs it; readiness waited on it until then.
+func TestPublishAllRebuildsTrashedDeferredPublication(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	file, _, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "trashed_rebuild_owner"))
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET trashed_at=now(),trash_episode_id='episode',purge_after=now()+interval '30 days' WHERE id=$1`, file); err != nil {
+		t.Fatal(err)
+	}
+	maintenanceTestPause(t, s)
+	waiting := func() bool {
+		t.Helper()
+		ready, err := s.OfficeReadiness(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range ready.Unpublished {
+			if u.FileID == file {
+				return u.RebuildPending
+			}
+		}
+		return false
+	}
+	if !waiting() {
+		t.Fatal("readiness should wait on the pending rebuild")
+	}
+	published, err := s.PublishAllOfficeSources(ctx)
+	if err != nil || !slices.Contains(published, OfficePublication{FileID: file, Rebuilt: true}) {
+		t.Fatalf("publish-all: %+v %v", published, err)
+	}
+	var pending bool
+	var epoch int64
+	var base string
+	if err = s.pool.QueryRow(ctx, `SELECT rebuild_pending,epoch,base_source_sha256 FROM source_documents WHERE file_id=$1`, file).Scan(&pending, &epoch, &base); err != nil || pending || epoch != 2 || base != export {
+		t.Fatalf("after publish-all: pending=%v epoch=%d base=%s %v", pending, epoch, base, err)
+	}
+	if waiting() {
+		t.Fatal("readiness still waits after publish-all")
+	}
+}
+
 func TestExportOnlyPublication(t *testing.T) {
 	s := maintenanceTestStore(t)
 	ctx := context.Background()

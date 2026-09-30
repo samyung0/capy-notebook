@@ -59,7 +59,6 @@ import {
 } from './officeRoots.js';
 import {
   closeOfficeRuntime,
-  OfficeEngineError,
   officeDocumentRoots,
   type SourceFormat,
 } from './officeRuntime.js';
@@ -93,7 +92,11 @@ import {
   type SourcePublish,
   SourcePublishingError,
 } from './sourceHandoff.js';
-import { handlePermanentStoreFailure } from './storeFailure.js';
+import {
+  engineFailures,
+  engineRefused,
+  handlePermanentStoreFailure,
+} from './storeFailure.js';
 import { armTokenExpiry, clearTokenExpiry } from './tokenExpiry.js';
 import {
   inboundYjsUpdate,
@@ -1044,13 +1047,16 @@ async function storeSource(document: Document) {
       (storeFailureGenerations.get(room) ?? 0) + 1
     );
     // A storage or frozen refusal drops every writer to view (their unsaved
-    // edits are discarded); a state the engine failed on or the gateway
-    // refused for good cannot be retried, so the room is discarded and its
-    // clients reload the last saved version. Anything else is retried here
-    // while the clients keep editing.
+    // edits are discarded); a state the engine refused (engineRefused) or the
+    // gateway refused for good cannot be retried, so the room is discarded
+    // and its clients reload the last saved version. Anything else is retried
+    // here while the clients keep editing.
     const readOnly = readOnlyRefusal(error);
+    const previous = failedStores.get(room);
+    const failures = engineFailures(error, previous?.engineFailures);
+    const refused = engineRefused(error, failures);
     const recoverable =
-      !(readOnly || error instanceof OfficeEngineError) &&
+      !(readOnly || refused) &&
       (!(error instanceof SourceRequestError) ||
         ![401, 403, 404, 409, 413, 422].includes(error.status));
     document.broadcastStateless(
@@ -1065,14 +1071,15 @@ async function storeSource(document: Document) {
             }
       )
     );
-    if (error instanceof OfficeEngineError) {
+    if (refused) {
       reportFailedStore(undefined, error, room);
       failedStores.delete(room);
       rejectAuthorizationRoom(room);
     } else if (recoverable && !roomEvictions.isDiscarding(room)) {
-      const eventId = reportFailedStore(failedStores.get(room), error, room);
+      const eventId = reportFailedStore(previous, error, room);
       failedStores.set(room, {
         checkpointIds: claimed,
+        engineFailures: failures,
         eventId,
         state: rawState,
       });
@@ -1528,14 +1535,15 @@ const failedStoreRetries = new FailedStoreRetryRunner(
         // As in storeSource: a refusal for good tells the clients (read-only,
         // or reset to the last saved version) and discards the room.
         const readOnly = readOnlyRefusal(error);
+        const failures = engineFailures(error, failed.engineFailures);
+        const refused = engineRefused(error, failures);
         if (
           readOnly ||
-          error instanceof OfficeEngineError ||
+          refused ||
           (error instanceof SourceRequestError &&
             [401, 403, 404, 409, 413, 422].includes(error.status))
         ) {
-          if (error instanceof OfficeEngineError)
-            reportFailedStore(failed, error, room);
+          if (refused) reportFailedStore(failed, error, room);
           server.hocuspocus.documents.get(room)?.broadcastStateless(
             JSON.stringify(
               readOnly
@@ -1550,7 +1558,10 @@ const failedStoreRetries = new FailedStoreRetryRunner(
           );
           clearIfCurrent();
           rejectAuthorizationRoom(room);
-        } else reportFailedStore(failed, error, room);
+        } else {
+          failed.engineFailures = failures;
+          reportFailedStore(failed, error, room);
+        }
         return;
       }
       if (

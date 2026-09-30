@@ -70,6 +70,8 @@ func main() {
 			mode := "republish"
 			if p.ExportOnly {
 				mode = "export-only"
+			} else if p.Rebuilt {
+				mode = "rebuild"
 			}
 			if p.Err != nil {
 				failed++

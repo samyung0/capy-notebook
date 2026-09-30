@@ -605,15 +605,21 @@ export class SourceDocumentStore {
   async request<T>(
     fileId: string,
     endpoint: string,
-    body?: unknown
+    body?: unknown,
+    timeoutMs?: number
   ): Promise<T> {
     return this.requestPath(
       `/internal/collaboration/files/${encodeURIComponent(fileId)}/${endpoint}`,
-      body
+      body,
+      timeoutMs
     );
   }
 
-  private async requestPath<T>(path: string, body?: unknown): Promise<T> {
+  private async requestPath<T>(
+    path: string,
+    body?: unknown,
+    timeoutMs = 60_000
+  ): Promise<T> {
     const endpoint = path.split('/').pop() ?? path;
     const response = await fetch(`${this.apiURL}${path}`, {
       headers: {
@@ -623,7 +629,7 @@ export class SourceDocumentStore {
       },
       method: body === undefined ? 'GET' : 'POST',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as {
