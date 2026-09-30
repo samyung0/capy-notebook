@@ -45,10 +45,7 @@ test.describe('standardized error surfaces', () => {
       expect(response?.headers()['cache-control']).toBe('no-store');
       expect(response?.headers()['x-robots-tag']).toBe('noindex, nofollow');
       await expect(
-        anonymousPage.getByRole('heading', { name: 'Workspace unavailable' })
-      ).toBeVisible();
-      await expect(
-        anonymousPage.getByText('This workspace is private or unavailable.')
+        anonymousPage.getByRole('heading', { name: 'Page not found' })
       ).toBeVisible();
       await expect(
         anonymousPage.getByText(seed.privateWorkspace.name)

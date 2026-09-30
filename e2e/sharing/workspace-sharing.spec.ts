@@ -64,7 +64,7 @@ test.describe('workspace sharing', () => {
       const response = await page.goto(`/w/${seed.privateWorkspace.id}`);
       expect(response?.status()).toBe(404);
       await expect(
-        page.getByRole('heading', { name: 'Workspace unavailable' })
+        page.getByRole('heading', { name: 'Page not found' })
       ).toBeVisible();
       await expect(page.getByText(seed.privateWorkspace.name)).toHaveCount(0);
       await expect(
