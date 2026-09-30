@@ -309,6 +309,23 @@ components:
       required:
         - url
       type: object
+    BankBatchBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/BankBatchBody.json
+          format: uri
+          readOnly: true
+          type: string
+        questions:
+          items:
+            $ref: "#/components/schemas/Detail"
+          nullable: true
+          type: array
+      required:
+        - questions
+      type: object
     BankCommentInputBody:
       additionalProperties: false
       properties:
@@ -5112,6 +5129,40 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Upload a public question figure
+      tags:
+        - Question bank
+  /api/bank/questions:
+    get:
+      operationId: bankQuestionBatch
+      parameters:
+        - description: Comma-separated question ids, returned in this order
+          explode: false
+          in: query
+          name: ids
+          required: true
+          schema:
+            description: Comma-separated question ids, returned in this order
+            items:
+              type: string
+            maxItems: 50
+            minItems: 1
+            nullable: true
+            type: array
+            uniqueItems: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BankBatchBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Read bank questions by id
       tags:
         - Question bank
   /api/bank/questions/{id}:

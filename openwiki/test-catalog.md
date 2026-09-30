@@ -12,7 +12,7 @@ Question bank backend additions:
 - `src/features/quizzes/quizNavigation.test.ts`: quiz-editor return destinations stay inside supported app pages; material previews return in View mode and parent notes retain their editing mode.
 - `server/internal/bank/bank_test.go`: independent migration ledger, syllabus/list queries, optimistic saves, review retained on edit, review undo, editor column grants, missing config and unreachable pool.
 - `server/internal/bank/assets_test.go`: immutable content-hash publication metadata and rejection of active, external-resource and oversized SVG assets.
-- `server/internal/httpapi/bank_test.go`: authenticated learner redaction, editor/read-only/suspended gates, stale saves, public SVG upload, historical source attribution with ShareAlike licensing and direct captured comment email.
+- `server/internal/httpapi/bank_test.go`: batch reads in request order with attribution, learner redaction and 404 for an unknown id, authenticated learner redaction, editor/read-only/suspended gates, stale saves, public SVG upload, historical source attribution with ShareAlike licensing and direct captured comment email.
 - `scripts/env/test_config.py`: bank owner/private-bucket secrets excluded from the API target and optional bank configuration.
 
 One-line descriptions of every automated test file in the repo (excluding build
@@ -901,6 +901,7 @@ Popover appearance ownership is documented in [frontend/motion.md](frontend/moti
 
 ### Question bank and shared question format
 
+- `e2e/editor/question-bank-paging.spec.ts`: the bank loads a long mock topic 10 questions at a time, a list click on an unloaded question loads its page plus the next in one request and scrolls it to the panel top, and "Show questions 11–20" inserts the earlier page without moving the reading position. Run `pnpm run e2e:slow --config=e2e/editor/playwright.editor.config.ts question-bank-paging.spec.ts`.
 - `e2e/editor/question-formula.spec.ts`: real MathLive inside the question Plate editor accepts a physical digit and retains it after commit/reopen, guarding against Slate canceling MathLive input; native menu templates also insert inside the question dialog. Question viewing and editing previews use inert MathLive with matching conjugate/derivative/plain-text dimensions. Block note editing preserves height; its ghost toggle, Escape and outside clicks dismiss the keyboard, keyboard taps still enter digits, and commit cleans it up. Inline question editing omits the keyboard toggle. Run `pnpm run e2e:slow --config=e2e/editor/playwright.editor.config.ts question-formula.spec.ts`.
 - `server/internal/questions/questions_test.go`, `collaboration/src/questions.test.ts`, `src/features/questions/validation.test.ts`: shared valid/invalid fixtures for seven answer types, bank asset policy, graph references/static SVG, quantity units/zero denominator, Unicode bounds and attempt-only awards.
 - `src/features/questions/parseMathText.test.ts`, `TextEditor.test.ts`, `graph.test.ts`, `src/components/charts/CategoryChart.test.tsx`: math-token boundaries and editor serialization, safe graph expressions/export recipe, shared chart rendering.

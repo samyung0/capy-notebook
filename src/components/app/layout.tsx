@@ -66,11 +66,14 @@ export function Panel({
   children,
   className,
   sectionClassName,
+  scrollRef,
   as,
 }: {
   children: ReactNode;
   className?: string;
   sectionClassName?: string;
+  /** The scrolling element, e.g. an IntersectionObserver root. */
+  scrollRef?: React.Ref<HTMLDivElement>;
   scroll?: boolean;
   as?: React.ElementType;
 }) {
@@ -87,6 +90,7 @@ export function Panel({
             'flex max-h-full flex-col items-stretch gap-2 overflow-auto p-0',
             sectionClassName
           )}
+          ref={scrollRef}
         >
           {children}
         </div>

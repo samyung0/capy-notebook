@@ -6,7 +6,16 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { lazy, type ReactNode, Suspense, useEffect, useState } from 'react';
+import {
+  lazy,
+  type ReactNode,
+  type RefObject,
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { api, isApiError } from '@/api/client';
@@ -29,6 +38,7 @@ import {
   type BankDetail,
   type BankRow,
   type BankSyllabus,
+  bankBatchQuery,
   bankQuestionQuery,
   bankQuestionsQuery,
   bankSyllabusQuery,
@@ -47,6 +57,8 @@ const QuestionDialog = lazy(() =>
   }))
 );
 const commentSchema = z.object({ text: z.string().trim().min(1).max(2000) });
+/** Questions per load; the window grows by this many as the reader nears its end. */
+const PAGE = 10;
 
 /**
  * Question bank: every question of the chosen topic in the main panel; exams,
@@ -69,6 +81,7 @@ export default function QuestionBank() {
   const [editing, setEditing] = useState<BankDetail | null>(null);
   const [conflict, setConflict] = useState(false);
   const [commentFor, setCommentFor] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
   const {
     data: syllabus,
     error: syllabusError,
@@ -89,13 +102,6 @@ export default function QuestionBank() {
       (mode !== 'edit' || !unreviewed || !row.reviewedAt) &&
       row.preview.toLowerCase().includes(filter.toLowerCase())
   );
-  // One request per question; each detail is cached for revisits and edits.
-  const details = useQueries({
-    queries: rows.map((row) => ({
-      ...bankQuestionQuery(row.id),
-      meta: { errorBoundary: false },
-    })),
-  });
   const { mutateAsync: saveQuestion } = useMutation({
     mutationFn: ({
       snapshot,
@@ -130,15 +136,6 @@ export default function QuestionBank() {
     },
   });
 
-  // A question in the URL scrolls into view once it and every question above
-  // it have loaded, so later loads cannot push it off screen.
-  const target = rows.findIndex((row) => row.id === questionId);
-  const targetReady =
-    target >= 0 && details.slice(0, target + 1).every((query) => query.data);
-  useEffect(() => {
-    if (targetReady) scrollToQuestion(questionId);
-  }, [questionId, targetReady]);
-
   const modeSearch = {
     mode: search.mode === 'edit' ? ('edit' as const) : undefined,
   };
@@ -164,7 +161,7 @@ export default function QuestionBank() {
   function select(id: string) {
     setNavOpen(false);
     // The URL does not change for the current question, so scroll directly.
-    if (id === questionId) scrollToQuestion(id);
+    if (id === questionId) scrollToQuestion(scrollRef.current, id);
     void navigate({
       params: { questionId: id, topicId },
       replace: true,
@@ -247,53 +244,24 @@ export default function QuestionBank() {
   else if (listPending) body = <Skeleton className="h-64 w-full" />;
   else if (rows.length)
     body = (
-      <ol className="grid gap-12">
-        {rows.map((row, i) => {
-          const query = details[i];
-          const detail = query?.data;
-          return (
-            <li
-              className="grid scroll-mt-6 gap-4"
-              data-question-id={row.id}
-              key={row.id}
-            >
-              {query?.error ? (
-                <BankError
-                  error={query.error}
-                  onRetry={() => void query.refetch()}
-                />
-              ) : detail ? (
-                <>
-                  <QuestionRunner
-                    answers={{}}
-                    disabled
-                    question={detail.question}
-                    questionNumber={row.position}
-                    showAnswerKey={mode === 'edit' && detail.editor}
-                  />
-                  {mode === 'edit' && detail.editor && (
-                    <ReviewBar
-                      detail={detail}
-                      onComment={() => setCommentFor(detail.question.id)}
-                      onEdit={() => setEditing(structuredClone(detail))}
-                      onReview={() =>
-                        setReviewed({
-                          id: detail.question.id,
-                          reviewed: !detail.reviewedAt,
-                        })
-                      }
-                      reviewing={reviewing}
-                    />
-                  )}
-                  <MaterialAttributionFooter provenance={detail.provenance} />
-                </>
-              ) : (
-                <Skeleton className="h-40 w-full" />
-              )}
-            </li>
-          );
-        })}
-      </ol>
+      <BankQuestions
+        // A new topic or filter starts a new window.
+        key={[topicId, filter, mode === 'edit' && unreviewed].join('|')}
+        mode={mode}
+        onComment={setCommentFor}
+        onEdit={(detail) => setEditing(structuredClone(detail))}
+        onReview={(detail) =>
+          setReviewed({
+            id: detail.question.id,
+            reviewed: !detail.reviewedAt,
+          })
+        }
+        questionId={questionId}
+        reviewing={reviewing}
+        rows={rows}
+        scrollRef={scrollRef}
+        topicId={topicId}
+      />
     );
   else
     body = (
@@ -314,6 +282,7 @@ export default function QuestionBank() {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <Panel
           className="min-h-0 flex-1 rounded-button lg:rounded-card-xl"
+          scrollRef={scrollRef}
           sectionClassName="h-full gap-0"
         >
           <QuizPageHeader
@@ -472,10 +441,222 @@ export default function QuestionBank() {
   );
 }
 
-function scrollToQuestion(id: string) {
-  document
-    .querySelector(`[data-question-id="${CSS.escape(id)}"]`)
-    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+const questionElement = (id: string) =>
+  document.querySelector(`[data-question-id="${CSS.escape(id)}"]`);
+
+/** Scrolls only the panel; scrollIntoView would also move the app shell when
+ * the panel cannot scroll far enough. */
+function scrollToQuestion(container: HTMLElement | null, id: string) {
+  const element = questionElement(id);
+  if (!container || !element) return;
+  container.scrollTo({
+    behavior: 'smooth',
+    top:
+      container.scrollTop +
+      element.getBoundingClientRect().top -
+      container.getBoundingClientRect().top -
+      24,
+  });
+}
+
+/**
+ * The topic's questions as a window that loads PAGE at a time as the reader
+ * nears its end. Jumping to a question outside the window (or not next to it)
+ * restarts the window at the question's page, and a button above brings back
+ * the earlier page while keeping the reading position: Safari has no scroll
+ * anchoring, so content never loads above the viewport on its own.
+ */
+function BankQuestions({
+  rows,
+  questionId,
+  topicId,
+  mode,
+  reviewing,
+  scrollRef,
+  onReview,
+  onComment,
+  onEdit,
+}: {
+  rows: BankRow[];
+  questionId: string;
+  topicId: string;
+  mode: 'view' | 'edit';
+  reviewing: boolean;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onReview: (detail: BankDetail) => void;
+  onComment: (id: string) => void;
+  onEdit: (detail: BankDetail) => void;
+}) {
+  const client = useQueryClient();
+  const target = rows.findIndex((row) => row.id === questionId);
+  const [range, setRange] = useState(() =>
+    target >= 0 ? around(target) : { end: PAGE, start: 0 }
+  );
+  const shown = rows.slice(range.start, range.end);
+  const { error, isFetching, refetch } = useQuery({
+    ...bankBatchQuery(
+      client,
+      shown.map((row) => row.id)
+    ),
+    meta: { errorBoundary: false },
+  });
+  // Read-only views of the cache the batch fills.
+  const details = useQueries({
+    queries: shown.map((row) => ({
+      ...bankQuestionQuery(row.id),
+      enabled: false,
+    })),
+  });
+
+  useEffect(() => {
+    if (target >= 0) setRange((current) => jump(current, target));
+  }, [target]);
+  // Scroll once the question and everything above it in the window has loaded.
+  const targetReady =
+    target >= range.start &&
+    target < range.end &&
+    details.slice(0, target - range.start + 1).every((query) => query.data);
+  useEffect(() => {
+    if (targetReady) scrollToQuestion(scrollRef.current, questionId);
+  }, [questionId, targetReady, scrollRef]);
+
+  // Grow the window when its end comes within 800px of the viewport.
+  const endRef = useRef<HTMLDivElement>(null);
+  const [nearEnd, setNearEnd] = useState(false);
+  useEffect(() => {
+    const end = endRef.current;
+    if (!end) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setNearEnd(entry.isIntersecting),
+      { root: scrollRef.current, rootMargin: '0px 0px 800px 0px' }
+    );
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [scrollRef]);
+  const more = range.end < rows.length;
+  useEffect(() => {
+    if (nearEnd && more && !isFetching && !error)
+      setRange((current) => ({ ...current, end: current.end + PAGE }));
+  }, [nearEnd, more, isFetching, error]);
+
+  // Earlier questions are fetched first, then inserted with the scroll
+  // position moved by the height they add.
+  const anchor = useRef<{ element: Element; top: number } | null>(null);
+  const [loadingEarlier, setLoadingEarlier] = useState(false);
+  const earlier = Math.max(0, range.start - PAGE);
+  async function showEarlier() {
+    setLoadingEarlier(true);
+    try {
+      await client.fetchQuery(
+        bankBatchQuery(
+          client,
+          rows.slice(earlier, range.start).map((row) => row.id)
+        )
+      );
+      const first = rows[range.start];
+      const element = first && questionElement(first.id);
+      anchor.current = element && {
+        element,
+        top: element.getBoundingClientRect().top,
+      };
+      setRange((current) => ({ ...current, start: earlier }));
+    } catch (loadError) {
+      userToast({
+        description: loadError instanceof Error ? loadError.message : undefined,
+        title: m.question_ui_questions_load_failed(),
+        variant: 'error',
+      });
+    } finally {
+      setLoadingEarlier(false);
+    }
+  }
+  useLayoutEffect(() => {
+    const saved = anchor.current;
+    anchor.current = null;
+    if (saved && scrollRef.current)
+      scrollRef.current.scrollTop +=
+        saved.element.getBoundingClientRect().top - saved.top;
+  }, [range.start, scrollRef]);
+
+  return (
+    <div className="grid gap-12">
+      {range.start > 0 && (
+        <Button
+          className="rounded-input"
+          disabled={loadingEarlier}
+          fullWidth
+          iconLeft="arrowUp"
+          onClick={() => void showEarlier()}
+          variant="outline"
+        >
+          {m.question_ui_show_questions({
+            from: earlier + 1,
+            to: range.start,
+          })}
+        </Button>
+      )}
+      <ol className="grid gap-12">
+        {shown.map((row, i) => {
+          const detail = details[i]?.data;
+          return (
+            <li className="grid gap-4" data-question-id={row.id} key={row.id}>
+              {detail ? (
+                <>
+                  <QuestionRunner
+                    answers={{}}
+                    disabled
+                    question={detail.question}
+                    questionNumber={row.position}
+                    showAnswerKey={mode === 'edit' && detail.editor}
+                  />
+                  {mode === 'edit' && detail.editor && (
+                    <ReviewBar
+                      detail={detail}
+                      onComment={() => onComment(detail.question.id)}
+                      onEdit={() => onEdit(detail)}
+                      onReview={() => onReview(detail)}
+                      reviewing={reviewing}
+                    />
+                  )}
+                  <MaterialAttributionFooter provenance={detail.provenance} />
+                </>
+              ) : (
+                <Skeleton className="h-40 w-full" />
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {error && (
+        <BankError
+          error={error}
+          onRetry={() => {
+            // A 404 means a question left the topic; the list drops it.
+            void client.invalidateQueries({
+              queryKey: bankQuestionsQuery(topicId).queryKey,
+            });
+            void refetch();
+          }}
+        />
+      )}
+      <div aria-hidden className="-mt-12" ref={endRef} />
+    </div>
+  );
+}
+
+/** A question's page and the next one, so the question can scroll to the top. */
+function around(index: number) {
+  const start = Math.floor(index / PAGE) * PAGE;
+  return { end: start + 2 * PAGE, start };
+}
+
+/** Extend the window to a question on or next to it, else restart around it. */
+function jump(range: { start: number; end: number }, index: number) {
+  const next = around(index);
+  if (next.start < range.start - PAGE || next.start > range.end) return next;
+  const start = Math.min(range.start, next.start);
+  const end = Math.max(range.end, next.end);
+  return start === range.start && end === range.end ? range : { end, start };
 }
 
 /** Title with a search icon that expands into a full-width field. */

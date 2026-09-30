@@ -3,13 +3,26 @@
 The bank is a separate syllabus and question database. Signed-in learners read
 question content; granted bank editors can edit, mark reviewed, upload figures
 and send a comment. The bank page is unlisted at `/bank`, inside the app shell:
-the main panel shows every question of the chosen topic (one detail request per
-question), and a dashboard-style right column holds exams and topics, swapping
+the main panel shows the chosen topic's questions, and a dashboard-style right column holds exams and topics, swapping
 to the topic's question list; on phones that column becomes a floating bar and
 bottom sheet. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,
 Comment, Edit) under each question. Studying directly from the bank and
 production Jev grading remain in `todo-question-bank.md`.
+
+The topic list (`GET /api/bank/topics/{id}/questions`) returns light rows for
+the navigation panel. Full questions come from `GET /api/bank/questions?ids=`,
+up to 50 per request in the requested order; an unknown id fails the whole
+batch with 404, so the page refetches the list. The page renders a window of
+the list that grows 10 questions at a time when its end comes within 800px of
+the view. A list click on a question outside the window restarts the window at
+that question's page plus the next (one request) and scrolls the panel so the
+question sits at the top; a page next to the window extends it instead.
+Earlier pages come back through a "Show questions x–y" button that fetches
+first, then inserts them and moves the scroll position by the added height.
+Content never loads above the viewport on its own because Safari has no CSS
+scroll anchoring. Each loaded question lives in its own query-cache entry,
+which edits and reviews update in place.
 
 ## Shared question format
 
