@@ -227,10 +227,11 @@ export async function republication(
     900_000
   );
   // The refused publication and a fresh one, both scheduled automatically;
-  // the fresh one captured the refused edit.
+  // the fresh one captured the refused edit. The handoff retypes a refresh job
+  // to parse or ingest, so match on the payload.
   const refreshes = await run.query(
     `SELECT payload->>'automatic' AS automatic,(payload->>'sourceCheckpoint')::bigint AS checkpoint
-    FROM jobs WHERE type='source_refresh' AND payload->>'fileId'=%s ORDER BY created_at`,
+    FROM jobs WHERE payload->>'sourceRefresh'='true' AND payload->>'fileId'=%s ORDER BY created_at`,
     [fileId]
   );
   assert.equal(refreshes.length, 2);
