@@ -12,6 +12,4 @@ export interface SetModelPrefsReq {
   chatModel?: Ref;
   chatThinking?: string;
   editorModel?: Ref;
-  generateModel?: Ref;
-  generateThinking?: string;
 }

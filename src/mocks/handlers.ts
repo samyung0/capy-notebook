@@ -722,7 +722,6 @@ export const handlers = [
     const prefs: Record<string, ModelRef | undefined> = {
       chat: db.user.chatModel,
       editor: db.user.editorModel,
-      generate: db.user.generateModel,
     };
     const selected = prefs[slot] ?? fallback;
     const models = mockCatalogModels();
@@ -752,10 +751,8 @@ export const handlers = [
       chatModel?: ModelRef;
       chatThinking?: string;
       editorModel?: ModelRef;
-      generateModel?: ModelRef;
-      generateThinking?: string;
     };
-    const fields = ['chatModel', 'editorModel', 'generateModel'] as const;
+    const fields = ['chatModel', 'editorModel'] as const;
     for (const field of fields) {
       const value = body[field];
       if (value === undefined) continue;
@@ -776,12 +773,9 @@ export const handlers = [
       }
       db.user[field] = value;
     }
-    const thinking = [
-      ['chat', db.user.chatModel, body.chatThinking],
-      ['generate', db.user.generateModel, body.generateThinking],
-    ] as const;
-    for (const [slot, model, value] of thinking) {
-      if (value === undefined) continue;
+    const value = body.chatThinking;
+    if (value !== undefined) {
+      const model = db.user.chatModel;
       const spec = mockCatalogModels().find((item) =>
         sameModel(optionRef(item), model)
       )?.thinking;
@@ -790,7 +784,7 @@ export const handlers = [
       }
       const identity = modelRefValue(model);
       if (!db.userThinking[identity]) db.userThinking[identity] = {};
-      db.userThinking[identity][slot] = value;
+      db.userThinking[identity].chat = value;
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -835,11 +829,7 @@ export const handlers = [
     const locked = Object.entries(USER_KEY_MODELS)
       .filter(([, provider]) => provider === slug)
       .map(([key]) => key);
-    for (const field of [
-      'chatModel',
-      'generateModel',
-      'editorModel',
-    ] as const) {
+    for (const field of ['chatModel', 'editorModel'] as const) {
       if (locked.includes(modelRefValue(db.user[field]))) {
         db.user[field] = {
           modelSlug: 'deepseek-flash',

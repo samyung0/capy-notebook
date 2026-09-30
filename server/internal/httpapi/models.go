@@ -148,11 +148,9 @@ func listedCfg(items []listedModel, ref models.Ref) models.Config {
 
 func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, error) {
 	if err := a.s.SetModelPrefs(ctx, userID(ctx), store.ModelPrefsPatch{
-		ChatModel:        in.Body.ChatModel,
-		GenerateModel:    in.Body.GenerateModel,
-		EditorModel:      in.Body.EditorModel,
-		ChatThinking:     in.Body.ChatThinking,
-		GenerateThinking: in.Body.GenerateThinking,
+		ChatModel:    in.Body.ChatModel,
+		EditorModel:  in.Body.EditorModel,
+		ChatThinking: in.Body.ChatThinking,
 	}); err != nil {
 		return nil, hErr(err)
 	}
@@ -188,7 +186,7 @@ func (a *api) resolveLLM(ctx context.Context, userID, slot string) (resolvedLLM,
 		return out, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
 	switch slot {
-	case models.SlotChat, models.SlotGenerate, models.SlotEditor:
+	case models.SlotChat, models.SlotEditor:
 		if userID == "" {
 			return out, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, slot)
 		}

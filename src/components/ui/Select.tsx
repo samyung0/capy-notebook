@@ -28,7 +28,14 @@ function SelectGroup({
 function SelectValue({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Value>) {
-  return <SelectPrimitive.Value data-slot="select-value" {...props} />;
+  // min-w-0 lets a long value truncate instead of squeezing the chevron.
+  return (
+    <SelectPrimitive.Value
+      className="min-w-0"
+      data-slot="select-value"
+      {...props}
+    />
+  );
 }
 
 const selectTriggerVariants = cva(
@@ -81,7 +88,7 @@ function SelectTrigger({
       ) : showDownIcon ? (
         <SelectPrimitive.Icon asChild>
           <Icon
-            className="size-4 -translate-y-px text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/select-trigger:rotate-180"
+            className="size-4 shrink-0 -translate-y-px text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/select-trigger:rotate-180"
             name="chevronDown"
           />
         </SelectPrimitive.Icon>

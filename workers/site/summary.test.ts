@@ -16,6 +16,7 @@ const summary = {
   chapters: [{ files: [file('Cells.pdf')], name: 'Cells' }],
   description: 'Lecture files',
   files: [file('Reading.pdf')],
+  iconId: 'waves-03',
   name: 'Biology',
   privacy: 'public',
   tags: ['Term 1'],
@@ -56,8 +57,16 @@ describe('public workspace SSR', () => {
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe(SHARED_CACHE);
     expect(html).toContain('<h1>Biology</h1>');
+    expect(html).toContain('src="/icons/waves-03.svg"');
+    expect(html).toContain('<p class="summary-byline">Mia</p>');
+    expect(html).toContain(
+      'href="/sign-up?redirect_url=%2Fworkspaces%2Fws_0123456789"'
+    );
+    expect(html).not.toContain('href="/explore"');
     expect(html).toContain('Cells.pdf');
     expect(html).toContain('Reading.pdf');
+    expect(html).toContain('data-file-icon="pdf"');
+    expect(html).toContain('data-file-icon="_folder_open"');
     expect(html).toContain('https://app.example.test/w/ws_0123456789');
     expect(html).toContain('href="/workspaces/ws_0123456789"');
     expect(html).not.toMatch(PRIVATE_CONTENT);
@@ -107,7 +116,9 @@ describe('public workspace SSR', () => {
     const fetcher = upstream({ ...summary, privacy: 'link' });
     const response = await handleSiteRequest(request(), env, fetcher);
     expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
-    expect(await response.text()).toContain('Shared by link');
+    expect(await response.text()).toContain(
+      '<p class="summary-byline">Mia</p>'
+    );
     fetcher.mockResolvedValue(new Response(null, { status: 404 }));
     const revoked = await handleSiteRequest(request(), env, fetcher);
     expect(revoked.status).toBe(404);
@@ -126,7 +137,12 @@ describe('public workspace SSR', () => {
       expect(response.headers.get('Cache-Control')).toBe('no-store');
       expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
       const html = await response.text();
-      expect(html).toContain('This workspace is private or unavailable.');
+      expect(html).toContain('Page not found');
+      expect(html).toContain('data-error-surface="page"');
+      expect(html).toContain('Go back');
+      expect(html).not.toContain('class="summary-meta"');
+      expect(html).not.toContain('class="summary-header"');
+      expect(html).toContain('id="summary-error" data-status="404"');
       expect(html).not.toMatch(PRIVATE_CONTENT);
       bodies.push(html);
     }
@@ -142,10 +158,15 @@ describe('public workspace SSR', () => {
       new Response('x'.repeat(512 * 1024 + 1)),
       new Response('no JSON'),
       Response.json({ ...summary, privacy: 'private' }),
+      Response.json({ ...summary, iconId: '../outside' }),
     ]) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(response);
       const result = await handleSiteRequest(request(), env, fetcher);
       expect(result.status).toBe(503);
+      const html = await result.text();
+      expect(html).toContain('data-error-surface="page"');
+      expect(html).toContain('Try again');
+      expect(html).toContain('id="summary-error" data-status="503"');
       expect(result.headers.get('Cache-Control')).toBe('no-store');
       expect(fetcher).toHaveBeenCalledTimes(1);
     }

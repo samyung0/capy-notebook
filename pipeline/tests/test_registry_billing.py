@@ -28,7 +28,7 @@ def _spec(**overrides) -> ModelConfig:
         "model_name": "Flash",
         "provider_slug": "deepseek",
         "model_slug": "flash",
-        "slots": ("chat", "generate", "editor", "quiz", "ingest"),
+        "slots": ("chat", "editor", "quiz", "ingest"),
         "micros_per_input_token": 250,
         "micros_per_output_token": 1000,
     }

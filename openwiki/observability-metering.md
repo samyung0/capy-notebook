@@ -295,8 +295,10 @@ Neither exception opens a general router path. Other DeepInfra slugs
 and other ZAI slugs fail registry validation. A ZAI user key cannot
 authenticate the routed GLM call.
 A **slot** is a named place the product calls a model. Every slot holds one
-default pin; chat, generate and editor also hold a per-user preference.
-The slots are `chat`, `generate`, `editor`, `quiz`, `ingest`, `retrieval`
+default pin; chat and editor also hold a per-user preference. Generate
+workflows run on the chat slot (migration `0044` merged the former `generate`
+slot into it; usage `surface` still records `generate`).
+The slots are `chat`, `editor`, `quiz`, `ingest`, `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
 query embedding), `captioning` (the vision model used for standalone image
 uploads; embedded figure captioning was retired) and `rerank` (the
@@ -365,9 +367,9 @@ enabled version of that provider/model identity. The
 `{providerSlug, modelSlug, modelVersion, modelDisplayName}` tuple
 is written onto the **assistant message**. Settings changes apply to the next
 message in an existing thread. Generate resolves the
-`users.generate_model_provider_slug` / `users.generate_model_slug` pair
-the same way per request. The browser cannot choose a model per message.
-Chat, generate and editor preferences are edited in **Settings → LLM**
+same chat pair and chat thinking per request. The browser cannot choose a model per message.
+Chat and editor preferences are edited in **Settings → LLM** (editor only when
+`VITE_FEATURE_EDITOR_AI` is on)
 (`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
 rejected, and a `PATCH` only touches the slots it names. Editor AI
 (`/ai/command`, `/ai/copilot`) resolves

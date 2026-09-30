@@ -7,8 +7,10 @@ import {
 } from '@/api/hooks';
 import type { LLMCredentialProvider } from '@/api/types';
 import { Button, ErrorAction } from '@/components/ui/Button';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { providerLabel } from './ModelPicker';
 
 function credentialError(error: unknown): string {
@@ -16,6 +18,16 @@ function credentialError(error: unknown): string {
     return m.settings_llm_key_unavailable();
   }
   return m.settings_llm_key_invalid();
+}
+
+/** Spinner over the hidden label, so the button keeps its width. */
+function BusyLabel({ busy, label }: { busy: boolean; label: string }) {
+  return (
+    <span className="grid place-items-center *:col-start-1 *:row-start-1">
+      <span className={cn(busy && 'invisible')}>{label}</span>
+      {busy ? <Spinner /> : null}
+    </span>
+  );
 }
 
 function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
@@ -72,7 +84,7 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
           }}
           variant="dark"
         >
-          {m.settings_llm_key_save()}
+          <BusyLabel busy={saving} label={m.settings_llm_key_save()} />
         </Button>
         {provider.last4 ? (
           <Button
@@ -81,7 +93,7 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
             onClick={() => remove(provider.providerSlug)}
             variant="danger"
           >
-            {m.settings_llm_key_remove()}
+            <BusyLabel busy={removing} label={m.settings_llm_key_remove()} />
           </Button>
         ) : null}
       </div>
@@ -94,8 +106,24 @@ function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
   );
 }
 
+/** Placeholder shaped like a ProviderRow: title, meta line, input and button. */
+function ProviderRowSkeleton() {
+  return (
+    <div className="flex min-w-0 flex-col gap-2.5">
+      <div className="flex flex-col gap-1.5">
+        <Skeleton className="h-5 w-32" />
+        <Skeleton className="h-4 w-56" />
+      </div>
+      <div className="flex min-w-0 items-center gap-3.5">
+        <Skeleton className="h-[42px] flex-1 rounded-input" />
+        <Skeleton className="h-[42px] w-18 rounded-input" />
+      </div>
+    </div>
+  );
+}
+
 export function KeysSection() {
-  const { data, error, isError, refetch } = useLLMCredentials({
+  const { data, error, isError, isPending, refetch } = useLLMCredentials({
     errorBoundary: false,
   });
   const providers = data?.providers ?? [];
@@ -119,6 +147,12 @@ export function KeysSection() {
             {m.error_action_retry()}
           </ErrorAction>
         </div>
+      ) : null}
+      {isPending ? (
+        <>
+          <ProviderRowSkeleton />
+          <ProviderRowSkeleton />
+        </>
       ) : null}
       {providers.map((provider) => (
         <ProviderRow key={provider.providerSlug} provider={provider} />

@@ -115,8 +115,8 @@ Resetting a boundary also resets TanStack Query's error state before retrying.
 ## Shared-resource security
 
 Public workspace summaries at `/w/:id` render on the server. Upstream HTTP 401, 403, and 404
-all produce the same “private or unavailable” HTML with HTTP 404, `no-store`,
-and `noindex, nofollow`. They do not use the React error components. Do not
+all produce the same “Page not found” HTML with HTTP 404, `no-store`,
+and `noindex, nofollow`. The server renders the shared page `ErrorState` and the client hydrates it. Do not
 include resource names, server details, or different actions that disclose
 which case occurred. Worker tests inject upstream failures; browser tests
 compare actual private and missing workspace summaries because browser route
@@ -445,3 +445,15 @@ banners carry no icon. `FileError` accepts an icon override: note edit-permissio
 failures use `securityWarning`, while user-info and collaboration-service
 failures use `error`. Normalized network/offline and permission icons remain
 specific to their causes.
+
+### Public summary errors
+
+The site Worker preserves the summary HTTP status and no-store/noindex headers,
+and uses the summary HTML entry for 404 and load-failure pages. The server renders
+`SummaryFailure`, which uses the shared `ErrorState` with `variant="page"`, into
+the first HTML response. The client hydrates the same component and locale;
+it never replaces a temporary error layout. Missing and private
+workspaces reuse the standard “Page not found” title, description and Go back action,
+centered in the full-width panel without the summary header; loading failures offer a manual retry.
+If the asset entry itself fails, the Worker retains the self-contained HTML error.
+The SPA's existing `RouteNotFoundComponent` remains the generic page-not-found UI.

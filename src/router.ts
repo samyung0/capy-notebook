@@ -23,10 +23,12 @@ import {
   filesQuery,
   flashcardSetQuery,
   labelsQuery,
+  llmCredentialsQuery,
   materialQuery,
   materialsQuery,
   meQuery,
   modelsQuery,
+  notificationPrefsQuery,
   ownedFilesQuery,
   ownedMaterialsQuery,
   quizQuery,
@@ -354,12 +356,20 @@ const appRoutes = [
   }),
   page('/help-and-legal', () => import('@/routes/HelpAndLegal')),
   page('/help-and-legal/credits', () => import('@/routes/Credits')),
+  // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/Settings')),
     getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc } }) => {
-      qc.prefetchQuery(modelsQuery('chat'));
-      qc.prefetchQuery(modelsQuery('generate'));
+    loaderDeps: ({ search }) => ({ tab: search.tab }),
+    // Only the open tab's data, started with the route instead of on mount.
+    loader: ({ context: { queryClient: qc }, deps }) => {
+      if (deps.tab === 'notifications') {
+        qc.prefetchQuery(notificationPrefsQuery());
+      } else if (deps.tab === 'llm') {
+        qc.prefetchQuery(modelsQuery('chat'));
+        if (features.editorAi) qc.prefetchQuery(modelsQuery('editor'));
+        qc.prefetchQuery(llmCredentialsQuery());
+      }
     },
     path: '/settings',
     validateSearch: parseSettingsSearch,

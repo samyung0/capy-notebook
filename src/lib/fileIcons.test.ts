@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { FILE_ICON_NAMES } from '@/components/ui/FileIcon';
-import { fileIconName, materialIconName } from './fileIcons';
+import { FILE_ICON_NAMES, fileIconName, materialIconName } from './fileIcons';
 
 describe('file icons', () => {
   it('ships a sprite symbol for every icon name', () => {
@@ -30,6 +29,10 @@ describe('file icons', () => {
     [{ kind: 'doc', name: 'Cell structure.docx' }, 'ms-word'],
     [{ kind: 'unknown', name: 'assets.zip' }, 'zip'],
     [{ kind: 'unknown', name: 'blob' }, '_file'],
+    [{ kind: 'unknown', name: 'Chapter.PDF' }, 'pdf'],
+    [{ kind: 'unknown', name: 'notes.md' }, 'markdown'],
+    [{ kind: 'unknown', name: 'lecture.docx' }, 'ms-word'],
+    [{ kind: 'unknown', name: 'constructor' }, '_file'],
   ] as const)('maps %o to %s', (file, icon) => {
     expect(fileIconName(file)).toBe(icon);
   });

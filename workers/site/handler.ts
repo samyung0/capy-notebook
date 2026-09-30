@@ -73,9 +73,23 @@ export async function handleSiteRequest(
 ): Promise<Response> {
   const url = new URL(request.url);
   const locale = localeFor(request);
-  const failure = (status: number) =>
-    new Response(
-      request.method === 'HEAD' ? null : renderFailure(status, locale),
+  const failure = async (status: number) => {
+    let template: string | undefined;
+    if (request.method !== 'HEAD') {
+      try {
+        const asset = await env.ASSETS.fetch(
+          new Request(new URL('/summary.html', url))
+        );
+        if (asset.ok) template = await boundedText(asset, 512 * 1024);
+        else await asset.body?.cancel();
+      } catch {
+        // Keep the existing self-contained error if the asset binding also fails.
+      }
+    }
+    return new Response(
+      request.method === 'HEAD'
+        ? null
+        : renderFailure(status, locale, template),
       {
         headers: headers({
           'Content-Type': 'text/html; charset=utf-8',
@@ -84,6 +98,7 @@ export async function handleSiteRequest(
         status,
       }
     );
+  };
   const isSummary = url.pathname.startsWith('/w/');
   if (url.pathname === '/summary' || url.pathname === '/summary.html')
     return failure(404);

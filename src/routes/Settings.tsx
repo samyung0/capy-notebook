@@ -20,6 +20,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AccountTab } from '@/features/settings/AccountTab';
 import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
 import { KeysSection } from '@/features/settings/KeysSection';
+import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
 import { m } from '@/i18n';
 import { features } from '@/lib/features';
@@ -35,6 +36,7 @@ function CustomizationsTab() {
         title={m.settings_tab_customizations()}
       />
       <div className="flex flex-col gap-6">
+        <LanguageRow />
         <SettingRow hint={m.settings_theme_hint()} title={m.settings_theme()}>
           <Select
             onValueChange={(v) => setStyle(v as typeof style)}
@@ -156,12 +158,6 @@ function LlmTab() {
           title={m.settings_llm_chat()}
         >
           <ModelPicker slot="chat" />
-        </SettingRow>
-        <SettingRow
-          hint={m.settings_llm_generate_hint()}
-          title={m.settings_llm_generate()}
-        >
-          <ModelPicker slot="generate" />
         </SettingRow>
         {features.editorAi && (
           <SettingRow

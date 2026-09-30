@@ -4,7 +4,6 @@ from enum import Enum
 
 class Slot(str, Enum):
     CHAT = "chat"
-    GENERATE = "generate"
     EDITOR = "editor"
     QUIZ = "quiz"
     INGEST = "ingest"

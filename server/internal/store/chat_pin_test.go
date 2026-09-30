@@ -458,18 +458,16 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	empty := models.Ref{}
-	for _, slot := range []string{"chat", "generate", "editor"} {
-		var chat, generate, editor *models.Ref
+	for _, slot := range []string{"chat", "editor"} {
+		var chat, editor *models.Ref
 		switch slot {
 		case "chat":
 			chat = &empty
-		case "generate":
-			generate = &empty
 		case "editor":
 			editor = &empty
 		}
 		if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
-			ChatModel: chat, GenerateModel: generate, EditorModel: editor,
+			ChatModel: chat, EditorModel: editor,
 		}); !errors.Is(err, ErrModelRefRequired) {
 			t.Fatalf("%s: got %v", slot, err)
 		}
@@ -570,14 +568,14 @@ func TestUpsertUserPopulatesRegistryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.ChatModel.Zero() || me.GenerateModel.Zero() || me.EditorModel.Zero() {
+	if me.ChatModel.Zero() || me.EditorModel.Zero() {
 		t.Fatalf("prefs empty: %#v", me)
 	}
 }
 
 func TestAccountModelPrefsRequiresRegistry(t *testing.T) {
 	s := openAccessTestStore(t)
-	_, _, _, err := s.accountModelPrefs(context.Background())
+	_, _, err := s.accountModelPrefs(context.Background())
 	if !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("account prefs without registry: got %v", err)
 	}
@@ -591,14 +589,14 @@ func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs
 		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
-		  '{"provider_slug":"openai","model_slug":"gpt-5.6-sol","platform_enabled":false,"slots":["generate","quiz"],"is_default_for":[]}'::jsonb)).*
+		  '{"provider_slug":"openai","model_slug":"gpt-5.6-sol","platform_enabled":false,"slots":["editor","quiz"],"is_default_for":[]}'::jsonb)).*
 		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		_, _ = s.pool.Exec(context.Background(), `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2`, ref.ProviderSlug, ref.ModelSlug)
 	})
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{GenerateModel: &ref}); !errors.Is(err, ErrModelUnavailable) {
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{EditorModel: &ref}); !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("locked byok: %v", err)
 	}
 }

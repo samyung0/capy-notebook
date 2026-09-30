@@ -6,31 +6,17 @@ import { z } from 'zod';
 import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
 import { UpdateMeBody } from '@/api/gen/validators';
-import { useMe, useSetLocale, useUpdateMe } from '@/api/hooks';
-import { SettingRow, TabHeader } from '@/components/app/tabPanel';
+import { useMe, useUpdateMe } from '@/api/hooks';
+import { TabHeader } from '@/components/app/tabPanel';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/Select';
 import { clerkMessage } from '@/features/auth/clerk';
 import { useUser } from '@/features/auth/clerkHooks';
 import { useProfilePhoto } from '@/features/auth/useProfilePhoto';
-import {
-  getLocale,
-  LOCALE_LABELS,
-  locales,
-  m,
-  setLocale as setParaglideLocale,
-} from '@/i18n';
+import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 
@@ -50,9 +36,8 @@ function ClerkAccountTab() {
   return <AccountForm user={user} />;
 }
 
-/** Profile (saved together: photo to Clerk, name and icon to Capy) and the
- * account language, which applies as soon as it changes. Without Clerk there
- * is nowhere to store a photo, so Upload photo is hidden. */
+/** Profile, saved together: photo to Clerk, name and icon to Capy. Without
+ * Clerk there is nowhere to store a photo, so Upload photo is hidden. */
 function AccountForm({ user }: { user?: ClerkUser }) {
   const { data: me } = useMe();
   const qc = useQueryClient();
@@ -113,7 +98,7 @@ function AccountForm({ user }: { user?: ClerkUser }) {
         description={m.settings_account_hint()}
         title={m.settings_account()}
       />
-      <form className="flex flex-col gap-5" onSubmit={(e) => void save(e)}>
+      <form className="flex flex-col gap-8" onSubmit={(e) => void save(e)}>
         {formError && (
           <p
             className="rounded-button bg-tint-error px-3 py-2 text-sm text-tint-error-fg"
@@ -122,7 +107,7 @@ function AccountForm({ user }: { user?: ClerkUser }) {
             {formError}
           </p>
         )}
-        <div className="flex flex-col gap-1.5">
+        <div className="mb-2 flex flex-col gap-1.5">
           <InputTitle>{m.settings_avatar()}</InputTitle>
           <div className="flex items-center gap-5">
             <Avatar
@@ -203,53 +188,6 @@ function AccountForm({ user }: { user?: ClerkUser }) {
           </Button>
         </div>
       </form>
-      <div className="my-6 border-divider border-t" />
-      <LanguageRow />
     </>
-  );
-}
-
-function LanguageRow() {
-  const { isPending, mutateAsync: setLocale } = useSetLocale();
-  const current = (() => {
-    try {
-      return getLocale();
-    } catch {
-      return 'en';
-    }
-  })();
-  const available: readonly string[] = (locales as
-    | readonly string[]
-    | undefined) ?? ['en', 'zh'];
-
-  return (
-    <SettingRow hint={m.settings_language_hint()} title={m.settings_language()}>
-      <Select
-        disabled={isPending}
-        onValueChange={(locale) => {
-          if (locale !== 'en' && locale !== 'zh') return;
-          const previous = current;
-          setParaglideLocale(locale);
-          void setLocale(locale).catch(() => {
-            if (getLocale() === locale) setParaglideLocale(previous as never);
-          });
-        }}
-        value={current}
-      >
-        <SelectTrigger aria-label={m.settings_language()} className="w-56">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {available.map((locale) => (
-            <SelectItem key={locale} value={locale}>
-              <span className="flex items-center gap-2">
-                <Icon className="size-4.5 -translate-y-px" name="globe" />
-                {LOCALE_LABELS[locale] ?? locale}
-              </span>
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </SettingRow>
   );
 }

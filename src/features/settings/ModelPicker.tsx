@@ -35,7 +35,7 @@ export function providerLabel(slug: string): string {
 
 export function ModelOptionLabel({ option }: { option: ModelOption }) {
   return (
-    <span className="flex min-w-0 items-center gap-2 pr-6">
+    <span className="flex min-w-0 items-center gap-2 in-data-[slot=select-item]:pr-6">
       <span className="min-w-0 truncate">
         {joinModelLabel(option.providerName, option.modelName)}
         {option.isDefault ? ` · ${m.settings_llm_default()}` : ''}
@@ -53,13 +53,11 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
 const SLOT_LABEL: Record<ModelSlot, () => string> = {
   chat: () => m.settings_llm_chat(),
   editor: () => m.settings_llm_editor(),
-  generate: () => m.settings_llm_generate(),
 };
 
 const PREF_FIELD: Record<ModelSlot, keyof SetModelPrefsReq> = {
   chat: 'chatModel',
   editor: 'editorModel',
-  generate: 'generateModel',
 };
 
 /** Preference picker for one slot. Changing it applies to the next request;
@@ -72,7 +70,9 @@ export function ModelPicker({
   className?: string;
   slot: ModelSlot;
 }) {
-  const { data } = useModels(slot, { errorBoundary: false });
+  const { data, isPending: loading } = useModels(slot, {
+    errorBoundary: false,
+  });
   const { isPending, mutate } = useSetModelPrefs();
   const models = sortModelOptions(data?.models ?? []);
   const selected = models.find((option) =>
@@ -82,7 +82,7 @@ export function ModelPicker({
     )
   );
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
+    <div className={cn('flex min-w-0 flex-col gap-1.5 sm:shrink-0', className)}>
       <div className="flex min-w-0 items-start gap-2">
         <Select
           disabled={isPending || models.length === 0}
@@ -133,10 +133,19 @@ export function ModelPicker({
               </SelectItem>
             </SelectContent>
           </Select>
-        ) : slot === 'chat' || slot === 'generate' ? (
+        ) : slot === 'chat' && loading ? (
+          <Select disabled>
+            <SelectTrigger
+              aria-label={m.settings_llm_thinking()}
+              className="w-34"
+              size="md"
+            >
+              <SelectValue placeholder={m.settings_llm_thinking()} />
+            </SelectTrigger>
+          </Select>
+        ) : slot === 'chat' ? (
           <ReasoningControls
             selected={selected}
-            slot={slot}
             stored={data?.selectedThinking ?? ''}
           />
         ) : null}

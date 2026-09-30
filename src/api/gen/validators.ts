@@ -2462,10 +2462,6 @@ export const GetMeResponse = zod.object({
   "providerSlug": zod.string()
 }),
   "email": zod.string(),
-  "generateModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
@@ -2515,10 +2511,6 @@ export const UpdateMeResponse = zod.object({
   "providerSlug": zod.string()
 }),
   "email": zod.string(),
-  "generateModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
@@ -2601,12 +2593,7 @@ export const SetModelPrefsBody = zod.object({
   "editorModel": zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
-}).optional(),
-  "generateModel": zod.object({
-  "modelSlug": zod.string(),
-  "providerSlug": zod.string()
-}).optional(),
-  "generateThinking": zod.string().optional()
+}).optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -2651,7 +2638,7 @@ export const GetMistakesResponse = zod.object({
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning', 'rerank']))
+  "slots": zod.array(zod.enum(['chat', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning', 'rerank']))
 })
 
 
@@ -2659,7 +2646,7 @@ export const ListModelSlotsResponse = zod.object({
  * @summary Enabled models for a slot
  */
 export const ListModelsQueryParams = zod.object({
-  "slot": zod.enum(['chat', 'generate', 'editor']).optional()
+  "slot": zod.enum(['chat', 'editor']).optional()
 })
 
 export const ListModelsResponse = zod.object({
@@ -2793,6 +2780,7 @@ export const GetPublicWorkspaceSummaryResponse = zod.object({
   "name": zod.string(),
   "sizeBytes": zod.int()
 })).describe('Unfiled files'),
+  "iconId": zod.string(),
   "name": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "tags": zod.array(zod.string())

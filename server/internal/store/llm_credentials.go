@@ -241,8 +241,8 @@ func (s *Store) modelPreferenceDefaults() (map[string]models.Ref, error) {
 	if s.registry == nil {
 		return nil, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
 	}
-	defaults := make(map[string]models.Ref, 3)
-	for _, slot := range []string{models.SlotChat, models.SlotGenerate, models.SlotEditor} {
+	defaults := make(map[string]models.Ref, 2)
+	for _, slot := range []string{models.SlotChat, models.SlotEditor} {
 		pin, err := s.registry.DefaultPin(slot)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s default: %v", ErrModelUnavailable, slot, err)
@@ -257,7 +257,6 @@ func (s *Store) modelPreferenceDefaults() (map[string]models.Ref, error) {
 // continue using the platform key.
 func remapUserKeyPrefs(ctx context.Context, tx pgx.Tx, userID, providerSlug string, defaults map[string]models.Ref) error {
 	chat := defaults[models.SlotChat]
-	generate := defaults[models.SlotGenerate]
 	editor := defaults[models.SlotEditor]
 	_, err := tx.Exec(ctx, `
 		UPDATE users SET
@@ -271,30 +270,19 @@ func remapUserKeyPrefs(ctx context.Context, tx pgx.Tx, userID, providerSlug stri
 					SELECT provider_slug, model_slug FROM model_configs
 					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
 				) THEN $4 ELSE chat_model_slug END,
-			generate_model_provider_slug = CASE
-				WHEN (generate_model_provider_slug, generate_model_slug) IN (
-					SELECT provider_slug, model_slug FROM model_configs
-					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
-				) THEN $5 ELSE generate_model_provider_slug END,
-			generate_model_slug = CASE
-				WHEN (generate_model_provider_slug, generate_model_slug) IN (
-					SELECT provider_slug, model_slug FROM model_configs
-					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
-				) THEN $6 ELSE generate_model_slug END,
 			editor_model_provider_slug = CASE
 				WHEN (editor_model_provider_slug, editor_model_slug) IN (
 					SELECT provider_slug, model_slug FROM model_configs
 					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
-				) THEN $7 ELSE editor_model_provider_slug END,
+				) THEN $5 ELSE editor_model_provider_slug END,
 			editor_model_slug = CASE
 				WHEN (editor_model_provider_slug, editor_model_slug) IN (
 					SELECT provider_slug, model_slug FROM model_configs
 					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
-				) THEN $8 ELSE editor_model_slug END,
+				) THEN $6 ELSE editor_model_slug END,
 			updated_at = now()
 		WHERE id=$1`, userID, providerSlug,
 		chat.ProviderSlug, chat.ModelSlug,
-		generate.ProviderSlug, generate.ModelSlug,
 		editor.ProviderSlug, editor.ModelSlug)
 	return err
 }

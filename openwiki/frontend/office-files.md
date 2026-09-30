@@ -635,7 +635,7 @@ of the same capture. Editing continues during processing.
 work (every one but a maintenance publication) never touches open editors: it
 swaps the file's bytes and index, and editing stays on the old base and epoch
 (`rebuild_pending`, `published_state`: the published capture as its change over
-seed(base), migration 0045). Edits saved after the capture stay pending,
+seed(base), migration 0046). Edits saved after the capture stay pending,
 measured against that capture on the old base (the engine's `compare`, XLSX
 included), which gives the same text effects the rebuild later reports. A
 save carries the base revision its effects were measured under, so one

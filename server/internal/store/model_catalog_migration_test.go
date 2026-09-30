@@ -9,6 +9,16 @@ import (
 	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
+// pre0010Schema restores the columns and slot names 0010 was written against,
+// which 0013 and 0044 later removed.
+const pre0010Schema = `ALTER TABLE users
+		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
+		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash',
+		ADD COLUMN generate_model_provider_slug text NOT NULL DEFAULT 'deepseek',
+		ADD COLUMN generate_model_slug text NOT NULL DEFAULT 'deepseek-flash';
+	ALTER TABLE model_configs DROP CONSTRAINT model_configs_slots_check,
+		DROP CONSTRAINT model_configs_default_for_check`
+
 func TestDeepSeekFlashMigrationPreservesPinsRatesAndCapacity(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
@@ -17,9 +27,7 @@ func TestDeepSeekFlashMigrationPreservesPinsRatesAndCapacity(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `ALTER TABLE users
-		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
-		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash'`); err != nil {
+	if _, err := tx.Exec(ctx, pre0010Schema); err != nil {
 		t.Fatal(err)
 	}
 	// Reconstruct an operator-edited pre-0010 catalog inside this transaction.
@@ -89,9 +97,7 @@ func TestDeepSeekFlashMigrationRefusesConflictingCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `ALTER TABLE users
-		ADD COLUMN quiz_model_provider_slug text NOT NULL DEFAULT 'deepseek',
-		ADD COLUMN quiz_model_slug text NOT NULL DEFAULT 'deepseek-flash'`); err != nil {
+	if _, err := tx.Exec(ctx, pre0010Schema); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO model_configs

@@ -3271,10 +3271,6 @@ components:
           type: string
         editorModel:
           $ref: "#/components/schemas/Ref"
-        generateModel:
-          $ref: "#/components/schemas/Ref"
-        generateThinking:
-          type: string
       type: object
     ShareRole:
       enum:
@@ -3284,7 +3280,6 @@ components:
     Slot:
       enum:
         - chat
-        - generate
         - editor
         - quiz
         - ingest
@@ -4787,8 +4782,6 @@ components:
           $ref: "#/components/schemas/Ref"
         email:
           type: string
-        generateModel:
-          $ref: "#/components/schemas/Ref"
         id:
           type: string
         locale:
@@ -4810,7 +4803,6 @@ components:
         - streak
         - locale
         - chatModel
-        - generateModel
         - editorModel
         - planTier
         - subscriptionStatus
@@ -4828,7 +4820,6 @@ components:
     UserModelSlot:
       enum:
         - chat
-        - generate
         - editor
       type: string
     Workspace:
@@ -5025,6 +5016,8 @@ components:
           items:
             $ref: "#/components/schemas/WorkspaceSummaryFile"
           type: array
+        iconId:
+          type: string
         name:
           type: string
         privacy:
@@ -5035,6 +5028,7 @@ components:
           type: array
       required:
         - name
+        - iconId
         - author
         - description
         - privacy

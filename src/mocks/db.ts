@@ -171,10 +171,6 @@ export const user: Omit<User, 'account'> = {
     providerSlug: 'deepseek',
   },
   email: 'kate@capynotebook.app',
-  generateModel: {
-    modelSlug: 'deepseek-flash',
-    providerSlug: 'deepseek',
-  },
   id: 'u_1',
   locale: 'en',
   name: 'Kate Malone',
@@ -199,7 +195,8 @@ export const workspaces: Workspace[] = [
     },
     chapterCount: 0,
     createdAt: days(40),
-    description: '',
+    description:
+      'Explore how cells work, how substances move across membranes, and how traits pass from one generation to the next. Lecture readings, revision notes and practice materials for our introductory biology course.',
     fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-01',
@@ -207,7 +204,7 @@ export const workspaces: Workspace[] = [
     isOwner: true,
     lastAccessedAt: hours(3),
     name: 'Biology 101',
-    privacy: 'private',
+    privacy: 'link',
     role: 'owner',
     shareRole: 'viewer',
     storageOwnerState: 'active',
@@ -251,7 +248,8 @@ export const workspaces: Workspace[] = [
     },
     chapterCount: 0,
     createdAt: days(22),
-    description: '',
+    description:
+      'Explore the ideas, conflicts and everyday lives that shaped the modern world. Chapter readings and discussion notes for our history study group.',
     fileCount: 0,
     filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     iconId: 'waves-03',
@@ -554,6 +552,62 @@ export const files: SourceFile[] = [
     workspaceId: 'ws_bio',
   },
 ];
+
+// A populated shared workspace for local summary and sharing previews.
+for (const [index, chapter] of [
+  {
+    name: 'Revolutions and reform',
+    titles: ['The Enlightenment', 'The French Revolution', 'Reform movements'],
+  },
+  {
+    name: 'Industry and empire',
+    titles: [
+      'The Industrial Revolution',
+      'Trade and empire',
+      'Life in a growing city',
+    ],
+  },
+  {
+    name: 'A world at war',
+    titles: [
+      'Causes of the First World War',
+      'Voices from the home front',
+      'The interwar years',
+    ],
+  },
+  {
+    name: 'The modern world',
+    titles: ['Decolonisation', 'The Cold War', 'Global connections'],
+  },
+].entries()) {
+  const chapterId = `ch_hist_${index}`;
+  const fileIds = chapter.titles.map((title, position) => {
+    const id = `f_hist_${index}_${position}`;
+    const body = `# ${title}\n\nReading notes for ${chapter.name}.\n\nCompare the causes, the people involved, and the consequences. Bring one primary source to our next discussion.\n`;
+    files.push({
+      addedAt: days(12 - index),
+      chapterId,
+      hasBytes: true,
+      id,
+      indexed: true,
+      kind: 'md',
+      name: `${title}.md`,
+      position,
+      revision: 1,
+      sizeBytes: new TextEncoder().encode(body).byteLength,
+      workspaceId: 'ws_hist',
+    });
+    fileLinks[id] = { url: textUrl(body) };
+    return id;
+  });
+  chapters.push({
+    fileIds,
+    id: chapterId,
+    name: chapter.name,
+    order: index,
+    workspaceId: 'ws_hist',
+  });
+}
 
 for (const workspace of workspaces) {
   workspace.chapterCount = chapters.filter(

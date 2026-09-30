@@ -310,12 +310,12 @@ export function ShareDialog({
           <WarningBanner message={m.share_public_edit_warning()} />
         )}
         {privacy !== 'private' && (
-          <div className="flex items-center gap-3.5">
+          <div className="flex flex-wrap items-center gap-3.5">
             <Input
               disabled
               type="text"
               value={absoluteLink}
-              wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto flex-1"
+              wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto min-w-40 flex-1"
             />
             <Button className="rounded-input" onClick={copy} variant="outline">
               <ContentSwap contentKey={String(copied)} kind="icon">
@@ -325,6 +325,18 @@ export function ShareDialog({
                 {copied ? m.action_copied() : m.action_copy()}
               </ContentSwap>
             </Button>
+            {workspaceId && (
+              <Button asChild className="rounded-input" variant="outline">
+                <a
+                  href={absoluteLink}
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  {m.summary_preview()}
+                  <Icon name="navigationForward" />
+                </a>
+              </Button>
+            )}
           </div>
         )}
         {workspaceId && canManageMembers && (

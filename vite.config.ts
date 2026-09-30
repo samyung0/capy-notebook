@@ -101,7 +101,8 @@ export default defineConfig(({ mode }) => {
         env.VITE_API_URL || 'http://localhost:8080',
         serveLocalUat
           ? `https://${devHost}`
-          : `http://localhost:${Number.parseInt(env.VITE_PORT, 10) || 5173}`
+          : `http://localhost:${Number.parseInt(env.VITE_PORT, 10) || 5173}`,
+        useMsw
       ),
       paraglideVitePlugin({
         outdir: './src/i18n/paraglide',

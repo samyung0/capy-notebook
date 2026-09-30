@@ -5,7 +5,8 @@ import type { Plugin } from 'vite';
 /** Use the deployed renderer for local full-stack and tunnel sessions too. */
 export function summaryVitePlugin(
   apiOrigin: string,
-  appOrigin: string
+  appOrigin: string,
+  useMsw: boolean
 ): Plugin {
   return {
     configureServer(server) {
@@ -22,22 +23,38 @@ export function summaryVitePlugin(
             },
             method: req.method,
           });
-          const response: Response = await handleSiteRequest(request, {
-            API_ORIGIN: apiOrigin,
-            APP_ORIGIN: appOrigin,
-            ASSETS: {
-              fetch: async () =>
-                new Response(
-                  await server.transformIndexHtml(
-                    '/summary.html',
-                    await fs.readFile(
-                      path.resolve(server.config.root, 'summary.html'),
-                      'utf8'
+          // Browser MSW cannot intercept this server-side request.
+          const fetchSummary: typeof fetch = useMsw
+            ? async () => {
+                const { mockWorkspaceSummary } = await server.ssrLoadModule(
+                  '/src/mocks/workspaceSummary.ts'
+                );
+                const summary = mockWorkspaceSummary(pathname.slice(3));
+                return summary
+                  ? Response.json(summary)
+                  : new Response(null, { status: 404 });
+              }
+            : fetch;
+          const response: Response = await handleSiteRequest(
+            request,
+            {
+              API_ORIGIN: apiOrigin,
+              APP_ORIGIN: appOrigin,
+              ASSETS: {
+                fetch: async () =>
+                  new Response(
+                    await server.transformIndexHtml(
+                      '/summary.html',
+                      await fs.readFile(
+                        path.resolve(server.config.root, 'summary.html'),
+                        'utf8'
+                      )
                     )
-                  )
-                ),
+                  ),
+              },
             },
-          });
+            fetchSummary
+          );
           res.statusCode = response.status;
           response.headers.forEach((value, key) => {
             res.setHeader(key, value);

@@ -210,7 +210,6 @@ GRANT SELECT (
 GRANT SELECT (
   id, email, locale,
   chat_model_provider_slug, chat_model_slug,
-  generate_model_provider_slug, generate_model_slug,
   editor_model_provider_slug, editor_model_slug
 ) ON users TO capy_ops_admin;
 GRANT SELECT (
@@ -243,7 +242,6 @@ GRANT UPDATE (version, updated_at)
   ON model_registry_state TO capy_ops_admin;
 GRANT UPDATE (
   chat_model_provider_slug, chat_model_slug,
-  generate_model_provider_slug, generate_model_slug,
   editor_model_provider_slug, editor_model_slug,
   updated_at
 ) ON users TO capy_ops_admin;

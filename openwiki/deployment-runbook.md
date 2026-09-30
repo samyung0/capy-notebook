@@ -1664,7 +1664,7 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://example.com      # root on the
 
 ## 9. Changing models in the registry
 
-Most slots are safe to retarget from the ops dashboard: chat, generate,
+Most slots are safe to retarget from the ops dashboard: chat,
 editor, ingest and captioning all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
 

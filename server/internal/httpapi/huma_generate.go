@@ -48,7 +48,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	wsID := in.ID
 	ctx, cancelLiveAuthorization := a.liveWorkspaceContext(ctx, actor, wsID)
 	defer cancelLiveAuthorization()
-	llm, err := a.resolveLLM(ctx, actor, models.SlotGenerate)
+	llm, err := a.resolveLLM(ctx, actor, models.SlotChat)
 	if err != nil {
 		return nil, hErr(err)
 	}
