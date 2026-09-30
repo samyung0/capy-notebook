@@ -2858,9 +2858,7 @@ components:
       properties:
         author:
           type: string
-        autoReindex:
-          type: boolean
-        autoReparse:
+        autoProcess:
           type: boolean
         canClone:
           type: boolean
@@ -2911,8 +2909,7 @@ components:
       required:
         - author
         - clones
-        - autoReparse
-        - autoReindex
+        - autoProcess
         - description
         - id
         - name
@@ -4571,9 +4568,7 @@ components:
           format: uri
           readOnly: true
           type: string
-        autoReindex:
-          type: boolean
-        autoReparse:
+        autoProcess:
           type: boolean
         description:
           description: Optional workspace description; empty clears it
@@ -4791,9 +4786,7 @@ components:
           format: uri
           readOnly: true
           type: string
-        autoReindex:
-          type: boolean
-        autoReparse:
+        autoProcess:
           type: boolean
         canClone:
           type: boolean
@@ -4839,8 +4832,7 @@ components:
             $ref: "#/components/schemas/Tag"
           type: array
       required:
-        - autoReparse
-        - autoReindex
+        - autoProcess
         - description
         - id
         - name

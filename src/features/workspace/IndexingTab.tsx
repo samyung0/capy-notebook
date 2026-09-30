@@ -155,7 +155,7 @@ function FileChanges({
 }
 
 /** The workspace settings Indexing tab: what is searchable, the file changes
- * still to process, and the automatic processing switches. */
+ * still to process, and the automatic processing switch. */
 export function IndexingTab({
   fallback,
   stats,
@@ -226,42 +226,16 @@ export function IndexingTab({
       ) : (
         fallback
       )}
-      <div className="flex flex-col gap-6">
-        <label className="flex items-center justify-between gap-5">
-          <span>
-            <span className="block font-medium">
-              {m.workspace_auto_reparse()}
-            </span>
-            <span className="t-meta text-fg-muted">
-              {m.workspace_auto_reparse_hint()}
-            </span>
-          </span>
-          <Switch
-            checked={workspace.autoReparse}
-            disabled={saving}
-            onCheckedChange={(autoReparse) => {
-              void update({ autoReparse, id: workspace.id }).catch(() => {});
-            }}
-          />
-        </label>
-        <label className="flex items-center justify-between gap-5">
-          <span>
-            <span className="block font-medium">
-              {m.workspace_auto_reindex()}
-            </span>
-            <span className="t-meta text-fg-muted">
-              {m.workspace_auto_reindex_hint()}
-            </span>
-          </span>
-          <Switch
-            checked={workspace.autoReindex}
-            disabled={saving}
-            onCheckedChange={(autoReindex) => {
-              void update({ autoReindex, id: workspace.id }).catch(() => {});
-            }}
-          />
-        </label>
-      </div>
+      <label className="flex items-center justify-between gap-5">
+        <span className="font-medium">{m.workspace_auto_process()}</span>
+        <Switch
+          checked={workspace.autoProcess}
+          disabled={saving}
+          onCheckedChange={(autoProcess) => {
+            void update({ autoProcess, id: workspace.id }).catch(() => {});
+          }}
+        />
+      </label>
     </div>
   );
 }

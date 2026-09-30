@@ -22,6 +22,9 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
   // Started work cannot be cancelled.
   await expect(row('exchange-plan.docx').getByRole('button')).toHaveCount(0);
   await expect(row('course-guide.xlsx')).toContainText("Couldn't process");
+  await expect(
+    settings.getByRole('switch', { name: 'Auto process edits' })
+  ).toBeChecked();
   await page.screenshot({
     path: test.info().outputPath('indexing-tab.png'),
   });

@@ -101,7 +101,7 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 	if !dirty || job == nil || indexErr != nil {
 		t.Fatalf("edited note state: dirty=%v job=%v err=%v", dirty, job, indexErr)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET auto_reindex=false WHERE id=$1`, ws.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET auto_process=false WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET index_job_id=NULL WHERE id=$1`, note.ID); err != nil {

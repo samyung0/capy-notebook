@@ -1069,8 +1069,7 @@ export const handlers = [
       tags?: TagInput[];
     };
     const ws: Workspace = {
-      autoReindex: true,
-      autoReparse: true,
+      autoProcess: true,
       canClone: true,
       capabilities: {
         canEdit: true,

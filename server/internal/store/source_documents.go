@@ -478,10 +478,10 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 		return SourceProcessResult{}, err
 	}
 	var name, kind, mode string
-	var ever, indexed, reprocess, autoParse, autoIndex, manual bool
+	var ever, indexed, reprocess, autoProcess, manual bool
 	var edited, lastRequested time.Time
 	var running, refreshError *string
-	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_reparse,w.auto_reindex,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &ever, &indexed, &reprocess, &autoParse, &autoIndex, &edited, &lastRequested, &running, &manual, &refreshError)
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_process,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &ever, &indexed, &reprocess, &autoProcess, &edited, &lastRequested, &running, &manual, &refreshError)
 	if isNoRows(err) {
 		return SourceProcessResult{}, ErrNothingToProcess
 	}
@@ -510,16 +510,16 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 			return result, ErrConflict
 		}
 		if doc.Format == "text" {
-			if (!autoIndex && !manual) || time.Since(lastRequested) < 15*time.Second {
+			if (!autoProcess && !manual) || time.Since(lastRequested) < 15*time.Second {
 				return result, ErrConflict
 			}
 		} else {
 			// Store-only files publish export-only under the same trigger,
-			// whatever auto-reparse says; the owner's Process stays their
+			// whatever auto-process says; the owner's Process stays their
 			// opt-in first parse.
 			exportOnly = storeOnly && !manual
 			due := doc.NetTokens >= officeRefreshTokens || time.Since(edited) >= officeRefreshStale
-			if ((!due || !(exportOnly || autoParse && ever)) && !manual) || time.Since(edited) < officeRefreshIdle {
+			if ((!due || !(exportOnly || autoProcess && ever)) && !manual) || time.Since(edited) < officeRefreshIdle {
 				return result, ErrConflict
 			}
 		}

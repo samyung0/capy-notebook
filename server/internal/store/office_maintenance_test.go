@@ -233,7 +233,7 @@ func TestExportOnlyPublication(t *testing.T) {
 }
 
 // Store-only files publish export-only under the automatic trigger whatever
-// auto-reparse says, through the handoff: finalize keeps the candidate, and the
+// auto-process says, through the handoff: finalize keeps the candidate, and the
 // publication takes the collaboration service's rebase of a save made after
 // the capture. The file stays unmarked and its room is left to the handoff.
 func TestStoreOnlyAutomaticExport(t *testing.T) {
@@ -242,7 +242,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	owner := newBlobTestUser(t, s, "store_only_export")
 	file := maintenanceTestEdited(t, s, owner, "lesson.docx", true)
 	for _, q := range []string{
-		`UPDATE workspaces w SET auto_reparse=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
+		`UPDATE workspaces w SET auto_process=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
 		`UPDATE source_documents SET net_tokens=3000,last_edited_at=now()-interval '2 minutes' WHERE file_id=$1`,
 	} {
 		if _, err := s.pool.Exec(ctx, q, file); err != nil {
@@ -377,7 +377,7 @@ func TestProcessDuringExportOnlyIsKept(t *testing.T) {
 		t.Helper()
 		file := maintenanceTestEdited(t, s, owner, name, true)
 		for _, q := range []string{
-			`UPDATE workspaces w SET auto_reparse=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
+			`UPDATE workspaces w SET auto_process=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
 			`UPDATE source_documents SET net_tokens=3000,last_edited_at=now()-interval '2 minutes' WHERE file_id=$1`,
 		} {
 			if _, err := s.pool.Exec(ctx, q, file); err != nil {

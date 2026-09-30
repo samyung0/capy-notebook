@@ -625,7 +625,7 @@ side; a move (text that only changed position, as every later paragraph does
 when one is inserted) carries no text and counts 0 tokens, so a pure reorder
 publishes through the 7-day rule. Manual processing bypasses the threshold. A
 store-only Office file (never processed) publishes export-only under the same
-trigger, whatever the workspace's auto-reparse setting, through the same
+trigger, whatever the workspace's auto-process setting, through the same
 handoff: the saved state becomes the file's bytes with no parser or provider
 call and no charge (see Maintenance window below). The owner's Process stays
 the opt-in first parse; pressed while such an export runs, it turns that job
@@ -748,7 +748,7 @@ any reason but a superseded candidate (409) or a refused rebase (422
 Unless the file never parsed successfully (then its owner's Process, charged as
 the first parse, stays the way to index it) it is marked (`reprocess_at`): the refresh
 scheduler then parses and indexes the file's bytes as a plain system-paid parse
-job (no page fee), whatever auto-reparse says, once the owner is active and the
+job (no page fee), whatever auto-process says, once the owner is active and the
 file is out of the trash, never while another parse or ingest job is queued for
 it. A failed attempt waits a day; a refused one (owner over quota) an hour. The
 first reprocess regenerates the descriptor, since none is published.

@@ -2474,7 +2474,7 @@ note's content changes, clears `index_error`, and skips unchanged writes; a
 new workspace note is dirty from creation. The collaboration sidecar's 5 s
 timer (`scheduleNoteIndexes`) asks Go to admit dirty notes that have been idle
 15 s, have no running job and no parked error, in workspaces with
-`auto_reindex` on. `POST /internal/collaboration/materials/{id}/index`
+`auto_process` on. `POST /internal/collaboration/materials/{id}/index`
 (`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
 inserts one `ingest` job carrying `materialId`, and records it in
 `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
@@ -2556,7 +2556,9 @@ candidate without changing the readable `files` row or `rag_file_contents` alias
 
 The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
-see observability-metering). `auto_reparse` and `auto_reindex` default to true.
+see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
+gates every automatic Office reparse, text reindex and note index; off, edits
+wait for the owner's Process.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. A move (unchanged text at a new position, as every

@@ -2613,7 +2613,7 @@ file's index and evicts the old room (editing is paused, so no writer needs a
 flush). Outside the window a store-only file's automatic export-only
 publication goes through the handoff like a refresh instead. Unless the file
 never parsed successfully it is marked for reprocessing: the refresh scheduler parses and
-indexes it at platform cost, whatever the workspace's auto-reparse setting,
+indexes it at platform cost, whatever the workspace's auto-process setting,
 once its owner is active and it is out of the trash, with one job at a time,
 and retries a day later if that fails. A parse that timed out or ran out of
 memory is not rerun until the file's bytes or the parser version change: the

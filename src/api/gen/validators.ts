@@ -29,8 +29,7 @@ export const GetDeletionPreflightResponse = zod.object({
 }).optional(),
   "workspacesNeedingTransfer": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -60,8 +59,7 @@ export const GetDeletionPreflightResponse = zod.object({
 })).nullable(),
   "workspacesToDestroy": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -907,8 +905,7 @@ export const exploreWorkspacesResponseTagsItemValueMax = 35;
 
 export const ExploreWorkspacesResponseItem = zod.object({
   "author": zod.string(),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3545,8 +3542,7 @@ export const listWorkspacesResponseTagsItemValueMax = 35;
 
 export const ListWorkspacesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3609,8 +3605,7 @@ export const createWorkspaceResponseTagsItemValueMax = 35;
 
 export const CreateWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3663,8 +3658,7 @@ export const getWorkspaceResponseTagsItemValueMax = 35;
 
 export const GetWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3715,8 +3709,7 @@ export const updateWorkspaceBodyTagsMax = 5;
 
 
 export const UpdateWorkspaceBody = zod.object({
-  "autoReindex": zod.boolean().optional(),
-  "autoReparse": zod.boolean().optional(),
+  "autoProcess": zod.boolean().optional(),
   "description": zod.string().max(updateWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description; empty clears it'),
   "iconId": zod.string().min(1).regex(updateWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
@@ -3732,8 +3725,7 @@ export const updateWorkspaceResponseTagsItemValueMax = 35;
 
 export const UpdateWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3838,8 +3830,7 @@ export const CloneWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "workspace": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -4215,8 +4206,7 @@ export const updateWorkspaceSharingResponseTagsItemValueMax = 35;
 
 export const UpdateWorkspaceSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -4516,8 +4506,7 @@ export const transferWorkspaceResponseTagsItemValueMax = 35;
 
 export const TransferWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),

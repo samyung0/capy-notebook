@@ -9,8 +9,7 @@ import type { TagInput } from './tagInput.ts';
 export interface UpdateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  autoReindex?: boolean;
-  autoReparse?: boolean;
+  autoProcess?: boolean;
   /**
      * Optional workspace description; empty clears it
      * @maxLength 500

@@ -639,15 +639,15 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "index_counts_owner")
 	ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
-	if !ws.AutoReparse || !ws.AutoReindex {
+	if !ws.AutoProcess {
 		t.Fatalf("auto settings not enabled: %+v", ws)
 	}
 	disabled := false
-	updated, err := s.UpdateWorkspace(ctx, owner, ws.ID, WorkspacePatch{AutoReparse: &disabled, AutoReindex: &disabled})
+	updated, err := s.UpdateWorkspace(ctx, owner, ws.ID, WorkspacePatch{AutoProcess: &disabled})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.AutoReparse || updated.AutoReindex {
+	if updated.AutoProcess {
 		t.Fatal("settings not saved")
 	}
 	for _, src := range []struct{ name, kind string }{{"not-indexed.txt", "txt"}, {"archive.zip", "unknown"}} {

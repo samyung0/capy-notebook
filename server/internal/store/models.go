@@ -30,8 +30,9 @@ type User struct {
 }
 
 type Workspace struct {
-	AutoReparse bool      `json:"autoReparse"`
-	AutoReindex bool      `json:"autoReindex"`
+	// AutoProcess lets automatic processing reparse and reindex edited files
+	// and notes; off, edits wait for the owner's Process.
+	AutoProcess bool      `json:"autoProcess"`
 	Description string    `json:"description"`
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`

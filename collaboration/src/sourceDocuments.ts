@@ -54,7 +54,7 @@ const OFFICE_REFRESH_STALE = '7 days';
 // publishes through the stale rule. A file refused because its owner is at
 // the concurrent ingest-job limit (429) is stamped by REFRESH_DEFER_SQL and
 // orders behind the other due files. Store-only Office files (never processed)
-// take the same trigger whatever auto-reparse says; Go publishes them
+// take the same trigger whatever auto-process says; Go publishes them
 // export-only. A `reprocess` row is a file an export-only publication left
 // unindexed, due once its owner is active and it is out of the trash (a file
 // never parsed successfully waits for its owner's Process); Go indexes it at
@@ -76,9 +76,9 @@ const REFRESH_CANDIDATES_SQL = `
       FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
         AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
-        AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
+        AND ((d.format='text' AND (w.auto_process OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
           OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
-            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_reparse AND f.ever_parsed_successfully)
+            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_process AND f.ever_parsed_successfully)
               OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))
       ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8)
   ) picked ORDER BY due LIMIT 8`;
@@ -1392,7 +1392,7 @@ export class SourceDocumentStore {
     const eligible = await this.pool.query<{ id: string }>(`
       SELECT m.id FROM materials m JOIN workspaces w ON w.id=m.workspace_id
       WHERE m.kind='note' AND m.trashed_at IS NULL AND m.index_dirty_at IS NOT NULL
-        AND m.index_job_id IS NULL AND m.index_error IS NULL AND w.auto_reindex
+        AND m.index_job_id IS NULL AND m.index_error IS NULL AND w.auto_process
         AND m.updated_at < now()-interval '15 seconds'
       ORDER BY m.updated_at LIMIT 8`);
     for (const row of eligible.rows) {
