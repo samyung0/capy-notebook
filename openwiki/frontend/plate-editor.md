@@ -339,20 +339,52 @@ converged. It does not mean PostgreSQL durably stored the state.
 
 The editor reports:
 
-- `Connecting…`: opening or reconnecting;
+- `Connecting…`: the first handshake (the note body waits for it);
+- `Reconnecting…`: a later drop while the browser is online; the editor stays
+  mounted and editable;
 - `Syncing…`: edits waiting for the checkpoint debounce or durable acknowledgment;
 - `Synced`: the initial room sync completed with no local work pending;
 - `Saved`: the sidecar confirmed that a state containing this client's work was
   committed;
-- `Offline`;
-- `Collaboration unavailable`.
+- `Offline`: the browser is offline;
+- `Not saved. Retrying…`: a store failed and the sidecar is retrying it;
+- `Collaboration unavailable`: reconnecting kept failing for 30 s, or the
+  provider could not start.
 
 The header shows these as Hugeicons cloud icons beside the title: Sync for
-Connecting and Syncing, SavingDone01 for Synced, Check for Saved, Off for Offline, and Alert for
-Collaboration unavailable. Localized labels remain in keyboard-accessible
-tooltips and the live status text for screen readers; the error icon stays red.
+Connecting, Reconnecting and Syncing, SavingDone01 for Synced, Check for Saved,
+Off for Offline, and a red Alert for Not saved and Collaboration unavailable.
+Office and text sources report the same states into the same slot
+(`EditorStatusContext`, `sourceHeaderStatus`). Localized labels remain in
+keyboard-accessible tooltips and the live status text for screen readers.
 Pending work preserves Connecting, Offline and error indicators. An older
 checkpoint acknowledgment cannot report Saved while newer edits are debouncing.
+
+### Connection lifetime and refusals
+
+Room tokens live five minutes. About a minute before expiry the sidecar asks
+the client for a fresh token in band (`connection.requestToken()`); the
+provider answers through its `token` function and `onTokenSync` verifies it,
+rechecks access and re-arms both timers (`collaboration/src/tokenExpiry.ts`).
+A connection that cannot answer is closed at expiry. A room closed on an open
+socket (expiry, eviction, an access recheck) only emits the provider's `close`,
+never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
+reconnects at once with a fresh token and backs off while refusals repeat.
+Authentication refusals carry reasons: `collaboration-read-only` drops to view
+under the read-only strip, `collaboration-not-found` (trashed or deleted) and
+`collaboration-forbidden` (lost access) replace the editor with the
+file-missing or no-access panel, and anything else (an expired token, a room
+being reset or compacted) is retried. A loss still unresolved after 30 s while
+online turns the status red and, with unsaved work, raises the failed-save
+toast. A failed first token request shows the panel for its status (not found,
+no access, or unavailable with Retry).
+
+A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
+pending receipts (the failed-store retry answers them), shows Not saved and
+raises the failed-save toast: "Failed to save. You can keep working while we
+retry." when the viewer is the only possible editor (standalone owner, or a
+workspace owner with no edit link and no other editing member), "Failed to
+save. Please reload the page." with Reload otherwise.
 
 On a value change, edit mode debounces a `checkpoint-request` stateless message
 carrying a random receipt ID. The sidecar keeps the room's outstanding IDs in
@@ -409,9 +441,12 @@ A rejected update closes only the offending connection, preceded by a
 instead of reconnecting and resending forever. If an over-limit document reaches
 the store hook anyway, the sidecar broadcasts `document-rejected` to the room and
 evicts it; Hocuspocus swallows store failures, so leaving the room loaded would
-mean it silently never persists again. `NoteEditor` responds by remounting
-`NoteEditorCore` under a new generation key, which reconnects onto the last
-durable state. Invalidating the collaboration token alone is not enough, because
+mean it silently never persists again. A structurally invalid snapshot is
+discarded the same way (`document-rejected` with code `invalid_document`), and
+an `authorization-revoked` eviction makes every editor drop its copy too.
+`NoteEditor` responds by remounting `NoteEditorCore` under a new generation
+key, which reconnects onto the last durable state; a limit shows the
+too-large toast, the others the failed-save toast when unsaved work was lost. Invalidating the collaboration token alone is not enough, because
 an unchanged room string leaves the editor mounted on its forked document.
 Failed-store retries use the same terminal path. If a queued snapshot later
 fails a document or quota limit, the sidecar drops it, broadcasts the rejection

@@ -85,6 +85,7 @@ export type {
   CreateWorkspaceReq,
   DeletionPreflight,
   Event as CalendarEvent,
+  FileChange,
   Flashcard,
   FlashcardSet,
   ImportSourcesAccepted as SourceImportAcceptedResponse,

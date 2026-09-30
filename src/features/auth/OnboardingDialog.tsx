@@ -14,6 +14,7 @@ import { IconPicker } from '@/components/ui/IconPicker';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { useUser } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 import { clerkMessage } from './clerk';
 import { useProfilePhoto } from './useProfilePhoto';
@@ -97,8 +98,12 @@ export function OnboardingDialog() {
       await qc.invalidateQueries({ queryKey: qk.me });
       setDismissed(true);
     } catch (error) {
+      // Clerk's own messages are user-facing; our API's never are.
       setFormError(
-        clerkMessage(error as { message: string; longMessage?: string })
+        errorCopy(
+          error,
+          clerkMessage(error as { message: string; longMessage?: string })
+        )
       );
     } finally {
       setBusy(false);

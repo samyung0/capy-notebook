@@ -53,6 +53,22 @@ export function FileError({
   );
 }
 
+/** The open file was trashed or deleted, or access to it lost, while editing. */
+export function FileUnavailable({ kind }: { kind: 'notFound' | 'forbidden' }) {
+  return kind === 'notFound' ? (
+    <FileError
+      message={m.files_missing_body()}
+      title={m.files_missing_title()}
+    />
+  ) : (
+    <FileError
+      icon="securityWarning"
+      message={m.editor_access_lost_body()}
+      title={m.editor_access_lost()}
+    />
+  );
+}
+
 export function FileEmpty({
   title = m.error_file_empty_title(),
   message = m.error_file_empty_body(),

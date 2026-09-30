@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -79,9 +80,11 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-candidate", "finalizeSourceRefresh", tag, "Enqueue an uploaded candidate", http.StatusNoContent, 150<<20, a.finalizeSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/publish", "publishSourceRefresh", tag, "Publish a processed source checkpoint", http.StatusOK, 150<<20, a.publishSourceRefresh)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-failure", "failSourceRefresh", tag, "Discard an unsuccessful candidate", http.StatusNoContent, a.failSourceRefresh)
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild", "rebuildSource", tag, "Move editing onto the published file", http.StatusNoContent, 150<<20, a.rebuildSource)
 	reg(api, http.MethodGet, "/api/files/{id}/source-session", "getSourceSession", tag, "Read source editing session", http.StatusOK, a.getSourceSession)
 	reg(api, http.MethodPost, "/api/files/{id}/collaboration-token", "createSourceCollaborationToken", tag, "Create source room token", http.StatusCreated, a.createSourceCollaborationToken)
 	reg(api, http.MethodPost, "/api/files/{id}/process-changes", "processSourceChanges", tag, "Process the latest saved source changes", http.StatusAccepted, a.processSourceChanges)
+	reg(api, http.MethodDelete, "/api/files/{id}/process-changes", "cancelSourceChanges", tag, "Cancel queued processing of source changes", http.StatusNoContent, a.cancelSourceChanges)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/bootstrap", "bootstrapSourceDocument", tag, "Bootstrap an authorized source room", http.StatusOK, a.bootstrapSourceDocument)
 	reg(api, http.MethodGet, "/internal/collaboration/files/{id}/access", "checkSourceAccess", tag, "Revalidate source room access", http.StatusNoContent, a.checkSourceAccess)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/checkpoint", "checkpointSourceDocument", tag, "Persist an authorized source checkpoint", http.StatusOK, 150<<20, a.checkpointSourceDocument)
@@ -107,6 +110,11 @@ func (a *api) sourceSessionResponse(ctx context.Context, session store.SourceSes
 		return nil, hErr(err)
 	}
 	session.SourceURL = url
+	if session.RebuildPending {
+		if session.PublishedSourceURL, err = a.blob.PresignGet(ctx, session.PublishedBlobPath); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	return &sourceSessionOutput{Body: session}, nil
 }
 func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*sourceSessionOutput, error) {
@@ -131,6 +139,8 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	// Effects stay server-side. The browser opens a text state; an Office
 	// editor takes its document from the room's sync.
 	session.PendingEffects = nil
+	// A pending rebuild is the collaboration service's.
+	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
 	if session.Format != "text" {
 		session.State, session.StateSeedSHA256 = nil, nil
 	}
@@ -190,6 +200,27 @@ func (a *api) processSourceChanges(ctx context.Context, in *collaborationTokenIn
 		return nil, hErr(err)
 	}
 	return &sourceProcessOutput{Body: out}, nil
+}
+
+type sourceRebuildInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+	Body   store.SourceRebuild
+}
+
+func (a *api) rebuildSource(ctx context.Context, in *sourceRebuildInput) (*struct{}, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	// The collaboration service holds the room lock for 30 s and abandons this
+	// request after 15 s. Ending the swap sooner means it never commits after
+	// the caller stopped waiting; a rolled-back swap is retried later.
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return nil, hErr(a.s.RebuildSource(ctx, in.ID, in.Body))
+}
+func (a *api) cancelSourceChanges(ctx context.Context, in *collaborationTokenInput) (*struct{}, error) {
+	return nil, hErr(a.s.CancelSourceRefresh(ctx, userID(ctx), in.ID))
 }
 func (a *api) requestSourceRefresh(ctx context.Context, in *sourceRefreshInput) (*sourceProcessOutput, error) {
 	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {

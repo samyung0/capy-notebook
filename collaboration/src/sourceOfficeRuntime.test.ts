@@ -695,3 +695,138 @@ test('a publication rebase the engine refuses ends the refresh with a 422', asyn
     status: 422,
   });
 }, 60_000);
+
+test.each([
+  ['docx', 'apps/demo/public/betteroffice-demo.docx'],
+  ['xlsx', 'apps/demo/public/sample.xlsx'],
+  ['pptx', 'apps/demo/public/betteroffice-demo.pptx'],
+] as const)(
+  'a deferred %s publication measures later edits against the capture and rebuilds onto the published file',
+  async (format, path) => {
+    const bytes = await readFile(
+      new URL(`../../vendor/betteroffice/${path}`, import.meta.url)
+    );
+    const sha256 = (value: Uint8Array) =>
+      createHash('sha256').update(value).digest('hex');
+    const seed = await runOffice('seedOffice', format, bytes);
+    const [first, second] = (
+      await runOffice('inspectOffice', bytes, seed)
+    ).filter((entry) => entry.value.length > 0);
+    const captured = await runOffice('applyOfficeCommands', bytes, seed, [
+      setText(format, first, 'Captured'),
+    ]);
+    const latest = await runOffice(
+      'applyOfficeCommands',
+      bytes,
+      { ...seed, state: captured.state },
+      [setText(format, second, 'Later')]
+    );
+    const exported = await runOffice(
+      'exportOffice',
+      bytes,
+      { ...seed, state: captured.state },
+      { now: '2000-01-01T00:00:00.000Z', seed: sha256(bytes) }
+    );
+    const change = (state: Uint8Array) => {
+      const document = new Y.Doc();
+      Y.applyUpdate(document, state);
+      const out = Buffer.from(
+        Y.encodeStateAsUpdate(
+          document,
+          Y.encodeStateVectorFromUpdate(seed.state)
+        )
+      ).toString('base64');
+      document.destroy();
+      return out;
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async (url: string) =>
+          new Response(url === 'http://base' ? bytes : Buffer.from(exported))
+      )
+    );
+    const session = {
+      baseSourceSHA256: seed.baseSha256,
+      checkpoint: 11,
+      epoch: 1,
+      fileId: 'f',
+      format,
+      indexedCheckpoint: 10,
+      pendingEffects: [],
+      publishedSourceSHA256: sha256(exported),
+      publishedSourceURL: 'http://export',
+      publishedState: change(captured.state),
+      publishedStateSeedSHA256: sha256(seed.state),
+      rebuildPending: true,
+      sourceURL: 'http://base',
+      state: change(latest.state),
+      stateSeedSHA256: sha256(seed.state),
+    } as unknown as SourceSession;
+    const store = new SourceDocumentStore({} as Pool, 'http://api', 'secret');
+    const text = (
+      effects: {
+        kind: string;
+        before?: string;
+        after?: string;
+        operation: string;
+      }[]
+    ) =>
+      effects
+        .filter((effect) => effect.kind === 'text')
+        .map(({ after, before, operation }) => ({ after, before, operation }));
+    // Only the edit saved after the capture is pending: the published one is
+    // in the file already.
+    const deferred = await store.effects(session, latest.state);
+    expect(text(deferred)).toEqual([
+      expect.objectContaining({ operation: 'replace' }),
+    ]);
+    expect(JSON.stringify(deferred)).toContain('Later');
+    expect(JSON.stringify(deferred)).not.toContain('Captured');
+    // Nothing saved since the capture: nothing pending.
+    expect(await store.effects(session, captured.state)).toEqual([]);
+    // The rebuild lands both edits on seed(published), with the same pending
+    // text edit as before it.
+    const rebuilt = await store.rebuildPublication(session);
+    expect(text(rebuilt.pendingEffects)).toEqual(text(deferred));
+    const exportSeed = await runOffice('seedOffice', format, exported);
+    expect(rebuilt.rebasedStateSeedSHA256).toBe(sha256(exportSeed.state));
+    const state = await new SourceDocumentStore(
+      {} as Pool,
+      'http://api',
+      'secret'
+    ).stateOf({
+      ...session,
+      baseSourceSHA256: sha256(exported),
+      sourceURL: 'http://export',
+      state: rebuilt.rebasedState as string,
+      stateSeedSHA256: rebuilt.rebasedStateSeedSHA256 as string,
+    });
+    const values = (
+      await runOffice('inspectOffice', exported, { ...exportSeed, state })
+    ).map((entry) => entry.value);
+    expect(values).toEqual(expect.arrayContaining(['Captured', 'Later']));
+    // Pending effects after the rebuild, measured the usual way against the
+    // published file, are the ones the rebuild reported.
+    const after = {
+      ...session,
+      baseSourceSHA256: sha256(exported),
+      publishedState: undefined,
+      publishedStateSeedSHA256: undefined,
+      rebuildPending: false,
+      sourceURL: 'http://export',
+      state: rebuilt.rebasedState as string,
+      stateSeedSHA256: rebuilt.rebasedStateSeedSHA256 as string,
+    } as unknown as SourceSession;
+    expect(text(await store.effects(after, state))).toEqual(text(deferred));
+    // With nothing saved after the capture the rebuild is seed(published).
+    expect(
+      await store.rebuildPublication({
+        ...session,
+        checkpoint: 10,
+        state: change(captured.state),
+      })
+    ).toEqual({ netTokens: 0, pendingEffects: [] });
+  },
+  120_000
+);

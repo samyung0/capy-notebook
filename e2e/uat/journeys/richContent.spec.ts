@@ -14,6 +14,7 @@ import {
   officeCharge,
   openEditor,
   publishWhileEditing,
+  rebuiltAfterLeaving,
   saved,
   savedExport,
   seedSHA256,
@@ -104,10 +105,12 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
     const publishedBytes = Buffer.from(source.bodyBase64, 'base64');
     assertRichPreserved(format, bytes, publishedBytes, marker, paste);
 
-    // Round trip: the reloaded page edits the published file, its viewer
-    // shows it, and with no later edits the saved state is seed(published).
+    // Round trip: once both leave, editing moves onto the published file; a
+    // later open edits it, its viewer shows it, and with no later edits the
+    // saved state is seed(published).
+    await rebuiltAfterLeaving(run, [run.owner, editor], workspaceId, fileId);
     await expectRichContent(
-      editor.page.frameLocator('iframe[src*="office-runtime"]'),
+      await openEditor(run, editor, workspaceId, fileId),
       format,
       marker,
       'edit'

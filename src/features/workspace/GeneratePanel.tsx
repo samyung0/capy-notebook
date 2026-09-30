@@ -1,6 +1,5 @@
-import { useMutation } from '@tanstack/react-query';
 import { type ReactNode, useState } from 'react';
-import { api, isApiError } from '@/api/client';
+import { isApiError } from '@/api/client';
 import { useGenerate } from '@/api/hooks';
 import type {
   Chapter,
@@ -19,6 +18,7 @@ import { deferStorageRefusal, describeError } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
 import type { TabAction } from './PanelTabRow';
+import { useProcessFileChanges } from './useProcessFileChanges';
 
 type GenerateResultData =
   | { kind: 'flashcards'; material?: FlashcardSet; cards?: unknown[] }
@@ -69,13 +69,8 @@ export function GeneratePanel({
   );
   const [failure, setFailure] = useState<string | null>(null);
   const [pendingFileIds, setPendingFileIds] = useState<string[] | null>(null);
-  const { mutate: processChanges, isPending: processingChanges } = useMutation({
-    mutationFn: async (fileIds: string[]) => {
-      await Promise.all(
-        fileIds.map((id) => api.post(`/files/${id}/process-changes`, {}))
-      );
-    },
-  });
+  const { mutate: processChanges, isPending: processingChanges } =
+    useProcessFileChanges(workspaceId);
   const [mode, setMode] = useState<GenerateMode | null>(null);
   const [result, setResult] = useState<GenerateResultData | null>(null);
 
@@ -96,17 +91,14 @@ export function GeneratePanel({
             : r.material?.id;
       if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
     } catch (error) {
-      if (isApiError(error) && error.code === 'context_too_large') {
+      if (isApiError(error) && error.code === 'pending_sources_too_large') {
+        // The edited files whose unprocessed changes do not fit, as chat's
+        // pending-source notice names them.
+        const ids = error.body?.fileIds;
         setPendingFileIds(
-          files
-            .filter(
-              (file) =>
-                (!opts.fileIds.length && !opts.chapters.length) ||
-                opts.fileIds.includes(file.id) ||
-                (file.chapterId !== null &&
-                  opts.chapters.includes(file.chapterId))
-            )
-            .map((file) => file.id)
+          Array.isArray(ids)
+            ? ids.filter((id): id is string => typeof id === 'string')
+            : []
         );
       } else if (!deferStorageRefusal(error))
         // A frozen or storage refusal shows as the workspace status instead.
@@ -149,7 +141,7 @@ export function GeneratePanel({
             role="status"
           >
             <p>{m.source_pending_context()}</p>
-            {canReprocess && (
+            {canReprocess && pendingFileIds.length > 0 && (
               <Button
                 disabled={processingChanges}
                 onClick={() => processChanges(pendingFileIds)}

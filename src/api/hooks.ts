@@ -722,6 +722,14 @@ export const workspaceStatsQuery = (id: string) =>
     enabled: !!id,
     queryFn: () => api.get<WorkspaceStats>(`/workspaces/${id}/stats`),
     queryKey: qk.workspaceStats(id),
+    // Processing reports nothing live, so the Indexing tab polls while a
+    // file change is queued or processing.
+    refetchInterval: (query) =>
+      query.state.data?.fileChanges.some(
+        (change) => change.state === 'queued' || change.state === 'processing'
+      )
+        ? 3000
+        : false,
   });
 export const useWorkspaceStats = (id: string, options?: QueryUiOptions) =>
   useQuery({ ...workspaceStatsQuery(id), meta: queryMeta(options) });
@@ -1806,7 +1814,6 @@ export function useMaterialCollaborationToken(
     meta: queryMeta(options),
     queryFn: () => getMaterialCollaborationToken(materialId),
     queryKey: ['material', materialId, 'collaboration-token'],
-    refetchInterval: 4 * 60 * 1000,
     staleTime: 3 * 60 * 1000,
   });
 }

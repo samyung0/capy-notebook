@@ -71,7 +71,7 @@ func TestOfficeEditingPause(t *testing.T) {
 	sourceTestEdit(t, s, owner, doc, "flushed-state")
 	// An agent edit that passed the gateway's check just before the pause is
 	// refused where it commits.
-	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
+	_, err := s.SaveSourceCheckpoint(ctx, open.ID, SourceCheckpoint{ActorIDs: []string{owner}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint + 1, State: []byte("agent-state"), PendingEffects: json.RawMessage(`[]`), Operation: &SourceCheckpointOperation{Receipt: SourceCheckpointReceipt{ID: uid("op"), RequestHash: "hash", ActorUserID: owner, ToolVersion: 1}, Inverse: json.RawMessage(`{"commands":[]}`)}})
 	if !errors.Is(err, ErrOfficeEditingPaused) {
 		t.Fatalf("agent edit commit during the pause: %v", err)
 	}
@@ -162,6 +162,47 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 	}
 }
 
+// A trashed file's rebuild never runs in the collaboration service, so
+// publish-all performs it; readiness waited on it until then.
+func TestPublishAllRebuildsTrashedDeferredPublication(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	file, _, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "trashed_rebuild_owner"))
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET trashed_at=now(),trash_episode_id='episode',purge_after=now()+interval '30 days' WHERE id=$1`, file); err != nil {
+		t.Fatal(err)
+	}
+	maintenanceTestPause(t, s)
+	waiting := func() bool {
+		t.Helper()
+		ready, err := s.OfficeReadiness(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, u := range ready.Unpublished {
+			if u.FileID == file {
+				return u.RebuildPending
+			}
+		}
+		return false
+	}
+	if !waiting() {
+		t.Fatal("readiness should wait on the pending rebuild")
+	}
+	published, err := s.PublishAllOfficeSources(ctx)
+	if err != nil || !slices.Contains(published, OfficePublication{FileID: file, Rebuilt: true}) {
+		t.Fatalf("publish-all: %+v %v", published, err)
+	}
+	var pending bool
+	var epoch int64
+	var base string
+	if err = s.pool.QueryRow(ctx, `SELECT rebuild_pending,epoch,base_source_sha256 FROM source_documents WHERE file_id=$1`, file).Scan(&pending, &epoch, &base); err != nil || pending || epoch != 2 || base != export {
+		t.Fatalf("after publish-all: pending=%v epoch=%d base=%s %v", pending, epoch, base, err)
+	}
+	if waiting() {
+		t.Fatal("readiness still waits after publish-all")
+	}
+}
+
 func TestExportOnlyPublication(t *testing.T) {
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
@@ -233,16 +274,17 @@ func TestExportOnlyPublication(t *testing.T) {
 }
 
 // Store-only files publish export-only under the automatic trigger whatever
-// auto-reparse says, through the handoff: finalize keeps the candidate, and the
-// publication takes the collaboration service's rebase of a save made after
-// the capture. The file stays unmarked and its room is left to the handoff.
+// auto-process says: finalize keeps the candidate, and the publication is
+// deferred like any owner's Office publication (the file's bytes change,
+// editing stays on its base until the rebuild). The file stays unmarked and
+// its room is left alone.
 func TestStoreOnlyAutomaticExport(t *testing.T) {
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "store_only_export")
 	file := maintenanceTestEdited(t, s, owner, "lesson.docx", true)
 	for _, q := range []string{
-		`UPDATE workspaces w SET auto_reparse=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
+		`UPDATE workspaces w SET auto_process=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
 		`UPDATE source_documents SET net_tokens=3000,last_edited_at=now()-interval '2 minutes' WHERE file_id=$1`,
 	} {
 		if _, err := s.pool.Exec(ctx, q, file); err != nil {
@@ -280,7 +322,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	}
 	doc = sourceTestEdit(t, s, owner, doc, "later-state")
 	residual := json.RawMessage(`[{"id":"p","kind":"text","label":"Paragraph","operation":"replace","before":"a","after":"b"}]`)
-	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-d", PendingEffects: residual, NetTokens: 1, RebasedState: []byte("rebased-later"), RebasedStateSeedSHA256: sourceTestStateSeed, ExpectedLatestCheckpoint: doc.Checkpoint - 1}
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-d", PendingEffects: residual, NetTokens: 1, Deferred: true, ExpectedLatestCheckpoint: doc.Checkpoint - 1}
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
 		t.Fatalf("publication missing the later save: %v", err)
 	}
@@ -289,7 +331,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if published.Epoch != 2 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "rebased-later" || published.StateSeedSHA256 == nil || *published.StateSeedSHA256 != sourceTestStateSeed || published.NetTokens != 1 || published.BaseRevision != 2 {
+	if published.Epoch != 1 || published.IndexedCheckpoint != candidate.Checkpoint || published.Checkpoint != doc.Checkpoint || string(published.State) != "later-state" || !published.RebuildPending || string(published.PublishedState) != string(candidate.State) || published.PublishedSourceSHA256 != strings.Repeat("d", 64) || published.NetTokens != 1 || published.BaseRevision != 2 {
 		t.Fatalf("export publication: %+v", published)
 	}
 	var marked, indexed bool
@@ -301,7 +343,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 	if marked || indexed || blobPath != candidate.SourceBlobPath || status != "done" || evictions != 0 {
 		t.Fatalf("marked=%v indexed=%v blob=%s job=%s evictions=%d", marked, indexed, blobPath, status, evictions)
 	}
-	if again, err := s.PublishSourceRefresh(ctx, file, publish); err != nil || again.Epoch != 2 {
+	if again, err := s.PublishSourceRefresh(ctx, file, publish); err != nil || again.Epoch != 1 || !again.RebuildPending {
 		t.Fatalf("publication receipt replay: %+v %v", again, err)
 	}
 }
@@ -347,19 +389,20 @@ func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
 	if err = s.FinalizeSourceRefresh(ctx, file, finalize); err != nil {
 		t.Fatal(err)
 	}
-	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), RebasedState: []byte(strings.Repeat("r", 2000+len("seed-f"))), RebasedStateSeedSHA256: sourceTestStateSeed, ExpectedLatestCheckpoint: candidate.Checkpoint}
-	// With no save after the capture the state returns to seed(export): a
-	// rebased state is refused.
+	publish := SourceRefreshPublish{AttemptID: 1, JobID: job.JobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-f", PendingEffects: json.RawMessage(`[]`), RebasedState: []byte("rebased"), RebasedStateSeedSHA256: sourceTestStateSeed, Deferred: true, ExpectedLatestCheckpoint: candidate.Checkpoint}
+	// A deferred publication carries no rebased state.
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.Is(err, ErrConflict) {
-		t.Fatalf("rebased state without a later save: %v", err)
+		t.Fatalf("deferred publication with a rebased state: %v", err)
 	}
-	// A save lands during the export; its rebase, 2,000 bytes past the export's
-	// seed, does not fit.
+	publish.RebasedState, publish.RebasedStateSeedSHA256 = nil, ""
+	// A save lands during the export; its pending effects, 2,000 bytes on top
+	// of the 500-byte larger export, do not fit.
 	doc, err := s.SourceSession(ctx, owner, file)
 	if err != nil {
 		t.Fatal(err)
 	}
 	publish.ExpectedLatestCheckpoint = sourceTestEdit(t, s, owner, doc, "later-state").Checkpoint
+	publish.PendingEffects = json.RawMessage(`[{"id":"p","kind":"text","operation":"replace","before":"a","after":"` + strings.Repeat("x", 2000) + `"}]`)
 	if _, err = s.PublishSourceRefresh(ctx, file, publish); !errors.As(err, &quota) {
 		t.Fatalf("export past the quota: %v", err)
 	}
@@ -377,7 +420,7 @@ func TestProcessDuringExportOnlyIsKept(t *testing.T) {
 		t.Helper()
 		file := maintenanceTestEdited(t, s, owner, name, true)
 		for _, q := range []string{
-			`UPDATE workspaces w SET auto_reparse=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
+			`UPDATE workspaces w SET auto_process=false FROM files f WHERE f.id=$1 AND w.id=f.workspace_id`,
 			`UPDATE source_documents SET net_tokens=3000,last_edited_at=now()-interval '2 minutes' WHERE file_id=$1`,
 		} {
 			if _, err := s.pool.Exec(ctx, q, file); err != nil {

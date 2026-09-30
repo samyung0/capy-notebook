@@ -54,7 +54,7 @@ test('a wasm-bindgen broken-object error replaces the worker like a trap; a refu
   const [first] = workers;
   expect(first.posted).toHaveLength(1);
   first.emit('message', { error: 'stale_target: changed', trap: false });
-  await expect(refused).rejects.toBeInstanceOf(OfficeEngineError);
+  await expect(refused).rejects.toMatchObject({ transient: false });
   expect(first.terminated).toBe(false);
   expect(first.posted).toHaveLength(2);
   first.emit('message', {
@@ -75,7 +75,10 @@ test('a timed-out call fails, the queue moves to a new worker and a late result 
   const hung = seed();
   const queued = seed();
   const [first] = workers;
-  const timedOut = expect(hung).rejects.toThrow('Office seedOffice timed out');
+  const timedOut = expect(hung).rejects.toMatchObject({
+    message: 'Office seedOffice timed out',
+    transient: true,
+  });
   await vi.advanceTimersByTimeAsync(120_000);
   await timedOut;
   expect(first.terminated).toBe(true);

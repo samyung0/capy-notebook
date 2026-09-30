@@ -15,8 +15,7 @@ import type { WorkspaceRole } from './workspaceRole.ts';
 export interface Workspace {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  autoReindex: boolean;
-  autoReparse: boolean;
+  autoProcess: boolean;
   canClone: boolean;
   capabilities: AccessCapabilities;
   chapterCount: number;

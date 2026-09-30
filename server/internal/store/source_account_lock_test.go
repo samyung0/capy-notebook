@@ -28,7 +28,7 @@ func TestSourceCheckpointSerializesEditorCancellation(t *testing.T) {
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, saveErr := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, ExpectedCheckpoint: doc.Checkpoint, State: []byte("late-state"), PendingEffects: json.RawMessage(`[]`)})
+		_, saveErr := s.SaveSourceCheckpoint(ctx, file.ID, SourceCheckpoint{ActorIDs: []string{actor}, Epoch: doc.Epoch, BaseRevision: doc.BaseRevision, ExpectedCheckpoint: doc.Checkpoint, State: []byte("late-state"), PendingEffects: json.RawMessage(`[]`)})
 		done <- saveErr
 	}()
 	deadline := time.Now().Add(3 * time.Second)

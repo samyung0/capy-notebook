@@ -91,7 +91,12 @@ export function showErrorToast(error: unknown) {
               })}`;
             },
           }
-        : undefined;
+        : description.action === 'reload'
+          ? {
+              label: m.error_action_reload(),
+              onClick: () => window.location.reload(),
+            }
+          : undefined;
 
   userToast({
     button,

@@ -49,7 +49,7 @@ func TestPDFDrawingValidation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			body := base
 			mutate(&body)
-			if err := validatePDFAnnotation(body); !errors.Is(err, ErrConflict) {
+			if err := validatePDFAnnotation(body); !errors.Is(err, ErrInvalidPDFAnnotation) {
 				t.Fatalf("invalid annotation accepted: %v", err)
 			}
 		})

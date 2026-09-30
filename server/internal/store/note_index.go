@@ -57,21 +57,21 @@ func (s *Store) RequestMaterialIndex(ctx context.Context, materialID string) (st
 	}
 	defer tx.Rollback(ctx)
 	var workspaceID, ownerID string
-	var autoReindex bool
+	var autoProcess bool
 	var dirtyAt *time.Time
 	var runningJob, indexError *string
 	var revision int64
-	if err := tx.QueryRow(ctx, `SELECT m.workspace_id, w.user_id, w.auto_reindex, m.index_dirty_at,
+	if err := tx.QueryRow(ctx, `SELECT m.workspace_id, w.user_id, w.auto_process, m.index_dirty_at,
 			m.index_job_id, m.index_error, m.revision
 		FROM materials m JOIN workspaces w ON w.id=m.workspace_id
 		WHERE m.id=$1 AND m.kind='note' AND m.trashed_at IS NULL FOR UPDATE OF m`, materialID).
-		Scan(&workspaceID, &ownerID, &autoReindex, &dirtyAt, &runningJob, &indexError, &revision); err != nil {
+		Scan(&workspaceID, &ownerID, &autoProcess, &dirtyAt, &runningJob, &indexError, &revision); err != nil {
 		if isNoRows(err) {
 			return "", ErrNotFound
 		}
 		return "", err
 	}
-	if !autoReindex || dirtyAt == nil || runningJob != nil || indexError != nil {
+	if !autoProcess || dirtyAt == nil || runningJob != nil || indexError != nil {
 		return "", ErrConflict
 	}
 	reservation, err := s.beginIngestSpendTx(ctx, tx, ownerID, workspaceID)

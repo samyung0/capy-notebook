@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { m } from '@/i18n';
 import {
   buildGradePrompt,
   GRADE_SYSTEM,
@@ -59,7 +60,7 @@ describe('quiz judge', () => {
     });
     expect(parseGradeResponse('no json here')).toEqual({
       award: 0,
-      reason: 'The judge did not return a score.',
+      reason: m.quiz_judge_no_score(),
     });
   });
 

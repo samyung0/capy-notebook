@@ -198,6 +198,14 @@ export async function runJourney(
     await ui.click(local ? m.action_upload() : m.action_import());
   };
 
+  // A failed save marks the header and toasts; the editor keeps its edits.
+  const saveFailedStatus = () =>
+    ui.wait(
+      () =>
+        document.querySelector('[data-testid="editor-save-state"]')
+          ?.textContent === m.editor_status_unsaved(),
+      'failed save status'
+    );
   if (id === 'source-save-failed' || id === 'source-replaced') {
     await sourceOpen();
     await ui.wait(
@@ -209,11 +217,14 @@ export async function runJourney(
     );
     if (id === 'source-save-failed') failNextSourceSave(scenarioText);
     await textEdit();
-    if (id === 'source-replaced')
+    if (id === 'source-replaced') {
       announceSourceEpoch(scenarioText, advanceScenarioSource(scenarioText));
-    else await ui.click(m.action_save());
-    // Unsaved edits send a replaced session to recovery, so both show the error strip.
-    await ui.element('[role="alert"]');
+      // Unsaved edits send a replaced session to recovery: the error strip.
+      await ui.element('[role="alert"]');
+      return;
+    }
+    await ui.click(m.action_save());
+    await saveFailedStatus();
     return;
   }
   if (id === 'source-draft-recovery') {
@@ -385,8 +396,11 @@ export async function runJourney(
         new CustomEvent('capy-scenario-export-failure')
       );
       await ui.click(m.material_mode(), 'button');
-    } else await ui.click(m.action_save());
-    await ui.element('[role="alert"]');
+      await ui.element('[role="alert"]');
+      return;
+    }
+    await ui.click(m.action_save());
+    await saveFailedStatus();
     return;
   }
 

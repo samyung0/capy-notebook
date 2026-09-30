@@ -1,6 +1,18 @@
 import path from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 
+/** Makes f_1 the newest file, so it is on the first Files page and in the
+ * dashboard's bounded recent list. Edits the page's MSW database, so it only
+ * lasts until a reload. */
+async function makeCellStructureNewest(page: Page) {
+  await page.evaluate(async () => {
+    const path = '/src/mocks/db.ts';
+    const { files } = await import(path);
+    files.find((file: { id: string }) => file.id === 'f_1').addedAt =
+      new Date().toISOString();
+  });
+}
+
 async function editPdf(page: Page) {
   await page.getByRole('button', { name: 'Material mode' }).click();
   await expect(page).toHaveURL(/mode=edit/);
@@ -108,9 +120,7 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
         path: path.resolve('e2e/fixtures/files/basic/digital.pdf'),
       })
   );
-  await page.goto('/files');
-  await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
-  await expect(page).toHaveURL(/\/files\/f_1$/);
+  await page.goto('/files/f_1');
   await expect(page.getByText('Page 1 of 1', { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -245,6 +255,7 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   });
 
   // Reopen through client navigation: MSW keeps marks, while component history resets.
+  await makeCellStructureNewest(page);
   await page.getByRole('button', { exact: true, name: 'Files' }).click();
   await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(
@@ -400,17 +411,10 @@ test('Create, Files and recent links use saved modes without reloading the app',
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
+  await makeCellStructureNewest(page);
   await page.getByRole('link', { exact: true, name: 'Files' }).click();
   await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
-
-  // Put this fixture in the dashboard's bounded recent list.
-  await page.evaluate(async () => {
-    const path = '/src/mocks/db.ts';
-    const { files } = await import(path);
-    files.find((file: { id: string }) => file.id === 'f_1').addedAt =
-      new Date().toISOString();
-  });
   await page.getByRole('link', { exact: true, name: 'Dashboard' }).click();
   const recent = page
     .getByRole('heading', { name: 'Recent Files' })

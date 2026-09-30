@@ -29,8 +29,9 @@ type User struct {
 }
 
 type Workspace struct {
-	AutoReparse bool      `json:"autoReparse"`
-	AutoReindex bool      `json:"autoReindex"`
+	// AutoProcess lets automatic processing reparse and reindex edited files
+	// and notes; off, edits wait for the owner's Process.
+	AutoProcess bool      `json:"autoProcess"`
 	Description string    `json:"description"`
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
@@ -477,12 +478,25 @@ type PublicFlashcardSet struct {
 	Clones int    `json:"clones"`
 }
 
+// FileChange is one source file in the Indexing tab's file changes list.
+// waiting: saved edits not yet requested; queued: requested and not started,
+// so still cancellable; processing: started; failed: the last attempt failed
+// or was refused, and automatic processing skips it until the next save.
+type FileChange struct {
+	FileID       string    `json:"fileId"`
+	Name         string    `json:"name"`
+	Kind         FileKind  `json:"kind"`
+	State        string    `json:"state" enum:"waiting,queued,processing,failed"`
+	LastEditedAt time.Time `json:"lastEditedAt"`
+}
+
 type WorkspaceStats struct {
-	Indexed        int `json:"indexed"`
-	NotIndexed     int `json:"notIndexed"`
-	NotIndexable   int `json:"notIndexable"`
-	PendingReparse int `json:"pendingReparse"`
-	PendingReindex int `json:"pendingReindex"`
+	Indexed      int `json:"indexed"`
+	NotIndexed   int `json:"notIndexed"`
+	NotIndexable int `json:"notIndexable"`
+	// FileChanges lists source files with unprocessed saved edits, oldest
+	// edit first, including ones queued or processing.
+	FileChanges []FileChange `json:"fileChanges" nullable:"false"`
 	// PendingNotes counts workspace notes whose index is behind their content.
 	PendingNotes int `json:"pendingNotes"`
 	Chapters     int `json:"chapters"`

@@ -45,7 +45,7 @@ import {
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { deferStorageRefusal } from '@/lib/errors';
+import { deferStorageRefusal, errorCopy } from '@/lib/errors';
 import { useEditorRuntime } from './EditorRuntime';
 import {
   acceptsPurpose,
@@ -147,9 +147,7 @@ export const MediaPlaceholderElement = withHOC(
             setError(
               isStorageQuotaError(cause)
                 ? m.editor_storage_quota()
-                : cause instanceof Error
-                  ? cause.message
-                  : m.editor_upload_failed()
+                : errorCopy(cause, m.editor_upload_failed())
             );
           }
         } finally {
@@ -343,9 +341,7 @@ function ImageToolbar({
       userToast({
         description: isStorageQuotaError(cause)
           ? m.editor_storage_quota()
-          : cause instanceof Error
-            ? cause.message
-            : undefined,
+          : errorCopy(cause, m.source_try_again()),
         title: m.editor_upload_failed(),
         variant: 'error',
       });

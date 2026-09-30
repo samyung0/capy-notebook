@@ -29,8 +29,7 @@ export const GetDeletionPreflightResponse = zod.object({
 }).optional(),
   "workspacesNeedingTransfer": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -60,8 +59,7 @@ export const GetDeletionPreflightResponse = zod.object({
 })).nullable(),
   "workspacesToDestroy": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -907,8 +905,7 @@ export const exploreWorkspacesResponseTagsItemValueMax = 35;
 
 export const ExploreWorkspacesResponseItem = zod.object({
   "author": zod.string(),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -1331,6 +1328,16 @@ export const GetFileLinksResponse = zod.object({
 
 
 /**
+ * @summary Cancel queued processing of source changes
+ */
+export const CancelSourceChangesParams = zod.object({
+  "id": zod.string()
+})
+
+export const CancelSourceChangesResponse = zod.void()
+
+
+/**
  * @summary Process the latest saved source changes
  */
 export const ProcessSourceChangesParams = zod.object({
@@ -1369,6 +1376,11 @@ export const GetSourceSessionResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
@@ -3523,8 +3535,7 @@ export const listWorkspacesResponseTagsItemValueMax = 35;
 
 export const ListWorkspacesResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3587,8 +3598,7 @@ export const createWorkspaceResponseTagsItemValueMax = 35;
 
 export const CreateWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3641,8 +3651,7 @@ export const getWorkspaceResponseTagsItemValueMax = 35;
 
 export const GetWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3693,8 +3702,7 @@ export const updateWorkspaceBodyTagsMax = 5;
 
 
 export const UpdateWorkspaceBody = zod.object({
-  "autoReindex": zod.boolean().optional(),
-  "autoReparse": zod.boolean().optional(),
+  "autoProcess": zod.boolean().optional(),
   "description": zod.string().max(updateWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description; empty clears it'),
   "iconId": zod.string().min(1).regex(updateWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
@@ -3710,8 +3718,7 @@ export const updateWorkspaceResponseTagsItemValueMax = 35;
 
 export const UpdateWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3816,8 +3823,7 @@ export const CloneWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "workspace": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -4193,8 +4199,7 @@ export const updateWorkspaceSharingResponseTagsItemValueMax = 35;
 
 export const UpdateWorkspaceSharingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -4458,13 +4463,18 @@ export const GetWorkspaceStatsResponse = zod.object({
   "attempts": zod.int(),
   "avgScore": zod.int(),
   "chapters": zod.int(),
+  "fileChanges": zod.array(zod.object({
+  "fileId": zod.string(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "lastEditedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "state": zod.enum(['waiting', 'queued', 'processing', 'failed'])
+})),
   "files": zod.int(),
   "indexed": zod.int(),
   "notIndexable": zod.int(),
   "notIndexed": zod.int(),
   "pendingNotes": zod.int(),
-  "pendingReindex": zod.int(),
-  "pendingReparse": zod.int(),
   "quizzes": zod.int()
 })
 
@@ -4489,8 +4499,7 @@ export const transferWorkspaceResponseTagsItemValueMax = 35;
 
 export const TransferWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "autoReindex": zod.boolean(),
-  "autoReparse": zod.boolean(),
+  "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -4570,6 +4579,11 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
@@ -4592,6 +4606,7 @@ export const CheckpointSourceDocumentHeader = zod.object({
 
 
 
+
 export const checkpointSourceDocumentBodyExpectedCheckpointMin = 0;
 
 export const checkpointSourceDocumentBodyNetTokensMin = 0;
@@ -4602,6 +4617,7 @@ export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 export const CheckpointSourceDocumentBody = zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
+  "baseRevision": zod.int().min(1),
   "baseSourceSHA256": zod.string().optional(),
   "epoch": zod.int().min(1),
   "expectedCheckpoint": zod.int().min(checkpointSourceDocumentBodyExpectedCheckpointMin),
@@ -4683,6 +4699,7 @@ export const PublishSourceRefreshBody = zod.object({
   "checkpoint": zod.int(),
   "contentHash": zod.string(),
   "contentId": zod.string(),
+  "deferred": zod.boolean().optional(),
   "epoch": zod.int(),
   "expectedLatestCheckpoint": zod.int(),
   "jobId": zod.string(),
@@ -4706,6 +4723,11 @@ export const PublishSourceRefreshResponse = zod.object({
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string().optional(),
+  "publishedSourceURL": zod.string().optional(),
+  "publishedState": zod.string().optional(),
+  "publishedStateSeedSHA256": zod.string().optional(),
+  "rebuildPending": zod.boolean().optional(),
   "room": zod.string(),
   "sourceIdentity": zod.string(),
   "sourceURL": zod.string(),
@@ -4713,6 +4735,37 @@ export const PublishSourceRefreshResponse = zod.object({
   "stateSeedSHA256": zod.string().nullable(),
   "workspaceId": zod.string()
 })
+
+
+/**
+ * @summary Move editing onto the published file
+ */
+export const RebuildSourceParams = zod.object({
+  "id": zod.string()
+})
+
+export const RebuildSourceHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+export const rebuildSourceBodyExpectedCheckpointMin = 0;
+
+export const rebuildSourceBodyNetTokensMin = 0;
+
+
+
+export const RebuildSourceBody = zod.object({
+  "epoch": zod.int().min(1),
+  "expectedCheckpoint": zod.int().min(rebuildSourceBodyExpectedCheckpointMin),
+  "netTokens": zod.int().min(rebuildSourceBodyNetTokensMin),
+  "pendingEffects": zod.unknown(),
+  "publishedSourceSHA256": zod.string(),
+  "state": zod.string().optional(),
+  "stateSeedSHA256": zod.string().optional()
+})
+
+export const RebuildSourceResponse = zod.void()
 
 
 /**

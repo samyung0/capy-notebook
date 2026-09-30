@@ -12,6 +12,7 @@ import type {
   WireMessage,
 } from '@/api/types';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 import { track } from '@/lib/observability';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
@@ -361,7 +362,7 @@ export function useChatStream(workspaceId: string) {
           fail(m.chat_failed());
         }
       } catch (error) {
-        fail(error instanceof Error ? error.message : m.chat_failed());
+        fail(errorCopy(error, m.chat_failed()));
       } finally {
         if (ac.signal.aborted) {
           complete('aborted');

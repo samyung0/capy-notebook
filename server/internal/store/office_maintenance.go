@@ -91,8 +91,11 @@ func (s *Store) maintenanceLockTx(ctx context.Context, tx pgx.Tx, fileID string)
 type OfficePublication struct {
 	FileID     string
 	ExportOnly bool
-	JobID      string
-	Err        error
+	// Rebuilt: a trashed file's editing moved onto its deferred publication
+	// here, with no job (JobID empty).
+	Rebuilt bool
+	JobID   string
+	Err     error
 }
 
 // PublishAllOfficeSources requests a maintenance publication of every Office
@@ -109,6 +112,10 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 	}
 	if !paused {
 		return nil, ErrOfficeEditingNotPaused
+	}
+	out, err := s.rebuildTrashedOfficeSources(ctx)
+	if err != nil {
+		return nil, err
 	}
 	// ponytail: the failed-republish lookup scans failed jobs per file; index
 	// jobs by payload fileId if a window ever holds thousands of files.
@@ -142,10 +149,44 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
-	out := make([]OfficePublication, 0, len(files))
 	for _, d := range files {
 		result, err := s.requestSourceRefresh(ctx, d.owner, d.file, false, models.PaidBySystem, d.exportOnly)
 		out = append(out, OfficePublication{FileID: d.file, ExportOnly: d.exportOnly, JobID: result.JobID, Err: err})
+	}
+	return out, nil
+}
+
+// rebuildTrashedOfficeSources moves editing onto the deferred publication of
+// each trashed Office file with nothing saved since. The collaboration service
+// never rebuilds a trashed file, so readiness would wait on it until a restore
+// or the trash purge. Nobody can open or save a trashed file, so no room holds
+// edits to wait for, and with nothing saved after the publication the rebuild
+// is the published file itself: no state, no pending effects.
+func (s *Store) rebuildTrashedOfficeSources(ctx context.Context) ([]OfficePublication, error) {
+	rows, err := s.pool.Query(ctx, `SELECT d.file_id,d.epoch,d.checkpoint,f.source_sha256 FROM source_documents d JOIN files f ON f.id=d.file_id
+		WHERE d.format<>'text' AND d.rebuild_pending AND d.checkpoint=d.indexed_checkpoint AND d.pending_effects='[]'::jsonb
+		AND d.running_job_id IS NULL AND f.trashed_at IS NOT NULL AND f.source_sha256 IS NOT NULL ORDER BY d.file_id`)
+	if err != nil {
+		return nil, err
+	}
+	var due []SourceRebuild
+	var ids []string
+	for rows.Next() {
+		in := SourceRebuild{PendingEffects: json.RawMessage(`[]`)}
+		var id string
+		if err = rows.Scan(&id, &in.Epoch, &in.ExpectedCheckpoint, &in.PublishedSourceSHA256); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		due, ids = append(due, in), append(ids, id)
+	}
+	rows.Close()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]OfficePublication, 0, len(due))
+	for i, in := range due {
+		out = append(out, OfficePublication{FileID: ids[i], Rebuilt: true, Err: s.RebuildSource(ctx, ids[i], in)})
 	}
 	return out, nil
 }
@@ -155,6 +196,9 @@ func (s *Store) PublishAllOfficeSources(ctx context.Context) ([]OfficePublicatio
 type UnpublishedSource struct {
 	FileID, Format, RunningJobID, RefreshError string
 	Checkpoint, IndexedCheckpoint              int64
+	// Published, waiting for the collaboration service to rebuild editing
+	// onto the published file.
+	RebuildPending bool
 }
 
 // InFlightJob is publication or reprocess work on an Office file not yet
@@ -191,7 +235,7 @@ type OfficeSeed struct {
 // Office change, for the pin bump's seed check.
 func (s *Store) OfficeSeeds(ctx context.Context) ([]OfficeSeed, error) {
 	rows, err := s.pool.Query(ctx, `SELECT d.format,min(d.base_blob_path),d.base_source_sha256,x.seed,count(DISTINCT d.file_id)::int FROM source_documents d
-		CROSS JOIN LATERAL (SELECT d.state_seed_sha256 UNION SELECT c.state_seed_sha256 FROM source_refresh_candidates c WHERE c.file_id=d.file_id) x(seed)
+		CROSS JOIN LATERAL (SELECT d.state_seed_sha256 UNION SELECT d.published_state_seed_sha256 UNION SELECT c.state_seed_sha256 FROM source_refresh_candidates c WHERE c.file_id=d.file_id) x(seed)
 		WHERE x.seed IS NOT NULL GROUP BY d.format,d.base_source_sha256,x.seed ORDER BY d.format,d.base_source_sha256`)
 	if err != nil {
 		return nil, err
@@ -216,13 +260,16 @@ func (s *Store) OfficeReadiness(ctx context.Context) (OfficeReadiness, error) {
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM office_editing_pause)`).Scan(&out.Paused); err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT file_id,format,COALESCE(running_job_id,''),COALESCE(refresh_error,''),checkpoint,indexed_checkpoint FROM source_documents WHERE format<>'text' AND (checkpoint>indexed_checkpoint OR pending_effects<>'[]'::jsonb) ORDER BY file_id`)
+	// A pending rebuild counts: its state is still a change over the old
+	// base's seed. The collaboration service rebuilds it while rooms are
+	// closed for the pause.
+	rows, err := s.pool.Query(ctx, `SELECT file_id,format,COALESCE(running_job_id,''),COALESCE(refresh_error,''),checkpoint,indexed_checkpoint,rebuild_pending FROM source_documents WHERE format<>'text' AND (checkpoint>indexed_checkpoint OR pending_effects<>'[]'::jsonb OR rebuild_pending) ORDER BY file_id`)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var u UnpublishedSource
-		if err = rows.Scan(&u.FileID, &u.Format, &u.RunningJobID, &u.RefreshError, &u.Checkpoint, &u.IndexedCheckpoint); err != nil {
+		if err = rows.Scan(&u.FileID, &u.Format, &u.RunningJobID, &u.RefreshError, &u.Checkpoint, &u.IndexedCheckpoint, &u.RebuildPending); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -255,6 +302,11 @@ type exportPublication struct {
 	size, checkpoint, attemptID, netTokens  int64
 	state                                   []byte
 	effects                                 json.RawMessage
+	// deferred: editing stays on its base (SourceRefreshPublish.Deferred),
+	// keeping the captured state for the rebuild.
+	deferred     bool
+	captured     []byte
+	capturedSeed *string
 }
 
 // publishExportTx is a maintenance export-only publication (system payer,
@@ -286,8 +338,10 @@ func (s *Store) publishExportTx(ctx context.Context, tx pgx.Tx, fileID, sourcePa
 // charged as the first parse, stays the way in), it is marked for reprocessing
 // at platform cost. The job is done; nothing else finishes it.
 func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublication) error {
-	var oldSHA string
-	if err := tx.QueryRow(ctx, `SELECT base_source_sha256 FROM source_documents WHERE file_id=$1`, fileID).Scan(&oldSHA); err != nil {
+	// The bytes this replaces: the file's own, and (unless deferred, when the
+	// base stays) the old base.
+	var fileSHA, baseSHA string
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(f.source_sha256,''),d.base_source_sha256 FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&fileSHA, &baseSHA); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, fileID); err != nil {
@@ -302,14 +356,22 @@ func applyExportTx(ctx context.Context, tx pgx.Tx, fileID string, p exportPublic
 	if _, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=NULL,indexed=false,status='ready',revision=revision+1,caption_blob_path=NULL WHERE id=$1`, fileID, p.sourcePath, p.sha, p.size, p.etag); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
-		return err
+	if p.deferred {
+		if _, err := tx.Exec(ctx, `UPDATE source_documents d SET indexed_checkpoint=$2,base_revision=d.base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,published_state=$5,published_state_seed_sha256=$6,running_job_id=NULL,desired_checkpoint=CASE WHEN $3::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $3::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.effects, p.netTokens, p.captured, p.capturedSeed); err != nil {
+			return err
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,rebuild_pending=false,published_state=NULL,published_state_seed_sha256=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,reprocess_at=CASE WHEN f.ever_parsed_successfully THEN now() END,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, p.checkpoint, p.state, p.sourcePath, p.sha, p.effects, p.netTokens, p.stateSeed); err != nil {
+			return err
+		}
+		if err := invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
+			return err
+		}
 	}
-	if err := invalidateEditInversesTx(ctx, tx, agenttools.KindSourceFile, fileID, "source_rebased"); err != nil {
-		return err
-	}
-	if err := releaseArtifactCacheTx(ctx, tx, oldSHA, p.sha); err != nil {
-		return err
+	for _, old := range []string{fileSHA, baseSHA} {
+		if err := releaseArtifactCacheTx(ctx, tx, old, p.sha); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM source_refresh_candidates WHERE file_id=$1`, fileID); err != nil {
 		return err

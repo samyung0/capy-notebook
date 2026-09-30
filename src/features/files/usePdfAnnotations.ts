@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
-import { api } from '@/api/client';
+import { ApiError, api } from '@/api/client';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
 import { isStorageRefusal } from '@/lib/errors';
 
@@ -14,6 +14,10 @@ export type AnnotationChanges = {
   update?: PDFAnnotation[];
   remove?: string[];
 };
+/** Another tab or person changed the mark first: the stale-revision copy. */
+const staleMark = () =>
+  new ApiError(409, 'Conflict', undefined, { code: 'revision_conflict' });
+
 export function annotationBody(mark: PDFAnnotationBody): PDFAnnotationBody {
   return {
     color: mark.color,
@@ -65,7 +69,7 @@ export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
       const publish = () => cache.setQueryData(queryKey, [...current]);
       for (const id of changes.remove ?? []) {
         const before = current.find((mark) => mark.id === id);
-        if (!before) throw new Error('Annotation changed; reopen the PDF.');
+        if (!before) throw staleMark();
         await api.del(`/files/${fileId}/annotations/${id}`);
         inverse.create.push({ ...annotationBody(before), id: before.id });
         current = current.filter((mark) => mark.id !== id);
@@ -73,7 +77,7 @@ export function usePdfAnnotations(fileId: string, sourceIdentity: string) {
       }
       for (const mark of changes.update ?? []) {
         const before = current.find((row) => row.id === mark.id);
-        if (!before) throw new Error('Annotation changed; reopen the PDF.');
+        if (!before) throw staleMark();
         const updated = await api.patch<PDFAnnotation>(
           `/files/${fileId}/annotations/${mark.id}`,
           annotationBody(mark)

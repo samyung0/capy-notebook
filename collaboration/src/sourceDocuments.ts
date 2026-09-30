@@ -54,7 +54,7 @@ const OFFICE_REFRESH_STALE = '7 days';
 // publishes through the stale rule. A file refused because its owner is at
 // the concurrent ingest-job limit (429) is stamped by REFRESH_DEFER_SQL and
 // orders behind the other due files. Store-only Office files (never processed)
-// take the same trigger whatever auto-reparse says; Go publishes them
+// take the same trigger whatever auto-process says; Go publishes them
 // export-only. A `reprocess` row is a file an export-only publication left
 // unindexed, due once its owner is active and it is out of the trash (a file
 // never parsed successfully waits for its owner's Process); Go indexes it at
@@ -76,9 +76,9 @@ const REFRESH_CANDIDATES_SQL = `
       FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
         AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
-        AND ((d.format='text' AND (w.auto_reindex OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
+        AND ((d.format='text' AND (w.auto_process OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
           OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
-            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_reparse AND f.ever_parsed_successfully)
+            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_process AND f.ever_parsed_successfully)
               OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))
       ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8)
   ) picked ORDER BY due LIMIT 8`;
@@ -110,6 +110,17 @@ export interface SourceSession {
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: NetEffect[];
+  publishedSourceSHA256?: string;
+  publishedSourceURL?: string;
+  publishedState?: string;
+  publishedStateSeedSHA256?: string;
+  /**
+   * The file and its index were published while editing stayed on this base
+   * (Office only): pending effects are measured against publishedState, the
+   * published capture stored like `state` (absent: seed(base)), and the
+   * rebuild lands editing on the published bytes once the room is empty.
+   */
+  rebuildPending?: boolean;
   room: string;
   sourceURL: string;
   /** Null: seed(base) until the first save (SourceDocumentStore.seed). */
@@ -151,6 +162,14 @@ export interface RefreshCandidate {
   stateSeedSHA256: string | null;
   uploadHeaders: Record<string, string>;
   uploadURL: string;
+}
+/** A rebase onto new bytes: none (no save after the capture) leaves the
+ * state seed(new bytes), with no effects. */
+export interface SourceRebase {
+  netTokens: number;
+  pendingEffects: NetEffect[];
+  rebasedState?: string;
+  rebasedStateSeedSHA256?: string;
 }
 export class SourceRequestError extends Error {
   readonly status: number;
@@ -540,9 +559,24 @@ export class SourceDocumentStore {
   /**
    * The indexed baseline, derived from the base: the decoded text, or the
    * baseline of seed(base). XLSX keeps none; its effects come from its
-   * overrides.
+   * overrides. While a rebuild is pending it is the published capture's
+   * baseline on the same base, XLSX included.
    */
   private async indexedBaseline(session: SourceSession) {
+    if (session.rebuildPending && session.format !== 'text') {
+      const published = await this.stateOf({
+        ...session,
+        state: session.publishedState ?? null,
+        stateSeedSHA256: session.publishedStateSeedSHA256 ?? null,
+      });
+      const key = `published:${session.format}:${session.baseSourceSHA256}:${createHash('sha256').update(published).digest('hex')}`;
+      let baseline = this.baselines.get(key);
+      if (!baseline) {
+        baseline = await this.baseline(session, published);
+        this.baselines.set(key, baseline, JSON.stringify(baseline).length);
+      }
+      return baseline;
+    }
     const bytes = await this.base(session.sourceURL, session.baseSourceSHA256);
     if (session.format === 'text')
       return { format: 'text', text: decodeText(bytes), version: 1 } as const;
@@ -571,15 +605,21 @@ export class SourceDocumentStore {
   async request<T>(
     fileId: string,
     endpoint: string,
-    body?: unknown
+    body?: unknown,
+    timeoutMs?: number
   ): Promise<T> {
     return this.requestPath(
       `/internal/collaboration/files/${encodeURIComponent(fileId)}/${endpoint}`,
-      body
+      body,
+      timeoutMs
     );
   }
 
-  private async requestPath<T>(path: string, body?: unknown): Promise<T> {
+  private async requestPath<T>(
+    path: string,
+    body?: unknown,
+    timeoutMs = 60_000
+  ): Promise<T> {
     const endpoint = path.split('/').pop() ?? path;
     const response = await fetch(`${this.apiURL}${path}`, {
       headers: {
@@ -589,7 +629,7 @@ export class SourceDocumentStore {
       },
       method: body === undefined ? 'GET' : 'POST',
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     if (!response.ok) {
       const body = (await response.json().catch(() => null)) as {
@@ -778,7 +818,7 @@ export class SourceDocumentStore {
     from?: SourceBaseline
   ) {
     let effects: NetEffect[];
-    if (session.format === 'xlsx') {
+    if (session.format === 'xlsx' && !session.rebuildPending && !from) {
       const bytes = await this.base(
         session.sourceURL,
         session.baseSourceSHA256
@@ -831,7 +871,7 @@ export class SourceDocumentStore {
       epoch: number;
       checkpoint: number;
     }
-  ) {
+  ): Promise<SourceRebase> {
     if (session.format === 'text')
       throw new Error('Office rebase requires an Office source');
     const result = await this.pool.query<{
@@ -855,14 +895,63 @@ export class SourceDocumentStore {
     // the baseline is derived from the export.
     if (session.checkpoint === input.checkpoint)
       return { netTokens: 0, pendingEffects: [] };
-    if (!session.state) throw new Error('Source state is missing after a save');
     const link = await this.request<{ sourceURL: string }>(
       session.fileId,
       `refresh-source?jobId=${encodeURIComponent(input.jobId)}&leaseToken=${encodeURIComponent(input.leaseToken)}`
     );
-    const [oldSource, exported] = await Promise.all([
+    return this.rebaseOnto(
+      session,
+      {
+        state: candidate.state?.toString('base64') ?? null,
+        stateSeedSHA256: candidate.state_seed_sha256,
+      },
+      { sha256: candidate.source_sha256, url: link.sourceURL }
+    );
+  }
+
+  /**
+   * The rebuild after a deferred publication: the edits saved after the
+   * published capture, landed on seed(published) (rebaseOnto). Nothing saved
+   * since: the state is seed(published), with no effects.
+   */
+  async rebuildPublication(session: SourceSession): Promise<SourceRebase> {
+    if (
+      !session.rebuildPending ||
+      !session.publishedSourceURL ||
+      !session.publishedSourceSHA256
+    )
+      throw new Error('Source has no pending rebuild');
+    if (session.checkpoint === session.indexedCheckpoint)
+      return { netTokens: 0, pendingEffects: [] };
+    return this.rebaseOnto(
+      session,
+      {
+        state: session.publishedState ?? null,
+        stateSeedSHA256: session.publishedStateSeedSHA256 ?? null,
+      },
+      {
+        sha256: session.publishedSourceSHA256,
+        url: session.publishedSourceURL,
+      }
+    );
+  }
+
+  /**
+   * The edits saved after `captured` (both on the session's base) landed on
+   * seed(exported), stored as their change over that seed with its SHA-256,
+   * and their effects against the export.
+   */
+  private async rebaseOnto(
+    session: SourceSession,
+    captured: { state: string | null; stateSeedSHA256: string | null },
+    exported: { url: string; sha256: string }
+  ): Promise<SourceRebase> {
+    if (session.format === 'text')
+      throw new Error('Office rebase requires an Office source');
+    if (!session.state) throw new Error('Source state is missing after a save');
+    const [oldSource, exportedSource] = await Promise.all([
       this.base(session.sourceURL, session.baseSourceSHA256),
-      this.base(link.sourceURL, candidate.source_sha256),
+      this.base(exported.url, exported.sha256),
     ]);
     const checkpoint = {
       baseSha256: session.baseSourceSHA256,
@@ -874,14 +963,10 @@ export class SourceDocumentStore {
       oldSource,
       {
         ...checkpoint,
-        state: await this.stateOf({
-          ...session,
-          state: candidate.state?.toString('base64') ?? null,
-          stateSeedSHA256: candidate.state_seed_sha256,
-        }),
+        state: await this.stateOf({ ...session, ...captured }),
       },
       { ...checkpoint, state: await this.stateOf(session) },
-      exported
+      exportedSource
     ).catch((error: unknown) => {
       // The engine refused the rebase, as it would every retry of this parse,
       // so the refresh job ends (a 4xx the ingest worker treats as terminal).
@@ -901,9 +986,9 @@ export class SourceDocumentStore {
     // The rebase lands on seed(export): stored as its change over that seed,
     // and the baseline derives from the export.
     const { seed, seedSHA256, seedVector } = await this.seed({
-      baseSourceSHA256: candidate.source_sha256,
+      baseSourceSHA256: exported.sha256,
       format: session.format,
-      sourceURL: link.sourceURL,
+      sourceURL: exported.url,
     });
     return {
       netTokens: effectTokens(pendingEffects),
@@ -954,7 +1039,10 @@ export class SourceDocumentStore {
           return { checkpoint: session.checkpoint, contributors };
         const state = Y.encodeStateAsUpdate(merged);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
-          throw new Error('Source checkpoint exceeds byte limit');
+          throw new SourceRequestError(
+            413,
+            'Source checkpoint exceeds byte limit'
+          );
         const effects = await this.effects(session, state);
         const stored = await this.storedState(session, state);
         try {
@@ -965,6 +1053,7 @@ export class SourceDocumentStore {
               ...(await this.seedReport(session)),
               ...stored,
               actorIds: actors,
+              baseRevision: session.baseRevision,
               epoch,
               expectedCheckpoint: session.checkpoint,
               netTokens: effectTokens(effects),
@@ -1120,7 +1209,10 @@ export class SourceDocumentStore {
         }
         const { state, update } = durableCommit(document, live);
         if (state.byteLength > MAX_SOURCE_STATE_BYTES)
-          throw new Error('Source checkpoint exceeds byte limit');
+          throw new SourceRequestError(
+            413,
+            'Source checkpoint exceeds byte limit'
+          );
         const effects = await this.effects(current, state);
         const stored = await this.storedState(current, state);
         try {
@@ -1131,6 +1223,7 @@ export class SourceDocumentStore {
               ...(await this.seedReport(current)),
               ...stored,
               actorIds: [input.actorUserId],
+              baseRevision: current.baseRevision,
               epoch: current.epoch,
               expectedCheckpoint: current.checkpoint,
               netTokens: effectTokens(effects),
@@ -1379,6 +1472,16 @@ export class SourceDocumentStore {
     }
   }
 
+  /** Files published while editing stayed on the old base, with no refresh
+   * in flight, oldest first, except `skip`. */
+  async pendingRebuilds(skip: string[] = []) {
+    const { rows } = await this.pool.query<{ file_id: string }>(
+      'SELECT d.file_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.rebuild_pending AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND NOT d.file_id=ANY($1::text[]) ORDER BY d.updated_at LIMIT 32',
+      [skip]
+    );
+    return rows.map((row) => row.file_id);
+  }
+
   /** Dirty workspace notes that sat idle become one ingest job each. Go admits
    * or refuses (409) each request; a real failure is parked on the note until
    * its content changes again. */
@@ -1386,7 +1489,7 @@ export class SourceDocumentStore {
     const eligible = await this.pool.query<{ id: string }>(`
       SELECT m.id FROM materials m JOIN workspaces w ON w.id=m.workspace_id
       WHERE m.kind='note' AND m.trashed_at IS NULL AND m.index_dirty_at IS NOT NULL
-        AND m.index_job_id IS NULL AND m.index_error IS NULL AND w.auto_reindex
+        AND m.index_job_id IS NULL AND m.index_error IS NULL AND w.auto_process
         AND m.updated_at < now()-interval '15 seconds'
       ORDER BY m.updated_at LIMIT 8`);
     for (const row of eligible.rows) {

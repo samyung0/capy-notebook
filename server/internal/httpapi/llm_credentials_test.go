@@ -13,6 +13,17 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
+func TestPendingSourcesTooLargeKeepsFileIDs(t *testing.T) {
+	mapped := pipelineGenerateError(&pipeline.Error{Path: "/generate", Status: http.StatusBadRequest, Body: []byte(`{"code":"pending_sources_too_large","fileIds":["f_1","f_2"]}`)})
+	var model *huma.ErrorModel
+	if !errors.As(hErr(mapped), &model) || model.Status != http.StatusBadRequest || len(model.Errors) != 1 || model.Errors[0].Message != "pending_sources_too_large" {
+		t.Fatalf("generation lost pending sources error: %#v", model)
+	}
+	if ids := model.Errors[0].Value.(map[string]any)["fileIds"]; fmt.Sprint(ids) != "[f_1 f_2]" {
+		t.Fatalf("file ids = %v", ids)
+	}
+}
+
 func TestSourceContextErrorsRelay(t *testing.T) {
 	for _, tc := range []struct {
 		code   string

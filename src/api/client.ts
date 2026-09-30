@@ -97,24 +97,6 @@ const ACCOUNT_FORBIDDEN_CODES = new Set([
   'account_locked',
 ]);
 
-const CODED_ERROR_MESSAGES = new Set([
-  'storage_quota_exceeded',
-  'files_limit_exceeded',
-  'files_batch_exceeded',
-  'workspace_limit_exceeded',
-  'llm_credits_exhausted',
-  'model_unavailable',
-  'provider_busy',
-  'invalid_llm_key',
-  'llm_key_failed',
-  'material_content_unreadable',
-  'stale_target',
-  'unavailable_target',
-  'undo_unavailable',
-  'office_editing_paused',
-  ...ACCOUNT_FORBIDDEN_CODES,
-]);
-
 /** Auth middleware / write gates refuse the session or mutation. */
 export function isAccountForbiddenError(err: unknown): err is ApiError {
   return (
@@ -135,16 +117,18 @@ export function isAccountBlockingError(err: unknown): err is ApiError {
   );
 }
 
-function parseErrorBody(value: unknown): ApiErrorBody | null {
+const ERROR_CODE = /^[a-z][a-z0-9_]*$/;
+
+export function parseErrorBody(value: unknown): ApiErrorBody | null {
   if (typeof value !== 'object' || value === null) return null;
   const body = value as ApiErrorBody & {
     errors?: Array<{ message?: string; value?: unknown }>;
   };
-  // Huma packs machine codes in errors[].message (quota + account locks).
+  // Huma packs machine codes in errors[].message; validation messages are
+  // prose, so only a snake_case message is a code.
   const coded = body.errors?.find(
     (error) =>
-      typeof error.message === 'string' &&
-      CODED_ERROR_MESSAGES.has(error.message)
+      typeof error.message === 'string' && ERROR_CODE.test(error.message)
   );
   if (!coded?.message) return body;
   const details =

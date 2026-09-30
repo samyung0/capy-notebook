@@ -16,6 +16,7 @@ import {
   ToolbarPopoverRow,
 } from '@/features/notes/toolbar/ToolbarPopover';
 import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
 
 export function ExportMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
@@ -40,8 +41,7 @@ export function ExportMenu({ editor }: { editor: AnyEditor }) {
     } catch (cause) {
       if (!task.signal.aborted)
         userToast({
-          description:
-            cause instanceof Error ? cause.message : m.editor_export_failed(),
+          description: errorCopy(cause, m.source_try_again()),
           title: m.editor_export_failed(),
           variant: 'error',
         });

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
-import { isMaterialContentUnreadable, qk } from '@/api/client';
+import { isApiError, isMaterialContentUnreadable, qk } from '@/api/client';
 import {
   useMaterial,
   useMaterialCollaborationToken,
@@ -14,11 +14,16 @@ import { FileError, FileLoading } from '@/features/files/FileStates';
 import { MaterialRenderProvider } from '@/features/materials/MaterialRenderContext';
 import { m } from '@/i18n';
 import {
+  type MaterialLimitCode,
+  materialLimitMessage,
+} from './collaborationEvents';
+import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,
 } from './EditorRuntime';
 import type { NoteEditorStatus } from './editorMode';
 import { NoteEditorCore } from './NoteEditorCore';
+import { useSaveFailureToast } from './saveFailure';
 
 /** Shared so a pending discussions query does not hand the editor a new array
  * identity on every render. */
@@ -116,19 +121,47 @@ function CollaborativeNoteEditor({
   // Remounting is the only way back onto the authoritative state: invalidating
   // the token alone can return the same room and leave this editor mounted.
   const [editorGeneration, setEditorGeneration] = useState(0);
+  const saveFailed = useSaveFailureToast(
+    material.workspaceId,
+    material.isOwner
+  );
+  const onSaveFailed = useCallback(() => saveFailed('retrying'), [saveFailed]);
   const onDocumentRejected = useCallback(
-    (message: string) => {
-      userToast({
-        description: m.editor_too_large_body({ message }),
-        title: m.editor_too_large_title(),
-        variant: 'error',
-      });
+    (
+      code: MaterialLimitCode | 'invalid_document' | 'revoked',
+      lostEdits: boolean
+    ) => {
+      if (code !== 'invalid_document' && code !== 'revoked')
+        userToast({
+          description: m.editor_too_large_body({
+            message: materialLimitMessage(code),
+          }),
+          title: m.editor_too_large_title(),
+          variant: 'error',
+        });
+      else if (lostEdits) saveFailed('undone');
       setEditorGeneration((generation) => generation + 1);
       void qc.invalidateQueries({
         queryKey: ['material', material.id, 'collaboration-token'],
       });
     },
-    [qc, material.id]
+    [qc, material.id, saveFailed]
+  );
+  // Trashed, deleted, or access lost while open: the room refused to let the
+  // editor back in.
+  const [unavailable, setUnavailable] = useState<
+    'notFound' | 'forbidden' | null
+  >(null);
+  const onUnavailable = useCallback(
+    (kind: 'notFound' | 'forbidden') => {
+      setUnavailable(kind);
+      void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+      if (material.workspaceId)
+        void qc.invalidateQueries({
+          queryKey: qk.materials(material.workspaceId),
+        });
+    },
+    [qc, material.id, material.workspaceId]
   );
   const reportReadOnly = useCallback(() => {
     // Capabilities and the storage status follow from the refreshed reads.
@@ -146,8 +179,9 @@ function CollaborativeNoteEditor({
     useMaterialDiscussions(material.id, { errorBoundary: false });
   const {
     data: collaborationTokenData,
-    isError: collaborationTokenIsError,
+    error: collaborationTokenError,
     isPending: collaborationTokenIsPending,
+    refetch: refetchCollaborationToken,
   } = useMaterialCollaborationToken(material.id, true, {
     errorBoundary: false,
   });
@@ -183,6 +217,22 @@ function CollaborativeNoteEditor({
     [material.kind, material.title, material.workspaceId]
   );
 
+  if (unavailable === 'notFound')
+    return (
+      <FileError
+        message={m.editor_note_deleted()}
+        title={m.editor_note_not_found()}
+      />
+    );
+  if (unavailable === 'forbidden')
+    return (
+      <FileError
+        icon="securityWarning"
+        message={m.editor_access_lost_body()}
+        title={m.editor_access_lost()}
+      />
+    );
+
   if (meIsPending || discussionsIsPending || collaborationTokenIsPending) {
     return <FileLoading />;
   }
@@ -191,8 +241,30 @@ function CollaborativeNoteEditor({
     return <FileError icon="error" message={m.editor_user_info_failed()} />;
   }
 
-  if (!collaborationTokenData || collaborationTokenIsError) {
-    return <FileError icon="error" message={m.editor_collab_unavailable()} />;
+  // Only a first request can fail here: once the editor holds a room, a new
+  // token rides the open connection instead.
+  if (!collaborationTokenData) {
+    const status = isApiError(collaborationTokenError)
+      ? collaborationTokenError.status
+      : 0;
+    return status === 404 ? (
+      <FileError
+        message={m.editor_note_deleted()}
+        title={m.editor_note_not_found()}
+      />
+    ) : status === 403 ? (
+      <FileError
+        icon="securityWarning"
+        message={m.editor_access_lost_body()}
+        title={m.editor_access_lost()}
+      />
+    ) : (
+      <FileError
+        icon="error"
+        message={m.editor_collab_unavailable()}
+        onRetry={() => void refetchCollaborationToken()}
+      />
+    );
   }
 
   return (
@@ -210,6 +282,8 @@ function CollaborativeNoteEditor({
             onDocumentRejected={onDocumentRejected}
             onEditorStatusChange={onEditorStatusChange}
             onReadOnly={reportReadOnly}
+            onSaveFailed={onSaveFailed}
+            onUnavailable={onUnavailable}
           />
         </div>
       </EditorRuntimeProvider>

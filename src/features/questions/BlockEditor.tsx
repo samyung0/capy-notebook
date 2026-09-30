@@ -8,6 +8,7 @@ import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { errorCopy } from '@/lib/errors';
 import { Field, SelectField } from './editorFields';
 import { GraphEditor } from './GraphEditor';
 import { QuestionBlockView } from './QuestionView';
@@ -370,11 +371,7 @@ export function BlockEditor({
                   width: image.naturalWidth,
                 });
               } catch (error) {
-                setError(
-                  error instanceof Error
-                    ? error.message
-                    : m.question_ui_upload_failed()
-                );
+                setError(errorCopy(error, m.question_ui_upload_failed()));
               } finally {
                 URL.revokeObjectURL(local);
                 setUploading(false);

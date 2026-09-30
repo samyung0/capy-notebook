@@ -10,6 +10,7 @@ import type {
   CalendarEvent,
   Chapter,
   Conversation,
+  FileChange,
   Flashcard,
   FlashcardSet,
   Label,
@@ -184,8 +185,7 @@ export const userThinking: Record<string, Record<string, string>> = {};
 
 export const workspaces: Workspace[] = [
   {
-    autoReindex: true,
-    autoReparse: true,
+    autoProcess: true,
     canClone: true,
     capabilities: {
       canEdit: true,
@@ -212,8 +212,7 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_1', 'tag_2'),
   },
   {
-    autoReindex: true,
-    autoReparse: true,
+    autoProcess: true,
     canClone: true,
     capabilities: {
       canEdit: true,
@@ -239,8 +238,7 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_3', 'tag_4'),
   },
   {
-    autoReindex: true,
-    autoReparse: true,
+    autoProcess: true,
     canClone: true,
     capabilities: {
       canEdit: true,
@@ -267,8 +265,7 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_5', 'tag_6', 'tag_war'),
   },
   {
-    autoReindex: true,
-    autoReparse: true,
+    autoProcess: true,
     canClone: true,
     capabilities: {
       canEdit: true,
@@ -294,8 +291,7 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_7'),
   },
   {
-    autoReindex: true,
-    autoReparse: true,
+    autoProcess: true,
     canClone: true,
     capabilities: {
       canEdit: true,
@@ -1787,6 +1783,47 @@ export function makeMaterial(draft: MaterialDraft): Material {
 }
 
 export const materials: Material[] = [];
+
+/** Unprocessed source edits by file, for the Indexing tab. `ticks` counts the
+ * stats reads since the state was entered, so the handler advances queued
+ * work as the tab polls. */
+export const fileChanges = new Map<
+  string,
+  { lastEditedAt: string; ticks: number; state: FileChange['state'] }
+>([
+  [
+    'bio-office-docx',
+    {
+      lastEditedAt: '2026-01-12T09:30:00Z',
+      state: 'processing',
+      ticks: 0,
+    },
+  ],
+  [
+    'bio-office-pptx',
+    {
+      lastEditedAt: '2026-01-12T10:05:00Z',
+      state: 'queued',
+      ticks: 0,
+    },
+  ],
+  [
+    'bio-office-xlsx',
+    {
+      lastEditedAt: '2026-01-11T16:20:00Z',
+      state: 'failed',
+      ticks: 0,
+    },
+  ],
+  [
+    'f_2',
+    {
+      lastEditedAt: '2026-01-12T11:00:00Z',
+      state: 'waiting',
+      ticks: 0,
+    },
+  ],
+]);
 
 const seedMaterials: MaterialDraft[] = [
   {

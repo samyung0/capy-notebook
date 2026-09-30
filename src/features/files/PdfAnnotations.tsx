@@ -9,6 +9,7 @@ import { createPortal } from 'react-dom';
 import type { PDFAnnotation, PDFAnnotationBody } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
 import { m } from '@/i18n';
+import { useReportEditorStatus } from './fileModeContext';
 import { PdfAnnotationToolbar, type PdfTool } from './PdfAnnotationToolbar';
 import {
   clientRectToPage,
@@ -93,6 +94,22 @@ export function PdfAnnotations({
     onPendingChange?.(isSaving || dragging);
     return () => onPendingChange?.(false);
   }, [isSaving, dragging, onPendingChange]);
+  // Marks save on each change: the header shows it like a note's save state.
+  const [wrote, setWrote] = useState(false);
+  useEffect(() => {
+    if (isSaving) setWrote(true);
+  }, [isSaving]);
+  useReportEditorStatus(
+    editing
+      ? isSaving
+        ? 'syncing'
+        : writeError
+          ? 'error'
+          : wrote
+            ? 'saved'
+            : 'synced'
+      : null
+  );
 
   function applyHighlight(selection: PdfSelection[], toggle: boolean) {
     const state = stateRef.current;

@@ -70,6 +70,8 @@ func main() {
 			mode := "republish"
 			if p.ExportOnly {
 				mode = "export-only"
+			} else if p.Rebuilt {
+				mode = "rebuild"
 			}
 			if p.Err != nil {
 				failed++
@@ -90,7 +92,11 @@ func main() {
 			fmt.Println("Office editing NOT paused: run office-maintenance pause first")
 		}
 		for _, u := range ready.Unpublished {
-			fmt.Printf("unpublished\t%s\t%s\tcheckpoint %d, indexed %d\tjob %s\t%s\n", u.FileID, u.Format, u.Checkpoint, u.IndexedCheckpoint, u.RunningJobID, u.RefreshError)
+			rebuild := ""
+			if u.RebuildPending {
+				rebuild = "\trebuild pending"
+			}
+			fmt.Printf("unpublished\t%s\t%s\tcheckpoint %d, indexed %d\tjob %s\t%s%s\n", u.FileID, u.Format, u.Checkpoint, u.IndexedCheckpoint, u.RunningJobID, u.RefreshError, rebuild)
 		}
 		for _, j := range ready.InFlight {
 			fmt.Printf("in flight\t%s\t%s\t%s\tfile %s\n", j.ID, j.Type, j.Status, j.FileID)

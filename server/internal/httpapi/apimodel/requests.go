@@ -28,8 +28,7 @@ type CreateWorkspaceReq struct {
 
 // UpdateWorkspaceReq updates general workspace settings only.
 type UpdateWorkspaceReq struct {
-	AutoReparse *bool                 `json:"autoReparse,omitempty"`
-	AutoReindex *bool                 `json:"autoReindex,omitempty"`
+	AutoProcess *bool                 `json:"autoProcess,omitempty"`
 	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description; empty clears it"`
 	Name        *WorkspaceName        `json:"name,omitempty" minLength:"1"`
 	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`

@@ -91,9 +91,10 @@ _PARSE_ROUTES = {
 
 
 def _publish_progress(workspace_id: str, file_id: str, *args, **kwargs) -> None:
+    # Reprocessing an edited source is invisible: no progress or failure, only
+    # the terminal ready event that refreshes the browser's file caches.
     if db.source_refresh_for(file_id) is not None and kwargs.get("status") != "ready":
-        kwargs.pop("status", None)
-        kwargs.pop("indexed", None)
+        return
     progress.publish(workspace_id, file_id, *args, **kwargs)
 
 

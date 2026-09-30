@@ -80,12 +80,13 @@ test('header distinguishes initial sync, pending edits and durable saves', async
   await page.evaluate(() => {
     (window as unknown as { disconnectEditor: () => void }).disconnectEditor();
   });
-  await expect(status).toHaveText('Offline');
+  // The browser is online, so a dropped room reads as reconnecting.
+  await expect(status).toHaveText('Reconnecting…');
   await releaseCheckpoint();
-  await expect(status).toHaveText('Offline');
+  await expect(status).toHaveText('Reconnecting…');
   await page.keyboard.insertText(' offline edit');
   await page.clock.runFor(1000);
-  await expect(status).toHaveText('Offline');
+  await expect(status).toHaveText('Reconnecting…');
   await page.evaluate(() => {
     (window as unknown as { connectEditor: () => void }).connectEditor();
   });

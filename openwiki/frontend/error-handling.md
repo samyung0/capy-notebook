@@ -63,6 +63,20 @@ normal must use:
 meta: { errorToast: false }
 ```
 
+Copy comes from paraglide only, chosen by error code: the browser keeps any
+snake_case code Huma sends in `errors[].message` (`parseErrorBody`), and
+`describeError` maps known codes before falling back to the status class.
+`errorCopy(error, fallback)` never returns an error's own text; `CopyError`
+carries already-localized copy. A 409 always names its conflict:
+`revision_conflict` (a stale revision: someone else changed it first, with
+Reload) is distinct from `account_deletion_busy`, `subscription_exists`,
+`subscription_active`, `account_state_changed`, `clone_source_changed`,
+`title_taken`, `transfer_self` and `nothing_to_process`. The Go store's
+specific conflicts wrap `ErrConflict`, so internal callers still see a
+conflict. Zod's own messages follow the UI locale (`z.config` in
+`src/i18n/index.ts`), and question validation throws or reports paraglide
+copy.
+
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
 and `too_many_streams`. The add-source dialog toasts it and keeps the unsent
 tail. Do not map it onto credits or the file-cap copy.
@@ -328,9 +342,22 @@ Playwright tests should use `expectErrorSurface(page, variant, text?)` from
 
 ## Collaborative source failures
 
-Source editors expose connecting, saving, saved, offline, error and recovery
-states. Saved requires an explicit durable checkpoint receipt. Recoverable
-failures retain the mounted editor and actor-specific local draft. An epoch
+Source editors expose connecting, reconnecting, saving, saved, offline,
+unsaved, error and recovery states, shown in the header like the note editor's
+(see [plate-editor.md](plate-editor.md#connection-lifetime-and-refusals)).
+Saved requires an explicit durable checkpoint receipt. A failed save the
+server retries keeps the mounted editor and its pending receipts, shows Not
+saved and raises the failed-save toast; the retry's receipt brings Saved back.
+An Office engine timeout or lost worker is retried like a gateway 5xx, up to
+three in a row (`ENGINE_ATTEMPTS`, `collaboration/src/storeFailure.ts`). A save
+refused for good (an engine refusal or trap, the third engine timeout in a
+row, a 401/403/404/409/413/422 from the gateway, the byte limit) discards the room and resets the editor to the last
+saved version with the "couldn't be saved and were undone" toast, clearing its
+drafts; a storage or frozen refusal at save drops every writer to view under
+the read-only strip. A trashed or deleted file, or lost access, replaces the
+editor with the file-missing or no-access panel. Draft storage failures
+(private mode, a full disk, a missing draft base) never block editing. Error
+strips carry localized copy only. An epoch
 change reloads a fully acknowledged editor; unacknowledged edits instead enter
 recovery with draft download and explicit discard of the displayed draft group.
 Discard checks versions, preserves newer writes from another tab and advances
@@ -341,8 +368,16 @@ and credits are required for processing rather than persistence.
 Chat `pending_sources` events show when edited source evidence is awaiting
 processing. If exact pending evidence exceeds the request budget, the message
 warns that source information may be outdated and offers Process file changes.
-Generation returns `context_too_large` with the same action instead of silently
-using incomplete pending evidence.
+Generation returns `pending_sources_too_large` with the edited file ids instead
+of silently using incomplete pending evidence, and offers the same action for
+exactly those files; a plain `context_too_large` is an ordinary failure. The action toasts that processing started,
+or that it could not start with the reason (`useProcessFileChanges`).
+Processing shows no progress anywhere else; the workspace settings Indexing
+tab lists every file with unprocessed edits as waiting, queued, processing
+(a spinner) or failed (an alert icon), polling the stats every 3 s while any
+is queued or processing. The owner processes a waiting or failed file, or all
+of them, and cancels a queued one; a file whose processing started refuses
+with `processing_started`. Editors see the list without actions.
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.

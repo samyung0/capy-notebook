@@ -28,6 +28,27 @@ def test_audio_job_timeout_preserves_pre_provider_ingest_budget(monkeypatch):
     assert worker._job_timeout({"type": "ingest", "payload": {}}, 900) == 900
 
 
+def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
+    events: list[str] = []
+    monkeypatch.setattr(
+        worker.progress,
+        "publish",
+        lambda *_args, status="processing", **_kwargs: events.append(status),
+    )
+    job = {"id": "job_1", "payload": {"fileId": "f_1", "sourceRefresh": True}}
+    token = worker.db.bind_source_refresh(job)
+    try:
+        worker._publish_progress("ws_1", "f_1", "parsing", 15, status="processing")
+        worker._publish_progress("ws_1", "f_1", "indexing", 55)
+        worker._publish_progress("ws_1", "f_1", "failed", 100, status="failed")
+        worker._publish_progress("ws_1", "f_1", "done", 100, status="ready")
+    finally:
+        worker.db.reset_source_refresh(token)
+    worker._publish_progress("ws_1", "f_1", "parsing", 15, status="processing")
+
+    assert events == ["ready", "processing"]
+
+
 def test_heartbeat_cancels_work_when_the_exact_claim_is_gone(monkeypatch):
     cancelled: list[str] = []
     heartbeats: list[tuple[str, int, int]] = []

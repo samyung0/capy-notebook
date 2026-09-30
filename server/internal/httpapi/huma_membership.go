@@ -55,9 +55,6 @@ func collaborationError(err error) error {
 	if errors.Is(err, store.ErrForbidden) {
 		return huma.Error403Forbidden("insufficient workspace role")
 	}
-	if errors.Is(err, store.ErrConflict) {
-		return huma.Error409Conflict("material revision is stale")
-	}
 	if errors.Is(err, materialdoc.ErrInvalid) {
 		return huma.Error400BadRequest(err.Error())
 	}
@@ -172,7 +169,7 @@ func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput)
 	}
 	ws, err := a.s.TransferWorkspace(ctx, userID(ctx), in.ID, in.Body.RecipientID)
 	if errors.Is(err, store.ErrTransferSelf) {
-		return nil, huma.Error409Conflict(err.Error())
+		return nil, conflictError("transfer_self", err.Error())
 	}
 	if err != nil {
 		return nil, collaborationError(err)

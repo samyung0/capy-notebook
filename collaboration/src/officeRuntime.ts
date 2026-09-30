@@ -116,8 +116,15 @@ interface Runtime {
   ): Promise<NetEffect[]>;
 }
 
-/** A call the Office engine refused, trapped on or did not finish in time. */
-export class OfficeEngineError extends Error {}
+/** A call the Office engine refused, trapped on or did not finish in time.
+ * `transient`: it timed out or lost its worker, so the same call may pass. */
+export class OfficeEngineError extends Error {
+  readonly transient: boolean;
+  constructor(message: string, transient = false) {
+    super(message);
+    this.transient = transient;
+  }
+}
 
 export const CALL_TIMEOUT_MS = 120_000;
 // A trap leaves wasm-bindgen objects poisoned, and the engine's dispose() or
@@ -197,7 +204,7 @@ function startWorker() {
   const died = (error: Error) => {
     if (worker !== created) return;
     worker = undefined;
-    finish()?.reject(new OfficeEngineError(error.message));
+    finish()?.reject(new OfficeEngineError(error.message, true));
     next();
   };
   created.on('error', died);
@@ -233,7 +240,7 @@ function next() {
   call.timer = setTimeout(() => {
     if (active !== call) return;
     finish();
-    call.reject(new OfficeEngineError(`Office ${call.method} timed out`));
+    call.reject(new OfficeEngineError(`Office ${call.method} timed out`, true));
     restart();
     next();
   }, CALL_TIMEOUT_MS);

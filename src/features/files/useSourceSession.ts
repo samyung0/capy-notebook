@@ -5,7 +5,15 @@ import { api, isApiError, qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { COLLABORATION_READ_ONLY_REASON } from '@/features/notes/collaborationEvents';
+import type { NoteEditorSaveState } from '@/features/notes/editorMode';
+import {
+  roomReconnector,
+  roomRefusal,
+  socketOpen,
+} from '@/features/notes/roomConnection';
+import { useSaveFailureToast } from '@/features/notes/saveFailure';
 import { m } from '@/i18n';
+import { CopyError, errorCopy } from '@/lib/errors';
 import {
   clearSourceDrafts,
   readSourceBase,
@@ -23,9 +31,12 @@ import {
 
 export type SourceSaveState =
   | 'connecting'
+  | 'reconnecting'
   | 'saving'
   | 'saved'
   | 'offline'
+  /** A save failed and the server is retrying; edits stay in the editor. */
+  | 'unsaved'
   | 'error'
   | 'recovery';
 export const SOURCE_IFRAME_ORIGIN = Symbol('source-iframe');
@@ -74,6 +85,47 @@ export function sourceChangesCovered(
  * `office_editing_paused` answer (token or session) or the collaboration
  * service's `office-editing-paused` authentication reason.
  */
+/** A failure this session already reported (strip, status or toast). */
+class SourceSessionError extends CopyError {}
+
+/** Draft storage is best effort (private mode, a full disk): a failure reads
+ * as nothing stored and never blocks editing. */
+async function bestEffort<T>(work: () => Promise<T>): Promise<T | null> {
+  try {
+    return await work();
+  } catch (error) {
+    console.warn('Source draft storage failed:', error);
+    return null;
+  }
+}
+
+export function sessionReported(value: unknown): boolean {
+  return value instanceof SourceSessionError;
+}
+
+/** The header status of an open source editor (null outside Edit), in the
+ * note editor's states. */
+export function sourceHeaderStatus(
+  status: SourceSaveState,
+  { editing, busy }: { editing: boolean; busy: boolean }
+): NoteEditorSaveState | null {
+  if (!editing) return null;
+  if (busy && (status === 'saved' || status === 'saving')) return 'syncing';
+  switch (status) {
+    case 'connecting':
+    case 'reconnecting':
+    case 'offline':
+    case 'saved':
+    case 'unsaved':
+    case 'error':
+      return status;
+    case 'saving':
+      return 'syncing';
+    case 'recovery':
+      return 'error';
+  }
+}
+
 export function maintenancePaused(value: unknown): boolean {
   return (
     value === OFFICE_EDITING_PAUSED_REASON ||
@@ -87,11 +139,15 @@ export function maintenancePaused(value: unknown): boolean {
 export function useSourceSession(
   fileId: string,
   enabled: boolean,
-  onReadOnly?: () => void
+  onReadOnly?: () => void,
+  workspaceId?: string
 ) {
   const { data: me } = useMe({ errorBoundary: false });
   const readOnlyHandler = useRef(onReadOnly);
   readOnlyHandler.current = onReadOnly;
+  const saveFailureToast = useSaveFailureToast(workspaceId);
+  const saveFailed = useRef(saveFailureToast);
+  saveFailed.current = saveFailureToast;
   const actorId = me?.id;
   const [loaded, setLoaded] = useState<{
     session: SourceSession;
@@ -100,6 +156,10 @@ export function useSourceSession(
   } | null>(null);
   const [status, setStatus] = useState<SourceSaveState>('connecting');
   const [error, setError] = useState<string | null>(null);
+  // The file was trashed or deleted, or access to it lost, while editing.
+  const [unavailable, setUnavailable] = useState<
+    'notFound' | 'forbidden' | null
+  >(null);
   const discardHandler = useRef<(() => Promise<void>) | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const discardDraft = useCallback(async () => {
@@ -108,7 +168,7 @@ export function useSourceSession(
     try {
       await discardHandler.current();
     } catch (value) {
-      setError(value instanceof Error ? value.message : String(value));
+      setError(errorCopy(value, m.error_file_body()));
     } finally {
       setDiscarding(false);
     }
@@ -157,11 +217,11 @@ export function useSourceSession(
     await flushHandler.current?.();
     const active = runtime.current;
     if (!active || active.recovery)
-      return Promise.reject(new Error(m.source_edit_recovery()));
+      return Promise.reject(new SourceSessionError(m.source_edit_recovery()));
     if (active.acknowledged >= active.sequence && !bufferDirtyRef.current)
       return Promise.resolve();
     if (!active.provider.isAuthenticated)
-      return Promise.reject(new Error(m.source_edit_offline()));
+      return Promise.reject(new SourceSessionError(m.source_edit_offline()));
     return new Promise((resolve, reject) => {
       flushWaiters.current.push({ reject, resolve, sequence: active.sequence });
       active.checkpoint(true);
@@ -180,17 +240,20 @@ export function useSourceSession(
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let flushDraft = () => {};
+    let disposeReconnect = () => {};
     let draftWrites = Promise.resolve();
+    // Drafts only outlive a reload; editing goes on without them (private
+    // mode, a full disk). Offline and recovery handling come next.
     const queueDraftWrite = (write: () => Promise<void>) => {
       const previous = draftWrites;
       draftWrites = (async () => {
         await previous;
-        try {
-          await write();
-        } catch (error) {
-          fail(error);
-        }
+        await bestEffort(write);
       })();
+    };
+    const rejectWaiters = (reason: Error) => {
+      for (const waiter of flushWaiters.current.splice(0))
+        waiter.reject(reason);
     };
     const fail = (value: unknown) => {
       if (cancelled) return;
@@ -199,14 +262,18 @@ export function useSourceSession(
         setPaused(true);
         return;
       }
-      const next = maintenancePaused(value)
-        ? new Error(m.source_edit_paused_error())
-        : value instanceof Error
-          ? value
-          : new Error(String(value));
+      if (isApiError(value) && (value.status === 404 || value.status === 403)) {
+        setUnavailable(value.status === 404 ? 'notFound' : 'forbidden');
+        return;
+      }
+      const next = new SourceSessionError(
+        maintenancePaused(value)
+          ? m.source_edit_paused_error()
+          : errorCopy(value, m.error_file_body())
+      );
       setError(next.message);
       setStatus('error');
-      for (const waiter of flushWaiters.current.splice(0)) waiter.reject(next);
+      rejectWaiters(next);
     };
     discardHandler.current = async () => {
       const presented = recoveryDrafts ?? [
@@ -226,26 +293,27 @@ export function useSourceSession(
     setReplaced(false);
     setPaused(false);
     setReadOnly(false);
+    setUnavailable(null);
     setSynced(false);
     setError(null);
     setLoaded(null);
     void (async () => {
-      const [session, credentials, drafts] = await Promise.all([
+      const [session, credentials, storedDrafts] = await Promise.all([
         api.get<SourceSession>(`/files/${fileId}/source-session`),
         api.post<SourceCollaborationToken>(
           `/files/${fileId}/collaboration-token`,
           {}
         ),
-        readSourceDrafts(draftKey),
+        bestEffort(() => readSourceDrafts(draftKey)),
       ]);
       if (cancelled) return;
       if (
         session.epoch !== credentials.epoch ||
         session.room !== credentials.room
       )
-        throw new Error(m.source_edit_session_changed());
+        throw new SourceSessionError(m.source_edit_session_changed());
       const response = await fetch(session.sourceURL);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) throw new SourceSessionError(m.error_file_body());
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (cancelled) return;
       const shared = new Y.Doc();
@@ -254,15 +322,21 @@ export function useSourceSession(
       // from the room's sync (the stored state may be a change over the seed).
       if (session.state && session.format === 'text')
         Y.applyUpdate(shared, decodeSourceState(session.state), RESTORE_ORIGIN);
-      recoveryDrafts = sourceRecoveryDrafts(drafts, session);
-      const draft = recoveryDrafts[0];
-      if (draft) {
+      const found = sourceRecoveryDrafts(storedDrafts ?? [], session);
+      const draft = found[0];
+      const base = draft ? await bestEffort(() => readSourceBase(draft)) : null;
+      if (cancelled) return;
+      // A draft whose base this device no longer holds cannot be opened.
+      if (draft && !base) await bestEffort(() => clearSourceDrafts(found));
+      const drafts = (storedDrafts ?? []).filter(
+        (entry) => !(draft && !base && found.includes(entry))
+      );
+      if (draft && base) {
+        recoveryDrafts = found;
         shared.destroy();
-        const base = await readSourceBase(draft);
-        if (cancelled) return;
         const recovered = new Y.Doc();
         doc = recovered;
-        for (const snapshot of recoveryDrafts)
+        for (const snapshot of found)
           Y.applyUpdate(recovered, snapshot.state, RESTORE_ORIGIN);
         setLoaded({
           bytes: base,
@@ -299,6 +373,51 @@ export function useSourceSession(
         sequence: restoredDrafts.length ? 1 : 0,
       };
       const unsyncedWaiters: (() => void)[] = [];
+      // Only a client that synced once has an editor to keep on screen.
+      let everSynced = false;
+      // The token request that failed, if one did (the provider only reports
+      // its own text for it).
+      let tokenError: unknown = null;
+      // Toast a failure once per episode: the server rebroadcasts each failed
+      // store and a lost connection is re-reported while it stays lost.
+      let lost = false;
+      // Set by reset(): later typing and the unmount flush write no draft of
+      // the refused state.
+      let discarded = false;
+      const reconnect = roomReconnector({
+        onStuck: () => {
+          if (cancelled || active.recovery || lost) return;
+          lost = true;
+          setStatus('error');
+          if (!sourceChangesCovered(active)) saveFailed.current('retrying');
+        },
+        // A closed session never reconnects (replaced, paused, reset).
+        provider: () => (cancelled || active.recovery ? null : provider),
+      });
+      // A save the server refused for good: go back to the last saved
+      // version, dropping this session's drafts so they cannot come back.
+      const reset = () => {
+        if (cancelled) return;
+        if (!sourceChangesCovered(active) || bufferDirtyRef.current)
+          saveFailed.current('undone');
+        cancelled = true;
+        discarded = true;
+        draftDue = false;
+        clearTimeout(timer);
+        provider?.disconnect();
+        rejectWaiters(new SourceSessionError(m.editor_save_failed_undone()));
+        void (async () => {
+          await draftWrites;
+          await bestEffort(() =>
+            clearSourceDrafts([
+              ...restoredDrafts,
+              ...(latestDraft ? [latestDraft] : []),
+            ])
+          );
+          pendingInput(false);
+          setGeneration((value) => value + 1);
+        })();
+      };
       // Nothing local is pending any more: forget this session's drafts.
       const settle = () => {
         setDirty(false);
@@ -311,6 +430,7 @@ export function useSourceSession(
         queueDraftWrite(() => clearSourceDrafts(settledDrafts));
       };
       const markSaved = () => {
+        lost = false;
         setStatus('saved');
         settle();
       };
@@ -372,30 +492,40 @@ export function useSourceSession(
         name: session.room,
         // A publication's first refusal never gets here (sourceProvider.ts).
         onAuthenticationFailed: ({ reason }) => {
-          if (active.recovery) return;
+          if (cancelled || active.recovery) return;
           // Paused before this client saw the room's paused message.
           if (maintenancePaused(reason)) {
             replace('paused');
             return;
           }
-          if (reason === COLLABORATION_READ_ONLY_REASON) {
-            replace('readOnly');
+          if (reason === SOURCE_PUBLISHING_REASON) {
+            fail(new SourceSessionError(m.source_edit_publishing()));
             return;
           }
-          fail(
-            new Error(
-              reason === SOURCE_PUBLISHING_REASON
-                ? m.source_edit_publishing()
-                : reason
-            )
-          );
+          const refusal = roomRefusal(reason, tokenError);
+          tokenError = null;
+          if (refusal === 'readOnly') replace('readOnly');
+          else if (refusal === 'retry') reconnect.refused();
+          else if (!cancelled) {
+            cancelled = true;
+            provider?.disconnect();
+            setUnavailable(refusal);
+          }
         },
+        onClose: () => reconnect.closed(socketOpen(provider)),
         onDisconnect: () => {
           active.disconnects++;
           active.handedOff = -1;
+          reconnect.disconnected();
           if (!cancelled) setHandoff(false);
           if (!cancelled && !active.recovery) {
-            setStatus('offline');
+            setStatus(
+              navigator.onLine
+                ? everSynced
+                  ? 'reconnecting'
+                  : 'connecting'
+                : 'offline'
+            );
             setSynced(false);
           }
         },
@@ -482,18 +612,18 @@ export function useSourceSession(
             event.type === 'source-checkpoint-failed' &&
             event.epoch === session.epoch
           ) {
-            fail(new Error(event.message ?? m.source_edit_save_failed()));
-            for (const id of event.checkpointIds ?? [])
-              active.pending.delete(id);
             if (event.recoverable === false) {
-              active.recovery = true;
-              provider?.disconnect();
-              setStatus('recovery');
+              reset();
+              return;
             }
-            return;
-          }
-          if (event.type === 'document-rejected') {
-            fail(new Error(event.message ?? m.source_edit_save_failed()));
+            // The server retries this save; its receipt answers the same
+            // checkpoint ids, so they stay pending.
+            setStatus('unsaved');
+            rejectWaiters(new SourceSessionError(m.editor_save_failed()));
+            if (!(lost || sourceChangesCovered(active))) {
+              lost = true;
+              saveFailed.current('retrying');
+            }
             return;
           }
           if (
@@ -514,6 +644,10 @@ export function useSourceSession(
         },
         onSynced: ({ state }) => {
           if (state && !cancelled && !active.recovery) {
+            reconnect.connected();
+            lost = false;
+            if (everSynced) setStatus('saving');
+            everSynced = true;
             setLoaded({ bytes, doc: shared, session });
             setSynced(true);
             checkpoint(true);
@@ -533,15 +667,17 @@ export function useSourceSession(
                 {}
               ));
           } catch (error) {
+            tokenError = error;
             // A reconnect during the maintenance pause.
             if (!cancelled && maintenancePaused(error)) replace('paused');
             throw error;
           }
-          if (cancelled) throw new Error(m.source_edit_session_changed());
+          if (cancelled)
+            throw new SourceSessionError(m.source_edit_session_changed());
           initialToken = null;
           if (token.epoch !== session.epoch || token.room !== session.room) {
             replace();
-            throw new Error(m.source_edit_session_changed());
+            throw new SourceSessionError(m.source_edit_session_changed());
           }
           // A reconnect after the account froze gets a read token.
           if (token.access === 'read') {
@@ -554,6 +690,7 @@ export function useSourceSession(
       });
       active.provider = provider;
       runtime.current = active;
+      disposeReconnect = reconnect.dispose;
       let draftDue = false;
       // A draft a receipt already covers is never written, so a saved draft
       // cannot come back as a recovery prompt.
@@ -571,11 +708,13 @@ export function useSourceSession(
         return latestDraft;
       };
       flushDraft = () => {
+        if (discarded) return;
         const next = draftDue ? takeDraft() : undefined;
         if (next) queueDraftWrite(() => writeSourceDraft(next, bytes));
       };
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
-        if (origin === provider || origin === RESTORE_ORIGIN) return;
+        if (origin === provider || origin === RESTORE_ORIGIN || discarded)
+          return;
         active.sequence++;
         setDirty(true);
         setStatus(active.recovery ? 'recovery' : 'saving');
@@ -583,7 +722,7 @@ export function useSourceSession(
           draftDue = true;
           queueDraftWrite(async () => {
             await new Promise((resolve) => setTimeout(resolve, DRAFT_WRITE_MS));
-            const next = draftDue ? takeDraft() : undefined;
+            const next = draftDue && !discarded ? takeDraft() : undefined;
             if (next) await writeSourceDraft(next, bytes);
           });
         }
@@ -597,10 +736,11 @@ export function useSourceSession(
       flushDraft();
       runtime.current = null;
       discardHandler.current = null;
+      disposeReconnect();
       provider?.destroy();
       doc?.destroy();
       for (const waiter of flushWaiters.current.splice(0))
-        waiter.reject(new Error(m.source_edit_save_failed()));
+        waiter.reject(new SourceSessionError(m.source_edit_save_failed()));
     };
   }, [fileId, actorId, enabled, generation, pendingInput]);
 
@@ -629,5 +769,6 @@ export function useSourceSession(
     save,
     status: status === 'saved' && bufferDirty ? ('saving' as const) : status,
     synced,
+    unavailable,
   };
 }

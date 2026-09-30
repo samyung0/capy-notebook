@@ -124,13 +124,23 @@ async def user_key_error_handler(_request: Request, exc: models.UserKeyError):
 
 
 @app.exception_handler(compact.ContextTooLarge)
-@app.exception_handler(workflows.PendingSourceContextTooLarge)
-async def pending_source_context_handler(
-    _request: Request,
-    exc: workflows.PendingSourceContextTooLarge | compact.ContextTooLarge,
-):
+async def context_too_large_handler(_request: Request, exc: compact.ContextTooLarge):
     return JSONResponse(
         {"code": "context_too_large", "message": str(exc)}, status_code=400
+    )
+
+
+@app.exception_handler(workflows.PendingSourceContextTooLarge)
+async def pending_source_context_handler(
+    _request: Request, exc: workflows.PendingSourceContextTooLarge
+):
+    return JSONResponse(
+        {
+            "code": "pending_sources_too_large",
+            "message": str(exc),
+            "fileIds": exc.file_ids,
+        },
+        status_code=400,
     )
 
 

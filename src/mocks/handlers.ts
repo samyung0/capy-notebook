@@ -496,6 +496,40 @@ const MOCK_USAGE_EVENTS = Array.from({ length: 45 }, (_, i) => {
   };
 });
 
+/** A Huma error carrying a machine code, as the gateway sends it. */
+const codeError = (status: number, code: string) =>
+  HttpResponse.json({ errors: [{ message: code }], status }, { status });
+
+/** The workspace's unprocessed edits. One file processes at a time: queued
+ * work starts on the second read without other work processing, and
+ * processing finishes on the fourth read, as the tab polls every 3 s. */
+function mockFileChanges(sourceFiles: SourceFile[]) {
+  const changes = sourceFiles.flatMap((file) => {
+    const change = db.fileChanges.get(file.id);
+    return change ? [{ change, file }] : [];
+  });
+  for (const { change, file } of changes) {
+    change.ticks++;
+    if (change.state === 'processing' && change.ticks > 3)
+      db.fileChanges.delete(file.id);
+  }
+  const live = changes.filter(({ file }) => db.fileChanges.has(file.id));
+  const next = live.find(({ change }) => change.state === 'queued');
+  if (
+    next &&
+    next.change.ticks > 1 &&
+    !live.some(({ change }) => change.state === 'processing')
+  )
+    Object.assign(next.change, { state: 'processing', ticks: 0 });
+  return live.map(({ change, file }) => ({
+    fileId: file.id,
+    kind: file.kind,
+    lastEditedAt: change.lastEditedAt,
+    name: file.name,
+    state: change.state,
+  }));
+}
+
 export const handlers = [
   ...questionBankHandlers,
   ...editorAssetHandlers,
@@ -964,6 +998,24 @@ export const handlers = [
     ws.lastAccessedAt = new Date().toISOString();
     return HttpResponse.json(ws);
   }),
+  http.post('/api/files/:id/process-changes', ({ params }) => {
+    const id = String(params.id);
+    const change = db.fileChanges.get(id);
+    if (!change) return codeError(409, 'nothing_to_process');
+    if (change.state === 'waiting' || change.state === 'failed')
+      Object.assign(change, { state: 'queued', ticks: 0 });
+    return HttpResponse.json(
+      { checkpoint: 1, fileId: id, jobId: uid('job'), status: 'pending' },
+      { status: 202 }
+    );
+  }),
+  http.delete('/api/files/:id/process-changes', ({ params }) => {
+    const change = db.fileChanges.get(String(params.id));
+    if (!change) return codeError(409, 'nothing_to_process');
+    if (change.state !== 'queued') return codeError(409, 'processing_started');
+    Object.assign(change, { state: 'waiting', ticks: 0 });
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.get('/api/workspaces/:id/stats', async ({ params }) => {
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
@@ -993,12 +1045,12 @@ export const handlers = [
       attempts: att.length,
       avgScore: avg,
       chapters: ws.chapterCount,
+      fileChanges: mockFileChanges(sourceFiles),
       files: ws.fileCount,
       indexed,
       notIndexable,
       notIndexed: sourceFiles.length - indexed - notIndexable,
-      pendingReindex: 0,
-      pendingReparse: 0,
+      pendingNotes: 0,
       quizzes: wsQuizIds.size,
     });
   }),
@@ -1007,8 +1059,7 @@ export const handlers = [
       tags?: TagInput[];
     };
     const ws: Workspace = {
-      autoReindex: true,
-      autoReparse: true,
+      autoProcess: true,
       canClone: true,
       capabilities: {
         canEdit: true,

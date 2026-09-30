@@ -1402,6 +1402,32 @@ components:
         - hasBytes
         - revision
       type: object
+    FileChange:
+      additionalProperties: false
+      properties:
+        fileId:
+          type: string
+        kind:
+          $ref: "#/components/schemas/FileKind"
+        lastEditedAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        state:
+          enum:
+            - waiting
+            - queued
+            - processing
+            - failed
+          type: string
+      required:
+        - fileId
+        - name
+        - kind
+        - state
+        - lastEditedAt
+      type: object
     FileKind:
       enum:
         - pdf
@@ -2832,9 +2858,7 @@ components:
       properties:
         author:
           type: string
-        autoReindex:
-          type: boolean
-        autoReparse:
+        autoProcess:
           type: boolean
         canClone:
           type: boolean
@@ -2885,8 +2909,7 @@ components:
       required:
         - author
         - clones
-        - autoReparse
-        - autoReindex
+        - autoProcess
         - description
         - id
         - name
@@ -3369,6 +3392,10 @@ components:
           minItems: 1
           nullable: true
           type: array
+        baseRevision:
+          format: int64
+          minimum: 1
+          type: integer
         baseSourceSHA256:
           type: string
         epoch:
@@ -3399,6 +3426,7 @@ components:
         - actorIds
         - epoch
         - expectedCheckpoint
+        - baseRevision
         - state
         - pendingEffects
         - netTokens
@@ -3592,6 +3620,42 @@ components:
         - status
         - jobId
       type: object
+    SourceRebuild:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceRebuild.json
+          format: uri
+          readOnly: true
+          type: string
+        epoch:
+          format: int64
+          minimum: 1
+          type: integer
+        expectedCheckpoint:
+          format: int64
+          minimum: 0
+          type: integer
+        netTokens:
+          format: int64
+          minimum: 0
+          type: integer
+        pendingEffects: {}
+        publishedSourceSHA256:
+          type: string
+        state:
+          format: base64
+          type: string
+        stateSeedSHA256:
+          type: string
+      required:
+        - epoch
+        - expectedCheckpoint
+        - publishedSourceSHA256
+        - pendingEffects
+        - netTokens
+      type: object
     SourceRefreshFinalize:
       additionalProperties: false
       properties:
@@ -3664,6 +3728,8 @@ components:
           type: string
         contentId:
           type: string
+        deferred:
+          type: boolean
         epoch:
           format: int64
           type: integer
@@ -3739,6 +3805,17 @@ components:
           format: int64
           type: integer
         pendingEffects: {}
+        publishedSourceSHA256:
+          type: string
+        publishedSourceURL:
+          type: string
+        publishedState:
+          format: base64
+          type: string
+        publishedStateSeedSHA256:
+          type: string
+        rebuildPending:
+          type: boolean
         room:
           type: string
         sourceIdentity:
@@ -4540,9 +4617,7 @@ components:
           format: uri
           readOnly: true
           type: string
-        autoReindex:
-          type: boolean
-        autoReparse:
+        autoProcess:
           type: boolean
         description:
           description: Optional workspace description; empty clears it
@@ -4756,9 +4831,7 @@ components:
           format: uri
           readOnly: true
           type: string
-        autoReindex:
-          type: boolean
-        autoReparse:
+        autoProcess:
           type: boolean
         canClone:
           type: boolean
@@ -4804,8 +4877,7 @@ components:
             $ref: "#/components/schemas/Tag"
           type: array
       required:
-        - autoReparse
-        - autoReindex
+        - autoProcess
         - description
         - id
         - name
@@ -4888,6 +4960,10 @@ components:
         chapters:
           format: int64
           type: integer
+        fileChanges:
+          items:
+            $ref: "#/components/schemas/FileChange"
+          type: array
         files:
           format: int64
           type: integer
@@ -4903,12 +4979,6 @@ components:
         pendingNotes:
           format: int64
           type: integer
-        pendingReindex:
-          format: int64
-          type: integer
-        pendingReparse:
-          format: int64
-          type: integer
         quizzes:
           format: int64
           type: integer
@@ -4916,8 +4986,7 @@ components:
         - indexed
         - notIndexed
         - notIndexable
-        - pendingReparse
-        - pendingReindex
+        - fileChanges
         - pendingNotes
         - chapters
         - files
@@ -6127,6 +6196,26 @@ paths:
       tags:
         - Content
   /api/files/{id}/process-changes:
+    delete:
+      operationId: cancelSourceChanges
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Cancel queued processing of source changes
+      tags:
+        - Source collaboration
     post:
       operationId: processSourceChanges
       parameters:
@@ -9185,6 +9274,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Publish a processed source checkpoint
+      tags:
+        - Source collaboration
+  /internal/collaboration/files/{id}/rebuild:
+    post:
+      operationId: rebuildSource
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceRebuild"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Move editing onto the published file
       tags:
         - Source collaboration
   /internal/collaboration/files/{id}/refresh:

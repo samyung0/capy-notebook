@@ -15,6 +15,7 @@ import {
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import {
+  EditorStatusContext,
   FileHeaderTarget,
   FileModeContext,
 } from '@/features/files/fileModeContext';
@@ -128,67 +129,69 @@ export function CenterContent({
       value={{ mode: materialMode, onChange: changeMaterialMode }}
     >
       <FileHeaderTarget.Provider value={fileHeader}>
-        <div
-          className={cn(
-            'flex min-h-0 flex-1 flex-col bg-surface',
-            isFullscreen && 'fixed inset-0 z-40'
-          )}
-        >
-          <Header
-            beforeFileDelete={beforeFileDelete}
-            chapters={chapters}
-            color={color}
-            editorStatus={editorStatus}
-            fileControls={
-              <span className="flex items-center" ref={setFileHeader} />
-            }
-            imageZoom={imageZoom}
-            isFullscreen={isFullscreen}
-            item={item}
-            leading={leading}
-            materialMode={materialMode}
-            onDeleted={onDeleted}
-            onImageZoomChange={setImageZoom}
-            onMaterialModeChange={changeMaterialMode}
-            onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-            readOnly={readOnly}
-            standalone={standalone}
-            workspaceId={workspaceId}
-          />
+        <EditorStatusContext.Provider value={setEditorStatus}>
           <div
             className={cn(
-              'relative min-h-0 flex-1',
-              item.kind === 'file'
-                ? 'flex flex-col overflow-hidden'
-                : 'overflow-auto'
+              'flex min-h-0 flex-1 flex-col bg-surface',
+              isFullscreen && 'fixed inset-0 z-40'
             )}
           >
-            {item.kind === 'material' && (
-              <MaterialBody
-                allowExternalAssets={!readOnly}
-                key={item.id}
-                materialId={item.id}
-                mode={materialMode}
-                onEditorStatusChange={setEditorStatus}
-                readOnly={readOnly}
-                workspaceId={workspaceId}
-              />
-            )}
-            {item.kind === 'file' && (
-              <FileBody
-                citation={item.citation}
-                color={color}
-                fileId={item.id}
-                imageZoom={imageZoom}
-                key={item.id}
-                onImageZoomChange={setImageZoom}
-                onViewerDirtyChange={onFileViewerDirtyChange}
-                page={item.page}
-                regions={item.regions}
-              />
-            )}
+            <Header
+              beforeFileDelete={beforeFileDelete}
+              chapters={chapters}
+              color={color}
+              editorStatus={editorStatus}
+              fileControls={
+                <span className="flex items-center" ref={setFileHeader} />
+              }
+              imageZoom={imageZoom}
+              isFullscreen={isFullscreen}
+              item={item}
+              leading={leading}
+              materialMode={materialMode}
+              onDeleted={onDeleted}
+              onImageZoomChange={setImageZoom}
+              onMaterialModeChange={changeMaterialMode}
+              onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+              readOnly={readOnly}
+              standalone={standalone}
+              workspaceId={workspaceId}
+            />
+            <div
+              className={cn(
+                'relative min-h-0 flex-1',
+                item.kind === 'file'
+                  ? 'flex flex-col overflow-hidden'
+                  : 'overflow-auto'
+              )}
+            >
+              {item.kind === 'material' && (
+                <MaterialBody
+                  allowExternalAssets={!readOnly}
+                  key={item.id}
+                  materialId={item.id}
+                  mode={materialMode}
+                  onEditorStatusChange={setEditorStatus}
+                  readOnly={readOnly}
+                  workspaceId={workspaceId}
+                />
+              )}
+              {item.kind === 'file' && (
+                <FileBody
+                  citation={item.citation}
+                  color={color}
+                  fileId={item.id}
+                  imageZoom={imageZoom}
+                  key={item.id}
+                  onImageZoomChange={setImageZoom}
+                  onViewerDirtyChange={onFileViewerDirtyChange}
+                  page={item.page}
+                  regions={item.regions}
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </EditorStatusContext.Provider>
       </FileHeaderTarget.Provider>
     </FileModeContext.Provider>
   );

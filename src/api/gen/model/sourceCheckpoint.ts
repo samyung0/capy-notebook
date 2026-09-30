@@ -14,6 +14,8 @@ export interface SourceCheckpoint {
      * @nullable
      */
   actorIds: string[] | null;
+  /** @minimum 1 */
+  baseRevision: number;
   baseSourceSHA256?: string;
   /** @minimum 1 */
   epoch: number;

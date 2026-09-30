@@ -480,7 +480,6 @@ class MockSourceProvider implements SourceProvider {
         checkpointIds: [event.id],
         epoch: Number(this.config.name.split(':')[3]),
         fileId,
-        message: 'Changes could not be saved. Your edits are still here.',
         recoverable: true,
         type: 'source-checkpoint-failed',
       });
@@ -500,6 +499,9 @@ class MockSourceProvider implements SourceProvider {
     // A round trip, so the receipt lands after the request returns.
     queueMicrotask(() => this.config.onStateless?.({ payload: receipt }));
   }
+
+  // The in-page room never closes a connection by itself.
+  connect() {}
 
   disconnect() {
     sourceProviders.delete(this);

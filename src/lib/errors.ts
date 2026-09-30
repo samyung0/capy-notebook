@@ -13,6 +13,7 @@ import {
 } from '@/api/client';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
+import { CopyError } from './copyError';
 
 export type ErrorKind =
   | 'offline'
@@ -106,8 +107,127 @@ export function isNonDisclosing(error: unknown): boolean {
   );
 }
 
+/** Copy for a server code whose status class alone would mislead. */
+function codeCopy(code: string): ErrorDescription | null {
+  switch (code) {
+    case 'revision_conflict':
+    case 'bank_conflict':
+      return {
+        action: 'reload',
+        description: m.error_revision_conflict_body(),
+        title: m.error_revision_conflict_title(),
+      };
+    case 'account_deletion_busy':
+      return {
+        description: m.error_account_deletion_busy_body(),
+        title: m.error_account_deletion_busy_title(),
+      };
+    case 'subscription_exists':
+      return {
+        description: m.error_subscription_exists_body(),
+        title: m.error_subscription_exists_title(),
+      };
+    case 'subscription_active':
+      return {
+        description: m.error_subscription_active_body(),
+        title: m.error_subscription_active_title(),
+      };
+    case 'account_state_changed':
+      return {
+        action: 'reload',
+        description: m.error_account_state_changed_body(),
+        title: m.error_account_state_changed_title(),
+      };
+    case 'clone_source_changed':
+      return {
+        action: 'retry',
+        description: m.error_clone_source_changed_body(),
+        title: m.error_clone_source_changed_title(),
+      };
+    case 'title_taken':
+      return {
+        description: m.error_title_taken_body(),
+        title: m.error_title_taken_title(),
+      };
+    case 'transfer_self':
+      return {
+        description: m.error_transfer_self_body(),
+        title: m.error_transfer_self_title(),
+      };
+    case 'workspace_limit_exceeded':
+      return {
+        action: 'subscription',
+        description: m.error_workspace_limit_body(),
+        title: m.error_workspace_limit_title(),
+      };
+    case 'too_many_streams':
+      return {
+        description: m.error_too_many_streams_body(),
+        title: m.error_too_many_streams_title(),
+      };
+    case 'context_too_large':
+      return {
+        description: m.error_context_too_large_body(),
+        title: m.error_context_too_large_title(),
+      };
+    case 'generate_empty':
+      return {
+        action: 'retry',
+        description: m.error_generate_empty_body(),
+        title: m.error_generate_empty_title(),
+      };
+    case 'scope_has_no_indexed_content':
+      return {
+        description: m.error_no_indexed_content_body(),
+        title: m.error_no_indexed_content_title(),
+      };
+    case 'ai_unavailable':
+      return {
+        action: 'retry',
+        description: m.error_ai_unavailable_body(),
+        title: m.error_ai_unavailable_title(),
+      };
+    case 'trash_expired':
+      return {
+        description: m.error_trash_expired_body(),
+        title: m.error_trash_expired_title(),
+      };
+    case 'operation_conflict':
+      return {
+        action: 'reload',
+        description: m.error_operation_conflict_body(),
+        title: m.error_operation_conflict_title(),
+      };
+    case 'nothing_to_process':
+      return {
+        description: m.error_nothing_to_process_body(),
+        title: m.error_nothing_to_process_title(),
+      };
+    case 'processing_started':
+      return {
+        description: m.error_processing_started_body(),
+        title: m.error_processing_started_title(),
+      };
+    case 'bank_unavailable':
+    case 'bank_read_only':
+    case 'bank_unconfigured':
+      return {
+        description: m.error_bank_unavailable_body(),
+        title: m.error_bank_unavailable_title(),
+      };
+    default:
+      return null;
+  }
+}
+
 export function describeError(error: unknown): ErrorDescription {
-  switch (errorKind(error)) {
+  const kind = errorKind(error);
+  const coded =
+    kind !== 'offline' && isApiError(error) && error.code
+      ? codeCopy(error.code)
+      : null;
+  if (coded) return coded;
+  switch (kind) {
     case 'offline':
       return {
         description: m.error_offline_body(),
@@ -230,6 +350,19 @@ export function describeError(error: unknown): ErrorDescription {
         title: m.error_generic_title(),
       };
   }
+}
+
+export { CopyError } from './copyError';
+
+/** Copy for a caught failure: a CopyError's own copy, API and connection
+ * failures by their code, anything else (an exception) as `fallback`, never
+ * the error's own text. */
+export function errorCopy(error: unknown, fallback: string): string {
+  if (error instanceof CopyError) return error.message;
+  const kind = errorKind(error);
+  return kind === 'unknown' || kind === 'cancelled'
+    ? fallback
+    : describeError(error).description;
 }
 
 export function privateErrorDescription(): ErrorDescription {

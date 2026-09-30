@@ -20,6 +20,11 @@ export interface SourceSession {
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: unknown;
+  publishedSourceSHA256?: string;
+  publishedSourceURL?: string;
+  publishedState?: string;
+  publishedStateSeedSHA256?: string;
+  rebuildPending?: boolean;
   room: string;
   sourceIdentity: string;
   sourceURL: string;

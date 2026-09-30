@@ -2475,7 +2475,7 @@ note's content changes, clears `index_error`, and skips unchanged writes; a
 new workspace note is dirty from creation. The collaboration sidecar's 5 s
 timer (`scheduleNoteIndexes`) asks Go to admit dirty notes that have been idle
 15 s, have no running job and no parked error, in workspaces with
-`auto_reindex` on. `POST /internal/collaboration/materials/{id}/index`
+`auto_process` on. `POST /internal/collaboration/materials/{id}/index`
 (`RequestMaterialIndex`) reserves ingest credits on the workspace owner,
 inserts one `ingest` job carrying `materialId`, and records it in
 `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
@@ -2557,7 +2557,9 @@ candidate without changing the readable `files` row or `rag_file_contents` alias
 
 The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
-see observability-metering). `auto_reparse` and `auto_reindex` default to true.
+see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
+gates every automatic Office reparse, text reindex and note index; off, edits
+wait for the owner's Process.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. A move (unchanged text at a new position, as every
@@ -2579,16 +2581,33 @@ coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
 state intact and exposes manual processing.
 
+The workspace stats (`fileChanges`) list each file with unprocessed saved edits
+(the scheduler's predicate) or a refresh in flight, as the settings Indexing
+tab shows them: waiting, queued (a `source_refresh` job not yet claimed:
+pending with no attempts), processing (claimed, exporting, parsing or
+indexing) or failed (`refresh_error`). A maintenance republish is left out.
+`DELETE /api/files/{id}/process-changes` lets the owner take a queued refresh
+back out of the queue (`CancelSourceRefresh`: the job is superseded, its
+reservation released and `desired_manual` cleared); a claimed refresh answers
+`processing_started` and runs to the end. The edits stay, so automatic
+processing may queue them again; the switches turn that off.
+
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
 publication URL and omits it from the strict JSON body for Office, text and
-already-published receipt recovery. Office coordinates connected clients, rebases the
-latest saved state onto seed(export) of the captured export, and compares-and-swaps that saved
+already-published receipt recovery. An owner's or automatic Office publication
+is deferred: the file and index change, editing stays on the old base with
+later edits pending against the capture, and the collaboration service
+rebuilds editing onto the export once the room is empty (see
+[Office files](frontend/office-files.md)). A maintenance publication
+coordinates connected clients, rebases the latest saved state onto
+seed(export) of the captured export, and compares-and-swaps that saved
 checkpoint. A newer save retries local rebase with the same completed parse. A
 rebase the engine refuses answers 422, which ends the refresh job without a
 retry (see [Office files](frontend/office-files.md)).
-Publication advances the indexed checkpoint, retains the current checkpoint and
-residual changes, increments the editing epoch and clears Undo/Redo. The
+Publication advances the indexed checkpoint and retains the current checkpoint
+and residual changes; the rebuild (or a maintenance handoff) increments the
+editing epoch and clears Undo/Redo. The
 rebased state keeps no package parts of the old base, which is released.
 Text retains exact residual changes and its Y.Text lineage. Once all processing
 finishes, `sourcePublicationReady` marks the job for publication-only retries;
@@ -2621,7 +2640,8 @@ model's window and the 250k effective ceiling, including output and safety
 allowances. If complete pending evidence cannot fit, chat omits that evidence,
 keeps it durably and explicitly tells both the model and user; the UI offers
 Process file changes. Generation uses the same evidence and returns
-`context_too_large` with that action when it cannot include it.
+`pending_sources_too_large` with the edited file ids when it cannot include it,
+so Process file changes sends exactly the files chat would.
 
 Text refresh uses normal full-file normalization and chunking with parsing
 skipped. A small lookup reuses embeddings only for exact indexed input and the

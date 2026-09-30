@@ -2,6 +2,8 @@ import { SOURCE_ROOM_PATTERN } from './auth.js';
 import { captureError, withEventId } from './observability.js';
 export interface FailedStoreSnapshot {
   checkpointIds: readonly string[];
+  /** Office engine timeouts and worker losses in a row on this room. */
+  engineFailures?: number;
   eventId?: string;
   state: Uint8Array;
 }

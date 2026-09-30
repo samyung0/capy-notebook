@@ -128,7 +128,7 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
 	p := store.WorkspacePatch{
 		Name: apimodel.Str(in.Body.Name), IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
-		AutoReparse: in.Body.AutoReparse, AutoReindex: in.Body.AutoReindex,
+		AutoProcess: in.Body.AutoProcess,
 	}
 	if in.Body.Tags != nil {
 		t := apimodel.ToTagRefs(*in.Body.Tags)

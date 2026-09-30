@@ -282,7 +282,19 @@ function fullSQL(userAlias: string, storageAlias: string): string {
           END)`;
 }
 
-export class CollaborationAuthorizationError extends Error {}
+/** Authentication refusal reasons the client acts on (see onAuthenticate): a
+ * missing or trashed document shows the file-missing panel, lost access the
+ * no-access panel. Any other refusal is retried with a fresh token. */
+export const COLLABORATION_NOT_FOUND_REASON = 'collaboration-not-found';
+export const COLLABORATION_FORBIDDEN_REASON = 'collaboration-forbidden';
+
+export class CollaborationAuthorizationError extends Error {
+  readonly reason: string = COLLABORATION_FORBIDDEN_REASON;
+}
+
+export class CollaborationNotFoundError extends CollaborationAuthorizationError {
+  override readonly reason: string = COLLABORATION_NOT_FOUND_REASON;
+}
 
 export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
 
@@ -291,11 +303,15 @@ export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
  * editor drops to view. `reason` reaches the client when authentication
  * refuses it. */
 export class CollaborationReadOnlyError extends CollaborationAuthorizationError {
-  readonly reason = COLLABORATION_READ_ONLY_REASON;
+  override readonly reason: string = COLLABORATION_READ_ONLY_REASON;
 }
 
 function denyCollaboration(message: string): never {
   throw new CollaborationAuthorizationError(message);
+}
+
+function denyMissingMaterial(): never {
+  throw new CollaborationNotFoundError('material not found');
 }
 
 type LiveAccess = { frozen: boolean; full: boolean; suspended: boolean };
@@ -334,10 +350,10 @@ async function liveCollaborationAccess(
      WHERE m.id=$1 AND m.trashed_at IS NULL`,
     [materialId, actorUserId]
   );
-  if (result.rowCount === 0) denyCollaboration('material not found');
+  if (result.rowCount === 0) denyMissingMaterial();
   const row = result.rows[0];
   if (row.owner_deleted_at || row.owner_deletion_requested_at) {
-    denyCollaboration('material not found');
+    denyMissingMaterial();
   }
   if (
     row.actor_deleted_at ||
@@ -422,7 +438,7 @@ async function lockCollaborationBoundary(
     'SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1 AND trashed_at IS NULL',
     [materialId]
   );
-  if (placement.rowCount === 0) denyCollaboration('material not found');
+  if (placement.rowCount === 0) denyMissingMaterial();
   const expected = placement.rows[0];
   const workspaceId = expected.workspace_id;
   if (workspaceId) {
@@ -430,7 +446,7 @@ async function lockCollaborationBoundary(
       'SELECT id FROM workspaces WHERE id=$1 FOR SHARE',
       [workspaceId]
     );
-    if (workspace.rowCount === 0) denyCollaboration('material not found');
+    if (workspace.rowCount === 0) denyMissingMaterial();
   }
 
   const accountIds = [
@@ -457,7 +473,7 @@ async function lockCollaborationBoundary(
      FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE`,
     [materialId]
   );
-  if (material.rowCount === 0) denyCollaboration('material not found');
+  if (material.rowCount === 0) denyMissingMaterial();
   const locked = material.rows[0];
   if (
     locked.owner_user_id !== expected.owner_user_id ||

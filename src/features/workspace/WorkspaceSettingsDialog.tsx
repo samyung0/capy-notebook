@@ -13,15 +13,13 @@ import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { InputTitle } from '@/components/ui/Input';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
-import { ProgressBar } from '@/components/ui/ProgressBar';
-import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { describeError } from '@/lib/errors';
 import { trackItemCloned } from '@/lib/observability';
+import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
-import { sourcePercentages } from './sourcePercentages';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
 
 /** Title, hint, action. The same shape the Sharing tab's rows use. */
@@ -65,7 +63,7 @@ export function WorkspaceSettingsDialog({
   const [tab, setTab] = useState<string>(initialTab);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const navigate = useNavigate();
-  const { mutateAsync: update, isPending: saving } = useUpdateWorkspace();
+  const { mutateAsync: update } = useUpdateWorkspace();
   const { mutate: cloneWorkspace, isPending: cloning } = useCloneWorkspace({
     errorToast: false,
   });
@@ -90,16 +88,6 @@ export function WorkspaceSettingsDialog({
       variant="panel"
     />
   ) : null;
-  const counts = stats
-    ? [stats.indexed, stats.notIndexed, stats.notIndexable]
-    : [];
-  const percentages = sourcePercentages(counts);
-  const labels = [
-    m.workspace_indexed(),
-    m.workspace_not_indexed(),
-    m.workspace_not_indexable(),
-  ];
-  const tones = ['green', 'amber', 'graphite'] as const;
   return (
     <SimpleDialog
       cardClassName="h-full"
@@ -190,106 +178,11 @@ export function WorkspaceSettingsDialog({
             )
           ))}
         {tab === 'indexing' && (
-          <div className="flex flex-col gap-6">
-            {isError ? (
-              statsError
-            ) : isPending ? (
-              <p>{m.common_loading()}</p>
-            ) : (
-              stats && (
-                <>
-                  {counts.some(Boolean) ? (
-                    <>
-                      <ProgressBar
-                        height={10}
-                        segments={counts.map((_, index) => ({
-                          label: labels[index],
-                          tone: tones[index],
-                          value: percentages[index],
-                        }))}
-                      />
-                      <div className="grid grid-cols-3 gap-4">
-                        {counts.map((count, index) => (
-                          <div
-                            className="flex flex-col gap-1"
-                            key={labels[index]}
-                          >
-                            <span className="t-meta text-fg-muted">
-                              {labels[index]}
-                            </span>
-                            <span className="text-xl tabular-nums">
-                              {count}
-                            </span>
-                            <span className="t-meta text-fg-muted">
-                              {percentages[index]}%
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-fg-muted">{m.workspace_no_sources()}</p>
-                  )}
-                  <div className="flex flex-col gap-3 border-line border-y py-4">
-                    <div className="flex justify-between">
-                      <span>{m.workspace_pending_reparse()}</span>
-                      <span className="tabular-nums">
-                        {stats.pendingReparse}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>{m.workspace_pending_reindex()}</span>
-                      <span className="tabular-nums">
-                        {stats.pendingReindex}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>{m.workspace_pending_notes()}</span>
-                      <span className="tabular-nums">{stats.pendingNotes}</span>
-                    </div>
-                  </div>
-                </>
-              )
-            )}
-            <label className="flex items-center justify-between gap-5">
-              <span>
-                <span className="block font-medium">
-                  {m.workspace_auto_reparse()}
-                </span>
-                <span className="t-meta text-fg-muted">
-                  {m.workspace_auto_reparse_hint()}
-                </span>
-              </span>
-              <Switch
-                checked={workspace.autoReparse}
-                disabled={saving}
-                onCheckedChange={(autoReparse) => {
-                  void update({ autoReparse, id: workspace.id }).catch(
-                    () => {}
-                  );
-                }}
-              />
-            </label>
-            <label className="flex items-center justify-between gap-5">
-              <span>
-                <span className="block font-medium">
-                  {m.workspace_auto_reindex()}
-                </span>
-                <span className="t-meta text-fg-muted">
-                  {m.workspace_auto_reindex_hint()}
-                </span>
-              </span>
-              <Switch
-                checked={workspace.autoReindex}
-                disabled={saving}
-                onCheckedChange={(autoReindex) => {
-                  void update({ autoReindex, id: workspace.id }).catch(
-                    () => {}
-                  );
-                }}
-              />
-            </label>
-          </div>
+          <IndexingTab
+            fallback={statsError ?? <p>{m.common_loading()}</p>}
+            stats={isError ? undefined : stats}
+            workspace={workspace}
+          />
         )}
         {tab === 'others' && workspace.canClone && (
           <div className="flex flex-col gap-6">

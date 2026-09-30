@@ -38,15 +38,31 @@ type SourceSession struct {
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
 	Access            string          `json:"access" enum:"write,read"`
+	// RebuildPending: the file and its index were published while editing
+	// stayed on this base; the collaboration service rebuilds the editing
+	// state onto the published file once the room is empty. PublishedState is
+	// the published (captured) state as its change over seed(base) (nil:
+	// seed(base)), which pending effects are measured against meanwhile.
+	// Collaboration service only; the browser never sees these.
+	RebuildPending           bool    `json:"rebuildPending,omitempty"`
+	PublishedState           []byte  `json:"publishedState,omitempty"`
+	PublishedStateSeedSHA256 *string `json:"publishedStateSeedSHA256,omitempty"`
+	PublishedSourceSHA256    string  `json:"publishedSourceSHA256,omitempty"`
+	PublishedSourceURL       string  `json:"publishedSourceURL,omitempty"`
+	PublishedBlobPath        string  `json:"-"`
 }
 
 type SourceCheckpoint struct {
-	ActorIDs           []string        `json:"actorIds" minItems:"1"`
-	Epoch              int64           `json:"epoch" minimum:"1"`
-	ExpectedCheckpoint int64           `json:"expectedCheckpoint" minimum:"0"`
-	State              []byte          `json:"state"`
-	PendingEffects     json.RawMessage `json:"pendingEffects"`
-	NetTokens          int64           `json:"netTokens" minimum:"0"`
+	ActorIDs           []string `json:"actorIds" minItems:"1"`
+	Epoch              int64    `json:"epoch" minimum:"1"`
+	ExpectedCheckpoint int64    `json:"expectedCheckpoint" minimum:"0"`
+	// The base revision the effects were measured under: a publication in
+	// between (which keeps epoch and checkpoint) refuses the save, whose
+	// effects are then stale.
+	BaseRevision   int64           `json:"baseRevision" minimum:"1"`
+	State          []byte          `json:"state"`
+	PendingEffects json.RawMessage `json:"pendingEffects"`
+	NetTokens      int64           `json:"netTokens" minimum:"0"`
 	// Required for an Office state, which is its change over seed(base): the
 	// seed's SHA-256.
 	StateSeedSHA256 string `json:"stateSeedSHA256,omitempty"`
@@ -212,11 +228,13 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 // ViewSourceSession is the viewer's read: authorization is the caller's
 // (fileRead), so it takes no locks, inserts no row and never consults account
 // state. State rides along only when a saved checkpoint is ahead of the
-// indexed one; a file nobody has edited answers with its blob alone.
+// indexed one, or while a rebuild is pending (the base is the old file, the
+// published edits live in the state); a file nobody has edited answers with
+// its blob alone.
 func (s *Store) ViewSourceSession(ctx context.Context, fileID string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, Access: "read"}
 	var name, kind string
-	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint THEN d.state_seed_sha256 END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256)
+	err := s.pool.QueryRow(ctx, `SELECT f.workspace_id,f.name,f.kind,COALESCE(d.epoch,0),COALESCE(d.checkpoint,0),COALESCE(d.indexed_checkpoint,0),COALESCE(d.base_revision,f.revision),COALESCE(d.base_blob_path,f.blob_path,''),COALESCE(d.base_source_sha256,f.source_sha256,''),CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state END,CASE WHEN d.checkpoint>d.indexed_checkpoint OR d.rebuild_pending THEN d.state_seed_sha256 END FROM files f LEFT JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).Scan(&out.WorkspaceID, &name, &kind, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256)
 	if isNoRows(err) {
 		return out, ErrNotFound
 	}
@@ -259,7 +277,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 
 func readSourceSession(ctx context.Context, tx pgx.Tx, fileID, ws string) (SourceSession, error) {
 	out := SourceSession{FileID: fileID, WorkspaceID: ws, Access: "read"}
-	err := tx.QueryRow(ctx, `SELECT format,epoch,checkpoint,indexed_checkpoint,base_revision,base_blob_path,base_source_sha256,state,state_seed_sha256,pending_effects,net_tokens FROM source_documents WHERE file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.PendingEffects, &out.NetTokens)
+	err := tx.QueryRow(ctx, `SELECT d.format,d.epoch,d.checkpoint,d.indexed_checkpoint,d.base_revision,d.base_blob_path,d.base_source_sha256,d.state,d.state_seed_sha256,d.pending_effects,d.net_tokens,d.rebuild_pending,d.published_state,d.published_state_seed_sha256,CASE WHEN d.rebuild_pending THEN COALESCE(f.blob_path,'') ELSE '' END,CASE WHEN d.rebuild_pending THEN COALESCE(f.source_sha256,'') ELSE '' END FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1`, fileID).Scan(&out.Format, &out.Epoch, &out.Checkpoint, &out.IndexedCheckpoint, &out.BaseRevision, &out.BaseBlobPath, &out.BaseSourceSHA256, &out.State, &out.StateSeedSHA256, &out.PendingEffects, &out.NetTokens, &out.RebuildPending, &out.PublishedState, &out.PublishedStateSeedSHA256, &out.PublishedBlobPath, &out.PublishedSourceSHA256)
 	out.Room = fmt.Sprintf("source:%s:epoch:%d", fileID, out.Epoch)
 	out.SourceIdentity = fmt.Sprintf("revision:%d", out.BaseRevision)
 	return out, err
@@ -339,7 +357,7 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision); err != nil {
 		return out, err
 	}
-	if revision != baseRevision {
+	if revision != baseRevision || in.BaseRevision != baseRevision {
 		return out, ErrConflict
 	}
 	// The first save over seed(base) binds the source SHA once, and a text
@@ -471,14 +489,20 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 		return SourceProcessResult{}, err
 	}
 	doc, err := readSourceSession(ctx, tx, fileID, ws)
+	if isNoRows(err) {
+		return SourceProcessResult{}, ErrNothingToProcess
+	}
 	if err != nil {
 		return SourceProcessResult{}, err
 	}
 	var name, kind, mode string
-	var ever, indexed, reprocess, autoParse, autoIndex, manual bool
+	var ever, indexed, reprocess, autoProcess, manual bool
 	var edited, lastRequested time.Time
 	var running, refreshError *string
-	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_reparse,w.auto_reindex,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &ever, &indexed, &reprocess, &autoParse, &autoIndex, &edited, &lastRequested, &running, &manual, &refreshError)
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.parse_mode,f.ever_parsed_successfully,f.indexed,COALESCE(d.reprocess_at<=now(),false),w.auto_process,d.last_edited_at,d.last_refresh_requested_at,d.running_job_id,d.desired_manual,d.refresh_error FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1 AND (f.trashed_at IS NULL OR $2) FOR UPDATE OF f,d`, fileID, system).Scan(&name, &kind, &mode, &ever, &indexed, &reprocess, &autoProcess, &edited, &lastRequested, &running, &manual, &refreshError)
+	if isNoRows(err) {
+		return SourceProcessResult{}, ErrNothingToProcess
+	}
 	if err != nil {
 		return SourceProcessResult{}, err
 	}
@@ -504,16 +528,16 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 			return result, ErrConflict
 		}
 		if doc.Format == "text" {
-			if (!autoIndex && !manual) || time.Since(lastRequested) < 15*time.Second {
+			if (!autoProcess && !manual) || time.Since(lastRequested) < 15*time.Second {
 				return result, ErrConflict
 			}
 		} else {
 			// Store-only files publish export-only under the same trigger,
-			// whatever auto-reparse says; the owner's Process stays their
+			// whatever auto-process says; the owner's Process stays their
 			// opt-in first parse.
 			exportOnly = storeOnly && !manual
 			due := doc.NetTokens >= officeRefreshTokens || time.Since(edited) >= officeRefreshStale
-			if ((!due || !(exportOnly || autoParse && ever)) && !manual) || time.Since(edited) < officeRefreshIdle {
+			if ((!due || !(exportOnly || autoProcess && ever)) && !manual) || time.Since(edited) < officeRefreshIdle {
 				return result, ErrConflict
 			}
 		}

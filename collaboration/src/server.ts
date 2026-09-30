@@ -59,12 +59,12 @@ import {
 } from './officeRoots.js';
 import {
   closeOfficeRuntime,
-  OfficeEngineError,
   officeDocumentRoots,
   type SourceFormat,
 } from './officeRuntime.js';
 import {
   CollaborationAuthorizationError,
+  CollaborationNotFoundError,
   CollaborationReadOnlyError,
   materialIdFromRoom,
   roomSaveQueue,
@@ -92,7 +92,12 @@ import {
   type SourcePublish,
   SourcePublishingError,
 } from './sourceHandoff.js';
-import { handlePermanentStoreFailure } from './storeFailure.js';
+import {
+  engineFailures,
+  engineRefused,
+  handlePermanentStoreFailure,
+} from './storeFailure.js';
+import { armTokenExpiry, clearTokenExpiry } from './tokenExpiry.js';
 import {
   inboundYjsUpdate,
   yjsUpdateContainsChanges,
@@ -490,11 +495,14 @@ function rejectInvalidDocumentRoom(room: string) {
   if (roomEvictions.isRejected(room)) return;
   roomEvictions.reject(room);
   const evictionId = randomUUID();
+  // `document-rejected` makes each editor drop its copy and reload the last
+  // valid state instead of reconnecting and resending the invalid one.
   const payload = JSON.stringify({
+    code: 'invalid_document',
     evictionId,
     materialId: materialIdFromRoom(room),
     room,
-    type: 'compaction-evict',
+    type: 'document-rejected',
   });
   setTimeout(() => {
     void (async () => {
@@ -559,6 +567,26 @@ async function withDistributedEviction<T>(
   }
 }
 
+// Sockets authenticating for a source room, by socket and room (one socket
+// multiplexes rooms), from before the publication lock check until they
+// connect or fail: a rebuild counts them as in the room. One that closed in
+// between is dropped after a minute (the handoff forgets it after 30 s).
+const sourceJoins = new Map<string, { done: () => void; since: number }>();
+function startSourceJoin(socketId: string, room: string) {
+  const now = Date.now();
+  for (const [key, join] of sourceJoins)
+    if (now - join.since > 60_000) sourceJoins.delete(key);
+  sourceJoins.set(`${socketId}\u0000${room}`, {
+    done: sourceHandoff.join(room, socketId),
+    since: now,
+  });
+}
+function endSourceJoin(socketId: string, room: string) {
+  const key = `${socketId}\u0000${room}`;
+  sourceJoins.get(key)?.done();
+  sourceJoins.delete(key);
+}
+
 const server = new Server<CollaborationContext>({
   address: config.host,
   // A message dropped for a resync (resyncOfficeConnection) is behind us.
@@ -567,8 +595,12 @@ const server = new Server<CollaborationContext>({
   },
   async afterUnloadDocument({ documentName }) {
     pendingCheckpoints.delete(documentName);
-    if (SOURCE_ROOM_PATTERN.test(documentName)) sources.forget(documentName);
-    else store.forgetRoom(documentName);
+    if (SOURCE_ROOM_PATTERN.test(documentName)) {
+      sources.forget(documentName);
+      // The last editor here left: a deferred publication can move editing
+      // onto the published file if no other instance has the room open.
+      sourceHandoff.scheduleRebuild(sourceRoom(documentName).fileId);
+    } else store.forgetRoom(documentName);
   },
   // Runs per inbound message, so keep it cheap: the only I/O is the writer
   // access recheck, at most once per connection every 5 s. Distributed
@@ -638,7 +670,6 @@ const server = new Server<CollaborationContext>({
               type: 'source-checkpoint-failed',
               ...sourceRoom(document.name),
               checkpointIds: [],
-              message: refusal,
               recoverable: false,
             })
           );
@@ -659,15 +690,10 @@ const server = new Server<CollaborationContext>({
       throw error;
     }
   },
-  async connected({ connection, context }) {
-    const delay = Math.max(0, context.expiresAt * 1000 - Date.now());
-    const timer = setTimeout(() => {
-      connection.close({
-        code: 4401,
-        reason: 'collaboration token expired',
-      } as CloseEvent);
-    }, delay);
-    connection.onClose(() => clearTimeout(timer));
+  async connected({ connection, documentName }) {
+    endSourceJoin(connection.socketId, documentName);
+    armTokenExpiry(connection);
+    connection.onClose(() => clearTokenExpiry(connection));
   },
   debounce: config.debounceMs,
   extensions: [
@@ -680,7 +706,15 @@ const server = new Server<CollaborationContext>({
   maxPendingDocuments: 8,
   maxUnauthenticatedQueueMessages: 64,
   maxUnauthenticatedQueueSize: 512 * 1024,
-  async onAuthenticate({ connectionConfig, documentName, request, token }) {
+  async onAuthenticate({
+    connectionConfig,
+    documentName,
+    request,
+    socketId,
+    token,
+  }) {
+    if (SOURCE_ROOM_PATTERN.test(documentName))
+      startSourceJoin(socketId, documentName);
     try {
       assertAllowedOrigin(request, config.allowedOrigins);
       assertRoomAvailable(documentName);
@@ -715,6 +749,7 @@ const server = new Server<CollaborationContext>({
       connectionConfig.readOnly = readOnly;
       return claimsContext(claims);
     } catch (error) {
+      endSourceJoin(socketId, documentName);
       authenticationFailures += 1;
       // Expected and high volume (expired tokens, stale tabs); logged, not
       // reported, or the error stream is nothing but this.
@@ -728,6 +763,15 @@ const server = new Server<CollaborationContext>({
         !(error instanceof CollaborationReadOnlyError)
       )
         throw new CollaborationReadOnlyError('source access is read-only', {
+          cause: error,
+        });
+      // The gateway's source access answer carries no reason: a missing or
+      // trashed file and lost access get theirs, so the editor shows a panel
+      // instead of retrying.
+      if (error instanceof SourceRequestError && error.status === 404)
+        throw new CollaborationNotFoundError(error.message, { cause: error });
+      if (error instanceof SourceRequestError && error.status === 403)
+        throw new CollaborationAuthorizationError(error.message, {
           cause: error,
         });
       throw error;
@@ -849,6 +893,13 @@ const server = new Server<CollaborationContext>({
               !handleRejectedStore(documentName, error, document) &&
               !roomEvictions.isDiscarding(documentName)
             ) {
+              // Retried below; the editors keep their edits and show it.
+              document.broadcastStateless(
+                JSON.stringify({
+                  materialId: materialIdFromRoom(documentName),
+                  type: 'checkpoint-failed',
+                })
+              );
               const eventId = reportFailedStore(
                 failedStores.get(documentName),
                 error,
@@ -923,6 +974,11 @@ const server = new Server<CollaborationContext>({
     ).assertConnectionAccess(documentName, claims.sub, claims.access);
     connection.context = claimsContext(claims);
     connection.readOnly = claims.access === 'read';
+    // It may have closed during the checks above; its timers are gone then.
+    if (
+      server.hocuspocus.documents.get(documentName)?.hasConnection(connection)
+    )
+      armTokenExpiry(connection);
   },
   quiet: true,
   stopOnSignals: false,
@@ -990,25 +1046,40 @@ async function storeSource(document: Document) {
       room,
       (storeFailureGenerations.get(room) ?? 0) + 1
     );
+    // A storage or frozen refusal drops every writer to view (their unsaved
+    // edits are discarded); a state the engine refused (engineRefused) or the
+    // gateway refused for good cannot be retried, so the room is discarded
+    // and its clients reload the last saved version. Anything else is retried
+    // here while the clients keep editing.
+    const readOnly = readOnlyRefusal(error);
+    const previous = failedStores.get(room);
+    const failures = engineFailures(error, previous?.engineFailures);
+    const refused = engineRefused(error, failures);
     const recoverable =
-      !(error instanceof SourceRequestError) ||
-      ![401, 403, 404, 409, 413, 422].includes(error.status);
+      !(readOnly || refused) &&
+      (!(error instanceof SourceRequestError) ||
+        ![401, 403, 404, 409, 413, 422].includes(error.status));
     document.broadcastStateless(
-      JSON.stringify({
-        type: 'source-checkpoint-failed',
-        ...sourceRoom(room),
-        checkpointIds: claimed,
-        message: error instanceof Error ? error.message : 'Source save failed',
-        recoverable,
-      })
+      JSON.stringify(
+        readOnly
+          ? { room, type: 'room-read-only' }
+          : {
+              type: 'source-checkpoint-failed',
+              ...sourceRoom(room),
+              checkpointIds: claimed,
+              recoverable,
+            }
+      )
     );
-    if (error instanceof OfficeEngineError) {
-      // Retrying a state the engine failed on cannot help; clients keep drafts.
+    if (refused) {
       reportFailedStore(undefined, error, room);
+      failedStores.delete(room);
+      rejectAuthorizationRoom(room);
     } else if (recoverable && !roomEvictions.isDiscarding(room)) {
-      const eventId = reportFailedStore(failedStores.get(room), error, room);
+      const eventId = reportFailedStore(previous, error, room);
       failedStores.set(room, {
         checkpointIds: claimed,
+        engineFailures: failures,
         eventId,
         state: rawState,
       });
@@ -1030,7 +1101,9 @@ const sourceHandoff = new SourceHandoff(
   sources,
   activeInstanceIds,
   persistSource,
-  config.uatPublicationHold
+  config.uatPublicationHold,
+  (error) => captureError(error, { stage: 'source_rebuild' }),
+  (room) => failedStores.has(room) || (activeStores.get(room)?.size ?? 0) > 0
 );
 
 async function handleHttpRequest(
@@ -1459,15 +1532,35 @@ const failedStoreRetries = new FailedStoreRetryRunner(
     } catch (error) {
       storeFailures += 1;
       if (SOURCE_ROOM_PATTERN.test(room)) {
+        // As in storeSource: a refusal for good tells the clients (read-only,
+        // or reset to the last saved version) and discards the room.
+        const readOnly = readOnlyRefusal(error);
+        const failures = engineFailures(error, failed.engineFailures);
+        const refused = engineRefused(error, failures);
         if (
-          error instanceof SourceRequestError &&
-          [401, 403, 404, 409, 413, 422].includes(error.status)
+          readOnly ||
+          refused ||
+          (error instanceof SourceRequestError &&
+            [401, 403, 404, 409, 413, 422].includes(error.status))
         ) {
+          if (refused) reportFailedStore(failed, error, room);
+          server.hocuspocus.documents.get(room)?.broadcastStateless(
+            JSON.stringify(
+              readOnly
+                ? { room, type: 'room-read-only' }
+                : {
+                    type: 'source-checkpoint-failed',
+                    ...sourceRoom(room),
+                    checkpointIds: failed.checkpointIds,
+                    recoverable: false,
+                  }
+            )
+          );
           clearIfCurrent();
           rejectAuthorizationRoom(room);
         } else {
+          failed.engineFailures = failures;
           reportFailedStore(failed, error, room);
-          if (error instanceof OfficeEngineError) clearIfCurrent();
         }
         return;
       }
@@ -1804,6 +1897,39 @@ const sourceRefreshTimer = setInterval(() => {
 }, 5000);
 sourceRefreshTimer.unref();
 
+// Rebuilds a room-unload trigger missed (another instance still had the room,
+// a restart): every minute, files with a pending rebuild and no refresh in
+// flight, skipping one found in use for five minutes.
+const rebuildBackoff = new Map<string, number>();
+let sweepingRebuilds = false;
+const rebuildTimer = setInterval(() => {
+  if (sweepingRebuilds) return;
+  sweepingRebuilds = true;
+  void (async () => {
+    const now = Date.now();
+    for (const [fileId, until] of rebuildBackoff)
+      if (until <= now) rebuildBackoff.delete(fileId);
+    // Files waiting out a backoff are left out of the query, so they never
+    // fill its batch.
+    for (const fileId of await sources.pendingRebuilds([
+      ...rebuildBackoff.keys(),
+    ])) {
+      try {
+        if (!(await sourceHandoff.rebuild(fileId)))
+          rebuildBackoff.set(fileId, now + 5 * 60_000);
+      } catch (error) {
+        rebuildBackoff.set(fileId, now + 10 * 60_000);
+        captureError(error, { stage: 'source_rebuild' });
+      }
+    }
+  })()
+    .catch((error) => captureError(error, { stage: 'source_rebuild' }))
+    .finally(() => {
+      sweepingRebuilds = false;
+    });
+}, 60_000);
+rebuildTimer.unref();
+
 // The maintenance pause (office_editing_pause, set by operators) reaches this
 // instance within 5 s: each loaded Office room flushes, persists and closes
 // its writers once. A room that loads later, or is mid-publication, follows on
@@ -1852,6 +1978,7 @@ async function shutdown(signal: string) {
   clearInterval(compactionTimer);
   clearInterval(heartbeatTimer);
   clearInterval(sourceRefreshTimer);
+  clearInterval(rebuildTimer);
   clearInterval(officePauseTimer);
   projections.stop();
   server.hocuspocus.flushPendingStores();
