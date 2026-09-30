@@ -13,7 +13,9 @@ test('bank jumps to an unloaded question and restores earlier ones in place', as
   await page.goto('/bank/practice');
   const question = (n: number) =>
     page.locator(`[data-question-id="bank-practice-${n}"]`);
-  await expect(question(1)).toContainText('width 2 cm');
+  // Page readiness: a cold dev server compiles the bank route first, so this
+  // gets the allowance question-formula.spec.ts uses.
+  await expect(question(1)).toContainText('width 2 cm', { timeout: 30_000 });
   await expect(question(11)).toHaveCount(0);
 
   await page
