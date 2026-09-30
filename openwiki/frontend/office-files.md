@@ -224,7 +224,12 @@ link): each child in the latest state must land in the rebased state in the
 same field and result slot, one to one, or the rebase refuses. So text typed in
 such a child after the capture lands only when the export's seed numbers its
 field as the capture does, and a captured field slot holding two links refuses
-every later rebase (accepted as rare). Any failure while landing the later
+every later rebase (accepted as rare). A DOCX rebase also refuses when text
+follows breaks that open a paragraph after another paragraph and the rebased
+state reads those breaks as leading it while the latest state does not
+(`assertBreaksLead`, aligning the two afresh): the capture's save can write a
+comment's reference after such breaks, so landing there would differ from a
+direct save. Any failure while landing the later
 edits is a refusal (`RebaseError`). A refusal (an error the engine raises
 with the `Office rebase:` prefix, including XLSX's) is terminal: the
 collaboration service answers the publication with 422, and the ingest worker
