@@ -9,8 +9,11 @@ the sources it names; the decision file is binding.
   containers, Accept/Reject all, refuse-when-unsure rebases, a patched yrs,
   and the pre-production fixes. BetterOffice `capy-ci` = `30e6ef9c`; Capy pins
   it (`aa9f9166`). UAT runs `24130ab6` (same engine; `30e6ef9c` only added tests).
-- Production has none of it. Its pin bump needs the Office maintenance window
-  (seeds change for breaks outside the body, leading page breaks, some fields).
+- Production has none of it. Seeds changed (breaks outside the body, leading
+  page breaks, some fields), but production holds no Office data yet, so its
+  pin bump needs no maintenance window. At release, a read-only count of
+  `source_documents` rows with a stored state confirms zero; any such row means
+  the window runs.
 
 ## Read first
 
@@ -118,8 +121,9 @@ break edge cases):
   1. Fast-forward `capy-ci`.
   2. Pin the exact SHA in Capy and update `openwiki/test-catalog.md` and the
      Office wiki.
-  3. If seeds change, run the UAT maintenance window. Nobody else uses UAT, so
-     deploy there without asking.
+  3. If seeds change and UAT holds Office rows with a stored state, run the UAT
+     maintenance window (it had none so far). Nobody else uses UAT, so deploy
+     there without asking.
   4. Deploy UAT (`deploy-uat.yml`, then `deploy-ingest.yml`), then run
      `uat-quality.yml` with critical paths. It includes the Office refusal
      journey.
