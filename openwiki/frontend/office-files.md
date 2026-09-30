@@ -264,11 +264,13 @@ as trailing breaks of the paragraph before it. A break with no paragraph
 before it and no text to lead (a story's start, right before a table) saves
 as a break-only paragraph of its own, and an insertion there after a capture
 refuses the rebase; a text-less paragraph whose breaks end in a column break
-keeps them. A break after a field, link or tracked change stays in place while
-the paragraph's text is unchanged and moves to the paragraph's end once it
-changes, as after plain runs (a file without `w14:paraId` finds a paragraph's
-source by its seeded index, `<story>:p<N>`). A bookmark opening before a
-paragraph's leading breaks stays before them (`breaksAfter`), and an empty
+keeps them. Mid-paragraph breaks stay between their surrounding text after
+typing, Enter, Accept/Reject all and publication, including breaks inside
+links, inline content controls and tracked changes. The render bridge splits
+an inline break into paragraph fragments while keeping one editable paragraph
+and one list number. Enter at the start of a heading after a trailing column
+break puts the empty line after that break, even if the preceding text changed.
+A bookmark opening before a paragraph's leading breaks stays before them, and an empty
 list item before a leading break keeps its number. Tracked breaks keep
 `w:ins`/`w:del`. The toolbar offers a page break only outside table cells,
 headers, footers and notes, as in Word; breaks the file has there are kept.
@@ -281,17 +283,28 @@ a leading break keeps every break in place: when such a comment has no
 reference mark yet, the save writes its reference after the breaks, so Word
 anchors its note on the heading's page.
 
+Word-authored reference marks before leading breaks leave those breaks at the
+paragraph start. Draft exports place reply references after the leading breaks
+too. Comments starting at the heading's text keep that start across captures,
+and a source reference in the next paragraph does not move its range. Comments
+added after a capture and ending before a trailing break keep excluding it in
+both direct and rebased saves. Empty-comment behavior is the same in body text,
+table cells, header cells and endnotes when tested with the same session ids.
+
 BetterOffice builds with a patched yrs 0.27.3 (`third_party/yrs`, through
 `[patch.crates-io]`): its `clean_format_gap` counts a map embed (a field,
 paragraph mark or break) as content, as JS Yjs does, so a delete before a
 field no longer spreads the deleted text's link and field marker onto the
 field. Without it, one Backspace at the end of a table of contents' first
-entry removed the whole TOC field from the saved file.
+entry removed the whole TOC field from the saved file. The native viewer,
+Python bindings and fuzz workspaces use that same copy, including the native
+viewer's UTF-8 validation in both update decoders. WASM fingerprints include
+the vendored source so changes rebuild the engines.
 
-The DOCX editor never puts paragraph text ahead of a table, block content
-control or page or column break in one paragraph slot, as in Word (the render
-bridge refuses that state). Delete at the end of a paragraph just before such
-a block, or Backspace at the start of the block's paragraph, does not merge
+The DOCX render bridge refuses paragraph text ahead of a table or block content
+control in one paragraph slot. Page and column breaks can follow text within a
+paragraph. Delete at the end of a paragraph just before a block-led slot,
+or Backspace at the start of that slot's paragraph, does not merge
 the two (`merge_paragraphs` in `crates/docx-edit`):
 
 - before a page or column break it removes the break, unless the paragraph
@@ -348,20 +361,35 @@ bookmarks inside `w:fldSimple`, a simple field inside a hyperlink or `w:ins`,
 tracked changes and content controls inside `w:fldSimple` or a complex field's
 result (one spanning paragraphs included), tracked changes and foreign markup
 inside field code, and a complex field nested in field code (mail-merge
-`IF { MERGEFIELD }`). Instruction text inside a field's begin run is kept. A
-tracked change holding a field's own `fldChar` moves in front of the field, so
-the field stays balanced. The editor shows a field's result with inserted and
+`IF { MERGEFIELD }`). Text beside a field character in its run is kept.
+Single-paragraph fields stay balanced when a revision wraps only one of their
+field characters. The editor shows a field's result with inserted and
 content-control text and without deleted text. Projected children of a field
 result (TOC entry links, a REF field's link) keep their field marker through
 Clear formatting, and text typed over a range that removes their field takes
-no field number, so the export never moves them into another field. Known
-export losses remain for a follow-up fork task: complex fields inside
-hyperlinks (a TOC entry's `PAGEREF` saves as its result), hyperlink and
-tracked-change nesting, a field inside one `w:ins` or `w:del`, content inside
-`w:ins`/`w:del` pairs, and bookmark offsets. Seeds changed with the break and
-field-container rules (breaks outside the body, leading or tracked breaks,
-comments and bookmarks beside a leading break, field containers, instruction
-text in a field's begin run), so the pin that brought them ships in a
+no field number, so the export never moves them into another field. Complex
+fields inside links, links inside tracked changes, tracked changes and content
+controls inside links, whole fields inside `w:ins` or `w:del`, and nested
+`w:ins`/`w:del` pairs retain their content and wrappers. Block content controls
+inside table cells retain their blocks on export. A table of contents keeps
+its entry links' nested `PAGEREF` fields, its `fldChar w:dirty` flags, and
+separate/end characters in their authored paragraphs, including characters
+inside links, revisions and inline controls. Their anchors move with edits and
+translate across publication, including paragraphs without source ids.
+Nested fields keep distinct anchors when both cross a paragraph boundary.
+Typing at a link's end keeps its history, frame and document-location
+attributes; unbolding a field's first child does not restore its old bold.
+
+Bookmarks use zero-width positions in the shared `bookmarks` root, covered by
+Undo and publication rebasing. Typing moves their boundaries, Enter leaves one
+copy, and joins or accepted paragraph-mark deletions retain them. Markers in
+links and inline controls survive export. Empty ranges remain together before
+new text. Generated comment paragraph ids reserve the ids already used by the
+document, headers, footers and notes.
+
+Seeds changed with the break and field-container rules, bookmark anchors,
+formatting revisions, multi-paragraph fields and Word comment references
+before leading breaks, so these pins ship in a
 [maintenance window](#maintenance-window).
 
 The DOCX toolbar has no Editing/Suggesting/Viewing dropdown: the editor always
@@ -375,6 +403,11 @@ of contents. Each is one undo step and keeps the editor focused. They resolve
 changes only: a field whose kept changes resolve becomes what the seed makes of
 its export, a projected child the user edited keeps its edit and one the user
 deleted stays deleted, and a child resolves only for the field that records it.
+Run-formatting revisions (`w:rPrChange`) appear in the change list; Accept keeps
+the current formatting and Reject restores the previous formatting. Both also
+resolve revisions in nested fields and controls and remove resolved move
+wrappers and range markers. Deleting a break in a field result removes it from
+the saved field too.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor

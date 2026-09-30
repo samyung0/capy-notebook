@@ -108,6 +108,10 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: bun install --frozen-lockfile && bun run test:matrix
+      - if: steps.pin.outputs.moved == 'true'
+        name: DOCX publication regressions
+        working-directory: vendor/betteroffice
+        run: bun test --isolate shared/docx-*.test.ts
       - if: always() && steps.pin.outputs.moved == 'true'
         uses: actions/upload-artifact@v4
         with:
