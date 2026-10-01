@@ -65,7 +65,7 @@ export function EditorSettingsDialog() {
         <EditorIcon name="preferences" />
       </ToolbarButton>
       <DialogContent className="max-w-2xl">
-        <DialogTitle>{m.editor_prefs_title()}</DialogTitle>
+        <DialogTitle className="pb-2">{m.editor_prefs_title()}</DialogTitle>
         <form
           onSubmit={handleSubmit((draft) => {
             setEnabled(draft.enabled);
@@ -75,7 +75,7 @@ export function EditorSettingsDialog() {
           })}
         >
           <Tabs
-            className="mt-2.5"
+            className="mt-2.5 whitespace-nowrap"
             onChange={setTab}
             tabs={[
               { label: m.settings_tab_general(), value: 'general' },
