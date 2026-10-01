@@ -230,7 +230,6 @@ function CodeBlock(props: PlateElementProps) {
     <PlateElement
       {...props}
       as="pre"
-      attributes={{ ...props.attributes, spellCheck: false }}
       className={CODE_BLOCK_CLASS}
       data-language={language}
     >

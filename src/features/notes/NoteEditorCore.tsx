@@ -283,6 +283,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
         onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
         scrollSelectionIntoView={scrollSelectionIntoView}
+        spellCheck={false}
       />
       {/* Share the editor's containing block so scrolling moves both natively. */}
       <FloatingToolbar />

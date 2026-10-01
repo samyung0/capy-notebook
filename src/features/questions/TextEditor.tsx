@@ -201,6 +201,7 @@ export function TextEditor({
             'min-w-0 outline-none',
             compact ? 'min-h-8 py-1' : 'min-h-40 p-3'
           )}
+          spellCheck={false}
         />
       </Plate>
     </FormulaControls.Provider>

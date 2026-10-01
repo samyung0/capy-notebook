@@ -59,7 +59,7 @@ export const EQUATION_BLOCK_CLASS =
 
 /* leaf marks */
 export const CODE_MARK_CLASS =
-  'rounded bg-surface-hover-bg px-1 py-0.5 font-mono text-[0.85em]';
+  'rounded bg-tint-accent-1 px-1 py-0.5 font-mono font-medium text-[0.85em] text-tint-accent-1-fg';
 export const HIGHLIGHT_MARK_CLASS = 'bg-tint-info border-b border-solid-info';
 export const KBD_MARK_CLASS =
   'rounded border border-line bg-surface-hover-bg px-1.5 py-0.5 text-sm font-mono text-fg';
