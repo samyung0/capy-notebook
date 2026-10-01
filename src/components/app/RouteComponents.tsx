@@ -1,5 +1,4 @@
 import { lazyRouteComponent, Outlet } from '@tanstack/react-router';
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { AnalyticsRoot } from './AnalyticsRoot';
 import { AppShell } from './AppShell';
 import { AuthGate } from './AuthProvider';
@@ -16,7 +15,7 @@ export function RootRoute() {
     <>
       <AnalyticsRoot />
       <Outlet />
-      <TanStackRouterDevtools />
+      {/* <TanStackRouterDevtools /> */}
     </>
   );
 }
