@@ -221,7 +221,12 @@ export function MentionInputElement(
                   key={member.userId}
                   onClick={() => select(index)}
                   onMouseDown={(event) => event.preventDefault()}
-                  onMouseEnter={() => setActiveIndex(index)}
+                  // A menu opening or scrolling under a resting pointer fires
+                  // enter events with no movement; only real motion selects.
+                  onMouseMove={(event) => {
+                    if (event.movementX || event.movementY)
+                      setActiveIndex(index);
+                  }}
                   role="option"
                   type="button"
                 >
