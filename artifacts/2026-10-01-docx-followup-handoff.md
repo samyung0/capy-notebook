@@ -126,6 +126,67 @@ and how to run them are in `artifacts/2026-10-02-docx-perf-probes/`.
 Fork changes follow How to work below. The matrix and goldens should not move,
 because these changes only touch rendering and decode.
 
+## Toolbar styling track (added 2026-10-02)
+
+This is also separate from items 1–6. The developer wants the DOCX editor
+toolbar to match Capy's own toolbars: `Toolbar` and `ToolbarGroup` in
+`src/components/ui/Toolbar.tsx`, and `ToolbarButton` in
+`src/components/ui/ToolbarButton.tsx`, as used by `NoteToolbar` and the PDF
+toolbar.
+
+Screenshots are in `artifacts/2026-10-02-docx-toolbar/`: the toolbar today in
+both themes, the toolbar with a CSS reset injected, and Capy's PDF toolbar for
+reference.
+
+The runtime is a separate document, so none of Capy's CSS reaches it. It loads
+only `src/office-runtime/office-runtime.css` and docx-react's `dist/styles.css`.
+
+**Capy side (no fork change):**
+
+1. **Add a CSS reset to the runtime.** This is most of today's "off" look.
+   `packages/docx/src/styles/editor.css` leaves out Tailwind's reset
+   (preflight) on purpose and expects the host to supply it, and the fork's own
+   apps load full Tailwind. Without it, every ghost button keeps the browser's
+   bevelled border. Injecting `tailwindcss/preflight.css` into the frame fixes
+   that (`docx-with-reset.png`). Importing it in `office-runtime.css` is safe
+   for the app, because the iframe is its own document. Check the XLSX and PPTX
+   viewers and editors afterwards, since they share that CSS.
+2. **Map Capy's colours onto the editor's variables.** In `office-runtime.css`,
+   set the `--doc-*` and shadcn variables on `.oox-root` (`--background`,
+   `--muted`, `--border` and so on) to Capy's values. Those values come from
+   `src/styles/tokens/primitives.css`, `src/styles/tokens/themes/*.css` and the
+   semantic names in `src/styles/tailwind.css`. The runtime can't read the
+   parent's variables, so it needs its own copy.
+3. **Dark mode.** The editor stays light while Capy is dark
+   (`docx-now-dark.png`). `DocxEditor` already takes
+   `colorMode: 'light' | 'dark' | 'system'`. The host needs to send its theme
+   (`src/theme/ThemeProvider.tsx`) with `load` and on every change. That is a
+   protocol message, so bump `OFFICE_PROTOCOL_VERSION`.
+4. **Wrong status label.** In edit mode the DOCX header keeps saying "Opening
+   document…" (`src/features/files/DocxView.tsx` around line 96), because only
+   the viewer reports a page count.
+
+**Fork side (`capy-ci`, styling only):** what's left after the reset is layout
+that docx-react hardcodes as Tailwind classes under `important: '.oox-root'`.
+Prefer CSS variables in the fork, with the values set from Capy, over
+rewriting the classes. That keeps the `capy-ci` diff small for upstream syncs.
+
+| Part | Fork today | Capy target |
+| --- | --- | --- |
+| Formatting bar (`packages/docx-react/src/components/Toolbar.tsx`, the `formatting-bar` container) | `bg-muted rounded-full min-h-[36px] mx-2 mb-1` pill | flat `h-10`, `border-b`, `bg-surface/95`, `px-2` |
+| `ToolbarGroup` (same file) | `gap-px px-1.5 border-r border-border/50` | 1px × 28px `after:` divider with `mx-1.5` |
+| `ToolbarButton` (same file, plus `.oox-toolbar-toggle` in `editor.css`) | `Button size="icon-sm"`, muted text | `size-8`, `[&_svg]:size-4`, hover `surface-hover-bg`, pressed `tint-accent-1` |
+| Pickers (zoom, style, font, size) | bordered selects | match Capy's dropdown `ToolbarButton` |
+
+**Not styling only. Each needs a developer decision recorded in `human/`
+before implementation:**
+
+- Whether to keep the title-bar row (document icon plus File, Format and Insert
+  menus) or fold it into the toolbar. `DocxEditor` already takes
+  `showFileOpen` and `showHelpMenu`.
+- Whether to swap the fork's `MaterialSymbol` icons for Capy's icon set. That
+  needs an icon injection point in docx-react.
+
 ## How to work
 
 - **Branch:** create one from `origin/capy-ci` in a worktree under your
