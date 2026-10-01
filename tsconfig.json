@@ -30,7 +30,9 @@
       "@betteroffice/fonts": [
         "./vendor/betteroffice/packages/fonts/src/index.ts"
       ],
-      "@betteroffice/fonts-cjk": ["./src/office-runtime/noCjkFonts.ts"],
+      "@betteroffice/fonts-cjk": [
+        "./vendor/betteroffice/packages/fonts-cjk/src/index.ts"
+      ],
       "@betteroffice/xlsx": [
         "./vendor/betteroffice/packages/xlsx/src/index.ts"
       ],

@@ -176,7 +176,7 @@ export default defineConfig(({ mode }) => {
           find: '@betteroffice/fonts-cjk',
           replacement: path.resolve(
             import.meta.dirname,
-            './src/office-runtime/noCjkFonts.ts'
+            './vendor/betteroffice/packages/fonts-cjk/src/index.ts'
           ),
         },
         {

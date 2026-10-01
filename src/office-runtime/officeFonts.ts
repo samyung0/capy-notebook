@@ -40,11 +40,6 @@ export function registerOfficeFaces(faces: readonly OfficeFace[]) {
   );
 }
 
-// The CJK faces ship in @betteroffice/fonts-cjk (33 MB), which Capy leaves
-// out: CJK text keeps the browser's fonts.
-const shipped = (face: BundledFontFace | undefined) =>
-  face?.script?.startsWith('cjk') ? undefined : face;
-
 function loader(face: BundledFontFace, family: string) {
   return async () => {
     try {
@@ -65,7 +60,9 @@ function loader(face: BundledFontFace, family: string) {
 
 /**
  * The fork's bundled fonts for configureDefaultFonts (record 16): DOCX
- * measures with the metric-compatible faces, each also registered as a
+ * measures with the metric-compatible faces and the CJK coverage faces
+ * (@betteroffice/fonts-cjk, emitted as same-origin assets that load only when
+ * a document needs that script), each also registered as a
  * FontFace under the Office family it stands in for (a no-op in a worker).
  * The engine falls back silently when a face fails, so each failure is also
  * reported to onOfficeFontFailure listeners, which show it as an error.
@@ -73,7 +70,7 @@ function loader(face: BundledFontFace, family: string) {
 export const officeFonts = {
   createFontProvider: () => ({
     resolve(family: string, bold: boolean, italic: boolean) {
-      const face = shipped(resolveMetricCompatFace(family, bold, italic));
+      const face = resolveMetricCompatFace(family, bold, italic);
       return face && loader(face, family);
     },
     resolveLastResort(family: string, bold: boolean, italic: boolean) {
@@ -84,7 +81,7 @@ export const officeFonts = {
       bold: boolean,
       italic: boolean
     ) {
-      const face = shipped(resolveScriptFallbackFace(script, bold, italic));
+      const face = resolveScriptFallbackFace(script, bold, italic);
       return face && loader(face, face.family);
     },
   }),

@@ -461,8 +461,13 @@ under the Office family it stands in for, in the runtime iframe, so the page
 paints what was measured (the viewer worker reports its faces with the display
 list). The runtime's own interface names only generic families
 (`office-runtime.css`), so a document's family never repaints it. PPTX loads
-the Liberation Sans faces as `Arial`. The CJK add-on
-is not shipped, so CJK text keeps the browser's fonts. A face that fails to load
+the Liberation Sans faces as `Arial`. The CJK add-on (`@betteroffice/fonts-cjk`:
+Noto Sans TC, SC, JP, KR and Noto Serif SC, 4.5 to 11.6 MB each) ships as
+same-origin, content-hashed assets that load only when a document's text or
+fonts need that script, so the engine measures CJK text with the face the page
+paints; without them CJK text overlapped in view and vanished in edit. Han text
+without kana or Hangul uses the Simplified bucket, so a Traditional Chinese
+file can load both Chinese faces. A face that fails to load
 shows an explicit error instead of the fallback layout
 (`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
 
