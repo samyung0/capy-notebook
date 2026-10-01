@@ -103,7 +103,6 @@ import {
 import {
   BlockPlaceholderPlugin,
   createPlatePlugin,
-  ParagraphPlugin,
   type RenderNodeWrapper,
 } from 'platejs/react';
 import { createElement } from 'react';
@@ -128,6 +127,7 @@ import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
+import { NoteParagraphPlugin, VscodeMarkdownPastePlugin } from './pastePlugins';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
@@ -294,7 +294,7 @@ const CodeBlockListCleanupPlugin = createSlatePlugin({
 }));
 
 const BasicBlocksKit = [
-  ParagraphPlugin,
+  NoteParagraphPlugin,
   H1Plugin.configure({
     inputRules: [HeadingRules.markdown()],
     rules: { break: { empty: 'reset' } },
@@ -530,6 +530,7 @@ export const MaterialKit: AnyPlugin[] = [
   CodeLinePlugin,
   CodeSyntaxPlugin,
   CodeBlockListCleanupPlugin,
+  VscodeMarkdownPastePlugin,
   VoidBlockBreakPlugin,
   TablePlugin.configure({ options: { minColumnWidth: 48 } })
     .extendEditorTransforms(({ editor }) => ({

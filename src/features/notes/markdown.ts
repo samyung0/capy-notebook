@@ -32,7 +32,9 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
     rules: {
       // Intercept fenced code: quiz/flashcards/mermaid become custom void nodes;
       // everything else falls back to the default code_block/code_line shape.
-      code: {
+      // Rules are keyed by Plate type: mdast `code` maps to `code_block`,
+      // while `code` is the inline code mark.
+      code_block: {
         deserialize: (node: AnyNode) => {
           const lang = node.lang ?? undefined;
           if (isCustomBlockLang(lang)) {
