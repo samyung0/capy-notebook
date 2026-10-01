@@ -223,11 +223,21 @@ links and fields of a field result (a table of contents' entries, a REF field's
 link): each child in the latest state must land in the rebased state in the
 same field and result slot, one to one, or the rebase refuses. So text typed in
 such a child after the capture lands only when the export's seed numbers its
-field as the capture does, and a captured field slot holding two links refuses
-every later rebase (accepted as rare). A DOCX rebase also refuses when text
+field as the capture does (a bookmark hand-off renumbers the surviving
+paragraph's fields as the seed does); text typed at a link's end stays in that
+link, so a captured slot holding two links lands exactly. A DOCX rebase also
+refuses when an edit after the capture touches a comment that would cover
+other content than in the latest state (a range typing reversed counts the
+units beside it), when a comment would lose both its range and its reference,
+when a restored field would lose its separate or end in a later paragraph, and
+when the capture's save wrote a new comment's reference ahead of breaks that
+open the latest paragraph or a bookmark sits right before such a reference.
+Comment boundaries meeting at one point save ends, then empty ranges, then
+starts, so direct and rebased saves order them alike. A DOCX rebase also refuses when text
 follows breaks that open a paragraph after another paragraph and the rebased
 state reads those breaks as leading it while the latest state does not
-(`assertBreaksLead`, aligning the two afresh): the capture's save can write a
+(`assertBreaksLead`, aligning the two afresh; bookmarks at the breaks count
+as the render bridge and the save count them): the capture's save can write a
 comment's reference after such breaks, so landing there would differ from a
 direct save (`bun run test:matrix` in BetterOffice classifies these
 rebase outcomes across breaks, comments next to breaks, fields and Accept/Reject
@@ -264,7 +274,9 @@ as trailing breaks of the paragraph before it. A break with no paragraph
 before it and no text to lead (a story's start, right before a table) saves
 as a break-only paragraph of its own, and an insertion there after a capture
 refuses the rebase; a text-less paragraph whose breaks end in a column break
-keeps them. Mid-paragraph breaks stay between their surrounding text after
+keeps them, and once text follows they lead it, so the editor shows its
+space-before at once. A column break that a comment boundary precedes stays in
+its own paragraph instead of closing the one before it. Mid-paragraph breaks stay between their surrounding text after
 typing, Enter, Accept/Reject all and publication, including breaks inside
 links, inline content controls and tracked changes. The render bridge splits
 an inline break into paragraph fragments while keeping one editable paragraph
@@ -379,17 +391,37 @@ translate across publication, including paragraphs without source ids.
 Nested fields keep distinct anchors when both cross a paragraph boundary.
 Typing at a link's end keeps its history, frame and document-location
 attributes; unbolding a field's first child does not restore its old bold.
+Plain result runs after a projected simple field seed as that field's text.
+
+Enter inside a projected link or TOC entry, or after a projected simple
+field's own result text, splits the field across the two paragraphs: its begin
+stays in the first, the result after the split point moves into the second as
+plain result runs, and the field ends after them. Undo restores the original
+field. Backspace, Delete or a range delete back rejoins it when only the moved
+runs sit there, in order; otherwise the split stays, keeping every run and
+typed character. A field whose result holds a kept insertion, a content
+control or foreign markup after the split point keeps the old Enter (the text
+after it leaves the field). Text typed at the end of a paragraph whose field
+code continues into the next lands ahead of the field. Follow-up fork task:
+two peers joining a just-split field at once can duplicate or revive text, the
+join drops formatting applied to the moved text, and text typed at the end of
+a paragraph whose field result continues saves inside the result while the
+editor shows it after the field.
 
 Bookmarks use zero-width positions in the shared `bookmarks` root, covered by
 Undo and publication rebasing. Typing moves their boundaries, Enter leaves one
 copy, and joins or accepted paragraph-mark deletions retain them. Markers in
 links and inline controls survive export. Empty ranges remain together before
-new text. Generated comment paragraph ids reserve the ids already used by the
+new text. Coincident bookmark and field markers keep their source order, every
+bookmark start saves before its end (also when a join collapses several to one
+point), and Undo and Redo re-anchor bookmarks where they stand, so the editor
+and the save agree. Generated comment paragraph ids reserve the ids already used by the
 document, headers, footers and notes.
 
 Seeds changed with the break and field-container rules, bookmark anchors,
-formatting revisions, multi-paragraph fields and Word comment references
-before leading breaks, so these pins ship in a
+formatting revisions, multi-paragraph fields, Word comment references
+before leading breaks, result runs after projected simple fields and source
+order for bookmarks in paragraphs holding continued field characters, so these pins ship in a
 [maintenance window](#maintenance-window).
 
 The DOCX toolbar has no Editing/Suggesting/Viewing dropdown: the editor always
