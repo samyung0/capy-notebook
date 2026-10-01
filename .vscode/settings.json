@@ -33,7 +33,7 @@
     "dist/**": true,
     "test-results/**": true,
     "playwright-report/**": true,
-    "bench/editor/.results/**": true,
+    "bench/**": true,
     "lab/playground/local/**": true,
     "vendor/betteroffice/target/**": true
   }
