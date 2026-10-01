@@ -4,7 +4,15 @@ import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
 import * as Y from 'yjs';
 import { sanitize } from './evidence';
-import { api, fileRow, object, openFile, sha256, string } from './files';
+import {
+  api,
+  fileRow,
+  object,
+  openFile,
+  sha256,
+  string,
+  whenReady,
+} from './files';
 import type { Actor, UatRun } from './runtime';
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
@@ -279,7 +287,9 @@ export async function openEditor(
   // Save is enabled once the replica is ready; large workbooks take longer
   // than the action timeout to open.
   const save = actor.page.getByRole('button', { exact: true, name: 'Save' });
-  await expect(save).toBeEnabled({ timeout: 120_000 });
+  await whenReady(run, actor, 'office-editor', () =>
+    expect(save).toBeEnabled({ timeout: 120_000 })
+  );
   await save.click();
   return actor.page.frameLocator('iframe[src*="office-runtime"]');
 }

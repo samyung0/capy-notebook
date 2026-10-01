@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import type { Locator, Page } from '@playwright/test';
 import { strFromU8, unzipSync, zipSync } from 'fflate';
 import { verify } from './evidence';
 import type { Actor, UatRun } from './runtime';
@@ -127,6 +128,75 @@ export async function fileRow(run: UatRun, fileId: string) {
 }
 
 /** Opens the file, in `mode` when given (the URL's mode wins over the one the browser remembers). */
+// A page's last console errors, the runtime frame's included, kept for the
+// evidence a readiness timeout attaches.
+const consoleErrors = new WeakMap<Page, string[]>();
+function watchConsole(page: Page) {
+  if (consoleErrors.has(page)) return;
+  const errors: string[] = [];
+  consoleErrors.set(page, errors);
+  const keep = (text: string) => {
+    errors.push(text.slice(0, 500));
+    if (errors.length > 30) errors.shift();
+  };
+  page.on('console', (message) => {
+    if (message.type() === 'error') keep(message.text());
+  });
+  page.on('pageerror', (error) => keep(`pageerror: ${error.message}`));
+}
+
+/**
+ * Waits for an editor to be ready; on failure attaches what the page showed
+ * (save and source status, alerts, the runtime frame's text, console errors)
+ * so the gate's evidence tells a failed open from a session that never synced.
+ */
+export async function whenReady(
+  run: UatRun,
+  actor: Actor,
+  name: string,
+  wait: () => Promise<unknown>
+) {
+  try {
+    await wait();
+  } catch (error) {
+    const { page } = actor;
+    const texts = (locator: Locator) =>
+      locator
+        .allInnerTexts()
+        .then((all) => all.map((text) => text.slice(0, 300)))
+        .catch(() => []);
+    await run.attach(`${name}-not-ready`, {
+      alerts: await texts(page.getByRole('alert')),
+      consoleErrors: consoleErrors.get(page) ?? [],
+      runtimeFrame: (
+        await page
+          .frameLocator('iframe[src*="office-runtime"]')
+          .locator('body')
+          .innerText({ timeout: 2000 })
+          .catch(() => '')
+      ).slice(0, 1000),
+      saveState: await page
+        .getByTestId('editor-save-state')
+        .evaluateAll((elements) =>
+          elements.map((element) => ({
+            label: element.getAttribute('aria-label'),
+            text: element.textContent,
+          }))
+        )
+        .catch(() => []),
+      sourceStatus: await page
+        .locator('[data-source-status]')
+        .evaluateAll((elements) =>
+          elements.map((element) => element.getAttribute('data-source-status'))
+        )
+        .catch(() => []),
+      statuses: await texts(page.getByRole('status')),
+      url: page.url(),
+    });
+    throw error;
+  }
+}
+
 export async function openFile(
   run: UatRun,
   actor: Actor,
@@ -134,6 +204,7 @@ export async function openFile(
   fileId: string,
   mode?: 'view' | 'edit'
 ) {
+  watchConsole(actor.page);
   await actor.page.goto(
     `${run.env.appUrl}/workspaces/${workspaceId}?file=${encodeURIComponent(fileId)}${mode ? `&mode=${mode}` : ''}`
   );

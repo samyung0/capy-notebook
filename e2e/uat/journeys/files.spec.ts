@@ -18,6 +18,7 @@ import {
   string,
   trashRestorePurge,
   upload,
+  whenReady,
   workspace,
 } from './files';
 import {
@@ -30,7 +31,7 @@ import {
   savedFacts,
   savedState,
 } from './office';
-import { test } from './runtime';
+import { expect, test } from './runtime';
 
 for (const [format, name] of [
   ['docx', 'lesson.docx'],
@@ -166,9 +167,13 @@ test('text: browser edit automatically publishes durable UTF-8 source', async ({
     .getByRole('button', { exact: true, name: 'Material mode' })
     .click();
   const edited = `${fact}\nThe launch code is CEDAR-42.\n${marker}\n`;
-  await run.owner.page
-    .getByRole('textbox', { name: 'Edit source text' })
-    .fill(edited);
+  const editor = run.owner.page.getByRole('textbox', {
+    name: 'Edit source text',
+  });
+  await whenReady(run, run.owner, 'text-editor', () =>
+    expect(editor).toBeVisible({ timeout: 30_000 })
+  );
+  await editor.fill(edited);
   await run.owner.page
     .getByRole('button', { exact: true, name: 'Save' })
     .click();

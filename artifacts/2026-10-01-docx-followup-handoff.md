@@ -77,116 +77,6 @@ For the agent picking up the remaining BetterOffice DOCX items. It replaces the
 Behaviour choices beyond these need a new decision from the developer, recorded
 in `human/` before you implement (see the `human` skill).
 
-## Performance track (added 2026-10-02)
-
-This is separate from items 1–6, and neither blocks the other. In dev, editing
-lags and hangs, and the tab reaches about 2 GB.
-
-**Already done in Capy (2026-10-02):** the workspace no longer remounts the viewer
-when it crosses lg, and the editor's Google Fonts lookup is off.
-
-**Measured** on Windows, in headless Chromium against MSW, with
-`exchange-plan.docx` (15 pages, Chinese) in edit mode at 1280×800. The probes
-and how to run them are in `artifacts/2026-10-02-docx-perf-probes/`.
-
-- **Typing:** keystroke to painted frame is p50 78 ms and p90 266 ms with
-  production React. Dev is p50 230 ms and p90 840 ms, about 18% of which is
-  React's dev-only render profiling.
-- **CPU per keystroke** (production React, 40 keys):
-  - Display-list decode takes 19%, about 23 ms per key. That is
-    `ValueCursor.value` in `packages/docx/src/layout/render/frameDelta.ts`,
-    which builds every object through `Object.defineProperty`.
-  - WASM layout takes 11% and the edit WASM 6%.
-  - 23% is browser work the profiler doesn't attribute.
-- **Memory:**
-  - The renderer uses 834 MB with the editor open, against 167 MB for the
-    workspace without a file.
-  - JS heap is 42 MB. The WASM heaps are 41 and 27 MB, and the 27 MB one grows
-    to 191 MB on the first edits and stays there.
-  - The total levels off around 1.2 GB after 200 keys, so it isn't an unbounded
-    leak.
-  - About 400–500 MB is unaccounted for. Suspected: copies of the font files
-    (the CJK faces are 4.5–11.6 MB each). Unverified.
-
-**Next:**
-
-1. Count how many pages each keystroke re-sends and decodes. If it's more than
-   the pages the edit changed, fix that first.
-2. Make the decoder cheap: plain object literals instead of `defineProperty`,
-   or decode lazily.
-3. Find where the unaccounted renderer memory goes with a native heap profile.
-   Start by counting how many copies of each font the editor and layout hold.
-4. Measure a larger real document (50+ pages) before and after each change.
-5. **Then in Capy:** add an Office spec to `bench/editor` that runs against a
-   production build:
-   - measures open to first paint, View to Edit ready, and keystroke to frame;
-   - the runtime reports its own timings in the `ready` message, because the
-     parent can't read the cross-origin frame's timeline.
-
-Fork changes follow How to work below. The matrix and goldens should not move,
-because these changes only touch rendering and decode.
-
-## Toolbar styling track (added 2026-10-02)
-
-This is also separate from items 1–6. The developer wants the DOCX editor
-toolbar to match Capy's own toolbars: `Toolbar` and `ToolbarGroup` in
-`src/components/ui/Toolbar.tsx`, and `ToolbarButton` in
-`src/components/ui/ToolbarButton.tsx`, as used by `NoteToolbar` and the PDF
-toolbar.
-
-Screenshots are in `artifacts/2026-10-02-docx-toolbar/`: the toolbar today in
-both themes, the toolbar with a CSS reset injected, and Capy's PDF toolbar for
-reference.
-
-The runtime is a separate document, so none of Capy's CSS reaches it. It loads
-only `src/office-runtime/office-runtime.css` and docx-react's `dist/styles.css`.
-
-**Capy side (no fork change):**
-
-1. **Add a CSS reset to the runtime.** This is most of today's "off" look.
-   `packages/docx/src/styles/editor.css` leaves out Tailwind's reset
-   (preflight) on purpose and expects the host to supply it, and the fork's own
-   apps load full Tailwind. Without it, every ghost button keeps the browser's
-   bevelled border. Injecting `tailwindcss/preflight.css` into the frame fixes
-   that (`docx-with-reset.png`). Importing it in `office-runtime.css` is safe
-   for the app, because the iframe is its own document. Check the XLSX and PPTX
-   viewers and editors afterwards, since they share that CSS.
-2. **Map Capy's colours onto the editor's variables.** In `office-runtime.css`,
-   set the `--doc-*` and shadcn variables on `.oox-root` (`--background`,
-   `--muted`, `--border` and so on) to Capy's values. Those values come from
-   `src/styles/tokens/primitives.css`, `src/styles/tokens/themes/*.css` and the
-   semantic names in `src/styles/tailwind.css`. The runtime can't read the
-   parent's variables, so it needs its own copy.
-3. **Dark mode.** The editor stays light while Capy is dark
-   (`docx-now-dark.png`). `DocxEditor` already takes
-   `colorMode: 'light' | 'dark' | 'system'`. The host needs to send its theme
-   (`src/theme/ThemeProvider.tsx`) with `load` and on every change. That is a
-   protocol message, so bump `OFFICE_PROTOCOL_VERSION`.
-4. **Wrong status label.** In edit mode the DOCX header keeps saying "Opening
-   document…" (`src/features/files/DocxView.tsx` around line 96), because only
-   the viewer reports a page count.
-
-**Fork side (`capy-ci`, styling only):** what's left after the reset is layout
-that docx-react hardcodes as Tailwind classes under `important: '.oox-root'`.
-Prefer CSS variables in the fork, with the values set from Capy, over
-rewriting the classes. That keeps the `capy-ci` diff small for upstream syncs.
-
-| Part | Fork today | Capy target |
-| --- | --- | --- |
-| Formatting bar (`packages/docx-react/src/components/Toolbar.tsx`, the `formatting-bar` container) | `bg-muted rounded-full min-h-[36px] mx-2 mb-1` pill | flat `h-10`, `border-b`, `bg-surface/95`, `px-2` |
-| `ToolbarGroup` (same file) | `gap-px px-1.5 border-r border-border/50` | 1px × 28px `after:` divider with `mx-1.5` |
-| `ToolbarButton` (same file, plus `.oox-toolbar-toggle` in `editor.css`) | `Button size="icon-sm"`, muted text | `size-8`, `[&_svg]:size-4`, hover `surface-hover-bg`, pressed `tint-accent-1` |
-| Pickers (zoom, style, font, size) | bordered selects | match Capy's dropdown `ToolbarButton` |
-
-**Not styling only. Each needs a developer decision recorded in `human/`
-before implementation:**
-
-- Whether to keep the title-bar row (document icon plus File, Format and Insert
-  menus) or fold it into the toolbar. `DocxEditor` already takes
-  `showFileOpen` and `showHelpMenu`.
-- Whether to swap the fork's `MaterialSymbol` icons for Capy's icon set. That
-  needs an icon injection point in docx-react.
-
 ## How to work
 
 - **Branch:** create one from `origin/capy-ci` in a worktree under your
@@ -223,9 +113,12 @@ before implementation:**
      references in `human/`.
   3. Capy CI's `office_matrix` runs the matrix and `shared/docx-*.test.ts`
      when the pin moves.
-  4. Deploy UAT with `deploy-uat.yml` (revision = full SHA), then
-     `deploy-ingest.yml` (`environment_name=uat`) if the pipeline changed. Then
-     run `uat-quality.yml`. Nobody else uses UAT, so deploy without asking.
+  4. Deploy UAT with `deploy-uat.yml` (revision = full SHA), then always
+     `deploy-ingest.yml` (`environment_name=uat`): the gate refuses an ingest
+     running another revision than the backend. Then run `uat-quality.yml`.
+     Nobody else uses UAT, so deploy without asking. On an editor-readiness
+     timeout the journeys attach `*-not-ready` evidence (save and source
+     status, alerts, the runtime frame's text, console errors).
   5. Never touch production.
 - **UAT seed check:** `office-maintenance seed-manifest` needs a shell on the
   UAT host, which this Mac has no access to. A seed the new pin can't read is
