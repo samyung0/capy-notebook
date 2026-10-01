@@ -14,7 +14,9 @@ import { openEditor, saved, savedState } from './office';
 import {
   editTocLink,
   heldPublication,
-  refusedPublication,
+  heldPublicationDone,
+  rebuiltAfterRepublication,
+  refusedRebuild,
   republication,
   setHold,
 } from './officeRefusal';
@@ -22,7 +24,7 @@ import { pasteRich, richPaste } from './richContent';
 import { test } from './runtime';
 
 // Needs UAT's COLLABORATION_UAT_PUBLICATION_HOLD=true (deployment runbook §12.2).
-test('docx refusal: a held publication refuses a TOC-link edit and the automatic republication publishes it', async ({
+test('docx refusal: a held publication publishes, its rebuild refuses a TOC-link edit and the automatic republication publishes and rebuilds it', async ({
   run,
 }) => {
   test.setTimeout(2_400_000);
@@ -71,22 +73,27 @@ test('docx refusal: a held publication refuses a TOC-link edit and the automatic
   ]);
   assert.equal(job.status, 'running');
   assert(Number(edited.indexed_checkpoint) < held.checkpoint);
-  // No editor stays connected through either handoff.
+  // A rebuild runs only once nobody has the room open.
   await page.goto(`${run.env.appUrl}/workspaces`);
   await setHold(run, fileId, name, false);
 
-  await refusedPublication(run, fileId, held.jobId, before);
+  // Deferred: the paste publishes and editing stays on the old base, where
+  // the rebuild refuses the TOC edit saved after the capture.
+  const first = await heldPublicationDone(run, fileId, held.jobId, before);
+  await refusedRebuild(run, fileId, Number(edited.epoch));
   const published = await republication(
     run,
     fileId,
-    held.jobId,
     Number(edited.checkpoint),
-    before
+    first
   );
   // The fresh publication captured the edit rather than rebasing it: nothing
-  // was saved after its capture, so the state is seed(published) again.
-  const current = await savedState(run, fileId);
-  assert.equal(current.state, null);
+  // was saved after its capture, so its rebuild lands on seed(published).
+  const current = await rebuiltAfterRepublication(
+    run,
+    fileId,
+    Number(edited.epoch)
+  );
   const source = await run.blob(string(published.blob_path));
   const bytes = Buffer.from(source.bodyBase64, 'base64');
   assert.equal(sha256(bytes), published.source_sha256);

@@ -1898,8 +1898,8 @@ const sourceRefreshTimer = setInterval(() => {
 sourceRefreshTimer.unref();
 
 // Rebuilds a room-unload trigger missed (another instance still had the room,
-// a restart): every minute, files with a pending rebuild and no refresh in
-// flight, skipping one found in use for five minutes.
+// a restart): every minute, files with a pending rebuild, no refresh in flight
+// and no refused rebuild, skipping one found in use for five minutes.
 const rebuildBackoff = new Map<string, number>();
 let sweepingRebuilds = false;
 const rebuildTimer = setInterval(() => {

@@ -207,6 +207,7 @@ export * from './sourceImportStatus.ts';
 export * from './sourceImportStatusStatus.ts';
 export * from './sourceProcessResult.ts';
 export * from './sourceRebuild.ts';
+export * from './sourceRebuildRefusal.ts';
 export * from './sourceRefreshFinalize.ts';
 export * from './sourceRefreshInputBody.ts';
 export * from './sourceRefreshPublish.ts';

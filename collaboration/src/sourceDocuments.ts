@@ -53,7 +53,8 @@ const OFFICE_REFRESH_STALE = '7 days';
 // worth no tokens, except an Office list of moves only (0 tokens), which
 // publishes through the stale rule. A file refused because its owner is at
 // the concurrent ingest-job limit (429) is stamped by REFRESH_DEFER_SQL and
-// orders behind the other due files. Store-only Office files (never processed)
+// orders behind the other due files. A refused rebuild (rebuild_refusal) makes
+// an Office file due whatever its edits weigh. Store-only Office files (never processed)
 // take the same trigger whatever auto-process says; Go publishes them
 // export-only. A `reprocess` row is a file an export-only publication left
 // unindexed, due once its owner is active and it is out of the trash (a file
@@ -75,10 +76,10 @@ const REFRESH_CANDIDATES_SQL = `
     (SELECT d.file_id,w.user_id,d.checkpoint,false,GREATEST(d.last_edited_at,d.last_refresh_requested_at)
       FROM source_documents d JOIN files f ON f.id=d.file_id JOIN workspaces w ON w.id=f.workspace_id
       WHERE d.checkpoint>d.indexed_checkpoint AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND d.refresh_error IS NULL
-        AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb))
+        AND (d.net_tokens>0 OR (d.format<>'text' AND d.pending_effects<>'[]'::jsonb) OR d.rebuild_refusal IS NOT NULL)
         AND ((d.format='text' AND (w.auto_process OR d.desired_manual) AND d.last_refresh_requested_at < now()-interval '15 seconds')
           OR(d.format<>'text' AND d.last_edited_at < now()-$2::interval AND (d.desired_manual
-            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval) AND ((w.auto_process AND f.ever_parsed_successfully)
+            OR ((d.net_tokens>=$1 OR d.last_edited_at < now()-$3::interval OR d.rebuild_refusal IS NOT NULL) AND ((w.auto_process AND f.ever_parsed_successfully)
               OR (f.parse_mode='none' AND NOT f.ever_parsed_successfully))))))
       ORDER BY GREATEST(d.last_edited_at,d.last_refresh_requested_at) LIMIT 8)
   ) picked ORDER BY due LIMIT 8`;
@@ -181,6 +182,15 @@ export class SourceRequestError extends Error {
     this.status = status;
     this.code = code;
   }
+}
+
+/** The engine refused a rebase (RebaseError), as it would on every retry. */
+export function rebaseRefused(error: unknown): error is SourceRequestError {
+  return (
+    error instanceof SourceRequestError &&
+    error.status === 422 &&
+    error.message.startsWith('Office rebase:')
+  );
 }
 
 export function sourceRoom(room: string) {
@@ -1395,9 +1405,7 @@ export class SourceDocumentStore {
         stale:
           publishing &&
           error instanceof SourceRequestError &&
-          (error.status === 409 ||
-            (error.status === 422 &&
-              error.message.startsWith('Office rebase:'))),
+          (error.status === 409 || rebaseRefused(error)),
       });
       throw error;
     }
@@ -1473,10 +1481,10 @@ export class SourceDocumentStore {
   }
 
   /** Files published while editing stayed on the old base, with no refresh
-   * in flight, oldest first, except `skip`. */
+   * in flight and no refused rebuild, oldest first, except `skip`. */
   async pendingRebuilds(skip: string[] = []) {
     const { rows } = await this.pool.query<{ file_id: string }>(
-      'SELECT d.file_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.rebuild_pending AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND NOT d.file_id=ANY($1::text[]) ORDER BY d.updated_at LIMIT 32',
+      'SELECT d.file_id FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.rebuild_pending AND d.rebuild_refusal IS NULL AND d.running_job_id IS NULL AND f.trashed_at IS NULL AND NOT d.file_id=ANY($1::text[]) ORDER BY d.updated_at LIMIT 32',
       [skip]
     );
     return rows.map((row) => row.file_id);

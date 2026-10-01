@@ -118,6 +118,7 @@ import type {
   SourceImportStatus,
   SourceProcessResult,
   SourceRebuild,
+  SourceRebuildRefusal,
   SourceRefreshFinalize,
   SourceRefreshInputBody,
   SourceRefreshPublish,
@@ -8084,6 +8085,57 @@ export const rebuildSource = async (id: string,
 
   const data: rebuildSourceResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as rebuildSourceResponse
+}
+
+
+
+export type refuseSourceRebuildResponse204 = {
+  data: void
+  status: 204
+}
+
+export type refuseSourceRebuildResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type refuseSourceRebuildResponseSuccess = (refuseSourceRebuildResponse204) & {
+  headers: Headers;
+};
+export type refuseSourceRebuildResponseError = (refuseSourceRebuildResponseDefault) & {
+  headers: Headers;
+};
+
+export type refuseSourceRebuildResponse = (refuseSourceRebuildResponseSuccess | refuseSourceRebuildResponseError)
+
+export const getRefuseSourceRebuildUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/files/${id}/rebuild-refusal`
+}
+
+/**
+ * @summary Record a refused rebuild and leave the file due
+ */
+export const refuseSourceRebuild = async (id: string,
+    sourceRebuildRefusal: NonReadonly<SourceRebuildRefusal>, options?: RequestInit): Promise<refuseSourceRebuildResponse> => {
+
+  const res = await fetch(getRefuseSourceRebuildUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(sourceRebuildRefusal)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: refuseSourceRebuildResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as refuseSourceRebuildResponse
 }
 
 

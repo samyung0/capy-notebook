@@ -94,8 +94,7 @@ export function validateRegistrationOwnership(
 
 /**
  * An event on an intentional-failure trace carries exactly one exception: the
- * type the journey recorded, with its exact `value` or, for a message that
- * embeds a service response, its `valuePrefix`.
+ * type the journey recorded, with its exact `value`.
  */
 export function expectedFailure(
   expected: Record<string, unknown>,
@@ -106,12 +105,7 @@ export function expectedFailure(
   const [{ type, value }] = exceptions;
   if (type !== expected.exceptionType || typeof value !== 'string')
     return false;
-  if (typeof expected.value === 'string') return value === expected.value;
-  return (
-    typeof expected.valuePrefix === 'string' &&
-    expected.valuePrefix !== '' &&
-    value.startsWith(expected.valuePrefix)
-  );
+  return typeof expected.value === 'string' && value === expected.value;
 }
 
 export async function cleanupRun(id: string) {

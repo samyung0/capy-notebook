@@ -688,7 +688,7 @@ const owner = (f: ReturnType<typeof setup>, extra: Record<string, unknown>) =>
   f.pool.query.mockImplementation(async (sql: string) => {
     if (sql.includes('FROM files')) return { rows: [{ user_id: 'u' }] };
     if (sql.includes("'paidBy'")) return { rows: [{ system: false }] };
-    if (sql.includes('rebuild_pending AS pending'))
+    if (sql.includes(' AS pending'))
       return { rows: [{ pending: extra.pending ?? false }] };
     if (sql.includes('source_refresh_candidates'))
       return {
@@ -1029,4 +1029,86 @@ test('during the maintenance pause a viewer left in the room does not hold the r
     'instance',
     'idle'
   );
+});
+
+const REFUSAL =
+  "Office rebase: a field result's child would not export in its field";
+
+test('a refused rebuild sends the file back to the scheduler and is not retried; the republication rebuilds', async () => {
+  const f = rebuildSetup();
+  // The gateway's row: the refusal holds until the next publication.
+  let refused = false;
+  const query = f.pool.query.getMockImplementation();
+  f.pool.query.mockImplementation(async (sql: string, ...rest: unknown[]) =>
+    sql.includes('AS pending')
+      ? {
+          rows: [
+            {
+              pending: !(refused && sql.includes('rebuild_refusal IS NULL')),
+            },
+          ],
+        }
+      : query?.(sql, ...rest)
+  );
+  f.rebase.mockImplementation(async () => {
+    f.order.push('rebase');
+    throw new SourceRequestError(422, REFUSAL);
+  });
+  f.request.mockImplementation(async (_file, endpoint) => {
+    f.order.push(endpoint);
+    if (endpoint === 'rebuild-refusal') refused = true;
+    if (endpoint === 'publish') refused = false;
+  });
+  await expect(f.handoff.rebuild('f')).rejects.toThrow(REFUSAL);
+  expect(f.order).toEqual(['rebase', 'rebuild-refusal']);
+  expect(f.request).toHaveBeenCalledWith('f', 'rebuild-refusal', {
+    epoch: 1,
+    error: REFUSAL,
+    publishedSourceSHA256: 'b'.repeat(64),
+  });
+  const refusalSchema = parse(
+    readFileSync(new URL('../../openapi.yaml', import.meta.url), 'utf8')
+  ).components.schemas.SourceRebuildRefusal as typeof publicationSchema;
+  expect(Object.keys(f.request.mock.calls[0][2] as object).sort()).toEqual(
+    [...refusalSchema.required].sort()
+  );
+  // Neither the sweep nor a room unloading runs that rebase again.
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
+  expect(f.rebase).toHaveBeenCalledTimes(1);
+
+  // The automatic republication captures the room's latest state, so nothing
+  // is saved after its capture and its rebuild lands.
+  f.session.indexedCheckpoint = f.session.checkpoint;
+  f.rebase.mockImplementation(async () => {
+    f.order.push('rebase');
+    return { netTokens: 0, pendingEffects: [] };
+  });
+  f.order.length = 0;
+  await f.handoff.publish({
+    ...publicationInput,
+    checkpoint: f.session.checkpoint,
+  });
+  await vi.waitFor(() => expect(f.order).toContain('complete'));
+  expect(f.order).toEqual([
+    'publish',
+    'rebase',
+    'lock',
+    'probe',
+    'rebuild',
+    'complete',
+    'unlock',
+  ]);
+});
+
+test('a rebuild that fails otherwise, or whose refusal is stale, retries later', async () => {
+  let f = rebuildSetup();
+  f.rebase.mockRejectedValue(new Error('Office engine call timed out'));
+  await expect(f.handoff.rebuild('f')).rejects.toThrow('timed out');
+  await expect(f.handoff.rebuild('f')).rejects.toThrow('timed out');
+  expect(f.request).not.toHaveBeenCalled();
+  // A publication or rebuild since the rebase: the gateway refuses the mark.
+  f = rebuildSetup();
+  f.rebase.mockRejectedValue(new SourceRequestError(422, REFUSAL));
+  f.request.mockRejectedValue(new SourceRequestError(409, 'stale'));
+  await expect(f.handoff.rebuild('f')).resolves.toBe(false);
 });

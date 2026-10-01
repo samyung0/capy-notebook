@@ -7,7 +7,9 @@ import {
   CAPTURED_STATE_SEED_SQL,
   CAPTURED_STATE_SQL,
   effectTokens,
+  rebaseRefused,
   type SourceDocumentStore,
+  type SourceRebase,
   SourceRequestError,
   type SourceSession,
   sourceRoom,
@@ -473,11 +475,13 @@ export class SourceHandoff {
    * room is locked only while every instance confirms it is empty and the
    * gateway swaps (a compare-and-swap on epoch, checkpoint and the published
    * bytes). A room in use, a save or a publication in between leaves it for
-   * a later attempt.
+   * a later attempt. A rebase the engine refuses is recorded and never tried
+   * again: the file is due, and the next automatic publication captures the
+   * room's latest state, whose own rebuild then lands.
    */
   async rebuild(fileId: string) {
     const pending = await this.pool.query<{ pending: boolean }>(
-      'SELECT rebuild_pending AS pending FROM source_documents WHERE file_id=$1',
+      'SELECT rebuild_pending AND rebuild_refusal IS NULL AS pending FROM source_documents WHERE file_id=$1',
       [fileId]
     );
     if (!pending.rows[0]?.pending) return false;
@@ -490,7 +494,26 @@ export class SourceHandoff {
     );
     const writersOnly = paused.rows[0]?.paused === true;
     if (this.occupied(session.room, writersOnly)) return false;
-    const rebase = await this.sources.rebuildPublication(session);
+    let rebase: SourceRebase;
+    try {
+      rebase = await this.sources.rebuildPublication(session);
+    } catch (error) {
+      if (!rebaseRefused(error)) throw error;
+      try {
+        await this.sources.request(fileId, 'rebuild-refusal', {
+          epoch: session.epoch,
+          error: error.message,
+          publishedSourceSHA256: session.publishedSourceSHA256,
+        });
+      } catch (recording) {
+        // A publication or rebuild since: a later attempt rebuilds that instead.
+        if (recording instanceof SourceRequestError && recording.status === 409)
+          return false;
+        throw recording;
+      }
+      // Reported once: neither the sweep nor a room unloading retries it.
+      throw error;
+    }
     const id = `rebuild:${randomUUID()}`;
     const room = session.room;
     const lock = `capy:collaboration:evicting:${room}`;

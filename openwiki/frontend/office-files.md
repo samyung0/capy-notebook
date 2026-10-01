@@ -244,8 +244,10 @@ rebase outcomes across breaks, comments next to breaks, fields and Accept/Reject
 all against a committed baseline; run it before landing Office changes). Any
 failure while landing the later
 edits is a refusal (`RebaseError`). A refusal (an error the engine raises
-with the `Office rebase:` prefix, including XLSX's) is terminal: the
-collaboration service answers the publication with 422, and the ingest worker
+with the `Office rebase:` prefix, including XLSX's) is terminal and leaves the
+file due again. A deferred publication rebases only in its rebuild, which
+records the refusal and stops (see Rebuild below). A publication that rebases
+at once (maintenance) is answered with 422, and the ingest worker
 fails the job with the refusal (attempt error code `office_rebase_refused`)
 without retrying it or sending the workspace a failed progress event. The saved edits stay on the old base and the file stays
 due without a `refresh_error` (its desired checkpoint moves to the latest), so
@@ -260,7 +262,8 @@ compared only by their count and operation, since they carry no values. UAT repr
 `COLLABORATION_UAT_PUBLICATION_HOLD=true`, a publication waits after its
 capture, before the handoff, while its file's name contains `[hold-publication]`
 (at most 60 s, then it fails with 503), so the refusal journey can save an edit
-in between ([deployment runbook](../deployment-runbook.md) §12.2).
+in between; the deferred publication then completes and its rebuild refuses
+that edit ([deployment runbook](../deployment-runbook.md) §12.2).
 
 Every DOCX page and column break is a story unit in every story (body, block
 content controls, table cells, headers, footers and notes), seeded and
@@ -735,7 +738,18 @@ old epoch; a late step gives up and a later attempt retries. A room in
 use, a save or a publication in between leaves it for later. It runs when a
 room unloads on an instance and from a sweep every minute (a room found in use
 waits five minutes, an error ten). A room that never empties keeps the old
-base, and the kept capture, until it does. The service never rebuilds a
+base, and the kept capture, until it does. A rebase the engine refuses
+(`RebaseError`; any other error retries as above) is reported once and
+recorded through the gateway (`POST
+/internal/collaboration/files/{id}/rebuild-refusal`, the row's
+`rebuild_refusal`, migration 0047), and no instance tries that rebuild again.
+The file is due again whatever its edits weigh, as after a refused
+publication: the next automatic publication (paid as usual, after the usual
+quiet period; with auto-process off, the owner's Process) captures the room's
+latest state on the old base, every edit since the refused capture included.
+Its job payload carries the refusal (`rebuildRefusal`), its publication clears
+the refusal, and its own rebuild lands, since nothing follows its capture, once
+the room is empty on every instance. The service never rebuilds a
 trashed file; a restore returns it to the sweep, and maintenance `publish-all`
 performs the swap for a trashed file with nothing saved since its publication
 (nobody can open or save it, and the rebuilt state is the published file), so

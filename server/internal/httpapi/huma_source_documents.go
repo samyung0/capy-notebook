@@ -81,6 +81,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/publish", "publishSourceRefresh", tag, "Publish a processed source checkpoint", http.StatusOK, 150<<20, a.publishSourceRefresh)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh-failure", "failSourceRefresh", tag, "Discard an unsuccessful candidate", http.StatusNoContent, a.failSourceRefresh)
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild", "rebuildSource", tag, "Move editing onto the published file", http.StatusNoContent, 150<<20, a.rebuildSource)
+	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/rebuild-refusal", "refuseSourceRebuild", tag, "Record a refused rebuild and leave the file due", http.StatusNoContent, a.refuseSourceRebuild)
 	reg(api, http.MethodGet, "/api/files/{id}/source-session", "getSourceSession", tag, "Read source editing session", http.StatusOK, a.getSourceSession)
 	reg(api, http.MethodPost, "/api/files/{id}/collaboration-token", "createSourceCollaborationToken", tag, "Create source room token", http.StatusCreated, a.createSourceCollaborationToken)
 	reg(api, http.MethodPost, "/api/files/{id}/process-changes", "processSourceChanges", tag, "Process the latest saved source changes", http.StatusAccepted, a.processSourceChanges)
@@ -218,6 +219,19 @@ func (a *api) rebuildSource(ctx context.Context, in *sourceRebuildInput) (*struc
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return nil, hErr(a.s.RebuildSource(ctx, in.ID, in.Body))
+}
+
+type sourceRebuildRefusalInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+	Body   store.SourceRebuildRefusal
+}
+
+func (a *api) refuseSourceRebuild(ctx context.Context, in *sourceRebuildRefusalInput) (*struct{}, error) {
+	if err := a.checkSourceSecret(ctx, in.Secret); err != nil {
+		return nil, err
+	}
+	return nil, hErr(a.s.RefuseSourceRebuild(ctx, in.ID, in.Body))
 }
 func (a *api) cancelSourceChanges(ctx context.Context, in *collaborationTokenInput) (*struct{}, error) {
 	return nil, hErr(a.s.CancelSourceRefresh(ctx, userID(ctx), in.ID))

@@ -416,7 +416,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	case in.Deferred:
 		// Editing stays on its base and epoch (no reload for open editors);
 		// base_revision follows the file's so the next capture is current.
-		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,published_state=$5,published_state_seed_sha256=$6,reprocess_at=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $3::jsonb='[]'::jsonb THEN NULL ELSE checkpoint END,desired_manual=desired_manual AND $3::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, effects, netTokens, captured, capturedSeed)
+		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,pending_effects=$3,net_tokens=$4,rebuild_pending=true,rebuild_refusal=NULL,published_state=$5,published_state_seed_sha256=$6,reprocess_at=NULL,running_job_id=NULL,desired_checkpoint=CASE WHEN $3::jsonb='[]'::jsonb THEN NULL ELSE checkpoint END,desired_manual=desired_manual AND $3::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, effects, netTokens, captured, capturedSeed)
 		if err == nil {
 			err = releaseArtifactCacheTx(ctx, tx, replacedSHA, sha)
 		}
@@ -425,7 +425,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		_, err = tx.Exec(ctx, `UPDATE source_documents SET indexed_checkpoint=$2,base_revision=base_revision+1,base_blob_path=$3,base_source_sha256=$4,pending_effects=$5,net_tokens=$6,desired_manual=desired_manual AND $5::jsonb<>'[]'::jsonb,desired_checkpoint=CASE WHEN $5::jsonb='[]'::jsonb THEN NULL ELSE desired_checkpoint END,running_job_id=NULL,refresh_error=NULL,updated_at=now() WHERE file_id=$1`, fileID, in.Checkpoint, source, sha, effects, netTokens)
 	default:
 		// Indexed now, so an export-only publication's reprocess mark is done.
-		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
+		_, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,indexed_checkpoint=$2,state=$3,state_seed_sha256=NULLIF($8,''),reprocess_at=NULL,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,base_revision=d.base_revision+1,base_blob_path=$4,base_source_sha256=$5,pending_effects=$6,net_tokens=$7,running_job_id=NULL,desired_checkpoint=CASE WHEN $6::jsonb='[]'::jsonb THEN NULL ELSE d.checkpoint END,desired_manual=d.desired_manual AND $6::jsonb<>'[]'::jsonb,refresh_error=NULL,updated_at=now() WHERE d.file_id=$1`, fileID, in.Checkpoint, state, source, sha, effects, netTokens, stateSeed)
 		if err == nil {
 			// Rebase can change native identities. Release AI edit guards and
 			// their Undo with the old editing epoch.
@@ -680,7 +680,7 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 	if _, err = tx.Exec(ctx, `SELECT enqueue_source_collaboration_eviction($1,'discard')`, fileID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents d SET epoch=d.epoch+1,base_blob_path=f.blob_path,base_source_sha256=f.source_sha256,state=$2,state_seed_sha256=NULLIF($3,''),pending_effects=$4,net_tokens=$5,rebuild_pending=false,rebuild_refusal=NULL,published_state=NULL,published_state_seed_sha256=NULL,updated_at=now() FROM files f WHERE d.file_id=$1 AND f.id=d.file_id`, fileID, state, in.StateSeedSHA256, in.PendingEffects, in.NetTokens); err != nil {
 		return err
 	}
 	// Rebase can change native identities. Release AI edit guards and their
@@ -690,6 +690,40 @@ func (s *Store) RebuildSource(ctx context.Context, fileID string, in SourceRebui
 	}
 	if err = releaseArtifactCacheTx(ctx, tx, oldSHA, published); err != nil {
 		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// SourceRebuildRefusal reports that the engine refused the rebase of a
+// deferred publication's rebuild (RebaseError, "Office rebase:"), sent by the
+// collaboration service.
+type SourceRebuildRefusal struct {
+	Epoch                 int64  `json:"epoch" minimum:"1"`
+	PublishedSourceSHA256 string `json:"publishedSourceSHA256"`
+	Error                 string `json:"error"`
+}
+
+// RefuseSourceRebuild leaves the file due again, as a refused publication
+// does: the collaboration service stops retrying that rebuild, and the refresh
+// scheduler admits the file whatever its tokens, so the next automatic
+// publication captures the room's latest state; that publication clears the
+// refusal and its own rebuild follows. It refuses (409) a refusal of an older
+// epoch or publication.
+func (s *Store) RefuseSourceRebuild(ctx context.Context, fileID string, in SourceRebuildRefusal) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `UPDATE source_documents d SET rebuild_refusal=left($4,2000) FROM files f WHERE d.file_id=$1 AND f.id=d.file_id AND d.rebuild_pending AND d.epoch=$2 AND f.source_sha256=$3`, fileID, in.Epoch, in.PublishedSourceSHA256, in.Error)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrConflict
 	}
 	return tx.Commit(ctx)
 }

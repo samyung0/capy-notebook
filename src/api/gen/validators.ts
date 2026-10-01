@@ -4769,6 +4769,29 @@ export const RebuildSourceResponse = zod.void()
 
 
 /**
+ * @summary Record a refused rebuild and leave the file due
+ */
+export const RefuseSourceRebuildParams = zod.object({
+  "id": zod.string()
+})
+
+export const RefuseSourceRebuildHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+
+
+export const RefuseSourceRebuildBody = zod.object({
+  "epoch": zod.int().min(1),
+  "error": zod.string(),
+  "publishedSourceSHA256": zod.string()
+})
+
+export const RefuseSourceRebuildResponse = zod.void()
+
+
+/**
  * @summary Admit a saved source refresh
  */
 export const RequestSourceRefreshParams = zod.object({

@@ -645,28 +645,36 @@ func sourceTestDeferredPublication(t *testing.T, s *Store, owner string) (fileID
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
+	export = strings.Repeat("b", 64)
+	sourceTestPublishDeferred(t, s, ws.ID, file.ID, job.JobID, export)
+	return file.ID, doc.Checkpoint, export
+}
+
+// sourceTestPublishDeferred claims, exports (as export), parses and publishes
+// the admitted refresh jobID deferred, with nothing saved after its capture.
+func sourceTestPublishDeferred(t *testing.T, s *Store, workspaceID, fileID, jobID, export string) {
+	t.Helper()
+	ctx := context.Background()
+	candidate, err := s.ClaimSourceRefresh(ctx, fileID, jobID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	export = strings.Repeat("b", 64)
-	if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: 1, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-b"}); err != nil {
+	if err = s.FinalizeSourceRefresh(ctx, fileID, SourceRefreshFinalize{JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: export, SizeBytes: 120, SourceETag: "etag-" + export[:1]}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID); err != nil {
+	if _, err = s.pool.Exec(ctx, `UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, jobID); err != nil {
 		t.Fatal(err)
 	}
 	contentID := uid("rc")
-	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'hash-b','ready')`, contentID, ws.ID); err != nil {
+	if _, err = s.pool.Exec(ctx, `INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,$3,'ready')`, contentID, workspaceID, "hash-"+export); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash='hash-b' WHERE file_id=$1`, file.ID, contentID); err != nil {
+	if _, err = s.pool.Exec(ctx, `UPDATE source_refresh_candidates SET content_id=$2,content_hash=$3 WHERE file_id=$1`, fileID, contentID, "hash-"+export); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: 1, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-b", ContentID: contentID, ContentHash: "hash-b", ExpectedLatestCheckpoint: doc.Checkpoint, PendingEffects: json.RawMessage(`[]`), Deferred: true}); err != nil {
+	if _, err = s.PublishSourceRefresh(ctx, fileID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, jobID), JobID: jobID, Epoch: candidate.Epoch, Checkpoint: candidate.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-" + export[:1], ContentID: contentID, ContentHash: "hash-" + export, ExpectedLatestCheckpoint: candidate.Checkpoint, PendingEffects: json.RawMessage(`[]`), Deferred: true}); err != nil {
 		t.Fatal(err)
 	}
-	return file.ID, doc.Checkpoint, export
 }
 
 func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
@@ -686,6 +694,100 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 	view, err = s.ViewSourceSession(ctx, fileID)
 	if err != nil || view.State != nil || view.Epoch != 2 || view.BaseSourceSHA256 != export {
 		t.Fatalf("view after the rebuild: %+v %v", view, err)
+	}
+}
+
+// A deferred publication's rebuild that the engine refused (RebaseError)
+// makes the file due whatever its remaining tokens: the scheduler lists it,
+// admission takes it as an automatic refresh that records the refusal, and
+// that republication clears it so its own rebuild lands.
+func TestRefusedRebuildMakesTheFileDue(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "refused_rebuild_owner")
+	fileID, _, export := sourceTestDeferredPublication(t, s, owner)
+	// One edit saved after the capture, far below the token trigger, idle
+	// past the quiet period.
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, fileID), "later-state")
+	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET net_tokens=5,last_edited_at=now()-interval '2 minutes',last_refresh_requested_at=now()-interval '2 minutes' WHERE file_id=$1`, fileID); err != nil {
+		t.Fatal(err)
+	}
+	candidatesSQL := schedulerSource(t, "(?s)const REFRESH_CANDIDATES_SQL = `(.*?)`;")
+	idle, stale := schedulerSource(t, `const OFFICE_REFRESH_IDLE = '(.*?)';`), schedulerSource(t, `const OFFICE_REFRESH_STALE = '(.*?)';`)
+	listed := func() bool {
+		t.Helper()
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback(ctx)
+		// Only this file competes for the batch; the rollback restores the rest.
+		if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE file_id<>$1`, fileID); err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		if err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM (`+candidatesSQL+`) c WHERE c.file_id=$4)`, officeRefreshTokens, idle, stale, fileID).Scan(&found); err != nil {
+			t.Fatal(err)
+		}
+		return found
+	}
+	if listed() {
+		t.Fatal("5 tokens listed before any refusal")
+	}
+	if _, err := s.RequestSourceRefresh(ctx, owner, fileID, true); !errors.Is(err, ErrConflict) {
+		t.Fatalf("automatic refresh before any refusal: %v", err)
+	}
+	const refusal = "Office rebase: a field result's child would not export in its field"
+	refused := SourceRebuildRefusal{Epoch: 1, PublishedSourceSHA256: export, Error: refusal}
+	for name, bad := range map[string]func(*SourceRebuildRefusal){
+		"stale epoch":     func(r *SourceRebuildRefusal) { r.Epoch = 2 },
+		"other published": func(r *SourceRebuildRefusal) { r.PublishedSourceSHA256 = strings.Repeat("f", 64) },
+	} {
+		attempt := refused
+		bad(&attempt)
+		if err := s.RefuseSourceRebuild(ctx, fileID, attempt); !errors.Is(err, ErrConflict) {
+			t.Fatalf("%s refusal recorded: %v", name, err)
+		}
+	}
+	if err := s.RefuseSourceRebuild(ctx, fileID, refused); err != nil {
+		t.Fatal(err)
+	}
+	if !listed() {
+		t.Fatal("a refused rebuild is not due")
+	}
+	job, err := s.RequestSourceRefresh(ctx, owner, fileID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload struct {
+		Automatic      bool   `json:"automatic"`
+		PaidBy         string `json:"paidBy"`
+		RebuildRefusal string `json:"rebuildRefusal"`
+	}
+	var raw []byte
+	if err = s.pool.QueryRow(ctx, `SELECT payload FROM jobs WHERE id=$1`, job.JobID).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(raw, &payload); err != nil || !payload.Automatic || payload.PaidBy != models.PaidByPlatform || payload.RebuildRefusal != refusal {
+		t.Fatalf("republication payload %s: %v", raw, err)
+	}
+	var workspaceID string
+	if err = s.pool.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1`, fileID).Scan(&workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	republished := strings.Repeat("c", 64)
+	sourceTestPublishDeferred(t, s, workspaceID, fileID, job.JobID, republished)
+	var pending bool
+	var refusalLeft *string
+	var checkpoint int64
+	if err = s.pool.QueryRow(ctx, `SELECT rebuild_pending,rebuild_refusal,checkpoint FROM source_documents WHERE file_id=$1`, fileID).Scan(&pending, &refusalLeft, &checkpoint); err != nil || !pending || refusalLeft != nil {
+		t.Fatalf("after the republication: pending=%v refusal=%v %v", pending, refusalLeft, err)
+	}
+	if err = s.RebuildSource(ctx, fileID, SourceRebuild{Epoch: 1, ExpectedCheckpoint: checkpoint, PublishedSourceSHA256: republished, PendingEffects: json.RawMessage(`[]`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RefuseSourceRebuild(ctx, fileID, SourceRebuildRefusal{Epoch: 2, PublishedSourceSHA256: republished, Error: refusal}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("refusal with no rebuild pending: %v", err)
 	}
 }
 
