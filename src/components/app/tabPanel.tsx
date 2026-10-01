@@ -1,12 +1,19 @@
 import type { ReactNode } from 'react';
 import { InputTitle } from '@/components/ui/Input';
+import { cn } from '@/lib/cn';
 
-/** Scrolling body under a page's tabs. Padding grows with the screen so wide
- * panels do not read as a strip hugging the left edge. */
-export function TabContent({ children }: { children: ReactNode }) {
+/** Scrolling body under a page's tabs. Positioned descendants stay inside this
+ * scroll area; padding grows with the screen. */
+export function TabContent({
+  children,
+  centered,
+}: {
+  children: ReactNode;
+  centered?: boolean;
+}) {
   return (
-    <div className="min-h-0 flex-1 overflow-auto px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
-      <div className="max-w-3xl">{children}</div>
+    <div className="relative min-h-0 flex-1 overflow-auto px-4 pt-8 pb-8 sm:px-6 lg:px-10 xl:px-16">
+      <div className={cn('max-w-3xl', centered && 'mx-auto')}>{children}</div>
     </div>
   );
 }

@@ -1657,7 +1657,6 @@
   "quiz_clone": "复制测验",
   "quiz_answered_count": "已作答 {answered}/{total}",
   "quiz_submit": "提交答案",
-  "quiz_details": "详情",
   "quiz_details_hint": "这份测验在创作页和所属工作区中的显示方式。",
   "quiz_questions": "题目",
   "question_ui_type_answer": "输入你的答案",

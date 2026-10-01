@@ -25,6 +25,7 @@ export function quizMeta(questions: Question[]) {
 
 /** Back arrow and breadcrumb above the page title; `actions` sit on the title line. */
 export function QuizPageHeader({
+  className,
   onBack,
   trail,
   title,
@@ -32,6 +33,7 @@ export function QuizPageHeader({
   actions,
   topBar = true,
 }: {
+  className?: string;
   onBack?: () => void;
   trail: string[];
   title: ReactNode;
@@ -42,8 +44,12 @@ export function QuizPageHeader({
 }) {
   return (
     <header className="flex items-start">
-      {/* Padding matches TabContent so the header lines up with the body. */}
-      <div className="flex min-w-0 flex-1 flex-col gap-2 px-4 pt-4 sm:px-6 sm:pt-6 lg:px-10 xl:px-16">
+      <div
+        className={cn(
+          'flex min-w-0 flex-1 flex-col gap-2 px-4 pt-4 sm:px-6 sm:pt-6 lg:px-10 xl:px-16',
+          className
+        )}
+      >
         {(onBack || trail.length > 0) && (
           <div
             className={cn('flex min-h-9 items-center gap-1', onBack && '-ml-2')}

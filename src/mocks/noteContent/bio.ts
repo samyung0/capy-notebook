@@ -1,4 +1,5 @@
 import { mermaidNode } from '@/features/materials/document';
+import { biologyQuizQuestions } from '../biologyQuiz';
 import {
   bullet,
   callout,
@@ -93,68 +94,7 @@ export const bioNotes: SeedNote[] = [
       ),
       heading(2, 'Self-check'),
       embeddedQuiz('mat_note_1', 'mat_embed_bio_note_quiz', {
-        questions: [
-          {
-            id: 'bio_note_q1',
-            labels: 'letters',
-            layout: 'paper',
-            level: 'recall',
-            parts: [
-              {
-                answer: {
-                  correct: [1],
-                  options: ['Nucleus', 'Mitochondria', 'Golgi apparatus'],
-                  type: 'mcq',
-                },
-                blocks: [
-                  {
-                    text: 'Which organelle produces most of the cell’s ATP?',
-                    type: 'text',
-                  },
-                ],
-                id: 'bio_note_q1:part',
-                markscheme: [
-                  'Mitochondria produce ATP through cellular respiration.',
-                ],
-                solution: [
-                  {
-                    text: 'Mitochondria produce ATP through cellular respiration.',
-                    type: 'text',
-                  },
-                ],
-              },
-            ],
-            stem: [],
-          },
-          {
-            id: 'bio_note_q2',
-            labels: 'letters',
-            layout: 'paper',
-            level: 'recall',
-            parts: [
-              {
-                answer: { correct: true, type: 'boolean' },
-                blocks: [
-                  {
-                    text: 'Prokaryotes lack a membrane-bound nucleus.',
-                    type: 'text',
-                  },
-                ],
-                id: 'bio_note_q2:part',
-                markscheme: [
-                  'True — prokaryotes lack membrane-bound organelles.',
-                ],
-                solution: [
-                  {
-                    text: 'True — prokaryotes lack membrane-bound organelles.',
-                    type: 'text',
-                  },
-                ],
-              },
-            ],
-            stem: [],
-          },
-        ],
+        questions: structuredClone(biologyQuizQuestions),
       }),
       embeddedFlashcards('mat_note_1', 'mat_embed_bio_note_cards', [
         {
@@ -394,122 +334,7 @@ export const bioNotes: SeedNote[] = [
 
       heading(2, 'Quiz block'),
       embeddedQuiz('mat_note_bio_feature_matrix', 'mat_embed_bio_matrix_quiz', {
-        questions: [
-          {
-            id: 'bio_matrix_q_mcq',
-            labels: 'letters',
-            layout: 'paper',
-            level: 'recall',
-            parts: [
-              {
-                answer: {
-                  correct: [0],
-                  options: ['Cytosol', 'Nucleus', 'Golgi lumen'],
-                  type: 'mcq',
-                },
-                blocks: [
-                  { text: 'Where does glycolysis occur?', type: 'text' },
-                ],
-                id: 'bio_matrix_q_mcq:part',
-                markscheme: ['Glycolysis occurs in the cytosol of the cell.'],
-                solution: [
-                  {
-                    text: 'Glycolysis occurs in the cytosol of the cell.',
-                    type: 'text',
-                  },
-                ],
-              },
-            ],
-            stem: [],
-          },
-          {
-            id: 'bio_matrix_q_multi',
-            labels: 'letters',
-            layout: 'paper',
-            level: 'application',
-            parts: [
-              {
-                answer: {
-                  correct: [0, 2],
-                  options: ['Mitochondria', 'Lysosomes', 'Chloroplasts'],
-                  type: 'multi',
-                },
-                blocks: [
-                  {
-                    text: 'Which organelles contain their own DNA? (multi)',
-                    type: 'text',
-                  },
-                ],
-                id: 'bio_matrix_q_multi:part',
-                markscheme: [
-                  'Both mitochondria and chloroplasts have their own DNA.',
-                ],
-                solution: [
-                  {
-                    text: 'Both mitochondria and chloroplasts have their own DNA.',
-                    type: 'text',
-                  },
-                ],
-              },
-            ],
-            stem: [],
-          },
-          {
-            id: 'bio_matrix_q_bool',
-            labels: 'letters',
-            layout: 'paper',
-            level: 'recall',
-            parts: [
-              {
-                answer: { correct: true, type: 'boolean' },
-                blocks: [
-                  {
-                    text: 'Ribosomes are present in both prokaryotes and eukaryotes.',
-                    type: 'text',
-                  },
-                ],
-                id: 'bio_matrix_q_bool:part',
-                markscheme: ['True — ribosomes are not membrane-bound.'],
-                solution: [
-                  {
-                    text: 'True — ribosomes are not membrane-bound.',
-                    type: 'text',
-                  },
-                ],
-              },
-            ],
-            stem: [],
-          },
-          {
-            id: 'bio_matrix_q_short',
-            labels: 'letters',
-            layout: 'paper',
-            level: 'recall',
-            parts: [
-              {
-                answer: {
-                  accepted: ['ATP', 'adenosine triphosphate'],
-                  type: 'short',
-                },
-                blocks: [
-                  {
-                    text: 'The main short-term energy carrier is ____.',
-                    type: 'text',
-                  },
-                ],
-                id: 'bio_matrix_q_short:part',
-                markscheme: ['ATP is the cell’s short-term energy currency.'],
-                solution: [
-                  {
-                    text: 'ATP is the cell’s short-term energy currency.',
-                    type: 'text',
-                  },
-                ],
-              },
-            ],
-            stem: [],
-          },
-        ],
+        questions: structuredClone(biologyQuizQuestions),
       }),
 
       heading(2, 'Flashcards block'),

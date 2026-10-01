@@ -13,7 +13,7 @@ export const HEADING_CLASS: Record<string, string> = {
   h6: 'mt-[0.75em] mb-1 pb-px text-base font-semibold text-fg',
 };
 
-export const PARAGRAPH_CLASS = 'py-1 px-0 leading-relaxed text-fg';
+export const PARAGRAPH_CLASS = 'py-1.5 px-0 leading-relaxed text-fg';
 export const BLOCKQUOTE_CLASS =
   'my-2 border-l-2 border-line pl-4 text-fg-secondary italic';
 export const HR_CLASS =
@@ -59,7 +59,7 @@ export const EQUATION_BLOCK_CLASS =
 
 /* leaf marks */
 export const CODE_MARK_CLASS =
-  'rounded bg-tint-accent-1 px-1 py-0.5 font-mono font-medium text-[0.85em] text-tint-accent-1-fg';
+  'rounded-none bg-surface-dark px-1 py-0 font-mono text-[0.85em] text-fg font-medium';
 export const HIGHLIGHT_MARK_CLASS = 'bg-tint-info border-b border-solid-info';
 export const KBD_MARK_CLASS =
   'rounded border border-line bg-surface-hover-bg px-1.5 py-0.5 text-sm font-mono text-fg';

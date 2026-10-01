@@ -516,7 +516,7 @@
     font-size: clamp(28px, 2vw, 32px);
     line-height: 1.42;
     letter-spacing: -0.01em;
-    text-wrap: balance;
+    text-wrap: wrap;
     font-style: italic;
   }
 }

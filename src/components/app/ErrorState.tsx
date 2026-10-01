@@ -50,7 +50,11 @@ export function ErrorState({
           <p className="t-card-title mt-1 font-bold">{title}</p>
         )}
         {description && (
-          <p className={variant === 'page' ? 't-subtitle font-medium' : ''}>
+          <p
+            className={
+              variant === 'page' ? 't-subtitle font-medium' : 'font-medium'
+            }
+          >
             {description}
           </p>
         )}

@@ -466,7 +466,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_quiz();
     },
     group: 'blockElements',
-    icon: 'error',
+    icon: 'quiz',
     id: 'quiz',
     get label() {
       return m.editor_quiz();
@@ -482,7 +482,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_flashcards();
     },
     group: 'blockElements',
-    icon: 'todo',
+    icon: 'flashcards',
     id: 'flashcards',
     get label() {
       return m.editor_flashcards();
@@ -500,7 +500,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       return m.editor_cmd_mermaid();
     },
     group: 'blockElements',
-    icon: 'braces',
+    icon: 'diagram',
     id: 'mermaid',
     keywords: ['diagram', 'flowchart'],
     get label() {
@@ -524,7 +524,7 @@ EDITOR_COMMANDS.push(
         return type === 'chart' ? m.editor_chart() : m.editor_graph();
       },
       group: 'blockElements',
-      icon: 'chart',
+      icon: type,
       id: type,
       get label() {
         return type === 'chart' ? m.editor_chart() : m.editor_graph();

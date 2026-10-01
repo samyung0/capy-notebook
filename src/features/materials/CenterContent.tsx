@@ -168,6 +168,7 @@ export function CenterContent({
               {item.kind === 'material' && (
                 <MaterialBody
                   allowExternalAssets={!readOnly}
+                  centerQuiz={!standalone}
                   key={item.id}
                   materialId={item.id}
                   mode={materialMode}
@@ -203,6 +204,7 @@ export function CenterContent({
  * material id at the call site: resetting the choice in an effect would let the
  * next document start fetching for the render before the reset lands. */
 function MaterialBody({
+  centerQuiz,
   materialId,
   workspaceId,
   mode,
@@ -210,6 +212,7 @@ function MaterialBody({
   onEditorStatusChange,
   readOnly,
 }: {
+  centerQuiz: boolean;
   materialId: string;
   workspaceId: string;
   mode: MaterialMode | null;
@@ -240,6 +243,7 @@ function MaterialBody({
   return (
     <MaterialContent
       allowExternalAssets={allowExternalAssets}
+      centerQuiz={centerQuiz}
       forceReadOnly={readOnly || choice === 'readOnly'}
       key={materialId}
       materialId={materialId}
@@ -250,12 +254,14 @@ function MaterialBody({
 }
 
 export function MaterialContent({
+  centerQuiz,
   materialId,
   mode,
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
 }: {
+  centerQuiz: boolean;
   materialId: string;
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
@@ -300,7 +306,7 @@ export function MaterialContent({
         {activeMode === 'view' && (
           <div className="h-full min-h-0 overflow-auto">
             {material.kind === 'quiz' ? (
-              <QuizPreview content={material.content} />
+              <QuizPreview centered={centerQuiz} content={material.content} />
             ) : (
               <Suspense fallback={<FileLoading />}>
                 <MaterialPreview
@@ -334,12 +340,18 @@ export function MaterialContent({
 
 /** A quiz reads exactly like the quiz page, without taking answers. Its
  * questions come from the material already loaded, so this works offline. */
-function QuizPreview({ content }: { content: MaterialDocument }) {
+function QuizPreview({
+  centered,
+  content,
+}: {
+  centered: boolean;
+  content: MaterialDocument;
+}) {
   const quiz = content.value.find(
     (node): node is QuizElement => node.type === 'quiz'
   );
   return (
-    <TabContent>
+    <TabContent centered={centered}>
       <QuizQuestionList
         disabled
         questions={quiz ? quizElementToBlock(quiz).questions : []}

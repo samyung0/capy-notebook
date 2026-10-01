@@ -1,0 +1,641 @@
+<svg
+  height="400"
+  style="overflow: hidden; display: block; font-family: Arial, sans-serif;"
+  viewBox="0 0 600 400"
+  width="600"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <defs>
+    <clipPath id="graph-0">
+      <rect height="400" rx="0" ry="0" width="600" x="0" y="0" />
+    </clipPath>
+    <marker
+      display="inherit"
+      fill="context-stroke"
+      id="graph-1"
+      markerHeight="8"
+      markerUnits="strokeWidth"
+      markerWidth="8"
+      orient="auto"
+      refX="0.05"
+      refY="5"
+      stroke="context-stroke"
+      stroke-width="0"
+      style="position: absolute;"
+      viewBox="0 0 10 10"
+    >
+      <path d="M 0,0 L 10,5 L 0,10 z" />
+    </marker>
+    <marker
+      display="inherit"
+      fill="context-stroke"
+      id="graph-2"
+      markerHeight="8"
+      markerUnits="strokeWidth"
+      markerWidth="8"
+      orient="auto"
+      refX="0.05"
+      refY="5"
+      stroke="context-stroke"
+      stroke-width="0"
+      style="position: absolute;"
+      viewBox="0 0 10 10"
+    >
+      <path d="M 0,0 L 10,5 L 0,10 z" />
+    </marker>
+  </defs>
+  <g />
+  <g>
+    <path
+      d=" M 0 22.22222222222223 L 600 22.22222222222223 M 0 66.66666666666669 L 600 66.66666666666669 M 0 111.11111111111109 L 600 111.11111111111109 M 0 155.55555555555554 L 600 155.55555555555554 M 0 200 L 600 200 M 0 244.44444444444443 L 600 244.44444444444443 M 0 288.88888888888886 L 600 288.88888888888886 M 0 333.3333333333333 L 600 333.3333333333333 M 0 377.77777777777777 L 600 377.77777777777777 M 61.53846153846154 0 L 61.53846153846154 400 M 138.46153846153845 0 L 138.46153846153845 400 M 215.3846153846154 0 L 215.3846153846154 400 M 292.3076923076923 0 L 292.3076923076923 400 M 369.2307692307692 0 L 369.2307692307692 400 M 446.15384615384613 0 L 446.15384615384613 400 M 523.0769230769231 0 L 523.0769230769231 400"
+      display="inline"
+      fill-opacity="0"
+      fill-rule="evenodd"
+      id="graph-3"
+      pointer-events="visibleStroke"
+      stroke="#c0c0c0"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="0.5"
+      stroke-width="1px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+    />
+    <path
+      d="M 0 0"
+      display="inline"
+      fill-opacity="0"
+      fill-rule="evenodd"
+      id="graph-4"
+      pointer-events="visibleStroke"
+      stroke="#c0c0c0"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="0.5"
+      stroke-width="1px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+    />
+  </g>
+  <g>
+    <line
+      display="inline"
+      fill-opacity="0"
+      id="graph-5"
+      marker-end="url(#graph-1)"
+      pointer-events="visibleStroke"
+      stroke="#666666"
+      stroke-linecap="butt"
+      stroke-opacity="1"
+      stroke-width="1px"
+      style="position: absolute; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+      x1="4.000000000000007"
+      x2="588"
+      y1="333.33333333333337"
+      y2="333.33333333333337"
+    />
+    <path
+      d=" M 76.92307692307692 333.3333333333333 L 76.92307692307692 333.3333333333333 L 76.92307692307692 338.3333333333333 M 92.3076923076923 333.3333333333333 L 92.3076923076923 333.3333333333333 L 92.3076923076923 338.3333333333333 M 107.69230769230771 333.3333333333333 L 107.69230769230771 333.3333333333333 L 107.69230769230771 338.3333333333333 M 123.07692307692308 333.3333333333333 L 123.07692307692308 333.3333333333333 L 123.07692307692308 338.3333333333333 M 138.46153846153845 0 L 138.46153846153845 400 M 153.84615384615384 333.3333333333333 L 153.84615384615384 333.3333333333333 L 153.84615384615384 338.3333333333333 M 169.23076923076923 333.3333333333333 L 169.23076923076923 333.3333333333333 L 169.23076923076923 338.3333333333333 M 184.6153846153846 333.3333333333333 L 184.6153846153846 333.3333333333333 L 184.6153846153846 338.3333333333333 M 200 333.3333333333333 L 200 333.3333333333333 L 200 338.3333333333333 M 215.38461538461536 0 L 215.38461538461536 400 M 230.76923076923075 333.3333333333333 L 230.76923076923075 333.3333333333333 L 230.76923076923075 338.3333333333333 M 246.15384615384616 333.3333333333333 L 246.15384615384616 333.3333333333333 L 246.15384615384616 338.3333333333333 M 261.53846153846155 333.3333333333333 L 261.53846153846155 333.3333333333333 L 261.53846153846155 338.3333333333333 M 276.9230769230769 333.3333333333333 L 276.9230769230769 333.3333333333333 L 276.9230769230769 338.3333333333333 M 292.3076923076923 0 L 292.3076923076923 400 M 307.69230769230774 333.3333333333333 L 307.69230769230774 333.3333333333333 L 307.69230769230774 338.3333333333333 M 323.07692307692315 333.3333333333333 L 323.07692307692315 333.3333333333333 L 323.07692307692315 338.3333333333333 M 338.4615384615385 333.3333333333333 L 338.4615384615385 333.3333333333333 L 338.4615384615385 338.3333333333333 M 353.8461538461539 333.3333333333333 L 353.8461538461539 333.3333333333333 L 353.8461538461539 338.3333333333333 M 369.2307692307693 0 L 369.2307692307693 400 M 384.6153846153847 333.3333333333333 L 384.6153846153847 333.3333333333333 L 384.6153846153847 338.3333333333333 M 400.0000000000001 333.3333333333333 L 400.0000000000001 333.3333333333333 L 400.0000000000001 338.3333333333333 M 415.3846153846155 333.3333333333333 L 415.3846153846155 333.3333333333333 L 415.3846153846155 338.3333333333333 M 430.7692307692309 333.3333333333333 L 430.7692307692309 333.3333333333333 L 430.7692307692309 338.3333333333333 M 446.1538461538463 0 L 446.1538461538463 400 M 461.53846153846166 333.3333333333333 L 461.53846153846166 333.3333333333333 L 461.53846153846166 338.3333333333333 M 476.9230769230771 333.3333333333333 L 476.9230769230771 333.3333333333333 L 476.9230769230771 338.3333333333333 M 492.3076923076925 333.3333333333333 L 492.3076923076925 333.3333333333333 L 492.3076923076925 338.3333333333333 M 507.69230769230785 333.3333333333333 L 507.69230769230785 333.3333333333333 L 507.69230769230785 338.3333333333333 M 523.0769230769232 0 L 523.0769230769232 400 M 538.4615384615387 333.3333333333333 L 538.4615384615387 333.3333333333333 L 538.4615384615387 338.3333333333333 M 553.846153846154 333.3333333333333 L 553.846153846154 333.3333333333333 L 553.846153846154 338.3333333333333 M 569.2307692307694 333.3333333333333 L 569.2307692307694 333.3333333333333 L 569.2307692307694 338.3333333333333 M 584.6153846153849 333.3333333333333 L 584.6153846153849 333.3333333333333 L 584.6153846153849 338.3333333333333 M 46.15384615384615 333.3333333333333 L 46.15384615384615 333.3333333333333 L 46.15384615384615 338.3333333333333 M 30.76923076923077 333.3333333333333 L 30.76923076923077 333.3333333333333 L 30.76923076923077 338.3333333333333 M 15.38461538461538 333.3333333333333 L 15.38461538461538 333.3333333333333 L 15.38461538461538 338.3333333333333"
+      display="inline"
+      fill="none"
+      fill-rule="evenodd"
+      id="graph-6"
+      stroke="#666666"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="0.25"
+      stroke-width="1"
+      style="position: absolute; clip-path: url(#graph-0); visibility: inherit;"
+    />
+    <line
+      display="inline"
+      fill-opacity="0"
+      id="graph-7"
+      marker-end="url(#graph-2)"
+      pointer-events="visibleStroke"
+      stroke="#666666"
+      stroke-linecap="butt"
+      stroke-opacity="1"
+      stroke-width="1px"
+      style="position: absolute; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+      x1="61.53846153846153"
+      x2="61.53846153846153"
+      y1="396"
+      y2="12"
+    />
+    <path
+      d=" M 56.53846153846154 324.4444444444444 L 61.53846153846154 324.4444444444444 L 61.53846153846154 324.4444444444444 M 56.53846153846154 315.55555555555554 L 61.53846153846154 315.55555555555554 L 61.53846153846154 315.55555555555554 M 56.53846153846154 306.66666666666663 L 61.53846153846154 306.66666666666663 L 61.53846153846154 306.66666666666663 M 56.53846153846154 297.77777777777777 L 61.53846153846154 297.77777777777777 L 61.53846153846154 297.77777777777777 M 0 288.88888888888886 L 600 288.88888888888886 M 56.53846153846154 280 L 61.53846153846154 280 L 61.53846153846154 280 M 56.53846153846154 271.1111111111111 L 61.53846153846154 271.1111111111111 L 61.53846153846154 271.1111111111111 M 56.53846153846154 262.22222222222223 L 61.53846153846154 262.22222222222223 L 61.53846153846154 262.22222222222223 M 56.53846153846154 253.33333333333331 L 61.53846153846154 253.33333333333331 L 61.53846153846154 253.33333333333331 M 0 244.44444444444446 L 600 244.44444444444446 M 56.53846153846154 235.55555555555554 L 61.53846153846154 235.55555555555554 L 61.53846153846154 235.55555555555554 M 56.53846153846154 226.66666666666666 L 61.53846153846154 226.66666666666666 L 61.53846153846154 226.66666666666666 M 56.53846153846154 217.77777777777777 L 61.53846153846154 217.77777777777777 L 61.53846153846154 217.77777777777777 M 56.53846153846154 208.88888888888886 L 61.53846153846154 208.88888888888886 L 61.53846153846154 208.88888888888886 M 0 199.99999999999997 L 600 199.99999999999997 M 56.53846153846154 191.11111111111106 L 61.53846153846154 191.11111111111106 L 61.53846153846154 191.11111111111106 M 56.53846153846154 182.22222222222217 L 61.53846153846154 182.22222222222217 L 61.53846153846154 182.22222222222217 M 56.53846153846154 173.3333333333333 L 61.53846153846154 173.3333333333333 L 61.53846153846154 173.3333333333333 M 56.53846153846154 164.44444444444437 L 61.53846153846154 164.44444444444437 L 61.53846153846154 164.44444444444437 M 0 155.55555555555551 L 600 155.55555555555551 M 56.53846153846154 146.6666666666666 L 61.53846153846154 146.6666666666666 L 61.53846153846154 146.6666666666666 M 56.53846153846154 137.77777777777771 L 61.53846153846154 137.77777777777771 L 61.53846153846154 137.77777777777771 M 56.53846153846154 128.8888888888888 L 61.53846153846154 128.8888888888888 L 61.53846153846154 128.8888888888888 M 56.53846153846154 119.99999999999991 L 61.53846153846154 119.99999999999991 L 61.53846153846154 119.99999999999991 M 0 111.11111111111103 L 600 111.11111111111103 M 56.53846153846154 102.22222222222211 L 61.53846153846154 102.22222222222211 L 61.53846153846154 102.22222222222211 M 56.53846153846154 93.33333333333323 L 61.53846153846154 93.33333333333323 L 61.53846153846154 93.33333333333323 M 56.53846153846154 84.44444444444434 L 61.53846153846154 84.44444444444434 L 61.53846153846154 84.44444444444434 M 56.53846153846154 75.55555555555543 L 61.53846153846154 75.55555555555543 L 61.53846153846154 75.55555555555543 M 0 66.66666666666652 L 600 66.66666666666652 M 56.53846153846154 57.77777777777766 L 61.53846153846154 57.77777777777766 L 61.53846153846154 57.77777777777766 M 56.53846153846154 48.888888888888744 L 61.53846153846154 48.888888888888744 L 61.53846153846154 48.888888888888744 M 56.53846153846154 39.99999999999983 L 61.53846153846154 39.99999999999983 L 61.53846153846154 39.99999999999983 M 56.53846153846154 31.111111111110972 L 61.53846153846154 31.111111111110972 L 61.53846153846154 31.111111111110972 M 0 22.222222222222058 L 600 22.222222222222058 M 56.53846153846154 13.333333333333144 L 61.53846153846154 13.333333333333144 L 61.53846153846154 13.333333333333144 M 56.53846153846154 342.22222222222223 L 61.53846153846154 342.22222222222223 L 61.53846153846154 342.22222222222223 M 56.53846153846154 351.1111111111111 L 61.53846153846154 351.1111111111111 L 61.53846153846154 351.1111111111111 M 56.53846153846154 360 L 61.53846153846154 360 L 61.53846153846154 360 M 56.53846153846154 368.88888888888886 L 61.53846153846154 368.88888888888886 L 61.53846153846154 368.88888888888886 M 0 377.77777777777777 L 600 377.77777777777777 M 56.53846153846154 386.66666666666663 L 61.53846153846154 386.66666666666663 L 61.53846153846154 386.66666666666663 M 56.53846153846154 395.55555555555554 L 61.53846153846154 395.55555555555554 L 61.53846153846154 395.55555555555554"
+      display="inline"
+      fill="none"
+      fill-rule="evenodd"
+      id="graph-8"
+      stroke="#666666"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="0.25"
+      stroke-width="1"
+      style="position: absolute; clip-path: url(#graph-0); visibility: inherit;"
+    />
+  </g>
+  <g />
+  <g />
+  <g>
+    <path
+      d="M 0 0"
+      display="none"
+      fill-opacity="0"
+      fill-rule="evenodd"
+      id="graph-9"
+      pointer-events="visibleStroke"
+      stroke="#D55E00"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="1"
+      stroke-width="1px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms; clip-path: url(#graph-0); visibility: hidden;"
+      tabindex="null"
+    />
+    <path
+      d="M 0 0"
+      display="none"
+      fill-opacity="0"
+      fill-rule="evenodd"
+      id="graph-10"
+      pointer-events="visibleStroke"
+      stroke="#D55E00"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="1"
+      stroke-width="1px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms; clip-path: url(#graph-0); visibility: hidden;"
+      tabindex="null"
+    />
+    <path
+      d=" M 138.46153846153845 66.66666666666669 L 142.96875 81.42681426814269 L 147.47596153846155 94.63869463869463 L 152.35877403846155 107.47173972980423 L 157.6171875 119.83320302319518 L 163.25120192307693 131.65928114229442 L 168.88521634615384 142.2439934686261 L 175.08263221153845 152.67394420553535 L 181.84344951923077 162.82651680715992 L 188.60426682692307 171.8987092324367 L 196.30408653846155 181.12225938312895 L 203.81610576923077 189.15874692009854 L 212.07932692307693 197.07252162341982 L 221.09375 204.7708725674827 L 230.10817307692307 211.64587046939988 L 239.87379807692307 218.3094636338107 L 249.63942307692307 224.2811501597444 L 260.9074519230769 230.44461190655613 L 272.1754807692308 235.94864479315262 L 284.19471153846155 241.20557804768328 L 296.9651442307692 246.20293554562858 L 310.4867788461538 250.93542546771272 L 324.75961538461536 255.40334855403347 L 339.78365384615387 259.61123110151186 L 356.31009615384613 263.7444784233775 L 373.58774038461536 267.5974963890226 L 391.61658653846155 271.1879836140191 L 410.3966346153846 274.533448176859 L 430.67908653846155 277.76421109754443 L 451.71274038461536 280.7598511102554 L 474.2487980769231 283.6306273510496 L 498.2872596153846 286.3662424033941 L 523.0769230769231 288.88888888888886"
+      display="inline"
+      fill-opacity="0"
+      fill-rule="evenodd"
+      id="graph-11"
+      pointer-events="visibleStroke"
+      stroke="#222222"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      stroke-opacity="1"
+      stroke-width="1px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+    />
+  </g>
+  <g />
+  <g />
+  <g />
+  <g>
+    <ellipse
+      cx="61.53846153846154"
+      cy="333.3333333333333"
+      display="none"
+      fill="#D55E00"
+      fill-opacity="1"
+      id="graph-12"
+      pointer-events="visiblePainted"
+      rx="4"
+      ry="4"
+      stroke="#D55E00"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: hidden;"
+      tabindex="null"
+    />
+    <ellipse
+      cx="138.46153846153845"
+      cy="333.3333333333333"
+      display="none"
+      fill="#D55E00"
+      fill-opacity="1"
+      id="graph-13"
+      pointer-events="visiblePainted"
+      rx="4"
+      ry="4"
+      stroke="#D55E00"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: hidden;"
+      tabindex="null"
+    />
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="1.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-14"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="middle"
+      x="138.46153846153845px"
+      y="336.3333333333333px"
+    >
+      1
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="1.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-15"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="middle"
+      x="215.38461538461536px"
+      y="336.3333333333333px"
+    >
+      2
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="1.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-16"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="middle"
+      x="292.3076923076923px"
+      y="336.3333333333333px"
+    >
+      3
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="1.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-17"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="middle"
+      x="369.2307692307693px"
+      y="336.3333333333333px"
+    >
+      4
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="1.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-18"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="middle"
+      x="446.1538461538463px"
+      y="336.3333333333333px"
+    >
+      5
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="1.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-19"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="middle"
+      x="523.0769230769232px"
+      y="336.3333333333333px"
+    >
+      6
+    </text>
+    <ellipse
+      cx="61.53846153846154"
+      cy="333.3333333333333"
+      display="none"
+      fill="#D55E00"
+      fill-opacity="1"
+      id="graph-20"
+      pointer-events="visiblePainted"
+      rx="4"
+      ry="4"
+      stroke="#D55E00"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: hidden;"
+      tabindex="null"
+    />
+    <ellipse
+      cx="61.53846153846154"
+      cy="288.88888888888886"
+      display="none"
+      fill="#D55E00"
+      fill-opacity="1"
+      id="graph-21"
+      pointer-events="visiblePainted"
+      rx="4"
+      ry="4"
+      stroke="#D55E00"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: hidden;"
+      tabindex="null"
+    />
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-22"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="288.88888888888886px"
+    >
+      1
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-23"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="244.44444444444446px"
+    >
+      2
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-24"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="199.99999999999997px"
+    >
+      3
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-25"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="155.55555555555551px"
+    >
+      4
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-26"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="111.11111111111103px"
+    >
+      5
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-27"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="66.66666666666652px"
+    >
+      6
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-28"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="22.222222222222058px"
+    >
+      7
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-29"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="end"
+      x="55.53846153846154px"
+      y="377.77777777777777px"
+    >
+      −1
+    </text>
+    <ellipse
+      cx="138.46153846153845"
+      cy="66.66666666666669"
+      display="inline"
+      fill="#222222"
+      fill-opacity="1"
+      id="graph-30"
+      pointer-events="visiblePainted"
+      rx="3"
+      ry="3"
+      stroke="#222222"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+    />
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-31"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="start"
+      x="148.46153846153845px"
+      y="56.666666666666686px"
+    >
+      A
+    </text>
+    <ellipse
+      cx="215.3846153846154"
+      cy="200"
+      display="inline"
+      fill="#222222"
+      fill-opacity="1"
+      id="graph-32"
+      pointer-events="visiblePainted"
+      rx="3"
+      ry="3"
+      stroke="#222222"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+    />
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-33"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="start"
+      x="225.3846153846154px"
+      y="190px"
+    >
+      B
+    </text>
+    <ellipse
+      cx="292.3076923076923"
+      cy="244.44444444444443"
+      display="inline"
+      fill="#222222"
+      fill-opacity="1"
+      id="graph-34"
+      pointer-events="visiblePainted"
+      rx="3"
+      ry="3"
+      stroke="#222222"
+      stroke-opacity="1"
+      stroke-width="2px"
+      style="position: absolute; transition: fill 100ms, fill-opacity 100ms, stroke 100ms, stroke-opacity 100ms, stroke-width 100ms, width 100ms, height 100ms, rx 100ms, ry 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+    />
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#000000"
+      fill-opacity="1"
+      id="graph-35"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="null"
+      text-anchor="start"
+      x="302.3076923076923px"
+      y="234.44444444444443px"
+    >
+      C
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#222222"
+      fill-opacity="1"
+      id="graph-36"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+      text-anchor="start"
+      x="215.3846153846154px"
+      y="373.3333333333333px"
+    >
+      Cell side length (µm)
+    </text>
+    <text
+      class="JXGtext"
+      display="inline"
+      dominant-baseline="auto"
+      dy="0.6ex"
+      fill="#222222"
+      fill-opacity="1"
+      id="graph-37"
+      pointer-events="visiblePainted"
+      style="position: absolute; white-space: nowrap; font-family: Arial, Helvetica, Geneva, sans-serif; font-size: 12px; transition: color 100ms, opacity 100ms; clip-path: url(#graph-0); visibility: inherit;"
+      tabindex="-1"
+      text-anchor="start"
+      x="92.3076923076923px"
+      y="22.22222222222223px"
+    >
+      Surface area : volume (µm⁻¹)
+    </text>
+  </g>
+  <g />
+  <g />
+  <g />
+  <g />
+  <g />
+  <g />
+  <g />
+  <g />
+  <g />
+  <g />
+</svg>

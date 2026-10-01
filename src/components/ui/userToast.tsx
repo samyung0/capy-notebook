@@ -10,6 +10,6 @@ export function userToast({
       toast.variant === 'error' || toast.variant === 'warning'
         ? 7000
         : undefined,
-    id: toastId,
+    ...(toastId === undefined ? {} : { id: toastId }),
   });
 }

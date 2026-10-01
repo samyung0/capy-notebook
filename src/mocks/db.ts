@@ -50,6 +50,7 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import { isDue, isKnown, newSrsState, reviewSrs } from '@/lib/srs';
+import { biologyQuizQuestions } from './biologyQuiz';
 import {
   chatFixtures,
   fixtureCitations,
@@ -628,264 +629,7 @@ const seedQuizzes: Quiz[] = [
     isOwner: true,
     name: 'Cell biology basics',
     privacy: 'private',
-    questions: [
-      {
-        id: 'q1',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'recall',
-        parts: [
-          {
-            answer: {
-              correct: [1],
-              options: [
-                'Nucleus',
-                'Mitochondria',
-                'Ribosome',
-                'Golgi apparatus',
-              ],
-              type: 'mcq',
-            },
-            blocks: [
-              {
-                text: 'Which organelle is the powerhouse of the cell?',
-                type: 'text',
-              },
-            ],
-            id: 'q1:part',
-            markscheme: [
-              'Mitochondria produce ATP through cellular respiration.',
-            ],
-            solution: [
-              {
-                text: 'Mitochondria produce ATP through cellular respiration.',
-                type: 'text',
-              },
-            ],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q2',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'recall',
-        parts: [
-          {
-            answer: { correct: true, type: 'boolean' },
-            blocks: [
-              {
-                text: 'The cell membrane is a phospholipid bilayer.',
-                type: 'text',
-              },
-            ],
-            id: 'q2:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q3',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'application',
-        parts: [
-          {
-            answer: {
-              correct: [1, 2],
-              options: ['Ribosome', 'Nucleus', 'Mitochondria', 'Cytosol'],
-              type: 'multi',
-            },
-            blocks: [
-              {
-                text: 'Select all that are membrane-bound organelles.',
-                type: 'text',
-              },
-            ],
-            id: 'q3:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q4',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'application',
-        parts: [
-          {
-            answer: { accepted: ['osmosis'], type: 'short' },
-            blocks: [
-              {
-                text: 'The diffusion of water across a membrane is called ____.',
-                type: 'text',
-              },
-            ],
-            id: 'q4:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q5',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'analysis',
-        parts: [
-          {
-            answer: {
-              items: [
-                'Ribosome',
-                'Rough ER',
-                'Golgi apparatus',
-                'Vesicle',
-                'Cell membrane',
-              ],
-              type: 'ordering',
-            },
-            blocks: [
-              { text: 'Order the path of protein secretion.', type: 'text' },
-            ],
-            id: 'q5:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q6',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'application',
-        parts: [
-          {
-            answer: {
-              options: ['Stores DNA', 'Makes ATP', 'Builds proteins'],
-              pairs: [
-                { left: 'Nucleus', right: 0 },
-                { left: 'Mitochondria', right: 1 },
-                { left: 'Ribosome', right: 2 },
-              ],
-              type: 'matching',
-            },
-            blocks: [
-              { text: 'Match the organelle to its function.', type: 'text' },
-            ],
-            id: 'q6:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q11',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'recall',
-        parts: [
-          {
-            answer: {
-              correct: [1],
-              options: ['Cell wall', 'Cell membrane', 'Nucleolus', 'Vacuole'],
-              type: 'mcq',
-            },
-            blocks: [
-              {
-                text: 'Which structure controls what enters and leaves the cell?',
-                type: 'text',
-              },
-            ],
-            id: 'q11:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q12',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'recall',
-        parts: [
-          {
-            answer: { correct: false, type: 'boolean' },
-            blocks: [
-              {
-                text: 'Ribosomes are membrane-bound organelles.',
-                type: 'text',
-              },
-            ],
-            id: 'q12:part',
-            markscheme: ['Ribosomes are not enclosed by a membrane.'],
-            solution: [
-              {
-                text: 'Ribosomes are not enclosed by a membrane.',
-                type: 'text',
-              },
-            ],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q13',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'application',
-        parts: [
-          {
-            answer: {
-              accepted: ['mitochondria', 'mitochondrion'],
-              type: 'short',
-            },
-            blocks: [
-              {
-                text: 'The organelle that produces most of the cell’s ATP is the ____.',
-                type: 'text',
-              },
-            ],
-            id: 'q13:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-      {
-        id: 'q14',
-        labels: 'letters',
-        layout: 'paper',
-        level: 'analysis',
-        parts: [
-          {
-            answer: {
-              accepted: ['cellular respiration', 'aerobic respiration'],
-              type: 'short',
-            },
-            blocks: [
-              {
-                text: 'Name the process cells use to convert glucose into ATP.',
-                type: 'text',
-              },
-            ],
-            id: 'q14:part',
-            markscheme: ['The answer identifies the correct response.'],
-            solution: [],
-          },
-        ],
-        stem: [],
-      },
-    ],
+    questions: structuredClone(biologyQuizQuestions),
     revision: 1,
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
@@ -1382,28 +1126,44 @@ export const attempts: (Attempt & {
   questions?: Question[];
 })[] = [
   {
-    answers: byPart({
-      q1: [1],
-      q2: true,
-      q3: [1, 2],
-      q4: 'osmosis',
-      q5: [0, 1, 2, 3, 4],
-      // Wrong: swapped Nucleus/Mitochondria functions.
-      q6: { 0: 1, 1: 0, 2: 2 },
-      q11: [1],
-      q12: true, // Wrong: correct answer is false.
-      q13: 'mitochondria',
-      q14: 'cellular respiration',
-    }),
+    answers: {
+      ...byPart({
+        q1: [1],
+        q2: true,
+        q3: [1, 2],
+        q4: 'osmosis',
+        q5: [0, 1, 2, 3, 4],
+        // Wrong: swapped Nucleus/Mitochondria functions.
+        q6: { 0: 1, 1: 0, 2: 2, 3: 1 },
+        q11: [1],
+        q12: true, // Wrong: correct answer is false.
+        q13: '24/8',
+        q14: 'The rate stays at 6 because extra light no longer increases photosynthesis.',
+      }),
+      'q14:control': null,
+      'q14:increase': '4',
+    },
     chapters: ['Cell structure'],
-    correct: 8,
+    correct: 13.5,
     id: 'at_1',
     materialId: 'qz_1',
-    pct: 80,
-    questions: seedQuizzes[0].questions,
+    pct: 64,
+    questions: seedQuizzes[0].questions.map((question) => ({
+      ...question,
+      parts: question.parts.map((part) =>
+        part.answer.type === 'open'
+          ? {
+              ...part,
+              awarded: 1.5,
+              awardReason:
+                'Identifies the plateau and that extra light no longer helps, but does not compare CO₂ concentrations to explain the limiting factor.',
+            }
+          : part
+      ),
+    })),
     quizName: 'Cell biology basics',
     takenAt: days(2),
-    total: 10,
+    total: 21,
     workspaceName: 'Biology 101',
   },
   {

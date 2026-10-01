@@ -12,10 +12,11 @@ import {
 import type { Question } from '@/api/types';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { TabContent } from '@/components/app/tabPanel';
+import { TabContent, TabHeader } from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
+import { Tabs } from '@/components/ui/Tabs';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 import { QuizPageHeader } from '@/features/quizzes/QuizPage';
@@ -58,6 +59,7 @@ function QuizEditor({ quizId }: { quizId: string }) {
     resolver: zodResolver(detailsSchema),
   });
   const name = useWatch({ control, name: 'name' });
+  const [tab, setTab] = useState('questions');
   const [questions, setQuestions] = useState<Question[]>([]);
   const seeded = useRef(false);
   const revision = useRef<number | null>(null);
@@ -76,33 +78,50 @@ function QuizEditor({ quizId }: { quizId: string }) {
     void navigate({ href: returnTo ?? '/create' });
   }
 
-  const save = handleSubmit(async ({ name: nextName }) => {
-    try {
-      if (revision.current === null || !quiz?.canEditContent || updateIsPending)
-        return;
-      const saved = await updateContent({
-        expectedRevision: revision.current,
-        id: quizId,
-        questions,
-      });
-      revision.current = saved.revision;
-      await updateMetadata({ id: quizId, name: nextName });
-      back();
-    } catch {
-      // The global mutation handler shows the normalized failure.
-    }
-  });
+  const save = handleSubmit(
+    async ({ name: nextName }) => {
+      try {
+        if (
+          revision.current === null ||
+          !quiz?.canEditContent ||
+          updateIsPending
+        )
+          return;
+        const saved = await updateContent({
+          expectedRevision: revision.current,
+          id: quizId,
+          questions,
+        });
+        revision.current = saved.revision;
+        await updateMetadata({ id: quizId, name: nextName });
+        back();
+      } catch {
+        // The global mutation handler shows the normalized failure.
+      }
+    },
+    () => setTab('general')
+  );
 
   const saveDisabled =
     updateIsPending || !seeded.current || !quiz?.canEditContent;
   return (
     <PanelWithInvertedRadius>
       <QuizPageHeader
+        className="px-6 pt-6 pb-2 sm:px-6 sm:pt-6 lg:px-6 xl:px-6"
         onBack={updateIsPending ? undefined : back}
         title={m.quiz_edit()}
         trail={
           quiz ? [quiz.workspaceName || m.nav_create(), name || quiz.name] : []
         }
+      />
+      <Tabs
+        className="px-6"
+        onChange={setTab}
+        tabs={[
+          { label: m.quiz_questions(), value: 'questions' },
+          { label: m.settings_tab_general(), value: 'general' },
+        ]}
+        value={tab}
       />
       <TabContent>
         {fetchStatus === 'paused' ? (
@@ -113,37 +132,43 @@ function QuizEditor({ quizId }: { quizId: string }) {
           <Skeleton className="h-64 w-full" />
         ) : quiz?.canEditContent ? (
           <>
-            <section className="grid gap-4">
-              <div className="flex flex-col gap-1">
-                <h2 className="t-card-title">{m.quiz_details()}</h2>
-                <p className="text-fg-secondary">{m.quiz_details_hint()}</p>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <InputField
-                  error={errors.name}
-                  id="quiz-name"
-                  label={m.common_name()}
-                >
-                  <Input id="quiz-name" {...register('name')} />
-                </InputField>
-              </div>
-            </section>
-            <h2 className="t-card-title mt-8 mb-6">{m.quiz_questions()}</h2>
-            <QuizForm
-              name={name}
-              onQuestionsChange={setQuestions}
-              questions={questions}
-            />
-            <Button
-              className="mt-3 rounded-input"
-              disabled={saveDisabled}
-              fullWidth
-              iconLeft="check"
-              onClick={() => void save()}
-              size="lg"
-            >
-              {updateIsPending ? m.canvas_saving() : m.action_save()}
-            </Button>
+            {tab === 'general' ? (
+              <>
+                <TabHeader
+                  description={m.quiz_details_hint()}
+                  title={m.settings_tab_general()}
+                />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <InputField
+                    error={errors.name}
+                    id="quiz-name"
+                    label={m.quiz_name()}
+                  >
+                    <Input id="quiz-name" {...register('name')} />
+                  </InputField>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="t-card-title mb-7">{m.quiz_questions()}</h2>
+                <QuizForm
+                  name={name}
+                  onQuestionsChange={setQuestions}
+                  questions={questions}
+                />
+              </>
+            )}
+            <div className="mt-8 flex justify-end">
+              <Button
+                aria-label={m.action_save()}
+                disabled={saveDisabled}
+                onClick={() => void save()}
+                size="lg"
+                variant="accent"
+              >
+                {updateIsPending ? <Spinner /> : m.action_save()}
+              </Button>
+            </div>
             <MaterialAttributionFooter provenance={quiz.provenance} />
           </>
         ) : (

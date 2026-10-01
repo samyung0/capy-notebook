@@ -39,7 +39,7 @@ export function QuizForm({
         disabled
         questions={questions}
         renderAfter={(question) => (
-          <div className="flex justify-end gap-0.5 sm:gap-1.5">
+          <div className="flex justify-end">
             <Button
               className="h-7 gap-1 rounded-input px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="trash"

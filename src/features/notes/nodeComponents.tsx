@@ -67,6 +67,7 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from './richBlockConfig';
+import { scrollHeadingIntoView } from './scrollHeadingIntoView';
 import {
   TableCellElement,
   TableCellHeaderElement,
@@ -400,36 +401,6 @@ function Callout(props: PlateElementProps) {
 }
 
 /* toc — read-only outline placeholder (headings are the source of truth) */
-const TOC_SCROLL_TOP_OFFSET = 36;
-
-function scrollHeadingIntoView(element: HTMLElement, topOffset: number) {
-  let scroller: HTMLElement | null = element.parentElement;
-  while (scroller) {
-    const { overflowY } = getComputedStyle(scroller);
-    if (
-      (overflowY === 'auto' ||
-        overflowY === 'scroll' ||
-        overflowY === 'overlay') &&
-      scroller.scrollHeight > scroller.clientHeight
-    ) {
-      break;
-    }
-    scroller = scroller.parentElement;
-  }
-
-  if (!scroller) {
-    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    return;
-  }
-
-  const scrollerRect = scroller.getBoundingClientRect();
-  const elementRect = element.getBoundingClientRect();
-  scroller.scrollTo({
-    behavior: 'smooth',
-    top: scroller.scrollTop + (elementRect.top - scrollerRect.top) - topOffset,
-  });
-}
-
 /** A document can carry hundreds of headings, and editing any one of their
  * titles produces a new heading list. Without a per-entry memo, retitling one
  * heading rebuilds every row on every keystroke. `path` arrives as a fresh
@@ -457,7 +428,7 @@ const TocEntry = memo(
           const element = editor.api.toDOMNode(node);
           if (!element) return;
 
-          scrollHeadingIntoView(element, TOC_SCROLL_TOP_OFFSET);
+          scrollHeadingIntoView(element);
           editor.tf.navigation.flashTarget({
             target: { path, type: 'node' },
           });

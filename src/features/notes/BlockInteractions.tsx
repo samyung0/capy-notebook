@@ -43,6 +43,7 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/ContextMenu';
+import { MATERIAL_REF_TYPE } from '@/features/materials/document';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -120,6 +121,7 @@ function DraggableBlock(props: PlateElementProps) {
 
   const isInColumn = path.length === 3;
   const isInTable = path.length === 4;
+  const isMaterialRef = element.type === MATERIAL_REF_TYPE;
 
   const [previewTop, setPreviewTop] = React.useState(0);
   const [handleTop, setHandleTop] = React.useState(3);
@@ -153,7 +155,7 @@ function DraggableBlock(props: PlateElementProps) {
       )}
       data-slot="block-wrapper"
       onMouseEnter={(event) => {
-        if (isDragging) return;
+        if (isDragging || isMaterialRef) return;
         const middle = firstLineMiddle(editor, element, event.currentTarget);
         // Center the 24px handle on the first line.
         if (middle !== null) setHandleTop(middle - 12);
@@ -161,7 +163,13 @@ function DraggableBlock(props: PlateElementProps) {
     >
       {!isInTable && (
         <Gutter>
-          <div className={cn('flex h-[1.5em]', isInColumn && 'h-4')}>
+          <div
+            className={cn(
+              'flex h-[1.5em]',
+              isInColumn && 'h-4',
+              isMaterialRef && 'h-full'
+            )}
+          >
             <div
               className={cn(
                 'pointer-events-auto relative mr-1 flex w-4.5 items-center',
@@ -174,7 +182,9 @@ function DraggableBlock(props: PlateElementProps) {
                 contentEditable={false}
                 data-plate-prevent-deselect
                 ref={handleRef}
-                style={{ top: `${handleTop}px` }}
+                style={{
+                  top: isMaterialRef ? 'calc(50% - 12px)' : `${handleTop}px`,
+                }}
                 type="button"
               >
                 <DragHandle

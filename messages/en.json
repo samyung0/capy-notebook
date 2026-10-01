@@ -1657,7 +1657,6 @@
   "quiz_clone": "Clone quiz",
   "quiz_answered_count": "{answered} of {total} answered",
   "quiz_submit": "Submit answers",
-  "quiz_details": "Details",
   "quiz_details_hint": "How this quiz appears in Create and in its workspace.",
   "quiz_questions": "Questions",
   "question_ui_type_answer": "Type your answer",

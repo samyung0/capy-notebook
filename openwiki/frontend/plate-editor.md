@@ -157,6 +157,11 @@ and hover transitions. Rows are square, full-width and gapless, with a local
 override disabling press shrink. The TOC margin sits on its Plate element so
 the drag handle aligns with the first text line. The navigation has an accessible
 label without a visible caption; selected TOC blocks use accent hover colors.
+Both modes scroll to headings with the shared 250ms `--motion-duration-fast`
+and `--motion-ease-smooth-out` tokens, leaving 36px above the destination when
+scroll bounds allow. Reduced motion jumps immediately; new navigation or manual
+wheel, touch, pointer or keyboard input cancels the current scroll. A native
+empty animation supplies eased progress to a short animation-frame scroll loop.
 
 `components/ui/BlockToolbar` owns the shared floating surface for selection,
 link and block actions, question-dialog blocks and the single-column workspace

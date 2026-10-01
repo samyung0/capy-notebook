@@ -58,6 +58,7 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
+import { scrollHeadingIntoView } from '@/features/notes/scrollHeadingIntoView';
 import {
   QuestionBlockView,
   QuestionView,
@@ -229,10 +230,11 @@ function scrollToHeading(event: MouseEvent, headingOrder: number) {
     '[data-slate-editor]'
   );
   if (!root) return;
-  const heads = root.querySelectorAll(
+  const heads = root.querySelectorAll<HTMLElement>(
     ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'
   );
-  heads[headingOrder]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const heading = heads[headingOrder];
+  if (heading) scrollHeadingIntoView(heading);
 }
 
 function Toc(props: SlateElementProps) {

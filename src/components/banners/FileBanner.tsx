@@ -58,7 +58,7 @@ export function FileBanner({
         )}
       </div>
       <IconButton
-        className="shrink-0 rounded-[7px] opacity-75 hover:bg-fg/5 hover:opacity-100"
+        className="shrink-0 rounded-md opacity-75 hover:bg-fg/5 hover:opacity-100"
         icon="x"
         label={m.action_close()}
         onClick={() => setClosed(message)}
