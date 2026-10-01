@@ -408,67 +408,15 @@ export default function WorkspaceOpen() {
     </div>
   );
 
+  // The viewer keeps one parent chain at every width: moving an Office iframe
+  // to another parent reloads its runtime and refetches the document.
   // overflow-visible WITH important is so that shadow doesnt get clipped
   return (
     <>
-      {layout === 'one' ? (
-        <div className="flex h-full min-h-0 flex-col gap-2.5">
-          <TopInsetBar className="w-full" />
-          <div className="relative min-h-0 flex-1">
-            {viewer}
-            <FloatingToolbar
-              aria-label={m.workspace_tools()}
-              className="gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"
-              open={!toolsOpen}
-              positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
-            >
-              {panelTabs.map((t) => (
-                <ToolbarButton
-                  className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
-                  key={t}
-                  label={tabLabel(t)}
-                  onClick={() => showTab(t)}
-                  tooltipSide="top"
-                >
-                  <Icon name={TAB_ICON[t]} />
-                  <span className="hidden sm:inline">{tabLabel(t)}</span>
-                </ToolbarButton>
-              ))}
-              {rowProps.onOpenSettings && (
-                <ToolbarButton
-                  className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
-                  label={m.workspace_settings()}
-                  onClick={rowProps.onOpenSettings}
-                  tooltipSide="top"
-                >
-                  <Icon name="settings" />
-                  <span className="hidden sm:inline">
-                    {m.workspace_settings_short()}
-                  </span>
-                </ToolbarButton>
-              )}
-            </FloatingToolbar>
-          </div>
-          <Drawer
-            onOpenChange={setToolsOpen}
-            open={toolsOpen}
-            showSwipeHandle
-            swipeDirection="down"
-          >
-            <DrawerContent
-              keepMounted
-              style={{ '--drawer-height': '82dvh' } as React.CSSProperties}
-            >
-              <DrawerTitle className="sr-only">
-                {m.workspace_tools()}
-              </DrawerTitle>
-              {rail}
-            </DrawerContent>
-          </Drawer>
-        </div>
-      ) : (
+      <div className="flex h-full min-h-0 flex-col gap-2.5">
+        {layout === 'one' && <TopInsetBar className="w-full" />}
         <ResizablePanelGroup
-          className="overflow-visible! flex h-full min-h-0 gap-1.5"
+          className="overflow-visible! flex min-h-0 flex-1 gap-1.5"
           orientation="horizontal"
         >
           {layout === 'three' && (
@@ -497,23 +445,81 @@ export default function WorkspaceOpen() {
           <ResizablePanel
             className="overflow-visible!"
             id="viewer"
-            minSize="400px"
+            minSize={layout === 'one' ? undefined : '400px'}
           >
-            {viewer}
+            <div className="relative h-full">
+              {viewer}
+              {layout === 'one' && (
+                <FloatingToolbar
+                  aria-label={m.workspace_tools()}
+                  className="gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"
+                  open={!toolsOpen}
+                  positionClassName="absolute bottom-4 left-1/2 z-10 -translate-x-1/2"
+                >
+                  {panelTabs.map((t) => (
+                    <ToolbarButton
+                      className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                      key={t}
+                      label={tabLabel(t)}
+                      onClick={() => showTab(t)}
+                      tooltipSide="top"
+                    >
+                      <Icon name={TAB_ICON[t]} />
+                      <span className="hidden sm:inline">{tabLabel(t)}</span>
+                    </ToolbarButton>
+                  ))}
+                  {rowProps.onOpenSettings && (
+                    <ToolbarButton
+                      className="size-10 gap-0 rounded-card-xl sm:w-auto sm:gap-2 sm:px-3 [&_svg]:size-5"
+                      label={m.workspace_settings()}
+                      onClick={rowProps.onOpenSettings}
+                      tooltipSide="top"
+                    >
+                      <Icon name="settings" />
+                      <span className="hidden sm:inline">
+                        {m.workspace_settings_short()}
+                      </span>
+                    </ToolbarButton>
+                  )}
+                </FloatingToolbar>
+              )}
+            </div>
           </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel
-            className="overflow-visible!"
-            // Relative so the rail grows on wide screens; ~410px at 1280px.
-            defaultSize="32%"
-            id="rail"
-            maxSize="50%"
-            minSize="300px"
-          >
-            {railColumn}
-          </ResizablePanel>
+          {layout !== 'one' && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel
+                className="overflow-visible!"
+                // Relative so the rail grows on wide screens; ~410px at 1280px.
+                defaultSize="32%"
+                id="rail"
+                maxSize="50%"
+                minSize="300px"
+              >
+                {railColumn}
+              </ResizablePanel>
+            </>
+          )}
         </ResizablePanelGroup>
-      )}
+        {layout === 'one' && (
+          <Drawer
+            onOpenChange={setToolsOpen}
+            open={toolsOpen}
+            showSwipeHandle
+            swipeDirection="down"
+          >
+            <DrawerContent
+              keepMounted
+              style={{ '--drawer-height': '82dvh' } as React.CSSProperties}
+            >
+              <DrawerTitle className="sr-only">
+                {m.workspace_tools()}
+              </DrawerTitle>
+              {rail}
+            </DrawerContent>
+          </Drawer>
+        )}
+      </div>
       <WorkspaceSettingsDialog
         onClose={() => setSettingsOpen(false)}
         open={settingsOpen}

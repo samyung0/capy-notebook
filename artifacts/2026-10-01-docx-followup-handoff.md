@@ -77,6 +77,55 @@ For the agent picking up the remaining BetterOffice DOCX items. It replaces the
 Behaviour choices beyond these need a new decision from the developer, recorded
 in `human/` before you implement (see the `human` skill).
 
+## Performance track (added 2026-10-02)
+
+This is separate from items 1–6, and neither blocks the other. In dev, editing
+lags and hangs, and the tab reaches about 2 GB.
+
+**Already done in Capy (2026-10-02):** the workspace no longer remounts the viewer
+when it crosses lg, and the editor's Google Fonts lookup is off.
+
+**Measured** on Windows, in headless Chromium against MSW, with
+`exchange-plan.docx` (15 pages, Chinese) in edit mode at 1280×800. The probes
+and how to run them are in `artifacts/2026-10-02-docx-perf-probes/`.
+
+- **Typing:** keystroke to painted frame is p50 78 ms and p90 266 ms with
+  production React. Dev is p50 230 ms and p90 840 ms, about 18% of which is
+  React's dev-only render profiling.
+- **CPU per keystroke** (production React, 40 keys):
+  - Display-list decode takes 19%, about 23 ms per key. That is
+    `ValueCursor.value` in `packages/docx/src/layout/render/frameDelta.ts`,
+    which builds every object through `Object.defineProperty`.
+  - WASM layout takes 11% and the edit WASM 6%.
+  - 23% is browser work the profiler doesn't attribute.
+- **Memory:**
+  - The renderer uses 834 MB with the editor open, against 167 MB for the
+    workspace without a file.
+  - JS heap is 42 MB. The WASM heaps are 41 and 27 MB, and the 27 MB one grows
+    to 191 MB on the first edits and stays there.
+  - The total levels off around 1.2 GB after 200 keys, so it isn't an unbounded
+    leak.
+  - About 400–500 MB is unaccounted for. Suspected: copies of the font files
+    (the CJK faces are 4.5–11.6 MB each). Unverified.
+
+**Next:**
+
+1. Count how many pages each keystroke re-sends and decodes. If it's more than
+   the pages the edit changed, fix that first.
+2. Make the decoder cheap: plain object literals instead of `defineProperty`,
+   or decode lazily.
+3. Find where the unaccounted renderer memory goes with a native heap profile.
+   Start by counting how many copies of each font the editor and layout hold.
+4. Measure a larger real document (50+ pages) before and after each change.
+5. **Then in Capy:** add an Office spec to `bench/editor` that runs against a
+   production build:
+   - measures open to first paint, View to Edit ready, and keystroke to frame;
+   - the runtime reports its own timings in the `ready` message, because the
+     parent can't read the cross-origin frame's timeline.
+
+Fork changes follow How to work below. The matrix and goldens should not move,
+because these changes only touch rendering and decode.
+
 ## How to work
 
 - **Branch:** create one from `origin/capy-ci` in a worktree under your

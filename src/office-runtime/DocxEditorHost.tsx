@@ -1,4 +1,5 @@
 import { configureDefaultFonts } from '@betteroffice/docx/layout';
+import { setGoogleFontsEnabled } from '@betteroffice/docx/utils';
 import { DocxEditor, type DocxEditorRef } from '@betteroffice/docx-react';
 import { useEffect, useRef } from 'react';
 import type {
@@ -10,6 +11,8 @@ import { officeFonts, onOfficeFontFailure } from './officeFonts';
 
 // Before any editor mounts: the engine measures with the bundled faces.
 configureDefaultFonts({ fonts: officeFonts });
+// Fonts come only from Capy's own assets: no fonts.googleapis.com lookup.
+setGoogleFontsEnabled(false);
 
 export function DocxEditorHost({
   bytes,

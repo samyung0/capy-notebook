@@ -126,7 +126,9 @@ Workspace and standalone file pages read `?mode=view|edit` on entry and update i
 View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
 shared changes and previews the exported current replica. Saving requests a database
-checkpoint receipt and keeps the editor mounted. Ordinary metadata refetches do
+checkpoint receipt and keeps the editor mounted. The workspace keeps the viewer
+under one parent at every breakpoint, since moving an iframe reloads it, so
+resizing never reopens the document. Ordinary metadata refetches do
 not recreate an active editor, and a publication leaves it alone (Deferred
 publication below). Only a maintenance handoff replaces its base: a saved
 editor keeps its current view read-only under a persistent banner that says a
@@ -470,7 +472,9 @@ same-origin, content-hashed assets that load only when a document's text or
 fonts need that script, so the engine measures CJK text with the face the page
 paints; without them CJK text overlapped in view and vanished in edit. Han text
 without kana or Hangul uses the Simplified bucket, so a Traditional Chinese
-file can load both Chinese faces. A face that fails to load
+file can load both Chinese faces. The editor's
+Google Fonts lookup is off (`setGoogleFontsEnabled(false)`), so a document
+font with no bundled face paints with its CSS fallback stack. A face that fails to load
 shows an explicit error instead of the fallback layout
 (`src/office-runtime/officeFonts.ts`, `pptxFonts.ts`).
 
