@@ -1,0 +1,40 @@
+{
+  // Hidden from the explorer: caches, build output and stray Windows dirs.
+  "files.exclude": {
+    "**/__pycache__": true,
+    ".pnpm-store": true,
+    ".uv-cache": true,
+    ".venv": true,
+    ".pytest_cache": true,
+    ".ruff_cache": true,
+    "%SystemDrive%": true,
+    "tsconfig.tsbuildinfo": true,
+    "vendor/betteroffice/target": true
+  },
+  // Visible in the explorer but left out of search and quick open.
+  // Gitignored paths (data/, tmp/, dist/, test-results/, paraglide output) are already skipped.
+  "search.exclude": {
+    "artifacts": true,
+    "bench": true,
+    "vendor": true,
+    "src/api/gen": true,
+    "pnpm-lock.yaml": true,
+    "uv.lock": true,
+    "**/node_modules": true
+  },
+  // Large or churny trees the file watcher does not need to follow.
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    ".pnpm-store/**": true,
+    ".uv-cache/**": true,
+    ".venv/**": true,
+    "data/**": true,
+    "tmp/**": true,
+    "dist/**": true,
+    "test-results/**": true,
+    "playwright-report/**": true,
+    "bench/editor/.results/**": true,
+    "lab/playground/local/**": true,
+    "vendor/betteroffice/target/**": true
+  }
+}

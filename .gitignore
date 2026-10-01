@@ -10,7 +10,8 @@ Thumbs.db
 .claude
 !.vscode/settings.json
 *~
-.zed
+.zed/*
+!.zed/settings.json
 .cursor
 
 # --- Env / secrets ---

@@ -1,0 +1,30 @@
+// Zed has no search-only exclude: these paths are dropped from the project
+// panel, file finder and project search. Gitignored paths are already left out
+// of search. The first entries repeat Zed's defaults, which this list replaces.
+{
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+
+    "artifacts",
+    "bench",
+    "vendor",
+    "src/api/gen",
+    "pnpm-lock.yaml",
+    "uv.lock",
+    "**/__pycache__",
+    ".pnpm-store",
+    ".uv-cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "%SystemDrive%",
+    "tsconfig.tsbuildinfo"
+  ]
+}
