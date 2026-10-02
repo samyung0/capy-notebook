@@ -399,7 +399,7 @@
   "theme_style_classroom": "课堂",
   "theme_style_notion": "Notion",
   "dashboard_empty_intro": "先四处看看 — 你的工作区、笔记会出现在这里。",
-  "dashboard_empty_cta": "去创建你的第一个工作区 :)",
+  "dashboard_empty_cta": "创建工作区",
   "dashboard_banner_title": "把资料变成摘要、记忆卡和测验",
   "dashboard_banner_body": "上传文件，然后对话或生成 — 内容基于你自己的资料。",
   "explore_subtitle": "发现社区里的公开学习集。",
@@ -1694,5 +1694,10 @@
   "question_validation_asset_host": "图片必须使用已配置的题库资源地址。",
   "question_validation_upload_graphs": "保存题目前请先上传题库图形。",
   "question_validation_question_ids": "题目 ID 不能重复。",
-  "question_validation_quiz_part_ids": "整份测验中的小题 ID 不能重复。"
+  "question_validation_quiz_part_ids": "整份测验中的小题 ID 不能重复。",
+  "question_validation_quiz_question_parts": "每道题最多有 {max} 个小题。",
+  "question_validation_quiz_markscheme": "每个小题最多有 {max} 个评分要点。",
+  "question_validation_open_answer_length": "参考答案最多 {max} 个字符。",
+  "question_validation_quiz_parts": "每份测验最多有 {max} 个小题。",
+  "question_validation_quiz_open_parts": "每份测验最多有 {max} 个开放式小题。"
 }

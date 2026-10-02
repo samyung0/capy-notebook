@@ -278,7 +278,11 @@ artifacts referenced by containing resources; published clones attach their
 own references and exclude pending captions. A failed candidate cannot remove
 the currently published source/index.
 
-Editor assets write to an `editor-assets/incoming/…` key and are promoted to
+Editor assets upload through the material that uses them
+(`/api/materials/{id}/editor-assets/uploads`, any editor of the material). A
+workspace material's asset belongs to the workspace and is charged to its
+owner; a standalone note or quiz's asset belongs to that material and is
+charged to the material owner, the only account that can edit it. Both write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
 still-valid upload URL cannot overwrite a ready object. If creating the
 durable DB row fails after a source object was written, handlers delete the
@@ -288,7 +292,7 @@ Workspace clones snapshot the source, gate the total file + material + ready
 editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
-processing, and failed files are omitted. Material nodes referring to a pending,
+processing, and failed files are omitted. Material nodes (and quiz image blocks) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
 document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.

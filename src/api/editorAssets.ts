@@ -33,19 +33,24 @@ export interface ResolvedEditorAsset {
   url: string;
 }
 
+/** A workspace material's assets belong to (and bill) the workspace owner; a
+ * standalone material's belong to its owner. The server picks the scope. */
+const uploadsPath = (materialId: string) =>
+  `/materials/${encodeURIComponent(materialId)}/editor-assets/uploads`;
+
 export interface EditorAssetUploadOptions {
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
 }
 
 export function reserveEditorAsset(
-  workspaceId: string,
+  materialId: string,
   file: File,
   purpose: EditorAssetPurpose,
   options: Pick<EditorAssetUploadOptions, 'signal'> = {}
 ) {
   return api.post<EditorAssetReservation>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/editor-assets/uploads`,
+    uploadsPath(materialId),
     {
       contentType: file.type,
       name: file.name,
@@ -76,12 +81,12 @@ export function uploadReservedEditorAsset(
 }
 
 export function completeEditorAssetUpload(
-  workspaceId: string,
+  materialId: string,
   uploadId: string,
   signal?: AbortSignal
 ) {
   return api.post<EditorAsset>(
-    `/workspaces/${encodeURIComponent(workspaceId)}/editor-assets/uploads/${encodeURIComponent(uploadId)}/complete`,
+    `${uploadsPath(materialId)}/${encodeURIComponent(uploadId)}/complete`,
     undefined,
     { signal }
   );
@@ -90,20 +95,20 @@ export function completeEditorAssetUpload(
 // Returns only stable metadata. Plate documents should persist assetId, never
 // the reservation URL or a resolved short-lived URL.
 export async function uploadEditorAsset(
-  workspaceId: string,
+  materialId: string,
   file: File,
   purpose: EditorAssetPurpose,
   options: EditorAssetUploadOptions = {}
 ): Promise<EditorAsset> {
   const reservation = await reserveEditorAsset(
-    workspaceId,
+    materialId,
     file,
     purpose,
     options
   );
   await uploadReservedEditorAsset(reservation, file, options);
   return completeEditorAssetUpload(
-    workspaceId,
+    materialId,
     reservation.uploadId,
     options.signal
   );

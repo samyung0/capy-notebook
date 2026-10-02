@@ -47,6 +47,14 @@ const (
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
+	// User quizzes (not the question bank) are bounded tighter, so one
+	// attempt's open parts fit a single grading request: at most 20 open parts
+	// of at most 5 marking items each.
+	QuizParts         = 100
+	QuizQuestionParts = 7
+	QuizOpenParts     = 20
+	QuizMarkscheme    = 5
+	QuizOpenAnswer    = 5_000
 )
 
 // QuestionBounds is exported into frontend, sidecar and pipeline contracts.
@@ -70,6 +78,11 @@ var QuestionBounds = map[string]int{
 	"QUESTION_SVG_BYTES_MAX":       QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX": QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":       QuestionAssetURL,
+	"QUIZ_PARTS_MAX":               QuizParts,
+	"QUIZ_QUESTION_PARTS_MAX":      QuizQuestionParts,
+	"QUIZ_OPEN_PARTS_MAX":          QuizOpenParts,
+	"QUIZ_MARKSCHEME_MAX":          QuizMarkscheme,
+	"QUIZ_OPEN_ANSWER_MAX":         QuizOpenAnswer,
 }
 
 // Columns lists every constrained column as "table.column" so the database

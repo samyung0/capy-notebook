@@ -9,6 +9,7 @@ import {
   assertMaterialDocument,
   createMaterialDocument,
   flashcardsNode,
+  isCustomMaterialElement,
   isMaterialRefElement,
   type MaterialDocument,
   type MaterialElement,
@@ -16,6 +17,7 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
+import { questionAssetIds } from '@/features/questions/types';
 import type { ExportFormat } from './export/render';
 
 type MarkdownEditor = PlateEditor & {
@@ -126,6 +128,8 @@ export async function exportNoteDocument(
     nodes.forEach((node) => {
       if ('text' in node) return;
       if (typeof node.assetId === 'string') ids.add(node.assetId);
+      if (isCustomMaterialElement(node) && node.type === 'quiz_question')
+        for (const id of questionAssetIds(node.question)) ids.add(id);
       visit(node.children);
     });
   visit(value);

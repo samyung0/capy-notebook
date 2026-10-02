@@ -64,8 +64,17 @@ is shared by question blocks, note embeds, tables and columns.
 Charts reuse the SVG renderer extracted from ChatChart. Graphs store a bounded
 JSXGraph recipe and a static rendering. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
-database and the SVG in the public bucket; bank images likewise use public
-content-hashed URLs. Image blocks are currently bank-only.
+database and the SVG in the public bucket. Image and graph blocks both keep
+their source under `image`: bank images use `{ url }`, a public content-hashed
+URL, and quiz images use `{ assetId }`, a private workspace editor asset
+(see [backend-storage-quota.md](backend-storage-quota.md)). Quiz images are
+resolved to signed URLs at render and export time and follow editor-asset
+cloning: a clone copies the asset rows, rewrites the ids, drops images whose
+asset was not copied, and drops a question whose part loses all content. Uploads
+go through the quiz's material route: a workspace quiz's images belong to its
+workspace (workspace owner pays), a standalone quiz's to the quiz (its owner
+pays). Answer
+options stay plain strings; no images or rich content go inside them.
 
 `POST /api/bank/assets` checks the editor grant, validates the bytes and uses
 server environment credentials. The local publisher has the same validation.

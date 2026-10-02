@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 
 /** One coloured share of a meter, as the Usage tab and the workspace Indexing
@@ -42,7 +43,13 @@ export function UsageBar({
   );
 }
 
-export function UsageHead({ title, value }: { title: string; value: string }) {
+export function UsageHead({
+  title,
+  value,
+}: {
+  title: string;
+  value: ReactNode;
+}) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
       <p className="t-subtitle font-bold">{title}</p>
@@ -55,7 +62,7 @@ export function UsageHead({ title, value }: { title: string; value: string }) {
 export function UsageLegend({
   segments,
 }: {
-  segments: (Segment & { value: string })[];
+  segments: (Segment & { value: ReactNode })[];
 }) {
   return (
     <ul className="m-0 flex list-none flex-col p-0">

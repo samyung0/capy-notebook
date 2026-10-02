@@ -1,0 +1,183 @@
+{
+  "provenance": {
+    "author": "Claude Code agent (Opus 5.5); synthetic questions, answers and labels",
+    "date": "2026-10-02",
+    "human_certified": false,
+    "labels_written_before_inference": true,
+    "review": "Re-reviewed once by the same agent before inference; changes listed under review.changes",
+    "scope": "Non-computational open parts whose question text, marking items or answers contain inline LaTeX ($...$)",
+    "labeling_rules": "Same rules as jev-contract-grading.json"
+  },
+  "answer_kinds": {
+    "latex_correct": "correct answer written with LaTeX",
+    "words_correct": "correct answer in plain words",
+    "partial": "genuinely incomplete",
+    "wrong": "fluent but incorrect",
+    "contradiction": "states required content and contradicts some of it",
+    "keywords": "LaTeX symbols and vocabulary without claims"
+  },
+  "questions": [
+    {
+      "id": "latex-derivative-sine",
+      "subject": "conceptual_mathematics",
+      "question": {
+        "id": "latex-derivative-sine",
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [{ "type": "text", "text": "Explain geometrically why $\\frac{d}{dx}\\sin x = \\cos x$." }],
+            "answer": { "type": "open", "accepted": ["The derivative is the gradient of the tangent to $y = \\sin x$. The sine curve is steepest (gradient 1) at $x = 0$ and flat at $x = \\frac{\\pi}{2}$, exactly where $\\cos x$ equals 1 and 0, and this matching continues around the curve."], "hints": [] },
+            "markscheme": [
+              "Interprets the derivative as the gradient of the tangent to $y = \\sin x$",
+              "Notes the gradient of $\\sin x$ is greatest at $x = 0$ and zero at $x = \\frac{\\pi}{2}$, matching the values of $\\cos x$"
+            ],
+            "solution": []
+          }
+        ],
+        "layout": "paper",
+        "labels": "letters"
+      },
+      "item_context": { "a": ["self_contained", "self_contained"] },
+      "answers": {
+        "a": [
+          { "kind": "latex_correct", "text": "The derivative is the slope of the tangent to $y=\\sin x$. At $x=0$ the sine curve is steepest, slope $1=\\cos 0$, and at $x=\\frac{\\pi}{2}$ it is flat, slope $0=\\cos\\frac{\\pi}{2}$, so the slope follows $\\cos x$.", "labels": [[1, "Slope of the tangent to y = sin x."], [1, "Steepest at 0 and flat at pi/2, matching cos."]] },
+          { "kind": "words_correct", "text": "The derivative means how steep the sine graph is at each point. The sine graph is steepest when x is 0 and completely flat at its peak at pi over 2, which is exactly where cos x is 1 and 0.", "labels": [[1, "Steepness of the sine graph at each point."], [1, "Steepest at 0, flat at pi/2, matching cos."]] },
+          { "kind": "partial", "text": "$\\frac{d}{dx}$ gives the gradient of the curve $y = \\sin x$ at each point.", "labels": [[1, "Gradient of the curve at each point."], [0, "No matching of gradient values with cos x."]] },
+          { "kind": "wrong", "text": "$\\frac{d}{dx}\\sin x = \\cos x$ because $\\sin^2 x + \\cos^2 x = 1$, so differentiating swaps sine for cosine.", "labels": [[0, "No gradient interpretation."], [0, "Invalid justification; no gradient values."]] }
+        ]
+      }
+    },
+    {
+      "id": "latex-limit-meaning",
+      "subject": "conceptual_mathematics",
+      "question": {
+        "id": "latex-limit-meaning",
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [{ "type": "text", "text": "Explain in words what $\\lim_{x \\to a} f(x) = L$ means." }],
+            "answer": { "type": "open", "accepted": ["As $x$ gets closer and closer to $a$ (without equalling it), $f(x)$ gets as close as we like to $L$. The value of $f(a)$ itself does not matter; it may be undefined or different from $L$."], "hints": [] },
+            "markscheme": [
+              "As $x$ gets closer and closer to $a$, $f(x)$ gets closer and closer to $L$",
+              "The value of $f$ at $a$ itself does not matter (it may be undefined or different from $L$)"
+            ],
+            "solution": []
+          }
+        ],
+        "layout": "paper",
+        "labels": "letters"
+      },
+      "item_context": { "a": ["self_contained", "self_contained"] },
+      "answers": {
+        "a": [
+          { "kind": "latex_correct", "text": "It means $f(x)$ can be made as close to $L$ as we like by taking $x$ close enough to $a$ (but $x \\neq a$), so $f(a)$ itself is irrelevant and might not even exist.", "labels": [[1, "f(x) as close to L as we like for x close to a."], [1, "f(a) irrelevant, may not exist."]] },
+          { "kind": "partial", "text": "As x approaches a, f(x) approaches L.", "labels": [[1, "x approaches a, f(x) approaches L."], [0, "Not mentioned."]] },
+          { "kind": "wrong", "text": "It means $f(a) = L$: you just substitute $x = a$ into the function.", "labels": [[0, "Replaces the limit with substitution."], [0, "Contradicts: makes f(a) the whole meaning."]] },
+          { "kind": "contradiction", "text": "As $x \\to a$, $f(x) \\to L$, and this only works if $f(a)$ is defined and equal to $L$.", "labels": [[1, "f(x) tends to L as x tends to a."], [0, "Contradicts: requires f(a) to be defined and equal to L."]] }
+        ]
+      }
+    },
+    {
+      "id": "latex-geometric-series",
+      "subject": "conceptual_mathematics",
+      "question": {
+        "id": "latex-geometric-series",
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [{ "type": "text", "text": "Without finding its value, explain why the series $\\sum_{n=1}^{\\infty} \\frac{1}{2^n}$ converges." }],
+            "answer": { "type": "open", "accepted": ["Each term is half the previous one, so it is a geometric series with ratio $\\frac{1}{2}$, and $|r| < 1$. The partial sums keep increasing but never pass 1, since each term covers half of the remaining gap to 1, so they approach a limit."], "hints": [] },
+            "markscheme": [
+              "Each term is half of the previous term, so the terms shrink geometrically (common ratio $\\frac{1}{2}$, with $|r| < 1$)",
+              "The partial sums increase but never exceed a fixed bound (for example 1), so they approach a limit"
+            ],
+            "solution": []
+          }
+        ],
+        "layout": "paper",
+        "labels": "letters"
+      },
+      "item_context": { "a": ["self_contained", "self_contained"] },
+      "answers": {
+        "a": [
+          { "kind": "latex_correct", "text": "It is geometric with $r=\\tfrac12$ and $|r|<1$. The partial sums keep growing but always stay below 1 (each new term fills half of the gap that is left), so they converge.", "labels": [[1, "Geometric, r = 1/2, |r| < 1."], [1, "Partial sums grow but stay below 1."]] },
+          { "kind": "partial", "text": "The terms get smaller and smaller.", "labels": [[0.5, "Terms shrink, but not geometrically by a fixed ratio."], [0, "No bound on the partial sums."]] },
+          { "kind": "wrong", "text": "It converges because $\\frac{1}{2^n} \\to 0$, and any series whose terms tend to 0 converges.", "labels": [[0, "No halving or ratio; relies on a false rule."], [0, "No bounded partial sums."]] },
+          { "kind": "keywords", "text": "$\\sum$, $r = \\frac{1}{2}$, $|r|<1$, $S_\\infty = \\frac{a}{1-r}$, convergent, geometric.", "labels": [[0, "List of symbols without a claim."], [0, "List of symbols without a claim."]] }
+        ]
+      }
+    },
+    {
+      "id": "latex-water-boiling",
+      "subject": "chemistry",
+      "question": {
+        "id": "latex-water-boiling",
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [{ "type": "text", "text": "Explain why $\\mathrm{H_2O}$ has a much higher boiling point than $\\mathrm{H_2S}$." }],
+            "answer": { "type": "open", "accepted": ["Water molecules form hydrogen bonds with each other because O is very electronegative. These are stronger than the forces between $\\mathrm{H_2S}$ molecules, so more energy is needed to separate water molecules."], "hints": [] },
+            "markscheme": [
+              "Water molecules form hydrogen bonds with each other (H bonded to the very electronegative O)",
+              "Hydrogen bonds are stronger than the intermolecular forces between $\\mathrm{H_2S}$ molecules, so more energy is needed to separate the molecules"
+            ],
+            "solution": []
+          }
+        ],
+        "layout": "paper",
+        "labels": "letters"
+      },
+      "item_context": { "a": ["self_contained", "self_contained"] },
+      "answers": {
+        "a": [
+          { "kind": "latex_correct", "text": "$\\mathrm{H_2O}$ forms hydrogen bonds between molecules because O is very electronegative; $\\mathrm{H_2S}$ only has weaker dipole-dipole and London forces, so water needs more energy to boil.", "labels": [[1, "Hydrogen bonds between water molecules."], [1, "H2S forces are weaker, so water needs more energy."]] },
+          { "kind": "partial", "text": "Water has hydrogen bonding between its molecules.", "labels": [[1, "Hydrogen bonding between water molecules."], [0, "No comparison with H2S or energy."]] },
+          { "kind": "wrong", "text": "Because the O-H covalent bonds inside $\\mathrm{H_2O}$ are stronger than the S-H bonds in $\\mathrm{H_2S}$, and boiling breaks these bonds.", "labels": [[0, "Confuses covalent bonds with hydrogen bonds."], [0, "Boiling does not break covalent bonds."]] },
+          { "kind": "contradiction", "text": "Water molecules form hydrogen bonds with each other, but these are weaker than the forces between $\\mathrm{H_2S}$ molecules.", "labels": [[1, "Hydrogen bonds between water molecules."], [0, "Contradicts: says hydrogen bonds are weaker."]] }
+        ]
+      }
+    },
+    {
+      "id": "latex-trolley-mass",
+      "subject": "physics",
+      "question": {
+        "id": "latex-trolley-mass",
+        "stem": [],
+        "parts": [
+          {
+            "id": "a",
+            "blocks": [{ "type": "text", "text": "Using $F = ma$, explain in words why a loaded trolley accelerates less than an empty one when pushed with the same force." }],
+            "answer": { "type": "open", "accepted": ["Rearranging gives $a = \\frac{F}{m}$: with the same force, a larger mass gives a smaller acceleration. The loaded trolley has more mass, so it accelerates less."], "hints": [] },
+            "markscheme": [
+              "For the same force, a larger mass gives a smaller acceleration ($a = \\frac{F}{m}$)",
+              "The loaded trolley has more mass"
+            ],
+            "solution": []
+          }
+        ],
+        "layout": "paper",
+        "labels": "letters"
+      },
+      "item_context": { "a": ["self_contained", "self_contained"] },
+      "answers": {
+        "a": [
+          { "kind": "latex_correct", "text": "Rearranging, $a = \\frac{F}{m}$: with $F$ fixed, a bigger $m$ means a smaller $a$. The loaded trolley has the bigger mass, so it accelerates less.", "labels": [[1, "Fixed F, bigger m, smaller a."], [1, "Loaded trolley has the bigger mass."]] },
+          { "kind": "partial", "text": "The loaded trolley is heavier.", "labels": [[0, "No link between mass and acceleration."], [1, "Heavier conveys more mass."]] },
+          { "kind": "wrong", "text": "Because friction only acts on the loaded trolley, so $F = ma$ does not apply to it.", "labels": [[0, "Rejects the relationship."], [0, "Mass not mentioned."]] },
+          { "kind": "keywords", "text": "$F=ma$, Newton's second law, inertia, $\\Sigma F$, $\\mathrm{kg\\,m\\,s^{-2}}$.", "labels": [[0, "List without a claim."], [0, "List without a claim."]] }
+        ]
+      }
+    }
+  ],
+  "review": {
+    "date": "2026-10-02",
+    "method": "Second pass over every label before inference, without model output.",
+    "changes": [
+      { "type": "item_context", "question": "latex-trolley-mass", "part": "a", "item": 1, "from": "needs_question", "to": "self_contained", "reason": "The item names the loaded trolley itself." }
+    ]
+  }
+}

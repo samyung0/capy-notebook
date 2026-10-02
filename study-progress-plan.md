@@ -139,8 +139,9 @@ Drop: `card_stats`, `known`, `known_pct`, `due_count`, `agent_card_state_restore
   back; question stem, parts and accepted answers), not formatting. Computed by
   the server from the stored document when a rating is written; a mismatch at
   read or write time treats the item as new.
-- `src/lib/srs.ts` and the `ts-fsrs` dependency are deleted; rating buttons no
-  longer preview intervals.
+- Signed-in rating buttons no longer preview intervals. `src/lib/srs.ts` and
+  `ts-fsrs` stay for anonymous, browser-local flashcard study
+  (`anonymous-study-plan.md`, decided 2026-10-02).
 
 ## API
 

@@ -12,7 +12,11 @@ import { Button, ErrorAction } from '@/components/ui/Button';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { track } from '@/lib/observability';
-import { BillingTable } from './BillingTable';
+import {
+  type BillingColumn,
+  BillingTable,
+  BillingTableSkeleton,
+} from './BillingTable';
 import { formatMoney } from './format';
 import { planLabel } from './labels';
 
@@ -70,7 +74,6 @@ export function SubscriptionTab() {
             className="rounded-input"
             disabled={upgrading || !billing}
             onClick={() => void upgrade()}
-            variant="outline"
           >
             {m.billing_upgrade_pro()}
           </Button>
@@ -87,6 +90,13 @@ export function SubscriptionTab() {
 function Invoices() {
   const { data, error, isError, isPending, refetch } = useInvoices();
   const locale = getLocale();
+  const columns: BillingColumn[] = [
+    { id: 'date', label: m.billing_col_date() },
+    { id: 'due', label: m.billing_col_due(), muted: true },
+    { id: 'total', label: m.billing_col_total() },
+    { id: 'status', label: m.billing_col_status() },
+    { align: 'right', id: 'view', label: '' },
+  ];
   const day = (iso: string) =>
     new Date(iso).toLocaleDateString(locale, {
       day: 'numeric',
@@ -107,19 +117,13 @@ function Invoices() {
       />
     );
   }
-  if (isPending) return <p role="status">{m.common_loading()}</p>;
+  if (isPending) return <BillingTableSkeleton columns={columns} />;
   if (data.items.length === 0) {
     return <p className="text-fg-muted">{m.billing_invoices_empty()}</p>;
   }
   return (
     <BillingTable
-      columns={[
-        { id: 'date', label: m.billing_col_date() },
-        { id: 'due', label: m.billing_col_due(), muted: true },
-        { id: 'total', label: m.billing_col_total() },
-        { id: 'status', label: m.billing_col_status() },
-        { align: 'right', id: 'view', label: '' },
-      ]}
+      columns={columns}
       rows={data.items.map((invoice) => ({
         cells: {
           date: day(invoice.createdAt),

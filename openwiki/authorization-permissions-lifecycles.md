@@ -716,7 +716,9 @@ while processing continues; the viewer shows progress above the preview.
 
 Source uploads and editor assets share the `upload_sessions` table but use
 different targets. Reserving an upload immediately reserves its declared bytes
-against the workspace owner. A successful finalize promotes the object from a
+against the workspace owner, or for a standalone material's editor asset
+against the material owner. Editor assets upload through their material, so
+only that material's editors can reserve them. A successful finalize promotes the object from a
 temporary incoming key, creates the durable resource row, and marks the upload
 session completed. Finalization is idempotent, so retrying a completed source
 upload returns the already-created file. Concurrent duplicate completions may

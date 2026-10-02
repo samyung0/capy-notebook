@@ -876,6 +876,10 @@ const contentWrites: [RegExp, (id: string) => string | null][] = [
   ],
   [/^POST \/api\/flashcards\/([^/]+)\/cards$/, materialWorkspace],
   [
+    /^POST \/api\/materials\/([^/]+)\/editor-assets\/uploads$/,
+    materialWorkspace,
+  ],
+  [
     /^(?:PATCH \/api\/flashcards\/cards\/([^/]+)\/content|DELETE \/api\/flashcards\/cards\/([^/]+))$/,
     (id) => materialWorkspace(cardStats[id]?.materialId),
   ],
@@ -932,7 +936,7 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
     http.all('/api/*', async ({ request }) => {
       const route = `${request.method} ${new URL(request.url).pathname}`;
       const into =
-        /^POST \/api\/workspaces\/([^/]+)\/(materials|sources|sources\/import|editor-assets\/uploads|generate)$/.exec(
+        /^POST \/api\/workspaces\/([^/]+)\/(materials|sources|sources\/import|generate)$/.exec(
           route
         )?.[1];
       const embedded = /^POST \/api\/materials\/([^/]+)\/embedded$/.exec(

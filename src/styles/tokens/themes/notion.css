@@ -1,5 +1,5 @@
 /* ============================================================
-   STYLE: notion  (latte + macchiato + mocha)
+   STYLE: notion  (latte + frappe + mocha)
    Clean, professional, document-first. Neutral warm grays,
    blue accent, restrained type scale, low radii (rounded but
    not bubbly). Maps the same TIER-2 role-token contract as
@@ -203,7 +203,7 @@
 }
 
 /* ---------------- notion · MACCHI (lighter dark) ---------------- */
-[data-style="notion"][data-theme="macchiato"] {
+[data-style="notion"][data-theme="frappe"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
   --chart-1: #9a6ec3;
   --chart-2: #e07f24;

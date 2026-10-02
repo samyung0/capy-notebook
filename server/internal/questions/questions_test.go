@@ -2,6 +2,7 @@ package questions
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -107,5 +108,39 @@ func TestAuthoredSnapshotKeepsContentAndLeavesScoresOnOriginal(t *testing.T) {
 	}
 	if err := Validate(f.Question, Policy{Snapshot: true}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
+	question := func(id string, open int, closed int) map[string]any {
+		parts := []any{}
+		for i := 0; i < open+closed; i++ {
+			kind := "boolean"
+			if i < open {
+				kind = "open"
+			}
+			parts = append(parts, map[string]any{"id": fmt.Sprintf("%s-%d", id, i), "answer": map[string]any{"type": kind}})
+		}
+		return map[string]any{"id": id, "parts": parts}
+	}
+	many := func(n int, open int) []map[string]any {
+		qs := []map[string]any{}
+		for i := 0; i < n; i++ {
+			o := 0
+			if i < open {
+				o = 1
+			}
+			qs = append(qs, question(fmt.Sprint(i), o, 1-o))
+		}
+		return qs
+	}
+	if err := QuizBounds(many(100, 20)); err != nil {
+		t.Fatalf("100 parts with 20 open rejected: %v", err)
+	}
+	if QuizBounds(many(101, 0)) == nil {
+		t.Fatal("accepted 101 parts")
+	}
+	if QuizBounds(many(30, 21)) == nil {
+		t.Fatal("accepted 21 open parts")
 	}
 }

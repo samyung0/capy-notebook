@@ -110,13 +110,13 @@ BLOCK = {
         tagged(
             "image",
             {
-                "url": TEXT,
+                "image": obj({"url": TEXT}),
                 "width": NUMBER,
                 "height": NUMBER,
                 "description": TEXT,
                 "attribution": TEXT,
             },
-            ["url", "width", "height", "description"],
+            ["image", "width", "height", "description"],
         ),
     ]
 }

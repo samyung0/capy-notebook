@@ -181,7 +181,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if err := json.Unmarshal(uploaded.Body.Bytes(), &asset); err != nil {
 		t.Fatal(err)
 	}
-	detail.Question["stem"] = []any{map[string]any{"type": "image", "url": asset.URL, "width": float64(10), "height": float64(10), "description": "Uploaded figure"}}
+	detail.Question["stem"] = []any{map[string]any{"type": "image", "image": map[string]any{"url": asset.URL}, "width": float64(10), "height": float64(10), "description": "Uploaded figure"}}
 	if err := bankStore.Validate(detail.Question); err != nil {
 		t.Fatalf("uploaded URL rejected by bank validator: %v", err)
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -35,6 +37,7 @@ type EditorAssetUpload struct {
 	ID           string
 	AssetID      string
 	WorkspaceID  string
+	MaterialID   string
 	UserID       string
 	ObjectPath   string
 	FinalPath    string
@@ -44,10 +47,13 @@ type EditorAssetUpload struct {
 	ExpiresAt    time.Time
 }
 
+// NewEditorAssetReservation is scoped to exactly one of WorkspaceID or
+// MaterialID (a standalone material, charged to its owner).
 type NewEditorAssetReservation struct {
 	AssetID      string
 	UploadID     string
 	WorkspaceID  string
+	MaterialID   string
 	CreatedBy    string
 	Name         string
 	Purpose      string
@@ -65,9 +71,7 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 	}
 	defer tx.Rollback(ctx)
 
-	ownerID, err := s.lockWorkspaceEditorMutationTx(
-		ctx, tx, in.WorkspaceID, in.CreatedBy,
-	)
+	ownerID, err := s.lockEditorAssetScopeTx(ctx, tx, in.WorkspaceID, in.MaterialID, in.CreatedBy)
 	if err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
@@ -79,17 +83,17 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 		finalPath = in.ObjectPath
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
-		(id, workspace_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`,
-		in.AssetID, in.WorkspaceID, ownerID, in.CreatedBy, in.Name, in.Purpose,
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending')`,
+		in.AssetID, nullStr(in.WorkspaceID), nullStr(in.MaterialID), ownerID, in.CreatedBy, in.Name, in.Purpose,
 		finalPath, in.ContentType, in.DeclaredSize); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
-		(id, target, asset_id, workspace_id, user_id, created_by, object_path, final_path,
+		(id, target, asset_id, workspace_id, material_id, user_id, created_by, object_path, final_path,
 		 content_type, declared_size, reserved_size, expires_at)
-		VALUES ($1,'editor_asset',$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)`,
-		in.UploadID, in.AssetID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy),
+		VALUES ($1,'editor_asset',$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,$11)`,
+		in.UploadID, in.AssetID, nullStr(in.WorkspaceID), nullStr(in.MaterialID), ownerID, nullStr(in.CreatedBy),
 		in.ObjectPath, finalPath, in.ContentType, in.DeclaredSize, in.ExpiresAt); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
@@ -133,12 +137,12 @@ func (s *Store) EditorAssetObjectPath(ctx context.Context, assetID string) (stri
 	return objectPath, err
 }
 
-const editorAssetUploadCols = `id, asset_id, workspace_id, user_id, object_path, final_path,
-	content_type, declared_size, status, expires_at`
+const editorAssetUploadCols = `id, asset_id, COALESCE(workspace_id,''), COALESCE(material_id,''), user_id,
+	object_path, final_path, content_type, declared_size, status, expires_at`
 
 func scanEditorAssetUpload(row interface{ Scan(...any) error }) (EditorAssetUpload, error) {
 	var upload EditorAssetUpload
-	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID, &upload.UserID,
+	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID, &upload.MaterialID, &upload.UserID,
 		&upload.ObjectPath, &upload.FinalPath, &upload.ContentType, &upload.DeclaredSize,
 		&upload.Status, &upload.ExpiresAt)
 	return upload, err
@@ -167,38 +171,27 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	}
 	defer tx.Rollback(ctx)
 
-	var workspaceID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id`+editorAssetUploadFrom+`id=$1`, uploadID).
-		Scan(&workspaceID); err != nil {
-		if isNoRows(err) {
-			return EditorAsset{}, ErrNotFound
-		}
-		return EditorAsset{}, err
-	}
-	ownerID, err := s.storageOwnerTx(ctx, tx, workspaceID)
-	if err != nil {
-		return EditorAsset{}, err
-	}
+	var workspaceID, materialID, storedOwnerID string
 	var createdBy *string
-	var storedOwnerID string
-	if err := tx.QueryRow(ctx,
-		`SELECT user_id, created_by`+editorAssetUploadFrom+`id=$1`, uploadID).
-		Scan(&storedOwnerID, &createdBy); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), COALESCE(material_id,''), user_id, created_by`+
+		editorAssetUploadFrom+`id=$1`, uploadID).
+		Scan(&workspaceID, &materialID, &storedOwnerID, &createdBy); err != nil {
 		if isNoRows(err) {
 			return EditorAsset{}, ErrNotFound
 		}
 		return EditorAsset{}, err
-	}
-	if storedOwnerID != ownerID {
-		return EditorAsset{}, ErrEditorAssetUploadState
 	}
 	actorID := ""
 	if createdBy != nil {
 		actorID = *createdBy
 	}
-	ownerID, err = s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+	ownerID, err := s.lockEditorAssetScopeTx(ctx, tx, workspaceID, materialID, actorID)
 	if err != nil {
 		return EditorAsset{}, err
+	}
+	// A workspace transferred since the reservation charges a different owner.
+	if storedOwnerID != ownerID {
+		return EditorAsset{}, ErrEditorAssetUploadState
 	}
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
 		return EditorAsset{}, err
@@ -279,4 +272,39 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// lockEditorAssetScopeTx admits an editor-asset write for the actor and returns
+// the storage owner. A workspace asset needs workspace edit access; a
+// standalone material is edited only by its owner. Accounts lock before the
+// material row, matching standalone material saves.
+func (s *Store) lockEditorAssetScopeTx(ctx context.Context, tx pgx.Tx, workspaceID, materialID, actorID string) (string, error) {
+	if workspaceID != "" {
+		return s.lockWorkspaceEditorMutationTx(ctx, tx, workspaceID, actorID)
+	}
+	var ownerID string
+	err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
+		WHERE id=$1 AND workspace_id IS NULL AND trashed_at IS NULL`, materialID).Scan(&ownerID)
+	if isNoRows(err) || (err == nil && ownerID != actorID) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
+		return "", err
+	}
+	var lockedOwnerID string
+	err = tx.QueryRow(ctx, `SELECT owner_user_id FROM materials
+		WHERE id=$1 AND workspace_id IS NULL AND trashed_at IS NULL FOR UPDATE`, materialID).Scan(&lockedOwnerID)
+	if isNoRows(err) || (err == nil && lockedOwnerID != ownerID) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if err := s.assertEditableTx(ctx, tx, ownerID); err != nil {
+		return "", err
+	}
+	return ownerID, nil
 }

@@ -206,7 +206,9 @@ Text leaves do not need IDs. Runtime values must never be written onto nodes:
 - collaboration presence;
 - local AI preview data.
 
-Media nodes persist `assetId` and stable metadata. Renderers resolve signed URLs
+Media nodes persist `assetId` and stable metadata. Uploads go through the
+note's material route, so standalone notes upload too (see
+[backend-storage-quota.md](../backend-storage-quota.md)). Renderers resolve signed URLs
 at runtime.
 
 Image and YouTube blocks share `MediaFrame`: a toolbar docked top-right that

@@ -207,9 +207,13 @@ func Validate(q map[string]any, policy Policy) error {
 	if err := blocks(q["stem"], policy); err != nil {
 		return err
 	}
-	parts, ok := array(q["parts"], 1, fieldlimits.QuestionParts)
+	maxParts, maxItems := fieldlimits.QuizQuestionParts, fieldlimits.QuizMarkscheme
+	if policy.Bank {
+		maxParts, maxItems = fieldlimits.QuestionParts, fieldlimits.QuestionMarkscheme
+	}
+	parts, ok := array(q["parts"], 1, maxParts)
 	if !ok {
-		return fail(fmt.Sprintf("parts must contain 1 to %d parts", fieldlimits.QuestionParts))
+		return fail(fmt.Sprintf("parts must contain 1 to %d parts", maxParts))
 	}
 	ids := map[string]bool{}
 	for _, raw := range parts {
@@ -244,10 +248,10 @@ func Validate(q map[string]any, policy Policy) error {
 		if policy.Bank && len(p["solution"].([]any)) == 0 {
 			return fail("bank part requires a solution")
 		}
-		if !stringsArray(p["markscheme"], 1, fieldlimits.QuestionMarkscheme, fieldlimits.QuestionMarkItem) {
-			return fail("invalid marking scheme")
+		if !stringsArray(p["markscheme"], 1, maxItems, fieldlimits.QuestionMarkItem) {
+			return fail(fmt.Sprintf("a marking scheme has 1 to %d items", maxItems))
 		}
-		if err := answer(p["answer"]); err != nil {
+		if err := answer(p["answer"], policy); err != nil {
 			return err
 		}
 		if v, exists := p["awarded"]; exists {
@@ -265,8 +269,13 @@ func Validate(q map[string]any, policy Policy) error {
 
 // ValidateAll also protects the flat part-id answer map across a whole quiz.
 func ValidateAll(qs []map[string]any, policy Policy) error {
-	if len(qs) > fieldlimits.QuestionCount {
+	if policy.Bank && len(qs) > fieldlimits.QuestionCount {
 		return fail("too many questions")
+	}
+	if !policy.Bank {
+		if err := QuizBounds(qs); err != nil {
+			return err
+		}
 	}
 	ids, parts := map[string]bool{}, map[string]bool{}
 	for _, q := range qs {
@@ -396,17 +405,31 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "image":
-		if !policy.Bank {
-			return fail("image blocks require bank policy")
-		}
-		if err := keys(b, "type url width height description", "attribution"); err != nil {
+		if err := keys(b, "type image width height description", "attribution"); err != nil {
 			return err
 		}
 		if err := imageFields(b); err != nil {
 			return err
 		}
-		if !assetURL(b["url"], policy.BankAssetsURL) {
-			return fail("invalid bank asset URL")
+		im, err := obj(b["image"])
+		if err != nil {
+			return err
+		}
+		// Bank figures are public URLs; quiz figures are private workspace editor assets.
+		if policy.Bank {
+			if err := keys(im, "url", ""); err != nil {
+				return err
+			}
+			if !assetURL(im["url"], policy.BankAssetsURL) {
+				return fail("invalid bank asset URL")
+			}
+		} else {
+			if err := keys(im, "assetId", ""); err != nil {
+				return err
+			}
+			if !str(im["assetId"], fieldlimits.QuestionID, true) {
+				return fail("invalid image asset")
+			}
 		}
 	case "graph":
 		if err := keys(b, "type board elements image width height description", "attribution"); err != nil {
@@ -582,7 +605,30 @@ func graph(b map[string]any) error {
 	return nil
 }
 
-func answer(value any) error {
+// QuizBounds caps a user quiz's total and open parts; the per-question checks
+// in Validate bound parts per question and marking items per part.
+func QuizBounds(qs []map[string]any) error {
+	parts, open := 0, 0
+	for _, q := range qs {
+		list, _ := q["parts"].([]any)
+		parts += len(list)
+		for _, raw := range list {
+			p, _ := raw.(map[string]any)
+			if a, _ := p["answer"].(map[string]any); a["type"] == "open" {
+				open++
+			}
+		}
+	}
+	if parts > fieldlimits.QuizParts {
+		return fail(fmt.Sprintf("a quiz has at most %d parts", fieldlimits.QuizParts))
+	}
+	if open > fieldlimits.QuizOpenParts {
+		return fail(fmt.Sprintf("a quiz has at most %d open parts", fieldlimits.QuizOpenParts))
+	}
+	return nil
+}
+
+func answer(value any, policy Policy) error {
 	a, err := obj(value)
 	if err != nil {
 		return err
@@ -663,7 +709,11 @@ func answer(value any) error {
 			return fail("invalid boolean answer")
 		}
 	case "short", "open":
-		if !stringsArray(a["accepted"], 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+		length := fieldlimits.QuestionText
+		if a["type"] == "open" && !policy.Bank {
+			length = fieldlimits.QuizOpenAnswer
+		}
+		if !stringsArray(a["accepted"], 1, fieldlimits.QuestionAnswers, length) {
 			return fail("invalid accepted answers")
 		}
 		if a["type"] == "open" && !stringsArray(a["hints"], 0, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
@@ -770,4 +820,75 @@ func LearnerView(q map[string]any) map[string]any {
 	}
 	out["parts"] = parts
 	return out
+}
+
+// AssetIDs returns the editor assets referenced by a quiz question's images.
+func AssetIDs(q map[string]any) []string {
+	var ids []string
+	for _, blocks := range blockLists(q) {
+		for _, raw := range blocks {
+			if id, ok := imageAssetID(raw); ok {
+				ids = append(ids, id)
+			}
+		}
+	}
+	return ids
+}
+
+// RewriteAssetIDs maps image assets through idMap and removes images whose
+// asset has no replacement. It returns false when a part is left without
+// content, because that question can no longer be stored.
+func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
+	rewrite := func(raw any) []any {
+		blocks, _ := raw.([]any)
+		kept := []any{}
+		for _, block := range blocks {
+			if id, ok := imageAssetID(block); ok {
+				if idMap[id] == "" {
+					continue
+				}
+				block.(map[string]any)["image"].(map[string]any)["assetId"] = idMap[id]
+			}
+			kept = append(kept, block)
+		}
+		return kept
+	}
+	q["stem"] = rewrite(q["stem"])
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		p["blocks"] = rewrite(p["blocks"])
+		p["solution"] = rewrite(p["solution"])
+		if len(p["blocks"].([]any)) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func blockLists(q map[string]any) [][]any {
+	stem, _ := q["stem"].([]any)
+	lists := [][]any{stem}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		if p, ok := raw.(map[string]any); ok {
+			blocks, _ := p["blocks"].([]any)
+			solution, _ := p["solution"].([]any)
+			lists = append(lists, blocks, solution)
+		}
+	}
+	return lists
+}
+
+func imageAssetID(raw any) (string, bool) {
+	b, ok := raw.(map[string]any)
+	if !ok || b["type"] != "image" {
+		return "", false
+	}
+	im, _ := b["image"].(map[string]any)
+	id, ok := im["assetId"].(string)
+	return id, ok && id != ""
 }

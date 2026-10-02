@@ -79,7 +79,8 @@ export type GraphBlock = {
 export type TableBlock = { type: 'table'; header: boolean; rows: string[][] };
 export type ImageBlock = {
   type: 'image';
-  url: string;
+  /** Bank images are public URLs; quiz images are private workspace editor assets. */
+  image: { url: string } | { assetId: string };
   width: number;
   height: number;
   description: string;
@@ -163,4 +164,16 @@ export function blankQuestion(): Question {
     ],
     stem: [],
   };
+}
+
+/** Editor assets referenced by a quiz question's images. */
+export function questionAssetIds(question: Question): string[] {
+  return [
+    ...question.stem,
+    ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
+  ].flatMap((block) =>
+    block.type === 'image' && 'assetId' in block.image
+      ? [block.image.assetId]
+      : []
+  );
 }

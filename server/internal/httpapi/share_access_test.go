@@ -483,3 +483,19 @@ func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *te
 		t.Fatalf("card study-state update = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+// Editor assets upload through the material: a link viewer of a standalone
+// quiz cannot reserve bytes on its owner's quota.
+func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
+	h := openShareHTTP(t)
+	body := map[string]any{"name": "figure.png", "purpose": "image", "sizeBytes": 10, "contentType": "image/png"}
+	for _, tc := range []struct {
+		user   string
+		status int
+	}{{"", 401}, {"u_other", 403}} {
+		rec := doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_link/editor-assets/uploads", tc.user, body)
+		if rec.Code != tc.status {
+			t.Fatalf("%q upload → %d body=%s, want %d", tc.user, rec.Code, rec.Body.String(), tc.status)
+		}
+	}
+}

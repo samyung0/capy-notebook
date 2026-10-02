@@ -239,8 +239,11 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         });
     }),
   z.strictObject({
+    image: z.union([
+      z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
+      z.strictObject({ assetId: identifier }),
+    ]),
     type: z.literal('image'),
-    url: z.url().max(limits.QUESTION_ASSET_URL_MAX),
     ...imageSize,
     attribution: meta.optional(),
     description: text,
@@ -429,36 +432,66 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
       );
     if (policy.bank && part.solution.length === 0)
       throw new Error('Bank questions need a worked solution for every part.');
+    if (!policy.bank && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
+      throw new Error(
+        `A part has at most ${limits.QUIZ_MARKSCHEME_MAX} marking items.`
+      );
+    if (
+      !policy.bank &&
+      part.answer.type === 'open' &&
+      part.answer.accepted.some(
+        (text) => [...text].length > limits.QUIZ_OPEN_ANSWER_MAX
+      )
+    )
+      throw new Error(
+        `Sample answers are limited to ${limits.QUIZ_OPEN_ANSWER_MAX} characters.`
+      );
   }
+  if (!policy.bank && question.parts.length > limits.QUIZ_QUESTION_PARTS_MAX)
+    throw new Error(
+      `A question has at most ${limits.QUIZ_QUESTION_PARTS_MAX} parts.`
+    );
   for (const block of [
     ...question.stem,
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
+    if (block.type !== 'image' && block.type !== 'graph') continue;
+    // Bank figures must be hosted bank assets; quiz figures must be editor assets.
     if (
-      block.type === 'image' ||
-      (block.type === 'graph' && 'url' in block.image)
-    ) {
-      const url =
-        block.type === 'image'
-          ? block.url
-          : 'url' in block.image
-            ? block.image.url
-            : '';
-      if (!policy.bank || !hostedAsset(url, policy.bankAssetsUrl))
-        throw new Error('Figures must use the configured bank asset host.');
-    }
+      'url' in block.image
+        ? !policy.bank || !hostedAsset(block.image.url, policy.bankAssetsUrl)
+        : 'assetId' in block.image && policy.bank
+    )
+      throw new Error('Figures must use the configured bank asset host.');
     if (policy.bank && block.type === 'graph' && 'svg' in block.image)
       throw new Error('Upload bank graphs before saving the question.');
   }
   return question;
 }
 
+/** One attempt's open parts must fit a single grading request. */
+export function assertQuizBounds(
+  questions: { parts: { answer: { type: unknown } }[] }[]
+) {
+  const parts = questions.flatMap((question) => question.parts);
+  if (parts.length > limits.QUIZ_PARTS_MAX)
+    throw new Error(`A quiz has at most ${limits.QUIZ_PARTS_MAX} parts.`);
+  if (
+    parts.filter((part) => part.answer.type === 'open').length >
+    limits.QUIZ_OPEN_PARTS_MAX
+  )
+    throw new Error(
+      `A quiz has at most ${limits.QUIZ_OPEN_PARTS_MAX} open parts.`
+    );
+}
+
 export function validateQuestions(value: unknown, policy: QuestionPolicy = {}) {
   const questions = z
     .array(z.unknown())
-    .max(limits.QUESTION_COUNT_MAX)
+    .max(policy.bank ? limits.QUESTION_COUNT_MAX : limits.QUIZ_PARTS_MAX)
     .parse(value)
     .map((q) => validateQuestion(q, policy));
+  if (!policy.bank) assertQuizBounds(questions);
   const ids = new Set<string>();
   const partIds = new Set<string>();
   for (const question of questions) {

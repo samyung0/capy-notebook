@@ -7,7 +7,7 @@ import { ErrorAction } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
-import { BillingTable } from './BillingTable';
+import { BillingTable, BillingTableSkeleton } from './BillingTable';
 import { formatCredits } from './format';
 import { areaOf, kindLabel } from './labels';
 
@@ -66,7 +66,7 @@ export function DetailsTab() {
       variant="panel"
     />
   ) : isPending ? (
-    <p role="status">{m.common_loading()}</p>
+    <BillingTableSkeleton columns={columns()} />
   ) : items.length === 0 ? (
     <p className="text-fg-muted">{m.billing_recent_empty()}</p>
   ) : (

@@ -413,7 +413,7 @@ export default function Create() {
         sorts={sorts}
         view={view}
       />
-      <div className="min-h-0 w-full flex-1 overflow-auto px-6 pt-2 pb-6">
+      <div className="w-full shrink-0 grow px-6 pt-2 pb-6">
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (

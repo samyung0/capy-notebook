@@ -10,7 +10,9 @@
     "stem": [
       {
         "type": "image",
-        "url": "https://bank.example/assets/a.png",
+        "image": {
+          "url": "https://bank.example/assets/a.png"
+        },
         "width": 20,
         "height": 20,
         "description": "Diagram"

@@ -1,5 +1,8 @@
-import { QUESTION_COUNT_MAX } from './questionLimits.generated.js';
-import { questionBlockSchema, validateQuestion } from './questions.js';
+import {
+  assertQuizBounds,
+  questionBlockSchema,
+  validateQuestion,
+} from './questions.js';
 // IMPORTANT: Keep this validator in sync with
 // server/internal/materialdoc/document.go. The sidecar runs it before writing
 // authoritative Yjs state so Go can always project that state.
@@ -317,7 +320,11 @@ export function assertCanonicalMaterialValue(value: unknown[], kind: string) {
     for (const child of children(node)) collect(child);
   };
   nodes.forEach(collect);
-  if (questions.length > QUESTION_COUNT_MAX) fail('too many questions');
+  try {
+    assertQuizBounds(questions as { parts: { answer: { type: unknown } }[] }[]);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : 'quiz is too large');
+  }
   const questionIds = new Set<unknown>();
   const partIds = new Set<unknown>();
   for (const question of questions) {

@@ -57,8 +57,8 @@ describe('part grading', () => {
         {
           description: 'A increases while B falls.',
           height: 100,
+          image: { url: 'https://example.invalid/figure.png' },
           type: 'image',
-          url: 'https://example.invalid/figure.png',
           width: 100,
         },
         { header: false, rows: [['A', '2']], type: 'table' },

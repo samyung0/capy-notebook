@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe } from '@/api/hooks';
 import { Avatar } from '@/components/ui/Avatar';
+import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
 import { NotificationsBell } from '@/features/notification/NotificationBell';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { TopInsetFrame } from '@/summary/TopInsetFrame';
 import { SearchDialog } from './SearchDialog';
 import { MobileNavDrawer } from './Sidebar';
@@ -74,7 +76,10 @@ function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
           <button
             aria-busy={isPending}
             aria-label={isPending ? m.a11y_loading() : undefined}
-            className="flex h-11.5 w-[176px] shrink-0 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg"
+            className={cn(
+              BASE_BUTTON_STYLE,
+              'flex h-11.5 w-[176px] shrink-0 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg'
+            )}
             type="button"
           >
             {isPending ? (

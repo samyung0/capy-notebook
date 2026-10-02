@@ -19,6 +19,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 /* ------------------------------------------------------------------ patches */
@@ -2443,6 +2444,7 @@ func (s *Store) MistakesQuiz(ctx context.Context, userID string) (Quiz, error) {
 	}
 	defer rows.Close()
 	items := []json.RawMessage{}
+	kept := []map[string]any{}
 	size := 2
 	for rows.Next() {
 		var q json.RawMessage
@@ -2453,6 +2455,11 @@ func (s *Store) MistakesQuiz(ctx context.Context, userID string) (Quiz, error) {
 		if err := json.Unmarshal(q, &question); err != nil {
 			return Quiz{}, err
 		}
+		// The review quiz is a quiz, so it stops at the quiz part bounds too.
+		if questions.QuizBounds(append(kept, question)) != nil {
+			break
+		}
+		kept = append(kept, question)
 		// Source materials own their part IDs. Give the virtual aggregate its own namespace.
 		if parts, ok := question["parts"].([]any); ok {
 			for _, raw := range parts {
@@ -2474,10 +2481,10 @@ func (s *Store) MistakesQuiz(ctx context.Context, userID string) (Quiz, error) {
 	if err := rows.Err(); err != nil {
 		return Quiz{}, err
 	}
-	questions, _ := json.Marshal(items)
+	payload, _ := json.Marshal(items)
 	return Quiz{
 		ID: "review_mistakes", Name: "Review mistakes", WorkspaceName: "",
-		Chapters: []string{}, Questions: questions, CreatedAt: time.Now().UTC(), Privacy: "private",
+		Chapters: []string{}, Questions: payload, CreatedAt: time.Now().UTC(), Privacy: "private",
 	}, nil
 }
 

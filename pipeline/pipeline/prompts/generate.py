@@ -8,6 +8,7 @@ advisory.
 
 from __future__ import annotations
 
+from ..generated import limits
 from .locale import response_language_rule
 
 # Mermaid header per diagram type. The prompt names the exact header so the
@@ -86,14 +87,22 @@ def diagram_instruction(diagram_type: str) -> str:
     )
 
 
-QUESTION_CONTRACT = """Return canonical question objects only, with no legacy fields:
+QUESTION_CONTRACT = (
+    """Return canonical question objects only, with no legacy fields:
 {"stem": [Block], "parts": [{"blocks": [Block], "answer": Answer,
 "markscheme": ["one explicit marking item per mark"], "solution": [Block]}],
 "layout": "paper" or "split", "labels": "letters" or "numbers"}.
 The application assigns UUID ids to questions and parts; omit their ids.
-Every question has at least one part. Each part has nonempty blocks, a nonempty
-markscheme and a worked solution. A one-part question may have an empty stem.
-Block forms:
+"""
+    + (
+        f"Every question has 1 to {limits.QUIZ_QUESTION_PARTS_MAX} parts. Each part has "
+        f"nonempty blocks, 1 to {limits.QUIZ_MARKSCHEME_MAX} marking items and a worked "
+        f"solution. The whole quiz has at most {limits.QUIZ_PARTS_MAX} parts, of which "
+        f"at most {limits.QUIZ_OPEN_PARTS_MAX} are open answers, and an open model answer "
+        f"stays under {limits.QUIZ_OPEN_ANSWER_MAX} characters. A one-part question may "
+        "have an empty stem.\n"
+    )
+    + """Block forms:
 - {"type":"text", "text":"plain text with $inline math$ or $$display math$$", "label":"optional paragraph label"}.
 - {"type":"table", "header":true, "rows":[["cell", "cell"]]}.
 - {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "unit", "xTitle", "yTitle", "gridlines":"normal|fine", "showValues":false}.
@@ -117,6 +126,7 @@ and short answer unit field, and write accepted VALUES ONLY in that unit. The UI
 fixes that unit; do not accept unit text or alternative-unit conversions. Text
 blanks and unitless quantities omit unit. Each marking item is explicit plain text.
 """
+)
 
 
 def quiz_instruction(

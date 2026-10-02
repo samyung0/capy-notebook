@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Icon } from '@/components/ui/Icon';
+import { useResolvedAsset } from '@/features/materials/MediaAssetView';
 import {
   CALLOUT_VARIANT_CLASS,
   type CalloutVariant,
@@ -12,6 +13,8 @@ import { TextView } from './TextView';
 export { TextView } from './TextView';
 
 import {
+  type GraphBlock,
+  type ImageBlock,
   type LearnerPart,
   type LearnerQuestion,
   partMarks,
@@ -70,34 +73,65 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
         </div>
       );
     case 'graph':
-    case 'image': {
-      const src =
-        block.type === 'image'
-          ? block.url
-          : 'url' in block.image
-            ? block.image.url
-            : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`;
+    case 'image':
+      if ('assetId' in block.image)
+        return <AssetFigure assetId={block.image.assetId} block={block} />;
       return (
-        <figure className="mx-auto w-fit max-w-full">
-          <img
-            alt={block.description}
-            className={cn(
-              'h-auto max-w-full',
-              block.type === 'graph' && 'bg-white'
-            )}
-            height={block.height}
-            src={src}
-            width={block.width}
-          />
-          {block.attribution && (
-            <figcaption className="mt-1 text-fg-muted text-xs">
-              {block.attribution}
-            </figcaption>
-          )}
-        </figure>
+        <Figure
+          block={block}
+          src={
+            'url' in block.image
+              ? block.image.url
+              : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`
+          }
+        />
       );
-    }
   }
+}
+
+/** Quiz images are private editor assets; the signed URL is resolved per render. */
+function AssetFigure({
+  assetId,
+  block,
+}: {
+  assetId: string;
+  block: ImageBlock | GraphBlock;
+}) {
+  const [asset] = useResolvedAsset(assetId);
+  return (
+    <Figure
+      block={block}
+      src={asset.status === 'ready' ? asset.url : undefined}
+    />
+  );
+}
+
+function Figure({
+  block,
+  src,
+}: {
+  block: ImageBlock | GraphBlock;
+  src: string | undefined;
+}) {
+  return (
+    <figure className="mx-auto w-fit max-w-full">
+      <img
+        alt={block.description}
+        className={cn(
+          'h-auto max-w-full',
+          block.type === 'graph' && 'bg-white'
+        )}
+        height={block.height}
+        src={src}
+        width={block.width}
+      />
+      {block.attribution && (
+        <figcaption className="mt-1 text-fg-muted text-xs">
+          {block.attribution}
+        </figcaption>
+      )}
+    </figure>
+  );
 }
 export const BlockView = QuestionBlockView;
 

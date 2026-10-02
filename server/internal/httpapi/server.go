@@ -209,8 +209,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	if cfg.E2EAuth && a.mailRecorder != nil {
 		r.Get("/api/e2e/emails", a.e2eEmails)
 	}
-	r.Post("/api/workspaces/{id}/editor-assets/uploads", a.reserveEditorAsset)
-	r.Post("/api/workspaces/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
+	r.Post("/api/materials/{id}/editor-assets/uploads", a.reserveEditorAsset)
+	r.Post("/api/materials/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)

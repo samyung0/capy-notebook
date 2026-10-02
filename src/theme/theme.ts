@@ -1,7 +1,7 @@
 import { createContext, useContext } from 'react';
 
 export type Style = 'classroom' | 'notion';
-export type Theme = 'latte' | 'mocha' | 'macchiato';
+export type Theme = 'latte' | 'mocha' | 'frappe';
 
 export const STYLES: {
   value: Style;
@@ -10,12 +10,12 @@ export const STYLES: {
 }[] = [
   {
     label: 'Classroom',
-    supportedThemes: ['latte', 'macchiato', 'mocha'],
+    supportedThemes: ['latte', 'frappe', 'mocha'],
     value: 'classroom',
   },
   {
     label: 'Notion',
-    supportedThemes: ['latte', 'macchiato', 'mocha'],
+    supportedThemes: ['latte', 'frappe', 'mocha'],
     value: 'notion',
   },
 ];
@@ -28,10 +28,10 @@ export const THEMES: {
 }[] = [
   { displayColor: '#f7f7f7', isDark: false, label: 'Latte', value: 'latte' },
   {
-    displayColor: '#24273a',
+    displayColor: '#303040',
     isDark: true,
-    label: 'Macchi',
-    value: 'macchiato',
+    label: 'Frappé',
+    value: 'frappe',
   },
   { displayColor: '#1e1e2e', isDark: true, label: 'Mocha', value: 'mocha' },
 ];

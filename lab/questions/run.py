@@ -206,7 +206,7 @@ def learner(question):
             if block["type"] in ("graph", "image"):
                 blocks[index] = {
                     "type": "image",
-                    "url": "learner.png",
+                    "image": {"url": "learner.png"},
                     "description": block["description"],
                     "width": block["width"],
                     "height": block["height"],
@@ -310,7 +310,7 @@ def check():
     for block in (visible["stem"][0], visible["parts"][0]["blocks"][0]):
         assert block == {
             "type": "image",
-            "url": "learner.png",
+            "image": {"url": "learner.png"},
             "description": "A plotted curve",
             "width": 600,
             "height": 400,

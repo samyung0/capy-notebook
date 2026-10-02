@@ -119,7 +119,7 @@ export function newQuestionBlock(type: QuestionBlock['type']): QuestionBlock {
         type,
       };
     case 'image':
-      return { description: '', height: 1, type, url: '', width: 1 };
+      return { description: '', height: 1, image: { url: '' }, type, width: 1 };
   }
 }
 function sectionBlocks(
@@ -317,7 +317,11 @@ function QuestionDialogSession({
           const asset = await uploadAsset(
             new File([svg], 'graph.svg', { type: 'image/svg+xml' })
           );
-          block = { ...block, image: { url: asset.url } };
+          if (!('url' in asset))
+            throw new CopyError(
+              m.question_ui_bank_image_uploads_are_unavailable()
+            );
+          block = { ...block, image: asset };
         } else block = { ...block, image: { svg } };
       }
       const blocks = sectionBlocks(draft, editing.location).map((item, i) =>
@@ -842,7 +846,7 @@ function QuestionDialogSession({
                       : current
                   )
                 }
-                uploadAsset={policy === 'bank' ? uploadAsset : undefined}
+                uploadAsset={uploadAsset}
               />
             ) : (
               <div className="space-y-5">
@@ -899,7 +903,7 @@ function QuestionDialogSession({
                         'chart',
                         'graph',
                         'table',
-                        ...(policy === 'bank' ? ['image' as const] : []),
+                        ...(uploadAsset ? ['image' as const] : []),
                         'part',
                       ] as const
                     ).map((type) => (

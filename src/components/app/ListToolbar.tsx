@@ -128,7 +128,7 @@ export function ListToolbar<V extends string>({
                   variant="ghost"
                 >
                   {m.workspaces_sort_prefix({ label: current.label })}
-                  <span className="font-normal text-fg-muted text-xs">
+                  <span className="-translate-y-px font-normal text-fg-muted text-xs">
                     {sortDirectionLabel(current.order, ascending)}
                   </span>
                 </Button>

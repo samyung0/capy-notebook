@@ -242,8 +242,11 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         });
     }),
   z.strictObject({
+    image: z.union([
+      z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
+      z.strictObject({ assetId: identifier }),
+    ]),
     type: z.literal('image'),
-    url: z.url().max(limits.QUESTION_ASSET_URL_MAX),
     ...imageSize,
     attribution: meta.optional(),
     description: text,
@@ -439,28 +442,65 @@ export function validateQuestion(
       throw new CopyError(m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
       throw new CopyError(m.question_validation_bank_solution());
+    if (!policy.bank) quizPartBounds(part);
   }
+  if (!policy.bank && question.parts.length > limits.QUIZ_QUESTION_PARTS_MAX)
+    throw new CopyError(
+      m.question_validation_quiz_question_parts({
+        max: limits.QUIZ_QUESTION_PARTS_MAX,
+      })
+    );
   for (const block of [
     ...question.stem,
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
+    if (block.type !== 'image' && block.type !== 'graph') continue;
+    // Bank figures must be hosted bank assets; quiz figures must be editor assets.
     if (
-      block.type === 'image' ||
-      (block.type === 'graph' && 'url' in block.image)
-    ) {
-      const url =
-        block.type === 'image'
-          ? block.url
-          : 'url' in block.image
-            ? block.image.url
-            : '';
-      if (!policy.bank || !hostedAsset(url, policy.bankAssetsUrl))
-        throw new CopyError(m.question_validation_asset_host());
-    }
+      'url' in block.image
+        ? !policy.bank || !hostedAsset(block.image.url, policy.bankAssetsUrl)
+        : 'assetId' in block.image && policy.bank
+    )
+      throw new CopyError(m.question_validation_asset_host());
     if (policy.bank && block.type === 'graph' && 'svg' in block.image)
       throw new CopyError(m.question_validation_upload_graphs());
   }
   return question;
+}
+
+/** User quizzes (not the bank) cap marking items and sample answer length per part. */
+function quizPartBounds(part: Question['parts'][number]) {
+  if (part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
+    throw new CopyError(
+      m.question_validation_quiz_markscheme({ max: limits.QUIZ_MARKSCHEME_MAX })
+    );
+  if (
+    part.answer.type === 'open' &&
+    part.answer.accepted.some(
+      (text) => [...text].length > limits.QUIZ_OPEN_ANSWER_MAX
+    )
+  )
+    throw new CopyError(
+      m.question_validation_open_answer_length({
+        max: limits.QUIZ_OPEN_ANSWER_MAX,
+      })
+    );
+}
+
+/** One attempt's open parts must fit a single grading request. */
+export function quizBounds(questions: Question[]) {
+  const parts = questions.flatMap((question) => question.parts);
+  if (parts.length > limits.QUIZ_PARTS_MAX)
+    throw new CopyError(
+      m.question_validation_quiz_parts({ max: limits.QUIZ_PARTS_MAX })
+    );
+  if (
+    parts.filter((part) => part.answer.type === 'open').length >
+    limits.QUIZ_OPEN_PARTS_MAX
+  )
+    throw new CopyError(
+      m.question_validation_quiz_open_parts({ max: limits.QUIZ_OPEN_PARTS_MAX })
+    );
 }
 
 export function validateQuestions(
@@ -469,9 +509,10 @@ export function validateQuestions(
 ): Question[] {
   const questions = z
     .array(z.unknown())
-    .max(limits.QUESTION_COUNT_MAX)
+    .max(policy.bank ? limits.QUESTION_COUNT_MAX : limits.QUIZ_PARTS_MAX)
     .parse(value)
     .map((q) => validateQuestion(q, policy));
+  if (!policy.bank) quizBounds(questions);
   const ids = new Set<string>();
   const partIds = new Set<string>();
   for (const question of questions) {

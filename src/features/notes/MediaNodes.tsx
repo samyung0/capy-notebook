@@ -82,7 +82,7 @@ export const MediaPlaceholderElement = withHOC(
     props: PlateElementProps<TPlaceholderElement>
   ) {
     const { editor, element } = props;
-    const { workspaceId, allowExternalAssets } = useEditorRuntime();
+    const { materialId, allowExternalAssets } = useEditorRuntime();
     const canCreateAssets = allowExternalAssets;
     const { api } = useEditorPlugin(PlaceholderPlugin);
     const [progress, setProgress] = useState(0);
@@ -122,7 +122,7 @@ export const MediaPlaceholderElement = withHOC(
         api.placeholder.addUploadingFile(element.id as string, file);
         try {
           const asset = await uploadEditorAsset(
-            workspaceId,
+            materialId,
             file,
             editorAssetPurpose(file),
             {
@@ -155,7 +155,7 @@ export const MediaPlaceholderElement = withHOC(
           setUploading(null);
         }
       },
-      [api.placeholder, canCreateAssets, editor, element, purpose, workspaceId]
+      [api.placeholder, canCreateAssets, editor, element, materialId, purpose]
     );
 
     const { openFilePicker } = useFilePicker({
@@ -315,7 +315,7 @@ function ImageToolbar({
 }) {
   const editor = useEditorRef();
   const element = node as unknown as MediaAssetNode;
-  const { workspaceId, allowExternalAssets } = useEditorRuntime();
+  const { materialId, allowExternalAssets } = useEditorRuntime();
   const [replacing, setReplacing] = useState(false);
 
   const replace = async (file: File) => {
@@ -328,7 +328,7 @@ function ImageToolbar({
     }
     setReplacing(true);
     try {
-      const asset = await uploadEditorAsset(workspaceId, file, 'image');
+      const asset = await uploadEditorAsset(materialId, file, 'image');
       const { assetId, contentType, name, sizeBytes } =
         mediaNodeFromAsset(asset);
       // Keep the node id, width and caption; only the picture changes. The

@@ -11,10 +11,16 @@ package agenttools
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
+
+// questionJSONDescription documents the question shape and the user-quiz bounds
+// the validator enforces.
+var questionJSONDescription = fmt.Sprintf("Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most %d parts per question and %d marking items per part; a quiz has at most %d parts, %d of them open; open accepted answers under %d characters. No legacy prompt/points/rubrics or awarded scores.",
+	fieldlimits.QuizQuestionParts, fieldlimits.QuizMarkscheme, fieldlimits.QuizParts, fieldlimits.QuizOpenParts, fieldlimits.QuizOpenAnswer)
 
 // ContractVersion changes whenever a tool definition, input schema, operation
 // name or result shape changes incompatibly. Python refuses to start on a
@@ -354,10 +360,10 @@ func editCommandSchema() map[string]any {
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
 			variant("replace_question", map[string]any{
 				"question_id": str(""),
-				"question":    map[string]any{"type": "object", "additionalProperties": true, "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores."},
+				"question":    map[string]any{"type": "object", "additionalProperties": true, "description": questionJSONDescription},
 			}, "question_id", "question"),
 			variant("add_question", map[string]any{
-				"question":          map[string]any{"type": "object", "additionalProperties": true, "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores."},
+				"question":          map[string]any{"type": "object", "additionalProperties": true, "description": questionJSONDescription},
 				"after_question_id": map[string]any{"type": []string{"string", "null"}},
 			}, "question"),
 			variant("remove_question", map[string]any{"question_id": str("")}, "question_id"),
@@ -568,7 +574,7 @@ func Definitions() []Definition {
 				},
 				"questions": map[string]any{
 					"type":        "array",
-					"description": "quiz only; Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. No legacy prompt/points/rubrics or awarded scores.",
+					"description": "quiz only; " + questionJSONDescription,
 					// Deliberately open: Go's materialdoc validates each question.
 					"items": map[string]any{"type": "object", "additionalProperties": true},
 				},

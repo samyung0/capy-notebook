@@ -121,9 +121,38 @@ func validateEditorAssetMetadata(
 	return "", "", "", fmt.Errorf("content type %q does not match %s extension %q", contentType, in.Purpose, ext)
 }
 
+// editorAssetScope is where a material's editor assets live; exactly one is set.
+type editorAssetScope struct{ workspaceID, materialID string }
+
+// editorAssetScopeFor admits an editor of the route's material and resolves the
+// scope: its workspace (charged to the workspace owner) or, for a standalone
+// material, the material itself (charged to its owner). The store transaction
+// rechecks both.
+func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (editorAssetScope, bool) {
+	materialID := id(r)
+	err := a.s.AssertMaterialEditor(r.Context(), uid(r), materialID)
+	if errors.Is(err, store.ErrForbidden) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"message": "material editor access required"})
+		return editorAssetScope{}, false
+	}
+	if err != nil {
+		a.fail(w, err)
+		return editorAssetScope{}, false
+	}
+	workspaceID, err := a.s.MaterialWorkspaceID(r.Context(), materialID)
+	if err != nil {
+		a.fail(w, err)
+		return editorAssetScope{}, false
+	}
+	if workspaceID != "" {
+		return editorAssetScope{workspaceID: workspaceID}, true
+	}
+	return editorAssetScope{materialID: materialID}, true
+}
+
 func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
-	wsID := id(r)
-	if !a.assertEditorAssetWrite(w, r, wsID) {
+	scope, ok := a.editorAssetScopeFor(w, r)
+	if !ok {
 		return
 	}
 	if a.blob == nil {
@@ -157,7 +186,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	asset, upload, err := a.s.CreateEditorAssetReservation(r.Context(), store.NewEditorAssetReservation{
-		AssetID: assetID, UploadID: uploadID, WorkspaceID: wsID, CreatedBy: uid(r),
+		AssetID: assetID, UploadID: uploadID, WorkspaceID: scope.workspaceID, MaterialID: scope.materialID, CreatedBy: uid(r),
 		Name: name, Purpose: in.Purpose, ObjectPath: uploadPath, FinalPath: finalPath, ContentType: contentType,
 		DeclaredSize: in.SizeBytes, ExpiresAt: signed.ExpiresAt,
 	})
@@ -176,31 +205,19 @@ func editorAssetObjectKey(assetID, ext string) string {
 	return "editor-assets/" + assetID + "/" + randID("blob") + ext
 }
 
-func (a *api) assertEditorAssetWrite(w http.ResponseWriter, r *http.Request, workspaceID string) bool {
-	err := a.s.AssertWorkspaceEditor(r.Context(), uid(r), workspaceID)
-	if errors.Is(err, store.ErrForbidden) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"message": "workspace editor access required"})
-		return false
-	}
-	if err != nil {
-		a.fail(w, err)
-		return false
-	}
-	return true
-}
-
 func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) {
+	scope, ok := a.editorAssetScopeFor(w, r)
+	if !ok {
+		return
+	}
 	uploadID := chi.URLParam(r, "uploadId")
 	upload, err := a.s.GetEditorAssetUpload(r.Context(), uploadID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if upload.WorkspaceID != id(r) {
+	if upload.WorkspaceID != scope.workspaceID || upload.MaterialID != scope.materialID {
 		a.fail(w, store.ErrNotFound)
-		return
-	}
-	if !a.assertEditorAssetWrite(w, r, upload.WorkspaceID) {
 		return
 	}
 	if upload.Status == "completed" {
