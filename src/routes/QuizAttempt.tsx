@@ -349,6 +349,8 @@ function AttemptBody({
       meta={quizMeta(questions)}
       onBack={onBack}
       title={name}
+      // The app bar belongs in the panel's notch; public pages have their own header.
+      topBar={Frame === PanelWithInvertedRadius}
       trail={trail}
     />
   );
