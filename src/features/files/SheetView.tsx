@@ -91,8 +91,10 @@ export default function SheetView({
       />
       <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
         <span className="t-meta flex-1 text-fg-muted">
-          {runtime.analysis?.format === 'xlsx'
-            ? m.files_office_sheet_count({
+          {runtime.ready
+            ? runtime.mode === 'view' &&
+              runtime.analysis?.format === 'xlsx' &&
+              m.files_office_sheet_count({
                 count: runtime.analysis.sheetCount,
               })
             : m.files_office_opening_workbook()}

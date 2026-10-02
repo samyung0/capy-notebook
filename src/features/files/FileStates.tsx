@@ -30,18 +30,20 @@ export function FileError({
   title = m.error_file_title(),
   message = m.error_file_body(),
   onRetry,
+  retryLabel = m.error_action_retry(),
 }: {
   icon?: IconName;
   title?: string;
   message?: string;
   onRetry?: () => void;
+  retryLabel?: string;
 }) {
   return (
     <ErrorState
       action={
         onRetry && (
           <ErrorAction iconLeftClassName="me-1.5" onClick={onRetry}>
-            {m.error_action_retry()}
+            {retryLabel}
           </ErrorAction>
         )
       }
@@ -53,8 +55,25 @@ export function FileError({
   );
 }
 
-/** The open file was trashed or deleted, or access to it lost, while editing. */
-export function FileUnavailable({ kind }: { kind: 'notFound' | 'forbidden' }) {
+/**
+ * The open file was trashed or deleted, or access to it lost, while editing;
+ * or (`outdated`) the Office runtime speaks another protocol version after a
+ * deploy, which only a reload resolves.
+ */
+export function FileUnavailable({
+  kind,
+}: {
+  kind: 'notFound' | 'forbidden' | 'outdated';
+}) {
+  if (kind === 'outdated')
+    return (
+      <FileError
+        message={m.error_chunk_body()}
+        onRetry={() => window.location.reload()}
+        retryLabel={m.error_action_reload()}
+        title={m.error_chunk_title()}
+      />
+    );
   return kind === 'notFound' ? (
     <FileError
       message={m.files_missing_body()}

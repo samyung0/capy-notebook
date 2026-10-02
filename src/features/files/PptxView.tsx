@@ -91,8 +91,12 @@ export default function PptxView({
       />
       <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
         <span className="t-meta flex-1 text-fg-muted">
-          {runtime.analysis?.format === 'pptx'
-            ? m.files_office_slide_count({ count: runtime.analysis.slideCount })
+          {runtime.ready
+            ? runtime.mode === 'view' &&
+              runtime.analysis?.format === 'pptx' &&
+              m.files_office_slide_count({
+                count: runtime.analysis.slideCount,
+              })
             : m.files_office_opening_presentation()}
         </span>
         <FileModeControl

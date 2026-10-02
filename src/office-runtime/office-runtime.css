@@ -1,13 +1,178 @@
-:root {
-  /* Generic families only: documents register their fonts as FontFaces under
-     Office family names in this document (officeFonts.ts). */
-  font-family: ui-sans-serif, system-ui, sans-serif;
-  color: #172033;
-  background: #f5f7fa;
+/* docx-react leaves Tailwind's reset to its host, and this frame is its own
+   document: nothing from Capy's stylesheet reaches it. */
+@import "tailwindcss/preflight.css" layer(base);
+/* Capy's role tokens, selected by the data-style and data-theme the host
+   sends (set-appearance). */
+@import "../styles/tokens/themes/classroom.css";
+@import "../styles/tokens/themes/notion.css";
+
+/* The classroom style's Fustat, for the chrome weights only (latin, from
+   @fontsource/fustat 5.3.0, OFL: fonts/LICENSE). Same-origin: the runtime's
+   CSP allows no font host. */
+@font-face {
+  font-family: "Fustat";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("./fonts/fustat-latin-400-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Fustat";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("./fonts/fustat-latin-500-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Fustat";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./fonts/fustat-latin-600-normal.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-* {
-  box-sizing: border-box;
+:root {
+  /* Capy's sans for the chrome; documents register their own fonts as
+     FontFaces under Office family names (officeFonts.ts). */
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  color: var(--text-primary);
+  background: var(--surface-card-bg);
+}
+
+/* Capy's colours on docx-react's variables, light and dark alike (the tokens
+   above already follow the theme). The shadcn variables are read as
+   hsl(var(--x) / alpha), so each takes a relative colour. :root covers the
+   viewer, which renders outside .oox-root. */
+:root,
+.oox-root,
+.oox-root.dark,
+.oox-root.dark .oox-root {
+  --background: from var(--surface-card-bg) h s l;
+  --foreground: from var(--text-primary) h s l;
+  --card: from var(--surface-card-bg) h s l;
+  --card-foreground: from var(--text-primary) h s l;
+  --popover: from var(--surface-card-bg) h s l;
+  --popover-foreground: from var(--text-primary) h s l;
+  --primary: from var(--action-primary-bg) h s l;
+  --primary-foreground: from var(--action-primary-fg) h s l;
+  --secondary: from var(--surface-card-hover-bg) h s l;
+  --secondary-foreground: from var(--text-primary) h s l;
+  --muted: from var(--surface-card-hover-bg) h s l;
+  --muted-foreground: from var(--text-muted) h s l;
+  --accent: from var(--surface-card-hover-bg) h s l;
+  --accent-foreground: from var(--text-primary) h s l;
+  --destructive: from var(--solid-error) h s l;
+  --destructive-foreground: from var(--action-primary-fg) h s l;
+  --border: from var(--border-default) h s l;
+  --input: from var(--border-default) h s l;
+  --ring: from var(--action-primary-bg) h s l;
+
+  --doc-surface: var(--surface-card-bg);
+  --doc-card: var(--surface-card-bg);
+  --doc-bg: var(--surface-card-bg);
+  --doc-bg-subtle: var(--surface-card-hover-bg);
+  --doc-bg-hover: var(--surface-card-hover-bg);
+  --doc-bg-input: var(--surface-card-bg);
+  --doc-primary: var(--action-accent-bg);
+  --doc-primary-hover: var(--action-accent-hover);
+  --doc-primary-light: var(--tint-accent-1-bg);
+  --doc-accent: var(--action-accent-bg);
+  --doc-accent-bg: var(--tint-accent-1-bg);
+  --doc-on-primary: var(--action-accent-fg);
+  /* ToolbarButton's pressed state. */
+  --doc-toggle-active-bg: color-mix(
+    in srgb,
+    var(--tint-accent-1-bg) 50%,
+    transparent
+  );
+  --doc-toggle-active-fg: var(--tint-accent-1-fg);
+  --doc-text: var(--text-primary);
+  --doc-text-muted: var(--text-muted);
+  --doc-text-subtle: var(--text-placeholder);
+  --doc-text-placeholder: var(--text-placeholder);
+  --doc-border: var(--border-default);
+  --doc-border-light: var(--divider);
+  --doc-border-dark: var(--border-strong);
+  --doc-border-input: var(--border-default);
+  --doc-error: var(--tint-error-fg);
+  --doc-error-bg: var(--tint-error-bg);
+  --doc-success: var(--tint-success-fg);
+  --doc-success-bg: var(--tint-success-bg);
+  --doc-warning: var(--solid-warning);
+  --doc-warning-bg: var(--tint-warning-bg);
+  --doc-warning-text: var(--tint-warning-fg);
+  --doc-link: var(--text-link);
+  --doc-shadow: rgba(0, 0, 0, 0.15);
+  /* Pages stay white in both themes, as PDF pages do, so the caret and the
+     page frame keep their light values. */
+  --doc-caret: #000;
+
+  /* The single-row toolbar as Capy's Toolbar and ToolbarButton. */
+  --doc-toolbar-bg: var(--surface-card-bg);
+  --doc-toolbar-border: var(--divider);
+  --doc-toolbar-button-size: 32px;
+  --doc-toolbar-icon-size: 16px;
+  --doc-toolbar-radius: var(--radius-button);
+  --doc-menu-trigger-font-size: 0.875rem;
+  --doc-menu-trigger-font-weight: 600;
+  --doc-menu-trigger-height: 32px;
+  --doc-menu-trigger-radius: var(--radius-button);
+}
+
+/* Chrome and Edge 111–118 have no relative colour syntax, so the shadcn
+   variables above are invalid there: menus and dropdowns take Capy's tokens
+   directly instead of turning see-through. */
+@supports not (color: hsl(from red h s l)) {
+  .oox-root .bg-popover,
+  .oox-root .bg-background {
+    background-color: var(--surface-card-bg);
+  }
+  .oox-root .bg-muted,
+  .oox-root .hover\:bg-muted:hover,
+  .oox-root .focus\:bg-muted:focus,
+  .oox-root .hover\:bg-accent:hover {
+    background-color: var(--surface-card-hover-bg);
+  }
+  .oox-root .bg-border {
+    background-color: var(--divider);
+  }
+  .oox-root .text-foreground,
+  .oox-root .text-popover-foreground {
+    color: var(--text-primary);
+  }
+  .oox-root .text-muted-foreground {
+    color: var(--text-muted);
+  }
+  .oox-root .border-border,
+  .oox-root .border-input {
+    border-color: var(--border-default);
+  }
+}
+
+/* Capy's scrollbars, on the viewer and the editor's page area alike, so a page
+   sits at the same place in both modes. */
+.docx-runtime-viewer,
+.oox-root .docx-editor__scroll-container {
+  scrollbar-gutter: stable both-edges;
+  scrollbar-color: auto;
+}
+.docx-runtime-viewer::-webkit-scrollbar,
+.oox-root .docx-editor__scroll-container::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.docx-runtime-viewer::-webkit-scrollbar-thumb,
+.oox-root .docx-editor__scroll-container::-webkit-scrollbar-thumb,
+.oox-root .docx-editor__scroll-container:hover::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border: 0;
+  border-radius: 999px;
 }
 
 html,
@@ -42,12 +207,22 @@ button {
   overflow: auto;
 }
 
+/* As the editor lays pages out: centred when they fit, otherwise from the left
+   edge and scrollable, so a page sits at the same place in both modes. */
+.docx-runtime-viewer .canvas-pages {
+  width: max-content;
+  min-width: 100%;
+}
+.docx-runtime-viewer .canvas-pages__column {
+  padding-inline: 0 !important;
+}
+
 .office-runtime-state {
   display: grid;
   place-items: center;
   height: 100%;
   font-size: 14px;
-  color: #667085;
+  color: var(--text-muted);
 }
 
 .office-a11y-only {
@@ -69,8 +244,8 @@ button {
   min-height: 37px;
   padding: 5px 8px;
   overflow-x: auto;
-  background: #fff;
-  border-bottom: 1px solid #d9dee8;
+  background: var(--surface-card-bg);
+  border-bottom: 1px solid var(--divider);
 }
 
 .office-tab {
@@ -84,7 +259,7 @@ button {
 
 .office-tab[aria-selected="true"] {
   font-weight: 600;
-  background: #e9edf5;
+  background: var(--surface-card-hover-bg);
 }
 
 .xlsx-viewport {
@@ -112,9 +287,8 @@ button {
 
 .pptx-runtime {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  min-height: 0;
+  height: 100%;
 }
 
 .pptx-stage {
@@ -124,7 +298,7 @@ button {
   min-height: 0;
   padding: 20px;
   overflow: auto;
-  background: #e7eaf0;
+  background: var(--surface-card-bg);
 }
 
 .pptx-stage canvas {
@@ -152,15 +326,15 @@ button {
   justify-content: center;
   min-height: 42px;
   font-size: 13px;
-  background: #fff;
-  border-top: 1px solid #d9dee8;
+  background: var(--surface-card-bg);
+  border-top: 1px solid var(--divider);
 }
 
 .pptx-controls button {
   padding: 4px 10px;
   cursor: pointer;
-  background: #fff;
-  border: 1px solid #cdd3df;
+  background: transparent;
+  border: 1px solid var(--border-default);
   border-radius: 5px;
 }
 

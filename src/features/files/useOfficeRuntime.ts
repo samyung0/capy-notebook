@@ -4,9 +4,12 @@ import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
 import {
   isOfficeRuntimeMessage,
+  isOutdatedOfficeRuntime,
   OFFICE_PROTOCOL_VERSION,
   type OfficeAnalysis,
   type OfficeCitation,
@@ -70,6 +73,8 @@ export function useOfficeRuntime({
   citationRef.current = citation;
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const config = useRef(getOfficeRuntimeConfig()).current;
+  const { style, theme } = useTheme();
+  const narrow = !useMediaQuery('(min-width: 1024px)');
   const [mode, setMode] = useFileMode(canEdit, initialMode);
   const [joined, setJoined] = useState(mode === 'edit');
   const [frameGeneration, setFrameGeneration] = useState(0);
@@ -82,6 +87,7 @@ export function useOfficeRuntime({
   } | null>(null);
   const [analysis, setAnalysis] = useState<OfficeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(config.error);
+  const [outdated, setOutdated] = useState(false);
   const [replicaReady, setReplicaReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
@@ -130,6 +136,18 @@ export function useOfficeRuntime({
       ),
     [config.origin]
   );
+  // Before the load below, and again whenever the runtime document boots: the
+  // runtime paints in Capy's theme from the start.
+  useEffect(() => {
+    if (frameLoaded)
+      post({
+        narrow,
+        style,
+        theme,
+        type: 'set-appearance',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+  }, [frameBoot, frameLoaded, narrow, post, style, theme]);
   useEffect(() => {
     if (frameLoaded)
       post({
@@ -371,10 +389,14 @@ export function useOfficeRuntime({
     const receive = (event: MessageEvent<unknown>) => {
       if (
         event.origin !== config.origin ||
-        event.source !== iframeRef.current?.contentWindow ||
-        !isOfficeRuntimeMessage(event.data)
+        event.source !== iframeRef.current?.contentWindow
       )
         return;
+      if (isOutdatedOfficeRuntime(event.data)) {
+        setOutdated(true);
+        return;
+      }
+      if (!isOfficeRuntimeMessage(event.data)) return;
       const message = event.data,
         active = sourceRef.current;
       if (message.type === 'initialized') {
@@ -521,6 +543,6 @@ export function useOfficeRuntime({
     setFrameLoaded,
     setRuntimeMode,
     status: source.status,
-    unavailable: source.unavailable,
+    unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };
 }

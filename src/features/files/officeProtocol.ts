@@ -1,4 +1,6 @@
-export const OFFICE_PROTOCOL_VERSION = 5 as const;
+import { STYLES, type Style, THEMES, type Theme } from '@/theme/theme';
+
+export const OFFICE_PROTOCOL_VERSION = 6 as const;
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 export type OfficeCitation = { quote: string; page?: number };
@@ -67,6 +69,15 @@ export type OfficeHostMessage =
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-capabilities';
       canEdit: boolean;
+    }
+  /** Capy's appearance, sent when the runtime starts and on every change. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'set-appearance';
+      style: Style;
+      theme: Theme;
+      /** The viewport is below lg, where the PDF toolbar drops zoom too. */
+      narrow: boolean;
     };
 
 export type OfficeRuntimeMessage =
@@ -145,6 +156,12 @@ export function isOfficeHostMessage(
   if (candidate.type === 'flush')
     return isCount(candidate.epoch) && typeof candidate.id === 'string';
   if (candidate.type === 'export') return typeof candidate.id === 'string';
+  if (candidate.type === 'set-appearance')
+    return (
+      STYLES.some((style) => style.value === candidate.style) &&
+      THEMES.some((theme) => theme.value === candidate.theme) &&
+      typeof candidate.narrow === 'boolean'
+    );
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
     ((candidate.type === 'load' &&
@@ -170,6 +187,17 @@ export function isOfficeHostMessage(
       (candidate.type === 'set-capabilities' &&
         typeof (candidate as { canEdit?: unknown }).canEdit === 'boolean'))
   );
+}
+
+/**
+ * The runtime started under another protocol version: a deploy replaced the
+ * runtime or the app while this tab stayed open, and neither side reads the
+ * other's messages. The host asks for a reload instead of waiting.
+ */
+export function isOutdatedOfficeRuntime(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const raw = value as Record<string, unknown>;
+  return raw.type === 'initialized' && raw.version !== OFFICE_PROTOCOL_VERSION;
 }
 
 export function isOfficeRuntimeMessage(

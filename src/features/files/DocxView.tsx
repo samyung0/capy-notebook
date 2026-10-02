@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useContext, useEffect } from 'react';
 import type { ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { FileModeControl } from './FileModeControl';
 import { FileError, FileUnavailable, SourceBanners } from './FileStates';
-import { useReportEditorStatus } from './fileModeContext';
+import { FileHeaderTarget, useReportEditorStatus } from './fileModeContext';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 import { sourceHeaderStatus } from './useSourceSession';
@@ -22,6 +23,7 @@ export default function DocxView({
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
 }) {
+  const headerTarget = useContext(FileHeaderTarget);
   const runtime = useOfficeRuntime({
     canEdit,
     citation,
@@ -89,10 +91,21 @@ export default function DocxView({
         readOnly={runtime.readOnly}
         replaced={runtime.replaced}
       />
-      <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
+      {/* In edit mode the editor's toolbar row takes this row's place, as the
+          PDF toolbar does, so the page stays put; the mode control portals
+          into the file header. */}
+      <div
+        className={cn(
+          'flex min-h-10 items-center gap-2 border-line border-b px-2',
+          runtime.mode === 'edit' && headerTarget && 'hidden'
+        )}
+      >
         <span className="t-meta flex-1 text-fg-muted">
-          {runtime.analysis?.format === 'docx'
-            ? m.files_office_page_count({ count: runtime.analysis.pageCount })
+          {/* Only the viewer counts pages: an open editor shows no count. */}
+          {runtime.ready
+            ? runtime.mode === 'view' &&
+              runtime.analysis?.format === 'docx' &&
+              m.files_office_page_count({ count: runtime.analysis.pageCount })
             : m.files_office_opening_document()}
         </span>
         <FileModeControl

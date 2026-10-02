@@ -146,8 +146,8 @@ import {
   WifiError02Icon,
   WifiOff02Icon,
 } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import type { CSSProperties } from 'react';
+import { HugeIcon } from './HugeIcon';
 
 const HugeIcons = {
   alert: Alert02Icon,
@@ -321,54 +321,6 @@ export type IconProps = React.ComponentProps<'svg'> & {
   style?: CSSProperties;
 };
 
-export function Icon({
-  name,
-  size = 18,
-  strokeWidth = 1.8,
-  className,
-  style,
-  ...rest
-}: IconProps) {
-  const el = HugeIcons[name] ?? HugeIcons['x'];
-  if (Array.isArray(el) && el.every((d) => typeof d === 'string')) {
-    return (
-      <svg
-        aria-hidden
-        className={className}
-        data-icon
-        fill="none"
-        height={size}
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={strokeWidth}
-        style={{ display: 'block', flex: '0 0 auto', ...style }}
-        viewBox="0 0 24 24"
-        width={size}
-        {...rest}
-      >
-        {el.map((d, i) => (
-          <path d={d} key={i} />
-        ))}
-      </svg>
-    );
-  }
-  return (
-    <HugeiconsIcon
-      aria-hidden
-      className={className}
-      color="currentColor"
-      data-icon
-      fill="none"
-      height={size}
-      icon={el as IconSvgElement}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={strokeWidth}
-      style={{ display: 'block', flex: '0 0 auto', ...style }}
-      viewBox="0 0 24 24"
-      width={size}
-      {...rest}
-    />
-  );
+export function Icon({ name, ...rest }: IconProps) {
+  return <HugeIcon icon={HugeIcons[name] ?? HugeIcons.x} {...rest} />;
 }

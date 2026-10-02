@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import {
   isOfficeHostMessage,
   isOfficeRuntimeMessage,
+  isOutdatedOfficeRuntime,
   OFFICE_PROTOCOL_VERSION,
 } from './officeProtocol';
 import {
@@ -61,6 +62,35 @@ describe('office host protocol', () => {
         version: OFFICE_PROTOCOL_VERSION,
       })
     ).toBe(true);
+  });
+
+  it("accepts only Capy's own styles and themes, with the narrow flag", () => {
+    const message = {
+      narrow: false,
+      style: 'classroom',
+      theme: 'mocha',
+      type: 'set-appearance',
+      version: OFFICE_PROTOCOL_VERSION,
+    };
+    expect(isOfficeHostMessage(message)).toBe(true);
+    expect(isOfficeHostMessage({ ...message, style: 'notion' })).toBe(true);
+    expect(isOfficeHostMessage({ ...message, theme: 'dark' })).toBe(false);
+    expect(isOfficeHostMessage({ ...message, style: undefined })).toBe(false);
+    expect(isOfficeHostMessage({ ...message, narrow: undefined })).toBe(false);
+  });
+
+  it('tells a runtime from another protocol version apart from a malformed message', () => {
+    expect(isOutdatedOfficeRuntime({ type: 'initialized', version: 5 })).toBe(
+      true
+    );
+    expect(
+      isOutdatedOfficeRuntime({
+        type: 'initialized',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(false);
+    expect(isOutdatedOfficeRuntime({ type: 'ready', version: 5 })).toBe(false);
+    expect(isOutdatedOfficeRuntime('initialized')).toBe(false);
   });
 
   it('rejects capability updates without a boolean permission', () => {

@@ -2,6 +2,7 @@ import { configureDefaultFonts } from '@betteroffice/docx/layout';
 import { setGoogleFontsEnabled } from '@betteroffice/docx/utils';
 import { DocxEditor, type DocxEditorRef } from '@betteroffice/docx-react';
 import { useEffect, useRef } from 'react';
+import { docxIcons } from './docxIcons';
 import type {
   OfficeCollaboration,
   OfficeExporter,
@@ -17,6 +18,8 @@ setGoogleFontsEnabled(false);
 export function DocxEditorHost({
   bytes,
   collaboration,
+  colorMode,
+  narrow,
   onExporter,
   onFlusher,
   onError,
@@ -25,6 +28,9 @@ export function DocxEditorHost({
 }: {
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
+  colorMode: 'light' | 'dark';
+  /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
+  narrow: boolean;
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onError: (error: Error) => void;
@@ -53,8 +59,10 @@ export function DocxEditorHost({
       <DocxEditor
         className="office-editor-host"
         collaboration={collaboration}
+        colorMode={colorMode}
         disableFindReplaceShortcuts
         documentBuffer={bytes}
+        icons={docxIcons}
         onError={onError}
         onPendingChange={onPendingChange}
         // File > Save and Ctrl/Cmd+S request the checkpoint; nothing serializes.
@@ -64,7 +72,11 @@ export function DocxEditorHost({
         readOnly={false}
         ref={editorRef}
         showFileOpen={false}
+        showFontPicker={!narrow}
+        showFontSizePicker={!narrow}
         showHelpMenu={false}
+        showZoomControl={!narrow}
+        singleRowToolbar
       />
     </div>
   );

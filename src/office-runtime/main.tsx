@@ -20,14 +20,16 @@ import {
 } from '@/features/files/officeProtocol';
 import { parentOriginFromRuntimeUrl } from '@/features/files/officeRuntimeConfig';
 import { m } from '@/i18n';
+import { THEMES } from '@/theme/theme';
 import { exportCheckpoint } from './exportCheckpoint';
 import type {
   OfficeExporter,
   OfficeFlusher,
   OfficeReplica,
 } from './officeCollaboration';
-import './office-runtime.css';
 import '../../vendor/betteroffice/packages/docx-react/dist/styles.css';
+// After docx-react's styles: its variables are overridden with Capy's.
+import './office-runtime.css';
 
 const parentOrigin = parentOriginFromRuntimeUrl();
 
@@ -70,6 +72,8 @@ function OfficeRuntime() {
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [citation, setCitation] = useState<OfficeCitation | null>(null);
   const [mode, setMode] = useState<OfficeMode>('view');
+  const [dark, setDark] = useState(false);
+  const [narrow, setNarrow] = useState(false);
   const revisionRef = useRef<number | null>(null);
   const epochRef = useRef<number | null>(null);
   const replicaRef = useRef<OfficeReplica | null>(null);
@@ -186,6 +190,16 @@ function OfficeRuntime() {
       });
     };
     const handleHostMessage = async (message: OfficeHostMessage) => {
+      if (message.type === 'set-appearance') {
+        // Selects Capy's role tokens imported in office-runtime.css.
+        document.documentElement.dataset.style = message.style;
+        document.documentElement.dataset.theme = message.theme;
+        setDark(
+          THEMES.some((theme) => theme.value === message.theme && theme.isDark)
+        );
+        setNarrow(message.narrow);
+        return;
+      }
       if (message.type === 'load') {
         const nextMode =
           message.mode === 'edit' && message.canEdit ? 'edit' : 'view';
@@ -398,6 +412,8 @@ function OfficeRuntime() {
             <DocxEditorHost
               bytes={file.bytes}
               collaboration={collaboration}
+              colorMode={dark ? 'dark' : 'light'}
+              narrow={narrow}
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}

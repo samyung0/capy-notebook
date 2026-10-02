@@ -85,7 +85,12 @@ configured by `VITE_OFFICE_RUNTIME_ORIGIN` in production. The app origin
 fetches the protected file URL and transfers its `ArrayBuffer` to the runtime
 through the versioned protocol in `officeProtocol.ts`; the runtime origin never
 receives a file URL, Clerk token, or app cookie. Local development may use the
-same origin.
+same origin. The runtime's first message, `initialized`, carries its
+`OFFICE_PROTOCOL_VERSION`. A different version means a deploy replaced the
+runtime or the app while the tab stayed open, so the host shows "An update is
+ready" with a Reload button (`FileUnavailable` kind `outdated`) instead of
+waiting for a runtime that ignores its messages. A host from before this check
+still waits on its first mismatch.
 
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
 WASM omits editing, collaboration, undo, and save machinery; the DOCX viewer
@@ -104,7 +109,7 @@ lock, so a suspended owner's shared files keep rendering) that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
 saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
 with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the
-hash as `checkpointSeedSHA256` on the `load` message (protocol version 5); the
+hash as `checkpointSeedSHA256` on the `load` message (protocol version 6); the
 runtime applies it over the base with the editor engines in a disposable
 `exportCheckpoint` worker, which for a change seeds the base first and refuses
 a seed whose hash differs (the same composition as the
@@ -446,6 +451,47 @@ resolve revisions in nested fields and controls and remove resolved move
 wrappers and range markers. Deleting a break in a field result removes it from
 the saved field too.
 
+The DOCX editor uses the fork's single-row toolbar (`singleRowToolbar`), drawn
+like Capy's own toolbars. A ☰ menu at the left holds File, Format, Insert and
+View sections; View has one checked item that shows or hides the document
+outline, so no outline button sits on the row or in the page gutter. Then come
+undo/redo, the style picker, the font picker, the size box (no −/+ steps) and
+the formatting groups, with alignment and lists before superscript/subscript
+and clear formatting. A percent zoom dropdown and the comments toggle stay
+pinned at the right. Below lg (the viewport, as the PDF toolbar) the zoom
+dropdown, the font picker and the size box are hidden. The groups scroll
+sideways: a vertical mouse wheel scrolls them, and an edge with more to scroll
+fades (`data-scroll-start`/`-end`, so it needs no scroll-driven animations). In
+edit mode this row takes the place of Capy's file header row whenever a file
+header exists (`DocxView`), so a page sits at the same place in view and edit
+mode at every width; the view mode row keeps the page count.
+
+The runtime is its own document, so `office-runtime.css` brings Capy's look
+itself. It imports Tailwind's preflight (in a lower layer) and Capy's theme
+token files, and maps the tokens onto docx-react's `--doc-*` variables, its
+toolbar variables and its shadcn variables. The shadcn ones are HSL triplets
+and take relative colour syntax (`from var(--token) h s l`); on Chrome and Edge
+111–118, which lack it, an `@supports` fallback gives menus and dropdowns
+Capy's tokens directly. The host sends `set-appearance` (`style`, `theme`,
+`narrow` below lg) before `load`, on every change and again after every runtime
+boot; the runtime sets `data-style`/`data-theme` on its root, passes
+`colorMode` to `DocxEditor` and hides the narrow controls. Pages stay white in
+dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
+and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
+`src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
+files carry their copyright and licence link, and the OFL text stays in the
+repo beside them).
+
+The editor draws Capy's icons through one hook: `DocxEditor`'s `icons` prop
+takes an `IconSet` that names every Material icon the editor uses and the icons
+it otherwise draws inline (`DRAWN_ICON_NAMES`: the right-click menu, the link
+popup and the table insert overlay; without a set the fork's own drawings
+stay). `src/office-runtime/docxIcons.tsx` maps every name to Capy's Hugeicons
+through `HugeIcon`, and its `Record<keyof IconSet, …>` type fails the build if
+a name is missing. The fork's print preview, find/replace and keyboard
+shortcut dialogs, its error toasts and its empty-document placeholder still
+draw their own SVGs.
+
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
 map included) or, in PPTX, writes or deletes anything in `pptx:meta` other
@@ -464,7 +510,7 @@ configures them at module scope and the DOCX viewer worker configures them
 before layout. Each face the engine loads is also registered as a `FontFace`
 under the Office family it stands in for, in the runtime iframe, so the page
 paints what was measured (the viewer worker reports its faces with the display
-list). The runtime's own interface names only generic families
+list). The runtime's own interface names only Fustat and generic families
 (`office-runtime.css`), so a document's family never repaints it. PPTX loads
 the Liberation Sans faces as `Arial`. The CJK add-on (`@betteroffice/fonts-cjk`:
 Noto Sans TC, SC, JP, KR and Noto Serif SC, 4.5 to 11.6 MB each) ships as

@@ -237,3 +237,39 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   }
   expect(sessions).toBe(opened);
 });
+
+test("Office runtime keeps Capy's theme after reloading and asks for a page reload on a protocol mismatch", async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.addInitScript(() => localStorage.setItem('capy.theme', 'mocha'));
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(frame.locator('html')).toHaveAttribute('data-theme', 'mocha');
+  const runtime = page
+    .frames()
+    .find((candidate) => candidate.url().includes('office-runtime'));
+  if (!runtime) throw new Error('Missing Office runtime');
+
+  // The runtime document reloads by itself; the host sends the theme again.
+  const reloaded = page.waitForEvent(
+    'framenavigated',
+    (navigated) => navigated === runtime
+  );
+  await runtime.evaluate(() => setTimeout(() => location.reload()));
+  await reloaded;
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(frame.locator('html')).toHaveAttribute('data-theme', 'mocha');
+
+  // A runtime from another deploy starts under another protocol version.
+  await runtime.evaluate(() =>
+    parent.postMessage({ type: 'initialized', version: 0 }, '*')
+  );
+  await expect(page.getByText('An update is ready')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
+});

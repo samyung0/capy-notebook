@@ -5,11 +5,16 @@ For the agent picking up the remaining BetterOffice DOCX items. It replaces the
 
 ## State
 
-- Landed: follow-up rounds 1 and 2. BetterOffice `capy-ci` = `dcf7d9b5`, and
-  Capy pins it (`3b725d4e`, deployed to UAT). Production has none of it and
-  holds no Office data, so a pin bump there needs no maintenance window.
-- The fork has only `main` and `capy-ci`. All feature branches were merged and
-  deleted.
+- Landed: follow-up rounds 1 and 2 (`dcf7d9b5`, Capy `3b725d4e`), then the
+  toolbar track (2026-10-02, `capy-ci` = `86744da3`, Capy commit "Match the
+  DOCX editor toolbar to Capy's toolbars", deployed to UAT). Production has
+  none of it and holds no Office data, so a pin bump there needs no
+  maintenance window.
+- In flight on local fork branches (not pushed): `capy/docx-followup-3`
+  (round 3 of items 1–6, see Remaining items) and `capy/docx-perf`
+  (Performance track). Both branch from `dcf7d9b5` and rebase onto the
+  current `capy-ci` before landing; `capy/docx-perf` also edits
+  `DocxEditor.tsx`, which the toolbar track changed.
 - Capy ships the engine's CJK faces (`c254fcee`), loaded on demand. Before
   that, CJK text overlapped in view mode and vanished in edit mode. Check CJK
   files (`e2e/fixtures/files/rich-content/exchange-plan.docx`) in both modes
@@ -126,66 +131,29 @@ and how to run them are in `artifacts/2026-10-02-docx-perf-probes/`.
 Fork changes follow How to work below. The matrix and goldens should not move,
 because these changes only touch rendering and decode.
 
-## Toolbar styling track (added 2026-10-02)
+## Toolbar styling track (landed 2026-10-02)
 
-This is also separate from items 1–6. The developer wants the DOCX editor
-toolbar to match Capy's own toolbars: `Toolbar` and `ToolbarGroup` in
-`src/components/ui/Toolbar.tsx`, and `ToolbarButton` in
-`src/components/ui/ToolbarButton.tsx`, as used by `NoteToolbar` and the PDF
-toolbar.
+Done: fork `capy-ci` = `86744da3`, Capy commit "Match the DOCX editor toolbar to Capy's toolbars". The decisions are the
+2026-10-02 toolbar, icon and toolbar-review lines in
+`human/frontend/office-files.md`; current behaviour is in
+`openwiki/frontend/office-files.md` (single-row toolbar, runtime theming via
+`set-appearance`, the icon hook, the protocol mismatch error). Screenshots of
+each approved checkpoint are in `artifacts/2026-10-02-docx-toolbar/checkpoint-5/`
+and `/Users/sam/web/capy-docx-review-harnesses/2026-10-02-toolbar/screenshots/`.
 
-Screenshots are in `artifacts/2026-10-02-docx-toolbar/`: the toolbar today in
-both themes, the toolbar with a CSS reset injected, and Capy's PDF toolbar for
-reference.
+Left over:
 
-The runtime is a separate document, so none of Capy's CSS reaches it. It loads
-only `src/office-runtime/office-runtime.css` and docx-react's `dist/styles.css`.
-
-**Capy side (no fork change):**
-
-1. **Add a CSS reset to the runtime.** This is most of today's "off" look.
-   `packages/docx/src/styles/editor.css` leaves out Tailwind's reset
-   (preflight) on purpose and expects the host to supply it, and the fork's own
-   apps load full Tailwind. Without it, every ghost button keeps the browser's
-   bevelled border. Injecting `tailwindcss/preflight.css` into the frame fixes
-   that (`docx-with-reset.png`). Importing it in `office-runtime.css` is safe
-   for the app, because the iframe is its own document. Check the XLSX and PPTX
-   viewers and editors afterwards, since they share that CSS.
-2. **Map Capy's colours onto the editor's variables.** In `office-runtime.css`,
-   set the `--doc-*` and shadcn variables on `.oox-root` (`--background`,
-   `--muted`, `--border` and so on) to Capy's values. Those values come from
-   `src/styles/tokens/primitives.css`, `src/styles/tokens/themes/*.css` and the
-   semantic names in `src/styles/tailwind.css`. The runtime can't read the
-   parent's variables, so it needs its own copy.
-3. **Dark mode.** The editor stays light while Capy is dark
-   (`docx-now-dark.png`). `DocxEditor` already takes
-   `colorMode: 'light' | 'dark' | 'system'`. The host needs to send its theme
-   (`src/theme/ThemeProvider.tsx`) with `load` and on every change. That is a
-   protocol message, so bump `OFFICE_PROTOCOL_VERSION`.
-4. **Wrong status label.** In edit mode the DOCX header keeps saying "Opening
-   document…" (`src/features/files/DocxView.tsx` around line 96), because only
-   the viewer reports a page count.
-
-**Fork side (`capy-ci`, styling only):** what's left after the reset is layout
-that docx-react hardcodes as Tailwind classes under `important: '.oox-root'`.
-Prefer CSS variables in the fork, with the values set from Capy, over
-rewriting the classes. That keeps the `capy-ci` diff small for upstream syncs.
-
-| Part | Fork today | Capy target |
-| --- | --- | --- |
-| Formatting bar (`packages/docx-react/src/components/Toolbar.tsx`, the `formatting-bar` container) | `bg-muted rounded-full min-h-[36px] mx-2 mb-1` pill | flat `h-10`, `border-b`, `bg-surface/95`, `px-2` |
-| `ToolbarGroup` (same file) | `gap-px px-1.5 border-r border-border/50` | 1px × 28px `after:` divider with `mx-1.5` |
-| `ToolbarButton` (same file, plus `.oox-toolbar-toggle` in `editor.css`) | `Button size="icon-sm"`, muted text | `size-8`, `[&_svg]:size-4`, hover `surface-hover-bg`, pressed `tint-accent-1` |
-| Pickers (zoom, style, font, size) | bordered selects | match Capy's dropdown `ToolbarButton` |
-
-**Not styling only. Each needs a developer decision recorded in `human/`
-before implementation:**
-
-- Whether to keep the title-bar row (document icon plus File, Format and Insert
-  menus) or fold it into the toolbar. `DocxEditor` already takes
-  `showFileOpen` and `showHelpMenu`.
-- Whether to swap the fork's `MaterialSymbol` icons for Capy's icon set. That
-  needs an icon injection point in docx-react.
+- XLSX and PPTX get the same treatment as a separate task (decided, last
+  XLSX/PPTX line in `human/frontend/office-files.md`). Their editors still
+  paint light chrome in dark mode, and the row under the file header is an
+  empty 40 px strip once their editor is ready.
+- After a runtime reload the host re-sends `load` and `set-appearance` but not
+  `set-citation` or `set-capabilities` (older than this track).
+- Inline SVGs in the print preview, find/replace and shortcut dialogs, toasts
+  and placeholders still draw the fork's icons (outside the icon decision).
+- The edge fades were checked in Chromium only, not a real Firefox.
+- Dialog buttons and tooltips have no fallback for browsers without relative
+  colour syntax (Chrome/Edge 111–118); menus and dropdowns do.
 
 ## How to work
 
