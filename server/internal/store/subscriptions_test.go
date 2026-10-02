@@ -20,8 +20,13 @@ func projectedPlan(t *testing.T, s *Store, userID string) (PlanTier, Subscriptio
 	return tier, status
 }
 
+// proPeriodEnd is fixed per test binary so two proSubscription calls describe
+// the same provider state. A per-call time.Now() can straddle a second boundary
+// and make an identical snapshot look like period-end drift.
+var proPeriodEnd = time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
+
 func proSubscription(userID, subID string, eventCreated int64) Subscription {
-	end := time.Now().Add(20 * 24 * time.Hour).UTC().Truncate(time.Second)
+	end := proPeriodEnd
 	return Subscription{
 		StripeSubscriptionID: subID,
 		UserID:               userID,
