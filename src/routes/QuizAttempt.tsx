@@ -19,13 +19,13 @@ import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Provenance, Question } from '@/api/types';
 import { SessionSwitch } from '@/components/app/AuthProvider';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PublicPage } from '@/components/app/PublicHeader';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TabContent } from '@/components/app/tabPanel';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
-import { signInHref } from '@/features/auth/clerk';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { PublicAssetUrlContext } from '@/features/questions/QuestionView';
 import { type Answer, scoreQuestion } from '@/features/quizzes/grade';
@@ -70,12 +70,14 @@ export function SharedQuizAttempt() {
   const token = (params as { quizId: string }).quizId;
   const quizId = token.split('.')[0];
   return (
-    <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
-      <SessionSwitch
-        anonymous={<AnonymousAttempt key={token} token={token} />}
-        signedIn={<Attempt key={quizId} quizId={quizId} shared />}
-      />
-    </div>
+    <SessionSwitch
+      anonymous={<AnonymousAttempt key={token} token={token} />}
+      signedIn={
+        <div className="t-body h-dvh bg-page p-1.5 text-fg sm:p-2.5">
+          <Attempt key={quizId} quizId={quizId} shared />
+        </div>
+      }
+    />
   );
 }
 
@@ -222,16 +224,23 @@ function AnonymousAttempt({ token }: { token: string }) {
       .catch(() => setPast([]));
   }, [quizId]);
 
-  if (isLoading) return <LoadingPanel />;
+  if (isLoading)
+    return (
+      <PublicQuizFrame>
+        <Skeleton className="h-[60vh] w-full" />
+      </PublicQuizFrame>
+    );
   if (isError || !quiz)
     return (
-      <WorkspaceError
-        title={
-          isApiError(error) && error.status === 404
-            ? m.error_private_title()
-            : m.quiz_unable_load()
-        }
-      />
+      <PublicQuizFrame>
+        <WorkspaceError
+          title={
+            isApiError(error) && error.status === 404
+              ? m.error_private_title()
+              : m.quiz_unable_load()
+          }
+        />
+      </PublicQuizFrame>
     );
 
   return (
@@ -239,18 +248,6 @@ function AnonymousAttempt({ token }: { token: string }) {
       value={(assetId) => anonymousAssetUrl(token, assetId)}
     >
       <AttemptBody
-        actions={
-          <Button
-            className="rounded-input"
-            onClick={() => {
-              window.location.href = signInHref();
-            }}
-            size="sm"
-            variant="outline"
-          >
-            {m.action_sign_in()}
-          </Button>
-        }
         footer={
           <div className="mt-6 grid gap-2 text-fg-muted">
             <p className="t-meta">{m.quiz_saved_in_browser()}</p>
@@ -269,6 +266,7 @@ function AnonymousAttempt({ token }: { token: string }) {
             )}
           </div>
         }
+        frame={PublicQuizFrame}
         grade={async (answers) =>
           gradeAnonymousQuiz(
             token,
@@ -305,9 +303,17 @@ function AnonymousAttempt({ token }: { token: string }) {
   );
 }
 
+/** Signed-out pages use the summary page's public layout and header. */
+function PublicQuizFrame({ children }: { children: ReactNode }) {
+  return (
+    <PublicPage returnTo={window.location.pathname}>{children}</PublicPage>
+  );
+}
+
 function AttemptBody({
   actions,
   footer,
+  frame: Frame = PanelWithInvertedRadius,
   grade,
   name,
   onBack,
@@ -318,6 +324,8 @@ function AttemptBody({
 }: {
   actions?: ReactNode;
   footer?: ReactNode;
+  /** The surrounding panel; the result view remounts it to open at the top. */
+  frame?: (props: { children: ReactNode }) => ReactNode;
   grade: GradeOpenParts;
   name: string;
   onBack?: () => void;
@@ -347,7 +355,7 @@ function AttemptBody({
 
   if (!questions.length) {
     return (
-      <PanelWithInvertedRadius>
+      <Frame>
         {header()}
         <TabContent>
           <p className="text-fg-muted">{m.quiz_no_questions()}</p>
@@ -357,7 +365,7 @@ function AttemptBody({
             </Button>
           </Link>
         </TabContent>
-      </PanelWithInvertedRadius>
+      </Frame>
     );
   }
 
@@ -390,7 +398,7 @@ function AttemptBody({
   if (graded) {
     return (
       // A fresh panel so the result opens at the top, not at the quiz's scroll.
-      <PanelWithInvertedRadius key="result">
+      <Frame key="result">
         {header()}
         <TabContent>
           <QuizScore
@@ -422,7 +430,7 @@ function AttemptBody({
           {footer}
           <MaterialAttributionFooter provenance={provenance} />
         </TabContent>
-      </PanelWithInvertedRadius>
+      </Frame>
     );
   }
 
@@ -430,7 +438,7 @@ function AttemptBody({
   const answered = parts.filter((part) => isAnswered(answers[part.id])).length;
 
   return (
-    <PanelWithInvertedRadius>
+    <Frame>
       {header(actions)}
       <TabContent>
         <QuizQuestionList
@@ -455,6 +463,6 @@ function AttemptBody({
         {footer}
         <MaterialAttributionFooter provenance={provenance} />
       </TabContent>
-    </PanelWithInvertedRadius>
+    </Frame>
   );
 }

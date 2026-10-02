@@ -37,3 +37,4 @@
 - Developer Epo decided (2026-10-01) quiz attempts keep their question and answer snapshot unencrypted and ungated.
 - Developer Epo decided (2026-10-01, supersedes frozen accounts being refused flashcard study progress) frozen accounts record all study progress and review ratings, since progress is the user's own data and charges no storage.
 - Developer decided (2026-10-02) signed-out visitors can open, attempt and study standalone link/public quizzes and flashcard sets (not workspace or embedded materials, which have no own sharing policy) through signed links; their attempts and reviews stay in that browser's IndexedDB and are never imported into an account on sign-in. anonymous-study-plan.md
+- Developer decided (2026-10-02) signed-out flashcard study skips cards whose front and back are both blank, such as the empty card a new set starts with. server/internal/store/anonymous_materials.go

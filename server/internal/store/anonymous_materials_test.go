@@ -74,11 +74,15 @@ func TestAnonymousMaterialsVisibilityAndAssets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The set starts with one blank card, which visitors never receive.
+	if _, err := s.CreateCard(ctx, ownerID, cards.ID, "Front", "Back", cards.Revision); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='public' WHERE id=$1`, cards.ID); err != nil {
 		t.Fatal(err)
 	}
 	set, err := s.AnonymousFlashcards(ctx, cards.ID)
-	if err != nil || len(set.Cards) != 1 {
+	if err != nil || len(set.Cards) != 1 || set.Cards[0].Front != "Front" {
 		t.Fatalf("public flashcards = %+v, %v", set, err)
 	}
 

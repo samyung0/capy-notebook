@@ -145,9 +145,13 @@ API without the visitor's IP, which the per-IP caps need. Go verifies the
 token again on `/api/public/...` because the API hostname is public, and reads
 visibility and the owner's lifecycle in the same statement as the content.
 Quiz reads keep answer keys and marking schemes, as signed-in link viewers
-already receive them; flashcard reads carry card text only, never the owner's
-study state. An image is served only when it belongs to the quiz and appears
+already receive them; flashcard reads carry written cards only (a new set's
+blank starter card is left out), never the owner's study state. An image is served only when it belongs to the quiz and appears
 in its current content. Unsharing takes up to five minutes to clear the edge.
+
+These pages use the workspace summary's public layout and header
+(`src/components/app/PublicHeader.tsx`), which reads the session client side:
+a skeleton while Clerk loads, then sign-in and sign-up or the profile pill.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
 (`src/lib/localDb.ts`) and are never imported into an account on sign-in. Open

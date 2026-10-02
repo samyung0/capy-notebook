@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { anonymousFlashcardsQuery } from '@/api/anonymous';
 import { isApiError } from '@/api/client';
 import type { SrsState } from '@/api/types';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { PublicPage } from '@/components/app/PublicHeader';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -12,7 +12,6 @@ import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { userToast } from '@/components/ui/userToast';
-import { signInHref } from '@/features/auth/clerk';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -68,21 +67,21 @@ export function AnonymousFlashcardStudy({ token }: { token: string }) {
 
   if (isLoading || (set && (!states || queue === null)))
     return (
-      <PanelWithInvertedRadius>
-        <div className="h-full p-6">
-          <Skeleton className="h-full w-full" />
-        </div>
-      </PanelWithInvertedRadius>
+      <PublicPage returnTo={window.location.pathname}>
+        <Skeleton className="h-[60vh] w-full" />
+      </PublicPage>
     );
   if (isError || !set || !states || queue === null)
     return (
-      <WorkspaceError
-        title={
-          isApiError(error) && error.status === 404
-            ? m.error_private_title()
-            : m.flashcards_unable_load()
-        }
-      />
+      <PublicPage returnTo={window.location.pathname}>
+        <WorkspaceError
+          title={
+            isApiError(error) && error.status === 404
+              ? m.error_private_title()
+              : m.flashcards_unable_load()
+          }
+        />
+      </PublicPage>
     );
 
   const card = set.cards.find((c) => c.id === queue[0]);
@@ -116,20 +115,7 @@ export function AnonymousFlashcardStudy({ token }: { token: string }) {
     });
   }
 
-  const header = (
-    <div className="mb-4 flex items-center gap-3">
-      <h1 className="t-subtitle flex-1 truncate">{set.name}</h1>
-      <Button
-        onClick={() => {
-          window.location.href = signInHref();
-        }}
-        size="sm"
-        variant="outline"
-      >
-        {m.action_sign_in()}
-      </Button>
-    </div>
-  );
+  const header = <h1 className="t-subtitle mb-4 truncate">{set.name}</h1>;
   const note = (
     <p className="t-meta mt-4 text-center text-fg-muted">
       {m.flashcards_saved_in_browser()}
@@ -143,8 +129,8 @@ export function AnonymousFlashcardStudy({ token }: { token: string }) {
       setFlipped(false);
     };
     return (
-      <PanelWithInvertedRadius>
-        <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
+      <PublicPage returnTo={window.location.pathname}>
+        <div className="flex flex-1 flex-col">
           {header}
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
             <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
@@ -164,14 +150,14 @@ export function AnonymousFlashcardStudy({ token }: { token: string }) {
           {note}
           <MaterialAttributionFooter provenance={set.provenance} />
         </div>
-      </PanelWithInvertedRadius>
+      </PublicPage>
     );
   }
 
   const previews = ratingPreviews(srsOf(card.id));
   return (
-    <PanelWithInvertedRadius>
-      <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
+    <PublicPage returnTo={window.location.pathname}>
+      <div className="flex flex-1 flex-col">
         {header}
         <div className="mb-4 flex items-center gap-3">
           <div className="flex-1">
@@ -188,7 +174,7 @@ export function AnonymousFlashcardStudy({ token }: { token: string }) {
           </Badge>
         </div>
         <button
-          className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-card-lg border border-line bg-surface p-8 text-center shadow-card transition-transform active:scale-[0.99]"
+          className="flex min-h-[320px] flex-1 flex-col items-center justify-center rounded-card-lg border border-line bg-surface p-8 text-center shadow-card transition-transform active:scale-[0.99]"
           onClick={() => setFlipped((f) => !f)}
           type="button"
         >
@@ -229,7 +215,7 @@ export function AnonymousFlashcardStudy({ token }: { token: string }) {
         {note}
         <MaterialAttributionFooter provenance={set.provenance} />
       </div>
-    </PanelWithInvertedRadius>
+    </PublicPage>
   );
 }
 

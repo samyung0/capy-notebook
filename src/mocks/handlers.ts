@@ -890,6 +890,7 @@ export const handlers = [
     return HttpResponse.json({
       cards: db
         .cardsFromMaterial(mt)
+        .filter(({ back, front }) => front.trim() || back.trim())
         .map(({ back, front, id }) => ({ back, front, id })),
       color: set.color,
       id: set.id,

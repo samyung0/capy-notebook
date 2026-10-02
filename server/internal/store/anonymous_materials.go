@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
@@ -79,6 +80,10 @@ func (s *Store) AnonymousFlashcards(ctx context.Context, id string) (AnonymousFl
 	if err != nil {
 		return AnonymousFlashcards{}, err
 	}
+	// A new set starts with one empty card; visitors only study written ones.
+	cards = slices.DeleteFunc(cards, func(c materialdoc.Card) bool {
+		return strings.TrimSpace(c.Front) == "" && strings.TrimSpace(c.Back) == ""
+	})
 	return AnonymousFlashcards{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Color: mt.Color, Cards: cards, Provenance: mt.Provenance}, nil
 }
 

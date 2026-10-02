@@ -62,9 +62,9 @@ describe('public workspace SSR', () => {
     expect(html).toContain('<h1>Biology</h1>');
     expect(html).toContain('src="/icons/waves-03.svg"');
     expect(html).toContain('<p class="summary-byline">Mia</p>');
-    expect(html).toContain(
-      'href="/sign-up?redirect_url=%2Fworkspaces%2Fws_0123456789"'
-    );
+    // The island fills in sign-in or the profile pill after reading the session.
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain('href="/sign-in');
     expect(html).not.toContain('href="/explore"');
     expect(html).toContain('Cells.pdf');
     expect(html).toContain('Reading.pdf');

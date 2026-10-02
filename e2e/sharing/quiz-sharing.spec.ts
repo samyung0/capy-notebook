@@ -57,6 +57,13 @@ test.describe('quiz sharing', () => {
       await expect(
         anonymousPage.getByRole('button', { name: 'Clone' })
       ).toHaveCount(0);
+      // The public header, not the app's top bar.
+      await expect(
+        anonymousPage.getByRole('link', { name: 'Sign up' })
+      ).toBeVisible();
+      await expect(
+        anonymousPage.getByRole('button', { name: 'Notifications' })
+      ).toHaveCount(0);
     }
     // The private seed quiz sits in a workspace and has no share link, so a
     // private standalone quiz stands in for "signed but private".
