@@ -108,9 +108,10 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `public, s-maxage=300, max-age=0, must-revalidate` and are held in the
    Worker's Cache API keyed by workspace id and resolved locale; failure pages
    stay `no-store`, and link summaries are `noindex, nofollow`. The `/p/*`
-   routes serve signed-out shared quizzes, their images, grading and flashcard
-   sets under the same signature check and five-minute edge cache (grading is
-   never cached). There is no
+   routes serve signed-out shared quizzes, their images and flashcard sets under
+   the same signature check and five-minute edge cache. Anonymous grading skips
+   the Worker and posts to `/api/public/quizzes/{token}/grade` directly, since
+   Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
    invocation. `public/_headers` marks the content-hashed `/assets/*` bundles

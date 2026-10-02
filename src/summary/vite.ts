@@ -20,11 +20,7 @@ export function summaryVitePlugin(
           const { handleSiteRequest } = await server.ssrLoadModule(
             '/workers/site/handler.ts'
           );
-          const chunks: Buffer[] = [];
-          if (req.method === 'POST')
-            for await (const chunk of req) chunks.push(chunk as Buffer);
           const request = new Request(new URL(req.url ?? '/', appOrigin), {
-            body: chunks.length ? Buffer.concat(chunks) : undefined,
             headers: {
               'Accept-Language': String(req.headers['accept-language'] ?? 'en'),
             },

@@ -75,12 +75,12 @@ returns 404 for forged or unsigned refs without calling the origin.
 | `GET /p/quizzes/{ref}` | `GET /api/public/quizzes/{ref}` | `s-maxage=300`, keyed by id |
 | `GET /p/flashcards/{ref}` | `GET /api/public/flashcards/{ref}` (set and cards) | `s-maxage=300` |
 | `GET /p/quizzes/{ref}/assets/{assetId}` | `GET /api/public/quizzes/{ref}/assets/{assetId}` → presigned URL; the Worker fetches the bytes | `s-maxage=300` |
-| `POST /p/quizzes/{ref}/grade` | `POST /api/public/quizzes/{ref}/grade` | none; 64 KiB body cap |
 
 Link-privacy responses carry `X-Robots-Tag: noindex`. Making a material
 private takes up to five minutes to clear the edge cache, as summaries do.
-Same-zone Worker subrequests carry the visitor's IP in `CF-Connecting-IP`;
-verify this on UAT before relying on per-IP caps.
+Grading is not a Worker route: on UAT (2026-10-02) Worker subrequests reached
+the API without the visitor's IP, so every visitor shared one per-IP budget.
+The browser posts `/api/public/quizzes/{ref}/grade` directly instead.
 
 ## 3. Go public endpoints
 

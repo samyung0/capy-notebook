@@ -138,8 +138,10 @@ embedded ones follow a note visitors cannot open, so neither is reachable.
 
 The SPA reads through the site Worker's `/p/` routes, which verify the token
 before any API call and cache reads at the edge for five minutes, as summaries
-do: `GET /p/quizzes/{token}`, `GET /p/quizzes/{token}/assets/{assetId}`,
-`POST /p/quizzes/{token}/grade` and `GET /p/flashcards/{token}`. Go verifies the
+do: `GET /p/quizzes/{token}`, `GET /p/quizzes/{token}/assets/{assetId}` and
+`GET /p/flashcards/{token}`. Grading posts straight to
+`/api/public/quizzes/{token}/grade`, because a Worker subrequest reaches the
+API without the visitor's IP, which the per-IP caps need. Go verifies the
 token again on `/api/public/...` because the API hostname is public, and reads
 visibility and the owner's lifecycle in the same statement as the content.
 Quiz reads keep answer keys and marking schemes, as signed-in link viewers
@@ -149,7 +151,7 @@ in its current content. Unsharing takes up to five minutes to clear the edge.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
 (`src/lib/localDb.ts`) and are never imported into an account on sign-in. Open
-parts are graded through the share route, by reference to the stored quiz,
+parts are graded through that API route, by reference to the stored quiz,
 under the anonymous caps in
 [observability-metering.md](observability-metering.md).
 

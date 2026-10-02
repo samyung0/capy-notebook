@@ -27,7 +27,8 @@ describe('anonymous material routes', () => {
     for (const path of [
       `/p/quizzes/${TOKEN.slice(0, -1)}x`,
       '/p/quizzes/mat_0123456789',
-      `/p/flashcards/${TOKEN}/grade`,
+      `/p/flashcards/${TOKEN}/assets/asset_1`,
+      `/p/quizzes/${TOKEN}/grade`,
     ]) {
       const response = await handleSiteRequest(request(path), env, fetcher);
       expect(response.status).toBe(404);
@@ -95,40 +96,5 @@ describe('anonymous material routes', () => {
       503
     );
     expect(svg).toHaveBeenCalledTimes(1);
-  });
-
-  it('forwards grading posts uncached and bounds their size', async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(Response.json({ parts: {} }, { status: 200 }));
-    const body = JSON.stringify({ parts: [] });
-    const graded = await handleSiteRequest(
-      request(`/p/quizzes/${TOKEN}/grade`, { body, method: 'POST' }),
-      env,
-      fetcher
-    );
-    expect(graded.status).toBe(200);
-    expect(graded.headers.get('Cache-Control')).toBe('no-store');
-    const sent = fetcher.mock.calls[0][0] as Request;
-    expect(sent.method).toBe('POST');
-    expect(await sent.text()).toBe(body);
-    const tooLarge = await handleSiteRequest(
-      request(`/p/quizzes/${TOKEN}/grade`, {
-        body: 'x'.repeat(512 * 1024 + 1),
-        method: 'POST',
-      }),
-      env,
-      fetcher
-    );
-    expect(tooLarge.status).toBe(413);
-    expect(
-      (
-        await handleSiteRequest(
-          request(`/p/quizzes/${TOKEN}/grade`),
-          env,
-          fetcher
-        )
-      ).status
-    ).toBe(405);
   });
 });

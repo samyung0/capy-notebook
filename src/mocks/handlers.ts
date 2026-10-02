@@ -871,7 +871,7 @@ export const handlers = [
     const { id, name, privacy, questions } = db.quizFromMaterial(mt);
     return HttpResponse.json({ id, name, privacy, questions });
   }),
-  http.post('/p/quizzes/:token/grade', async ({ params, request }) => {
+  http.post('/api/public/quizzes/:token/grade', async ({ params, request }) => {
     const mt = anonymousMaterial(String(params.token), 'quiz');
     if (!mt)
       return HttpResponse.json({ message: 'not found' }, { status: 404 });

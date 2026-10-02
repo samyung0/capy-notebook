@@ -8,9 +8,10 @@ import type {
 } from './types';
 
 /**
- * Signed-out reads and grading of shared standalone quizzes and flashcard sets.
- * They go through the site Worker's `/p/` routes, which verify the share token
- * and cache reads at the edge; `token` is the `{id}.{signature}` from the link.
+ * Signed-out reads and grading of shared standalone quizzes and flashcard sets;
+ * `token` is the `{id}.{signature}` from the link. Reads go through the site
+ * Worker's `/p/` routes, which verify the token and cache at the edge. Grading
+ * calls the API directly so it sees the visitor's IP for its per-IP caps.
  */
 async function publicJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -53,7 +54,7 @@ export async function gradeAnonymousQuiz(
   localId: string | undefined
 ): Promise<Record<string, GradedPart>> {
   const { parts } = await publicJson<GradeQuizResp>(
-    `/p/quizzes/${token}/grade`,
+    `/api/public/quizzes/${token}/grade`,
     {
       body: JSON.stringify({ answers, localId }),
       headers: { 'Content-Type': 'application/json' },

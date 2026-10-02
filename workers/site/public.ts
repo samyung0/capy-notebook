@@ -5,19 +5,19 @@ import { verifiedShareToken } from '../../src/lib/shareLink';
  * flashcard sets. Every route verifies the share token first, so forged links
  * never reach the API. Reads are cached at the edge for five minutes, like
  * workspace summaries; Go verifies the token again and reads privacy live.
+ * Grading posts go straight to `/api/public/quizzes/{token}/grade`: a Worker
+ * subrequest reaches the API without the visitor's IP, which the per-IP
+ * grading caps and rate limits key on.
  *
- *   GET  /p/quizzes/{token}                    → /api/public/quizzes/{token}
- *   GET  /p/quizzes/{token}/assets/{assetId}   → the image bytes
- *   POST /p/quizzes/{token}/grade              → /api/public/quizzes/{token}/grade
- *   GET  /p/flashcards/{token}                 → /api/public/flashcards/{token}
+ *   GET /p/quizzes/{token}                    → /api/public/quizzes/{token}
+ *   GET /p/quizzes/{token}/assets/{assetId}   → the image bytes
+ *   GET /p/flashcards/{token}                 → /api/public/flashcards/{token}
  */
 
 const ROUTE =
-  /^\/p\/(quizzes|flashcards)\/([^/]+)(?:\/(grade)|\/assets\/(asset_[A-Za-z0-9_-]{1,64}))?$/;
+  /^\/p\/(quizzes|flashcards)\/([^/]+)(?:\/assets\/(asset_[A-Za-z0-9_-]{1,64}))?$/;
 const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
 const JSON_LIMIT = 4 * 1024 * 1024;
-// Twenty open answers of 5,000 characters each, as UTF-8, plus framing.
-const GRADE_BODY_LIMIT = 512 * 1024;
 const ASSET_LIMIT = 20 * 1024 * 1024;
 // Editor asset images never include SVG, so nothing served here can script.
 const IMAGE_TYPES = new Set([
@@ -91,38 +91,10 @@ export async function handlePublicRequest(
   const url = new URL(request.url);
   const match = url.pathname.match(ROUTE);
   if (!match) return error(404);
-  const [, kind, token, grade, assetId] = match;
+  const [, kind, token, assetId] = match;
   const id = await verifiedShareToken(secret, token);
-  if (!id || (kind === 'flashcards' && (grade || assetId))) return error(404);
+  if (!id || (kind === 'flashcards' && assetId)) return error(404);
   const upstreamPath = `/api/public/${kind}/${token}`;
-
-  if (grade) {
-    if (request.method !== 'POST') return respond(null, 405, { Allow: 'POST' });
-    let body: Uint8Array;
-    try {
-      body = await bounded(request.body, GRADE_BODY_LIMIT);
-    } catch {
-      return respond(null, 413);
-    }
-    // Same-zone subrequests carry the visitor's IP in CF-Connecting-IP, which
-    // the API's per-IP grading caps read.
-    const upstream = await fetcher(
-      new Request(`${apiOrigin}${upstreamPath}/grade`, {
-        body,
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        method: 'POST',
-        redirect: 'manual',
-        signal: AbortSignal.timeout(60_000),
-      })
-    );
-    return respond(upstream.body, upstream.status, {
-      'Content-Type':
-        upstream.headers.get('Content-Type') ?? 'application/json',
-    });
-  }
 
   if (request.method !== 'GET' && request.method !== 'HEAD')
     return respond(null, 405, { Allow: 'GET, HEAD' });
