@@ -24,6 +24,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/mail"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -73,6 +74,9 @@ type Config struct {
 	// ModelRegistry is the process-wide model config cache. Nil disables
 	// per-model pricing and pinning (tests).
 	ModelRegistry *models.Registry
+	// Jev grades open quiz parts. Nil (no JEV_TYPESAFE_API_KEY) makes grading
+	// answer 503 rather than falling back to another model.
+	Jev *jev.Client
 	// PipelineSecret authenticates the retrieval service's and the ingest
 	// host's callbacks into /api/internal/*. Empty disables those routes and
 	// therefore Drive/OneDrive imports, which need the import worker.
@@ -104,6 +108,7 @@ type api struct {
 	mailRecorder       mail.Recorder
 	limiter            *ratelimit.Limiter
 	modelReg           *models.Registry
+	jev                *jev.Client
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
 	stripeInvoices     func(string) ([]*stripe.Invoice, error)
@@ -135,6 +140,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		cfg:                cfg,
 		mailRecorder:       cfg.MailRecorder,
 		limiter:            ratelimit.New(rdb, cfg.RateLimit),
+		jev:                cfg.Jev,
 		modelReg:           cfg.ModelRegistry,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
@@ -163,10 +169,11 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		AllowCredentials: false,
 		MaxAge:           600,
 	}))
-	// Summary failures must not be cached either: visibility is read live.
+	// Public failures must not be cached either: visibility is read live, and
+	// only the site Worker caches public responses.
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/api/public/workspaces/") {
+			if strings.HasPrefix(r.URL.Path, "/api/public/") {
 				w.Header().Set("Cache-Control", "no-store")
 			}
 			next.ServeHTTP(w, r)
@@ -182,12 +189,15 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		Store:      s,
 		PublicPrefix: []string{
 			"/api/email/unsubscribe",
+			// Signed-out grading of a shared quiz; the handler verifies the
+			// share token and applies the anonymous daily caps.
+			"/api/public/quizzes/",
 			// Service-to-service, authenticated by X-Pipeline-Secret inside the
 			// handler; there is no Clerk session to verify.
 			"/api/internal/",
 		},
 		PublicReadPrefix: []string{
-			"/api/public/workspaces/",
+			"/api/public/",
 		},
 	}))
 	// After auth: limits are per user wherever there is one, and only fall back
@@ -209,6 +219,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	if cfg.E2EAuth && a.mailRecorder != nil {
 		r.Get("/api/e2e/emails", a.e2eEmails)
 	}
+	r.Post("/api/public/quizzes/{token}/grade", a.gradeAnonymousQuiz)
 	r.Post("/api/materials/{id}/editor-assets/uploads", a.reserveEditorAsset)
 	r.Post("/api/materials/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)

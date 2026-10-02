@@ -94,3 +94,29 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     </>
   );
 }
+
+/** Renders `signedIn` for a session and `anonymous` for signed-out visitors.
+ * MSW and key-less local runs have no session, so `?anonymous` in the URL
+ * selects the signed-out page there. */
+export function SessionSwitch({
+  anonymous,
+  signedIn,
+}: {
+  anonymous: React.ReactNode;
+  signedIn: React.ReactNode;
+}) {
+  if (USE_MSW || !PUBLISHABLE_KEY)
+    return (
+      <>
+        {new URLSearchParams(window.location.search).has('anonymous')
+          ? anonymous
+          : signedIn}
+      </>
+    );
+  return (
+    <>
+      <Show when="signed-in">{signedIn}</Show>
+      <Show when="signed-out">{anonymous}</Show>
+    </>
+  );
+}

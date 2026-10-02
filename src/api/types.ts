@@ -23,6 +23,7 @@ import type {
   ActivityBlockOutcome,
   ActivityCapture,
   FileKind,
+  AnonymousQuiz as GenAnonymousQuiz,
   AttemptDetail as GenAttemptDetail,
   Citation as GenCitation,
   Comment as GenComment,
@@ -207,6 +208,16 @@ export type SearchResult = GenSearchResult & { color?: UserColor };
 
 /** `questions` is the rich discriminated union; the wire keeps it opaque. */
 export type Quiz = Omit<GenQuiz, 'questions'> & { questions: Question[] };
+/** A shared standalone quiz as signed-out visitors read it. */
+export type AnonymousQuiz = Omit<GenAnonymousQuiz, 'questions'> & {
+  questions: Question[];
+};
+export type {
+  AnonymousFlashcards,
+  ComputationCheckResp,
+  GradedPart,
+  GradeQuizResp,
+} from './gen/model';
 export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
   questions: Question[];
 };

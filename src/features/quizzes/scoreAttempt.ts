@@ -1,93 +1,44 @@
-import type { Question, QuestionBlock, QuestionPart } from '@/api/types';
-import { gradeOpenViaCloud } from './cloudGrade';
+import type { GradedPart, Question, QuestionPart } from '@/api/types';
 import {
   type Answers,
-  applyOpenAward,
+  applyItemAwards,
   scorePart,
   scoreQuestion,
   sumScores,
 } from './grade';
 
-/** Preserve readable context for the existing text-only quiz grading slot. */
-export function blocksToText(blocks: QuestionBlock[]): string {
-  return blocks
-    .map((block) => {
-      switch (block.type) {
-        case 'text':
-          return [block.label, block.text].filter(Boolean).join('\n');
-        case 'image':
-        case 'graph':
-          return '[Figure: ' + block.description + ']';
-        case 'table':
-          return block.rows.map((row) => row.join(' | ')).join('\n');
-        case 'chart':
-          return (
-            block.title +
-            (block.unit ? ' (' + block.unit + ')' : '') +
-            '\n' +
-            block.series
-              .map(
-                (series) =>
-                  series.name +
-                  ': ' +
-                  series.values
-                    .map((value, i) => block.labels[i] + '=' + value)
-                    .join(', ')
-              )
-              .join('\n')
-          );
-      }
-      throw new Error('Unsupported question block');
-    })
-    .join('\n\n');
-}
+/** Grades open answers on the server, keyed by part id. */
+export type GradeOpenParts = (
+  answers: Record<string, string>
+) => Promise<Record<string, GradedPart>>;
+
+/** Scores closed parts in the browser and sends every answered open part in
+ * one grading request; blank open answers earn 0 without a request. */
 export async function gradeAttemptQuestions(
   questions: Question[],
   answers: Answers,
-  opts: { workspaceId?: string }
+  gradeOpen: GradeOpenParts
 ): Promise<{ questions: Question[]; awarded: number; max: number }> {
-  const next: Question[] = [];
-  for (const question of questions) {
-    const parts: QuestionPart[] = [];
-    for (const part of question.parts) {
-      if (part.answer.type !== 'open') {
-        parts.push({
-          ...part,
-          awarded: scorePart(part, answers[part.id]).awarded,
-        });
-        continue;
-      }
-      const answer = answers[part.id];
-      const userAnswer = typeof answer === 'string' ? answer : '';
-      if (!userAnswer.trim()) {
-        parts.push(applyOpenAward(part, 0));
-        continue;
-      }
-      const result = await gradeOpenViaCloud(
-        {
-          hints: part.answer.hints,
-          modelAnswer: part.answer.accepted.join('\n'),
-          prompt: [
-            blocksToText(question.stem),
-            ...question.parts
-              .slice(0, parts.length)
-              .map(
-                (prior, i) =>
-                  'Earlier part ' + (i + 1) + ': ' + blocksToText(prior.blocks)
-              ),
-            'Part to grade: ' + blocksToText(part.blocks),
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
-          rubrics: part.markscheme,
-          userAnswer,
-        },
-        opts.workspaceId
-      );
-      parts.push(applyOpenAward(part, result.award, result.reason));
-    }
-    next.push({ ...question, parts });
+  const open: Record<string, string> = {};
+  for (const part of questions.flatMap((question) => question.parts)) {
+    const answer = answers[part.id];
+    if (
+      part.answer.type === 'open' &&
+      typeof answer === 'string' &&
+      answer.trim()
+    )
+      open[part.id] = answer;
   }
+  const graded = Object.keys(open).length ? await gradeOpen(open) : {};
+  const next = questions.map((question) => ({
+    ...question,
+    parts: question.parts.map(
+      (part): QuestionPart =>
+        part.answer.type === 'open'
+          ? applyItemAwards(part, graded[part.id]?.itemAwards)
+          : { ...part, awarded: scorePart(part, answers[part.id]).awarded }
+    ),
+  }));
   return {
     ...sumScores(next.map((q) => scoreQuestion(q, answers))),
     questions: next,

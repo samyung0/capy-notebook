@@ -55,6 +55,8 @@ const (
 	QuizOpenParts     = 20
 	QuizMarkscheme    = 5
 	QuizOpenAnswer    = 5_000
+	// AnonymousLocalID bounds the reporting id a signed-out browser sends.
+	AnonymousLocalID = 64
 )
 
 // QuestionBounds is exported into frontend, sidecar and pipeline contracts.
@@ -109,6 +111,7 @@ var Columns = map[string]int{
 	"editor_assets.name":               FileName,
 	"upload_sessions.chapter_name":     ChapterName,
 	"upload_sessions.name":             FileName,
+	"anonymous_grading_usage.local_id": AnonymousLocalID,
 	"reconcile_runs.requested_by_name": UserName,
 	"pdf_annotations.text":             PDFAnnotationText,
 }

@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
-import { applyOpenAward } from './grade';
+import { applyItemAwards } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 import { gradeAttemptQuestions } from './scoreAttempt';
 
@@ -16,7 +16,9 @@ it('reviews the graded snapshot with marks, the answer before a collapsed scheme
     'Obtains 2 cm.',
   ];
   const answers = { 'quantity-part': '2' };
-  const graded = await gradeAttemptQuestions([question], answers, {});
+  const graded = await gradeAttemptQuestions([question], answers, async () => {
+    throw new Error('closed parts never call the grader');
+  });
   const html = renderToStaticMarkup(
     <QuestionRunner
       answers={answers}
@@ -57,13 +59,14 @@ it('letters matching options with a dot and reviews the chosen letter', () => {
   expect(reviewed).toContain('Correct: B');
 });
 
-it('shows an open part award without inventing per-item marks or an unanswered ordering response', () => {
+it('shows an open part with one mark per marking item and an unanswered ordering response', () => {
   const question = exampleQuestion('open', {
     accepted: ['Supporting evidence'],
     hints: [],
     type: 'open',
   });
-  question.parts[0] = applyOpenAward(question.parts[0], 0.5, 'Partly correct.');
+  question.parts[0].markscheme = ['States the claim.', 'Gives evidence.'];
+  question.parts[0] = applyItemAwards(question.parts[0], [1, 0.5]);
   const html = renderToStaticMarkup(
     <QuestionRunner
       answers={{ 'open-part': 'Some evidence' }}
@@ -71,9 +74,8 @@ it('shows an open part award without inventing per-item marks or an unanswered o
       review
     />
   );
-  expect(html).toContain('0.5 / 1');
-  expect(html).not.toContain('1 / 1');
-  expect(html).toContain('Partly correct.');
+  expect(html).toContain('1.5 / 2');
+  expect(html).toContain('text-tint-warning-fg');
   const ordering = exampleQuestion('ordering', {
     items: ['First event', 'Second event'],
     type: 'ordering',

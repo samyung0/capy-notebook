@@ -20,7 +20,7 @@ import urllib.request
 
 ROOT = Path(__file__).resolve().parents[3]
 DATA = ROOT / "data" / "grading-benchmark"
-PROMPT_FILE = ROOT / "pipeline/pipeline/prompts/quiz.py"
+PROMPT_FILE = Path(__file__).with_name("quiz_prompt.py")
 spec = importlib.util.spec_from_file_location("capy_quiz_grade", PROMPT_FILE)
 assert spec and spec.loader
 grade = importlib.util.module_from_spec(spec)

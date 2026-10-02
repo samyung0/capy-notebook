@@ -68,7 +68,8 @@ func (a *api) registerQuizzes(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Record a quiz attempt", http.StatusCreated, 8<<20, a.createAttempt)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
-	a.registerQuizGrade(api)
+	a.registerQuizGrading(api)
+	a.registerComputationCheck(api)
 }
 
 func (a *api) getMistakes(ctx context.Context, _ *struct{}) (*quizOutput, error) {

@@ -135,11 +135,6 @@ def test_deepseek_thinking_maps_product_levels():
     assert deepseek_thinking_body("instant") == {"thinking": {"type": "disabled"}}
 
 
-def test_quiz_grade_tokens_stay_small():
-    bind_request_llm(thinking="high")
-    assert retrieval_models.quiz_grade_max_tokens(_spec()) == 80
-
-
 class _StatusError(Exception):
     def __init__(self, status: int, message: str):
         super().__init__(message)

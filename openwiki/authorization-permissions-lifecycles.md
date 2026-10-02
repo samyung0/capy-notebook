@@ -46,6 +46,7 @@ validation instead of being remapped.
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
+| Take a standalone link/public quiz or study its flashcards through the signed link           | Yes   | —             | —                  | —             | Yes                | Yes, kept in the browser |
 
 Owner and editor satisfy `canEdit`; only owner satisfies `canManageMembers`.
 The API returns these request-scoped capabilities on workspace and material
@@ -126,6 +127,36 @@ Sources: [public handler](../server/internal/httpapi/huma_workspace_summary.go),
 [live projection](../server/internal/store/workspace_summary.go), and
 [authentication boundary](../server/internal/httpapi/server.go).
 
+### Anonymous quizzes and flashcards
+
+Standalone quizzes and flashcard sets that are link-shared or public open for
+signed-out visitors at `/share/quizzes/{id}.{signature}` and
+`/share/flashcards/{id}.{signature}`, the `sharePath` their API responses carry.
+The token is the summary's `share:v1:{id}` HMAC. Workspace materials have no
+sharing of their own (a check constraint keeps their privacy `private`) and
+embedded ones follow a note visitors cannot open, so neither is reachable.
+
+The SPA reads through the site Worker's `/p/` routes, which verify the token
+before any API call and cache reads at the edge for five minutes, as summaries
+do: `GET /p/quizzes/{token}`, `GET /p/quizzes/{token}/assets/{assetId}`,
+`POST /p/quizzes/{token}/grade` and `GET /p/flashcards/{token}`. Go verifies the
+token again on `/api/public/...` because the API hostname is public, and reads
+visibility and the owner's lifecycle in the same statement as the content.
+Quiz reads keep answer keys and marking schemes, as signed-in link viewers
+already receive them; flashcard reads carry card text only, never the owner's
+study state. An image is served only when it belongs to the quiz and appears
+in its current content. Unsharing takes up to five minutes to clear the edge.
+
+Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
+(`src/lib/localDb.ts`) and are never imported into an account on sign-in. Open
+parts are graded through the share route, by reference to the stored quiz,
+under the anonymous caps in
+[observability-metering.md](observability-metering.md).
+
+Sources: [Worker routes](../workers/site/public.ts),
+[public handlers](../server/internal/httpapi/huma_anonymous.go) and
+[projections](../server/internal/store/anonymous_materials.go).
+
 ### Private workspaces
 
 Only the owner and explicit members can read a private workspace. Unauthorized
@@ -152,9 +183,10 @@ Important boundaries:
 - A share role never reaches workspace settings or membership. Renaming,
   tagging, changing privacy or `shareRole`, reading statistics,
   inviting, and deleting or transferring read persisted membership only.
-- Anonymous visitors cannot read workspace contents, standalone materials,
-  files, previews, editor assets, quizzes, flashcards, or Explore. The public
-  summary is their only workspace read endpoint; write routes still require
+- Anonymous visitors cannot read workspace contents, notes, files, previews,
+  or Explore. The public summary is their only workspace read; standalone
+  link/public quizzes and flashcard sets (and those quizzes' images) are their
+  only material reads, through signed links. Write routes still require
   authentication.
 - Roles are grants rather than caps, so a member's effective role is the **more
   permissive** of their membership and the share role. A viewer invited to a
@@ -366,7 +398,9 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 ### Quizzes and flashcards
 
 - Readable shared quizzes can be attempted by any signed-in user. Attempts,
-  mistakes, and review history belong to the user taking the quiz.
+  mistakes, and review history belong to the user taking the quiz. Signed-out
+  visitors can take standalone link/public quizzes and study flashcards; their
+  progress stays in the browser (see Anonymous quizzes and flashcards).
 - Quiz/flashcard responses distinguish `isOwner` from `canEdit`. Effective
   workspace editors receive content controls without receiving owner-only
   sharing/privacy controls; viewers do not receive mutation controls.
@@ -383,7 +417,7 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   privacy, and sharing rejects workspace-contained materials before writing
   anything.
 - Signed-in viewers can read a shared quiz or flashcards, but cannot change
-  its questions or cards. Anonymous visitors must sign in to read this content.
+  its questions or cards.
 - An embedded quiz or flashcard set (`parent_material_id` set) has no lifecycle
   or sharing of its own: `materialEffectiveAccess` evaluates the parent note,
   the sharing endpoint rejects it, it is hidden from the workspace tree, the

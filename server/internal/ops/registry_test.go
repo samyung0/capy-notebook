@@ -371,7 +371,7 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 			1, 'Retired', 'Model', $1, $2,
 			true, false, 100000,
 			ARRAY['high']::text[], 'high', '{}'::jsonb,
-			ARRAY['chat','editor','quiz'], 1, 1, 1, true, '{}'
+			ARRAY['chat','editor'], 1, 1, 1, true, '{}'
 		)`, retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
@@ -853,7 +853,7 @@ func TestBindEliteLLMDraftAppliesAgenticLoopSlotPolicy(t *testing.T) {
 	if err := bindEliteLLMDraft(&draft, []string{models.SlotChat}); err == nil {
 		t.Fatal("already-on-chat re-save bypassed certification")
 	}
-	if err := bindEliteLLMDraft(&draft, []string{models.SlotQuiz}); err != nil {
+	if err := bindEliteLLMDraft(&draft, []string{models.SlotIngest}); err != nil {
 		t.Fatalf("non-agentic slot required certification: %v", err)
 	}
 }

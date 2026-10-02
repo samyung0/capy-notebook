@@ -118,6 +118,8 @@ services:
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
       # Vite's summary middleware falls back to the same value (vite.config.ts).
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:-dev-share-link-secret-0123456789abcdef}
+      # Grades open quiz parts; without it grading answers 503.
+      JEV_TYPESAFE_API_KEY: ${JEV_TYPESAFE_API_KEY:-}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial label stored on the job payload; the parse route is chosen by

@@ -1,15 +1,17 @@
 /**
- * Signed workspace summary links: `/w/{id}.{signature}`, matching
- * `store.SharePath` in Go. The site Worker rejects a path whose signature does
- * not verify before it ever calls the API; privacy is still read live there.
- * The SPA never signs, it uses `sharePath` from the workspace response.
+ * Signed share tokens `{id}.{signature}`, matching `store.ShareToken` in Go:
+ * workspace summaries at `/w/{token}`, standalone quizzes and flashcard sets at
+ * `/share/quizzes/{token}` and `/share/flashcards/{token}`. The site Worker
+ * rejects a token whose signature does not verify before it ever calls the API;
+ * privacy is still read live there. The SPA never signs, it uses `sharePath`
+ * from API responses.
  */
 
 /** Local stacks and MSW share this value with deploy/docker-compose.yml. */
 export const DEV_SHARE_LINK_SECRET = 'dev-share-link-secret-0123456789abcdef';
 
 const SIGNATURE_BYTES = 12;
-const SHARE_PATH = /^\/w\/(ws_[A-Za-z0-9_-]{1,64})\.([A-Za-z0-9_-]{16})$/;
+const SHARE_TOKEN = /^([a-z]+_[A-Za-z0-9_-]{1,64})\.([A-Za-z0-9_-]{16})$/;
 
 let cachedKey: { key: Promise<CryptoKey>; secret: string } | undefined;
 
@@ -41,16 +43,29 @@ const base64url = (bytes: Uint8Array) =>
     .replaceAll('+', '-')
     .replaceAll('/', '_');
 
-export async function sharePath(secret: string, id: string): Promise<string> {
-  return `/w/${id}.${base64url(await signature(secret, id))}`;
+export async function shareToken(secret: string, id: string): Promise<string> {
+  return `${id}.${base64url(await signature(secret, id))}`;
 }
 
-/** Returns the workspace id when `pathname` carries a valid signature. */
+export async function sharePath(secret: string, id: string): Promise<string> {
+  return `/w/${await shareToken(secret, id)}`;
+}
+
+/** Returns the workspace id when a `/w/` summary path carries a valid signature. */
 export async function verifiedShareID(
   secret: string,
   pathname: string
 ): Promise<string | undefined> {
-  const match = pathname.match(SHARE_PATH);
+  if (!pathname.startsWith('/w/ws_')) return;
+  return verifiedShareToken(secret, pathname.slice(3));
+}
+
+/** Returns the signed workspace or material id, or undefined when forged. */
+export async function verifiedShareToken(
+  secret: string,
+  token: string
+): Promise<string | undefined> {
+  const match = token.match(SHARE_TOKEN);
   if (!match) return;
   const [, id, given] = match;
   const expected = base64url(await signature(secret, id));

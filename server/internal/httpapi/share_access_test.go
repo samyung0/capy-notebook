@@ -499,3 +499,29 @@ func TestShareHTTPMaterialEditorAssetUploads(t *testing.T) {
 		}
 	}
 }
+
+// Signed-out visitors read a standalone link quiz through its signed token; a
+// forged token or a private quiz is indistinguishable from a missing one.
+func TestShareHTTPAnonymousMaterials(t *testing.T) {
+	h := openShareHTTP(t)
+	link := store.ShareToken(nil, "qz_e2e_link")
+	for _, tc := range []struct {
+		path   string
+		status int
+	}{
+		{"/api/public/quizzes/" + link, 200},
+		{"/api/public/quizzes/" + store.ShareToken(nil, "qz_e2e_private"), 404},
+		{"/api/public/quizzes/" + link[:len(link)-1] + "x", 404},
+		{"/api/public/quizzes/qz_e2e_link", 404},
+		{"/api/public/flashcards/" + link, 404},
+		{"/api/public/flashcards/" + store.ShareToken(nil, "dk_e2e_link"), 200},
+	} {
+		rec := doReq(t, h, http.MethodGet, tc.path, "", nil)
+		if rec.Code != tc.status {
+			t.Fatalf("%s → %d body=%s, want %d", tc.path, rec.Code, rec.Body.String(), tc.status)
+		}
+		if rec.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s Cache-Control = %q", tc.path, rec.Header().Get("Cache-Control"))
+		}
+	}
+}

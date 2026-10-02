@@ -1,7 +1,8 @@
 # Local quiz-grading benchmark
 
-Compare small models against Capy's actual rubric-based quiz prompt. This is
-an evaluation tool; it does not change the app's model selection or grading.
+Compare small models against Capy's retired rubric-based quiz prompt. This is
+an evaluation tool; production grading uses Jev (see the 2026-10-02 contract
+report).
 
 The reviewed core is 8 domains × 7 language/script groups × 50 questions × 5 answers
 = 14,000 grading cases. A translated question is a localized version of its
@@ -19,9 +20,11 @@ not human-certified. Report provenance, ambiguity, translation review status,
 and any incomplete coverage. Do not fill coverage targets with duplicates or
 treat automatically translated labels as independently verified.
 
-Use the production prompt from `pipeline/pipeline/retrieve/quiz_grade.py`.
-Baseline settings mirror `src/llm-runtime/main.ts`: 1,024 context tokens,
-80 output tokens and temperature 0.1. Native runs are screening results;
+Use the frozen prompt in [`scripts/quiz_prompt.py`](scripts/quiz_prompt.py).
+Baseline settings are 1,024 context tokens, 80 output tokens and temperature
+0.1, as the retired in-browser grader used (2 to 4 CPU threads only in a
+cross-origin isolated page, otherwise 1; WebGPU offload when an adapter
+exists). Native runs are screening results;
 browser runs must record their actual runtime and GPU adapter. Unsupported
 exports, context overflow, timeouts and invalid responses are failures with
 their raw output preserved, not zero grades.

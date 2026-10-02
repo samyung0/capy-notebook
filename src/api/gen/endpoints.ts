@@ -9,6 +9,9 @@ import type {
   AccountStatus,
   AddChapterReq,
   AgentOperation,
+  AnonymousAsset,
+  AnonymousFlashcards,
+  AnonymousQuiz,
   Attempt,
   AttemptDetail,
   BankAssetOutputBody,
@@ -28,6 +31,8 @@ import type {
   CloneWorkspaceResp,
   CollaborationTokenResponse,
   Comment,
+  ComputationCheckReq,
+  ComputationCheckResp,
   Conversation,
   CreateAttemptReq,
   CreateCanvasReq,
@@ -61,6 +66,8 @@ import type {
   GenerateReq,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
+  GradeQuizReq,
+  GradeQuizResp,
   ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
@@ -99,8 +106,6 @@ import type {
   PublicWorkspace,
   PurgeTrashedParams,
   Quiz,
-  QuizGradeReq,
-  QuizGradeResp,
   ReadSourceRefreshParams,
   ReorderChaptersReq,
   ReorderContentReq,
@@ -4849,6 +4854,158 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
 
 
+export type getAnonymousFlashcardsResponse200 = {
+  data: AnonymousFlashcards
+  status: 200
+}
+
+export type getAnonymousFlashcardsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAnonymousFlashcardsResponseSuccess = (getAnonymousFlashcardsResponse200) & {
+  headers: Headers;
+};
+export type getAnonymousFlashcardsResponseError = (getAnonymousFlashcardsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAnonymousFlashcardsResponse = (getAnonymousFlashcardsResponseSuccess | getAnonymousFlashcardsResponseError)
+
+export const getGetAnonymousFlashcardsUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/flashcards/${token}`
+}
+
+/**
+ * @summary Get a shared flashcard set for signed-out visitors
+ */
+export const getAnonymousFlashcards = async (token: string, options?: RequestInit): Promise<getAnonymousFlashcardsResponse> => {
+
+  const res = await fetch(getGetAnonymousFlashcardsUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAnonymousFlashcardsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAnonymousFlashcardsResponse
+}
+
+
+
+export type getAnonymousQuizResponse200 = {
+  data: AnonymousQuiz
+  status: 200
+}
+
+export type getAnonymousQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAnonymousQuizResponseSuccess = (getAnonymousQuizResponse200) & {
+  headers: Headers;
+};
+export type getAnonymousQuizResponseError = (getAnonymousQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAnonymousQuizResponse = (getAnonymousQuizResponseSuccess | getAnonymousQuizResponseError)
+
+export const getGetAnonymousQuizUrl = (token: string,) => {
+
+
+
+
+  return `/api/public/quizzes/${token}`
+}
+
+/**
+ * @summary Get a shared quiz for signed-out visitors
+ */
+export const getAnonymousQuiz = async (token: string, options?: RequestInit): Promise<getAnonymousQuizResponse> => {
+
+  const res = await fetch(getGetAnonymousQuizUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAnonymousQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAnonymousQuizResponse
+}
+
+
+
+export type getAnonymousQuizAssetResponse200 = {
+  data: AnonymousAsset
+  status: 200
+}
+
+export type getAnonymousQuizAssetResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAnonymousQuizAssetResponseSuccess = (getAnonymousQuizAssetResponse200) & {
+  headers: Headers;
+};
+export type getAnonymousQuizAssetResponseError = (getAnonymousQuizAssetResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAnonymousQuizAssetResponse = (getAnonymousQuizAssetResponseSuccess | getAnonymousQuizAssetResponseError)
+
+export const getGetAnonymousQuizAssetUrl = (token: string,
+    assetId: string,) => {
+
+
+
+
+  return `/api/public/quizzes/${token}/assets/${assetId}`
+}
+
+/**
+ * @summary Get a shared quiz image URL
+ */
+export const getAnonymousQuizAsset = async (token: string,
+    assetId: string, options?: RequestInit): Promise<getAnonymousQuizAssetResponse> => {
+
+  const res = await fetch(getGetAnonymousQuizAssetUrl(token,assetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAnonymousQuizAssetResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAnonymousQuizAssetResponse
+}
+
+
+
 export type getPublicWorkspaceSummaryResponse200 = {
   data: WorkspaceSummary
   status: 200
@@ -4949,52 +5106,52 @@ export const headPublicWorkspaceSummary = async (id: string, options?: RequestIn
 
 
 
-export type gradeQuizAnswerResponse200 = {
-  data: QuizGradeResp
+export type checkQuestionComputationResponse200 = {
+  data: ComputationCheckResp
   status: 200
 }
 
-export type gradeQuizAnswerResponseDefault = {
+export type checkQuestionComputationResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type gradeQuizAnswerResponseSuccess = (gradeQuizAnswerResponse200) & {
+export type checkQuestionComputationResponseSuccess = (checkQuestionComputationResponse200) & {
   headers: Headers;
 };
-export type gradeQuizAnswerResponseError = (gradeQuizAnswerResponseDefault) & {
+export type checkQuestionComputationResponseError = (checkQuestionComputationResponseDefault) & {
   headers: Headers;
 };
 
-export type gradeQuizAnswerResponse = (gradeQuizAnswerResponseSuccess | gradeQuizAnswerResponseError)
+export type checkQuestionComputationResponse = (checkQuestionComputationResponseSuccess | checkQuestionComputationResponseError)
 
-export const getGradeQuizAnswerUrl = () => {
-
-
+export const getCheckQuestionComputationUrl = () => {
 
 
-  return `/api/quiz-grade`
+
+
+  return `/api/questions/computation-check`
 }
 
 /**
- * @summary Mark one open quiz answer against its marking scheme
+ * @summary Check whether an open part needs computation to grade
  */
-export const gradeQuizAnswer = async (quizGradeReq: NonReadonly<QuizGradeReq>, options?: RequestInit): Promise<gradeQuizAnswerResponse> => {
+export const checkQuestionComputation = async (computationCheckReq: NonReadonly<ComputationCheckReq>, options?: RequestInit): Promise<checkQuestionComputationResponse> => {
 
-  const res = await fetch(getGradeQuizAnswerUrl(),
+  const res = await fetch(getCheckQuestionComputationUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(quizGradeReq)
+    body: JSON.stringify(computationCheckReq)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: gradeQuizAnswerResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as gradeQuizAnswerResponse
+  const data: checkQuestionComputationResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as checkQuestionComputationResponse
 }
 
 
@@ -5306,6 +5463,57 @@ export const updateQuizContent = async (id: string,
 
   const data: updateQuizContentResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateQuizContentResponse
+}
+
+
+
+export type gradeQuizResponse200 = {
+  data: GradeQuizResp
+  status: 200
+}
+
+export type gradeQuizResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type gradeQuizResponseSuccess = (gradeQuizResponse200) & {
+  headers: Headers;
+};
+export type gradeQuizResponseError = (gradeQuizResponseDefault) & {
+  headers: Headers;
+};
+
+export type gradeQuizResponse = (gradeQuizResponseSuccess | gradeQuizResponseError)
+
+export const getGradeQuizUrl = (id: string,) => {
+
+
+
+
+  return `/api/quizzes/${id}/grade`
+}
+
+/**
+ * @summary Grade the open parts of one quiz attempt
+ */
+export const gradeQuiz = async (id: string,
+    gradeQuizReq: NonReadonly<GradeQuizReq>, options?: RequestInit): Promise<gradeQuizResponse> => {
+
+  const res = await fetch(getGradeQuizUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(gradeQuizReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: gradeQuizResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as gradeQuizResponse
 }
 
 

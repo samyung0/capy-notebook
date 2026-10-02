@@ -29,6 +29,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, errorCopy } from '@/lib/errors';
 import { BlockEditor, type UploadQuestionAsset } from './BlockEditor';
+import { warnComputationalOpenParts } from './computationCheck';
 import {
   AnswerEditor,
   answerLabels,
@@ -361,6 +362,7 @@ function QuestionDialogSession({
       try {
         await onSave(question);
         onClose();
+        if (policy === 'quiz') void warnComputationalOpenParts(question);
       } catch (error) {
         fail(errorCopy(error, m.question_ui_could_not_save_question()));
       }

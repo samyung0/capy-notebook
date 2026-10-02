@@ -1,4 +1,5 @@
 import { verifiedShareID } from '../../src/lib/shareLink';
+import { handlePublicRequest } from './public';
 import {
   localeFor,
   renderFailure,
@@ -126,6 +127,15 @@ export async function handleSiteRequest(
         statusText: upstream.statusText,
       });
     }
+    if (url.pathname.startsWith('/p/'))
+      return await handlePublicRequest(
+        request,
+        trustedOrigin(env.API_ORIGIN),
+        trustedOrigin(env.APP_ORIGIN),
+        env.SHARE_LINK_SECRET,
+        fetcher,
+        cache
+      );
     if (!isSummary) return await env.ASSETS.fetch(request);
     if (request.method !== 'GET' && request.method !== 'HEAD')
       return new Response(null, {
@@ -196,13 +206,19 @@ export async function handleSiteRequest(
     await cache?.put(cacheKey, rendered.clone());
     return head(rendered);
   } catch (error) {
+    const isPublic = url.pathname.startsWith('/p/');
     console.error(
       JSON.stringify({
         error: error instanceof Error ? error.name : 'Error',
         event: 'site_request_failed',
-        path: isSummary ? '/w/:id' : '/api/*',
+        path: isSummary ? '/w/:id' : isPublic ? '/p/*' : '/api/*',
       })
     );
+    if (isPublic)
+      return new Response(JSON.stringify({ message: 'unavailable' }), {
+        headers: headers({ 'Content-Type': 'application/json' }),
+        status: 503,
+      });
     return failure(503);
   }
 }

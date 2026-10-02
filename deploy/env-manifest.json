@@ -533,6 +533,11 @@
       "kind": "variable",
       "targets": ["workflow", "quality"]
     },
+    "JEV_TYPESAFE_API_KEY": {
+      "kind": "secret",
+      "targets": ["coolify"],
+      "required_for": ["coolify"]
+    },
     "KNOWLEDGE_BASE_B2_APP_KEY": {
       "kind": "secret",
       "targets": ["coolify", "local"],
@@ -1004,10 +1009,6 @@
       "targets": ["workflow", "build"]
     },
     "VITE_GOOGLE_PICKER_APP_ID": {
-      "kind": "variable",
-      "targets": ["workflow", "build"]
-    },
-    "VITE_LLM_RUNTIME_ORIGIN": {
       "kind": "variable",
       "targets": ["workflow", "build"]
     },

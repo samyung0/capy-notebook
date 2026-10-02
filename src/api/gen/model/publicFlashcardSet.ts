@@ -23,6 +23,7 @@ export interface PublicFlashcardSet {
   privacy: Privacy;
   provenance?: Provenance;
   revision: number;
+  sharePath?: string;
   workspaceId: string;
   workspaceName: string;
 }

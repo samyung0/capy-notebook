@@ -1,7 +1,7 @@
 import { lazyRouteComponent, Outlet } from '@tanstack/react-router';
 import { AnalyticsRoot } from './AnalyticsRoot';
 import { AppShell } from './AppShell';
-import { AuthGate } from './AuthProvider';
+import { AuthGate, SessionSwitch } from './AuthProvider';
 
 const SharedQuiz = lazyRouteComponent(
   () => import('@/routes/QuizAttempt'),
@@ -9,6 +9,10 @@ const SharedQuiz = lazyRouteComponent(
 );
 const SharedFlashcards = lazyRouteComponent(
   () => import('@/routes/FlashcardStudy')
+);
+const AnonymousFlashcards = lazyRouteComponent(
+  () => import('@/routes/AnonymousFlashcardStudy'),
+  'AnonymousFlashcardStudyRoute'
 );
 export function RootRoute() {
   return (
@@ -28,18 +32,16 @@ export function AuthShellRoute() {
   );
 }
 
+/** Shared links open signed in or out; signed-out visitors study locally. */
 export function SharedQuizRoute() {
-  return (
-    <AuthGate>
-      <SharedQuiz />
-    </AuthGate>
-  );
+  return <SharedQuiz />;
 }
 
 export function SharedFlashcardsRoute() {
   return (
-    <AuthGate>
-      <SharedFlashcards />
-    </AuthGate>
+    <SessionSwitch
+      anonymous={<AnonymousFlashcards />}
+      signedIn={<SharedFlashcards />}
+    />
   );
 }

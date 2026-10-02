@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { exampleQuestion } from '@/features/questions/questionFixtures';
-import { answerKey, applyOpenAward, fuzzyMatch, scoreQuestion } from './grade';
-import { blocksToText } from './scoreAttempt';
+import { answerKey, applyItemAwards, fuzzyMatch, scoreQuestion } from './grade';
 
 describe('part grading', () => {
   it('derives marks from scheme items and uses stable part IDs', () => {
@@ -17,7 +16,7 @@ describe('part grading', () => {
       hints: [],
       type: 'open',
     });
-    open.parts[0] = applyOpenAward(open.parts[0], 0.5, 'Partly correct.');
+    open.parts[0] = applyItemAwards(open.parts[0], [0.5]);
     expect(scoreQuestion(open, {})).toEqual({ awarded: 0.5, max: 1 });
   });
   it('retains unused and reused matching choices without matching by label', () => {
@@ -51,27 +50,6 @@ describe('part grading', () => {
         0
       );
   });
-  it('keeps figures, table cells, and chart data in the text grading context', () => {
-    expect(
-      blocksToText([
-        {
-          description: 'A increases while B falls.',
-          height: 100,
-          image: { url: 'https://example.invalid/figure.png' },
-          type: 'image',
-          width: 100,
-        },
-        { header: false, rows: [['A', '2']], type: 'table' },
-        {
-          kind: 'bar',
-          labels: ['May'],
-          series: [{ name: 'A', values: [12] }],
-          title: 'Growth',
-          type: 'chart',
-        },
-      ])
-    ).toContain('A increases while B falls.');
-  });
   it('compares decimal, fraction and scientific quantities without rounding', () => {
     const check = (accepted: string, entered: string) =>
       scoreQuestion(
@@ -90,5 +68,25 @@ describe('part grading', () => {
     expect(check('1e400', '10e399')).toBe(1);
     expect(check('0', '-0.000')).toBe(1);
     expect(check('0', '0/0')).toBe(0);
+  });
+});
+
+describe('attempt grading', () => {
+  it('grades answered open parts in one request and blank ones as zero', async () => {
+    const { gradeAttemptQuestions } = await import('./scoreAttempt');
+    const open = (id: string) =>
+      exampleQuestion(id, { accepted: ['Because'], hints: [], type: 'open' });
+    const requests: Record<string, string>[] = [];
+    const result = await gradeAttemptQuestions(
+      [open('a'), open('b')],
+      { 'a-part': 'An answer', 'b-part': '  ' },
+      async (answers) => {
+        requests.push(answers);
+        return { 'a-part': { awarded: 1, itemAwards: [1] } };
+      }
+    );
+    expect(requests).toEqual([{ 'a-part': 'An answer' }]);
+    expect(result.questions[1].parts[0].itemAwards).toEqual([0]);
+    expect(result).toMatchObject({ awarded: 1, max: 2 });
   });
 });

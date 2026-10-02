@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -223,7 +224,7 @@ func Validate(q map[string]any, policy Policy) error {
 		}
 		optional := ""
 		if policy.Snapshot {
-			optional = "awarded awardReason"
+			optional = "awarded itemAwards"
 		}
 		if err := keys(p, "id blocks answer markscheme solution", optional); err != nil {
 			return err
@@ -260,8 +261,8 @@ func Validate(q map[string]any, policy Policy) error {
 				return fail("invalid awarded marks")
 			}
 		}
-		if !optionalString(p, "awardReason", fieldlimits.QuestionMetadata) {
-			return fail("invalid award reason")
+		if err := itemAwards(p); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -605,6 +606,32 @@ func graph(b map[string]any) error {
 	return nil
 }
 
+// itemAwards are an open part's Jev marks: one 0, 0.5 or 1 per marking item,
+// summing to the part's awarded marks.
+func itemAwards(p map[string]any) error {
+	raw, exists := p["itemAwards"]
+	if !exists {
+		return nil
+	}
+	list, ok := array(raw, len(p["markscheme"].([]any)), len(p["markscheme"].([]any)))
+	awarded, hasAwarded := num(p["awarded"])
+	if !ok || !hasAwarded {
+		return fail("item awards need one mark per marking item and an awarded total")
+	}
+	total := 0.0
+	for _, v := range list {
+		n, ok := num(v)
+		if !ok || (n != 0 && n != 0.5 && n != 1) {
+			return fail("item awards are 0, 0.5 or 1")
+		}
+		total += n
+	}
+	if total != awarded {
+		return fail("item awards must sum to the awarded marks")
+	}
+	return nil
+}
+
 // QuizBounds caps a user quiz's total and open parts; the per-question checks
 // in Validate bound parts per question and marking items per part.
 func QuizBounds(qs []map[string]any) error {
@@ -771,7 +798,7 @@ func Authored(q map[string]any) map[string]any {
 		part, _ := raw.(map[string]any)
 		copy := make(map[string]any, len(part))
 		for key, value := range part {
-			if key != "awarded" && key != "awardReason" {
+			if key != "awarded" && key != "itemAwards" {
 				copy[key] = value
 			}
 		}
@@ -891,4 +918,81 @@ func imageAssetID(raw any) (string, bool) {
 	im, _ := b["image"].(map[string]any)
 	id, ok := im["assetId"].(string)
 	return id, ok && id != ""
+}
+
+// GradingText is the question text a grader sees for one part: the stem, the
+// earlier parts and the part itself, with figures as their descriptions.
+func GradingText(q map[string]any, partIndex int) string {
+	stem, _ := q["stem"].([]any)
+	sections := []string{blocksText(stem)}
+	parts, _ := q["parts"].([]any)
+	for i, raw := range parts[:partIndex] {
+		p, _ := raw.(map[string]any)
+		blocks, _ := p["blocks"].([]any)
+		sections = append(sections, fmt.Sprintf("Earlier part %d: %s", i+1, blocksText(blocks)))
+	}
+	p, _ := parts[partIndex].(map[string]any)
+	blocks, _ := p["blocks"].([]any)
+	sections = append(sections, "Part to grade: "+blocksText(blocks))
+	nonEmpty := sections[:0]
+	for _, section := range sections {
+		if section != "" {
+			nonEmpty = append(nonEmpty, section)
+		}
+	}
+	return strings.Join(nonEmpty, "\n\n")
+}
+
+func blocksText(blocks []any) string {
+	out := make([]string, 0, len(blocks))
+	for _, raw := range blocks {
+		b, _ := raw.(map[string]any)
+		str := func(key string) string { s, _ := b[key].(string); return s }
+		switch b["type"] {
+		case "text":
+			lines := []string{}
+			for _, s := range []string{str("label"), str("text")} {
+				if s != "" {
+					lines = append(lines, s)
+				}
+			}
+			out = append(out, strings.Join(lines, "\n"))
+		case "image", "graph":
+			out = append(out, "[Figure: "+str("description")+"]")
+		case "table":
+			rows, _ := b["rows"].([]any)
+			lines := make([]string, 0, len(rows))
+			for _, row := range rows {
+				cells := []string{}
+				for _, cell := range row.([]any) {
+					s, _ := cell.(string)
+					cells = append(cells, s)
+				}
+				lines = append(lines, strings.Join(cells, " | "))
+			}
+			out = append(out, strings.Join(lines, "\n"))
+		case "chart":
+			title := str("title")
+			if unit := str("unit"); unit != "" {
+				title += " (" + unit + ")"
+			}
+			labels, _ := b["labels"].([]any)
+			series, _ := b["series"].([]any)
+			lines := []string{title}
+			for _, raw := range series {
+				s, _ := raw.(map[string]any)
+				values, _ := s["values"].([]any)
+				pairs := make([]string, len(values))
+				for i, v := range values {
+					label, _ := labels[i].(string)
+					n, _ := num(v)
+					pairs[i] = label + "=" + strconv.FormatFloat(n, 'f', -1, 64)
+				}
+				name, _ := s["name"].(string)
+				lines = append(lines, name+": "+strings.Join(pairs, ", "))
+			}
+			out = append(out, strings.Join(lines, "\n"))
+		}
+	}
+	return strings.Join(out, "\n\n")
 }

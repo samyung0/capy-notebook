@@ -30,7 +30,10 @@ var aiSuffixes = []string{
 	"/chat/stream",
 	"/ai/command",
 	"/generate",
-	"/quiz-grade",
+	// Jev grading of a quiz attempt, signed in or anonymous, and the author's
+	// computation check.
+	"/grade",
+	"/computation-check",
 }
 
 var editorSuffixes = []string{
@@ -69,6 +72,12 @@ func classify(path string) class {
 		if strings.HasPrefix(path, prefix) {
 			return classExempt
 		}
+	}
+	// Signed-out share routes key on the client IP, which a whole classroom
+	// shares; anonymous grading is bounded by its daily caps instead of the
+	// AI burst guard.
+	if strings.HasPrefix(path, "/api/public/") {
+		return classDefault
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {

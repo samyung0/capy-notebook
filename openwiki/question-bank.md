@@ -101,10 +101,26 @@ neither fuzzy matching nor the grading model converts units. Numeric signs and
 operators are preserved. Generation instructions reserve open answers for
 non-computational questions.
 
-The existing backend grading slot still gives an open part one 0/0.5/1 decision,
-scaled by its marking-item count. Its text request preserves stem, earlier-part,
-current-part, figure-description, table and chart context. Jev integration,
-per-item decisions and the review computation classifier are deferred.
+Quiz open parts are graded by Jev, one request per part, with the contract
+benchmarked in
+[2026-10-02-jev-production-contract.md](../bench/grading/reports/2026-10-02-jev-production-contract.md):
+each marking item earns 0, 0.5 or 1 from a zero/partial/full `choice`, and an
+answer that is only a list of subject vocabulary earns 0 on every item. The
+part's award is the sum and the snapshot keeps `itemAwards`. The grading text
+is built in Go (`questions.GradingText`) from the stem, earlier parts and the
+part, with figures as their descriptions, tables and chart data. The browser
+sends part ids and answers for one attempt; the server loads the scheme, so the
+endpoints cannot grade arbitrary text. Saving an open part in the quiz editor
+asks Jev whether grading it needs a calculation checked and warns the author
+at a probability of 0.3 or more; the save is never blocked. Usage and the
+anonymous caps are in [observability-metering.md](observability-metering.md).
+
+User quizzes (not the bank) are bounded so one attempt fits one grading
+request: at most 100 parts per quiz, 7 per question, 5 marking items per part
+and 20 open parts per quiz, and sample answers of at most 5,000 characters;
+learners' open answers have the same 5,000-character cap. The Go, browser and
+collaboration validators share these bounds (`fieldlimits.Quiz*`), and the
+generation prompt and agent tool descriptions state them.
 
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,
@@ -114,8 +130,7 @@ share the part review renderer: "You scored" with one green/red square per
 question (blank answers are wrong; grey is reserved for a future Skip), marks in
 tint-fg colours, the submitted answer, then one collapsed disclosure holding the
 marking scheme and worked solution. Closed parts show item awards from their
-deterministic result; open parts keep their part award without inventing
-per-item scores.
+deterministic result; open parts show Jev's mark beside each marking item.
 
 Workspace quiz previews center the question column in the viewer; other quiz
 entry points retain left alignment.
@@ -127,8 +142,7 @@ borderless because their shared `Select` carries the border. Selected and result
 rows reuse the editor callout variants (tip, success, danger, warning). True /
 false and text inputs span the row. After checking, choices tag "Your answer"
 and "Correct answer", true/false shows two result rows, a short answer marks its
-field and lists every accepted answer with its unit, an open answer shows the
-judge's reason after a full/half/no marks lead, matching rows show the chosen
+field and lists every accepted answer with its unit, matching rows show the chosen
 letter and the correct one beside the option list, and wrong ordering rows show
 their right position.
 Matching dropdowns list letters in stored option order. Ordering starts

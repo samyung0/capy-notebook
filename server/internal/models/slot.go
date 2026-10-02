@@ -15,7 +15,6 @@ type UserModelSlot Slot
 const (
 	SlotChat       = "chat"
 	SlotEditor     = "editor"
-	SlotQuiz       = "quiz"
 	SlotIngest     = "ingest"
 	SlotRetrieval  = "retrieval"
 	SlotCaptioning = "captioning"
@@ -25,7 +24,6 @@ const (
 var allSlots = []Slot{
 	SlotChat,
 	SlotEditor,
-	SlotQuiz,
 	SlotIngest,
 	SlotRetrieval,
 	SlotCaptioning,
@@ -39,7 +37,7 @@ var userModelSlots = []UserModelSlot{
 
 // llmSlots are the slots served by a text model: they need a context window
 // and thinking levels. Retrieval, captioning and rerank rows omit both.
-var llmSlots = []Slot{SlotChat, SlotEditor, SlotQuiz, SlotIngest}
+var llmSlots = []Slot{SlotChat, SlotEditor, SlotIngest}
 
 // Capability is something a catalog row must be able to do to sit in a slot.
 // Vision, pdf, embedding and rerank are set by operators on the row. AgenticLoop is

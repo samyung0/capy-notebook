@@ -36,23 +36,52 @@ test.describe('quiz sharing', () => {
     await expect(ownerPage.getByText(seed.privateQuiz.prompt)).toBeVisible();
   });
 
-  test('anonymous full reads require sign-in for every visibility', async ({
+  test('anonymous visitors open link and public quizzes only through signed links', async ({
     anonymousApi,
     anonymousPage,
+    ownerApi,
     seed,
   }) => {
+    const sharePath = async (id: string) =>
+      (await (await ownerApi.get(`/api/quizzes/${id}`)).json())
+        .sharePath as string;
+    // The authenticated API stays closed; signed-out reads use the share route.
     for (const quiz of [seed.privateQuiz, seed.linkQuiz, seed.publicQuiz]) {
       const response = await anonymousApi.get(`/api/quizzes/${quiz.id}`);
       expect(response.status()).toBe(401);
-      expect(await response.text()).not.toContain(quiz.prompt);
-      await anonymousPage.goto(`/share/quizzes/${quiz.id}`);
-      await expect(
-        anonymousPage.getByTestId('private-or-unavailable')
-      ).toBeVisible();
-      await expect(anonymousPage.getByText(quiz.prompt)).toHaveCount(0);
+    }
+    // No Clerk in e2e, so ?anonymous selects the signed-out page.
+    for (const quiz of [seed.linkQuiz, seed.publicQuiz]) {
+      await anonymousPage.goto(`${await sharePath(quiz.id)}?anonymous`);
+      await expect(anonymousPage.getByText(quiz.prompt)).toBeVisible();
       await expect(
         anonymousPage.getByRole('button', { name: 'Clone' })
       ).toHaveCount(0);
+    }
+    // The private seed quiz sits in a workspace and has no share link, so a
+    // private standalone quiz stands in for "signed but private".
+    const created = await ownerApi.post('/api/quizzes', {
+      data: { name: 'E2E private standalone quiz' },
+    });
+    expect(created.status()).toBe(201);
+    const privateQuiz = await created.json();
+    try {
+      for (const path of [
+        `${privateQuiz.sharePath}?anonymous`,
+        `/share/quizzes/${seed.linkQuiz.id}?anonymous`,
+      ]) {
+        await anonymousPage.goto(path);
+        await expect(
+          anonymousPage.getByTestId('private-or-unavailable')
+        ).toBeVisible();
+        await expect(anonymousPage.getByText(seed.linkQuiz.prompt)).toHaveCount(
+          0
+        );
+      }
+    } finally {
+      expect(
+        (await ownerApi.delete(`/api/quizzes/${privateQuiz.id}`)).status()
+      ).toBe(204);
     }
   });
 

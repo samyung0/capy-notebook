@@ -148,15 +148,15 @@ export function scoreQuestion(
     question.parts.map((part) => scorePart(part, answers[part.id]))
   );
 }
-export function applyOpenAward(
+/** An open part's per-item marks; a blank answer earns 0 on every item. */
+export function applyItemAwards(
   part: QuestionPart,
-  award: 0 | 0.5 | 1,
-  reason?: string
+  itemAwards: number[] = part.markscheme.map(() => 0)
 ): QuestionPart {
   return {
     ...part,
-    awarded: award * partMarks(part),
-    ...(reason ? { awardReason: reason } : {}),
+    awarded: itemAwards.reduce((sum, award) => sum + award, 0),
+    itemAwards,
   };
 }
 export function shuffledIndices(length: number): number[] {

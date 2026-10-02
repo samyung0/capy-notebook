@@ -4,10 +4,11 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { GradeQuizReqAnswers } from './gradeQuizReqAnswers.ts';
 
-export interface QuizGradeResp {
+export interface GradeQuizReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  award: number;
-  reason: string;
+  answers: GradeQuizReqAnswers;
+  localId?: string;
 }

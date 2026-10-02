@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { createContext, type ReactNode, useContext } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
 import { Icon } from '@/components/ui/Icon';
 import { useResolvedAsset } from '@/features/materials/MediaAssetView';
@@ -89,8 +89,29 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
   }
 }
 
+/** Signed-out pages load quiz images through the site Worker's share route
+ * instead of the authenticated resolve endpoint. */
+export const PublicAssetUrlContext = createContext<
+  ((assetId: string) => string) | null
+>(null);
+
 /** Quiz images are private editor assets; the signed URL is resolved per render. */
 function AssetFigure({
+  assetId,
+  block,
+}: {
+  assetId: string;
+  block: ImageBlock | GraphBlock;
+}) {
+  const publicUrl = useContext(PublicAssetUrlContext);
+  return publicUrl ? (
+    <Figure block={block} src={publicUrl(assetId)} />
+  ) : (
+    <ResolvedAssetFigure assetId={assetId} block={block} />
+  );
+}
+
+function ResolvedAssetFigure({
   assetId,
   block,
 }: {
@@ -486,30 +507,17 @@ export function QuestionReview({
       renderAnswer={(part) => {
         if (!('markscheme' in part)) return null;
         const max = partMarks(part);
-        // The judge's open-answer award: full, half or no marks.
-        const verdict =
-          part.awarded === max
-            ? 'success'
-            : part.awarded
-              ? 'warning'
-              : 'danger';
+        // Closed parts are all or nothing; open parts carry Jev's item marks.
+        const itemAward = (i: number) =>
+          part.itemAwards?.[i] ??
+          (part.answer.type !== 'open' && part.awarded != null
+            ? part.awarded === max
+              ? 1
+              : 0
+            : undefined);
         return (
           <>
             {renderAnswer?.(part)}
-            {part.awardReason && (
-              <p className={cn(answerRowClass(verdict), 'col-[2/-1] text-sm')}>
-                <span className="min-w-0">
-                  <b>
-                    {verdict === 'success'
-                      ? m.question_ui_full_marks()
-                      : verdict === 'warning'
-                        ? m.question_ui_half_marks()
-                        : m.question_ui_no_marks()}
-                  </b>{' '}
-                  <span className="text-fg">{part.awardReason}</span>
-                </span>
-              </p>
-            )}
             <details className="col-start-2 min-w-0 text-sm">
               <summary className="cursor-pointer font-semibold text-fg-secondary">
                 {part.solution.length > 0
@@ -521,20 +529,28 @@ export function QuestionReview({
                   {part.markscheme.map((item, i) => (
                     <li className="flex items-baseline gap-4" key={i}>
                       <TextView className="min-w-0 flex-1" text={item} />
-                      {part.answer.type !== 'open' && part.awarded != null && (
+                      {itemAward(i) != null && (
                         <span
                           className={cn(
                             'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
-                            part.awarded === max
+                            itemAward(i) === 1
                               ? 'text-tint-success-fg'
-                              : 'text-tint-error-fg'
+                              : itemAward(i) === 0.5
+                                ? 'text-tint-warning-fg'
+                                : 'text-tint-error-fg'
                           )}
                         >
                           <Icon
-                            name={part.awarded === max ? 'check' : 'x'}
+                            name={
+                              itemAward(i) === 1
+                                ? 'check'
+                                : itemAward(i) === 0.5
+                                  ? 'minus'
+                                  : 'x'
+                            }
                             size={12}
                           />
-                          {part.awarded === max ? '1' : '0'}
+                          {itemAward(i)}
                         </span>
                       )}
                     </li>

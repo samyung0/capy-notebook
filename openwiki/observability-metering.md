@@ -298,7 +298,7 @@ A **slot** is a named place the product calls a model. Every slot holds one
 default pin; chat and editor also hold a per-user preference. Generate
 workflows run on the chat slot (migration `0044` merged the former `generate`
 slot into it; usage `surface` still records `generate`).
-The slots are `chat`, `editor`, `quiz`, `ingest`, `retrieval`
+The slots are `chat`, `editor`, `ingest`, `retrieval`
 (the workspace embedding model, used by ingest indexing and by chat/generate
 query embedding), `captioning` (the vision model used for standalone image
 uploads; embedded figure captioning was retired) and `rerank` (the
@@ -377,12 +377,36 @@ the `users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
 way chat does. It is the highest-call-volume
 slot per user, so it is the one where an expensive choice shows up first in
 credit burn. Editor thinking is forced to Instant on the Python call.
-Settings show Instant as a disabled control for this slot. Quiz marking
-(`POST /api/quiz-grade`) resolves the registry's quiz slot default per request,
-using platform credentials and the grading pipeline's existing non-thinking
-policy. Users cannot choose its model or thinking level. Migration `0013` removes stored quiz preferences;
-Settings and quiz attempts no longer offer browser grading. Attempt points stay
-on the quiz snapshot for the taker and are not a trusted score.
+Settings show Instant as a disabled control for this slot.
+
+Open quiz parts are graded by typesafe.ai's Jev (`server/internal/jev`, model
+pinned to `jev-1.13.0`, key `JEV_TYPESAFE_API_KEY`), which Go calls directly:
+it is not an EliteLLM provider and has no registry row (migration `0050`
+dropped the `quiz` slot). `POST /api/quizzes/{id}/grade` (signed in) and
+`POST /api/public/quizzes/{token}/grade` (anonymous, through the site Worker)
+take part ids and answers only; the server loads the marking scheme from the
+stored quiz, so neither grades arbitrary text. One Jev request per open part,
+at most 20 per attempt, five at a time; any failure fails the attempt and the
+learner retries. Jev costs $0.042 per million input tokens and nothing for
+output, so grading is **recorded, never charged**: signed-in requests write one
+`usage_events` row (surface `quiz`, provider `typesafe`, `credit_micros` 0,
+`units` = graded parts, `metadata.costMicroUsd`), and the author's
+`POST /api/questions/computation-check` writes one per check. Attempt points
+stay on the quiz snapshot for the taker and are not a trusted score.
+
+Anonymous grading has no actor, so it is kept in `anonymous_grading_usage` per
+UTC day, salted client-IP hash (HMAC with `SHARE_LINK_SECRET`) and the random
+id the browser keeps in IndexedDB. Parts are counted before any Jev call and
+stay counted when grading fails. Caps: 300 graded parts per IP hash per day
+(generous because a classroom shares one IP) and 50,000 per day overall; over
+either, the API answers 429 `anonymous_grading_limit` and the page asks the
+visitor to sign in. The local id is reporting only, because the client
+chooses it. Rows older than 30 days are pruned by the API's maintenance loop.
+No browser fingerprinting is used. `/api/public/*` stays in the default
+anonymous class (60/minute per IP) rather than the AI class, whose 15/minute
+burst would stop a classroom sharing one IP. Same-zone Worker subrequests carry the
+visitor's IP in `CF-Connecting-IP`; this needs checking on UAT before the
+per-IP cap is relied on.
 
 Ingest and captioning are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
@@ -416,7 +440,7 @@ Relace reports `reasoning_tokens` at the top level of `usage`). A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
 Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
-(`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
+(`model_configs_credit_rates_check`). Platform chat/generate/editor/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
 input > 0; cached-read and output may be 0.
 
@@ -474,7 +498,7 @@ begin(session)  →  provider call  →  settle(call id, measured usage)
 A current session reserves 0 credits in `provider_sessions.reserved_micros`.
 The column records the session's contribution when a future workflow takes an
 estimated credit hold. Platform
-chat, generate, editor, and quiz share `ConcurrentLLMLeases` (5). The gate is
+chat, generate and editor share `ConcurrentLLMLeases` (5). The gate is
 `used + reserved >= limit` plus that cap, the same check as
 `AssertCreditsAvailable`. BYOK chat has a session for idempotent usage events
 but does not consume a concurrency slot and skips the platform used+reserved
@@ -548,7 +572,7 @@ limit. The 21st enqueue fails with `too_many_ingest_leases`, distinct from
 Query embeddings are recorded at zero credits, so those calls cost the actor
 nothing to start. Ingest embeddings still bill through the worker.
 
-Every billed LLM path (chat, generate, editor, quiz, complete) opens a
+Every billed LLM path (chat, generate, editor, complete) opens a
 provider session and binds it in Python. Before the provider HTTP call,
 Python resolves the thinking level for that specific call, locks the open
 session, and inserts an exact `provider_calls` authorization row (`open`) with
@@ -586,7 +610,7 @@ path must use one of these explicit accounting boundaries or it is invisible
 and silently free.
 
 A contextvar accumulator (`obs.Usage`) still aggregates request telemetry.
-Chat, generate, editor, and quiz bind a `RequestAccounting` context when the
+Chat, generate and editor bind a `RequestAccounting` context when the
 gateway sends `spendSessionId`. `models.py` opens the pending call, then
 posts measured usage to the gateway before returning. The callback carries a
 stable call id, call purpose, normalized cache fields, and measured tokens.
@@ -603,7 +627,7 @@ busy answer (429, 503, 529) waits for the provider's `Retry-After`, else a
 jittered backoff, and every attempt is a new call id. Interactive calls get two
 attempts inside three seconds and then fail closed as `provider_busy` (HTTP 503
 carrying `retryAfterSeconds`, with a `Retry-After` header on the Plate copilot
-route; generate and quiz grade answer through Huma, which sets no header, so
+route; generate answers through Huma, which sets no header, so
 the wait is in the body only; an SSE `error` event with `retryAfterSeconds` on
 chat and Plate commands). A request cancelled while its admission is in flight
 is undone by a detached task that abandons the never-sent call row and frees
@@ -644,7 +668,7 @@ embedding pin so the event is labeled. Chat and generate call
 `resolveEmbedding` before opening spend. `EmbeddingRates` fails
 closed on a nil registry, empty workspace, query miss, empty pin, catalog miss,
 or a row that is not embedding. There is no `DefaultEmbeddingRates`. A miss is
-`model_unavailable`. Editor and quiz pass empty embed
+`model_unavailable`. Editor passes empty embed
 rates and do not call `resolveEmbedding`. Ingest embeddings still bill the
 actor at the workspace pin's rates.
 
@@ -945,7 +969,8 @@ worked with one.
 orders of magnitude. Listing workspaces touches one index. A chat turn is
 capped at 12 planning responses and 12 accepted tool calls. Provider completion,
 compaction, embedding, and cumulative input counts are telemetry. AI routes
-(`/chat/stream`, `/generate`, `/ai/command`) are 200/hour with burst 15, plus
+(`/chat/stream`, `/generate`, `/ai/command`, signed-in quiz `/grade` and
+`/computation-check`) are 200/hour with burst 15, plus
 a 15/minute short-window guard so a scripted loop trips immediately. Cheap
 editor routes (`/ai/copilot`) have their own 120/minute
 class so typing in the note does not consume the chat allowance. Upload

@@ -9,7 +9,7 @@
     "binding": "ASSETS",
     "html_handling": "none",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/w/*", "/summary", "/summary.html"]
+    "run_worker_first": ["/api/*", "/w/*", "/p/*", "/summary", "/summary.html"]
   },
   "observability": {
     "enabled": true
@@ -34,7 +34,13 @@
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*", "/w/*", "/summary", "/summary.html"]
+        "run_worker_first": [
+          "/api/*",
+          "/w/*",
+          "/p/*",
+          "/summary",
+          "/summary.html"
+        ]
       },
       "workers_dev": false,
       "preview_urls": false,
@@ -73,7 +79,13 @@
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "single-page-application",
-        "run_worker_first": ["/api/*", "/w/*", "/summary", "/summary.html"]
+        "run_worker_first": [
+          "/api/*",
+          "/w/*",
+          "/p/*",
+          "/summary",
+          "/summary.html"
+        ]
       }
     }
   }

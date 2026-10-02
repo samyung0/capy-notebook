@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { publicWorkspaces, workspaces } from '@/mocks/db';
-import { DEV_SHARE_LINK_SECRET, sharePath, verifiedShareID } from './shareLink';
+import {
+  DEV_SHARE_LINK_SECRET,
+  sharePath,
+  shareToken,
+  verifiedShareID,
+  verifiedShareToken,
+} from './shareLink';
 
 describe('share links', () => {
   // Same vector as server/internal/store/share_link_test.go.
@@ -10,6 +16,16 @@ describe('share links', () => {
     expect(path).toBe('/w/ws_1a2b3c4d5e.FVCxkY8emO_wohfF');
     expect(await verifiedShareID(secret, path)).toBe('ws_1a2b3c4d5e');
     expect(await verifiedShareID(`${secret}x`, path)).toBeUndefined();
+  });
+  it('verifies material tokens but never as a workspace summary', async () => {
+    const secret = 'test-secret-0123456789abcdef0000';
+    const token = await shareToken(secret, 'mat_1a2b3c4d5e');
+    expect(token).toBe('mat_1a2b3c4d5e.tWUDh1a-tb_YSGgu');
+    expect(await verifiedShareToken(secret, token)).toBe('mat_1a2b3c4d5e');
+    expect(await verifiedShareID(secret, `/w/${token}`)).toBeUndefined();
+    expect(
+      await verifiedShareToken(secret, `${token.slice(0, -1)}A`)
+    ).toBeUndefined();
   });
   // The seeds hold literal paths; Vite's MSW middleware verifies them.
   it('keeps mock seed paths signed with the dev secret', async () => {

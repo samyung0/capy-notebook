@@ -18,6 +18,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/bank"
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
+	"github.com/samyung0/capy-notebook/server/internal/jev"
 	"github.com/samyung0/capy-notebook/server/internal/mail"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -381,6 +382,9 @@ func main() {
 			if err := st.PruneUploadSessions(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune upload sessions: %v", err)
 			}
+			if err := st.PruneAnonymousGradingUsage(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("prune anonymous grading usage: %v", err)
+			}
 		}
 		sweep()
 		ticker := time.NewTicker(time.Minute)
@@ -442,6 +446,7 @@ func main() {
 		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,
+		Jev:                    jev.New(env("JEV_TYPESAFE_API_KEY", "")),
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

@@ -21,6 +21,7 @@ export interface MaterialListItem {
   parentTitle: string;
   privacy: Privacy;
   questionCount?: number;
+  sharePath?: string;
   sizeBytes: number;
   title: string;
   updatedAt: string;

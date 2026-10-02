@@ -394,6 +394,7 @@ func registerRoutes(api huma.API, a *api) {
 	a.registerExplore(api)
 	a.registerShare(api)
 	a.registerWorkspaceSummary(api)
+	a.registerAnonymousMaterials(api)
 	a.registerBillingIntegrations(api)
 }
 

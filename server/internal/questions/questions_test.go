@@ -39,7 +39,7 @@ func TestSharedFixtures(t *testing.T) {
 				learner := LearnerView(fixture.Question)
 				for _, raw := range learner["parts"].([]any) {
 					p := raw.(map[string]any)
-					for _, key := range []string{"markscheme", "solution", "awarded", "awardReason"} {
+					for _, key := range []string{"markscheme", "solution", "awarded", "itemAwards"} {
 						if _, ok := p[key]; ok {
 							t.Fatalf("leaked %s", key)
 						}
@@ -95,12 +95,12 @@ func TestAuthoredSnapshotKeepsContentAndLeavesScoresOnOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	part := f.Question["parts"].([]any)[0].(map[string]any)
-	part["awardReason"] = "Partly correct"
+	part["itemAwards"] = []any{0.5}
 	authored := Authored(f.Question)
 	if err := Validate(authored, Policy{}); err != nil {
 		t.Fatal(err)
 	}
-	if part["awarded"] != 0.5 || part["awardReason"] != "Partly correct" {
+	if part["awarded"] != 0.5 || part["itemAwards"] == nil {
 		t.Fatal("original snapshot was modified")
 	}
 	if Marks(authored) != Marks(f.Question) {
@@ -142,5 +142,25 @@ func TestQuizBoundsCapPartsAndOpenParts(t *testing.T) {
 	}
 	if QuizBounds(many(30, 21)) == nil {
 		t.Fatal("accepted 21 open parts")
+	}
+}
+
+// Mirrors the prompt src/features/quizzes/scoreAttempt.ts used to build.
+func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
+	q := map[string]any{
+		"stem": []any{
+			map[string]any{"type": "text", "label": "Source A", "text": "Prices rose."},
+			map[string]any{"type": "image", "description": "A demand curve"},
+			map[string]any{"type": "chart", "title": "Sales", "unit": "kg", "labels": []any{"Jan", "Feb"},
+				"series": []any{map[string]any{"name": "Shop", "values": []any{1.5, 2.0}}}},
+		},
+		"parts": []any{
+			map[string]any{"blocks": []any{map[string]any{"type": "table", "rows": []any{[]any{"a", "b"}, []any{"c", "d"}}}}},
+			map[string]any{"blocks": []any{map[string]any{"type": "text", "text": "Explain."}}},
+		},
+	}
+	want := "Source A\nPrices rose.\n\n[Figure: A demand curve]\n\nSales (kg)\nShop: Jan=1.5, Feb=2\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
+	if got := GradingText(q, 1); got != want {
+		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
 	}
 }

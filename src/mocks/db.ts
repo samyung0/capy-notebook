@@ -1160,8 +1160,9 @@ export const attempts: (Attempt & {
           ? {
               ...part,
               awarded: 1.5,
-              awardReason:
-                'Identifies the plateau and that extra light no longer helps, but does not compare CO₂ concentrations to explain the limiting factor.',
+              itemAwards: part.markscheme.map((_, i) =>
+                i === 0 ? 1 : i === 1 ? 0.5 : 0
+              ),
             }
           : part
       ),
@@ -1992,6 +1993,50 @@ seedFlashcardSets.forEach((d, i) => {
     })
   );
 });
+// Standalone link-shared materials for the share pages; add `?anonymous` to
+// open them as a signed-out visitor.
+materials.push(
+  makeMaterial({
+    capabilities: ownerCapabilities,
+    chapterId: null,
+    content: createMaterialDocument([
+      quizNode({ questions: seedQuizzes[0].questions }, 'qz_shared'),
+    ]),
+    createdAt: days(3),
+    id: 'qz_shared',
+    kind: 'quiz',
+    privacy: 'link',
+    role: 'owner',
+    scopeChapters: [],
+    scopeFileNames: [],
+    title: 'Shared cell biology quiz',
+    workspaceId: '',
+    workspaceName: '',
+  }),
+  makeMaterial({
+    capabilities: ownerCapabilities,
+    chapterId: null,
+    color: 'green',
+    content: createMaterialDocument([
+      flashcardsNode(
+        seedCards
+          .filter((c) => c.materialId === seedFlashcardSets[0].id)
+          .map((c) => ({ back: c.back, front: c.front, id: `shared_${c.id}` })),
+        'dk_shared'
+      ),
+    ]),
+    createdAt: days(3),
+    id: 'dk_shared',
+    kind: 'flashcards',
+    privacy: 'link',
+    role: 'owner',
+    scopeChapters: [],
+    scopeFileNames: [],
+    title: 'Shared cell biology cards',
+    workspaceId: '',
+    workspaceName: '',
+  })
+);
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
 if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
   materials.push(
@@ -2075,6 +2120,15 @@ for (const seed of embeddedSeeds) {
   );
 }
 
+/** Standalone quizzes and flashcard sets share through a signed link. MSW has
+ * no Worker to verify it, so the signature is a fixed placeholder. */
+export function mockSharePath(mt: Material): string | undefined {
+  if (mt.workspaceId || mt.parentMaterialId) return;
+  if (mt.kind === 'quiz') return `/share/quizzes/${mt.id}.mswSignature0000`;
+  if (mt.kind === 'flashcards')
+    return `/share/flashcards/${mt.id}.mswSignature0000`;
+}
+
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): Quiz {
   const { questions } =
@@ -2094,6 +2148,7 @@ export function quizFromMaterial(mt: Material): Quiz {
     privacy: mt.privacy,
     questions,
     revision: mt.revision,
+    sharePath: mockSharePath(mt),
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
   };
@@ -2140,6 +2195,7 @@ export function flashcardSetFromMaterial(mt: Material): FlashcardSet {
     name: mt.title,
     privacy: mt.privacy,
     revision: mt.revision,
+    sharePath: mockSharePath(mt),
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
   };
@@ -2162,6 +2218,7 @@ export function materialListItem(mt: Material): MaterialListItem {
     parentMaterialId: mt.parentMaterialId ?? '',
     parentTitle: parent?.title ?? '',
     privacy: mt.privacy,
+    sharePath: mockSharePath(mt),
     sizeBytes: mt.contentBytes,
     title: mt.title,
     updatedAt: mt.updatedAt,

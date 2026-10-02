@@ -378,12 +378,12 @@ export const questionSchema = z.strictObject({
       z.strictObject({
         answer: answerSchema,
         awarded: finite.nonnegative().optional(),
-        awardReason: meta.optional(),
         blocks: z
           .array(questionBlockSchema)
           .min(1)
           .max(limits.QUESTION_BLOCKS_MAX),
         id: identifier,
+        itemAwards: z.array(finite).optional(),
         markscheme: z
           .array(
             z
@@ -432,12 +432,19 @@ export function validateQuestion(
     ids.add(part.id);
     if (
       !policy.snapshot &&
-      (part.awarded !== undefined || part.awardReason !== undefined)
+      (part.awarded !== undefined || part.itemAwards !== undefined)
     )
       throw new CopyError(m.question_validation_awarded_marks());
     if (
       part.awarded !== undefined &&
       (part.awarded > part.markscheme.length || (part.awarded * 2) % 1 !== 0)
+    )
+      throw new CopyError(m.question_validation_awarded_range());
+    if (
+      part.itemAwards !== undefined &&
+      (part.itemAwards.length !== part.markscheme.length ||
+        part.itemAwards.some((award) => ![0, 0.5, 1].includes(award)) ||
+        part.itemAwards.reduce((sum, award) => sum + award, 0) !== part.awarded)
     )
       throw new CopyError(m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)

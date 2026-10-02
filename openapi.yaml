@@ -190,6 +190,81 @@ components:
         - toolVersion
         - outcome
       type: object
+    AnonymousAsset:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AnonymousAsset.json
+          format: uri
+          readOnly: true
+          type: string
+        contentType:
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        url:
+          type: string
+      required:
+        - url
+        - contentType
+        - expiresAt
+      type: object
+    AnonymousFlashcards:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AnonymousFlashcards.json
+          format: uri
+          readOnly: true
+          type: string
+        cards:
+          items:
+            $ref: "#/components/schemas/Card"
+          type: array
+        color:
+          $ref: "#/components/schemas/UserColor"
+        id:
+          type: string
+        name:
+          type: string
+        privacy:
+          $ref: "#/components/schemas/Privacy"
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+      required:
+        - id
+        - name
+        - privacy
+        - color
+        - cards
+      type: object
+    AnonymousQuiz:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AnonymousQuiz.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        privacy:
+          $ref: "#/components/schemas/Privacy"
+        provenance:
+          $ref: "#/components/schemas/Provenance"
+        questions: {}
+      required:
+        - id
+        - name
+        - privacy
+        - questions
+      type: object
     AssignableRole:
       enum:
         - editor
@@ -481,6 +556,20 @@ components:
         - name
         - updatedAt
       type: object
+    Card:
+      additionalProperties: false
+      properties:
+        back:
+          type: string
+        front:
+          type: string
+        id:
+          type: string
+      required:
+        - id
+        - front
+        - back
+      type: object
     CardContent:
       additionalProperties: false
       properties:
@@ -645,6 +734,42 @@ components:
         - isDeleted
         - createdAt
         - updatedAt
+      type: object
+    ComputationCheckReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ComputationCheckReq.json
+          format: uri
+          readOnly: true
+          type: string
+        partId:
+          type: string
+        question:
+          additionalProperties: {}
+          type: object
+      required:
+        - question
+        - partId
+      type: object
+    ComputationCheckResp:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ComputationCheckResp.json
+          format: uri
+          readOnly: true
+          type: string
+        computational:
+          type: boolean
+        probability:
+          format: double
+          type: number
+      required:
+        - computational
+        - probability
       type: object
     ContentOrderItem:
       additionalProperties: false
@@ -1573,6 +1698,8 @@ components:
         revision:
           format: int64
           type: integer
+        sharePath:
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -1679,6 +1806,55 @@ components:
         - kind
         - count
         - title
+      type: object
+    GradeQuizReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/GradeQuizReq.json
+          format: uri
+          readOnly: true
+          type: string
+        answers:
+          additionalProperties:
+            type: string
+          type: object
+        localId:
+          type: string
+      required:
+        - answers
+      type: object
+    GradeQuizResp:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/GradeQuizResp.json
+          format: uri
+          readOnly: true
+          type: string
+        parts:
+          additionalProperties:
+            $ref: "#/components/schemas/GradedPart"
+          type: object
+      required:
+        - parts
+      type: object
+    GradedPart:
+      additionalProperties: false
+      properties:
+        awarded:
+          format: double
+          type: number
+        itemAwards:
+          items:
+            format: double
+            type: number
+          type: array
+      required:
+        - awarded
+        - itemAwards
       type: object
     ImportSourcesAccepted:
       additionalProperties: false
@@ -2158,6 +2334,8 @@ components:
         questionCount:
           format: int64
           type: integer
+        sharePath:
+          type: string
         sizeBytes:
           format: int64
           type: integer
@@ -2775,6 +2953,8 @@ components:
         revision:
           format: int64
           type: integer
+        sharePath:
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -2833,6 +3013,8 @@ components:
         revision:
           format: int64
           type: integer
+        sharePath:
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -2967,6 +3149,8 @@ components:
         revision:
           format: int64
           type: integer
+        sharePath:
+          type: string
         workspaceId:
           type: string
         workspaceName:
@@ -2984,56 +3168,6 @@ components:
         - isOwner
         - canEdit
         - canEditContent
-      type: object
-    QuizGradeReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/QuizGradeReq.json
-          format: uri
-          readOnly: true
-          type: string
-        hints:
-          items:
-            type: string
-          type: array
-        modelAnswer:
-          type: string
-        prompt:
-          type: string
-        rubrics:
-          items:
-            type: string
-          type: array
-        userAnswer:
-          type: string
-        workspaceId:
-          type: string
-      required:
-        - hints
-        - modelAnswer
-        - prompt
-        - rubrics
-        - userAnswer
-      type: object
-    QuizGradeResp:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/QuizGradeResp.json
-          format: uri
-          readOnly: true
-          type: string
-        award:
-          format: double
-          type: number
-        reason:
-          type: string
-      required:
-        - award
-        - reason
       type: object
     Ref:
       additionalProperties: false
@@ -3284,7 +3418,6 @@ components:
       enum:
         - chat
         - editor
-        - quiz
         - ingest
         - retrieval
         - captioning
@@ -7492,6 +7625,98 @@ paths:
       summary: Mark one notification read
       tags:
         - Account
+  /api/public/flashcards/{token}:
+    get:
+      operationId: getAnonymousFlashcards
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousFlashcards"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a shared flashcard set for signed-out visitors
+      tags:
+        - Sharing
+  /api/public/quizzes/{token}:
+    get:
+      operationId: getAnonymousQuiz
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousQuiz"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a shared quiz for signed-out visitors
+      tags:
+        - Sharing
+  /api/public/quizzes/{token}/assets/{assetId}:
+    get:
+      operationId: getAnonymousQuizAsset
+      parameters:
+        - in: path
+          name: token
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: assetId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnonymousAsset"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get a shared quiz image URL
+      tags:
+        - Sharing
   /api/public/workspaces/{id}/summary:
     get:
       operationId: getPublicWorkspaceSummary
@@ -7545,21 +7770,21 @@ paths:
       summary: Check public workspace metadata
       tags:
         - Sharing
-  /api/quiz-grade:
+  /api/questions/computation-check:
     post:
-      operationId: gradeQuizAnswer
+      operationId: checkQuestionComputation
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/QuizGradeReq"
+              $ref: "#/components/schemas/ComputationCheckReq"
         required: true
       responses:
         "200":
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/QuizGradeResp"
+                $ref: "#/components/schemas/ComputationCheckResp"
           description: OK
         default:
           content:
@@ -7567,7 +7792,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Mark one open quiz answer against its marking scheme
+      summary: Check whether an open part needs computation to grade
       tags:
         - Quizzes
   /api/quizzes:
@@ -7733,6 +7958,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Update quiz content
+      tags:
+        - Quizzes
+  /api/quizzes/{id}/grade:
+    post:
+      operationId: gradeQuiz
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GradeQuizReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GradeQuizResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Grade the open parts of one quiz attempt
       tags:
         - Quizzes
   /api/quizzes/{id}/metadata:

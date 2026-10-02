@@ -840,32 +840,61 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.post('/api/quiz-grade', async ({ request }) => {
-    const body = (await request.json()) as {
-      rubrics?: string[];
-      userAnswer?: string;
-    };
-    const answer = (body.userAnswer ?? '').toLowerCase();
-    if (!answer.trim()) {
-      return HttpResponse.json({ award: 0, reason: '' });
-    }
-    const rubrics = body.rubrics ?? [];
-    const hits = rubrics.filter((rubric) =>
-      rubric
-        .toLowerCase()
-        .split(/\s+/)
-        .some((word) => word.length > 3 && answer.includes(word))
+  http.post('/api/quizzes/:id/grade', async ({ params, request }) => {
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'quiz'
     );
-    const award =
-      hits.length === 0 ? 0 : hits.length < rubrics.length ? 0.5 : 1;
+    if (!mt) return new HttpResponse(null, { status: 404 });
+    const { answers } = (await request.json()) as {
+      answers: Record<string, string>;
+    };
     return HttpResponse.json({
-      award,
-      reason:
-        award === 1
-          ? 'Covers the marking scheme.'
-          : award === 0.5
-            ? 'Partly covers the marking scheme.'
-            : 'Does not meet the marking scheme.',
+      parts: mockGradeParts(db.quizFromMaterial(mt).questions, answers),
+    });
+  }),
+  http.post('/api/questions/computation-check', async ({ request }) => {
+    const { question } = (await request.json()) as { question: Question };
+    const text = JSON.stringify(question.parts).toLowerCase();
+    const computational = /calculat|convert|solve|\d+\s*[+*/=-]\s*\d+/.test(
+      text
+    );
+    return HttpResponse.json({
+      computational,
+      probability: computational ? 0.9 : 0.05,
+    });
+  }),
+  // The site Worker's share routes. MSW skips the signature check.
+  http.get('/p/quizzes/:token', ({ params }) => {
+    const mt = anonymousMaterial(String(params.token), 'quiz');
+    if (!mt)
+      return HttpResponse.json({ message: 'not found' }, { status: 404 });
+    const { id, name, privacy, questions } = db.quizFromMaterial(mt);
+    return HttpResponse.json({ id, name, privacy, questions });
+  }),
+  http.post('/p/quizzes/:token/grade', async ({ params, request }) => {
+    const mt = anonymousMaterial(String(params.token), 'quiz');
+    if (!mt)
+      return HttpResponse.json({ message: 'not found' }, { status: 404 });
+    const { answers } = (await request.json()) as {
+      answers: Record<string, string>;
+    };
+    return HttpResponse.json({
+      parts: mockGradeParts(db.quizFromMaterial(mt).questions, answers),
+    });
+  }),
+  http.get('/p/flashcards/:token', ({ params }) => {
+    const mt = anonymousMaterial(String(params.token), 'flashcards');
+    if (!mt)
+      return HttpResponse.json({ message: 'not found' }, { status: 404 });
+    const set = db.flashcardSetFromMaterial(mt);
+    return HttpResponse.json({
+      cards: db
+        .cardsFromMaterial(mt)
+        .map(({ back, front, id }) => ({ back, front, id })),
+      color: set.color,
+      id: set.id,
+      name: set.name,
+      privacy: set.privacy,
     });
   }),
 
@@ -3183,3 +3212,41 @@ export const handlers = [
 ];
 
 type SourceKindFix = 'pdf' | 'doc' | 'md' | 'image' | 'txt';
+
+/** Signed-out reads reach standalone, non-embedded link/public materials. */
+function anonymousMaterial(token: string, kind: 'quiz' | 'flashcards') {
+  const id = token.split('.')[0];
+  return db.materials.find(
+    (x) =>
+      x.id === id &&
+      x.kind === kind &&
+      !x.workspaceId &&
+      !x.parentMaterialId &&
+      x.privacy !== 'private'
+  );
+}
+
+/** Credits a marking item when the answer shares a long word with it. */
+function mockGradeParts(
+  questions: Question[],
+  answers: Record<string, string>
+) {
+  const parts: Record<string, { awarded: number; itemAwards: number[] }> = {};
+  for (const part of questions.flatMap((question) => question.parts)) {
+    const answer = answers[part.id]?.toLowerCase().trim();
+    if (part.answer.type !== 'open' || !answer) continue;
+    const itemAwards = part.markscheme.map((item): number =>
+      item
+        .toLowerCase()
+        .split(/\s+/)
+        .some((word) => word.length > 3 && answer.includes(word))
+        ? 1
+        : 0
+    );
+    parts[part.id] = {
+      awarded: itemAwards.reduce((sum, award) => sum + award, 0),
+      itemAwards,
+    };
+  }
+  return parts;
+}

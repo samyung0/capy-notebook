@@ -22,6 +22,7 @@ export interface Quiz {
   provenance?: Provenance;
   questions: QuizQuestionsItem[];
   revision: number;
+  sharePath?: string;
   workspaceId: string;
   workspaceName: string;
 }

@@ -113,7 +113,8 @@ export type QuestionPart = {
   solution: QuestionBlock[];
   /** Attempt snapshots only; authored content rejects these fields. */
   awarded?: number;
-  awardReason?: string;
+  /** Open parts: Jev's 0, 0.5 or 1 per marking item, summing to `awarded`. */
+  itemAwards?: number[];
 };
 export type Question = {
   id: string;

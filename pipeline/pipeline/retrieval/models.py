@@ -263,11 +263,6 @@ def _raise_user_key(exc: BaseException) -> None:
     raise exc
 
 
-def quiz_grade_max_tokens(_model: ModelConfig | None = None) -> int:
-    """Short grade JSON. The grade call always disables thinking."""
-    return 80
-
-
 def _as_spec(model: ModelConfig) -> ModelConfig:
     if isinstance(model, ModelConfig):
         return model

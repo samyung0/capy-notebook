@@ -143,6 +143,8 @@ type Quiz struct {
 	CreatedAt      time.Time       `json:"createdAt"`
 	Privacy        Privacy         `json:"privacy"`
 	TimeLimitMin   *int            `json:"timeLimitMin,omitempty"`
+	// SharePath is the signed share link of a standalone quiz.
+	SharePath string `json:"sharePath,omitempty"`
 	// Provenance is the source material's attribution record; the attempt page
 	// renders it as a footer.
 	Provenance *Provenance `json:"provenance,omitempty"`
@@ -186,9 +188,12 @@ type FlashcardSet struct {
 	WorkspaceName string    `json:"workspaceName"`
 	Color         UserColor `json:"color"`
 	Privacy       Privacy   `json:"privacy"`
-	CardCount     int       `json:"cardCount"`
-	KnownPct      int       `json:"knownPct"`
-	DueCount      int       `json:"dueCount"`
+	// SharePath is the signed share link of a standalone flashcard set.
+	SharePath        string `json:"sharePath,omitempty"`
+	ParentMaterialID string `json:"-"`
+	CardCount        int    `json:"cardCount"`
+	KnownPct         int    `json:"knownPct"`
+	DueCount         int    `json:"dueCount"`
 	// Provenance is the source material's attribution record; the study page
 	// renders it as a footer.
 	Provenance *Provenance `json:"provenance,omitempty"`

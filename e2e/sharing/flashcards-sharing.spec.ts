@@ -2,11 +2,15 @@ import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 
 test.describe('flashcards sharing', () => {
-  test('anonymous full reads require sign-in for every visibility', async ({
+  test('anonymous visitors study link and public flashcards only through signed links', async ({
     anonymousApi,
     anonymousPage,
+    ownerApi,
     seed,
   }) => {
+    const sharePath = async (id: string) =>
+      (await (await ownerApi.get(`/api/flashcards/${id}`)).json())
+        .sharePath as string;
     for (const flashcardSet of [
       seed.privateFlashcardSet,
       seed.linkFlashcardSet,
@@ -16,15 +20,39 @@ test.describe('flashcards sharing', () => {
         `/api/flashcards/${flashcardSet.id}`
       );
       expect(response.status()).toBe(401);
-      expect(await response.text()).not.toContain(flashcardSet.front);
-      await anonymousPage.goto(`/share/flashcards/${flashcardSet.id}`);
-      await expect(
-        anonymousPage.getByTestId('private-or-unavailable')
-      ).toBeVisible();
-      await expect(anonymousPage.getByText(flashcardSet.front)).toHaveCount(0);
+    }
+    // No Clerk in e2e, so ?anonymous selects the signed-out page.
+    for (const flashcardSet of [
+      seed.linkFlashcardSet,
+      seed.publicFlashcardSet,
+    ]) {
+      await anonymousPage.goto(`${await sharePath(flashcardSet.id)}?anonymous`);
+      await expect(anonymousPage.getByText(flashcardSet.front)).toBeVisible();
       await expect(
         anonymousPage.getByRole('button', { name: 'Clone flashcards' })
       ).toHaveCount(0);
+    }
+    // The private seed set sits in a workspace and has no share link, so a
+    // private standalone set stands in for "signed but private".
+    const created = await ownerApi.post('/api/flashcards', {
+      data: { name: 'E2E private standalone flashcards' },
+    });
+    expect(created.status()).toBe(201);
+    const privateSet = await created.json();
+    try {
+      for (const path of [
+        `${privateSet.sharePath}?anonymous`,
+        `/share/flashcards/${seed.linkFlashcardSet.id}?anonymous`,
+      ]) {
+        await anonymousPage.goto(path);
+        await expect(
+          anonymousPage.getByTestId('private-or-unavailable')
+        ).toBeVisible();
+      }
+    } finally {
+      expect(
+        (await ownerApi.delete(`/api/materials/${privateSet.id}`)).status()
+      ).toBe(204);
     }
   });
 

@@ -378,12 +378,12 @@ export const questionSchema = z.strictObject({
       z.strictObject({
         answer: answerSchema,
         awarded: finite.nonnegative().optional(),
-        awardReason: meta.optional(),
         blocks: z
           .array(questionBlockSchema)
           .min(1)
           .max(limits.QUESTION_BLOCKS_MAX),
         id: identifier,
+        itemAwards: z.array(finite).optional(),
         markscheme: z
           .array(z.string().trim().min(1).max(1000))
           .min(1)
@@ -420,7 +420,7 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
     ids.add(part.id);
     if (
       !policy.snapshot &&
-      (part.awarded !== undefined || part.awardReason !== undefined)
+      (part.awarded !== undefined || part.itemAwards !== undefined)
     )
       throw new Error('Authored questions cannot contain awarded marks.');
     if (
@@ -430,6 +430,13 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
       throw new Error(
         'Awarded marks exceed the marking scheme or are not half marks.'
       );
+    if (
+      part.itemAwards !== undefined &&
+      (part.itemAwards.length !== part.markscheme.length ||
+        part.itemAwards.some((award) => ![0, 0.5, 1].includes(award)) ||
+        part.itemAwards.reduce((sum, award) => sum + award, 0) !== part.awarded)
+    )
+      throw new Error('Item awards must give each marking item one mark.');
     if (policy.bank && part.solution.length === 0)
       throw new Error('Bank questions need a worked solution for every part.');
     if (!policy.bank && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)

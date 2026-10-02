@@ -1,7 +1,11 @@
 # Plan: anonymous quizzes and flashcards, Jev grading
 
-Date: 2026-10-02. Status: draft for review; the Jev request contract (section 5)
-waits on `bench/grading/reports/2026-10-02-jev-production-contract.md`.
+Date: 2026-10-02. Status: implemented 2026-10-02 (uncommitted at the time of
+writing); the Jev request contract follows
+`bench/grading/reports/2026-10-02-jev-production-contract.md`. Durable
+behaviour is documented in `openwiki/authorization-permissions-lifecycles.md`
+(Anonymous quizzes and flashcards), `openwiki/observability-metering.md` and
+`openwiki/question-bank.md`; this file keeps the plan's reasoning.
 Decisions: `human/authorization-permissions-lifecycles.md`,
 `human/observability-metering.md` and `human/question-bank.md` (2026-10-02
 entries). The question bank is out of scope.
@@ -141,7 +145,8 @@ and the session continues in memory.
 - Removed: `quiz_grade.go`, pipeline `/quiz-grade` (`retrieve/service.py`,
   `retrieve/quiz_grade.py`, `prompts/quiz.py`), the `quiz` model slot rows and
   enum value (migration), `cloudGrade.ts`, `judge.ts`, and the unused browser
-  grader in `src/llm-runtime` once confirmed unused.
+  grader (`src/llm-runtime`, `llm-runtime.html`, `@wllama/wllama`, its framing
+  headers and deploy step).
 - Author warning: `POST /api/questions/computation-check` (signed in) takes one
   open part's text and marking items, asks Jev the benchmark's computation
   question, and returns `{computational, probability}`. The question dialog
@@ -166,8 +171,10 @@ and the session continues in memory.
   dedicated anonymous grading rate-limit class plus the existing edge rule.
   Turnstile only if abuse appears.
 
-Numbers needing sign-off: per-IP daily cap, global daily cap, answer length cap,
-parts per request, usage row retention.
+Signed-off numbers: 300 graded parts per IP hash per day, 50,000 per day
+overall, 5,000-character answers, at most 20 open parts per grade request, 30
+days of anonymous usage rows. User quizzes are bounded at 100 parts, 7 parts
+per question, 5 marking items per part and 20 open parts.
 
 ## 7. Interaction with `study-progress-plan.md`
 

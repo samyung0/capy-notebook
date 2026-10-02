@@ -67,7 +67,6 @@ operator hostname before traffic reaches its origin.
 | Hostname           | Serves                                             | Public DNS | Proxied              |
 | ------------------ | -------------------------------------------------- | ---------- | -------------------- |
 | `app.capynotebook.com`     | SPA and workspace SSR (Cloudflare Worker)                    | yes        | yes                  |
-| `llm.capynotebook.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
 | `office.capynotebook.com`  | isolated Office file runtime                       | yes        | yes                  |
 | `capynotebook.com`         | future separate static public site                | yes        | yes                  |
 | `www.capynotebook.com`     | future redirect to apex                                   | yes        | yes                  |
@@ -97,7 +96,10 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    at least 32 characters, `openssl rand -hex 32`) signs `/w/` links in Go and
    verifies them in the Worker; CI passes the same GitHub secret to Coolify and
    to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
-   `secrets.required`. Changing it invalidates every shared link. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   `secrets.required`. Changing it invalidates every shared link, including
+   quiz and flashcard links, and resets the anonymous grading IP hashes.
+   `JEV_TYPESAFE_API_KEY` (manifest secret, target `coolify`) is the typesafe.ai
+   key that grades open quiz parts; without it grading answers 503. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is
@@ -105,31 +107,18 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    Coolify serves the backend, not the site. Rendered summaries are
    `public, s-maxage=300, max-age=0, must-revalidate` and are held in the
    Worker's Cache API keyed by workspace id and resolved locale; failure pages
-   stay `no-store`, and link summaries are `noindex, nofollow`. There is no
+   stay `no-store`, and link summaries are `noindex, nofollow`. The `/p/*`
+   routes serve signed-out shared quizzes, their images, grading and flashcard
+   sets under the same signature check and five-minute edge cache (grading is
+   never cached). There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
    invocation. `public/_headers` marks the content-hashed `/assets/*` bundles
    `immutable` and the avatar/workspace `/icons/*` `max-age=86400`; the rest
    keep the Workers Assets default of `public, max-age=0, must-revalidate`
    with an `ETag`.
-   The quiz judge is `llm-runtime.html`, usually same-origin as the SPA. It is
-   served directly by Workers Assets, without a Worker invocation. Before
-   deploying, CI runs `node workers/site/headers.mjs dist "$APP_ORIGIN"` to
-   generate `dist/_headers` from `public/_headers`, allowing only `'self'` and
-   the exact deployment app origin in `frame-ancestors`. Manual deployments
-   must run the same command; the checked-in headers allow local development.
-   Isolation headers live only on that document (`COOP`/`COEP` plus
-   `Document-Isolation-Policy: isolate-and-credentialless`). The SPA stays
-   unisolated so Clerk, Google Picker, Stripe, and PDF.js keep working.
-   Chrome 137+ isolates that iframe and gives it SharedArrayBuffer / extra
-   CPU threads even when the parent is not isolated. COOP/COEP alone
-   cannot. Safari and Firefox stay single-thread. A second hostname
-   (`llm.capynotebook.com`, `VITE_LLM_RUNTIME_ORIGIN`) is optional. If you use one,
-   stage its headers with the SPA's `APP_ORIGIN` and set `VITE_APP_URL`. Do not
-   set `Cross-Origin-Resource-Policy: same-origin` on the runtime document
-   or the parent cannot embed it.
-   The Office viewer/editor is different: production requires a separate
-   cookie-less hostname such as `office.capynotebook.com`. Serve only the built
+   The Office viewer/editor needs its own cookie-less hostname in production,
+   such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
    `VITE_OFFICE_RUNTIME_ORIGIN=https://office.capynotebook.com` when building the SPA,
    and set `OFFICE_ALLOWED_PARENT_ORIGINS` to the exact comma-separated HTTPS
@@ -284,8 +273,7 @@ stays on the app Worker.
    and the production app equivalent before launch, keeping old entries during
    overlap. Add `local.uat` separately if local OneDrive use is wanted.
 5. Deploy backend/collaboration configuration and rebuild the SPA and Office
-   from one reviewed revision. The same deployment regenerates the LLM runtime
-   framing headers. API, collaboration, Office and local-development hostnames
+   from one reviewed revision. API, collaboration, Office and local-development hostnames
    remain unchanged. `APP_URL` changes new invitation/email links and Stripe
    Checkout/portal returns; existing issued links retain their original URLs.
    Clerk/Stripe webhooks remain on `uat-api`, and Resend mail still uses `uat`.

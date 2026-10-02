@@ -589,7 +589,7 @@ func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs
 		SELECT (jsonb_populate_record(NULL::model_configs, to_jsonb(c) ||
-		  '{"provider_slug":"openai","model_slug":"gpt-5.6-sol","platform_enabled":false,"slots":["editor","quiz"],"is_default_for":[]}'::jsonb)).*
+		  '{"provider_slug":"openai","model_slug":"gpt-5.6-sol","platform_enabled":false,"slots":["editor"],"is_default_for":[]}'::jsonb)).*
 		FROM model_configs c WHERE provider_slug='deepseek' AND model_slug='deepseek-flash' AND enabled`); err != nil {
 		t.Fatal(err)
 	}

@@ -856,6 +856,7 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -892,6 +893,7 @@ export const ExploreQuizzesResponseItem = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1434,6 +1436,7 @@ export const CreateFlashcardSetResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1579,6 +1582,7 @@ export const GetFlashcardSetResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1692,6 +1696,7 @@ export const CloneFlashcardSetResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1788,6 +1793,7 @@ export const UpdateFlashcardSetResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1831,6 +1837,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "license": zod.string().optional()
 }).optional(),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -1961,6 +1968,7 @@ export const ListOwnedMaterialsResponse = zod.object({
   "parentTitle": zod.string(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "questionCount": zod.int().optional(),
+  "sharePath": zod.string().optional(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
@@ -2631,6 +2639,7 @@ export const GetMistakesResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2641,7 +2650,7 @@ export const GetMistakesResponse = zod.object({
  */
 export const ListModelSlotsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "slots": zod.array(zod.enum(['chat', 'editor', 'quiz', 'ingest', 'retrieval', 'captioning', 'rerank']))
+  "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'retrieval', 'captioning', 'rerank']))
 })
 
 
@@ -2760,6 +2769,87 @@ export const ReadNotificationResponse = zod.void()
 
 
 /**
+ * @summary Get a shared flashcard set for signed-out visitors
+ */
+export const GetAnonymousFlashcardsParams = zod.object({
+  "token": zod.string()
+})
+
+export const GetAnonymousFlashcardsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "cards": zod.array(zod.object({
+  "back": zod.string(),
+  "front": zod.string(),
+  "id": zod.string()
+})),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "id": zod.string(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional()
+})
+
+
+/**
+ * @summary Get a shared quiz for signed-out visitors
+ */
+export const GetAnonymousQuizParams = zod.object({
+  "token": zod.string()
+})
+
+export const GetAnonymousQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "id": zod.string(),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "provenance": zod.object({
+  "books": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "edition": zod.string().optional(),
+  "excerptIds": zod.array(zod.string()),
+  "id": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "sourceUrl": zod.string().optional(),
+  "title": zod.string(),
+  "version": zod.int()
+})),
+  "license": zod.string().optional()
+}).optional(),
+  "questions": zod.unknown()
+})
+
+
+/**
+ * @summary Get a shared quiz image URL
+ */
+export const GetAnonymousQuizAssetParams = zod.object({
+  "token": zod.string(),
+  "assetId": zod.string()
+})
+
+export const GetAnonymousQuizAssetResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "contentType": zod.string(),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "url": zod.string()
+})
+
+
+/**
  * @summary Get public workspace metadata
  */
 export const GetPublicWorkspaceSummaryParams = zod.object({
@@ -2801,21 +2891,17 @@ export const HeadPublicWorkspaceSummaryResponse = zod.unknown()
 
 
 /**
- * @summary Mark one open quiz answer against its marking scheme
+ * @summary Check whether an open part needs computation to grade
  */
-export const GradeQuizAnswerBody = zod.object({
-  "hints": zod.array(zod.string()),
-  "modelAnswer": zod.string(),
-  "prompt": zod.string(),
-  "rubrics": zod.array(zod.string()),
-  "userAnswer": zod.string(),
-  "workspaceId": zod.string().optional()
+export const CheckQuestionComputationBody = zod.object({
+  "partId": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown())
 })
 
-export const GradeQuizAnswerResponse = zod.object({
+export const CheckQuestionComputationResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "award": zod.number(),
-  "reason": zod.string()
+  "computational": zod.boolean(),
+  "probability": zod.number()
 })
 
 
@@ -2860,6 +2946,7 @@ export const CreateQuizResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2916,6 +3003,7 @@ export const GetQuizResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -2989,6 +3077,7 @@ export const CloneQuizResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -3035,8 +3124,30 @@ export const UpdateQuizContentResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Grade the open parts of one quiz attempt
+ */
+export const GradeQuizParams = zod.object({
+  "id": zod.string()
+})
+
+export const GradeQuizBody = zod.object({
+  "answers": zod.record(zod.string(), zod.string()),
+  "localId": zod.string().optional()
+})
+
+export const GradeQuizResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "parts": zod.record(zod.string(), zod.object({
+  "awarded": zod.number(),
+  "itemAwards": zod.array(zod.number())
+}))
 })
 
 
@@ -3082,6 +3193,7 @@ export const UpdateQuizMetadataResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
@@ -3124,6 +3236,7 @@ export const UpdateQuizSharingResponse = zod.object({
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
+  "sharePath": zod.string().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })

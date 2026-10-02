@@ -129,7 +129,9 @@ def item_questions(index, item):
         },
         f"m{index}_noul": {
             "type": "noul",
-            "instructions": instructions("`user_answer` fully satisfies `marking_item`."),
+            "instructions": instructions(
+                "`user_answer` fully satisfies `marking_item`."
+            ),
             "criteria": {
                 "true": PLAIN_CRITERIA["full"],
                 "false": "The answer does not fully satisfy `marking_item`. This includes the partial-credit case: "
@@ -149,7 +151,11 @@ def item_questions(index, item):
 
 
 def js_number(value):
-    return str(int(value)) if isinstance(value, float) and value.is_integer() else str(value)
+    return (
+        str(int(value))
+        if isinstance(value, float) and value.is_integer()
+        else str(value)
+    )
 
 
 def blocks_to_text(blocks):
@@ -190,7 +196,9 @@ def question_text(question, part_index):
         f"Earlier part {i + 1}: " + blocks_to_text(prior["blocks"])
         for i, prior in enumerate(question["parts"][:part_index])
     ]
-    pieces.append("Part to grade: " + blocks_to_text(question["parts"][part_index]["blocks"]))
+    pieces.append(
+        "Part to grade: " + blocks_to_text(question["parts"][part_index]["blocks"])
+    )
     return "\n\n".join(p for p in pieces if p)
 
 
@@ -213,7 +221,10 @@ def validate_question(q):
         if block["type"] == "text":
             assert isinstance(block["text"], str) and block["text"].strip()
         elif block["type"] == "image":
-            assert block["description"].strip() and set(block["image"]) <= {"url", "assetId"}
+            assert block["description"].strip() and set(block["image"]) <= {
+                "url",
+                "assetId",
+            }
         else:
             assert block["type"] in ("graph", "table", "chart")
 
@@ -240,7 +251,9 @@ def validate_grading_fixture(fixture, minimum_questions, minimum_answers):
     for change in fixture["review"]["changes"]:
         q = by_id[change["question"]]
         if change["type"] == "award":
-            answer = next(a for a in q["answers"][change["part"]] if a["kind"] == change["kind"])
+            answer = next(
+                a for a in q["answers"][change["part"]] if a["kind"] == change["kind"]
+            )
             assert answer["labels"][change["item"]][0] == change["to"] != change["from"]
         else:
             assert q["item_context"][change["part"]][change["item"]] == change["to"]
@@ -249,7 +262,8 @@ def validate_grading_fixture(fixture, minimum_questions, minimum_answers):
 def production_questions(items):
     """The candidate production request: one choice per item and the vocabulary guard."""
     questions = {
-        f"m{i}_choice": item_questions(i, item)[f"m{i}_choice"] for i, item in enumerate(items)
+        f"m{i}_choice": item_questions(i, item)[f"m{i}_choice"]
+        for i, item in enumerate(items)
     }
     questions[GUARD_ID] = copy.deepcopy(GUARD_QUESTION)
     return questions
@@ -367,7 +381,11 @@ def decode_grading(result):
                 noul = answers[f"m{i}_noul"]["noul"]
                 score = answers[f"m{i}_score"]
                 value = score["score"]
-                if not (type(value) in (int, float) and math.isfinite(value) and 0 <= value <= 2):
+                if not (
+                    type(value) in (int, float)
+                    and math.isfinite(value)
+                    and 0 <= value <= 2
+                ):
                     raise ValueError("Invalid score")
                 if not probability(score["confidence"]):
                     raise ValueError("Invalid score confidence")
@@ -401,7 +419,9 @@ def decode_grading(result):
 def item_records(rows):
     records = []
     for row in rows:
-        decoded = {} if "error" in row else {d["index"]: d for d in row.get("decoded", [])}
+        decoded = (
+            {} if "error" in row else {d["index"]: d for d in row.get("decoded", [])}
+        )
         for item in row["items"]:
             d = decoded.get(item["index"])
             records.append(
@@ -445,9 +465,16 @@ def answer_scores(records, method):
     for answer_id, items in grouped.items():
         gold = sum(r["gold"] for r in items)
         pred = (
-            sum(r["awards"][method] for r in items) if all(r["awards"] for r in items) else None
+            sum(r["awards"][method] for r in items)
+            if all(r["awards"] for r in items)
+            else None
         )
-        out[answer_id] = {"kind": items[0]["kind"], "gold": gold, "pred": pred, "marks": len(items)}
+        out[answer_id] = {
+            "kind": items[0]["kind"],
+            "gold": gold,
+            "pred": pred,
+            "marks": len(items),
+        }
     return out
 
 
@@ -479,7 +506,10 @@ def bootstrap(clusters, seed=20261002, resamples=2000):
         den = sum(c[1] for c in sample)
         values.append(sum(c[0] for c in sample) / den if den else 0)
     values.sort()
-    return [round(values[int(0.025 * resamples)], 4), round(values[int(0.975 * resamples) - 1], 4)]
+    return [
+        round(values[int(0.025 * resamples)], 4),
+        round(values[int(0.975 * resamples) - 1], 4),
+    ]
 
 
 def correct_clusters(records, method, other=None):
@@ -519,9 +549,18 @@ def compare_arms(records, a, b, method, context=None):
         for k in left
         if k in right and (context is None or left[k]["context"] == context)
     ]
-    out = {"pairs": len(keys), "decision_changes": 0, "a_right_b_wrong": 0, "a_wrong_b_right": 0}
+    out = {
+        "pairs": len(keys),
+        "decision_changes": 0,
+        "a_right_b_wrong": 0,
+        "a_wrong_b_right": 0,
+    }
     for k in keys:
-        x, y, gold = left[k]["awards"][method], right[k]["awards"][method], left[k]["gold"]
+        x, y, gold = (
+            left[k]["awards"][method],
+            right[k]["awards"][method],
+            left[k]["gold"],
+        )
         out["decision_changes"] += x != y
         out["a_right_b_wrong"] += x == gold != y
         out["a_wrong_b_right"] += y == gold != x
@@ -535,12 +574,19 @@ def paired_against(records, base, others):
         shared = [
             m
             for m in PRIMARY
-            if all(m in r["awards"] for r in records if r["arm"] in (base, other) and r["awards"])
+            if all(
+                m in r["awards"]
+                for r in records
+                if r["arm"] in (base, other) and r["awards"]
+            )
         ]
         out[f"{base}_vs_{other}"] = {
             method: {
                 "all": compare_arms(records, base, other, method),
-                **{ctx: compare_arms(records, base, other, method, ctx) for ctx in CONTEXTS},
+                **{
+                    ctx: compare_arms(records, base, other, method, ctx)
+                    for ctx in CONTEXTS
+                },
             }
             for method in shared
         }
@@ -551,7 +597,9 @@ def cross_run(base_rows, rows):
     """Compare a follow-up run with the matrix run's part_q arm."""
     renamed = [{**r, "arm": r["arm"] + "@followup"} for r in rows]
     records = item_records([r for r in base_rows if r["arm"] == "part_q"] + renamed)
-    return paired_against(records, "part_q", list(dict.fromkeys(r["arm"] for r in renamed)))
+    return paired_against(
+        records, "part_q", list(dict.fromkeys(r["arm"] for r in renamed))
+    )
 
 
 def summarize_grading(rows):
@@ -578,7 +626,9 @@ def summarize_grading(rows):
                     for kind in sorted({r["kind"] for r in recs})
                 },
                 "parts_by_kind": {
-                    kind: part_metrics({k: s for k, s in scores.items() if s["kind"] == kind})
+                    kind: part_metrics(
+                        {k: s for k, s in scores.items() if s["kind"] == kind}
+                    )
                     for kind in sorted({s["kind"] for s in scores.values()})
                 },
                 "by_context": {
@@ -589,25 +639,31 @@ def summarize_grading(rows):
                 "false_credit": {
                     "kinds": list(FALSE_CREDIT_KINDS),
                     "items_over": sum(
-                        bool(r["awards"]) and r["awards"][method] > r["gold"] for r in fc
+                        bool(r["awards"]) and r["awards"][method] > r["gold"]
+                        for r in fc
                     ),
                     "items": len(fc),
                     "answers_over": sum(
-                        s["pred"] is not None and s["pred"] > s["gold"] for s in fc_scores
+                        s["pred"] is not None and s["pred"] > s["gold"]
+                        for s in fc_scores
                     ),
                     "answers": len(fc_scores),
                     "marks_over": sum(
-                        max(0, s["pred"] - s["gold"]) for s in fc_scores if s["pred"] is not None
+                        max(0, s["pred"] - s["gold"])
+                        for s in fc_scores
+                        if s["pred"] is not None
                     ),
                 },
                 "missed_credit": {
                     "kinds": list(MISSED_CREDIT_KINDS),
                     "items_under": sum(
-                        bool(r["awards"]) and r["awards"][method] < r["gold"] for r in mc
+                        bool(r["awards"]) and r["awards"][method] < r["gold"]
+                        for r in mc
                     ),
                     "items_with_credit": len(mc),
                     "answers_under": sum(
-                        s["pred"] is not None and s["pred"] < s["gold"] for s in mc_scores
+                        s["pred"] is not None and s["pred"] < s["gold"]
+                        for s in mc_scores
                     ),
                     "answers": len(mc_scores),
                 },
@@ -640,21 +696,32 @@ def summarize_grading(rows):
         guards = {}
         for r in arm_rows:
             if GUARD_ID in r["questions"]:
-                flagged = "error" not in r and r["response"]["answers"][GUARD_ID]["noul"] >= GUARD_THRESHOLD
+                flagged = (
+                    "error" not in r
+                    and r["response"]["answers"][GUARD_ID]["noul"] >= GUARD_THRESHOLD
+                )
                 count = guards.setdefault(r["kind"], {"flagged": 0, "answers": 0})
                 count["flagged"] += flagged
                 count["answers"] += 1
         report["arms"][arm] = {
             "requests": len(arm_rows),
             "failures": sum("error" in r for r in arm_rows),
-            "errors_by_type": dict(Counter(r["error"] for r in arm_rows if "error" in r)),
-            "returned_models": dict(Counter(str(r.get("returned_model")) for r in arm_rows)),
+            "errors_by_type": dict(
+                Counter(r["error"] for r in arm_rows if "error" in r)
+            ),
+            "returned_models": dict(
+                Counter(str(r.get("returned_model")) for r in arm_rows)
+            ),
             "methods": methods,
             "vocabulary_guard_by_kind": guards or None,
             "latency_s": {
                 "per_request": quantiles(latencies),
-                "per_answer_parallel": quantiles([max(e["lat"]) for e in per_answer.values()]),
-                "per_answer_sequential": quantiles([sum(e["lat"]) for e in per_answer.values()]),
+                "per_answer_parallel": quantiles(
+                    [max(e["lat"]) for e in per_answer.values()]
+                ),
+                "per_answer_sequential": quantiles(
+                    [sum(e["lat"]) for e in per_answer.values()]
+                ),
             },
             "input_tokens": {
                 "total": sum(tokens),
@@ -663,10 +730,18 @@ def summarize_grading(rows):
             },
             "choice_confidence": {
                 "correct": quantiles(
-                    [r["choice_confidence"] for r in confident if r["awards"]["choice"] == r["gold"]]
+                    [
+                        r["choice_confidence"]
+                        for r in confident
+                        if r["awards"]["choice"] == r["gold"]
+                    ]
                 ),
                 "wrong": quantiles(
-                    [r["choice_confidence"] for r in confident if r["awards"]["choice"] != r["gold"]]
+                    [
+                        r["choice_confidence"]
+                        for r in confident
+                        if r["awards"]["choice"] != r["gold"]
+                    ]
                 ),
                 "below_0_6": sum(r["choice_confidence"] < 0.6 for r in confident),
                 "wrong_below_0_6": sum(
@@ -697,7 +772,9 @@ def summarize_grading(rows):
             if a in available and b in available
         }
     if "part_q" in arms:
-        report["paired"] = paired_against(records, "part_q", [a for a in arms if a != "part_q"])
+        report["paired"] = paired_against(
+            records, "part_q", [a for a in arms if a != "part_q"]
+        )
     report["interpretation"] = (
         "Synthetic AI-authored items, answers and labels; not human-certified. Item "
         "agreement uses correct/planned, so failures count as errors. Part score = sum of "
@@ -739,7 +816,9 @@ def validate_compute_fixture(fixture):
     assert len(prompts) >= 60 and len({p["id"] for p in prompts}) == len(prompts)
     for p in prompts:
         assert p["group"] in ("computational", "non_computational", "hard")
-        assert isinstance(p["compute"], bool) and p["question"].strip() and p["markscheme"]
+        assert (
+            isinstance(p["compute"], bool) and p["question"].strip() and p["markscheme"]
+        )
         assert p["group"] != "computational" or p["compute"]
         assert p["group"] != "non_computational" or not p["compute"]
         assert p["group"] != "hard" or (p.get("hard_kind") and p.get("rationale"))
@@ -785,7 +864,9 @@ def summarize_compute(rows):
         }
         for wording in wordings:
             state_report["wordings"][wording] = {
-                "thresholds": {str(t): confusion(scored, wording, t) for t in THRESHOLDS},
+                "thresholds": {
+                    str(t): confusion(scored, wording, t) for t in THRESHOLDS
+                },
                 "by_group_at": {
                     str(t): {
                         g: confusion([r for r in scored if r["group"] == g], wording, t)
@@ -794,12 +875,15 @@ def summarize_compute(rows):
                     for t in (0.3, 0.5)
                 },
                 "noul_by_label": {
-                    "compute": quantiles([r["nouls"][wording] for r in scored if r["compute"]]),
+                    "compute": quantiles(
+                        [r["nouls"][wording] for r in scored if r["compute"]]
+                    ),
                     "non_compute": quantiles(
                         [r["nouls"][wording] for r in scored if not r["compute"]]
                     ),
                     "compute_min": min(
-                        (r["nouls"][wording] for r in scored if r["compute"]), default=None
+                        (r["nouls"][wording] for r in scored if r["compute"]),
+                        default=None,
                     ),
                 },
                 "all_scored": sorted(
@@ -831,7 +915,9 @@ def summarize_compute(rows):
 
 
 def model_payload(job):
-    return json.dumps({"state": job["state"], "questions": job["questions"]}, ensure_ascii=False)
+    return json.dumps(
+        {"state": job["state"], "questions": job["questions"]}, ensure_ascii=False
+    )
 
 
 def check():
@@ -845,24 +931,37 @@ def check():
     jobs = grading_jobs(grading, MATRIX_ARMS)
     assert grading == original
     counts = Counter(j["arm"] for j in jobs)
-    assert counts == {"part_q": 176, "part_noq": 176, "part_noscheme": 176, "item_q": 464}, counts
+    assert counts == {
+        "part_q": 176,
+        "part_noq": 176,
+        "part_noscheme": 176,
+        "item_q": 464,
+    }, counts
     assert len({j["id"] for j in jobs}) == len(jobs) == 992
     by_answer = {}
     for job in jobs:
-        by_answer.setdefault(job["answer_id"], {}).setdefault(job["arm"], []).append(job)
+        by_answer.setdefault(job["answer_id"], {}).setdefault(job["arm"], []).append(
+            job
+        )
     for arms in by_answer.values():
         (part,) = arms["part_q"]
         (noq,) = arms["part_noq"]
         (noscheme,) = arms["part_noscheme"]
-        assert {k: v for k, v in part["state"].items() if k != "question"} == noq["state"]
-        assert {k: v for k, v in part["state"].items() if k != "markscheme"} == noscheme["state"]
+        assert {k: v for k, v in part["state"].items() if k != "question"} == noq[
+            "state"
+        ]
+        assert {
+            k: v for k, v in part["state"].items() if k != "markscheme"
+        } == noscheme["state"]
         assert part["questions"] == noq["questions"] == noscheme["questions"]
         merged = {}
         for item_job in arms["item_q"]:
             assert item_job["state"] == part["state"] and len(item_job["items"]) == 1
             merged.update(item_job["questions"])
         assert merged == part["questions"]
-        assert [i["gold"] for i in part["items"]] == [j["items"][0]["gold"] for j in arms["item_q"]]
+        assert [i["gold"] for i in part["items"]] == [
+            j["items"][0]["gold"] for j in arms["item_q"]
+        ]
     poisoned = copy.deepcopy(grading)
     n = 0
     for q in poisoned["questions"]:
@@ -896,9 +995,19 @@ def check():
         "Source\nStem text\n\n[Figure: A cartoon]\n\na | b\n1 | 2\n\nSales (£)\nShop: Q1=3, Q2=2.5"
         "\n\nEarlier part 1: First?\n\nPart to grade: [Figure: A curve]"
     )
-    assert question_text({"stem": [], "parts": question["parts"]}, 0) == "Part to grade: First?"
+    assert (
+        question_text({"stem": [], "parts": question["parts"]}, 0)
+        == "Part to grade: First?"
+    )
     assert [band(p) for p in (0.349, 0.35, 0.649, 0.65)] == [0, 0.5, 0.5, 1]
-    assert [score_round(s) for s in (0, 0.49, 0.5, 1.49, 1.5, 2)] == [0, 0, 0.5, 0.5, 1, 1]
+    assert [score_round(s) for s in (0, 0.49, 0.5, 1.49, 1.5, 2)] == [
+        0,
+        0,
+        0.5,
+        0.5,
+        1,
+        1,
+    ]
     assert score_argmax({"0": 0.4, "1": 0.4, "2": 0.2}) == 0
     job = next(j for j in jobs if j["arm"] == "part_q" and len(j["items"]) == 2)
 
@@ -939,7 +1048,12 @@ def check():
         assert bad["error"] == "InvalidDecisionResponse" and "decoded" not in bad
     rows = [
         {**ok, "latency_s": 0.5, "usage": {"input_tokens": 100}},
-        {**copy.deepcopy(job), "arm": "item_q", "error": "TimeoutError", "latency_s": 60},
+        {
+            **copy.deepcopy(job),
+            "arm": "item_q",
+            "error": "TimeoutError",
+            "latency_s": 60,
+        },
     ]
     summary = summarize_grading(rows)
     part = summary["arms"]["part_q"]["methods"]["choice"]
@@ -948,21 +1062,32 @@ def check():
     assert part["parts"]["exact"] == int(abs(sum(gold) - 1) < 1e-9)
     assert part["parts"]["within_half"] == int(abs(sum(gold) - 1) <= 0.5)
     failed = summary["arms"]["item_q"]
-    assert failed["failures"] == 1 and failed["methods"]["choice"]["items"]["valid"] == 0
+    assert (
+        failed["failures"] == 1 and failed["methods"]["choice"]["items"]["valid"] == 0
+    )
     assert failed["methods"]["choice"]["items"]["planned"] == 2
     assert failed["methods"]["choice"]["parts"]["valid"] == 0
     kind_job = {**copy.deepcopy(job), "kind": "keywords"}
     for item in kind_job["items"]:
         item["gold"] = 0
-    fc = summarize_grading([decode_grading({**kind_job, "response": {"answers": good_answers()}})])
+    fc = summarize_grading(
+        [decode_grading({**kind_job, "response": {"answers": good_answers()}})]
+    )
     credit = fc["arms"]["part_q"]["methods"]["choice"]["false_credit"]
-    assert credit["items_over"] == 2 and credit["answers_over"] == 1 and credit["marks_over"] == 1
+    assert (
+        credit["items_over"] == 2
+        and credit["answers_over"] == 1
+        and credit["marks_over"] == 1
+    )
     latex_jobs = grading_jobs(latex, DEFAULT_ARMS["latex"])
     assert len(latex_jobs) == 20 and all(j["arm"] == "prod" for j in latex_jobs)
     prod = grading_jobs(grading, ("part_q", "prod"))
     for base, candidate in zip(prod[::2], prod[1::2]):
         assert candidate["arm"] == "prod" and candidate["state"] == base["state"]
-        assert candidate["keys"] == [GUARD_ID] and candidate["questions"][GUARD_ID] == GUARD_QUESTION
+        assert (
+            candidate["keys"] == [GUARD_ID]
+            and candidate["questions"][GUARD_ID] == GUARD_QUESTION
+        )
         assert {k: v for k, v in candidate["questions"].items() if k != GUARD_ID} == {
             k: v for k, v in base["questions"].items() if k.endswith("_choice")
         }
@@ -972,17 +1097,27 @@ def check():
     prod_answers = {k: v for k, v in good_answers().items() if k.endswith("_choice")}
     for guard, expected in ((0.49, 0.5), (0.5, 0)):
         decoded = decode_grading(
-            {**copy.deepcopy(prod_job), "response": {"answers": {**prod_answers, GUARD_ID: {"noul": guard}}}}
+            {
+                **copy.deepcopy(prod_job),
+                "response": {"answers": {**prod_answers, GUARD_ID: {"noul": guard}}},
+            }
         )
         assert [d["awards"] for d in decoded["decoded"]] == [
             {"choice": 0.5, "choice_guarded": expected}
         ] * 2
-    missing = decode_grading({**copy.deepcopy(prod_job), "response": {"answers": prod_answers}})
+    missing = decode_grading(
+        {**copy.deepcopy(prod_job), "response": {"answers": prod_answers}}
+    )
     assert missing["error"] == "InvalidDecisionResponse"
-    mixed = summarize_grading([ok, {**decoded, "latency_s": 0.4, "usage": {"input_tokens": 50}}])
+    mixed = summarize_grading(
+        [ok, {**decoded, "latency_s": 0.4, "usage": {"input_tokens": 50}}]
+    )
     assert set(mixed["arms"]["prod"]["methods"]) == {"choice", "choice_guarded"}
     assert set(mixed["paired"]["part_q_vs_prod"]) == {"choice"}
-    assert mixed["arms"]["prod"]["vocabulary_guard_by_kind"][prod_job["kind"]] == {"flagged": 1, "answers": 1}
+    assert mixed["arms"]["prod"]["vocabulary_guard_by_kind"][prod_job["kind"]] == {
+        "flagged": 1,
+        "answers": 1,
+    }
     assert set(cross_run([ok], [ok])) == {"part_q_vs_part_q@followup"}
     cjobs = compute_jobs(compute)
     assert len(cjobs) == 2 * len(compute["prompts"]) == 168
@@ -990,12 +1125,27 @@ def check():
         assert a["state"] == {"question": b["state"]["question"]}
         assert set(b["questions"]) - set(a["questions"]) == {"scheme_item"}
         assert a["questions"]["legacy"] == ROUTE_QUESTIONS["compute"]
-        assert '"compute":' not in model_payload(a) and '"compute":' not in model_payload(b)
+        assert '"compute":' not in model_payload(
+            a
+        ) and '"compute":' not in model_payload(b)
     toy = [
-        {"state_name": "question_only", "prompt_id": str(i), "group": "hard", "hard_kind": "x",
-         "compute": c, "arguable": arg, "nouls": {"legacy": p, "product": p}}
+        {
+            "state_name": "question_only",
+            "prompt_id": str(i),
+            "group": "hard",
+            "hard_kind": "x",
+            "compute": c,
+            "arguable": arg,
+            "nouls": {"legacy": p, "product": p},
+        }
         for i, (c, p, arg) in enumerate(
-            [(True, 0.9, False), (True, 0.2, False), (False, 0.4, False), (False, 0.1, False), (False, 0.95, True)]
+            [
+                (True, 0.9, False),
+                (True, 0.2, False),
+                (False, 0.4, False),
+                (False, 0.1, False),
+                (False, 0.95, True),
+            ]
         )
     ]
     toy.append({**toy[0], "error": "TimeoutError"})
@@ -1004,7 +1154,9 @@ def check():
     at3 = cs["wordings"]["product"]["thresholds"]["0.3"]
     assert (at3["tp"], at3["fp"], at3["fn"], at3["tn"]) == (1, 1, 1, 1)
     assert cs["wordings"]["product"]["arguable"] == [{"id": "4", "noul": 0.95}]
-    assert jev_context.safe_response({"headers": {"x": "k"}, "v": "k"}, "k") == {"v": "[redacted]"}
+    assert jev_context.safe_response({"headers": {"x": "k"}, "v": "k"}, "k") == {
+        "v": "[redacted]"
+    }
     print(
         "Offline check passed: fixtures valid; grading 992 calls (176 x 3 part arms + 464 item calls) "
         "with identical questions across arms and no label leakage; app question text, bands, "
@@ -1036,7 +1188,12 @@ def plan(experiment, arms, kinds=None):
         validate_compute_fixture(fixture)
         return fixture, compute_jobs(fixture), decode_compute, summarize_compute
     validate_grading_fixture(fixture, *((16, 6) if experiment == "grading" else (5, 4)))
-    return fixture, grading_jobs(fixture, arms, kinds), decode_grading, summarize_grading
+    return (
+        fixture,
+        grading_jobs(fixture, arms, kinds),
+        decode_grading,
+        summarize_grading,
+    )
 
 
 def headline(experiment, summary):
@@ -1048,7 +1205,8 @@ def headline(experiment, summary):
                 lines.append(
                     f"{state:16} {wording:12} "
                     + " ".join(
-                        f"@{k} P={t[k]['precision']} R={t[k]['recall']}" for k in ("0.3", "0.5")
+                        f"@{k} P={t[k]['precision']} R={t[k]['recall']}"
+                        for k in ("0.3", "0.5")
                     )
                 )
         return "\n".join(lines)
@@ -1062,12 +1220,18 @@ def headline(experiment, summary):
                 f"within 0.5 {m['parts']['within_half']} "
                 f"false credit {m['false_credit']['items_over']}/{m['false_credit']['items']}"
             )
-        lines.append(f"{arm:14} failures {a['failures']} tokens {a['input_tokens']['total']}")
+        lines.append(
+            f"{arm:14} failures {a['failures']} tokens {a['input_tokens']['total']}"
+        )
     return "\n".join(lines)
 
 
 def run(args, key):
-    arms = tuple(args.arms.split(",")) if args.arms else DEFAULT_ARMS.get(args.experiment, ())
+    arms = (
+        tuple(args.arms.split(","))
+        if args.arms
+        else DEFAULT_ARMS.get(args.experiment, ())
+    )
     kinds = set(args.kinds.split(",")) if args.kinds else None
     fixture, jobs, decode, summarize = plan(args.experiment, arms, kinds)
     args.output.mkdir(parents=True, exist_ok=False)
@@ -1113,14 +1277,18 @@ def run(args, key):
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     rows = []
-    with (args.output / "results.jsonl").open("x", encoding="utf-8", buffering=1) as handle:
+    with (args.output / "results.jsonl").open(
+        "x", encoding="utf-8", buffering=1
+    ) as handle:
         first = decode(jev_context.call(jobs[0], key))
         rows.append(first)
         handle.write(json.dumps(first, ensure_ascii=False) + "\n")
         # The first planned request is the auth/format gate; it is kept, never repeated.
         if "error" not in first:
             with ThreadPoolExecutor(max_workers=args.workers) as pool:
-                for row in pool.map(lambda job: decode(jev_context.call(job, key)), jobs[1:]):
+                for row in pool.map(
+                    lambda job: decode(jev_context.call(job, key)), jobs[1:]
+                ):
                     rows.append(row)
                     handle.write(json.dumps(row, ensure_ascii=False) + "\n")
     summary = summarize(rows)
@@ -1134,7 +1302,9 @@ def run(args, key):
         "complete": len(rows) == len(jobs),
         "finished_utc": datetime.now(timezone.utc).isoformat(),
         "input_tokens_total": sum(
-            r["usage"].get("input_tokens", 0) for r in rows if isinstance(r.get("usage"), dict)
+            r["usage"].get("input_tokens", 0)
+            for r in rows
+            if isinstance(r.get("usage"), dict)
         ),
         "returned_models": dict(Counter(str(r.get("returned_model")) for r in rows)),
         "runner_sha256": sha256(__file__),
@@ -1143,7 +1313,9 @@ def run(args, key):
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     marker = key[:8]
-    clean = all(marker not in p.read_text(encoding="utf-8") for p in args.output.iterdir())
+    clean = all(
+        marker not in p.read_text(encoding="utf-8") for p in args.output.iterdir()
+    )
     print(headline(args.experiment, summary))
     print(f"credential marker absent from run files: {clean}")
     return int(any("error" in r for r in rows) or not clean)
@@ -1152,7 +1324,9 @@ def run(args, key):
 def load_rows(directory):
     return [
         json.loads(line)
-        for line in (Path(directory) / "results.jsonl").read_text(encoding="utf-8").splitlines()
+        for line in (Path(directory) / "results.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
 
 
@@ -1164,11 +1338,16 @@ def rescore(directory, experiment, base=None):
         if row.get("error") == "InvalidDecisionResponse":
             del row["error"]
         decode(row)
-    summary = (summarize_compute if experiment == "compute" else summarize_grading)(rows)
+    summary = (summarize_compute if experiment == "compute" else summarize_grading)(
+        rows
+    )
     if base:
         summary["paired_with_base"] = cross_run(load_rows(base), rows)
     previous = json.loads((directory / "summary.json").read_text(encoding="utf-8"))
-    summary["execution"] = {**previous.get("execution", {}), "rescored_runner_sha256": sha256(__file__)}
+    summary["execution"] = {
+        **previous.get("execution", {}),
+        "rescored_runner_sha256": sha256(__file__),
+    }
     (directory / "summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
@@ -1176,11 +1355,17 @@ def rescore(directory, experiment, base=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("--experiment", choices=tuple(FIXTURES))
     parser.add_argument("--arms", help="comma-separated subset of " + ", ".join(ARMS))
-    parser.add_argument("--kinds", help="grading/latex: only these comma-separated answer kinds")
-    parser.add_argument("--base", type=Path, help="matrix run directory to pair part_q against")
+    parser.add_argument(
+        "--kinds", help="grading/latex: only these comma-separated answer kinds"
+    )
+    parser.add_argument(
+        "--base", type=Path, help="matrix run directory to pair part_q against"
+    )
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--rescore", type=Path, help="existing run directory")
@@ -1203,11 +1388,20 @@ def main():
         rescore(args.rescore, args.experiment, args.base)
         return 0
     if args.dry_run:
-        arms = tuple(args.arms.split(",")) if args.arms else DEFAULT_ARMS.get(args.experiment, ())
+        arms = (
+            tuple(args.arms.split(","))
+            if args.arms
+            else DEFAULT_ARMS.get(args.experiment, ())
+        )
         kinds = set(args.kinds.split(",")) if args.kinds else None
         _, jobs, _, _ = plan(args.experiment, arms, kinds)
         sample = next(
-            (j for j in jobs if len(j.get("items", ())) > 1 or j.get("state_name") == "question_scheme"),
+            (
+                j
+                for j in jobs
+                if len(j.get("items", ())) > 1
+                or j.get("state_name") == "question_scheme"
+            ),
             jobs[0],
         )
         print(
@@ -1215,7 +1409,9 @@ def main():
                 {
                     "experiment": args.experiment,
                     "calls": len(jobs),
-                    "by_arm": dict(Counter(j.get("arm", j.get("state_name")) for j in jobs)),
+                    "by_arm": dict(
+                        Counter(j.get("arm", j.get("state_name")) for j in jobs)
+                    ),
                     "decisions": sum(len(j["questions"]) for j in jobs),
                     "sample_request": {
                         "model": jev_context.MODEL,
@@ -1231,7 +1427,9 @@ def main():
     if args.output is None or args.output.exists():
         parser.error("--output must name a fresh directory")
     if args.key_stdin:
-        key = (getpass.getpass("Jev key: ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
+        key = (
+            getpass.getpass("Jev key: ") if sys.stdin.isatty() else sys.stdin.readline()
+        ).strip()
     else:
         key = os.environ.get("TYPESAFE_API_KEY", "").strip()
     if not key:

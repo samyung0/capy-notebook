@@ -787,7 +787,7 @@ const keptWhenFrozen = [
   /^PATCH \/api\/[a-z]+\/[^/]+\/sharing$/,
   /^POST \/api\/workspaces\/[^/]+\/(transfer|chat\/stream)$/,
   /^POST \/api\/(materials|files)\/[^/]+\/collaboration-token$/,
-  /^POST \/api\/(quizzes\/[^/]+\/attempts|quiz-grade)$/,
+  /^POST \/api\/quizzes\/[^/]+\/(attempts|grade)$/,
   /^POST \/api\/(notifications|billing|account)\//,
   /^(PATCH|PUT|DELETE) \/api\/(me|notification-prefs)(\/|$)/,
   /^[A-Z]+ \/api\/bank\//,

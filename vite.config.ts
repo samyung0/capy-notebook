@@ -7,7 +7,6 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
 import { summaryVitePlugin } from './src/summary/vite';
-import { llmRuntimePlugin } from './vite-llm-runtime';
 import { mathliveFonts } from './vite-mathlive';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
@@ -54,7 +53,6 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         input: {
-          llmRuntime: path.resolve(import.meta.dirname, 'llm-runtime.html'),
           main: path.resolve(import.meta.dirname, 'index.html'),
           officeRuntime: path.resolve(
             import.meta.dirname,
@@ -87,7 +85,6 @@ export default defineConfig(({ mode }) => {
         '@betteroffice/xlsx/editor',
         '@betteroffice/xlsx/viewer',
         '@betteroffice/xlsx-react',
-        '@wllama/wllama',
       ],
       // Export worker imports are outside the initial crawl. Discovering these
       // on the first Word export otherwise reloads every open development page.
@@ -97,7 +94,6 @@ export default defineConfig(({ mode }) => {
       react(),
       mathliveFonts(),
       tailwindcss(),
-      llmRuntimePlugin(),
       summaryVitePlugin(
         env.VITE_API_URL || 'http://localhost:8080',
         serveLocalUat

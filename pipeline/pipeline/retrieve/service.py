@@ -1,4 +1,4 @@
-"""Retrieval HTTP service. The Go gateway proxies /chat/stream, /generate, /quiz-grade and /plate-ai here.
+"""Retrieval HTTP service. The Go gateway proxies /chat/stream, /generate and /plate-ai here.
 
 Chat runs a capped tool loop over the workspace index (see retrieval/agent.py).
 Generation runs fixed workflows instead, because its output has to parse.
@@ -25,7 +25,6 @@ from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..generated.limits import CHAT_CHARACTER_LIMIT
 from ..prompts import generate as generate_prompts
-from ..prompts import quiz as quiz_prompts
 from ..retrieval import (
     accounting,
     compact,
@@ -37,10 +36,9 @@ from ..retrieval import (
     workflows,
 )
 from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
-from ..retrieval.chunking import clip_to_tokens, estimate_tokens
+from ..retrieval.chunking import estimate_tokens
 from ..retrieval.events import error as client_error
 from ..retrieval.tools import Ledger, ToolContext
-from . import quiz_grade as quiz_grade_mod
 from .ai_adapter import router as plate_ai_router
 
 obs.init_logging("retrieval")
@@ -459,59 +457,6 @@ async def chat_stream(req: ChatStreamReq, request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-
-class QuizGradeReq(LLMPin):
-    workspaceId: str | None = None
-    prompt: str = ""
-    hints: list[str] | None = None
-    rubrics: list[str] | None = None
-    modelAnswer: str = ""
-    userAnswer: str = ""
-    locale: str | None = None
-    spendSessionId: str = ""
-
-
-@app.post("/quiz-grade")
-async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
-    _bind_llm(req)
-    accounting_token = _bind_accounting(req.spendSessionId)
-    model = models.resolve_query_model(
-        req.providerSlug,
-        req.modelSlug,
-        req.configVersion,
-        slot=registry.Slot.QUIZ,
-    )
-    try:
-        text = await models.complete_text(
-            [
-                {"role": "system", "content": quiz_prompts.GRADE_SYSTEM},
-                {
-                    "role": "user",
-                    "content": clip_to_tokens(
-                        quiz_prompts.build_grade_prompt(
-                            prompt=req.prompt,
-                            hints=req.hints or [],
-                            rubrics=req.rubrics or [],
-                            model_answer=req.modelAnswer,
-                            user_answer=req.userAnswer,
-                        ),
-                        registry.input_budget(model),
-                    ),
-                },
-            ],
-            model=model,
-            temperature=0.1,
-            max_tokens=models.quiz_grade_max_tokens(model),
-            reasoning=False,
-        )
-        payload = quiz_grade_mod.parse_grade_response(text)
-        usage = obs.current_usage()
-        if usage is not None and not usage.is_empty():
-            payload["usage"] = usage.as_dict()
-        return payload
-    finally:
-        _reset_accounting(accounting_token)
 
 
 # ------------------------------------------------------------------- generate

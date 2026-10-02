@@ -123,19 +123,13 @@ const publicRoutes = [
     component: SharedQuizRoute,
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
-    loader: ({ context: { queryClient: qc }, params }) => {
-      qc.prefetchQuery(quizQuery(params.quizId));
-    },
+    // The param is a signed share token; the page loads signed in or out.
     path: '/share/quizzes/$quizId',
   }),
   createRoute({
     component: SharedFlashcardsRoute,
     errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
-    loader: ({ context: { queryClient: qc }, params }) => {
-      qc.prefetchQuery(flashcardSetQuery(params.flashcardSetId));
-      qc.prefetchQuery(cardsQuery(params.flashcardSetId));
-    },
     path: '/share/flashcards/$flashcardSetId',
   }),
   createRoute({

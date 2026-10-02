@@ -146,13 +146,15 @@ type MaterialListItem struct {
 	ParentMaterialID string       `json:"parentMaterialId"`
 	ParentTitle      string       `json:"parentTitle"`
 	Privacy          Privacy      `json:"privacy"`
-	CreatedAt        time.Time    `json:"createdAt"`
-	UpdatedAt        time.Time    `json:"updatedAt"`
-	SizeBytes        int64        `json:"sizeBytes"`
-	QuestionCount    *int         `json:"questionCount,omitempty"`
-	CardCount        *int         `json:"cardCount,omitempty"`
-	KnownPct         *int         `json:"knownPct,omitempty"`
-	DueCount         *int         `json:"dueCount,omitempty"`
+	// SharePath is the signed share link of a standalone quiz or flashcard set.
+	SharePath     string    `json:"sharePath,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	SizeBytes     int64     `json:"sizeBytes"`
+	QuestionCount *int      `json:"questionCount,omitempty"`
+	CardCount     *int      `json:"cardCount,omitempty"`
+	KnownPct      *int      `json:"knownPct,omitempty"`
+	DueCount      *int      `json:"dueCount,omitempty"`
 }
 
 type MaterialPage struct {
@@ -231,6 +233,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			&item.QuestionCount, &item.CardCount, &item.KnownPct, &item.DueCount); err != nil {
 			return MaterialPage{}, err
 		}
+		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, item.ParentMaterialID)
 		page.Items = append(page.Items, item)
 	}
 	if err := rows.Err(); err != nil {

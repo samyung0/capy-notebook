@@ -1790,7 +1790,9 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 
 // quizFromMaterial derives the legacy typed Quiz API view from canonical
 // quiz_question descendants; everything else maps straight off the material.
-func quizFromMaterial(mt Material) (Quiz, error) {
+// quizFromMaterial builds the quiz view, including a standalone quiz's signed
+// share link.
+func (s *Store) quizFromMaterial(mt Material) (Quiz, error) {
 	questions, timeLimit, err := materialdoc.ExtractQuiz(mt.Content)
 	if err != nil {
 		return Quiz{}, err
@@ -1807,7 +1809,8 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 		ID:       mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
 		Chapters: chapters, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
 		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance,
-		IsOwner: mt.IsOwner, CanEdit: mt.Capabilities.CanEdit, CanEditContent: mt.Capabilities.CanEditContent,
+		SharePath: materialSharePath(s.shareLinkSecret, string(mt.Kind), mt.ID, mt.WorkspaceID, mt.ParentMaterialID),
+		IsOwner:   mt.IsOwner, CanEdit: mt.Capabilities.CanEdit, CanEditContent: mt.Capabilities.CanEditContent,
 	}, nil
 }
 
@@ -1819,7 +1822,7 @@ func (s *Store) GetQuiz(ctx context.Context, id string) (Quiz, error) {
 	if mt.Kind != "quiz" {
 		return Quiz{}, ErrNotFound
 	}
-	return quizFromMaterial(mt)
+	return s.quizFromMaterial(mt)
 }
 
 func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
@@ -1834,7 +1837,7 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	if err != nil {
 		return Quiz{}, err
 	}
-	created, err := quizFromMaterial(mt)
+	created, err := s.quizFromMaterial(mt)
 	if err != nil {
 		return Quiz{}, err
 	}
@@ -1854,7 +1857,7 @@ func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentP
 	if p.ExpectedRevision < 1 || p.ExpectedRevision != mt.Revision {
 		return Quiz{}, ErrConflict
 	}
-	cur, err := quizFromMaterial(mt)
+	cur, err := s.quizFromMaterial(mt)
 	if err != nil {
 		return Quiz{}, err
 	}
@@ -1996,14 +1999,14 @@ const flashcardSetStatsExpr = `
 // flashcardSetCols is the shared column list every flashcard-set read starts
 // with; callers append their own request-scoped columns after it.
 const flashcardSetCols = `m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,` +
-	flashcardSetStatsExpr + `, m.provenance, m.revision`
+	flashcardSetStatsExpr + `, m.provenance, m.revision, COALESCE(m.parent_material_id,'')`
 
 // scanFlashcardSetRow reads flashcardSetCols plus the caller's extra columns.
 func scanFlashcardSetRow(row pgx.Row, extra ...any) (FlashcardSet, error) {
 	var d FlashcardSet
 	var provenance []byte
 	dest := append([]any{&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color,
-		&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &provenance, &d.Revision}, extra...)
+		&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &provenance, &d.Revision, &d.ParentMaterialID}, extra...)
 	err := row.Scan(dest...)
 	if err == nil {
 		d.Provenance, err = decodeProvenance(provenance)
@@ -2017,6 +2020,7 @@ func (s *Store) GetFlashcardSet(ctx context.Context, id string) (FlashcardSet, e
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}
+	d.SharePath = materialSharePath(s.shareLinkSecret, "flashcards", d.ID, d.WorkspaceID, d.ParentMaterialID)
 	return d, err
 }
 

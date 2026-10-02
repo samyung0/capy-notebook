@@ -47,7 +47,7 @@ Decision records: [parser accuracy](parsers/reports/2026-08-28-parser-accuracy.m
 ### grading
 
 14,000 grading cases across 8 domains and 7 language groups, scored against the
-production prompt in `pipeline/pipeline/retrieve/quiz_grade.py`. AI-authored and
+retired generative quiz prompt (`grading/scripts/quiz_prompt.py`). AI-authored and
 AI-reviewed labels, not human-certified — read
 [the README](grading/README.md) on provenance before citing a number. Model
 files and run artifacts live in the gitignored `data/grading-benchmark/`.

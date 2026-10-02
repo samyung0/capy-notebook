@@ -25,7 +25,7 @@ The Python services share one Postgres schema owned by Go migrations
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes the file descriptor. Each replica runs one job at a time |
-| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
+| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
 | Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
@@ -90,19 +90,13 @@ network and no pin.
 | `chat.py` | `chat` | Agent system prompt and full message list; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
-| `quiz.py` | `quiz` | Open-answer marking. Import-free: `bench/grading` loads it by path, and `src/features/quizzes/judge.ts` is its browser twin |
 | `ingest.py` | `ingest` | File descriptor, and `SUMMARY_VERSION` |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `curate.py` | `chat` | Curate-mode system prompt, its tool-description overrides, and the progress-ledger message |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
-Two prompts have a twin outside this package. `quiz.py` and
-`src/features/quizzes/judge.ts` must produce identical text — the browser BYOK
-path builds its own request — and `prompts/quiz_grade.golden.json` is asserted
-by both `pipeline/tests/test_quiz_grade.py` and
-`src/features/quizzes/judge.test.ts`, so a change made to one implementation
-and not the other fails. Ordinary agent tool descriptions come from the shared
+Ordinary agent tool descriptions come from the shared
 contract (`retrieval/contract.py`), and curate mode replaces four of them from
 `prompts/curate.TOOL_DESCRIPTIONS`. Nothing model-facing is written in
 `retrieval/`: `LANG_RULE` lives in `chat.py`, and

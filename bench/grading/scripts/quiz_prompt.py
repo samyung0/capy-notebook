@@ -1,9 +1,8 @@
-"""Quiz-slot prompt: marking one open answer against its scheme.
+"""The retired generative quiz-grading prompt, frozen for this benchmark.
 
-This module has no imports on purpose. ``src/features/quizzes/judge.ts`` is the
-same prompt for the browser BYOK path, and ``bench/grading`` loads
-this file directly by path to hash it alongside its results. The three stay in
-step through ``quiz_grade.golden.json``, which both test suites assert against.
+Production grading moved to Jev (`server/internal/jev`), which takes the
+marking items directly. This copy keeps earlier reports reproducible;
+`benchmark.py` loads it by path and hashes it alongside its results.
 """
 
 from __future__ import annotations

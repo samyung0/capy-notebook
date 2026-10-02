@@ -155,22 +155,6 @@ type UpsertLLMCredentialReq struct {
 	APIKey       string `json:"apiKey"`
 }
 
-// QuizGradeReq is one open-answer marking request. The gateway builds the
-// judge prompt server-side; the client only sends the question fields.
-type QuizGradeReq struct {
-	Hints       []string `json:"hints" nullable:"false"`
-	ModelAnswer string   `json:"modelAnswer"`
-	Prompt      string   `json:"prompt"`
-	Rubrics     []string `json:"rubrics" nullable:"false"`
-	UserAnswer  string   `json:"userAnswer"`
-	WorkspaceID string   `json:"workspaceId,omitempty"`
-}
-
-type QuizGradeResp struct {
-	Award  float64 `json:"award"`
-	Reason string  `json:"reason"`
-}
-
 // SourceUploadPolicy describes the server-owned file allowlist and parser
 // limits consumed by the upload dialog.
 type SourceUploadKindPolicy struct {
@@ -417,6 +401,7 @@ type Quiz struct {
 	Questions     []map[string]any `json:"questions" nullable:"false"`
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
+	SharePath     string           `json:"sharePath,omitempty"`
 	// Provenance credits the library books the quiz was written from.
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// IsOwner and CanEdit are request-scoped. Explicit workspace editors can
@@ -432,7 +417,7 @@ func FromQuiz(q store.Quiz) Quiz {
 		Revision: q.Revision,
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Chapters: q.Chapters, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, Provenance: q.Provenance,
+		Privacy: q.Privacy, SharePath: q.SharePath, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
 	if out.Chapters == nil {

@@ -394,7 +394,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 		if mt.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
-		q, err := quizFromMaterial(mt)
+		q, err := s.quizFromMaterial(mt)
 		if err != nil {
 			continue // skip unparseable content instead of failing the page
 		}

@@ -471,13 +471,7 @@ export default function Create() {
       />
       {sharing && (
         <ShareDialog
-          link={
-            sharing.kind === 'quiz'
-              ? `/share/quizzes/${sharing.id}`
-              : sharing.kind === 'flashcards'
-                ? `/share/flashcards/${sharing.id}`
-                : `/materials/${sharing.id}`
-          }
+          link={sharing.sharePath ?? `/materials/${sharing.id}`}
           onClose={() => setSharing(null)}
           onPrivacyChange={async (privacy) => {
             const id = sharing.id;

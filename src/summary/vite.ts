@@ -13,12 +13,18 @@ export function summaryVitePlugin(
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const pathname = req.url?.split('?')[0] ?? '';
-        if (!pathname.startsWith('/w/')) return next();
+        // Under MSW the browser worker answers /p/ routes itself.
+        const isPublic = pathname.startsWith('/p/') && !useMsw;
+        if (!pathname.startsWith('/w/') && !isPublic) return next();
         try {
           const { handleSiteRequest } = await server.ssrLoadModule(
             '/workers/site/handler.ts'
           );
+          const chunks: Buffer[] = [];
+          if (req.method === 'POST')
+            for await (const chunk of req) chunks.push(chunk as Buffer);
           const request = new Request(new URL(req.url ?? '/', appOrigin), {
+            body: chunks.length ? Buffer.concat(chunks) : undefined,
             headers: {
               'Accept-Language': String(req.headers['accept-language'] ?? 'en'),
             },
@@ -64,7 +70,7 @@ export function summaryVitePlugin(
           response.headers.forEach((value, key) => {
             res.setHeader(key, value);
           });
-          res.end(await response.text());
+          res.end(Buffer.from(await response.arrayBuffer()));
         } catch (error) {
           next(error);
         }
