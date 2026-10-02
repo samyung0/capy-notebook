@@ -106,7 +106,9 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    deferred. Help and credits stay in the app until public pages exist.
    Coolify serves the backend, not the site. Rendered summaries are
    `public, s-maxage=300, max-age=0, must-revalidate` and are held in the
-   Worker's Cache API keyed by workspace id and resolved locale; failure pages
+   Worker's Cache API keyed by workspace id and resolved locale (a cache hit
+   comes back with the zone's Browser Cache TTL as `max-age`, so the Worker
+   resets `Cache-Control` before returning it); failure pages
    stay `no-store`, and link summaries are `noindex, nofollow`. The `/p/*`
    routes serve signed-out shared quizzes, their images and flashcard sets under
    the same signature check and five-minute edge cache. Anonymous grading skips

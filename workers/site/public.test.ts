@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { DEV_SHARE_LINK_SECRET, shareToken } from '../../src/lib/shareLink';
+import {
+  DEV_SHARE_LINK_SECRET,
+  sharePath,
+  shareToken,
+} from '../../src/lib/shareLink';
 import { handleSiteRequest } from './handler';
 
 const env = {
@@ -70,6 +74,33 @@ describe('anonymous material routes', () => {
           : ''
       )
     ).toBe(`https://api.example.test/api/public/quizzes/${TOKEN}`);
+  });
+
+  it('keeps browsers revalidating when the edge returns a cached copy', async () => {
+    // Cloudflare stamps the zone's Browser Cache TTL onto Cache API hits.
+    const cache = {
+      match: vi.fn(
+        async () =>
+          new Response('{}', {
+            headers: {
+              'Cache-Control': 'public, max-age=14400, s-maxage=300',
+            },
+          })
+      ),
+      put: vi.fn(),
+    };
+    const summary = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_0123456789');
+    for (const path of [`/p/quizzes/${TOKEN}`, summary]) {
+      const response = await handleSiteRequest(
+        request(path),
+        env,
+        vi.fn<typeof fetch>(),
+        cache
+      );
+      expect(response.headers.get('Cache-Control')).toBe(
+        'public, s-maxage=300, max-age=0, must-revalidate'
+      );
+    }
   });
 
   it('serves quiz images as raster bytes only', async () => {

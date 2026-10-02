@@ -1,5 +1,5 @@
 import { verifiedShareID } from '../../src/lib/shareLink';
-import { handlePublicRequest } from './public';
+import { fromEdgeCache, handlePublicRequest, SHARED_CACHE } from './public';
 import {
   localeFor,
   renderFailure,
@@ -153,7 +153,7 @@ export async function handleSiteRequest(
     // belongs in the key rather than in a header the edge will not read.
     const cacheKey = new Request(`${appOrigin}/w/${id}?lang=${locale}`);
     const cached = await cache?.match(cacheKey);
-    if (cached) return head(cached);
+    if (cached) return head(fromEdgeCache(cached));
     const upstream = await fetcher(
       new Request(`${apiOrigin}/api/public/workspaces/${id}/summary`, {
         headers: { Accept: 'application/json' },
@@ -179,10 +179,7 @@ export async function handleSiteRequest(
     // Shared caches hold the render for five minutes; browsers revalidate every
     // time, so a privacy change reaches a reloading reader once the edge entry
     // expires. Failure pages stay no-store so publishing takes effect at once.
-    responseHeaders.set(
-      'Cache-Control',
-      'public, s-maxage=300, max-age=0, must-revalidate'
-    );
+    responseHeaders.set('Cache-Control', SHARED_CACHE);
     if (summary.privacy === 'link')
       responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
     // HEAD renders and caches like GET so it cannot bypass the edge cache.

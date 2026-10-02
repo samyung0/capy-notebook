@@ -16,7 +16,16 @@ import { verifiedShareToken } from '../../src/lib/shareLink';
 
 const ROUTE =
   /^\/p\/(quizzes|flashcards)\/([^/]+)(?:\/assets\/(asset_[A-Za-z0-9_-]{1,64}))?$/;
-const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
+export const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
+
+/** A Cache API hit comes back with the zone's Browser Cache TTL in its
+ * max-age (four hours on UAT), so browsers would keep a page long after it is
+ * unshared. Restore our header before returning a cached copy. */
+export function fromEdgeCache(cached: Response): Response {
+  const response = new Response(cached.body, cached);
+  response.headers.set('Cache-Control', SHARED_CACHE);
+  return response;
+}
 const JSON_LIMIT = 4 * 1024 * 1024;
 const ASSET_LIMIT = 20 * 1024 * 1024;
 // Editor asset images never include SVG, so nothing served here can script.
@@ -104,7 +113,7 @@ export async function handlePublicRequest(
     `${appOrigin}/p/${kind}/${id}${assetId ? `/assets/${assetId}` : ''}`
   );
   const cached = await cache?.match(cacheKey);
-  if (cached) return head(cached);
+  if (cached) return head(fromEdgeCache(cached));
 
   const upstream = await fetcher(
     new Request(
