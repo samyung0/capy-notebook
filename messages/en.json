@@ -1197,7 +1197,6 @@
   "quiz_item_n": "Item {n}",
   "summary_open": "Open workspace",
   "summary_title": "Workspace summary",
-  "summary_unfiled": "Unfiled files",
   "summary_empty": "No files have been added yet.",
   "summary_error_title": "Unable to load workspace",
   "summary_error_body": "The workspace could not be loaded. Please try again.",

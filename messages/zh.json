@@ -1197,7 +1197,6 @@
   "quiz_item_n": "项目 {n}",
   "summary_open": "打开工作区",
   "summary_title": "工作区概览",
-  "summary_unfiled": "未归类文件",
   "summary_empty": "尚未添加文件。",
   "summary_error_title": "无法加载工作区",
   "summary_error_body": "无法加载此工作区，请重试。",

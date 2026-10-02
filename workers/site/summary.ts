@@ -2,7 +2,8 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { z } from 'zod';
 import type { WorkspaceSummary } from '../../src/api/types';
-import { buttonVariants } from '../../src/components/ui/Button';
+import { Button, buttonVariants } from '../../src/components/ui/Button';
+import { IconButton } from '../../src/components/ui/IconButton';
 import { m } from '../../src/i18n';
 import { fileIconName } from '../../src/lib/fileIcons';
 import { iconUrl } from '../../src/lib/icon-catalog';
@@ -64,6 +65,25 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Pre-hydration copy of `PublicNavigation`; the island replaces it on mount. */
+function publicNavigation(
+  locale: SummaryLocale,
+  signInURL: string,
+  signUpURL: string,
+  label?: string
+): string {
+  const options = { locale };
+  const toggle = renderToString(
+    createElement(IconButton, {
+      icon: 'moon',
+      label: m.public_theme_dark({}, options),
+      type: 'button',
+      variant: 'ghost-hover',
+    })
+  );
+  return `<nav class="summary-actions"${label ? ` aria-label="${escapeHTML(label)}"` : ''}>${toggle}<a class="${buttonVariants({ size: 'lg', variant: 'ghost-hover' })}" href="${escapeHTML(signInURL)}">${escapeHTML(m.action_sign_in({}, options))}</a><a class="${buttonVariants({ size: 'lg' })}" href="${escapeHTML(signUpURL)}">${escapeHTML(m.summary_sign_up({}, options))}</a></nav>`;
+}
+
 export function renderSummary(
   template: string,
   summary: WorkspaceSummary,
@@ -91,7 +111,19 @@ export function renderSummary(
   const section = (name: string, entries: WorkspaceSummary['files']) =>
     `<section class="summary-chapter"><h2>${fileIcon('_folder_open')}<span>${escapeHTML(name)}</span></h2>${files(entries)}</section>`;
   const header = `<title>${escapeHTML(summary.name)} | Capy Notebook</title><meta name="description" content="${escapeHTML(summary.description || summary.name)}"><link rel="canonical" href="${escapeHTML(canonical)}"><meta property="og:type" content="website"><meta property="og:title" content="${escapeHTML(summary.name)}"><meta property="og:description" content="${escapeHTML(summary.description || summary.name)}"><meta property="og:url" content="${escapeHTML(canonical)}"><meta property="og:site_name" content="Capy Notebook"><meta name="robots" content="${summary.privacy === 'link' ? 'noindex, nofollow' : 'index, follow'}"><script type="application/ld+json">${jsonForHTML({ '@context': 'https://schema.org', '@type': 'CreativeWork', description: summary.description, name: summary.name, url: canonical, ...(summary.author ? { author: { '@type': 'Person', name: summary.author } } : {}) })}</script>`;
-  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a><div id="summary-auth" data-workspace-id="${id}" data-locale="${locale}"><nav class="summary-actions" aria-label="${escapeHTML(m.summary_profile({}, options))}"><a class="${buttonVariants({ variant: 'ghost-hover' })}" href="${escapeHTML(signInURL)}">${escapeHTML(m.action_sign_in({}, options))}</a><a class="summary-signup" href="${escapeHTML(signUpURL)}">${escapeHTML(m.summary_sign_up({}, options))}</a></nav></div></header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><h1>${escapeHTML(summary.name)}</h1>${summary.author ? `<p class="summary-byline">${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul><a class="summary-open" href="${openURL}">${escapeHTML(m.summary_open({}, options))}<span aria-hidden="true">↗</span></a></div><p class="summary-counts">${escapeHTML(m.workspace_card_meta({ chapters: String(summary.chapters.length), files: String(fileCount) }, options))}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? section(m.summary_unfiled({}, options), summary.files) : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty({}, options))}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
+  const openButton = renderToString(
+    createElement(
+      Button,
+      {
+        asChild: true,
+        className: 'summary-open',
+        iconRight: 'navigationForward',
+        size: 'lg',
+      },
+      createElement('a', { href: openURL }, m.summary_open({}, options))
+    )
+  );
+  const body = `<div class="summary-shell"><header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a><div id="summary-auth" data-workspace-id="${id}" data-locale="${locale}">${publicNavigation(locale, signInURL, signUpURL, m.summary_profile({}, options))}</div></header><main class="summary-panel"><div class="summary-meta"><img class="summary-icon" src="${escapeHTML(iconUrl(summary.iconId))}" alt="" width="60" height="60"><h1>${escapeHTML(summary.name)}</h1>${summary.author ? `<p class="summary-byline">${escapeHTML(summary.author)}</p>` : ''}${summary.description ? `<p class="summary-description">${escapeHTML(summary.description)}</p>` : ''}<ul class="summary-tags">${summary.tags.map((tag) => `<li># ${escapeHTML(tag)}</li>`).join('')}</ul>${openButton}</div><p class="summary-counts">${escapeHTML(m.workspace_card_meta({ chapters: String(summary.chapters.length), files: String(fileCount) }, options))}</p><div class="summary-outline">${summary.chapters.map((chapter) => section(chapter.name, chapter.files)).join('')}${summary.files.length ? `<div class="summary-chapter">${files(summary.files)}</div>` : ''}${!summary.chapters.length && !fileCount ? `<p class="summary-empty">${escapeHTML(m.summary_empty({}, options))}</p>` : ''}</div></main><footer class="summary-footer">Capy Notebook</footer></div>`;
   return template
     .replace('lang="en"', `lang="${locale}"`)
     .replace('<!--capy-summary-head-->', () => header)
@@ -117,7 +149,7 @@ export function renderFailure(
       )
       .replace(
         '<!--capy-summary-body-->',
-        `<div class="summary-shell">${unavailable ? '' : `<header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a><div id="summary-auth" data-locale="${locale}"><nav class="summary-actions"><a class="${buttonVariants({ variant: 'ghost-hover' })}" href="/sign-in">${escapeHTML(m.action_sign_in({}, options))}</a><a class="summary-signup" href="/sign-up">${escapeHTML(m.summary_sign_up({}, options))}</a></nav></div></header>`}<main class="summary-panel" id="summary-error" data-status="${status}" data-locale="${locale}">${renderToString(createElement(SummaryFailure, { locale, status }))}</main></div>`
+        `<div class="summary-shell">${unavailable ? '' : `<header class="summary-header"><a class="summary-brand" href="/">Capy Notebook</a><div id="summary-auth" data-locale="${locale}">${publicNavigation(locale, '/sign-in', '/sign-up')}</div></header>`}<main class="summary-panel" id="summary-error" data-status="${status}" data-locale="${locale}">${renderToString(createElement(SummaryFailure, { locale, status }))}</main></div>`
       );
   }
   return `<!doctype html><html lang="${locale}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escapeHTML(unavailable ? m.error_not_found_page_title({}, options) : m.summary_error_title({}, options))} | Capy Notebook</title><body style="font:16px/1.6 system-ui;margin:12vh auto;padding:24px;max-width:580px">${unavailable ? '' : '<a href="/">Capy Notebook</a>'}<h1>${escapeHTML(unavailable ? m.error_not_found_page_title({}, options) : m.summary_error_title({}, options))}</h1><p>${escapeHTML(unavailable ? m.error_not_found_page_body({}, options) : m.summary_error_body({}, options))}</p>${unavailable ? '' : `<a href="">${escapeHTML(m.summary_retry({}, options))}</a>`}</body></html>`;

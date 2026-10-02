@@ -39,30 +39,6 @@
   display: flex;
   gap: 8px;
   align-items: center;
-  font-size: 14px;
-  font-weight: 650;
-}
-.summary-signup {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 14px;
-  white-space: nowrap;
-  text-decoration: none;
-  border-radius: var(--radius-button);
-}
-.summary-signup {
-  min-width: 96px;
-  min-height: 52px;
-  padding: 0 26px;
-  font-size: 0.925rem;
-  color: var(--action-primary-fg);
-  background: var(--action-primary-bg);
-  border-radius: 9999px;
-}
-.summary-signup:hover {
-  background: var(--action-primary-hover);
 }
 .summary-profile {
   display: flex;
@@ -70,6 +46,8 @@
   align-items: center;
   max-width: 165px;
   padding: 4px 7px 4px 4px;
+  font-size: 14px;
+  font-weight: 650;
   cursor: pointer;
   background: var(--surface-card-bg);
   border-radius: 99px;
@@ -142,22 +120,10 @@
   background: var(--tint-accent-1-bg);
   border-radius: 7px;
 }
+/* Button styles come from buttonVariants; this only sizes it to the column. */
 .summary-open {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: center;
   width: 100%;
-  padding: 14px 20px;
   margin-top: 28px;
-  font-weight: 750;
-  color: var(--action-primary-fg);
-  text-decoration: none;
-  background: var(--action-primary-bg);
-  border-radius: var(--radius-button);
-}
-.summary-open:hover {
-  background: var(--action-primary-hover);
 }
 .summary-counts {
   padding: 0 40px 20px;
@@ -208,6 +174,9 @@
   font-size: 13px;
   color: var(--text-muted);
 }
+.summary-files svg {
+  translate: 0 -1px;
+}
 .summary-chapter svg {
   flex-shrink: 0;
   width: 20px;
@@ -225,8 +194,8 @@
   color: var(--text-muted);
   text-align: center;
 }
-.summary-page a:focus-visible,
-.summary-page button:focus-visible {
+.summary-brand:focus-visible,
+.summary-profile:focus-visible {
   outline: 3px solid var(--tint-accent-1-fg);
   outline-offset: 4px;
 }

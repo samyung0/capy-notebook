@@ -11,8 +11,9 @@ breakpoints only. [Open the interactive preview](https://faflav2lddl1.postplan.d
 
 ## Studying from the bank
 
-- [ ] Define how learners study from the question bank page. The current idea
-  is not final. The page shows a question without answers, marking scheme or
+- [ ] Define how learners study from the question bank page. Superseded in part
+  by "Question-bank progress" in `todo-learning-outputs.md` (separate progress
+  by topic and exam, no learning plan). The current idea is not final. The page shows a question without answers, marking scheme or
   worked solution. Check answer adds the question to a learning plan if it is
   not on one yet, grades it and stores the attempt on that plan. The question
   list shows a check for correct and a cross for incorrect, read from the plan.

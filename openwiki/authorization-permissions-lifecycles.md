@@ -86,11 +86,13 @@ larger than 256 KiB returns `422` rather than a truncated outline.
 
 The summary uses one full-width panel with a centered reading column, including
 its 404 and loading-error states. The header sits inside the panel with text-only branding on the left and a sun/moon theme
-toggle, ghost-hover sign-in button and large sign-up button on the right. The toggle switches
+toggle, large ghost-hover sign-in button and equally large sign-up button on the right. The toggle switches
 between Light (Latte) and Dark (Mocha), and is also used on authentication pages. Signed-in summary visitors retain their
 profile menu and theme drawer. The workspace uses its stored icon and displays
 only the owner's name in its byline. Chapter and file rows use the file panel's
-Catppuccin sprite and filename icon mapping; the client supplies its hashed asset URL. Workspace Share and Settings → Sharing put
+Catppuccin sprite and filename icon mapping, with file icons shifted up 1px;
+the client supplies the hashed sprite URL. Files outside chapters remain visible
+without an “Unfiled files” heading. Workspace Share and Settings → Sharing put
 Preview beside Copy for link/public workspaces; it opens the summary in a new
 tab. Private workspaces still have no anonymous or owner-bypass summary.
 
