@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { DEV_SHARE_LINK_SECRET, sharePath } from '../../src/lib/shareLink';
 import { handleSiteRequest } from './handler';
 
 const template = readFileSync(
@@ -25,8 +26,10 @@ const env = {
   API_ORIGIN: 'https://api.example.test',
   APP_ORIGIN: 'https://app.example.test',
   ASSETS: { fetch: vi.fn(async () => new Response(template)) },
+  SHARE_LINK_SECRET: DEV_SHARE_LINK_SECRET,
 };
-const request = (path = '/w/ws_0123456789', init?: RequestInit) =>
+const SHARED = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_0123456789');
+const request = (path = SHARED, init?: RequestInit) =>
   new Request(`https://app.example.test${path}`, init);
 const PRIVATE_CONTENT = /PRIVATE BODY|u_secret|capy-summary-body/;
 
@@ -67,7 +70,7 @@ describe('public workspace SSR', () => {
     expect(html).toContain('Reading.pdf');
     expect(html).toContain('data-file-icon="pdf"');
     expect(html).toContain('data-file-icon="_folder_open"');
-    expect(html).toContain('https://app.example.test/w/ws_0123456789');
+    expect(html).toContain(`https://app.example.test${SHARED}`);
     expect(html).toContain('href="/workspaces/ws_0123456789"');
     expect(html).not.toMatch(PRIVATE_CONTENT);
     const sent = fetcher.mock.calls[0][0] as Request;
@@ -148,11 +151,24 @@ describe('public workspace SSR', () => {
     }
     expect(new Set(bodies).size).toBe(1);
   });
-  it('rejects invalid IDs, private data, redirects, oversized bodies and malformed JSON', async () => {
-    expect(
-      (await handleSiteRequest(request('/w/not-a-workspace'), env, upstream()))
-        .status
-    ).toBe(404);
+  it('rejects unsigned and forged links before calling the API', async () => {
+    const fetcher = upstream();
+    const other = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_other');
+    const flipped = `${SHARED.slice(0, -1)}${SHARED.endsWith('A') ? 'B' : 'A'}`;
+    for (const path of [
+      '/w/ws_0123456789',
+      flipped,
+      `/w/ws_other.${SHARED.split('.')[1]}`,
+      `/w/ws_0123456789.${other.split('.')[1]}`,
+      '/w/not-a-workspace',
+    ]) {
+      const response = await handleSiteRequest(request(path), env, fetcher);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('rejects private data, redirects, oversized bodies and malformed JSON', async () => {
     for (const response of [
       Response.redirect('https://elsewhere.test', 302),
       new Response('x'.repeat(512 * 1024 + 1)),
@@ -171,7 +187,7 @@ describe('public workspace SSR', () => {
       expect(fetcher).toHaveBeenCalledTimes(1);
     }
   });
-  it('supports HEAD, Chinese text, and the old share URL without a SPA fetch', async () => {
+  it('supports HEAD and Chinese text without a SPA fetch', async () => {
     const head = await handleSiteRequest(
       request(undefined, { method: 'HEAD' }),
       env,
@@ -180,7 +196,7 @@ describe('public workspace SSR', () => {
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
     const chinese = await handleSiteRequest(
-      request('/w/ws_0123456789?lang=zh'),
+      request(`${SHARED}?lang=zh`),
       env,
       upstream()
     );
@@ -200,7 +216,7 @@ describe('summary edge caching', () => {
     expect(await repeat.text()).toContain('<h1>Biology</h1>');
     expect(fetcher).toHaveBeenCalledTimes(1);
     const chinese = await handleSiteRequest(
-      request('/w/ws_0123456789?lang=zh'),
+      request(`${SHARED}?lang=zh`),
       env,
       fetcher,
       cache
@@ -211,6 +227,21 @@ describe('summary edge caching', () => {
       'https://app.example.test/w/ws_0123456789?lang=en',
       'https://app.example.test/w/ws_0123456789?lang=zh',
     ]);
+  });
+  it('answers HEAD from the cache GET filled', async () => {
+    const cache = cacheStub();
+    const fetcher = upstream();
+    await handleSiteRequest(request(), env, fetcher, cache);
+    const head = await handleSiteRequest(
+      request(undefined, { method: 'HEAD' }),
+      env,
+      fetcher,
+      cache
+    );
+    expect(head.status).toBe(200);
+    expect(head.headers.get('Cache-Control')).toBe(SHARED_CACHE);
+    expect(await head.text()).toBe('');
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
   it('leaves failures uncached so publishing takes effect at once', async () => {
     const cache = cacheStub();

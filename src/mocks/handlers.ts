@@ -50,6 +50,7 @@ import {
   sameModel,
 } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
+import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { isKnown, newSrsState } from '@/lib/srs';
 import { mockChatStream } from './chatStream';
 import {
@@ -1058,6 +1059,7 @@ export const handlers = [
     const body = (await request.json()) as Partial<Workspace> & {
       tags?: TagInput[];
     };
+    const id = uid('ws');
     const ws: Workspace = {
       autoProcess: true,
       canClone: true,
@@ -1075,12 +1077,13 @@ export const handlers = [
       iconId:
         body.iconId ??
         `waves-${String(Math.floor(Math.random() * 11) + 1).padStart(2, '0')}`,
-      id: uid('ws'),
+      id,
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),
       name: body.name ?? 'Untitled workspace',
       privacy: 'private',
       role: 'owner',
+      sharePath: await sharePath(DEV_SHARE_LINK_SECRET, id),
       shareRole: 'viewer',
       storageOwnerState: db.accountStatus.state,
       storageOwnerUsage: db.accountStatus.storageUsage,
@@ -1368,6 +1371,7 @@ export const handlers = [
       lastAccessedAt: new Date().toISOString(),
       name: `${source.name} (copy)`,
       privacy: 'private',
+      sharePath: await sharePath(DEV_SHARE_LINK_SECRET, newId),
     };
     db.workspaces.unshift(workspace);
 

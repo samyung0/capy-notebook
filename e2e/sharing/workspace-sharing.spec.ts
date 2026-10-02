@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
-import { openWorkspaceSharing } from '../helpers/workspace';
+import { openWorkspaceSharing, summaryPath } from '../helpers/workspace';
 
 test.describe('workspace sharing', () => {
   test('owner can open and edit a private workspace', async ({
@@ -61,7 +61,9 @@ test.describe('workspace sharing', () => {
     seed,
   }) => {
     for (const page of [otherPage, anonymousPage]) {
-      const response = await page.goto(`/w/${seed.privateWorkspace.id}`);
+      const response = await page.goto(
+        await summaryPath(seed.privateWorkspace.id)
+      );
       expect(response?.status()).toBe(404);
       await expect(
         page.getByRole('heading', { name: 'Page not found' })
@@ -102,7 +104,9 @@ test.describe('workspace sharing', () => {
       ).toContainText('Can view');
 
       for (const page of [anonymousPage, otherPage]) {
-        const response = await page.goto(`/w/${seed.mutateWorkspace.id}`);
+        const response = await page.goto(
+          await summaryPath(seed.mutateWorkspace.id)
+        );
         expect(response?.status()).toBe(200);
         await expect(
           page.getByRole('heading', { name: seed.mutateWorkspace.name })
@@ -143,12 +147,16 @@ test.describe('workspace sharing', () => {
     otherPage,
     seed,
   }) => {
-    const publicRes = await anonymousPage.goto(`/w/${seed.publicWorkspace.id}`);
+    const publicRes = await anonymousPage.goto(
+      await summaryPath(seed.publicWorkspace.id)
+    );
     expect(publicRes?.status()).toBe(200);
     await expect(
       anonymousPage.getByRole('heading', { name: seed.publicWorkspace.name })
     ).toBeVisible();
-    const linkRes = await anonymousPage.goto(`/w/${seed.linkWorkspace.id}`);
+    const linkRes = await anonymousPage.goto(
+      await summaryPath(seed.linkWorkspace.id)
+    );
     expect(linkRes?.status()).toBe(200);
     const exploreRes = waitForApi(
       otherPage,

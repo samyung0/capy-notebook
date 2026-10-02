@@ -108,6 +108,7 @@ type Store struct {
 	collaborationSecret string
 	collaborationHTTP   *http.Client
 	credKey             []byte
+	shareLinkSecret     []byte
 	planLimits          planlimits.Catalog
 	planLimitsMu        sync.Mutex
 }
@@ -195,6 +196,10 @@ func (s *Store) ConfigureCollaboration(rawURL, secret string) {
 	s.collaborationURL = strings.TrimRight(rawURL, "/")
 	s.collaborationSecret = secret
 }
+
+// ConfigureShareLinks installs the key that signs summary links; the site
+// Worker holds the same key and rejects unsigned /w/ paths at the edge.
+func (s *Store) ConfigureShareLinks(secret string) { s.shareLinkSecret = []byte(secret) }
 
 // uid mirrors the frontend's id scheme: a short prefixed random token.
 func uid(prefix string) string {

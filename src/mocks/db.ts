@@ -207,6 +207,7 @@ export const workspaces: Workspace[] = [
     name: 'Biology 101',
     privacy: 'link',
     role: 'owner',
+    sharePath: '/w/ws_bio.WsDtCIGPdoZOSZL0',
     shareRole: 'viewer',
     storageOwnerState: 'active',
     storageOwnerUsage: 'ok',
@@ -233,6 +234,7 @@ export const workspaces: Workspace[] = [
     name: 'Calculus II',
     privacy: 'private',
     role: 'owner',
+    sharePath: '/w/ws_calc.UZ6Qw4jRVADIzzI1',
     shareRole: 'viewer',
     storageOwnerState: 'active',
     storageOwnerUsage: 'ok',
@@ -260,6 +262,7 @@ export const workspaces: Workspace[] = [
     name: 'World History',
     privacy: 'link',
     role: 'owner',
+    sharePath: '/w/ws_hist.bVGQ2CHqnMetPMgB',
     shareRole: 'viewer',
     storageOwnerState: 'active',
     storageOwnerUsage: 'ok',
@@ -286,6 +289,7 @@ export const workspaces: Workspace[] = [
     name: 'Organic Chemistry',
     privacy: 'private',
     role: 'owner',
+    sharePath: '/w/ws_chem.c5KOZGPxH2RwP08Z',
     shareRole: 'viewer',
     storageOwnerState: 'active',
     storageOwnerUsage: 'ok',
@@ -312,6 +316,7 @@ export const workspaces: Workspace[] = [
     name: 'English Literature',
     privacy: 'public',
     role: 'owner',
+    sharePath: '/w/ws_eng.-sR-YQ2vLCQXEe2Q',
     shareRole: 'viewer',
     storageOwnerState: 'active',
     storageOwnerUsage: 'ok',
@@ -1855,6 +1860,7 @@ export const publicWorkspaces: PublicWorkspace[] = [
     isOwner: false,
     name: 'AP Biology — full course',
     privacy: 'public',
+    sharePath: '/w/pub_ws_1.HHb0FBNicpc_Eiu4',
   },
   // A public viewer share role: readable, not clonable, no membership role.
   {
@@ -1873,6 +1879,7 @@ export const publicWorkspaces: PublicWorkspace[] = [
     name: 'Modern World History',
     privacy: 'public',
     role: undefined,
+    sharePath: '/w/pub_ws_2.IT_5zt_99G56MWnD',
   },
 ];
 export const publicQuizzes: PublicQuiz[] = [

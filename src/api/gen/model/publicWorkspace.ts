@@ -30,6 +30,7 @@ export interface PublicWorkspace {
   name: string;
   privacy: Privacy;
   role?: WorkspaceRole;
+  sharePath: string;
   shareRole: ShareRole;
   storageOwnerState?: AccountState;
   storageOwnerUsage?: StorageUsageLevel;

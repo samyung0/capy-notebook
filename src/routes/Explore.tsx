@@ -94,7 +94,7 @@ export default function Explore() {
                     </span>
                     <a
                       className="t-card-title mt-3 block truncate hover:underline"
-                      href={`/w/${w.id}`}
+                      href={w.sharePath}
                       title={m.summary_view()}
                     >
                       {w.name}

@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures/actors';
 import { expectErrorSurface } from '../helpers/errors';
+import { summaryPath } from '../helpers/workspace';
 
 const apiError = (status: number, detail: string) => ({
   detail,
@@ -40,7 +41,7 @@ test.describe('standardized error surfaces', () => {
     const bodies: string[] = [];
     for (const id of [seed.privateWorkspace.id, 'ws_e2e_missing_summary']) {
       // The summary fetch runs on the server, outside browser route interception.
-      const response = await anonymousPage.goto(`/w/${id}`);
+      const response = await anonymousPage.goto(await summaryPath(id));
       expect(response?.status()).toBe(404);
       expect(response?.headers()['cache-control']).toBe('no-store');
       expect(response?.headers()['x-robots-tag']).toBe('noindex, nofollow');

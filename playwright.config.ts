@@ -53,6 +53,8 @@ process.env.E2E_API_URL = apiUrl;
 process.env.E2E_BASE_URL = baseURL;
 process.env.E2E_COMPOSE_PROJECT = composeProject;
 process.env.E2E_AUTH_SECRET = e2eSecret;
+// Shared by the Go server (compose), Vite's summary middleware and e2e/helpers.
+process.env.SHARE_LINK_SECRET ||= randomBytes(32).toString('hex');
 
 export default defineConfig({
   expect: { timeout: 10_000 },

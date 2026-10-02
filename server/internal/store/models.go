@@ -38,7 +38,9 @@ type Workspace struct {
 	IconID      string    `json:"iconId"`
 	Privacy     Privacy   `json:"privacy"`
 	ShareRole   ShareRole `json:"shareRole"`
-	Tags        []Tag     `json:"tags"`
+	// SharePath is the signed public summary path, /w/{id}.{signature}.
+	SharePath string `json:"sharePath"`
+	Tags      []Tag  `json:"tags"`
 	// OwnerUserID is the account every byte in this workspace is charged to.
 	// It is the account whose quota governs whether members may add content,
 	// so it is not interchangeable with the requester.

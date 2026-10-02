@@ -284,6 +284,7 @@ type Workspace struct {
 	IconID         string                   `json:"iconId"`
 	Privacy        store.Privacy            `json:"privacy"`
 	ShareRole      store.ShareRole          `json:"shareRole"`
+	SharePath      string                   `json:"sharePath"`
 	Tags           []Tag                    `json:"tags" nullable:"false"`
 	ChapterCount   int                      `json:"chapterCount"`
 	FileCount      int                      `json:"fileCount"`
@@ -319,7 +320,8 @@ func FromWorkspace(w store.Workspace, owner store.AccountStatus) Workspace {
 	out := Workspace{
 		AutoProcess: w.AutoProcess,
 		ID:          w.ID, Name: w.Name, Description: w.Description, IconID: w.IconID, Privacy: w.Privacy, ShareRole: w.ShareRole,
-		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
+		SharePath: w.SharePath,
+		Tags:      WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true), CanClone: true,

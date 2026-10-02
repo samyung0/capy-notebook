@@ -1,4 +1,5 @@
 import type { Page } from '@playwright/test';
+import { sharePath } from '../../src/lib/shareLink';
 
 export async function openWorkspaceMaterial(
   page: Page,
@@ -21,4 +22,9 @@ export async function openWorkspaceSharing(page: Page) {
     .click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { exact: true, name: 'Sharing' }).click();
+}
+
+/** Signed /w/ summary path, using the secret playwright.config.ts generated. */
+export function summaryPath(workspaceId: string) {
+  return sharePath(process.env.SHARE_LINK_SECRET!, workspaceId);
 }

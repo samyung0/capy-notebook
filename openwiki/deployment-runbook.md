@@ -93,7 +93,11 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    in §1.0.1; production must provision the same tunnel and scriptless route
    before its first deployment. `APP_ORIGIN`
    is the canonical browser origin. CI supplies both from the GitHub deployment
-   URLs. Both app environments use exact Worker Routes in `wrangler.jsonc`,
+   URLs. `SHARE_LINK_SECRET` (manifest secret, targets `coolify` and `workflow`,
+   at least 32 characters, `openssl rand -hex 32`) signs `/w/` links in Go and
+   verifies them in the Worker; CI passes the same GitHub secret to Coolify and
+   to `wrangler deploy --secrets-file`, and `wrangler.jsonc` lists it under
+   `secrets.required`. Changing it invalidates every shared link. Both app environments use exact Worker Routes in `wrangler.jsonc`,
    with DNS pointing at their tunnel. Do not attach either app as a Worker
    Custom Domain; that would replace the tunnel destination. The apex and
    `www` remain reserved for the future public site, whose implementation is

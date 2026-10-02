@@ -752,6 +752,11 @@
       "kind": "variable",
       "targets": ["workflow", "build"]
     },
+    "SHARE_LINK_SECRET": {
+      "kind": "secret",
+      "targets": ["coolify", "workflow"],
+      "required_for": ["coolify", "workflow"]
+    },
     "SOURCE_COMMIT": {
       "kind": "variable",
       "targets": ["local"]

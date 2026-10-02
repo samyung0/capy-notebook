@@ -1,6 +1,6 @@
 import { expect, test } from '../fixtures/actors';
 import { expectEditorLive } from '../helpers/editor';
-import { openWorkspaceMaterial } from '../helpers/workspace';
+import { openWorkspaceMaterial, summaryPath } from '../helpers/workspace';
 
 test.describe('shared material modes', () => {
   test('anonymous visitors see only the summary and cannot read materials', async ({
@@ -12,7 +12,7 @@ test.describe('shared material modes', () => {
       [seed.linkWorkspace.id, seed.viewerNote],
       [seed.editableWorkspace.id, seed.editableNote],
     ] as const) {
-      const response = await anonymousPage.goto(`/w/${workspaceId}`);
+      const response = await anonymousPage.goto(await summaryPath(workspaceId));
       expect(response?.status()).toBe(200);
       await expect(anonymousPage.getByText(material.body)).toHaveCount(0);
       await expect(

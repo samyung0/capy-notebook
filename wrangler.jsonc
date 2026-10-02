@@ -14,6 +14,9 @@
   "observability": {
     "enabled": true
   },
+  // Signs /w/ summary links with the Go API's SHARE_LINK_SECRET. Not inherited,
+  // so each environment repeats it; CI supplies it with --secrets-file.
+  "secrets": { "required": ["SHARE_LINK_SECRET"] },
   "vars": {
     "API_ORIGIN": "http://localhost:8080",
     "APP_ORIGIN": "http://localhost:8787"
@@ -21,6 +24,7 @@
   "env": {
     "uat": {
       "name": "capy-notebook-uat",
+      "secrets": { "required": ["SHARE_LINK_SECRET"] },
       "vars": {
         "API_ORIGIN": "",
         "APP_ORIGIN": ""
@@ -49,6 +53,7 @@
     },
     "production": {
       "name": "capy-notebook-production",
+      "secrets": { "required": ["SHARE_LINK_SECRET"] },
       "workers_dev": false,
       "preview_urls": false,
       // Provision tunnel-backed DNS and a scriptless app.capynotebook.com/api/*

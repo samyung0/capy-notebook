@@ -134,7 +134,7 @@ export function WorkspaceSettingsDialog({
             canManageMembers={workspace.capabilities.canManageMembers}
             containerClassName="-mt-3"
             embedded
-            link={`/w/${workspace.id}`}
+            link={workspace.sharePath}
             onClose={onClose}
             onPrivacyChange={(privacy) =>
               updateSharing({ id: workspace.id, privacy })

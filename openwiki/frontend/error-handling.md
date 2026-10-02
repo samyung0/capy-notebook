@@ -114,8 +114,8 @@ Resetting a boundary also resets TanStack Query's error state before retrying.
 
 ## Shared-resource security
 
-Public workspace summaries at `/w/:id` render on the server. Upstream HTTP 401, 403, and 404
-all produce the same “Page not found” HTML with HTTP 404, `no-store`,
+Public workspace summaries at `/w/:id.:signature` render on the server. Unsigned or
+forged paths, and upstream HTTP 401, 403, and 404, all produce the same “Page not found” HTML with HTTP 404, `no-store`,
 and `noindex, nofollow`. The server renders the shared page `ErrorState` and the client hydrates it. Do not
 include resource names, server details, or different actions that disclose
 which case occurred. Worker tests inject upstream failures; browser tests

@@ -69,8 +69,15 @@ Sources: [role definitions](../server/internal/store/enums.go#L62),
 ### Anonymous workspace summaries
 
 `GET /api/public/workspaces/{id}/summary` reads live metadata for link/public
-workspaces. `HEAD` checks the same visibility without returning a body. Existing
-`ws_` identifiers remain the link identity. The response contains the workspace
+workspaces. `HEAD` checks the same visibility without returning a body. The
+browser link is `/w/{id}.{signature}`, returned as `sharePath` on every workspace
+response: a 12-byte HMAC-SHA256 of `share:v1:{id}` under `SHARE_LINK_SECRET`,
+base64url-encoded ([Go](../server/internal/store/share_link.go),
+[TypeScript](../src/lib/shareLink.ts)). The site Worker answers an unsigned or
+forged path with the same 404 page before any API call, so guessed IDs never
+reach Go or Postgres. The signature only proves the link came from us; the
+summary query still decides visibility, so unsharing works as before, and
+rotating the secret replaces every link at once. The response contains the workspace
 name, stored `iconId`, description, tags, privacy, owner display name, chapter names and,
 for every file including unfiled ones, its name, `sizeBytes` and `addedAt`. It
 contains no material content, extracted text, internal content IDs, blob keys,
@@ -96,7 +103,8 @@ without an “Unfiled files” heading. Workspace Share and Settings → Sharing
 Preview beside Copy for link/public workspaces; it opens the summary in a new
 tab. Private workspaces still have no anonymous or owner-bypass summary.
 
-Local MSW development renders `/w/{id}` from the server's seed data, since
+Local MSW development renders signed `/w/` paths from the server's seed data,
+with seed `sharePath` values signed by the dev secret in `src/lib/shareLink.ts`, since
 browser MSW cannot intercept the server-side fetch. World History (`ws_hist`)
 has four chapters and twelve readable source files for previewing the outline.
 Biology 101 (`ws_bio`) is also shared by link in the seed, with a sample description for immediate preview.

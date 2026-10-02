@@ -223,6 +223,7 @@ func (s *Store) scanWorkspace(row pgx.Row, extra ...any) (Workspace, error) {
 		return w, err
 	}
 	w.FilesLimit = limits.FilesPerWorkspace
+	w.SharePath = SharePath(s.shareLinkSecret, w.ID)
 	return w, err
 }
 

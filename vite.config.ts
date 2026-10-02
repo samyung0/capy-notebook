@@ -5,6 +5,7 @@ import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
+import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
 import { summaryVitePlugin } from './src/summary/vite';
 import { llmRuntimePlugin } from './vite-llm-runtime';
 import { mathliveFonts } from './vite-mathlive';
@@ -102,7 +103,11 @@ export default defineConfig(({ mode }) => {
         serveLocalUat
           ? `https://${devHost}`
           : `http://localhost:${Number.parseInt(env.VITE_PORT, 10) || 5173}`,
-        useMsw
+        useMsw,
+        // MSW signs its mock links with the dev secret (src/mocks/db.ts).
+        useMsw || !env.SHARE_LINK_SECRET
+          ? DEV_SHARE_LINK_SECRET
+          : env.SHARE_LINK_SECRET
       ),
       paraglideVitePlugin({
         outdir: './src/i18n/paraglide',

@@ -143,7 +143,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         <>
           <ShareDialog
             canManageMembers={canManage}
-            link={`/w/${workspace.id}`}
+            link={workspace.sharePath}
             onClose={() => setShareOpen(false)}
             onPrivacyChange={(privacy) =>
               updateSharing({ id: workspace.id, privacy })

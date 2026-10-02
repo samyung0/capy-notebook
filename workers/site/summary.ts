@@ -9,7 +9,6 @@ import { fileIconName } from '../../src/lib/fileIcons';
 import { iconUrl } from '../../src/lib/icon-catalog';
 import { SummaryFailure } from '../../src/summary/SummaryFailure';
 
-export const workspaceID = /^ws_[A-Za-z0-9_-]{1,64}$/;
 export type SummaryLocale = 'en' | 'zh';
 const file = z.object({
   addedAt: z.iso.datetime({ offset: true }),
@@ -88,11 +87,12 @@ export function renderSummary(
   template: string,
   summary: WorkspaceSummary,
   id: string,
+  sharePath: string,
   appOrigin: string,
   locale: SummaryLocale
 ): string {
   const options = { locale };
-  const canonical = `${appOrigin}/w/${id}`;
+  const canonical = `${appOrigin}${sharePath}`;
   const openURL = `/workspaces/${id}`;
   const authSearch = new URLSearchParams({ redirect_url: openURL });
   const signInURL = `/sign-in?${authSearch}`;

@@ -266,6 +266,11 @@ func main() {
 		env("COLLABORATION_INTERNAL_URL", ""),
 		env("COLLABORATION_SECRET", ""),
 	)
+	shareLinkSecret := os.Getenv("SHARE_LINK_SECRET")
+	if len(shareLinkSecret) < 32 {
+		log.Fatal("SHARE_LINK_SECRET must be at least 32 characters and match the site Worker's")
+	}
+	st.ConfigureShareLinks(shareLinkSecret)
 
 	blobStore, err := openBlobStore(appEnv)
 	if err != nil {

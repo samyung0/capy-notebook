@@ -1,14 +1,15 @@
+import { verifiedShareID } from '../../src/lib/shareLink';
 import {
   localeFor,
   renderFailure,
   renderSummary,
   summarySchema,
-  workspaceID,
 } from './summary';
 
-const SUMMARY_PATH = /^\/w\/([^/]+)$/;
-
-type SiteBindings = Pick<Cloudflare.Env, 'API_ORIGIN' | 'APP_ORIGIN'> & {
+type SiteBindings = Pick<
+  Cloudflare.Env,
+  'API_ORIGIN' | 'APP_ORIGIN' | 'SHARE_LINK_SECRET'
+> & {
   ASSETS: Pick<Cloudflare.Env['ASSETS'], 'fetch'>;
 };
 type SummaryCache = Pick<Cache, 'match' | 'put'>;
@@ -131,17 +132,18 @@ export async function handleSiteRequest(
         headers: headers({ Allow: 'GET, HEAD' }),
         status: 405,
       });
-    const match = url.pathname.match(SUMMARY_PATH);
-    const id = match?.[1];
-    if (!id || !workspaceID.test(id)) return failure(404);
+    // Unsigned or forged links stop here, before any API or database work.
+    const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
+    if (!id) return failure(404);
     const apiOrigin = trustedOrigin(env.API_ORIGIN);
     const appOrigin = trustedOrigin(env.APP_ORIGIN);
+    const head = (response: Response) =>
+      request.method === 'HEAD' ? new Response(null, response) : response;
     // Cloudflare's cache ignores Vary: Accept-Language, so the resolved locale
     // belongs in the key rather than in a header the edge will not read.
     const cacheKey = new Request(`${appOrigin}/w/${id}?lang=${locale}`);
-    const cached =
-      request.method === 'GET' ? await cache?.match(cacheKey) : undefined;
-    if (cached) return cached;
+    const cached = await cache?.match(cacheKey);
+    if (cached) return head(cached);
     const upstream = await fetcher(
       new Request(`${apiOrigin}/api/public/workspaces/${id}/summary`, {
         headers: { Accept: 'application/json' },
@@ -173,8 +175,7 @@ export async function handleSiteRequest(
     );
     if (summary.privacy === 'link')
       responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
-    if (request.method === 'HEAD')
-      return new Response(null, { headers: responseHeaders });
+    // HEAD renders and caches like GET so it cannot bypass the edge cache.
     const asset = await env.ASSETS.fetch(
       new Request(`${appOrigin}/summary.html`)
     );
@@ -189,11 +190,11 @@ export async function handleSiteRequest(
     )
       return failure(503);
     const rendered = new Response(
-      renderSummary(template, summary, id, appOrigin, locale),
+      renderSummary(template, summary, id, url.pathname, appOrigin, locale),
       { headers: responseHeaders }
     );
     await cache?.put(cacheKey, rendered.clone());
-    return rendered;
+    return head(rendered);
   } catch (error) {
     console.error(
       JSON.stringify({

@@ -116,6 +116,8 @@ services:
       B2_LINK_TTL: ${B2_LINK_TTL:-}
       REDIS_URL: redis://redis:6379/0
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
+      # Vite's summary middleware falls back to the same value (vite.config.ts).
+      SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:-dev-share-link-secret-0123456789abcdef}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial label stored on the job payload; the parse route is chosen by

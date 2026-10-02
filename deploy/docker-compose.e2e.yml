@@ -80,6 +80,7 @@ services:
       APP_URL: ${APP_URL:-http://localhost:5173}
       REDIS_URL: redis://redis:6379/0
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-e2e-collaboration-secret}
+      SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:?SHARE_LINK_SECRET is required}
       COLLABORATION_URL: ws://127.0.0.1:${E2E_COLLABORATION_PORT:-11234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       CAPY_PARSE_MAX_PAGES: "1400"

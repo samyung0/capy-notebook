@@ -6,7 +6,8 @@ import type { Plugin } from 'vite';
 export function summaryVitePlugin(
   apiOrigin: string,
   appOrigin: string,
-  useMsw: boolean
+  useMsw: boolean,
+  shareLinkSecret: string
 ): Plugin {
   return {
     configureServer(server) {
@@ -25,11 +26,14 @@ export function summaryVitePlugin(
           });
           // Browser MSW cannot intercept this server-side request.
           const fetchSummary: typeof fetch = useMsw
-            ? async () => {
+            ? async (input) => {
                 const { mockWorkspaceSummary } = await server.ssrLoadModule(
                   '/src/mocks/workspaceSummary.ts'
                 );
-                const summary = mockWorkspaceSummary(pathname.slice(3));
+                const id = new URL(
+                  input instanceof Request ? input.url : String(input)
+                ).pathname.split('/')[4];
+                const summary = mockWorkspaceSummary(id);
                 return summary
                   ? Response.json(summary)
                   : new Response(null, { status: 404 });
@@ -52,6 +56,7 @@ export function summaryVitePlugin(
                     )
                   ),
               },
+              SHARE_LINK_SECRET: shareLinkSecret,
             },
             fetchSummary
           );
