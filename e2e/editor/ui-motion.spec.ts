@@ -184,7 +184,7 @@ test('workspace filter anchor stays fixed throughout its opening animation', asy
 }) => {
   await page.goto('/workspaces');
   const trigger = page.getByRole('button', { exact: true, name: 'Filter' });
-  await expect(trigger).toBeVisible();
+  await expect(trigger).toBeVisible({ timeout: 30_000 });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ height: 844, width });
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -195,8 +195,8 @@ test('workspace filter anchor stays fixed throughout its opening animation', asy
             once: true,
           })
         );
-        const start = performance.now();
-        while (performance.now() - start < 650) {
+        let deadline = performance.now() + 5000;
+        while (performance.now() < deadline) {
           await new Promise(requestAnimationFrame);
           const menu = document.querySelector(
             '[data-slot="popover-content"][data-state="open"]'
@@ -204,6 +204,8 @@ test('workspace filter anchor stays fixed throughout its opening animation', asy
           if (!menu || Number(getComputedStyle(menu).opacity) === 0) continue;
           const rect = menu.parentElement!.getBoundingClientRect();
           if (rect.y < 0) continue;
+          // Slow clicks must not consume the visible animation's sample window.
+          if (samples.length === 0) deadline = performance.now() + 650;
           samples.push({ width: rect.width, x: rect.x, y: rect.y });
         }
         return samples;
