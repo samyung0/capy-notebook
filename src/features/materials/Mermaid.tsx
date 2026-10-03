@@ -156,6 +156,8 @@ export function Mermaid({
     <div
       className={cn(
         'mermaid-render flex justify-center overflow-auto rounded-lg p-3',
+        // Matches MediaFrame's MAX_HEIGHT; the SVG scales down to fit.
+        '[&>svg]:max-h-[min(70vh,48rem)]',
         MERMAID_TEXT_CLASS
       )}
       // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)

@@ -84,6 +84,7 @@ export function MediaAssetView({
   // An SVG without width/height has no intrinsic width and collapses in a
   // fit-to-image frame, so it fills the block instead.
   const [fill, setFill] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<number>();
   // A presigned URL is short-lived; seeking past the buffered range re-reads
   // it. Re-resolve once, then let a second failure surface.
   const retried = useRef(false);
@@ -114,6 +115,7 @@ export function MediaAssetView({
       )}
       {asset.status === 'ready' && element.type === 'img' && (
         <MediaFrame
+          aspectRatio={aspectRatio}
           fill={fill}
           onWidthChange={onWidthChange}
           toolbar={toolbar}
@@ -126,7 +128,10 @@ export function MediaAssetView({
               element.width || fill ? 'w-full' : 'max-w-full'
             )}
             onLoad={(event) => {
-              if (!event.currentTarget.offsetWidth) setFill(true);
+              const image = event.currentTarget;
+              if (!image.offsetWidth) setFill(true);
+              if (image.naturalWidth && image.naturalHeight)
+                setAspectRatio(image.naturalWidth / image.naturalHeight);
             }}
             src={asset.url}
           />

@@ -3,6 +3,8 @@ import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { cn } from '@/lib/cn';
 
 const MIN_WIDTH_PERCENT = 20;
+/** Tallest an image gets; Mermaid caps its SVG at the same height. */
+const MAX_HEIGHT = 'min(70vh, 48rem)';
 
 interface Drag {
   direction: 1 | -1;
@@ -18,12 +20,15 @@ interface Drag {
  * and report the width as a percentage of the block.
  */
 export function MediaFrame({
+  aspectRatio,
   children,
   fill = false,
   onWidthChange,
   toolbar,
   width,
 }: {
+  /** Width over height. Narrows the frame so tall media stops at `MAX_HEIGHT`. */
+  aspectRatio?: number;
   children: ReactNode;
   /** Take the full block width when no width is stored (embeds). */
   fill?: boolean;
@@ -98,7 +103,12 @@ export function MediaFrame({
           'rounded-card outline-2 outline-solid-accent-1 outline-offset-2'
       )}
       ref={ref}
-      style={current === undefined ? undefined : { width: current }}
+      style={{
+        maxWidth: aspectRatio
+          ? `min(100%, var(--container-3xl), calc(${MAX_HEIGHT} * ${aspectRatio}))`
+          : undefined,
+        width: current,
+      }}
     >
       {children}
       {toolbar && (
