@@ -140,10 +140,13 @@ export async function runJourney(
     const toggle = await ui.button(m.material_mode(), 'button');
     if (toggle.getAttribute('aria-pressed') !== 'true') ui.activate(toggle);
   };
-  const sourceOpen = async (fileId = scenarioText) => {
+  const sourceOpen = async (fileId = scenarioText, office = false) => {
     await go(`${scenarioPath}?file=${fileId}`);
     await editMode();
-    await ui.button(m.action_save());
+    // A text source is ready with its Save button; an Office editor once its
+    // Edit menu arrives (with the replica, as the old Save button did).
+    if (office) await ui.button('Edit', '[role="menubar"] [role="menuitem"]');
+    else await ui.button(m.action_save());
   };
   const textEdit = async (marker = scenarioMarker) => {
     const input = await ui.element<HTMLTextAreaElement>(
@@ -347,7 +350,7 @@ export async function runJourney(
         : (id.split('-')[1] as 'docx' | 'xlsx' | 'pptx');
     await prepareScenarioOffice(format, signal);
     const fileId = `mock-scenario-${format}`;
-    await sourceOpen(fileId);
+    await sourceOpen(fileId, true);
     const frame = await ui.element<HTMLIFrameElement>(
       'iframe[src*="office-runtime"]'
     );
@@ -399,7 +402,12 @@ export async function runJourney(
       await ui.element('[role="alert"]');
       return;
     }
-    await ui.click(m.action_save());
+    // File › Save in the header's menu bar (the Save button is gone).
+    await ui.click('File', '[role="menubar"] [role="menuitem"]');
+    await ui.click(
+      m.action_save(),
+      '[data-slot="menubar-content"] [role="menuitem"] > span'
+    );
     await saveFailedStatus();
     return;
   }

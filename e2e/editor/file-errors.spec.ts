@@ -151,7 +151,10 @@ test('Office retry recovers from both session and parser failures', async ({
     window.dispatchEvent(new CustomEvent('office-retry-stage', { detail: 2 }))
   );
   await error.getByRole('button', { exact: true, name: 'Retry' }).click();
-  await expect(page.getByText(/^\d+ sheets$/)).toBeVisible({ timeout: 30_000 });
+  // The workbook opened: its sheet tabs and the drawn sheet.
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.getByRole('tab').first()).toBeVisible({ timeout: 30_000 });
+  await expect(frame.locator('canvas').first()).toBeVisible();
   await expect(error).toHaveCount(0);
   expect(
     await page.evaluate(
