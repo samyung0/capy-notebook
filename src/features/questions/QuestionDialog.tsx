@@ -730,7 +730,7 @@ function QuestionDialogSession({
     <SimpleDialog
       cardClassName="min-h-0 rounded-t-card-xl rounded-b-none sm:rounded-card-lg"
       cardScrollContainerClassName="max-h-[92dvh] overflow-hidden px-4 py-5 sm:max-h-[88dvh] sm:px-5.5 sm:py-6.5 [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
-      className="top-auto bottom-0 left-0 max-h-[92dvh] translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:max-h-[88dvh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
+      className="top-auto bottom-0 left-0 max-h-[92dvh] translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-(--dialog-center,50%) sm:bottom-auto sm:left-(--dialog-center,50%) sm:max-h-[88dvh] sm:translate-x-(--dialog-offset,-50%) sm:translate-y-(--dialog-offset,-50%) sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
       footer={
         editing ? (
           <>

@@ -221,7 +221,7 @@ export function GenerateFormDialog({
 
   return (
     <Dialog onOpenChange={setOpen} open={open}>
-      <DialogContent className="top-1/2 -translate-y-1/2">
+      <DialogContent>
         <DialogTitle>
           {m.generate_title()} · {generateModeLabel(mode)}
         </DialogTitle>
