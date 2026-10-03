@@ -782,8 +782,24 @@ export async function runJourney(
       fail();
       await sourceImport(false);
       return id === 'import-job-pending'
-        ? 'The import remains pending in the application.'
+        ? 'The import stays pending; after the mock polling budget its row reads Still importing.'
         : undefined;
+    case 'upload-parse-failed':
+    case 'upload-not-indexed': {
+      fail();
+      await sourceImport(true);
+      const status = id === 'upload-parse-failed' ? 'error' : 'info';
+      await ui.wait(
+        () =>
+          document.querySelector(
+            `[data-testid="source-transfer-panel"] [data-transfer-status="${status}"]`
+          ),
+        'ingest outcome in the transfer panel'
+      );
+      return id === 'upload-parse-failed'
+        ? 'The upload was added and its parsing failed.'
+        : 'The upload was added and stored without an index.';
+    }
     case 'import-analysis':
       fail();
       await go(scenarioPath);

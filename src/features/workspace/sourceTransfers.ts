@@ -46,9 +46,6 @@ export type TransferStage =
 export interface SourceTransfer {
   error?: string;
   fileId?: string;
-  /** The file goes through ingest, so a ready file without an index is a
-   * failed index rather than a store-only file. */
-  indexes: boolean;
   key: string;
   kind: FileKind;
   name: string;
@@ -246,11 +243,6 @@ export function startSourceTransfer(start: StartTransfer) {
       ...state.transfers,
       ...requests.map(
         (request): SourceTransfer => ({
-          indexes: needsIngestJob(
-            request.name,
-            request.kind,
-            request.parseMode
-          ),
           key: request.key,
           kind: request.kind,
           name: request.name,
@@ -337,7 +329,9 @@ export function startSourceTransfer(start: StartTransfer) {
           signal: pollSignal,
         }),
       jobId,
-      { signal }
+      // Mock imports give up sooner, so a pending scenario reaches the
+      // background state.
+      USE_MSW ? { maxWaitMilliseconds: 12_000, signal } : { signal }
     ).then(
       (fileId) => {
         patchTransfer(key, { fileId, stage: 'added' });

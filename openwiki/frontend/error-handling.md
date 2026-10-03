@@ -281,7 +281,12 @@ or response cannot be reached. It does not render a replacement error component.
 fixture drafts and temporary faults, and returns to Workspaces. Temporary faults
 are retired after the application renders their result, so the next explicit
 Save or Retry can succeed. Permanent permission/account states survive reload
-until Reset. Pending imports keep polling in the transfer panel until Reset stops them.
+until Reset. Pending imports keep polling in the transfer panel until Reset stops them;
+under MSW the import polling budget is 12 seconds, after which the row reads
+"Still importing". "Upload parsing fails" and "Upload stored without index"
+upload the dialog preview's file and let the mock worker finish it as failed or
+unindexed, so the panel reaches those rows through the real flow; mock ingest
+progress always ends by reading the outcome from the mock server.
 Reload remembers the selected button but does not replay actions.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate
@@ -401,8 +406,10 @@ into one entry per imported file).
 `SourceTransferPanel`, mounted at the root next to the toaster and painted below
 it (and below dialogs), lists those entries: waiting, uploading (bar), importing
 (sweeping bar, since import jobs report no percentage), then the file's own
-status read from the files cache (queued, parsing with `ingestPct`, ready, not
-searchable, parsing failed). The event stream only follows the open workspace,
+status read from the files cache (queued, parsing with `ingestPct`, ready,
+parsing failed, or "not searchable" for a ready file without an index, shown as
+neutral information because it is usually a file the user chose not to parse).
+Each status label takes its icon's colour. The event stream only follows the open workspace,
 so the panel polls the files list every four seconds for other workspaces with
 unfinished rows, and the runner's wave gate polls every five. Closing the panel
 clears its rows only; the transfers continue, and the `beforeunload` guard

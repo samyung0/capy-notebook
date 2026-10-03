@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import type { SourceFile } from '@/api/types';
 import { m } from '@/i18n';
-import { transferStatus } from './SourceTransferPanel';
 import {
   type LocalTransferRequest,
   resetSourceTransfers,
@@ -10,6 +9,7 @@ import {
   startSourceTransfer,
   useSourceTransfers,
 } from './sourceTransfers';
+import { transferStatus } from './transferStatus';
 
 vi.mock('@/api/auth', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/api/auth')>()),
@@ -93,7 +93,6 @@ describe('source transfers', () => {
 describe('transfer status', () => {
   const transfer: SourceTransfer = {
     fileId: 'f_1',
-    indexes: true,
     key: 'k',
     kind: 'pdf',
     name: 'paper.pdf',
@@ -118,15 +117,10 @@ describe('transfer status', () => {
     expect(transferStatus(transfer, file({ status: undefined })).kind).toBe(
       'done'
     );
+    // Stored without an index is information, not a warning.
     expect(
       transferStatus(transfer, file({ indexed: false, status: 'ready' })).kind
-    ).toBe('warning');
-    expect(
-      transferStatus(
-        { ...transfer, indexes: false },
-        file({ indexed: false, status: 'ready' })
-      ).kind
-    ).toBe('done');
+    ).toBe('info');
     expect(
       transferStatus(transfer, file({ indexed: false, status: 'failed' })).kind
     ).toBe('error');

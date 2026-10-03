@@ -649,7 +649,7 @@ function SourceList({
   return (
     <>
       <Separator className="mt-4.5 mb-3" />
-      <div className="mb-1.5 flex shrink-0 items-center gap-0.5">
+      <div className="mb-1.5 flex shrink-0 items-center gap-1.5">
         <h3 className="t-subtitle">{m.source_selected_files()}</h3>
         <Popover>
           <PopoverTrigger asChild>
@@ -686,7 +686,7 @@ function SourceList({
             <div className="flex items-center gap-1.5">
               {source.provider && (
                 <ProviderIcon
-                  className="text-fg-muted"
+                  className="-translate-y-px text-fg-muted"
                   provider={source.provider}
                 />
               )}

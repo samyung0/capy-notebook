@@ -22,81 +22,13 @@ import {
   type SourceTransfer,
   useSourceTransfers,
 } from './sourceTransfers';
-
-export type TransferStatus =
-  | { kind: 'progress'; label: string; value: number }
-  | { kind: 'indeterminate'; label: string }
-  | {
-      detail?: string;
-      kind: 'done' | 'background' | 'warning' | 'error';
-      label: string;
-    };
-
-/** One row's status: the transfer stage until the file exists, then the
- * file's own ingest status from the files cache. */
-export function transferStatus(
-  transfer: SourceTransfer,
-  file: SourceFile | undefined
-): TransferStatus {
-  switch (transfer.stage) {
-    case 'waiting':
-      return { kind: 'progress', label: m.source_transfer_waiting(), value: 0 };
-    case 'uploading':
-      return {
-        kind: 'progress',
-        label: m.source_transfer_uploading(),
-        value: transfer.uploadPct,
-      };
-    case 'importing':
-      return { kind: 'indeterminate', label: m.source_transfer_importing() };
-    case 'background':
-      return {
-        detail: m.source_transfer_background_detail(),
-        kind: 'background',
-        label: m.source_transfer_background(),
-      };
-    case 'failed':
-      return {
-        detail: transfer.error,
-        kind: 'error',
-        label: m.source_transfer_not_added(),
-      };
-    case 'added':
-      break;
-  }
-  // Not in the cache yet, or still waiting for a parser.
-  if (!file || file.status === 'pending') {
-    return { kind: 'progress', label: m.source_transfer_queued(), value: 0 };
-  }
-  if (file.status === 'processing') {
-    return {
-      kind: 'progress',
-      label: m.source_transfer_parsing(),
-      value: file.ingestPct ?? 0,
-    };
-  }
-  if (file.status === 'failed') {
-    return {
-      detail: m.files_not_indexed_failed(),
-      kind: 'error',
-      label: m.source_transfer_parse_failed(),
-    };
-  }
-  // Ready, or a file without a status, which the app treats as done.
-  return transfer.indexes && !file.indexed
-    ? {
-        detail: m.files_not_indexed(),
-        kind: 'warning',
-        label: m.source_transfer_not_searchable(),
-      }
-    : { kind: 'done', label: m.source_transfer_ready() };
-}
+import { transferStatus } from './transferStatus';
 
 const TERMINAL_ICON = {
   background: { className: 'text-fg-muted', name: 'clock' },
   done: { className: 'text-tint-success-fg', name: 'check' },
   error: { className: 'text-tint-error-fg', name: 'error' },
-  warning: { className: 'text-tint-warning-fg', name: 'alert' },
+  info: { className: 'text-fg-muted', name: 'info' },
 } as const;
 
 export function ProviderIcon({
@@ -107,7 +39,7 @@ export function ProviderIcon({
   provider: SourceProvider;
 }) {
   return provider === 'google' ? (
-    <GoogleDriveMonoIcon className={cn('size-3.25 shrink-0', className)} />
+    <GoogleDriveMonoIcon className={cn('size-4.25 shrink-0', className)} />
   ) : (
     <OneDriveMonoIcon className={cn('h-2.5 w-4 shrink-0', className)} />
   );
@@ -123,7 +55,7 @@ function TransferRow({
   const status = transferStatus(transfer, file);
   return (
     <li
-      className="flex flex-col gap-1 border-divider border-b px-4 py-1.5 last:border-0"
+      className="flex flex-col gap-1 border-divider border-b px-4 py-2 last:border-0"
       data-transfer-status={status.kind}
     >
       <div className="flex items-center gap-2">
@@ -141,9 +73,9 @@ function TransferRow({
           />
         )}
       </div>
-      <div className="flex items-center gap-2 pl-6">
+      <div className="flex items-center gap-2">
         {status.kind === 'progress' || status.kind === 'indeterminate' ? (
-          <>
+          <div className="-mt-1 flex w-full items-center pl-6">
             <ProgressBar
               className="flex-1"
               height={4}
@@ -153,9 +85,9 @@ function TransferRow({
             <span className="t-meta w-18 shrink-0 text-right text-fg-muted">
               {status.label}
             </span>
-          </>
+          </div>
         ) : (
-          <>
+          <div className="mt-1 flex w-full items-center gap-2 pl-0.5">
             <Icon
               className={cn(
                 'size-3.5 shrink-0',
@@ -164,22 +96,23 @@ function TransferRow({
               name={TERMINAL_ICON[status.kind].name}
               strokeWidth={2}
             />
+            {/* The label takes its icon's colour. */}
             <span
-              className={cn('t-meta text-fg-muted', {
-                'text-tint-error-fg': status.kind === 'error',
-              })}
+              className={cn(
+                't-meta translate-y-px',
+                TERMINAL_ICON[status.kind].className
+              )}
             >
               {status.label}
             </span>
-          </>
+          </div>
         )}
       </div>
       {'detail' in status && status.detail && (
         <p
           className={cn('t-meta pl-6', {
-            'text-fg-muted': status.kind === 'background',
+            'text-fg-muted': status.kind !== 'error',
             'text-tint-error-fg': status.kind === 'error',
-            'text-tint-warning-fg': status.kind === 'warning',
           })}
         >
           {status.detail}
@@ -246,7 +179,7 @@ export function SourceTransferPanel() {
     <Card
       border="solid"
       // Same overlay surface, line and shadow as dialogs and dropdowns.
-      className="pointer-events-auto fixed right-6 bottom-6 z-40 block w-80 max-w-[calc(100vw-2rem)] border-overlay-line bg-overlay p-1 shadow-pop max-sm:right-4 max-sm:bottom-4"
+      className="pointer-events-auto fixed right-6 bottom-6 z-40 block w-96 max-w-[calc(100vw-2rem)] border-overlay-line bg-overlay p-1 shadow-pop max-sm:right-4 max-sm:bottom-4"
       data-testid="source-transfer-panel"
       radius="card"
     >

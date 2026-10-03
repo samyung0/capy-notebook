@@ -11,6 +11,7 @@ import { WorkspaceTransferDialog } from '@/features/workspace/WorkspaceMemberMan
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { tasks, workspaces } from '@/mocks/db';
 import { scenarioWorkspace } from '@/mocks/scenarioFixtures';
+import { scenarioUploadName } from '@/mocks/scenarios';
 import type { MockDialogId } from './mockDialogOptions';
 
 const source: PendingSource = {
@@ -41,10 +42,10 @@ export default function MockDialogPreview({
       dialog === 'source-upload'
         ? {
             ...source,
-            file: new File(['Scenario upload'], 'Scenario upload.txt', {
+            file: new File(['Scenario upload'], scenarioUploadName, {
               type: 'text/plain',
             }),
-            name: 'Scenario upload.txt',
+            name: scenarioUploadName,
             origin: 'local',
             parseMode: 'none',
             sizeBytes: 15,

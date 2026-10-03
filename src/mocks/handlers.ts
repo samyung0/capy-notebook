@@ -2131,11 +2131,12 @@ export const handlers = [
     if (ws) ws.fileCount += 1;
     if (f.chapterId)
       db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
-    // Eventually mark ready so later refetches reflect a finished ingest.
+    // Finish the ingest before the client's animation (5 × 450 ms) refetches
+    // the list; scenarios can rewrite the outcome on that read.
     setTimeout(() => {
       f.status = 'ready';
       f.indexed = f.kind !== 'audio';
-    }, 2600);
+    }, 2000);
     return HttpResponse.json(f, { status: 201 });
   }),
   /* ---------------- chat & generate ---------------- */

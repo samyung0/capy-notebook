@@ -149,6 +149,8 @@ export const mockScenarioOptions = [
   { id: 'import-rejected', label: 'Cloud selection rejected' },
   { id: 'import-job-failed', label: 'Cloud import job failed' },
   { id: 'import-job-pending', label: 'Cloud import stays pending' },
+  { id: 'upload-parse-failed', label: 'Upload parsing fails' },
+  { id: 'upload-not-indexed', label: 'Upload stored without index' },
   { id: 'connection-reconnecting', label: 'Events connection reconnecting' },
   { id: 'workspace-500', label: 'Workspace GET 500' },
   { id: 'workspace-401', label: 'Workspace GET 401' },
@@ -171,6 +173,8 @@ export const mockScenarioOptions = [
 export type MockScenarioId = (typeof mockScenarioOptions)[number]['id'];
 
 export const LAST_SCENARIO = 'capy.scenario.last';
+/** The local file the Upload details dialog preview starts with. */
+export const scenarioUploadName = 'Scenario upload.txt';
 export const permanentScenarios: readonly string[] = [
   'file-list-forbidden',
   'account-locked',
@@ -525,6 +529,24 @@ export function getMockScenarioHandlers(
             ],
           })
         ),
+      ];
+    case 'upload-parse-failed':
+    case 'upload-not-indexed':
+      return [
+        // The worker's outcome for the scenario upload, written when the list
+        // is read; returning nothing hands the request to the regular handler.
+        http.get('/api/workspaces/:id/files', () => {
+          for (const file of files) {
+            if (
+              file.name !== scenarioUploadName ||
+              file.status !== 'ready' ||
+              !file.indexed
+            )
+              continue;
+            file.indexed = false;
+            if (scenario === 'upload-parse-failed') file.status = 'failed';
+          }
+        }),
       ];
     case 'import-job-failed':
     case 'import-job-pending':

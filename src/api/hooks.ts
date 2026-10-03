@@ -1235,26 +1235,23 @@ function trackIngestTerminal(
   });
 }
 
+/** Animates a mock ingest, then reads the outcome from the mock server, which
+ * decides it (ready, unindexed or failed) the way a worker would. */
 function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
   let pct = 0;
   ingestTracker.markStart(fileId);
   const timer = setInterval(() => {
-    pct = Math.min(100, pct + 20);
-    patchFileInCache(qc, wsId, fileId, {
-      ingestPct: pct,
-      status: pct < 40 ? 'pending' : 'processing',
-    });
-    if (pct >= 100) {
-      clearInterval(timer);
-      const list = qc.getQueryData<SourceFile[]>(qk.files(wsId));
-      const kind = list?.find((entry) => entry.id === fileId)?.kind;
+    pct += 20;
+    if (pct < 100) {
       patchFileInCache(qc, wsId, fileId, {
-        indexed: kind !== 'audio',
-        ingestPct: 100,
-        status: 'ready',
+        ingestPct: pct,
+        status: pct < 40 ? 'pending' : 'processing',
       });
-      trackIngestTerminal(qc, wsId, fileId, 'ready', 'done');
+      return;
     }
+    clearInterval(timer);
+    void qc.invalidateQueries({ queryKey: qk.files(wsId) });
+    void qc.invalidateQueries({ queryKey: qk.file(fileId) });
   }, 450);
 }
 
