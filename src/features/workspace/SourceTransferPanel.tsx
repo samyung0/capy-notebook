@@ -12,6 +12,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { fileIsIngesting } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -21,7 +22,6 @@ import {
   type SourceTransfer,
   useSourceTransfers,
 } from './sourceTransfers';
-import { fileReachedTerminal } from './sourceUpload';
 
 export type TransferStatus =
   | { kind: 'progress'; label: string; value: number }
@@ -64,30 +64,32 @@ export function transferStatus(
     case 'added':
       break;
   }
-  if (file?.status === 'failed') {
-    return {
-      detail: m.files_not_indexed_failed(),
-      kind: 'error',
-      label: m.source_transfer_parse_failed(),
-    };
+  // Not in the cache yet, or still waiting for a parser.
+  if (!file || file.status === 'pending') {
+    return { kind: 'progress', label: m.source_transfer_queued(), value: 0 };
   }
-  if (file?.status === 'ready') {
-    return transfer.indexes && !file.indexed
-      ? {
-          detail: m.files_not_indexed(),
-          kind: 'warning',
-          label: m.source_transfer_not_searchable(),
-        }
-      : { kind: 'done', label: m.source_transfer_ready() };
-  }
-  if (file?.status === 'processing') {
+  if (file.status === 'processing') {
     return {
       kind: 'progress',
       label: m.source_transfer_parsing(),
       value: file.ingestPct ?? 0,
     };
   }
-  return { kind: 'progress', label: m.source_transfer_queued(), value: 0 };
+  if (file.status === 'failed') {
+    return {
+      detail: m.files_not_indexed_failed(),
+      kind: 'error',
+      label: m.source_transfer_parse_failed(),
+    };
+  }
+  // Ready, or a file without a status, which the app treats as done.
+  return transfer.indexes && !file.indexed
+    ? {
+        detail: m.files_not_indexed(),
+        kind: 'warning',
+        label: m.source_transfer_not_searchable(),
+      }
+    : { kind: 'done', label: m.source_transfer_ready() };
 }
 
 const TERMINAL_ICON = {
@@ -219,9 +221,10 @@ export function SourceTransferPanel() {
       ...filesQuery(workspaceId),
       // The event stream only follows the open workspace; poll the others.
       refetchInterval: (query: { state: { data?: SourceFile[] } }) =>
-        fileIdsByWorkspace
-          .get(workspaceId)
-          ?.some((id) => !fileReachedTerminal(query.state.data, id))
+        fileIdsByWorkspace.get(workspaceId)?.some((id) => {
+          const file = query.state.data?.find((entry) => entry.id === id);
+          return !file || fileIsIngesting(file.status);
+        })
           ? 4000
           : false,
     })),

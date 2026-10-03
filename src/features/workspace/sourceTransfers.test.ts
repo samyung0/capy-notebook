@@ -82,7 +82,7 @@ describe('source transfers', () => {
         }),
         m.source_import_file_error({
           name: 'broken.pdf',
-          reason: m.source_try_again(),
+          reason: m.error_generic_title(),
         }),
       ].join('\n'),
       title: m.source_transfer_failed_many({ count: 2 }),
@@ -113,6 +113,9 @@ describe('transfer status', () => {
       transferStatus(transfer, file({ ingestPct: 60, status: 'processing' }))
     ).toMatchObject({ kind: 'progress', value: 60 });
     expect(transferStatus(transfer, file({ status: 'ready' })).kind).toBe(
+      'done'
+    );
+    expect(transferStatus(transfer, file({ status: undefined })).kind).toBe(
       'done'
     );
     expect(

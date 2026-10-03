@@ -1,13 +1,6 @@
 import { create } from 'zustand';
 import { USE_MSW } from '@/api/auth';
-import {
-  api,
-  isCreditsExhaustedError,
-  isFileLimitError,
-  isStorageQuotaError,
-  isTooManyIngestLeasesError,
-  qk,
-} from '@/api/client';
+import { api, qk } from '@/api/client';
 import type { useImportSources, useUploadSource } from '@/api/hooks';
 import { ingestSlotsQuery } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
@@ -18,7 +11,7 @@ import type {
 } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
-import { deferStorageRefusal } from '@/lib/errors';
+import { deferStorageRefusal, describeError } from '@/lib/errors';
 import { trackQuotaBlocked } from '@/lib/observability';
 import {
   parseSourceImportAcceptedResponse,
@@ -163,19 +156,12 @@ export function sourceImportFailureReason(code: string) {
   }
 }
 
+/** Short reason for a panel row and the merged toast: import codes by their
+ * own copy, everything else by the app-wide error title. */
 function transferFailureReason(error: unknown) {
-  if (isCreditsExhaustedError(error)) return m.error_credits_title();
-  if (isTooManyIngestLeasesError(error)) return m.error_ingest_slots_title();
-  if (isStorageQuotaError(error)) return m.error_quota_title();
-  if (isFileLimitError(error)) {
-    return error.code === 'files_batch_exceeded'
-      ? m.error_files_batch_title()
-      : m.error_files_limit_title();
-  }
-  if (error instanceof SourceImportFailedError) {
-    return sourceImportFailureReason(error.code);
-  }
-  return m.source_try_again();
+  return error instanceof SourceImportFailedError
+    ? sourceImportFailureReason(error.code)
+    : describeError(error).title;
 }
 
 /** One error toast per submission: each failure adds its file name under its

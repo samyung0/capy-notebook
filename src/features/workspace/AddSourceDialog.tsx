@@ -59,6 +59,7 @@ import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { errorCopy } from '@/lib/errors';
 import { fileIconName } from '@/lib/fileIcons';
 import {
   createGooglePicker,
@@ -1087,7 +1088,8 @@ export function AddSourceDialog({
 
   function handlePickerError(error: unknown) {
     userToast({
-      description: error instanceof Error ? error.message : undefined,
+      // Never the raw text: API errors carry status lines and server detail.
+      description: errorCopy(error, m.source_try_again()),
       title: m.source_import_failed(),
       variant: 'error',
     });
@@ -1228,7 +1230,7 @@ export function AddSourceDialog({
           setIsPicking(false);
           if (data.action === 'error') {
             reportPickerFailure('google', 'selection');
-            handlePickerError(new Error(m.source_try_again()));
+            handlePickerError(new Error('Google Picker error callback'));
           } else if (data.action === 'picked' && data.docs?.length) {
             void inspect(
               'google',
