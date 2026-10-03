@@ -13,6 +13,7 @@ import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/tailwind.css';
 import 'streamdown/styles.css';
 import { TooltipProvider } from './components/ui/Tooltip';
+import { SourceTransferPanel } from './features/workspace/SourceTransferPanel';
 
 // Before the first render, so a crash during mount is still reported.
 initErrorReporting();
@@ -62,6 +63,8 @@ enableMocks().finally(() => {
             {/* Outside the router so public /share routes and router error
                 boundaries can surface toasts too. */}
             <AppToaster />
+            {/* Uploads outlive the dialog that started them and any route. */}
+            <SourceTransferPanel />
           </QueryClientProvider>
         </AppAuthProvider>
       </ThemeProvider>

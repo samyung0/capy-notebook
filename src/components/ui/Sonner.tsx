@@ -61,7 +61,7 @@ function Toast(props: ToastProps) {
       >
         <span className="block font-bold text-sm leading-5">{title}</span>
         {description && (
-          <span className="mt-0.75 block font-medium text-[13px] text-fg-secondary leading-4.5">
+          <span className="mt-0.75 block whitespace-pre-line font-medium text-[13px] text-fg-secondary leading-4.5">
             {description}
           </span>
         )}

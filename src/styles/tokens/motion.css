@@ -361,3 +361,17 @@
   animation: motion-confetti-burst 900ms cubic-bezier(0.15, 0.8, 0.3, 1) 300ms
     backwards;
 }
+
+/* A third-width bar sweeping across its track: progress with no percentage. */
+@keyframes motion-indeterminate {
+  from {
+    translate: -100%;
+  }
+  to {
+    translate: 300%;
+  }
+}
+
+@utility motion-indeterminate {
+  animation: motion-indeterminate 1.2s var(--motion-ease-smooth-out) infinite;
+}

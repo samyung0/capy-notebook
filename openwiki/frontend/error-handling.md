@@ -166,13 +166,13 @@ A write that still meets `account_over_quota` or `storage_quota_exceeded`
 inside a workspace (a stale capability, or creation at the limit) shows only
 the workspace status toast: `deferStorageRefusal` (in `src/lib/errors.ts`,
 called first by the mutation cache and by surfaces with their own error toast
-or strip: the upload dialog, sharing, clone, note media uploads, the PDF
+or strip: the source transfer runner, sharing, clone, note media uploads, the PDF
 annotation strip and the generate panel) hands each refusal once to
 `WorkspaceHealth`. A quota refusal carries its numbers only for the charged
 account, so one with numbers seen by a member (a clone charged to the member)
 is about the member's own storage and keeps the surface's copy. The
 `quota_blocked` analytics event is recorded before the deferral (by the
-mutation cache, or by the upload and clone surfaces for their own). At the
+mutation cache, or by the source transfer and clone surfaces for their own). At the
 limit the chat's curate switch hides with `canEditContent`, since the server
 refuses curate there. Its `refusalHandler` refetches the workspace and
 `/me` and shows the status as a new toast (fresh id including the status
@@ -281,7 +281,7 @@ or response cannot be reached. It does not render a replacement error component.
 fixture drafts and temporary faults, and returns to Workspaces. Temporary faults
 are retired after the application renders their result, so the next explicit
 Save or Retry can succeed. Permanent permission/account states survive reload
-until Reset. Pending imports keep polling until Reset closes their dialog.
+until Reset. Pending imports keep polling in the transfer panel until Reset stops them.
 Reload remembers the selected button but does not replay actions.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate
@@ -387,6 +387,38 @@ codes for HTTP responses and chat events; neither starts an automatic retry.
 Google Picker temporarily replaces the source chooser so the Radix focus trap and pointer lock cannot intercept it. The chooser returns on cancel/error or while selected files are inspected. Google multi-select and folder selection are enabled; folders are expanded by the gateway before the source details step. Import clicks check file grants separately from login connections: Google needs `drive.readonly` or `drive`, Microsoft needs `Files.Read`. Missing grants request consent through Clerk's `additionalScopes`; login/signup uses only baseline scopes. Consent returns to the current page, where the user can reopen the importer. Both provider buttons stay disabled while a picker is opening or active.
 
 Picker startup failures and Google `error` callbacks produce a toast and a frontend Sentry event tagged `component=source-picker`, `provider`, and `stage`. Telemetry uses a fixed message rather than the provider payload, which can contain OAuth tokens and file names. Internal HTTP failures in Google's cross-origin iframe are only observable when Google forwards an error callback; they never reach gateway Sentry.
+
+## Source transfers
+
+Pressing Upload or Import in the Add file dialog hands the open tab's rows to
+`startSourceTransfer` (`src/features/workspace/sourceTransfers.ts`) and closes
+the dialog unless the other tab still has rows. The runner lives outside React,
+so closing the dialog, navigating away or switching workspace does not cancel
+anything. It sends every row even after one fails, in ingest-slot waves as
+before, and keeps a zustand store of one entry per file (a picked folder expands
+into one entry per imported file).
+
+`SourceTransferPanel`, mounted at the root next to the toaster and painted below
+it (and below dialogs), lists those entries: waiting, uploading (bar), importing
+(sweeping bar, since import jobs report no percentage), then the file's own
+status read from the files cache (queued, parsing with `ingestPct`, ready, not
+searchable, parsing failed). The event stream only follows the open workspace,
+so the panel polls the files list every four seconds for other workspaces with
+unfinished rows, and the runner's wave gate polls every five. Closing the panel
+clears its rows only; the transfers continue, and the `beforeunload` guard
+follows the store's separate unsent count.
+
+A source the server refused (upload error, provider rejection, failed import
+job) stays in the panel as "Not added" with its reason, and is also named in
+one error toast per submission: each failure adds its file name under its
+reason to the same toast id instead of stacking toasts. A storage or frozen
+refusal inside a workspace still goes to the workspace status toast through
+`deferStorageRefusal`. Failed sources are not kept for resubmission; the user
+adds them again. An import still running after the polling budget shows "Still
+importing" and appears in the workspace when it finishes.
+
+Selections the provider refuses before anything is sent (the inspection step)
+show one toast that counts files per reason, since the picker returns only ids.
 
 ### Sentry ownership
 

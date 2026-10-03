@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
+import { resetSourceTransfers } from '@/features/workspace/sourceTransfers';
 import { m } from '@/i18n';
 import { cancelMockAuthRequests } from '@/mocks/auth';
 import { worker } from '@/mocks/browser';
@@ -106,6 +107,8 @@ export default function MockScenarioPanel() {
           () => queryClient.isMutating() === 0,
           'previous submission settled'
         );
+        // Uploads outlive the dialog; stop them with the rest of the state.
+        resetSourceTransfers();
         await resetScenarioFixtures(!!id);
         current.signal.throwIfAborted();
         await queryClient.cancelQueries();

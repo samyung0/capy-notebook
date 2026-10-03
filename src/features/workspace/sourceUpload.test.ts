@@ -5,19 +5,16 @@ import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 
 import {
-  aggregateUploadPct,
   capSourceUploads,
   chunkItems,
   defaultParseMode,
   fileReachedTerminal,
   getFileKind,
   MAX_FILES_PER_UPLOAD,
-  MAX_SOURCE_UPLOAD_FILES,
   mapWithConcurrency,
   needsIngestJob,
   parseModeIssues,
   retryAfterMs,
-  shouldArmBeforeUnload,
   splitSourceWave,
   withUploadRetry,
 } from './sourceUpload';
@@ -67,22 +64,6 @@ describe('source upload policy', () => {
   });
 });
 
-describe('aggregate upload progress', () => {
-  it('weights progress by bytes rather than file count', () => {
-    expect(
-      aggregateUploadPct([
-        { size: 1, uploadPct: 100 },
-        { size: 3, uploadPct: 0 },
-      ])
-    ).toBe(25);
-  });
-
-  it('handles empty and missing progress values', () => {
-    expect(aggregateUploadPct([])).toBe(0);
-    expect(aggregateUploadPct([{ size: 100 }])).toBe(0);
-  });
-});
-
 describe('upload batch limits', () => {
   it('caps the picker at remaining workspace room, not the per-request 20', () => {
     const { accepted, rejected } = capSourceUploads(
@@ -92,7 +73,6 @@ describe('upload batch limits', () => {
     );
     expect(accepted).toHaveLength(40);
     expect(rejected).toBe(0);
-    expect(MAX_SOURCE_UPLOAD_FILES).toBe(MAX_FILES_PER_UPLOAD);
     expect(MAX_FILES_PER_UPLOAD).toBe(20);
   });
 
@@ -123,11 +103,6 @@ describe('upload batch limits', () => {
     const { wave, rest } = splitSourceWave(items, (item) => item.ingest, 2);
     expect(wave.map((item) => item.id)).toEqual(['a', 'b', 'c']);
     expect(rest.map((item) => item.id)).toEqual(['d']);
-  });
-
-  it('arms beforeunload only while an unsent tail remains', () => {
-    expect(shouldArmBeforeUnload(0)).toBe(false);
-    expect(shouldArmBeforeUnload(3)).toBe(true);
   });
 
   it('treats text and parsed files as ingest jobs', () => {

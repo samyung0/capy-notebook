@@ -102,7 +102,7 @@ for (const failure of ['reservation', 'put'] as const) {
   test(
     'a failed ' +
       failure +
-      ' keeps the source for an explicit successful resubmit',
+      ' is reported in the panel and toast, and adding it again succeeds',
     async ({ ownerApi, ownerPage, workspaceFactory }) => {
       const workspace = await workspaceFactory.create({
         name: 'Failed ' + failure,
@@ -126,11 +126,19 @@ for (const failure of ['reservation', 'put'] as const) {
       );
       await submit.click();
       expect((await rejected).status()).toBe(503);
-      await expect(submit).toBeEnabled();
+      // The dialog hands the source to the transfer panel and closes.
+      await expect(ownerPage.getByRole('dialog')).toHaveCount(0);
+      const panel = ownerPage.getByTestId('source-transfer-panel');
+      await expect(panel).toContainText(name);
+      await expect(panel).toContainText('Not added');
+      await expect(ownerPage.locator('[data-sonner-toast]')).toContainText(
+        name
+      );
       expect(requests.reservations).toHaveLength(1);
       expect(requests.completed).toEqual([]);
       expect(requests.puts).toHaveLength(failure === 'put' ? 1 : 0);
 
+      await chooseSources(ownerPage, workspace.id, [name]);
       await submit.click();
       await expect.poll(() => requests.completed).toEqual(['up_failure_2']);
       expect(requests.reservations).toEqual([

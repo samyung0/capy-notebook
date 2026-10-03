@@ -462,7 +462,7 @@ test('a failed annotation save shows its strip under the PDF toolbar', async ({
   expect(stripBox!.y).toBeLessThan(pageBox!.y);
 });
 
-test('pending import keeps polling until Reset closes the real dialog', async ({
+test('pending import keeps polling in the transfer panel until Reset', async ({
   page,
 }) => {
   await page.evaluate(() => {
@@ -486,7 +486,9 @@ test('pending import keeps polling until Reset closes the real dialog', async ({
       { timeout: 15_000 }
     )
     .toBeGreaterThan(1);
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  const transfers = page.getByTestId('source-transfer-panel');
+  await expect(transfers).toContainText('Importing');
   const panel = page.getByTestId('mock-scenario-panel');
   await panel.evaluate((node: HTMLDetailsElement) => {
     node.open = true;
@@ -496,7 +498,7 @@ test('pending import keeps polling until Reset closes the real dialog', async ({
     .filter({ hasText: /^Reset$/ })
     .click();
   await expect(panel).toHaveAttribute('data-scenario-status', 'idle');
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(transfers).toHaveCount(0);
 });
 
 test('failed Office export keeps the editor and URL in Edit', async ({

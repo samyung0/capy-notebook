@@ -59,3 +59,44 @@ export function OneDriveIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+/** One-colour Google Drive mark for small source labels. Path from Tabler
+ * Icons (MIT). */
+export function GoogleDriveMonoIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      aria-hidden
+      fill="none"
+      height="14"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+      width="14"
+      {...props}
+    >
+      <path d="M12 10l-6 10l-3 -5l6 -10z" />
+      <path d="M9 15h12l-3 5h-12" />
+      <path d="M15 15l-6 -10h6l6 10z" />
+    </svg>
+  );
+}
+
+/** One-colour OneDrive mark in the classic two-cloud shape, so it does not
+ * read as a generic cloud. */
+export function OneDriveMonoIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      aria-hidden
+      fill="currentColor"
+      height="10"
+      viewBox="100 290 1000 620"
+      width="16"
+      {...props}
+    >
+      <path d="M225 850C150 840 100 790 100 720C100 640 150 590 220 578C218 470 300 390 378 390C410 390 440 400 464 415C500 345 570 300 650 300C780 300 850 400 866 481C845 480 825 484 806 490C760 440 700 415 633 415C520 415 450 490 422 588C340 610 275 660 275 760C275 800 283 825 295 850Z" />
+      <path d="M455 900C370 880 325 830 325 765C325 690 380 645 463 632C485 540 550 466 633 466C705 466 760 500 790 551C810 540 835 532 865 532C940 532 1003 590 1003 682C1065 700 1100 740 1100 795C1100 860 1055 895 1010 900Z" />
+    </svg>
+  );
+}

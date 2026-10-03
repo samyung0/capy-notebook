@@ -5,6 +5,8 @@ import { userColorPair } from '@/lib/userColor';
 export interface ProgressBarProps {
   className?: string;
   height?: number;
+  /** Work with no measurable progress: a sweeping bar instead of `value`. */
+  indeterminate?: boolean;
   segments?: { value: number; tone: UserColor; label: string }[];
   showLabel?: boolean;
   tone?: UserColor;
@@ -15,6 +17,7 @@ export function ProgressBar({
   value = 0,
   tone = 'graphite',
   height = 6,
+  indeterminate,
   showLabel,
   className,
   segments,
@@ -27,7 +30,12 @@ export function ProgressBar({
         className="flex flex-1 overflow-hidden rounded-full bg-surface-hover-bg"
         style={{ height }}
       >
-        {segments ? (
+        {indeterminate ? (
+          <div
+            className="motion-indeterminate h-full w-1/3 rounded-full"
+            style={{ backgroundColor: userColorPair(tone)?.bg }}
+          />
+        ) : segments ? (
           segments.map((segment) => (
             <div
               className="h-full"

@@ -72,27 +72,7 @@ export function defaultParseMode(
   return 'none';
 }
 
-export interface UploadProgressItem {
-  size: number;
-  uploadPct?: number;
-}
-
-/** Returns a byte-weighted batch percentage so large files contribute fairly. */
-export function aggregateUploadPct(
-  items: readonly UploadProgressItem[]
-): number {
-  const totalBytes = items.reduce((sum, item) => sum + item.size, 0);
-  if (totalBytes === 0) return 0;
-  const uploadedBytes = items.reduce(
-    (sum, item) =>
-      sum + (item.size * Math.max(0, Math.min(100, item.uploadPct ?? 0))) / 100,
-    0
-  );
-  return Math.round((uploadedBytes / totalBytes) * 100);
-}
-
 export const MAX_FILES_PER_UPLOAD = PLAN_LIMITS.free.filesPerUpload;
-export const MAX_SOURCE_UPLOAD_FILES = MAX_FILES_PER_UPLOAD;
 export const MAX_FILES_PER_WORKSPACE = PLAN_LIMITS.free.filesPerWorkspace;
 export const SOURCE_UPLOAD_CONCURRENCY = 3;
 
@@ -158,10 +138,6 @@ export function chunkItems<T>(items: readonly T[], size: number): T[][] {
     out.push(items.slice(i, i + n));
   }
   return out;
-}
-
-export function shouldArmBeforeUnload(unsentCount: number): boolean {
-  return unsentCount > 0;
 }
 
 export function fileReachedTerminal(

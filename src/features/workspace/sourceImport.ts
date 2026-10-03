@@ -25,8 +25,6 @@ type ReadSourceImport = (
   signal?: AbortSignal
 ) => Promise<unknown>;
 
-type SourceImportJob = SourceImportAcceptedResponse['jobs'][number];
-
 type ParsedSourceImportStatus =
   | {
       jobId: string;
@@ -52,23 +50,6 @@ interface WaitForSourceImportOptions {
   maxWaitMilliseconds?: number;
   random?: () => number;
   signal?: AbortSignal;
-}
-
-export interface SourceImportWaveFailure {
-  error: unknown;
-  job: SourceImportJob;
-}
-
-export interface SourceImportWaveResult {
-  completedJobIds: string[];
-  failures: SourceImportWaveFailure[];
-  fileIds: string[];
-}
-
-export interface CollectedSourceImportResponses {
-  jobs: SourceImportJob[];
-  rejected: SourceImportAcceptedResponse['rejected'];
-  requestErrors: unknown[];
 }
 
 const DEFAULT_INITIAL_POLL_MILLISECONDS = 750;
@@ -220,30 +201,6 @@ function pollDelayMilliseconds(
   return Math.min(maxMilliseconds, Math.round(exponential * jitter));
 }
 
-export function collectSourceImportResponses(
-  results: readonly PromiseSettledResult<unknown>[]
-): CollectedSourceImportResponses {
-  const collected: CollectedSourceImportResponses = {
-    jobs: [],
-    rejected: [],
-    requestErrors: [],
-  };
-  for (const result of results) {
-    if (result.status === 'rejected') {
-      collected.requestErrors.push(result.reason);
-      continue;
-    }
-    try {
-      const response = parseSourceImportAcceptedResponse(result.value);
-      collected.jobs.push(...response.jobs);
-      collected.rejected.push(...response.rejected);
-    } catch (error) {
-      collected.requestErrors.push(error);
-    }
-  }
-  return collected;
-}
-
 function sourceImportRequestRetryDelay(
   error: unknown,
   attempt: number
@@ -348,30 +305,4 @@ export async function waitForSourceImport(
     pollAttempt += 1;
     await abortableDelay(Math.min(delayMilliseconds, remaining), signal);
   }
-}
-
-export async function waitForSourceImportWave(
-  read: ReadSourceImport,
-  jobs: readonly SourceImportJob[],
-  options: WaitForSourceImportOptions = {}
-): Promise<SourceImportWaveResult> {
-  const results = await Promise.allSettled(
-    jobs.map((job) => waitForSourceImport(read, job.jobId, options))
-  );
-  const wave: SourceImportWaveResult = {
-    completedJobIds: [],
-    failures: [],
-    fileIds: [],
-  };
-  results.forEach((result, index) => {
-    const job = jobs[index];
-    if (!job) return;
-    if (result.status === 'fulfilled') {
-      wave.completedJobIds.push(job.jobId);
-      wave.fileIds.push(result.value);
-      return;
-    }
-    wave.failures.push({ error: result.reason, job });
-  });
-  return wave;
 }

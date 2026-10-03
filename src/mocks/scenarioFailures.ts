@@ -4,7 +4,6 @@ import { HttpResponse, http } from 'msw';
 type Failure = {
   id: string;
   label: string;
-  hint: string;
   method: 'get' | 'post' | 'patch' | 'put' | 'delete';
   paths: string[];
   /** 'network' rejects the fetch itself (TypeError: Failed to fetch). */
@@ -15,7 +14,6 @@ type Failure = {
 // One outcome can cover sibling requests that use the same error UI.
 export const failureScenarios = [
   {
-    hint: 'Open the dashboard or Settings.',
     id: 'profile-load',
     label: 'Profile GET 500',
     method: 'get',
@@ -23,7 +21,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Change the name in Settings → Account or the onboarding preview, then save.',
     id: 'profile-save',
     label: 'Profile save 500',
     method: 'patch',
@@ -31,7 +28,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Files or a workspace.',
     id: 'file-list',
     label: 'Files list GET 500',
     method: 'get',
@@ -39,7 +35,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Files or a workspace. Plain 403 without an account code.',
     id: 'file-list-forbidden',
     label: 'Files list GET 403',
     method: 'get',
@@ -47,7 +42,6 @@ export const failureScenarios = [
     status: 403,
   },
   {
-    hint: 'Open Files or a workspace. The request never reaches a server.',
     id: 'file-list-network',
     label: 'Files list network error',
     method: 'get',
@@ -55,7 +49,6 @@ export const failureScenarios = [
     status: 'network',
   },
   {
-    hint: 'Open a file preview from Files.',
     id: 'file-detail',
     label: 'File preview GET 500',
     method: 'get',
@@ -63,7 +56,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open a file with stored bytes. Retry requests a fresh link.',
     id: 'file-links',
     label: 'File download links 503',
     method: 'get',
@@ -71,7 +63,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Rename a file.',
     id: 'file-save',
     label: 'File rename 500',
     method: 'patch',
@@ -79,7 +70,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Delete a file.',
     id: 'file-delete',
     label: 'Move file to trash 500',
     method: 'delete',
@@ -87,7 +77,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Files → Trash.',
     id: 'trash-load',
     label: 'Trash list GET 500',
     method: 'get',
@@ -96,7 +85,6 @@ export const failureScenarios = [
   },
   {
     code: 'storage_quota_exceeded',
-    hint: 'Trash a file before applying, then restore it.',
     id: 'trash-restore',
     label: 'Trash restore 403 quota',
     method: 'post',
@@ -104,7 +92,6 @@ export const failureScenarios = [
     status: 403,
   },
   {
-    hint: 'Trash a file before applying, then permanently delete it.',
     id: 'trash-delete',
     label: 'Permanently delete 500',
     method: 'delete',
@@ -112,7 +99,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Edit workspace settings, then save.',
     id: 'workspace-save',
     label: 'Workspace save 500',
     method: 'patch',
@@ -120,7 +106,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Create a workspace.',
     id: 'workspace-create',
     label: 'Workspace create 500',
     method: 'post',
@@ -128,7 +113,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Delete a workspace in its settings.',
     id: 'workspace-delete',
     label: 'Workspace delete 500',
     method: 'delete',
@@ -137,7 +121,6 @@ export const failureScenarios = [
   },
   {
     code: 'storage_quota_exceeded',
-    hint: 'Clone a workspace, quiz or flashcard set.',
     id: 'workspace-clone',
     label: 'Clone 403 quota',
     method: 'post',
@@ -149,7 +132,6 @@ export const failureScenarios = [
     status: 403,
   },
   {
-    hint: 'Open workspace settings → Statistics or Indexing. The dummy Workspace statistics dialog also works.',
     id: 'workspace-stats',
     label: 'Workspace statistics 500',
     method: 'get',
@@ -157,7 +139,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open a workspace.',
     id: 'chapters-load',
     label: 'Chapters GET 500',
     method: 'get',
@@ -165,7 +146,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Create a chapter in a workspace.',
     id: 'chapter-save',
     label: 'Chapter create 500',
     method: 'post',
@@ -173,7 +153,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open workspace sharing → members.',
     id: 'members-load',
     label: 'Members GET 500',
     method: 'get',
@@ -181,7 +160,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Change visibility in a Share dialog.',
     id: 'sharing-save',
     label: 'Sharing save 500',
     method: 'patch',
@@ -194,7 +172,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Invite a member through workspace sharing.',
     id: 'invite-send',
     label: 'Invite send 500',
     method: 'post',
@@ -202,7 +179,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open the invitation preview link.',
     id: 'invite-unavailable',
     label: 'Invitation unavailable 404',
     method: 'post',
@@ -210,7 +186,6 @@ export const failureScenarios = [
     status: 404,
   },
   {
-    hint: 'Open the invitation preview link, then accept.',
     id: 'invite-retry',
     label: 'Invitation accept 503',
     method: 'post',
@@ -218,7 +193,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Change a member role in workspace sharing.',
     id: 'member-save',
     label: 'Member role save 500',
     method: 'patch',
@@ -226,7 +200,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Remove a member in workspace sharing.',
     id: 'member-remove',
     label: 'Member removal 500',
     method: 'delete',
@@ -234,7 +207,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Transfer ownership to an existing member.',
     id: 'ownership-transfer',
     label: 'Ownership transfer 500',
     method: 'post',
@@ -242,7 +214,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Add sources. Format information cannot load.',
     id: 'upload-policy',
     label: 'Upload formats GET 503',
     method: 'get',
@@ -250,7 +221,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Choose a local file and upload it.',
     id: 'upload-failed',
     label: 'Upload POST 500',
     method: 'post',
@@ -259,7 +229,6 @@ export const failureScenarios = [
   },
   {
     code: 'files_limit_exceeded',
-    hint: 'Choose a local file and upload it.',
     id: 'upload-file-cap',
     label: 'Upload file cap 403',
     method: 'post',
@@ -268,7 +237,6 @@ export const failureScenarios = [
   },
   {
     code: 'files_batch_exceeded',
-    hint: 'Choose several local files and upload them.',
     id: 'upload-batch-cap',
     label: 'Upload batch cap 403',
     method: 'post',
@@ -277,7 +245,6 @@ export const failureScenarios = [
   },
   {
     code: 'too_many_ingest_leases',
-    hint: 'Upload or import a source.',
     id: 'ingest-slots',
     label: 'Ingest slots exhausted 429',
     method: 'post',
@@ -288,7 +255,6 @@ export const failureScenarios = [
     status: 429,
   },
   {
-    hint: 'Add sources → Import → either provider.',
     id: 'import-inspect',
     label: 'Cloud inspection 503',
     method: 'post',
@@ -296,7 +262,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Add sources → Import → either provider. The file analysis fails with Retry.',
     id: 'import-analysis',
     label: 'Cloud file analysis 503',
     method: 'get',
@@ -304,7 +269,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Select a cloud source, then press Import.',
     id: 'import-start',
     label: 'Cloud import POST 503',
     method: 'post',
@@ -312,7 +276,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Select a cloud source, then press Import.',
     id: 'import-status',
     label: 'Cloud job status 503',
     method: 'get',
@@ -320,7 +283,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open a workspace.',
     id: 'materials-load',
     label: 'Materials list GET 500',
     method: 'get',
@@ -328,7 +290,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open a note or generated material.',
     id: 'material-load',
     label: 'Material GET 500',
     method: 'get',
@@ -336,7 +297,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Rename a note or generated material.',
     id: 'material-save',
     label: 'Material metadata 500',
     method: 'patch',
@@ -345,7 +305,6 @@ export const failureScenarios = [
   },
   {
     code: 'material_content_unreadable',
-    hint: 'Open a note or generated material to show the unreadable-content error.',
     id: 'material-unreadable',
     label: 'Material content unreadable 500',
     method: 'get',
@@ -353,7 +312,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open workspace chat.',
     id: 'conversations-load',
     label: 'Chat history GET 500',
     method: 'get',
@@ -364,7 +322,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Generate a quiz, flashcards, diagram or mind map.',
     id: 'generation-failed',
     label: 'Generate 503',
     method: 'post',
@@ -373,7 +330,6 @@ export const failureScenarios = [
   },
   {
     code: 'llm_credits_exhausted',
-    hint: 'Send chat, generate or use editor AI.',
     id: 'ai-credits',
     label: 'AI credits exhausted 402',
     method: 'post',
@@ -387,7 +343,6 @@ export const failureScenarios = [
   },
   {
     code: 'invalid_llm_key',
-    hint: 'Send chat, generate or use editor AI.',
     id: 'ai-key',
     label: 'AI invalid provider key 422',
     method: 'post',
@@ -401,7 +356,6 @@ export const failureScenarios = [
   },
   {
     code: 'llm_key_failed',
-    hint: 'Send chat, generate or use editor AI.',
     id: 'ai-key-failed',
     label: 'AI provider key failed 422',
     method: 'post',
@@ -415,7 +369,6 @@ export const failureScenarios = [
   },
   {
     code: 'provider_busy',
-    hint: 'Send chat or generate a material.',
     id: 'ai-busy',
     label: 'AI provider busy 503',
     method: 'post',
@@ -424,7 +377,6 @@ export const failureScenarios = [
   },
   {
     code: 'model_unavailable',
-    hint: 'Send chat or generate a material.',
     id: 'ai-model',
     label: 'AI model unavailable 422',
     method: 'post',
@@ -433,7 +385,6 @@ export const failureScenarios = [
   },
   {
     code: 'context_too_large',
-    hint: 'Generate a material. This probes the server code normalization and recovery action.',
     id: 'ai-context',
     label: 'Generation context too large 400',
     method: 'post',
@@ -442,7 +393,6 @@ export const failureScenarios = [
   },
   {
     code: 'source_changed',
-    hint: 'Send chat or generate a material.',
     id: 'ai-source-changed',
     label: 'Source changed 409',
     method: 'post',
@@ -450,7 +400,6 @@ export const failureScenarios = [
     status: 409,
   },
   {
-    hint: 'Open Quizzes or a quiz attempt.',
     id: 'quiz-load',
     label: 'Quiz GET 500',
     method: 'get',
@@ -458,7 +407,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Edit and save a quiz.',
     id: 'quiz-save',
     label: 'Quiz content save 500',
     method: 'patch',
@@ -466,7 +414,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Complete and submit a quiz attempt.',
     id: 'quiz-submit',
     label: 'Quiz attempt submit 500',
     method: 'post',
@@ -474,7 +421,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Answer a free-text question that uses server grading.',
     id: 'quiz-grade',
     label: 'Quiz AI grading 503',
     method: 'post',
@@ -482,7 +428,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open quiz history or an attempt result.',
     id: 'attempt-load',
     label: 'Quiz results GET 500',
     method: 'get',
@@ -490,7 +435,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Flashcards or study a set.',
     id: 'flashcards-load',
     label: 'Flashcards GET 500',
     method: 'get',
@@ -502,7 +446,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Study a flashcard and rate it.',
     id: 'flashcard-progress',
     label: 'Flashcard progress save 500',
     method: 'patch',
@@ -510,7 +453,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Billing & usage.',
     id: 'billing-load',
     label: 'Billing GET 500',
     method: 'get',
@@ -518,7 +460,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Choose a paid plan or buy credits.',
     id: 'checkout',
     label: 'Checkout 503',
     method: 'post',
@@ -526,7 +467,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open Manage subscription on a paid mock account.',
     id: 'billing-portal',
     label: 'Billing portal 503',
     method: 'post',
@@ -534,7 +474,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open Settings → LLM or a model selector.',
     id: 'models-load',
     label: 'Models GET 503',
     method: 'get',
@@ -542,7 +481,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Change a model selection in Settings → LLM.',
     id: 'models-save',
     label: 'Model preferences save 500',
     method: 'patch',
@@ -550,7 +488,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Settings → LLM.',
     id: 'credentials-load',
     label: 'Provider keys GET 503',
     method: 'get',
@@ -559,7 +496,6 @@ export const failureScenarios = [
   },
   {
     code: 'invalid_llm_key',
-    hint: 'Add a provider key in Settings → LLM.',
     id: 'credentials-save',
     label: 'Provider key save 422',
     method: 'put',
@@ -567,7 +503,6 @@ export const failureScenarios = [
     status: 422,
   },
   {
-    hint: 'Open the notification panel.',
     id: 'notifications-load',
     label: 'Notifications GET 500',
     method: 'get',
@@ -575,7 +510,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Mark a notification or all notifications as read.',
     id: 'notification-save',
     label: 'Notification read 500',
     method: 'post',
@@ -583,7 +517,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Change a notification preference in Settings → Notifications.',
     id: 'notification-prefs',
     label: 'Notification preferences save 500',
     method: 'patch',
@@ -591,7 +524,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Settings → Connections or Add sources.',
     id: 'integrations-load',
     label: 'Connections GET 503',
     method: 'get',
@@ -599,7 +531,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open Settings → Danger → Delete.',
     id: 'deletion-check',
     label: 'Account deletion check 503',
     method: 'get',
@@ -607,7 +538,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Confirm account deletion in Settings → Danger.',
     id: 'deletion-submit',
     label: 'Account deletion submit 500',
     method: 'post',
@@ -615,7 +545,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open search and enter a query.',
     id: 'search',
     label: 'Search GET 503',
     method: 'get',
@@ -623,7 +552,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Enable VITE_FEATURE_EXPLORE=true, then open Explore.',
     id: 'explore',
     label: 'Explore GET 503',
     method: 'get',
@@ -635,7 +563,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Enable VITE_FEATURE_SCHEDULE=true, then open Schedule.',
     id: 'schedule',
     label: 'Schedule GET 503',
     method: 'get',
@@ -643,7 +570,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Enable VITE_FEATURE_TASKS=true, then open Tasks.',
     id: 'tasks',
     label: 'Tasks GET 503',
     method: 'get',
@@ -651,7 +577,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Enable VITE_FEATURE_THINKING=true, then open a canvas.',
     id: 'thinking',
     label: 'Thinking canvas GET 503',
     method: 'get',
@@ -659,7 +584,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open the Office preview or edit a text file.',
     id: 'source-session',
     label: 'Source / Office session 503',
     method: 'get',
@@ -667,7 +591,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Join a source editing session. A successful source-session fixture is required first.',
     id: 'source-token',
     label: 'Source collaboration token 503',
     method: 'post',
@@ -675,7 +598,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open a PDF.',
     id: 'annotations-load',
     label: 'PDF annotations GET 503',
     method: 'get',
@@ -683,7 +605,6 @@ export const failureScenarios = [
     status: 503,
   },
   {
-    hint: 'Open Cell structure.pdf in Biology 101, switch to Edit, then draw an annotation. The PDF stays visible with an inline warning.',
     id: 'annotations-save',
     label: 'PDF annotation save 500',
     method: 'post',
@@ -691,7 +612,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open the task editor preview and save a changed title.',
     id: 'task-save',
     label: 'Task save 500',
     method: 'patch',
@@ -699,7 +619,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Search tags in a workspace form.',
     id: 'tags-load',
     label: 'Tags GET 500',
     method: 'get',
@@ -707,7 +626,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Check the bell unread count.',
     id: 'notification-count',
     label: 'Notification count GET 500',
     method: 'get',
@@ -715,7 +633,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    hint: 'Open Settings → Notifications.',
     id: 'notification-prefs-load',
     label: 'Notification preferences GET 500',
     method: 'get',
@@ -724,7 +641,6 @@ export const failureScenarios = [
   },
   {
     code: 'account_locked',
-    hint: 'Create a material or upload a source.',
     id: 'account-locked',
     label: 'Account locked on write 403',
     method: 'post',

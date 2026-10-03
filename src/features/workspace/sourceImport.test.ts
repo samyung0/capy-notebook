@@ -2,11 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/api/client';
 import type { SourceImportStatus } from '@/api/types';
 import {
-  collectSourceImportResponses,
   parseSourceImportAcceptedResponse,
   SourceImportPollingTimeoutError,
   waitForSourceImport,
-  waitForSourceImportWave,
   withSourceImportRequestRetry,
 } from './sourceImport';
 
@@ -183,58 +181,17 @@ describe('source import request retries', () => {
   });
 });
 
-describe('async import waves', () => {
-  it('collects accepted jobs even when another POST rejects', () => {
-    const requestError = new Error('network failure');
-    const results: PromiseSettledResult<{
-      jobs: { jobId: string; name: string; uploadId: string }[];
-      rejected: { code: string; fileId: string }[];
-    }>[] = [
-      { reason: requestError, status: 'rejected' },
-      {
-        status: 'fulfilled',
-        value: {
-          jobs: [{ jobId: 'imp_2', name: 'kept.pdf', uploadId: 'up_2' }],
-          rejected: [],
-        },
-      },
-      {
-        status: 'fulfilled',
-        value: {
-          jobs: [],
-          rejected: [{ code: 'unsupported_file', fileId: 'drive_3' }],
-        },
-      },
-    ];
-
-    expect(collectSourceImportResponses(results)).toEqual({
-      jobs: [{ jobId: 'imp_2', name: 'kept.pdf', uploadId: 'up_2' }],
-      rejected: [{ code: 'unsupported_file', fileId: 'drive_3' }],
-      requestErrors: [requestError],
-    });
-  });
-
+describe('accepted import responses', () => {
   it('rejects malformed accepted POST payloads', () => {
-    const collected = collectSourceImportResponses([
-      {
-        status: 'fulfilled',
-        value: { jobs: [{ jobId: 'imp_1' }], rejected: [] },
-      },
-    ]);
-
-    expect(collected.jobs).toEqual([]);
-    expect(collected.requestErrors).toHaveLength(1);
-    expect(collected.requestErrors[0]).toMatchObject({
-      code: 'invalid_import_response',
-    });
-    expect(
-      collectSourceImportResponses([
-        {
-          status: 'fulfilled',
-          value: { jobs: [], rejected: [] },
-        },
-      ]).requestErrors
-    ).toHaveLength(1);
+    expect(() =>
+      parseSourceImportAcceptedResponse({
+        jobs: [{ jobId: 'imp_1' }],
+        rejected: [],
+      })
+    ).toThrow('Source import failed');
+    expect(() =>
+      parseSourceImportAcceptedResponse({ jobs: [], rejected: [] })
+    ).toThrow('Source import failed');
     expect(() =>
       parseSourceImportAcceptedResponse(
         {
@@ -244,42 +201,5 @@ describe('async import waves', () => {
         'expected'
       )
     ).toThrow('Source import failed');
-  });
-
-  it('waits for every poll and preserves successful file ids', async () => {
-    const read = vi.fn(async (jobId: string) => {
-      if (jobId === 'imp_failed') {
-        return {
-          ...status('failed', { errorCode: 'provider_download_refused' }),
-          jobId,
-          name: 'failed.pdf',
-        };
-      }
-      return {
-        ...status('succeeded', { fileId: 'f_success' }),
-        jobId,
-        name: 'success.pdf',
-      };
-    });
-
-    const result = await waitForSourceImportWave(
-      read,
-      [
-        { jobId: 'imp_failed', name: 'failed.pdf', uploadId: 'up_1' },
-        { jobId: 'imp_success', name: 'success.pdf', uploadId: 'up_2' },
-      ],
-      { initialDelayMilliseconds: 0 }
-    );
-
-    expect(result.fileIds).toEqual(['f_success']);
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0]).toMatchObject({
-      error: {
-        code: 'provider_download_refused',
-        fileName: 'failed.pdf',
-      },
-      job: { jobId: 'imp_failed', name: 'failed.pdf' },
-    });
-    expect(read).toHaveBeenCalledTimes(2);
   });
 });

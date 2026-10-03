@@ -1258,13 +1258,26 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
   }, 450);
 }
 
+/** MSW answers an XHR without upload progress events, so mock uploads tick
+ * through progress before the request goes out. */
+async function simulateMswUploadProgress(
+  onUploadProgress: ((pct: number) => void) | undefined,
+  signal: AbortSignal | undefined
+) {
+  for (let pct = 10; pct < 100; pct += 10) {
+    if (signal?.aborted) return;
+    onUploadProgress?.(pct);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+}
+
 /** Reserve a B2 object, upload it directly, then ask the gateway to verify and
  * enqueue it. File bytes never traverse the Go gateway. */
 export function useUploadSource(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: ({
+    mutationFn: async ({
       file,
       kind,
       chapterId,
@@ -1294,6 +1307,7 @@ export function useUploadSource(wsId: string) {
       signal?: AbortSignal;
     }) => {
       if (USE_MSW || !USE_DIRECT_B2_UPLOAD) {
+        if (USE_MSW) await simulateMswUploadProgress(onUploadProgress, signal);
         const form = new FormData();
         form.append('file', file, file.name);
         form.append('name', file.name);
@@ -1308,7 +1322,7 @@ export function useUploadSource(wsId: string) {
         return api.upload<SourceFile>(
           `/workspaces/${wsId}/sources`,
           form,
-          onUploadProgress,
+          USE_MSW ? undefined : onUploadProgress,
           signal
         );
       }
@@ -1364,6 +1378,9 @@ export function useUploadSource(wsId: string) {
         return next;
       });
       qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+      // The file counts against the workspace from upload, not from ingest.
+      qc.invalidateQueries({ queryKey: qk.workspace(wsId) });
+      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
       if (file.status === 'ready') {
         trackIngestTerminal(qc, wsId, file.id, 'ready', 'done');
       }
