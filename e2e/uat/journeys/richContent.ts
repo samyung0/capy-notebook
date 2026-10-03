@@ -244,6 +244,10 @@ export async function expectRichContent(
     ).toBeAttached();
   } else if (mode === 'edit') {
     await frame.locator('aside button').nth(1).click();
+    // Speaker notes start hidden; the choice is remembered per browser.
+    const notesToggle = frame.getByTestId('pptx-notes-toggle');
+    if ((await notesToggle.getAttribute('aria-pressed')) !== 'true')
+      await notesToggle.click();
     await expect(
       frame.getByRole('textbox', { name: 'Speaker notes' })
     ).toHaveValue('Speaker note: the rehearsal takes 12 minutes.', {
