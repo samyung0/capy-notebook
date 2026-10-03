@@ -124,13 +124,23 @@ export async function pasteRich(
 // The mirror ignores pointer events, so force routes the click to the canvas.
 // During a remote layout the mirror remains mounted but clicks are gated.
 // The text cursor confirms hit testing is ready before we place the caret.
+// Mirror pages away from the viewport hold only plain text, so each attempt
+// brings the paragraph's page into view and points at its positioned glyph.
 async function focusParagraph(frame: FrameLocator, text: string) {
+  const paragraph = frame
+    .getByRole('paragraph')
+    .filter({ hasText: new RegExp(`^${text}$`) });
   const last = frame
+    .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
     .getByRole('paragraph')
     .filter({ hasText: new RegExp(`^${text}$`) })
     .getByText(text.at(-1) ?? '', { exact: true })
     .last();
   await expect(async () => {
+    await frame
+      .locator('.layout-page-mirror')
+      .filter({ has: paragraph })
+      .scrollIntoViewIfNeeded({ timeout: 5000 });
     await last.hover({ force: true, timeout: 5000 });
     await expect(frame.locator('.canvas-pages')).toHaveCSS('cursor', 'text', {
       timeout: 1000,

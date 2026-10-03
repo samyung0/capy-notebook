@@ -139,13 +139,23 @@ for (const [format, name] of [
       await mode.click();
       await expect(save).toBeEnabled({ timeout: 30_000 });
       const input = frame.getByTestId('yrs-input');
+      const paragraph = frame
+        .getByRole('paragraph')
+        .filter({ hasText: /^人數：20人$/ });
+      // Mirror pages away from the viewport hold only plain text: bring the
+      // paragraph's page into view, then point at its positioned glyph.
       const last = frame
+        .locator('.layout-page-mirror:not(.layout-page-mirror-text)')
         .getByRole('paragraph')
         .filter({ hasText: /^人數：20人$/ })
         .getByText('人', { exact: true })
         .last();
       await expect(async () => {
-        await last.hover({ force: true });
+        await frame
+          .locator('.layout-page-mirror')
+          .filter({ has: paragraph })
+          .scrollIntoViewIfNeeded({ timeout: 1000 });
+        await last.hover({ force: true, timeout: 1000 });
         await expect(frame.locator('.canvas-pages')).toHaveCSS(
           'cursor',
           'text',
