@@ -41,8 +41,13 @@ function questionTypeLabel(type: QuestionType): string {
       return m.quiz_type_short();
     case 'open':
       return m.quiz_type_open();
+    case 'gaps':
+      return m.question_ui_fill_in_the_gaps();
   }
 }
+
+// Generation offers the server's question types; fill-in-the-gaps is authored only.
+const GENERATE_TYPES = QUESTION_TYPES.filter((type) => type !== 'gaps');
 
 const DIAGRAM_TYPES: DiagramType[] = [
   'auto',
@@ -316,7 +321,7 @@ export function GenerateFormDialog({
                   {m.generate_question_types()}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {QUESTION_TYPES.map((t) => (
+                  {GENERATE_TYPES.map((t) => (
                     <Chip
                       active={types.includes(t)}
                       key={t}

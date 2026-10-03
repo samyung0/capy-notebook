@@ -19,15 +19,18 @@ import {
   OptionKey,
   optionColumns,
   optionLetter,
+  QuestionBlockView,
   QuestionReview,
   QuestionView,
   type QuestionViewProps,
   TextView,
 } from '@/features/questions/QuestionView';
 import {
+  GAP_MARKER,
   isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
+  type TextBlock,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -36,6 +39,7 @@ import {
   type Answers,
   emptyAnswer,
   quantityValue,
+  scoredItems,
   scorePart,
   shuffledIndices,
 } from './grade';
@@ -46,7 +50,9 @@ const NON_QUANTITY_CHAR = /[^\d\s+\-./eE]/;
 export function isAnswered(value: Answer | undefined): boolean {
   if (value == null) return false;
   if (typeof value === 'string') return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
+  // Gaps start as empty strings, one per gap.
+  if (Array.isArray(value))
+    return value.some((item) => typeof item === 'number' || item.trim() !== '');
   if (typeof value === 'object') return Object.keys(value).length > 0;
   return true;
 }
@@ -77,6 +83,32 @@ export function QuestionRunner({
   questionNumber?: number;
   renderBlock?: QuestionViewProps['renderBlock'];
 }) {
+  // A gaps part's text carries its own fields, one per numbered blank.
+  const gapBlock: QuestionViewProps['renderBlock'] = (
+    block,
+    index,
+    section
+  ) => {
+    const part = question.parts.find(
+      (item) => item.id === section.partId && item.answer.type === 'gaps'
+    );
+    if (part && block.type === 'text' && !section.solution)
+      return (
+        <GapText
+          block={block}
+          disabled={disabled}
+          onChange={(value) => onChange?.(part.id, value)}
+          part={part}
+          review={review}
+          value={answers[part.id] ?? emptyAnswer(part)}
+        />
+      );
+    return renderBlock ? (
+      renderBlock(block, index, section)
+    ) : (
+      <QuestionBlockView block={block} />
+    );
+  };
   const answer = (part: QuestionPart | LearnerPart) => (
     <div className="@container col-[2/-1] min-w-0">
       <PartRunner
@@ -96,7 +128,7 @@ export function QuestionRunner({
         question={question}
         questionNumber={questionNumber}
         renderAnswer={answer}
-        renderBlock={renderBlock}
+        renderBlock={gapBlock}
         review={showAnswerKey}
       />
     );
@@ -112,8 +144,75 @@ export function QuestionRunner({
       }}
       questionNumber={questionNumber}
       renderAnswer={answer}
-      renderBlock={renderBlock}
+      renderBlock={gapBlock}
     />
+  );
+}
+
+/** A gaps part's text with a small field at each "(n) ______" blank; on review
+ * each field shows right or wrong, with the accepted answers after a wrong one. */
+function GapText({
+  block,
+  part,
+  value,
+  onChange,
+  review,
+  disabled,
+}: {
+  block: TextBlock;
+  part: QuestionPart | LearnerPart;
+  value: Answer;
+  onChange: (value: Answer) => void;
+  review: boolean;
+  disabled: boolean;
+}) {
+  const answer = part.answer;
+  if (answer.type !== 'gaps') return null;
+  const count = 'gaps' in answer ? answer.gaps : answer.accepted.length;
+  const typed = Array.from({ length: count }, (_, i) => {
+    const item = Array.isArray(value) ? value[i] : undefined;
+    return typeof item === 'string' ? item : '';
+  });
+  const results =
+    review && isAuthoredPart(part) ? scoredItems(part, value) : undefined;
+  // split() with a capture group alternates text and blank numbers.
+  const pieces = block.text.split(new RegExp(GAP_MARKER.source));
+  return (
+    <div className="leading-[2.4]">
+      {block.label && <strong className="mr-3">{block.label}</strong>}
+      {pieces.map((piece, i) => {
+        if (i % 2 === 0) return <TextView key={i} text={piece} />;
+        const gap = Number(piece) - 1;
+        return (
+          <span className="whitespace-nowrap" key={i}>
+            <Input
+              aria-label={m.question_ui_gap({ number: gap + 1 })}
+              className="py-0.5 text-center"
+              disabled={review || disabled}
+              onChange={(event) =>
+                onChange(
+                  typed.map((item, j) =>
+                    j === gap ? event.target.value : item
+                  )
+                )
+              }
+              placeholder={String(gap + 1)}
+              value={typed[gap] ?? ''}
+              wrapperClassName={cn(
+                'mx-1 inline-flex w-36 align-middle',
+                results &&
+                  (results[gap] ? 'border-solid-success' : 'border-solid-error')
+              )}
+            />
+            {results && !results[gap] && 'accepted' in answer && (
+              <span className="mr-1 font-bold text-tint-success-fg text-xs">
+                {answer.accepted[gap]?.join(' / ')}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -217,11 +316,15 @@ function PartRunner({
     if (taking && answer.type === 'ordering' && value === null) onChange(order);
   }, [taking, answer.type, value, onChange, order]);
   const [unitError, setUnitError] = useState(false);
+  // Choice and ordering answers are option indices; gaps are typed strings.
+  const indices = Array.isArray(value)
+    ? value.filter((item) => typeof item === 'number')
+    : null;
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
       <div className={cn('grid gap-2', twoColumns && '@xl:grid-cols-2')}>
         {answer.options.map((option, i) => {
-          const selected = Array.isArray(value) && value.includes(i);
+          const selected = indices?.includes(i) ?? false;
           return (
             <ChoiceRow
               correct={key?.type === answer.type && key.correct.includes(i)}
@@ -232,9 +335,9 @@ function PartRunner({
                 onChange(
                   answer.type === 'mcq'
                     ? [i]
-                    : selected && Array.isArray(value)
-                      ? value.filter((n) => n !== i)
-                      : [...(Array.isArray(value) ? value : []), i]
+                    : selected
+                      ? (indices ?? []).filter((n) => n !== i)
+                      : [...(indices ?? []), i]
                 )
               }
               review={review}
@@ -280,6 +383,8 @@ function PartRunner({
         ))}
       </div>
     );
+  // Gap fields sit inside the part's text (GapText), not under it.
+  if (answer.type === 'gaps') return null;
   if (answer.type === 'short') {
     const right = 'awarded' in part && part.awarded === part.marks;
     return (
@@ -432,8 +537,8 @@ function PartRunner({
     return <MatchingLayout items={rows} options={answer.options} />;
   }
   if (answer.type === 'ordering') {
-    if (review && !Array.isArray(value)) return <p>—</p>;
-    const current = Array.isArray(value) ? value : order;
+    if (review && !indices) return <p>—</p>;
+    const current = indices ?? order;
     function move(index: number, direction: number) {
       const next = [...current];
       [next[index], next[index + direction]] = [

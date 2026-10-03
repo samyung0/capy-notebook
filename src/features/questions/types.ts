@@ -6,6 +6,7 @@ export const QUESTION_TYPES = [
   'matching',
   'ordering',
   'open',
+  'gaps',
 ] as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -145,7 +146,9 @@ export type QuestionAnswer =
       pairs: { left: string; right: number }[];
     }
   | { type: 'ordering'; items: string[] }
-  | { type: 'open'; accepted: string[]; hints: string[] };
+  | { type: 'open'; accepted: string[]; hints: string[] }
+  /** One accepted list per numbered gap written in the part's text. */
+  | { type: 'gaps'; accepted: string[][] };
 
 /** An open part's marking item; harder steps can carry more whole marks. */
 export type MarkItem = { text: string; marks: number };
@@ -177,7 +180,8 @@ export type LearnerAnswer =
   | { type: 'boolean' | 'open' }
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
-  | { type: 'ordering'; items: string[] };
+  | { type: 'ordering'; items: string[] }
+  | { type: 'gaps'; gaps: number };
 export type LearnerPart = {
   id: string;
   blocks: QuestionBlock[];
@@ -187,6 +191,18 @@ export type LearnerPart = {
 export type LearnerQuestion = Omit<Question, 'parts'> & {
   parts: LearnerPart[];
 };
+
+/** A numbered blank in a gaps part's text, written "(1) ______". */
+export const GAP_MARKER = /\((\d+)\) ?_{3,}/g;
+
+/** The blank numbers a gaps part's text blocks contain, in order. */
+export function gapNumbers(blocks: QuestionBlock[]): number[] {
+  return blocks.flatMap((block) =>
+    block.type === 'text'
+      ? [...block.text.matchAll(GAP_MARKER)].map((match) => Number(match[1]))
+      : []
+  );
+}
 
 /** Authored parts carry a worked solution; learner parts never do. */
 export function isAuthoredPart(

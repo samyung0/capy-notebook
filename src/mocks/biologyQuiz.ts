@@ -592,4 +592,36 @@ export const biologyQuizQuestions: Question[] = [
       photosynthesis,
     ],
   },
+  {
+    id: 'q15',
+    labels: 'numbers',
+    layout: 'paper',
+    parts: [
+      {
+        answer: {
+          accepted: [['mitochondria', 'mitochondrion'], ['glucose'], ['ATP']],
+          type: 'gaps',
+        },
+        blocks: [
+          {
+            text: 'Complete the summary below. Write one word in each gap.',
+            type: 'text',
+          },
+          {
+            text: 'Aerobic respiration takes place mainly in the (1) ______. There, the energy stored in (2) ______ is released step by step and captured in (3) ______, which the cell spends on its work.',
+            type: 'text',
+          },
+        ],
+        id: 'q15:part',
+        marks: 3,
+        solution: [
+          {
+            text: '(1) Mitochondria host the Krebs cycle and the electron transport chain. (2) Glucose is the usual fuel. (3) ATP carries the released energy.',
+            type: 'text',
+          },
+        ],
+      },
+    ],
+    stem: [],
+  },
 ];

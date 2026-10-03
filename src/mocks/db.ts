@@ -1142,15 +1142,16 @@ export const attempts: (Attempt & {
         q12: true, // Wrong: correct answer is false.
         q13: '24/8',
         q14: 'The rate stays at 6 because extra light no longer increases photosynthesis.',
+        q15: ['mitochondria', 'glucose', ''],
       }),
       'q14:control': null,
       'q14:increase': '4',
     },
     chapters: ['Cell structure'],
-    correct: 14.5,
+    correct: 18.5,
     id: 'at_1',
     materialId: 'qz_1',
-    pct: 63,
+    pct: 71,
     questions: seedQuizzes[0].questions.map((question) => ({
       ...question,
       parts: question.parts.map((part) =>
@@ -1168,7 +1169,7 @@ export const attempts: (Attempt & {
     })),
     quizName: 'Cell biology basics',
     takenAt: days(2),
-    total: 23,
+    total: 26,
     workspaceName: 'Biology 101',
   },
   {

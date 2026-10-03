@@ -2,7 +2,7 @@ import { z } from 'zod';
 import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
-import type { Question } from './types';
+import { gapNumbers, type Question } from './types';
 
 const letterStart = /^[A-Za-z]/;
 const svgStart = /^\s*<svg[\s>]/;
@@ -404,6 +404,11 @@ const answerSchema = z.discriminatedUnion('type', [
       error: () => m.question_validation_matching_pairs(),
     }),
   z.strictObject({ items: list.min(2), type: z.literal('ordering') }),
+  // One accepted list per numbered gap in the part's text.
+  z.strictObject({
+    accepted: z.array(list).min(1).max(limits.QUESTION_ANSWERS_MAX),
+    type: z.literal('gaps'),
+  }),
   z.strictObject({
     accepted: list,
     hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
@@ -483,6 +488,13 @@ export function validateQuestion(
       (part.awarded !== undefined || part.itemAwards !== undefined)
     )
       throw new CopyError(m.question_validation_awarded_marks());
+    // Each accepted list belongs to one blank, numbered 1 to n in the text.
+    if (
+      part.answer.type === 'gaps' &&
+      gapNumbers(part.blocks).join() !==
+        part.answer.accepted.map((_, i) => i + 1).join()
+    )
+      throw new CopyError(m.question_validation_gap_markers());
     // Only open parts have a marking scheme, which Jev grades against.
     if ((part.answer.type === 'open') !== (part.markscheme !== undefined))
       throw new CopyError(m.question_validation_markscheme_open());

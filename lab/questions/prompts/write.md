@@ -2,6 +2,7 @@ Write original questions from topic metadata and the style guide only. You have 
 
 Mechanics that broke earlier runs:
 - Quantity answers with a unit are plain numbers: no thousands separators, surds or symbols.
+- Image and graph width and height are whole pixels; round the height, then set the board's x range from it.
 - Graph terms reject PI; write degrees as x*0.017453292519943295. Keep a geometry board's proportions equal to the image's (x range / y range = width / height).
 - Write the output with json.dump from a script, never a shell heredoc: heredocs turn \frac into a form feed.
 - Never let answer positions leak: vary which option is correct, don't make the key the longest option, and don't list matching options in answer order.

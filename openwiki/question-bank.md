@@ -27,7 +27,7 @@ which edits and reviews update in place.
 ## Shared question format
 
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
-part has a stable ID, blocks, one of seven answer types, whole `marks` (1–20)
+part has a stable ID, blocks, one of eight answer types, whole `marks` (1–20)
 and worked-solution blocks. Only open parts carry a marking scheme: items of
 text and whole marks that add up to the part's marks, because Jev grades against
 them. A closed part's answer is its own key and its solution explains it, so it
@@ -142,7 +142,12 @@ share the part review renderer: "You scored" with one green/red square per
 question (blank answers are wrong; grey is reserved for a future Skip), marks in
 tint-fg colours, the submitted answer, then one collapsed disclosure holding the
 worked solution, and for open parts the marking scheme with Jev's marks beside
-each item. Closed parts are all or nothing. A question with one part shows its
+each item. Matching pairs and `gaps` score item by item: each right item earns its
+share of the part's marks, rounded down to a half mark; other closed parts are
+all or nothing. A `gaps` part writes numbered blanks, (1) ______, in its text, 1 to n in order
+(all three validators check this), and keeps one accepted list per blank, which
+may be several words. `QuestionRunner` renders each blank as a small field inside
+the sentence, green or red on review with the accepted answers after a wrong one. It is authored only, so in-app generation does not offer it. A question with one part shows its
 marks once, in the header. Multiple-choice options sit two by two (A B / C D)
 when a paper-layout answer area is at least 36rem wide (a container query);
 split-layout questions keep one column beside their passage.
@@ -202,7 +207,7 @@ immutable assets and inserts new IDs; it does not overwrite later reviewer edits
 ## Delivery and checks
 
 The Biology 101 MSW quiz and both note-embedded quizzes share
-`src/mocks/biologyQuiz.ts`: 10 questions, 12 parts and 23 marks covering all seven
+`src/mocks/biologyQuiz.ts`: 11 questions, 13 parts and 26 marks covering all eight
 answer types, fixed-unit quantities, multipart questions, both layouts, formulas,
 tables, an editable graph and all six chart styles. Every part has a worked
 solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded

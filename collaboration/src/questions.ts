@@ -47,6 +47,7 @@ const imageSize = {
   width: z.number().int().min(1).max(limits.QUESTION_IMAGE_DIMENSION_MAX),
 };
 const style = { dash: z.boolean().optional(), hidden: z.boolean().optional() };
+const GAP_MARKER = /\((\d+)\) ?_{3,}/g;
 
 /** Values only. A quantity's unit belongs to the question, never to its answer. */
 export const quantityValuePattern =
@@ -404,6 +405,11 @@ const answerSchema = z.discriminatedUnion('type', [
       'Every pair needs a choice from the pool.'
     ),
   z.strictObject({ items: list.min(2), type: z.literal('ordering') }),
+  // One accepted list per numbered gap in the part's text.
+  z.strictObject({
+    accepted: z.array(list).min(1).max(limits.QUESTION_ANSWERS_MAX),
+    type: z.literal('gaps'),
+  }),
   z.strictObject({
     accepted: list,
     hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
@@ -473,6 +479,20 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
       (part.awarded !== undefined || part.itemAwards !== undefined)
     )
       throw new Error('Authored questions cannot contain awarded marks.');
+    // Each accepted list belongs to one blank, "(1) ______", numbered 1 to n.
+    if (part.answer.type === 'gaps') {
+      const numbers = part.blocks.flatMap((block) =>
+        block.type === 'text'
+          ? [...block.text.matchAll(GAP_MARKER)].map((match) =>
+              Number(match[1])
+            )
+          : []
+      );
+      if (numbers.join() !== part.answer.accepted.map((_, i) => i + 1).join())
+        throw new Error(
+          'Write each gap in the text as (1) ______, (2) ______ and so on, one per accepted list.'
+        );
+    }
     // Only open parts have a marking scheme, which Jev grades against.
     if ((part.answer.type === 'open') !== (part.markscheme !== undefined))
       throw new Error(

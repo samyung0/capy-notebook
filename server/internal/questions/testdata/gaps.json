@@ -1,0 +1,33 @@
+{
+  "name": "gaps",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Steel bands use (1) ______ drums and (2) ______ pans."
+          }
+        ],
+        "answer": {
+          "type": "gaps",
+          "accepted": [["oil"], ["tenor", "tenors"]]
+        },
+        "marks": 2,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

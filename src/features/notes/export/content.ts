@@ -106,6 +106,10 @@ function answerLines(part: QuestionPart, labels: ExportLabels): string[] {
       return a.pairs.map((pair) => `${pair.left} → ${a.options[pair.right]}`);
     case 'ordering':
       return a.items.map((item, index) => `${index + 1}. ${item}`);
+    case 'gaps':
+      return a.accepted.map(
+        (accepted, index) => `(${index + 1}) ${accepted.join(' / ')}`
+      );
   }
 }
 
@@ -132,6 +136,10 @@ function choices(part: QuestionPart, labels: ExportLabels): MaterialValue {
     return [...a.items]
       .sort()
       .map((item) => paragraph(item, { indent: 1, listStyleType: 'disc' }));
+  if (a.type === 'gaps')
+    return a.accepted.map((_, i) =>
+      paragraph(`(${i + 1}) ______________________________`)
+    );
   return [paragraph(`${labels.answer}: ______________________________`)];
 }
 

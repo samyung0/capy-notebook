@@ -200,6 +200,17 @@ export function AnswerView({ part }: { part: QuestionPart }) {
       />
     );
   }
+  if (answer.type === 'gaps')
+    return (
+      <ol className="grid gap-1">
+        {answer.accepted.map((accepted, i) => (
+          <li className="flex gap-3" key={i}>
+            <span className="text-fg-muted">({i + 1})</span>
+            <TextView text={accepted.join(' / ')} />
+          </li>
+        ))}
+      </ol>
+    );
   if (answer.type === 'ordering')
     return (
       <ol className="list-inside list-decimal">
@@ -608,7 +619,9 @@ export function QuestionReview({
                 ? 'text-fg-muted'
                 : awarded === max
                   ? 'text-tint-success-fg'
-                  : 'text-tint-error-fg'
+                  : awarded > 0
+                    ? 'text-tint-warning-fg'
+                    : 'text-tint-error-fg'
             )}
           >
             {awarded ?? '—'} / {max}

@@ -31,7 +31,23 @@ describe('part grading', () => {
     expect(scoreQuestion(question, answerKey(question)).awarded).toBe(1);
     expect(
       scoreQuestion(question, { 'matching-part': { 0: 0, 1: 1 } }).awarded
-    ).toBe(0);
+    ).toBe(0.5);
+  });
+  it('scores matching pairs and gaps item by item, in half marks', () => {
+    const gaps = exampleQuestion('gaps', {
+      accepted: [['oil'], ['tenor', 'tenors'], ['chords']],
+      type: 'gaps',
+    });
+    gaps.parts[0].marks = 3;
+    expect(scoreQuestion(gaps, answerKey(gaps)).awarded).toBe(3);
+    expect(scoreQuestion(gaps, { 'gaps-part': ['oil', 'Tenors', ''] })).toEqual(
+      { awarded: 2, max: 3 }
+    );
+    // Two of three right on a 2-mark part is 1.33, rounded down to 1.
+    gaps.parts[0].marks = 2;
+    expect(
+      scoreQuestion(gaps, { 'gaps-part': ['oil', 'tenor', 'x'] }).awarded
+    ).toBe(1);
   });
   it('keeps signs and decimals, rejects typed units, and never converts units', () => {
     expect(fuzzyMatch('-25', '25')).toBe(false);

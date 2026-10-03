@@ -196,6 +196,7 @@ export function MarkschemeList({
 }
 export const answerLabels: Record<QuestionType, () => string> = {
   boolean: m.question_ui_true_false,
+  gaps: m.question_ui_fill_in_the_gaps,
   matching: m.question_ui_matching,
   mcq: m.question_ui_multiple_choice,
   multi: m.question_ui_multiple_answers,
@@ -218,6 +219,8 @@ export function emptyAnswer(type: QuestionType): QuestionAnswer {
       return { options: ['', ''], pairs: [{ left: '', right: 0 }], type };
     case 'ordering':
       return { items: ['', ''], type };
+    case 'gaps':
+      return { accepted: [['']], type };
   }
 }
 
@@ -339,6 +342,50 @@ export function AnswerEditor({
           onChange={(hints) => onChange({ ...answer, hints })}
           values={answer.hints}
         />
+      )}
+      {answer.type === 'gaps' && (
+        <div className="space-y-4">
+          {answer.accepted.map((accepted, i) => (
+            <div className="flex items-start gap-2" key={i}>
+              <div className="min-w-0 flex-1">
+                <StringList
+                  label={m.question_ui_gap({ number: i + 1 })}
+                  onChange={(values) =>
+                    onChange({
+                      ...answer,
+                      accepted: answer.accepted.map((item, j) =>
+                        j === i ? values : item
+                      ),
+                    })
+                  }
+                  values={accepted}
+                />
+              </div>
+              <ToolbarButton
+                label={m.question_ui_remove_gap({ number: i + 1 })}
+                onClick={() =>
+                  onChange({
+                    ...answer,
+                    accepted: answer.accepted.filter((_, j) => j !== i),
+                  })
+                }
+              >
+                <Icon name="trash" />
+              </ToolbarButton>
+            </div>
+          ))}
+          <Button
+            iconLeft="plus"
+            onClick={() =>
+              onChange({ ...answer, accepted: [...answer.accepted, ['']] })
+            }
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {m.question_ui_add_gap()}
+          </Button>
+        </div>
       )}
       {answer.type === 'ordering' && (
         <StringList

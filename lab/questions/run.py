@@ -200,6 +200,8 @@ def learner(question):
                 answer["items"],
                 key=lambda text: hashlib.sha256(text.encode()).hexdigest(),
             )
+        if answer["type"] == "gaps":
+            visible["gaps"] = len(answer["accepted"])
         if "unit" in answer:
             visible["unit"] = answer["unit"]
         part["answer"] = visible
@@ -266,6 +268,16 @@ def closed_correct(answer, value):
         )
     if kind == "ordering":
         return value == answer["items"]
+    if kind == "gaps":
+        return (
+            isinstance(value, list)
+            and len(value) == len(answer["accepted"])
+            and all(
+                isinstance(v, str)
+                and v.strip().casefold() in {a.strip().casefold() for a in accepted}
+                for v, accepted in zip(value, answer["accepted"], strict=True)
+            )
+        )
     raise ValueError("Open answers require the explicit judge stage model")
 
 
@@ -345,6 +357,9 @@ def check():
         }
     assert q["stem"][0]["elements"][0]["term"] == "secret"
     assert closed_correct({"type": "short", "accepted": ["12"], "unit": "cm"}, "12")
+    gaps = {"type": "gaps", "accepted": [["oil"], ["tenor", "tenors"]]}
+    assert closed_correct(gaps, ["Oil", "tenors"])
+    assert not closed_correct(gaps, ["oil", "bass"])
     assert not closed_correct(
         {"type": "short", "accepted": ["12"], "unit": "cm"}, "12 cm"
     )

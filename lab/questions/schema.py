@@ -177,6 +177,8 @@ ANSWER = {
         ),
         tagged("ordering", {"items": array(TEXT, 2)}),
         tagged("open", {"accepted": array(TEXT, 1), "hints": array(TEXT)}),
+        # One accepted list per numbered gap in the part's text.
+        tagged("gaps", {"accepted": array(array(TEXT, 1), 1)}),
     ]
 }
 # Only open parts have a markscheme; its items' marks add up to the part's.

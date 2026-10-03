@@ -86,6 +86,9 @@ func tableCells(value any) bool {
 	return true
 }
 
+// gapMarker is a numbered blank in a gaps part's text: "(1) ______".
+var gapMarker = regexp.MustCompile(`\((\d+)\) ?_{3,}`)
+
 var quantityPattern = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:\s*/\s*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)?$`)
 
 func fail(message string) error { return fmt.Errorf("invalid question: %s", message) }
@@ -277,6 +280,9 @@ func Validate(q map[string]any, policy Policy) error {
 		}
 		if err := answer(p["answer"], policy); err != nil {
 			return err
+		}
+		if a["type"] == "gaps" && !gapsNumbered(p) {
+			return fail("write each gap in the text as (1) ______, (2) ______ and so on, one per accepted list")
 		}
 		if v, exists := p["awarded"]; exists {
 			n, ok := num(v)
@@ -692,6 +698,28 @@ func markscheme(v any, maxItems int) ([]string, []float64, error) {
 	return texts, marks, nil
 }
 
+// gapsNumbered checks that a gaps part's text numbers its blanks 1 to n in
+// order, one per accepted list.
+func gapsNumbered(p map[string]any) bool {
+	blocks, _ := p["blocks"].([]any)
+	next := 1
+	for _, raw := range blocks {
+		b, _ := raw.(map[string]any)
+		text, _ := b["text"].(string)
+		if b["type"] != "text" {
+			continue
+		}
+		for _, match := range gapMarker.FindAllStringSubmatch(text, -1) {
+			if match[1] != strconv.Itoa(next) {
+				return false
+			}
+			next++
+		}
+	}
+	accepted, _ := p["answer"].(map[string]any)["accepted"].([]any)
+	return next-1 == len(accepted)
+}
+
 func sum(values []float64) float64 {
 	total := 0.0
 	for _, v := range values {
@@ -775,6 +803,9 @@ func answer(value any, policy Policy) error {
 		required += " items"
 	case "open":
 		required += " accepted hints"
+	case "gaps":
+		// One accepted list per numbered gap in the part's text.
+		required += " accepted"
 	default:
 		return fail("invalid answer type")
 	}
@@ -834,6 +865,16 @@ func answer(value any, policy Policy) error {
 	case "boolean":
 		if _, ok := a["correct"].(bool); !ok {
 			return fail("invalid boolean answer")
+		}
+	case "gaps":
+		gaps, ok := array(a["accepted"], 1, fieldlimits.QuestionAnswers)
+		if !ok {
+			return fail("invalid gaps")
+		}
+		for _, accepted := range gaps {
+			if !stringsArray(accepted, 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
+				return fail("invalid accepted answers for a gap")
+			}
 		}
 	case "short", "open":
 		length := fieldlimits.QuestionText
@@ -942,6 +983,8 @@ func LearnerView(q map[string]any) map[string]any {
 				left = append(left, pair.(map[string]any)["left"])
 			}
 			learner["left"] = left
+		case "gaps":
+			learner["gaps"] = len(a["accepted"].([]any))
 		case "ordering":
 			items := append([]any{}, a["items"].([]any)...)
 			rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })

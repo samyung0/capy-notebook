@@ -16,5 +16,7 @@ export function questionTypeLabel(type: QuestionType): string {
       return 'Matching';
     case 'open':
       return 'Open answer';
+    case 'gaps':
+      return 'Fill in the gaps';
   }
 }
