@@ -37,6 +37,7 @@ import {
   LINK_CLASS,
   MEDIA_CAPTION_CLASS,
   MEDIA_MAX_WIDTH_CLASS,
+  MENTION_AT_CLASS,
   MENTION_CLASS,
   MERMAID_CAPTION_CLASS,
   OL_CLASS,
@@ -276,7 +277,10 @@ function Mention(props: SlateElementProps) {
   const value = String(mention.value ?? mention.key ?? '');
   return (
     <SlateElement {...props} as="span" className={MENTION_CLASS}>
-      <span>@{value}</span>
+      <span>
+        <span className={MENTION_AT_CLASS}>@</span>
+        {value}
+      </span>
       {props.children}
     </SlateElement>
   );

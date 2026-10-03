@@ -70,7 +70,7 @@ function DropdownMenuContent({
         {...scope}
         aria-hidden={!open || undefined}
         className={cn(
-          'z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
+          'z-50 min-w-40 overflow-hidden rounded-card border border-overlay-line bg-overlay p-1 text-fg shadow-pop outline-none',
           animationClassName,
           className
         )}
@@ -109,7 +109,7 @@ function DropdownMenuItem({
       {...useDropdownMenuScope()}
       className={cn(
         'relative flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
-        'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
+        'focus:bg-overlay-hover data-[highlighted]:bg-overlay-hover',
         'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
         'data-[inset]:pl-8 [&_svg]:size-4 [&_svg]:shrink-0',
         className
@@ -133,7 +133,7 @@ function DropdownMenuCheckboxItem({
       checked={checked}
       className={cn(
         'relative flex cursor-default select-none items-center rounded-button py-1.5 pr-2 pl-8 text-sm outline-none',
-        'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
+        'focus:bg-overlay-hover data-[highlighted]:bg-overlay-hover',
         'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
         className
       )}
@@ -197,7 +197,7 @@ function DropdownMenuSubTrigger({
       {...useDropdownMenuScope()}
       className={cn(
         'flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
-        'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg data-[state=open]:bg-surface-hover-bg',
+        'focus:bg-overlay-hover data-[highlighted]:bg-overlay-hover data-[state=open]:bg-overlay-hover',
         'data-[disabled]:pointer-events-none data-[inset]:pl-8 data-[disabled]:opacity-40',
         '[&_svg]:size-4 [&_svg]:shrink-0',
         className
@@ -229,7 +229,7 @@ function DropdownMenuSubContent({
         {...scope}
         aria-hidden={!open || undefined}
         className={cn(
-          'motion-anchored-popup z-50 min-w-40 overflow-hidden rounded-card border border-line bg-surface p-1 text-fg shadow-pop outline-none',
+          'motion-anchored-popup z-50 min-w-40 overflow-hidden rounded-card border border-overlay-line bg-overlay p-1 text-fg shadow-pop outline-none',
           className
         )}
         data-slot="dropdown-menu-sub-content"

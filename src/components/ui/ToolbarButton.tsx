@@ -35,7 +35,8 @@ export function ToolbarButton({
           BASE_BUTTON_STYLE,
           'size-8 shrink-0 gap-1 px-0.5 text-fg [&_svg]:size-4',
           'focus-visible:ring-focus disabled:opacity-40',
-          !variant && 'hover:bg-surface-hover-bg hover:text-fg',
+          !variant &&
+            'hover:bg-surface-hover-bg hover:text-fg [[data-floating-toolbar]_&]:hover:bg-overlay-hover',
           'data-[active=true]:bg-tint-accent-1/50 data-[active=true]:text-tint-accent-1-fg data-[active=true]:hover:bg-tint-accent-1/50',
           variant && buttonVariants({ size: null, variant }),
           dropdown && 'w-fit',

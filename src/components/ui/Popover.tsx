@@ -37,7 +37,7 @@ function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         className={cn(
-          'motion-anchored-popup z-50 flex w-72 flex-col gap-2.5 rounded-lg border border-line bg-surface p-2.5 shadow-pop outline-hidden',
+          'motion-anchored-popup z-50 flex w-72 flex-col gap-2.5 rounded-lg border border-overlay-line bg-overlay p-2.5 shadow-pop outline-hidden',
           alignWidthToTrigger && 'w-(--radix-popover-trigger-width)!',
           className
         )}

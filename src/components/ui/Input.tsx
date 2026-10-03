@@ -5,7 +5,7 @@ import { Icon, type IconName } from './Icon';
 import { IconButton, type IconButtonProps } from './IconButton';
 
 const inputContainerVariants = cva(
-  'has-[input[aria-invalid=true]]:motion-error-shake flex items-center gap-2 outline-none transition-none duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-surface-hover-bg',
+  'has-[input[aria-invalid=true]]:motion-error-shake flex items-center gap-2 outline-none transition-none duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-field-disabled',
   {
     compoundVariants: [
       {
@@ -36,7 +36,7 @@ const inputContainerVariants = cva(
       },
       variant: {
         light:
-          'border border-line bg-surface focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',
+          'border border-line bg-field focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',
         transparent: '',
         underline:
           'border-line border-b focus-within:border-action-accent has-[input[aria-invalid=true]]:border-solid-error',
@@ -46,7 +46,7 @@ const inputContainerVariants = cva(
 );
 
 const inputVariants = cva(
-  'min-w-0 flex-1 border-none bg-transparent py-2.5 outline-none placeholder:text-placeholder disabled:bg-surface-hover-bg disabled:text-fg-secondary',
+  'min-w-0 flex-1 border-none bg-transparent py-2.5 outline-none placeholder:text-placeholder disabled:bg-field-disabled disabled:text-fg-muted',
   {
     defaultVariants: {
       size: 'md',

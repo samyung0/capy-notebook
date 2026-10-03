@@ -9,10 +9,11 @@ export function BlockToolbar({
 }: React.ComponentProps<'div'>) {
   return (
     <div
+      data-floating-toolbar
       role="toolbar"
       {...props}
       className={cn(
-        'flex w-fit max-w-[90vw] items-center gap-0 overflow-x-auto rounded-input border border-line bg-surface p-1 shadow-pop',
+        'flex w-fit max-w-[90vw] items-center gap-0 overflow-x-auto rounded-input border border-overlay-line bg-overlay p-1 shadow-pop',
         '[&_[data-toolbar-group]]:after:hidden',
         className
       )}

@@ -51,18 +51,20 @@ export function tocItemIndent(headingType: string): CSSProperties {
   };
 }
 
-export const MENTION_CLASS =
-  'rounded bg-tint-accent-1 px-1 text-tint-accent-1-fg';
+export const MENTION_CLASS = 'font-bold text-tint-accent-1-fg';
+/** Larger @, nudged up so its bottom meets the text baseline. */
+export const MENTION_AT_CLASS = 'relative -top-px mr-0.5 text-[1.12em]';
 
 export const EQUATION_BLOCK_CLASS =
   'my-1 overflow-auto rounded-sm p-2 text-center';
 
 /* leaf marks */
 export const CODE_MARK_CLASS =
-  'rounded-none bg-surface-dark px-1 py-0 font-mono text-[0.85em] text-fg font-medium';
-export const HIGHLIGHT_MARK_CLASS = 'bg-tint-info border-b border-solid-info';
+  'rounded-none bg-code-inline px-1 py-0 font-mono text-[0.85em] text-code-inline-fg font-medium';
+export const HIGHLIGHT_MARK_CLASS =
+  'bg-highlight border-b border-highlight-line text-inherit';
 export const KBD_MARK_CLASS =
-  'rounded border border-line bg-surface-hover-bg px-1.5 py-0.5 text-sm font-mono text-fg';
+  'rounded border border-kbd-line bg-kbd px-1.5 py-0.5 text-sm font-mono text-fg';
 export const BOLD_MARK_CLASS = 'font-extrabold';
 export const ITALIC_MARK_CLASS = 'italic';
 

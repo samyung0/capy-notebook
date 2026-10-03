@@ -39,7 +39,7 @@ function SelectValue({
 }
 
 const selectTriggerVariants = cva(
-  'group/select-trigger flex w-full items-center justify-between gap-2 bg-surface text-left text-fg hover:border-line-strong focus-visible:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 data-[state=open]:border-line-strong',
+  'group/select-trigger flex w-full items-center justify-between gap-2 bg-field text-left text-fg hover:border-line-strong focus-visible:border-line-strong disabled:cursor-not-allowed disabled:bg-field-disabled disabled:text-fg-muted data-[state=open]:border-line-strong',
   {
     defaultVariants: {
       size: 'md',
@@ -109,7 +109,7 @@ function SelectContent({
       <SelectPrimitive.Content
         align={align}
         className={cn(
-          'motion-popup data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-line bg-surface data-[align-trigger=true]:animate-none',
+          'motion-popup data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-overlay-line bg-overlay shadow-pop data-[align-trigger=true]:animate-none',
           position === 'popper' &&
             'data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
           className
@@ -149,7 +149,7 @@ function SelectLabel({
 }
 
 const selectItemVariants = cva(
-  "relative flex w-full cursor-pointer select-none items-center gap-1.5 rounded-button bg-surface text-left font-medium text-fg outline-hidden transition-colors hover:bg-surface-hover-bg disabled:opacity-40 data-disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+  "relative flex w-full cursor-pointer select-none items-center gap-1.5 rounded-button bg-overlay text-left font-medium text-fg outline-hidden transition-colors hover:bg-overlay-hover disabled:opacity-40 data-disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
   {
     defaultVariants: {
       size: 'md',

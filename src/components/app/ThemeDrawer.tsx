@@ -43,7 +43,7 @@ const ThemeChooser = ({
         >
           <span
             className={cn(
-              'block size-8 rounded-full border border-line transition-transform ease-(--motion-ease-smooth-out) group-hover:scale-105',
+              'block size-8 rounded-full border border-line-strong transition-transform ease-(--motion-ease-smooth-out) group-hover:scale-105',
               isSelected &&
                 'ring-2 ring-action ring-offset-2 ring-offset-surface'
             )}

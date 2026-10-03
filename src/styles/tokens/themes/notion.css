@@ -110,6 +110,13 @@
   --surface-topbar-bg: #f1f1ef;
   --surface-topbar-fg: #37352f;
 
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #ffffff;
+  --surface-overlay-hover-bg: #f7f7f6;
+  --border-overlay: #e9e9e7;
+  --surface-field-bg: #ffffff;
+  --surface-field-disabled-bg: #f7f7f6;
+
   --color-scrollbar: #d3d1cb;
 
   /* Text roles */
@@ -118,6 +125,20 @@
   --text-muted: #9b9a97;
   --text-placeholder: #a2a19c;
   --text-link: #337ea9;
+  --selection-bg: #f6f3f9; /* text + block selection */
+  --highlight-bg: #e7f3f8; /* highlight text mark */
+  --highlight-line: #337ea9;
+  --code-inline-bg: #f1f1ef; /* inline code mark */
+  --code-inline-fg: #37352f;
+  --kbd-bg: #f7f7f6; /* keyboard key mark */
+  --kbd-border: #e9e9e7;
+  /* Code block syntax colors */
+  --syntax-comment: #9b9a97;
+  --syntax-keyword: #d44c47;
+  --syntax-string: #337ea9;
+  --syntax-constant: #337ea9;
+  --syntax-function: #448361;
+  --syntax-builtin: #cb912f;
   --text-link-hover: #29567a;
 
   /* Borders & lines */
@@ -223,6 +244,13 @@
   --surface-topbar-bg: #28282b;
   --surface-topbar-fg: #d8d7d5;
 
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #222225;
+  --surface-overlay-hover-bg: #2a2a2e;
+  --border-overlay: #303034;
+  --surface-field-bg: #222225;
+  --surface-field-disabled-bg: #2a2a2e;
+
   --color-scrollbar: #4a4a4f;
 
   /* Text roles */
@@ -231,6 +259,20 @@
   --text-muted: #83827f;
   --text-placeholder: #6b6a68;
   --text-link: #529cca;
+  --selection-bg: #292432; /* text + block selection */
+  --highlight-bg: #1c2831; /* highlight text mark */
+  --highlight-line: #529cca;
+  --code-inline-bg: #303034; /* inline code mark */
+  --code-inline-fg: #d8d7d5;
+  --kbd-bg: #2a2a2e; /* keyboard key mark */
+  --kbd-border: #303034;
+  /* Code block syntax colors */
+  --syntax-comment: #83827f;
+  --syntax-keyword: #df7773;
+  --syntax-string: #529cca;
+  --syntax-constant: #529cca;
+  --syntax-function: #6cae8a;
+  --syntax-builtin: #d9ad5f;
   --text-link-hover: #6cb1da;
 
   /* Borders & lines */
@@ -337,6 +379,13 @@
   --surface-topbar-bg: #232323;
   --surface-topbar-fg: #d4d4d2;
 
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #1d1d1d;
+  --surface-overlay-hover-bg: #252525;
+  --border-overlay: #2b2b2b;
+  --surface-field-bg: #1d1d1d;
+  --surface-field-disabled-bg: #252525;
+
   --color-scrollbar: #444444;
 
   /* Text roles */
@@ -345,6 +394,20 @@
   --text-muted: #797874;
   --text-placeholder: #61605d;
   --text-link: #529cca;
+  --selection-bg: #261f30; /* text + block selection */
+  --highlight-bg: #18262f; /* highlight text mark */
+  --highlight-line: #529cca;
+  --code-inline-bg: #2a2a2a; /* inline code mark */
+  --code-inline-fg: #d4d4d2;
+  --kbd-bg: #252525; /* keyboard key mark */
+  --kbd-border: #2b2b2b;
+  /* Code block syntax colors */
+  --syntax-comment: #797874;
+  --syntax-keyword: #df7773;
+  --syntax-string: #529cca;
+  --syntax-constant: #529cca;
+  --syntax-function: #6cae8a;
+  --syntax-builtin: #d9ad5f;
   --text-link-hover: #6cb1da;
 
   /* Borders & lines */

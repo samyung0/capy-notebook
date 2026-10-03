@@ -216,7 +216,7 @@ export function AiMenu() {
     <FloatingPortal>
       <PopupMotion
         aria-label={m.editor_ai_commands()}
-        className="w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-button border border-line bg-surface shadow-pop"
+        className="w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-button border border-overlay-line bg-overlay shadow-pop"
         onPointerDown={(event) => event.stopPropagation()}
         open={open}
         positionClassName="z-50"
@@ -245,7 +245,7 @@ export function AiMenu() {
           />
           <button
             aria-label={m.editor_ai_close()}
-            className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
+            className="rounded-button p-1 text-fg-muted hover:bg-overlay-hover"
             onClick={() => editor.getApi(AIChatPlugin).aiChat.hide()}
             type="button"
           >
@@ -333,7 +333,7 @@ export function AiMenu() {
               <button
                 className={cn(
                   'flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm',
-                  'hover:bg-surface-hover-bg'
+                  'hover:bg-overlay-hover'
                 )}
                 key={action.id}
                 onClick={() =>
@@ -353,7 +353,7 @@ export function AiMenu() {
             ))}
             {chat.messages.length > 0 && (
               <button
-                className="flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm hover:bg-surface-hover-bg"
+                className="flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm hover:bg-overlay-hover"
                 onClick={() => {
                   const last = lastCommand.current;
                   if (last) {

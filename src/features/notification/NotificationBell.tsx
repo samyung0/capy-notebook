@@ -76,7 +76,8 @@ export function NotificationsBell() {
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <IconButton
-          className="shrink-0"
+          // The top bar is the hover color in Frappe/Mocha, so lift past it.
+          className="shrink-0 [[data-style=classroom][data-theme=frappe]_&]:hover:bg-surface-dark-hover-bg [[data-style=classroom][data-theme=mocha]_&]:hover:bg-surface-dark-hover-bg"
           // NOTE: dont include unread notification numbers in ui display, labelling is OK for accessibility
           dot={unread}
           icon="bell"
@@ -88,7 +89,7 @@ export function NotificationsBell() {
       <PopoverContent className="border-0 bg-transparent shadow-none!">
         <Card
           border="solid"
-          className="block min-w-[320px] max-w-120 p-1"
+          className="block min-w-[320px] max-w-120 border-overlay-line bg-overlay p-1 shadow-pop"
           radius="card"
         >
           <div className="flex h-9 items-center justify-between border-divider border-b px-4 py-2">

@@ -42,7 +42,7 @@ const menuItemVariants = cva(
     variants: {
       danger: {
         false:
-          'text-fg hover:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
+          'text-fg hover:bg-overlay-hover data-[highlighted]:bg-overlay-hover',
         true: 'text-tint-error-fg hover:bg-tint-error data-[highlighted]:bg-tint-error',
       },
     },
@@ -141,7 +141,7 @@ export function Menu({
       {variant === 'morph' ? (
         <span className="relative inline-flex size-11 shrink-0">
           <span
-            className="motion-menu-morph absolute right-0 bottom-0 overflow-hidden bg-surface shadow-sm ring-1 ring-line"
+            className="motion-menu-morph absolute right-0 bottom-0 overflow-hidden bg-overlay shadow-pop ring-1 ring-overlay-line"
             data-closing={morphClosing || undefined}
             data-open={morphOpen}
             data-slot="menu-morph-surface"

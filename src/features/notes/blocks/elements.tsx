@@ -233,8 +233,9 @@ function StudyBlockToolbar({
     <FloatingPortal>
       <PopupMotion
         aria-label={m.editor_study_actions()}
-        className="flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-pop"
+        className="flex items-center gap-0.5 rounded-lg border border-overlay-line bg-overlay p-1 shadow-pop"
         contentEditable={false}
+        data-floating-toolbar
         data-plate-prevent-deselect
         data-study-block-toolbar
         onExited={onExited}

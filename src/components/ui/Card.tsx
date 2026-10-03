@@ -60,7 +60,7 @@ export function Card({
     <Tag
       className={cn(
         cardVariants({ border, radius, theme }),
-        raised && 'shadow-card',
+        raised && 'bg-overlay shadow-pop',
         interactive &&
           'cursor-pointer transition-all duration-100 ease-(--motion-ease-smooth-out) hover:-translate-y-0.5 hover:shadow-card active:scale-[0.98]',
         (!hoverBackgroundColorChange || !interactive) && 'hover:bg-unset', //todo

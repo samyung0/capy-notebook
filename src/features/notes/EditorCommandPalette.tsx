@@ -78,7 +78,7 @@ export function EditorCommandPalette() {
         <DialogPrimitive.Content
           aria-describedby={undefined}
           aria-label={m.editor_command_palette()}
-          className="motion-modal motion-blur-in fixed top-[15dvh] left-1/2 z-60 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 overflow-hidden rounded-card border border-line bg-surface shadow-pop"
+          className="motion-modal motion-blur-in fixed top-[15dvh] left-1/2 z-60 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 overflow-hidden rounded-card border border-overlay-line bg-overlay shadow-pop"
           onCloseAutoFocus={(event) => event.preventDefault()}
         >
           <DialogPrimitive.Title className="sr-only">
@@ -115,7 +115,7 @@ export function EditorCommandPalette() {
             {commands.length ? (
               commands.map((command) => (
                 <button
-                  className="flex w-full items-center gap-3 rounded-button px-2 py-2 text-left hover:bg-surface-hover-bg"
+                  className="flex w-full items-center gap-3 rounded-button px-2 py-2 text-left hover:bg-overlay-hover"
                   key={command.id}
                   onClick={() => {
                     setOpen(false);

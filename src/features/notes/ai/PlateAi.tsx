@@ -25,7 +25,7 @@ export function AiCursorOverlay() {
         id === 'selection'
           ? selectionRects.map((rect, index) => (
               <div
-                className="pointer-events-none absolute z-10 bg-action-accent/25"
+                className="pointer-events-none absolute z-10 bg-selection"
                 key={index}
                 style={{
                   height: rect.height,

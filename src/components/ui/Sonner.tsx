@@ -16,7 +16,7 @@ const sonnerCardVariants = cva(
     },
     variants: {
       variant: {
-        default: 'bg-surface',
+        default: 'bg-overlay',
         error: 'motion-error-shake border-tint-error bg-tint-error delay-750',
         success: 'border-tint-success bg-tint-success',
         warning: 'border-tint-warning bg-tint-warning',

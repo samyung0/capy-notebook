@@ -50,6 +50,7 @@ import {
   KBD_MARK_CLASS,
   LI_CLASS,
   LINK_CLASS,
+  MENTION_AT_CLASS,
   MENTION_CLASS,
   OL_CLASS,
   PARAGRAPH_CLASS,
@@ -492,7 +493,10 @@ function Mention(props: PlateElementProps) {
   const value = String(mention.value ?? mention.key ?? '');
   return (
     <PlateElement {...props} as="span" className={MENTION_CLASS}>
-      <span contentEditable={false}>@{value}</span>
+      <span contentEditable={false}>
+        <span className={MENTION_AT_CLASS}>@</span>
+        {value}
+      </span>
       {props.children}
     </PlateElement>
   );

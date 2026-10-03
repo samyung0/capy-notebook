@@ -1,5 +1,6 @@
 /* Fustat — keep the CDN import for dev; swap to self-hosted @font-face later. */
 @import url("https://fonts.googleapis.com/css2?family=Fustat:wght@300;400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
 @import "tailwindcss" source("../");
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
@@ -27,6 +28,11 @@
 
   --color-surface-dark-hover-bg: var(--surface-card-dark-hover-bg);
   --color-surface-dark: var(--surface-card-dark-bg);
+  --color-overlay: var(--surface-overlay-bg);
+  --color-overlay-hover: var(--surface-overlay-hover-bg);
+  --color-overlay-line: var(--border-overlay);
+  --color-field: var(--surface-field-bg);
+  --color-field-disabled: var(--surface-field-disabled-bg);
 
   /* Text → text-* */
   --color-fg: var(--text-primary);
@@ -59,6 +65,13 @@
   --color-tint-warning-fg: var(--tint-warning-fg);
   --color-tint-error: var(--tint-error-bg);
   --color-tint-error-fg: var(--tint-error-fg);
+  --color-selection: var(--selection-bg);
+  --color-highlight: var(--highlight-bg);
+  --color-highlight-line: var(--highlight-line);
+  --color-code-inline: var(--code-inline-bg);
+  --color-code-inline-fg: var(--code-inline-fg);
+  --color-kbd: var(--kbd-bg);
+  --color-kbd-line: var(--kbd-border);
   --color-tint-accent-1: var(--tint-accent-1-bg);
   --color-tint-accent-1-fg: var(--tint-accent-1-fg);
   --color-tint-accent-dark: var(--tint-accent-dark-bg);
@@ -386,7 +399,7 @@
   }
   ::selection {
     color: var(--text-primary);
-    background: var(--tint-accent-1-bg);
+    background: var(--selection-bg);
   }
   button {
     cursor: pointer;
@@ -399,6 +412,21 @@
   ::file-selector-button {
     @apply t-body;
   }
+}
+
+/* Floating surfaces (dialogs, drawers, menus, popovers) sit above cards, so
+   cards, buttons, borders and hovers inside them step up from the overlay color. With
+   `@theme inline` the utilities read these variables where they are used. */
+.bg-overlay {
+  --surface-card-bg: var(--surface-overlay-bg);
+  --surface-card-hover-bg: var(--surface-overlay-hover-bg);
+  --border-default: var(--border-overlay);
+}
+
+/* Code font for every style (the @theme entry only forwards it). */
+[data-style] {
+  --font-mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root {
@@ -422,14 +450,14 @@
   }
 
   .note-editor .slate-selectable:has(> [data-slot="block-selection"]) {
-    box-shadow: inset 0 0 0 9999px var(--tint-accent-1-bg);
+    box-shadow: inset 0 0 0 9999px var(--selection-bg);
   }
 
   /* lowlight emits highlight.js token classes on code-syntax leaves. */
   .note-editor pre .hljs-comment,
   .note-editor pre .hljs-code,
   .note-editor pre .hljs-formula {
-    color: var(--text-muted);
+    color: var(--syntax-comment);
   }
 
   .note-editor pre .hljs-comment {
@@ -442,12 +470,12 @@
   .note-editor pre .hljs-template-variable,
   .note-editor pre .hljs-type,
   .note-editor pre .hljs-variable.language_ {
-    color: var(--tint-error-fg);
+    color: var(--syntax-keyword);
   }
 
   .note-editor pre .hljs-string,
   .note-editor pre .hljs-regexp {
-    color: var(--tint-info-fg);
+    color: var(--syntax-string);
   }
 
   .note-editor pre .hljs-number,
@@ -460,7 +488,7 @@
   .note-editor pre .hljs-selector-class,
   .note-editor pre .hljs-selector-id,
   .note-editor pre .hljs-variable {
-    color: var(--text-link);
+    color: var(--syntax-constant);
   }
 
   .note-editor pre .hljs-title,
@@ -468,18 +496,18 @@
   .note-editor pre .hljs-quote,
   .note-editor pre .hljs-selector-tag,
   .note-editor pre .hljs-selector-pseudo {
-    color: var(--tint-success-fg);
+    color: var(--syntax-function);
   }
 
   .note-editor pre .hljs-built_in,
   .note-editor pre .hljs-symbol {
-    color: var(--tint-warning-fg);
+    color: var(--syntax-builtin);
   }
 
   .note-editor pre .hljs-section,
   .note-editor pre .hljs-strong {
     font-weight: 700;
-    color: var(--text-link);
+    color: var(--syntax-constant);
   }
 
   .note-editor pre .hljs-emphasis {

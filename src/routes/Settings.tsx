@@ -75,7 +75,7 @@ function CustomizationsTab() {
                 <SelectItem key={t.value} value={t.value}>
                   <span className="flex items-center gap-2">
                     <span
-                      className="size-4 shrink-0 rounded-full border border-line"
+                      className="size-4 shrink-0 rounded-full border border-line-strong"
                       style={{ background: t.displayColor }}
                     />
                     {t.value === 'latte'

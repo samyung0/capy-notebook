@@ -195,7 +195,7 @@ export function MentionInputElement(
         </span>
         <FloatingPortal>
           <PopupMotion
-            className="block max-h-64 w-64 overflow-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+            className="block max-h-64 w-64 overflow-auto rounded-card border border-overlay-line bg-overlay p-1 shadow-pop"
             open
             positionClassName="z-50"
             positionRef={refs.setFloating}
@@ -217,7 +217,7 @@ export function MentionInputElement(
               matches.map((member, index) => (
                 <button
                   aria-selected={activeIndex === index}
-                  className="flex w-full flex-col rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg aria-selected:bg-surface-hover-bg"
+                  className="flex w-full flex-col rounded-button px-2 py-1.5 text-left hover:bg-overlay-hover aria-selected:bg-overlay-hover"
                   key={member.userId}
                   onClick={() => select(index)}
                   onMouseDown={(event) => event.preventDefault()}

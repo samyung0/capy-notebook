@@ -25,7 +25,7 @@ export function ProfilePillButton({
       aria-label={pending ? m.a11y_loading() : undefined}
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex h-11.5 w-[176px] shrink-0 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg',
+        'flex h-11.5 w-[176px] shrink-0 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg [[data-style=classroom][data-theme=frappe]_&]:hover:bg-[#283447] [[data-style=classroom][data-theme=mocha]_&]:hover:bg-[#1f2836]',
         className
       )}
       type="button"

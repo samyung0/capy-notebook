@@ -84,6 +84,13 @@
   --surface-card-dark-bg: #e6e9ea; /* dark card */
   --surface-card-dark-hover-bg: #dfdfdf;
 
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #ffffff;
+  --surface-overlay-hover-bg: #f7f8f8;
+  --border-overlay: #d6d6d6;
+  --surface-field-bg: #ffffff;
+  --surface-field-disabled-bg: #f7f8f8;
+
   --color-scrollbar: #afafaf;
 
   /* Text roles */
@@ -92,6 +99,20 @@
   --text-muted: #6b6b6b;
   --text-placeholder: #6b6b6b;
   --text-link: #5b4aa8;
+  --selection-bg: #ece6f6; /* text + block selection */
+  --highlight-bg: #e4ecf8; /* highlight text mark */
+  --highlight-line: #8ec9f9;
+  --code-inline-bg: #ece6f6; /* inline code mark */
+  --code-inline-fg: #5b4aa8;
+  --kbd-bg: #f7f8f8; /* keyboard key mark */
+  --kbd-border: #d6d6d6;
+  /* Code block syntax colors */
+  --syntax-comment: #6b6b6b;
+  --syntax-keyword: #b8475a;
+  --syntax-string: #2e6bb0;
+  --syntax-constant: #5b4aa8;
+  --syntax-function: #2f7d56;
+  --syntax-builtin: #a9772a;
   --text-link-hover: rgb(65, 51, 134);
 
   /* Borders & lines */
@@ -166,72 +187,93 @@
 /* ---------------- classroom · MOCHA (Catppuccin mocha) ---------------- */
 [data-style="classroom"][data-theme="mocha"] {
   /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #cba6f7;
+  --chart-1: #b5a1f8;
   --chart-2: #fab387;
   --chart-3: #a6e3a1;
   --chart-4: #89b4fa;
   --chart-5: #f9e2af;
   --chart-6: #f5c2e7;
 
-  /* Surfaces: crust → mantle → base → surface0 = 4-step elevation */
-  --surface-page: #14151f; /* outer "device" */
-  --surface-page-hover: #232433;
-  --surface-canvas: #0d0e13;
-  --surface-card-bg: #1e1e2e;
-  --surface-card-hover-bg: #262637;
-  --surface-card-dark-bg: #313244; /* contrasting "heavy" card — lightens in dark mode */
-  --surface-card-dark-hover-bg: #3a3b50;
-  --surface-topbar-bg: #232433;
-  --surface-topbar-fg: #cdd6f4;
+  /* Slate surfaces, one step darker than Frappe. */
+  --surface-page: #0d1219; /* outer "device" */
+  --surface-page-hover: #1a222d;
+  --surface-canvas: #080b10;
+  --surface-card-bg: #161d27;
+  --surface-card-hover-bg: #232c3a;
+  --surface-card-dark-bg: #222c3a; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #334156;
+  --surface-topbar-bg: #1d2531;
+  --surface-topbar-fg: #e6e9ef;
 
-  --color-scrollbar: #45475a;
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #1d2633;
+  --surface-overlay-hover-bg: #2c3748;
+  --border-overlay: #3f4d64;
+  --surface-field-bg: #121821;
+  --surface-field-disabled-bg: #1c2430;
+
+  --color-scrollbar: #3a4657;
 
   /* Text roles */
-  --text-primary: #cdd6f4;
-  --text-secondary: #a6adc8;
-  --text-muted: #7f849c;
-  --text-placeholder: #6c7086;
+  --text-primary: #e6e9ef;
+  --text-secondary: #c0c8d4;
+  --text-muted: #9aa4b3;
+  --text-placeholder: #9aa4b3;
   --text-link: #b4befe;
+  --selection-bg: #59547f; /* text + block selection */
+  --highlight-bg: #655534; /* highlight text mark */
+  --highlight-line: #f9e2af;
+  --code-inline-bg: #31334b; /* inline code mark */
+  --code-inline-fg: #d3c7fb;
+  --kbd-bg: #222c3a; /* keyboard key mark */
+  --kbd-border: #45546b;
+  /* Code block syntax colors */
+  --syntax-comment: #8f99a8;
+  --syntax-keyword: #df9fb1;
+  --syntax-string: #9eb9e5;
+  --syntax-constant: #c2c8f0;
+  --syntax-function: #b1d6ae;
+  --syntax-builtin: #ebddbd;
   --text-link-hover: #c3cbfe;
 
   /* Borders & lines */
-  --border-default: #414256;
-  --border-strong: #595c70;
-  --divider: #37384a;
+  --border-default: #323e52;
+  --border-strong: #3a4657;
+  --divider: rgba(255, 255, 255, 0.07);
 
   /* Actions (pairs) — near-black primary inverts to a dimmed white */
-  --action-primary-bg: #c2c7e0;
-  --action-primary-fg: #1e1e2e;
-  --action-primary-hover: #d0d4e8;
-  --action-accent-bg: #cba6f7;
-  --action-accent-fg: #31293f;
-  --action-accent-hover: #d6baf9;
+  --action-primary-bg: #cdd4de;
+  --action-primary-fg: #0d1219;
+  --action-primary-hover: #dde2e9;
+  --action-accent-bg: #b5a1f8;
+  --action-accent-fg: #2b2c41;
+  --action-accent-hover: #c4b4f9;
 
   /* Tinted containers (bg + fg) + solid signal color */
   /* system colors */
-  --tint-success-bg: #364143;
+  --tint-success-bg: #2e3f3c;
   --tint-success-fg: #a6e3a1;
-  --tint-info-bg: #313953;
+  --tint-info-bg: #2a374b;
   --tint-info-fg: #89b4fa;
-  --tint-warning-bg: #454145;
+  --tint-warning-bg: #423c2e;
   --tint-warning-fg: #f9e2af;
-  --tint-error-bg: #443244;
+  --tint-error-bg: #3c303d;
   --tint-error-fg: #f38ba8;
-  --tint-accent-1-bg: #3d3652;
-  --tint-accent-1-fg: #cba6f7;
-  --tint-accent-dark-bg: #554a6e;
-  --tint-accent-dark-fg: #f4ebfd;
-  --tint-accent-2-bg: #364143;
+  --tint-accent-1-bg: #31334b;
+  --tint-accent-1-fg: #c8b8fa;
+  --tint-accent-dark-bg: #56527b;
+  --tint-accent-dark-fg: #f6f4fe;
+  --tint-accent-2-bg: #2e3f3c;
   --tint-accent-2-fg: #a6e3a1;
-  --solid-accent-1: #cba6f7;
+  --solid-accent-1: #b5a1f8;
   --solid-accent-2: #a6e3a1;
   --solid-success: #a6e3a1;
   --solid-info: #89b4fa;
   --solid-warning: #f9e2af;
   --solid-error: #f38ba8;
   /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
-  --tint-purple: #cba6f7;
-  --tint-purple-fg: #362f47;
+  --tint-purple: #b5a1f8;
+  --tint-purple-fg: #2b2c41;
   --tint-green: #a6e3a1;
   --tint-green-fg: #2f3b36;
   --tint-blue: #89b4fa;
@@ -240,7 +282,7 @@
   --tint-amber-fg: #3f3b39;
   --tint-coral: #eba0ac;
   --tint-coral-fg: #3d2e38;
-  --tint-graphite: #585b70;
+  --tint-graphite: #5b6b82;
   --tint-graphite-fg: #f5f6fa;
   --tint-purple-dark: var(--tint-accent-1-bg);
   --tint-purple-dark-fg: var(--tint-accent-1-fg);
@@ -252,100 +294,121 @@
   --tint-amber-dark-fg: var(--tint-warning-fg);
   --tint-coral-dark: var(--tint-error-bg);
   --tint-coral-dark-fg: var(--tint-error-fg);
-  --tint-graphite-dark: #313244;
-  --tint-graphite-dark-fg: #cdd6f4;
+  --tint-graphite-dark: #222c3a;
+  --tint-graphite-dark-fg: #e6e9ef;
 
   /* Sticky-note surfaces */
-  --note-green-bg: #41514c;
+  --note-green-bg: #41584c;
   --note-green-fg: #c1ebbd;
   --note-green-fg-muted: rgba(193, 235, 189, 0.66);
-  --note-purple-bg: #4b4162;
-  --note-purple-fg: #dbc1f9;
-  --note-purple-fg-muted: rgba(219, 193, 249, 0.66);
-  --note-green-soft-bg: #364143;
+  --note-purple-bg: #49476a;
+  --note-purple-fg: #d3c7fb;
+  --note-purple-fg-muted: #cbbdfa;
+  --note-green-soft-bg: #2e3f3c;
   --note-green-soft-fg: #a6e3a1;
-  --note-purple-soft-bg: #3d3652;
-  --note-purple-soft-fg: #cba6f7;
+  --note-purple-soft-bg: #31334b;
+  --note-purple-soft-fg: #b5a1f8;
 
   /* Shadows — dark themes rely on surface contrast; keep shadows soft */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-raised:
     0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
-  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.45), 0 16px 48px rgba(0, 0, 0, 0.65);
   --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
 
 /* ---------------- classroom · FRAPPÉ (lighter Mocha) ---------------- */
 [data-style="classroom"][data-theme="frappe"] {
-  /* Mocha accents on lighter blue-violet surfaces. */
-  --chart-1: #cba6f7;
+  /* Violet accent on neutral slate surfaces; other accents from Mocha. */
+  --chart-1: #b5a1f8;
   --chart-2: #fab387;
   --chart-3: #a6e3a1;
   --chart-4: #89b4fa;
   --chart-5: #f9e2af;
   --chart-6: #f5c2e7;
 
-  /* Mocha surface hues lifted together, preserving elevation. */
-  --surface-page: #262731; /* outer "device" */
-  --surface-page-hover: #353645;
-  --surface-canvas: #1f2025;
-  --surface-card-bg: #303040;
-  --surface-card-hover-bg: #383849;
-  --surface-card-dark-bg: #434456; /* contrasting "heavy" card — lightens in dark mode */
-  --surface-card-dark-hover-bg: #4c4d62;
-  --surface-topbar-bg: #353645;
-  --surface-topbar-fg: #d9e0f6;
+  /* Slate surfaces: dark page, gray-800 cards, lighter heavy cards. */
+  --surface-page: #141a23; /* outer "device" */
+  --surface-page-hover: #232d3b;
+  --surface-canvas: #0e131a;
+  --surface-card-bg: #1f2937;
+  --surface-card-hover-bg: #2e3b4f;
+  --surface-card-dark-bg: #2f3e52; /* contrasting "heavy" card — lightens in dark mode */
+  --surface-card-dark-hover-bg: #405370;
+  --surface-topbar-bg: #263244;
+  --surface-topbar-fg: #eef1f5;
 
-  --color-scrollbar: #57596c;
+  /* Floating surfaces (menus, popovers, dialogs, drawers, toasts) and form fields */
+  --surface-overlay-bg: #273447;
+  --surface-overlay-hover-bg: #384a63;
+  --border-overlay: #4d5e78;
+  --surface-field-bg: #1c2533;
+  --surface-field-disabled-bg: #253041;
+
+  --color-scrollbar: #475569;
 
   /* Text roles */
-  --text-primary: #d9e0f6;
-  --text-secondary: #bdc4de;
-  --text-muted: #bbc1da;
-  --text-placeholder: #bbc1da;
+  --text-primary: #eef1f5;
+  --text-secondary: #cbd3de;
+  --text-muted: #a7b1c0;
+  --text-placeholder: #a7b1c0;
   --text-link: #b4befe;
+  --selection-bg: #625f8e; /* text + block selection */
+  --highlight-bg: #6a5b3e; /* highlight text mark */
+  --highlight-line: #f9e2af;
+  --code-inline-bg: #3d415e; /* inline code mark */
+  --code-inline-fg: #d3c7fb;
+  --kbd-bg: #2f3e52; /* keyboard key mark */
+  --kbd-border: #52627a;
+  /* Code block syntax colors */
+  --syntax-comment: #98a2b3;
+  --syntax-keyword: #df9fb1;
+  --syntax-string: #9eb9e5;
+  --syntax-constant: #c2c8f0;
+  --syntax-function: #b1d6ae;
+  --syntax-builtin: #ebddbd;
   --text-link-hover: #c3cbfe;
 
   /* Borders & lines */
-  --border-default: #535569;
-  --border-strong: #6c6f85;
-  --divider: #484a5d;
+  --border-default: #3e4d63;
+  --border-strong: #475569;
+  --divider: rgba(255, 255, 255, 0.09);
 
   /* Actions (pairs) — near-black primary inverts to a dimmed white */
-  --action-primary-bg: #c2c7e0;
-  --action-primary-fg: #1e1e2e;
-  --action-primary-hover: #d0d4e8;
-  --action-accent-bg: #cba6f7;
-  --action-accent-fg: #31293f;
-  --action-accent-hover: #d6baf9;
+  --action-primary-bg: #d3dae4;
+  --action-primary-fg: #141a23;
+  --action-primary-hover: #e2e7ee;
+  --action-accent-bg: #b5a1f8;
+  --action-accent-fg: #313249;
+  --action-accent-hover: #c4b4f9;
 
   /* Tinted containers (bg + fg) + solid signal color */
   /* system colors */
-  --tint-success-bg: #485355;
+  --tint-success-bg: #364949;
   --tint-success-fg: #a6e3a1;
-  --tint-info-bg: #373f59;
+  --tint-info-bg: #314158;
   --tint-info-fg: #89b4fa;
-  --tint-warning-bg: #575357;
+  --tint-warning-bg: #4d473c;
   --tint-warning-fg: #f9e2af;
-  --tint-error-bg: #4a384a;
+  --tint-error-bg: #433a4a;
   --tint-error-fg: #f38ba8;
-  --tint-accent-1-bg: #433c58;
-  --tint-accent-1-fg: #cba6f7;
-  --tint-accent-dark-bg: #675c80;
-  --tint-accent-dark-fg: #f4ebfd;
-  --tint-accent-2-bg: #485355;
+  --tint-accent-1-bg: #3d415e;
+  --tint-accent-1-fg: #c8b9fa;
+  --tint-accent-dark-bg: #5b5984;
+  --tint-accent-dark-fg: #f6f4fe;
+  --tint-accent-2-bg: #364949;
   --tint-accent-2-fg: #a6e3a1;
-  --solid-accent-1: #cba6f7;
+  --solid-accent-1: #b5a1f8;
   --solid-accent-2: #a6e3a1;
   --solid-success: #a6e3a1;
   --solid-info: #89b4fa;
   --solid-warning: #f9e2af;
   --solid-error: #f38ba8;
   /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
-  --tint-purple: #cba6f7;
-  --tint-purple-fg: #362f47;
+  --tint-purple: #b5a1f8;
+  --tint-purple-fg: #313249;
   --tint-green: #a6e3a1;
   --tint-green-fg: #2f3b36;
   --tint-blue: #89b4fa;
@@ -354,7 +417,7 @@
   --tint-amber-fg: #3f3b39;
   --tint-coral: #eba0ac;
   --tint-coral-fg: #3d2e38;
-  --tint-graphite: #6a6d82;
+  --tint-graphite: #64748b;
   --tint-graphite-fg: #f5f6fa;
   --tint-purple-dark: var(--tint-accent-1-bg);
   --tint-purple-dark-fg: var(--tint-accent-1-fg);
@@ -366,27 +429,27 @@
   --tint-amber-dark-fg: var(--tint-warning-fg);
   --tint-coral-dark: var(--tint-error-bg);
   --tint-coral-dark-fg: var(--tint-error-fg);
-  --tint-graphite-dark: #434456;
-  --tint-graphite-dark-fg: #d9e0f6;
+  --tint-graphite-dark: #2f3e52;
+  --tint-graphite-dark-fg: #eef1f5;
 
   /* Sticky-note surfaces */
-  --note-green-bg: #53635e;
+  --note-green-bg: #486157;
   --note-green-fg: #c1ebbd;
   --note-green-fg-muted: #c5e3ca;
-  --note-purple-bg: #5d5374;
-  --note-purple-fg: #e0c8fc;
-  --note-purple-fg-muted: #dacbed;
-  --note-green-soft-bg: #485355;
+  --note-purple-bg: #4f4f75;
+  --note-purple-fg: #d3c7fb;
+  --note-purple-fg-muted: #cbbdfa;
+  --note-green-soft-bg: #364949;
   --note-green-soft-fg: #a6e3a1;
-  --note-purple-soft-bg: #433c58;
-  --note-purple-soft-fg: #cba6f7;
+  --note-purple-soft-bg: #3d415e;
+  --note-purple-soft-fg: #b5a1f8;
 
   /* Shadows — dark themes rely on surface contrast; keep shadows soft */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.25), 0 8px 24px rgba(0, 0, 0, 0.2);
   --shadow-raised:
     0 1px 2px rgba(0, 0, 0, 0.3), 0 16px 40px rgba(0, 0, 0, 0.35);
-  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 2px 6px rgba(0, 0, 0, 0.35), 0 16px 48px rgba(0, 0, 0, 0.55);
   --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }

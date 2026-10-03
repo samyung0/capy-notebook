@@ -225,7 +225,7 @@ export function SlashInputElement(
         </span>
         <FloatingPortal>
           <PopupMotion
-            className="block max-h-[min(80vh,38rem,var(--slash-available-height,38rem))] w-72 overflow-auto rounded-lg border border-line bg-surface px-1 pt-2 pb-1.5 font-medium text-fg text-sm leading-(--body-line-height) shadow-pop"
+            className="block max-h-[min(80vh,38rem,var(--slash-available-height,38rem))] w-72 overflow-auto rounded-lg border border-overlay-line bg-overlay px-1 pt-2 pb-1.5 font-medium text-fg text-sm leading-(--body-line-height) shadow-pop"
             id={listboxId}
             open
             positionClassName="z-50"
@@ -250,7 +250,7 @@ export function SlashInputElement(
                       return (
                         <ToolbarPopoverItem
                           aria-selected={index === activeIndex}
-                          className="aria-selected:bg-surface-hover-bg"
+                          className="aria-selected:bg-overlay-hover"
                           icon={<EditorIcon name={command.icon} />}
                           id={`${listboxId}-${index}`}
                           key={command.id}

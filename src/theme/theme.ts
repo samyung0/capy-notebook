@@ -28,12 +28,12 @@ export const THEMES: {
 }[] = [
   { displayColor: '#f7f7f7', isDark: false, label: 'Latte', value: 'latte' },
   {
-    displayColor: '#303040',
+    displayColor: '#1f2937',
     isDark: true,
     label: 'Frappé',
     value: 'frappe',
   },
-  { displayColor: '#1e1e2e', isDark: true, label: 'Mocha', value: 'mocha' },
+  { displayColor: '#161d27', isDark: true, label: 'Mocha', value: 'mocha' },
 ];
 
 interface ThemeState {

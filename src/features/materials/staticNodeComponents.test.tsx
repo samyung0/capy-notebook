@@ -36,7 +36,7 @@ describe('static study-block renderers', () => {
       },
     ]);
 
-    expect(html).toContain('@user_deleted_1');
+    expect(html.replace(/<[^>]+>/g, '')).toContain('@user_deleted_1');
   });
 
   it('renders task lists with read-only checked state', () => {

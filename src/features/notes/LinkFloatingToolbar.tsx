@@ -62,7 +62,7 @@ export function LinkFloatingToolbar() {
     >
       {state.isEditing ? (
         <form
-          className="z-50 flex w-80 flex-col rounded-lg border border-line bg-surface p-1 text-fg shadow-pop"
+          className="z-50 flex w-80 flex-col rounded-lg border border-overlay-line bg-overlay p-1 text-fg shadow-pop"
           onSubmit={(event) => {
             event.preventDefault();
             setAttemptedSubmit(true);

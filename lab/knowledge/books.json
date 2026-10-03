@@ -90,6 +90,31 @@
       "version": 5
     },
     {
+      "id": "a-cool-brisk-walk-through-discrete-mathematics-version-2-2",
+      "title": "A Cool Brisk Walk Through Discrete Mathematics - version 2.2",
+      "authors": [
+        "Stephen Davies"
+      ],
+      "edition": "Version 2.2.2",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/a-cool-brisk-walkthrough-discrete-mathematics-davis",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1473",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/a-cool-brisk-walkthrough-discrete-mathematics-davis",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "A Cool Brisk Walk Through Discrete Mathematics - version 2.2, Stephen Davies, Version 2.2.2. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/a-cool-brisk-walkthrough-discrete-mathematics-davis",
+      "pdf_path": "data/knowledge-base/sources/861eacfb7090f3b936893f03250c9a4aa2bf80b4c4e822d1f2992f0fe86321b6.pdf",
+      "sha256": "861eacfb7090f3b936893f03250c9a4aa2bf80b4c4e822d1f2992f0fe86321b6",
+      "bytes": 1753103,
+      "pages": 254,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "discrete-mathematics",
+      "version": 1
+    },
+    {
       "id": "a-first-course-in-electrical-and-computer-engineering",
       "title": "A First Course in Electrical and Computer Engineering",
       "authors": [
@@ -368,6 +393,46 @@
       "version": 5
     },
     {
+      "id": "a-people-s-history-of-structural-racism-in-academia-from-a-d",
+      "title": "A People’s History of Structural Racism in Academia: From A(dministration of Justice) to Z(oology)",
+      "authors": [
+        "Susan Rahman",
+        "Prateek Sunder",
+        "Dahmitra Jackson"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/a-people-s-history-of-structural-racism-in-academia-from-a-dministration-of-justice-to-z-oology",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/3195",
+      "license": "CC BY",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/a-people-s-history-of-structural-racism-in-academia-from-a-dministration-of-justice-to-z-oology",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "A People’s History of Structural Racism in Academia: From A(dministration of Justice) to Z(oology), Susan Rahman, Prateek Sunder, Dahmitra Jackson. CC BY. https://open.umn.edu/opentextbooks/textbooks/a-people-s-history-of-structural-racism-in-academia-from-a-dministration-of-justice-to-z-oology",
+      "pdf_path": "data/knowledge-base/sources/e66779bb0fd3f355abcd690c8f11141b896067f25fb9f29d7dedcda060ddbbc5.pdf",
+      "sha256": "e66779bb0fd3f355abcd690c8f11141b896067f25fb9f29d7dedcda060ddbbc5",
+      "bytes": 1850539,
+      "pages": 260,
+      "first_content_page": 6,
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            117.647,
+            366.463,
+            882.353,
+            785.34
+          ],
+          "figure": "Cover cartoon",
+          "figure_id": "fig_202c585fc49877_2",
+          "credit": "Cover art courtesy of @Christopher Weyant, Boston Globe. Boston Globe 5-17-20 © 2020 by Christopher Weyant is licensed under CC BY-ND 4.0"
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "gender-ethnic-studies",
+      "version": 1
+    },
+    {
       "id": "accountancy",
       "title": "Accountancy",
       "authors": [
@@ -418,6 +483,31 @@
       "rights_notes": [],
       "subject_id": "accounting",
       "version": 3
+    },
+    {
+      "id": "aerodynamics-and-aircraft-performance",
+      "title": "Aerodynamics and Aircraft Performance",
+      "authors": [
+        "Marchman, James F. III"
+      ],
+      "edition": "3rd edition",
+      "source_url": "https://vtechworks.lib.vt.edu/items/a9bd021c-4dfa-45c7-b3cd-33722b87265d",
+      "download_url": "https://vtechworks.lib.vt.edu/bitstreams/9096a84e-cdb4-4b82-88ac-9713a4992e8a/download",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0",
+      "license_evidence_url": "https://vtechworks.lib.vt.edu/items/a9bd021c-4dfa-45c7-b3cd-33722b87265d",
+      "license_evidence_quote": "Marchman, James F. III, (2021). Aerodynamics and Aircraft Performance , 3rd ed., Blacksburg, VA: University Libraries at Virginia Tech. http://hdl.handle.net/10919/96525 , CC BY 4.0",
+      "attribution_reviewed": false,
+      "attribution": "Aerodynamics and Aircraft Performance, Marchman, James F. III, 3rd edition. CC BY 4.0. https://vtechworks.lib.vt.edu/items/a9bd021c-4dfa-45c7-b3cd-33722b87265d",
+      "pdf_path": "data/knowledge-base/sources/9029d445efedfb853f2e9cdbceb1df6e2c211fc4e7e9b5469b55e415cc66f792.pdf",
+      "sha256": "9029d445efedfb853f2e9cdbceb1df6e2c211fc4e7e9b5469b55e415cc66f792",
+      "bytes": 26162152,
+      "pages": 255,
+      "first_content_page": 20,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "aerospace-engineering",
+      "version": 1
     },
     {
       "id": "ahss4",
@@ -838,7 +928,8 @@
       "first_content_page": 1064,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "literature"
+      "subject_id": "literature",
+      "version": 1
     },
     {
       "id": "business-ethics",
@@ -1665,6 +1756,31 @@
       "version": 4
     },
     {
+      "id": "concept-development-studies-in-chemistry",
+      "title": "Concept Development Studies in Chemistry",
+      "authors": [
+        "John S. Hutchinson"
+      ],
+      "edition": "2012",
+      "source_url": "https://archive.org/details/cnx-org-col10264",
+      "download_url": "https://archive.org/download/cnx-org-col10264/concept-development-studies-in-chemistry.pdf",
+      "license": "CC BY 2.0",
+      "license_url": "http://creativecommons.org/licenses/by/2.0/",
+      "license_evidence_url": "https://archive.org/details/cnx-org-col10264",
+      "license_evidence_quote": "Usage Attribution",
+      "attribution_reviewed": false,
+      "attribution": "Concept Development Studies in Chemistry, John S. Hutchinson, 2012. CC BY 2.0. https://archive.org/details/cnx-org-col10264",
+      "pdf_path": "data/knowledge-base/sources/0b5202c452122843468c0a6351d36f1d5dcbd122df0381ed4d7798569a7472ca.pdf",
+      "sha256": "0b5202c452122843468c0a6351d36f1d5dcbd122df0381ed4d7798569a7472ca",
+      "bytes": 1830606,
+      "pages": 267,
+      "first_content_page": 2,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "general-chemistry",
+      "version": 1
+    },
+    {
       "id": "concepts-of-biology",
       "title": "Concepts Of Biology",
       "authors": [
@@ -1739,9 +1855,23 @@
       "bytes": 1565915,
       "pages": 240,
       "first_content_page": 12,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            117.647,
+            85.227,
+            866.912,
+            857.955
+          ],
+          "figure": "Cover art (no printed label)",
+          "figure_id": "fig_f4fc5bfbcc78b3_0",
+          "credit": "Notices page (PDF page 3): \"The cover art design is a copyrighted work of CALI, all rights reserved. The CALI graphical logo is a trademark and may not be used without permission.\""
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "contract-law"
+      "subject_id": "contract-law",
+      "version": 1
     },
     {
       "id": "core-concepts-of-marketing",
@@ -2263,7 +2393,8 @@
       "first_content_page": 111,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "geometry"
+      "subject_id": "geometry",
+      "version": 1
     },
     {
       "id": "euclidean-plane-and-its-relatives",
@@ -2316,6 +2447,31 @@
       "version": 5
     },
     {
+      "id": "federal-rules-of-evidence-u-s-code-title-28-appendix",
+      "title": "Federal Rules of Evidence (U.S. Code, Title 28 Appendix)",
+      "authors": [
+        "Office of the Law Revision Counsel, U.S. House of Representatives"
+      ],
+      "edition": "United States Code, 2024 Edition, with Advisory Committee notes",
+      "source_url": "https://www.govinfo.gov/app/details/USCODE-2024-title28/USCODE-2024-title28-app-federalru-dup2",
+      "download_url": "https://www.govinfo.gov/content/pkg/USCODE-2024-title28/pdf/USCODE-2024-title28-app-federalru-dup2.pdf",
+      "license": "Public Domain",
+      "license_url": "https://uscode.house.gov/view.xhtml?req=granuleid:USC-prelim-title17-section105",
+      "license_evidence_url": "https://www.govinfo.gov/about/policies",
+      "license_evidence_quote": "Copyright protection under this title is not available for any work of the United States Government",
+      "attribution_reviewed": false,
+      "attribution": "Federal Rules of Evidence (U.S. Code, Title 28 Appendix), Office of the Law Revision Counsel, U.S. House of Representatives, United States Code, 2024 Edition, with Advisory Committee notes. Public Domain. https://www.govinfo.gov/app/details/USCODE-2024-title28/USCODE-2024-title28-app-federalru-dup2",
+      "pdf_path": "data/knowledge-base/sources/341facb413d2e4f53a70aae47a435febd27e0e4907f84e18b38273837426c468.pdf",
+      "sha256": "341facb413d2e4f53a70aae47a435febd27e0e4907f84e18b38273837426c468",
+      "bytes": 689209,
+      "pages": 101,
+      "first_content_page": 1,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "civil-law-procedure",
+      "version": 1
+    },
+    {
       "id": "fish-fishing-and-conservation-low-resolution",
       "title": "Fish, Fishing, and Conservation (low resolution)",
       "authors": [
@@ -2335,9 +2491,179 @@
       "bytes": 11851154,
       "pages": 413,
       "first_content_page": 25,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 112,
+          "bbox": [
+            500.0,
+            327.135,
+            861.731,
+            690.283
+          ],
+          "figure": "Figure 4.6: Mimi E. Lam, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_920",
+          "credit": "Used with permission from Mimi E. Lam. Photo by Tony J. Pitcher. CC BY-ND 4.0."
+        },
+        {
+          "page": 112,
+          "bbox": [
+            500.0,
+            694.836,
+            686.569,
+            709.358
+          ],
+          "figure": "Figure 4.6: Mimi E. Lam, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_923",
+          "credit": "Used with permission from Mimi E. Lam. Photo by Tony J. Pitcher. CC BY-ND 4.0."
+        },
+        {
+          "page": 162,
+          "bbox": [
+            500.0,
+            327.135,
+            861.731,
+            570.0
+          ],
+          "figure": "Figure 6.6: Karen J. Murchie, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_1481",
+          "credit": "Used with permission from Karen J. Murchie. Photo by Shedd Aquarium/Brenna Hernandez. Use of the contribution is permitted at no cost in perpetuity in this and all future versions of this work."
+        },
+        {
+          "page": 162,
+          "bbox": [
+            500.0,
+            574.554,
+            712.347,
+            589.076
+          ],
+          "figure": "Figure 6.6: Karen J. Murchie, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_1483",
+          "credit": "Used with permission from Karen J. Murchie. Photo by Shedd Aquarium/Brenna Hernandez. Use of the contribution is permitted at no cost in perpetuity in this and all future versions of this work."
+        },
+        {
+          "page": 238,
+          "bbox": [
+            395.064,
+            408.601,
+            901.575,
+            679.11
+          ],
+          "figure": "Figure 10.1: Two young recreational anglers using familiar spinning fishing gear.",
+          "figure_id": "fig_b158f579f7dcf9_2252",
+          "credit": "Florida Fish and Wildlife. 2012. CC BY-ND 2.0. https://flic.kr/p/bR2GSZ."
+        },
+        {
+          "page": 238,
+          "bbox": [
+            395.064,
+            683.662,
+            899.425,
+            698.185
+          ],
+          "figure": "Figure 10.1: Two young recreational anglers using familiar spinning fishing gear.",
+          "figure_id": "fig_b158f579f7dcf9_2254",
+          "credit": "Florida Fish and Wildlife. 2012. CC BY-ND 2.0. https://flic.kr/p/bR2GSZ."
+        },
+        {
+          "page": 261,
+          "bbox": [
+            500.0,
+            354.168,
+            861.731,
+            565.442
+          ],
+          "figure": "Figure 10.14: Sascha Clark Danylchuk.",
+          "figure_id": "fig_b158f579f7dcf9_2439",
+          "credit": "Used with permission from Sascha Clark Danylchuk. CC BY-ND 4.0."
+        },
+        {
+          "page": 261,
+          "bbox": [
+            500.0,
+            569.994,
+            736.014,
+            584.517
+          ],
+          "figure": "Figure 10.14: Sascha Clark Danylchuk.",
+          "figure_id": "fig_b158f579f7dcf9_2441",
+          "credit": "Used with permission from Sascha Clark Danylchuk. CC BY-ND 4.0."
+        },
+        {
+          "page": 322,
+          "bbox": [
+            596.106,
+            327.135,
+            861.731,
+            623.749
+          ],
+          "figure": "Figure 12.17: D. G. Webster, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_3038",
+          "credit": "Used with permission from D. G. Webster. CC BY-ND 4.0."
+        },
+        {
+          "page": 322,
+          "bbox": [
+            596.106,
+            628.301,
+            795.161,
+            642.824
+          ],
+          "figure": "Figure 12.17: D. G. Webster, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_3040",
+          "credit": "Used with permission from D. G. Webster. CC BY-ND 4.0."
+        },
+        {
+          "page": 347,
+          "bbox": [
+            500.0,
+            327.135,
+            861.731,
+            690.193
+          ],
+          "figure": "Figure 13.12: Yvonne Sadovy de Mitcheson, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_3296",
+          "credit": "Used with permission from Yvonne Sadovy de Mitcheson. Photo by Alan Lai Kin Lun / Good Show Photography. CC BY-ND 4.0."
+        },
+        {
+          "page": 347,
+          "bbox": [
+            500.0,
+            694.746,
+            797.097,
+            709.268
+          ],
+          "figure": "Figure 13.12: Yvonne Sadovy de Mitcheson, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_3299",
+          "credit": "Used with permission from Yvonne Sadovy de Mitcheson. Photo by Alan Lai Kin Lun / Good Show Photography. CC BY-ND 4.0."
+        },
+        {
+          "page": 395,
+          "bbox": [
+            500.0,
+            327.135,
+            861.731,
+            761.636
+          ],
+          "figure": "Figure 15.9: Emmanuel A. Frimpong, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_3802",
+          "credit": "Used with permission from Emmanuel A. Frimpong. CC BY-ND 4.0."
+        },
+        {
+          "page": 395,
+          "bbox": [
+            500.0,
+            766.189,
+            759.306,
+            780.711
+          ],
+          "figure": "Figure 15.9: Emmanuel A. Frimpong, PhD.",
+          "figure_id": "fig_b158f579f7dcf9_3806",
+          "credit": "Used with permission from Emmanuel A. Frimpong. CC BY-ND 4.0."
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "ecology-evolution"
+      "subject_id": "ecology-evolution",
+      "version": 1
     },
     {
       "id": "focusing-on-organizational-change",
@@ -2388,7 +2714,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "curriculum-instruction"
+      "subject_id": "curriculum-instruction",
+      "version": 1
     },
     {
       "id": "fracture-mechanics-an-engineering-primer",
@@ -2412,9 +2739,23 @@
       "bytes": 42900451,
       "pages": 379,
       "first_content_page": 14,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            233.777,
+            -2.875,
+            1004.229,
+            1002.875
+          ],
+          "figure": "Front-cover fracture photograph",
+          "figure_id": "fig_64993d56fb6d81_2",
+          "credit": "Cover image TU Delft OPEN Publishing. No further use allowed"
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "mechanical-engineering"
+      "subject_id": "mechanical-engineering",
+      "version": 1
     },
     {
       "id": "fundamental-methods-of-logic",
@@ -2528,6 +2869,56 @@
       "rights_notes": [],
       "subject_id": "electrical-engineering",
       "version": 9
+    },
+    {
+      "id": "gateway-to-business-analytics-with-microsoft-excel",
+      "title": "Gateway to Business Analytics with Microsoft Excel®",
+      "authors": [
+        "Humberto Barreto"
+      ],
+      "edition": "",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/gateway-to-business-analytics-with-microsoft-excel",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/4940",
+      "license": "CC BY 4.0",
+      "license_url": "http://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/gateway-to-business-analytics-with-microsoft-excel",
+      "license_evidence_quote": "Conditions of Use Attribution CC BY",
+      "attribution_reviewed": false,
+      "attribution": "Gateway to Business Analytics with Microsoft Excel®, Humberto Barreto. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/gateway-to-business-analytics-with-microsoft-excel",
+      "pdf_path": "data/knowledge-base/sources/71ebb4a8fe660bc70e7bcc81b4d82b65b24f7bb0a42281349a7b1e93f9830ca4.pdf",
+      "sha256": "71ebb4a8fe660bc70e7bcc81b4d82b65b24f7bb0a42281349a7b1e93f9830ca4",
+      "bytes": 10661608,
+      "pages": 265,
+      "first_content_page": 18,
+      "figure_exclusions": [
+        {
+          "page": 119,
+          "bbox": [
+            92.636,
+            251.366,
+            907.364,
+            731.985
+          ],
+          "figure": "Figure 4.4: US and Japan, real GDP per person, 2022 Euro PPP.",
+          "figure_id": "fig_46d507c4ce19f1_1163",
+          "credit": "Source: World Inequality Database / CC BY-NC-SA 4.0."
+        },
+        {
+          "page": 133,
+          "bbox": [
+            92.636,
+            143.341,
+            907.364,
+            543.042
+          ],
+          "figure": "Figure 4.6: The college wage premium over time.",
+          "figure_id": "fig_46d507c4ce19f1_1322",
+          "credit": "Source: Bengali et. al, 2023 / Used with permission."
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "data-science",
+      "version": 1
     },
     {
       "id": "geometry-with-an-introduction-to-cosmic-topology-2018-editio",
@@ -7693,6 +8084,55 @@
       "version": 6
     },
     {
+      "id": "introduction-to-animal-science",
+      "title": "Introduction to Animal Science",
+      "authors": [
+        "Deanne Pawlisch"
+      ],
+      "edition": "LibreTexts export, compiled June 5 2026",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-animal-science",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/5379",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/d4cf174e8676a1a8f4eb1b4fcb21eaae0c6108a3d5780fb4942d4bb452a44fc4.pdf#page=283",
+      "license_evidence_quote": "1 https://bio.libretexts.org/@go/page/160806 Detailed Licensing Published under a Creative Commons (CC) BY 4.0 license. This license enables reusers to distribute, remix, adapt, and build upon the material in any medium or format, so long as attribution is given to the creator. The license allows for commercial use. Content in the Front and Back Matter, directories and similar can be uncopywriteable, being simple listings and these are also shown as undeclared. Overview Title: Introduction to Animal Science Webpages: 154 All licenses found: CC BY 4.0: 92.9% (143 pages) Undeclared: 6.5% (10 pages) Other: 0.6% (1 page) By Page Introduction to Animal Science - CC BY 4.0 Front Matter - Undeclared TitlePage - Undeclared InfoPage - Other Table of Contents - Undeclared Acknowledgements - CC BY 4.0 Licensing - Undeclared 1: Introduction to Animal Science - CC BY 4.0 1.1: Let's Begin - CC BY 4.0 2: A Brief History of Animal Science - CC BY 4.0 2.1: Animal Domestication Timeline - CC BY 4.0 2.2: Domestication Discussion - CC BY 4.0 2.3: The Classical and Medieval Eras--Laying Intellectual Foundations - CC BY 4.0 2.4: The Agricultural Revolution--A Paradigm Shift - CC BY 4.0 2.5: The Development of Animal Science as a Discipline - CC BY 4.0 2.6: The History of Animal Agriculture in the United States - CC BY 4.0 2.7: The 19th and Early 20th Centuries--Key Developments - CC BY 4.0 2.8: Mid to Late 20th Century--Specialization and Technological Advancements - CC BY 4.0 2.9: The Diverse Contributions of Animals to Society - CC BY 4.0 2.10: 21st Century--Sustainability, Precision Agriculture, and One Health - CC BY 4.0 2.11: Summary and Flashcards - CC BY 4.0 3: A Global Perspective - CC BY 4.0 3.1: The Fundamental Role of Animals in Global Food Systems - CC BY 4.0 3.2: The Impact of Animals in Your Life--A Personal Inventory - CC BY 4.0 3.3: Non-Food Uses of Animals--A Broader Perspective - CC BY 4.0 3.4: Animals and Religion - CC BY 4.0 3.5: Animals in Health Research and Conservation - CC BY 4.0 3.6: The Value of Animals Discussion - CC BY 4.0 3.7: Global Trends in Livestock Production - CC BY 4.0 3.8: Animal Relationships Activity - CC BY 4.0 3.9: Summary and Flashcards - CC BY 4.0 4: Agricultural Systems - CC BY 4.0 4.1: Introduction - CC BY 4.0 4.2: Adaptation - CC BY 4.0 4.3: Environmental Stressors - CC BY 4.0 4.4: Animal Adaptations Activity - CC BY 4.0 4.5: Agricultural Development - CC BY 4.0 4.6: Livestock and Crop Production Types - CC BY 4.0 4.7: Contrasting Developed and Developing Countries - CC BY 4.0 4.8: Agricultural Systems Review and Case Studies - CC BY 4.0 4.9: A Livestock Industry Overview - CC BY 4.0 4.10: The Global Significance of Milk and Dairy Products - CC BY 4.0 4.11: Eggs as a Global Food Resource - CC BY 4.0 4.12: Fishing and Aquaculture - CC BY 4.0 4.13: End of the Line - CC BY 4.0 4.14: Outlaw Ocean - CC BY 4.0 4.15: Aquaculture and Fishing Role-Playing Activity - CC BY 4.0 Review note: licence index marks sections 6.10 Digestive Detective Activity, 6.11 Summary and Flashcards, and 6.12 Digestive Systems Study Guide undeclared; overall book explicitly states CC BY 4.0. Preserve section-level notices.",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to Animal Science, Deanne Pawlisch, LibreTexts export, compiled June 5 2026. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/introduction-to-animal-science",
+      "pdf_path": "data/knowledge-base/sources/d4cf174e8676a1a8f4eb1b4fcb21eaae0c6108a3d5780fb4942d4bb452a44fc4.pdf",
+      "sha256": "d4cf174e8676a1a8f4eb1b4fcb21eaae0c6108a3d5780fb4942d4bb452a44fc4",
+      "bytes": 28652185,
+      "pages": 288,
+      "first_content_page": 10,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "general-biology"
+    },
+    {
+      "id": "introduction-to-basic-legal-citation",
+      "title": "Introduction to Basic Legal Citation",
+      "authors": [
+        "Peter W. Martin"
+      ],
+      "edition": "Fall 2013 revision",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-basic-legal-citation",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/46",
+      "license": "CC BY-SA",
+      "license_url": "http://creativecommons.org/licenses/",
+      "license_evidence_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-basic-legal-citation",
+      "license_evidence_quote": "Conditions of Use Attribution-ShareAlike CC BY-SA",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to Basic Legal Citation, Peter W. Martin, Fall 2013 revision. CC BY-SA. https://open.umn.edu/opentextbooks/textbooks/introduction-to-basic-legal-citation",
+      "pdf_path": "data/knowledge-base/sources/01097e4d022fb91536bedd596778690c4fb94f51f6ec892f9969e3160790db81.pdf",
+      "sha256": "01097e4d022fb91536bedd596778690c4fb94f51f6ec892f9969e3160790db81",
+      "bytes": 1623990,
+      "pages": 277,
+      "first_content_page": 9,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "writing-composition",
+      "version": 1
+    },
+    {
       "id": "introduction-to-college-research",
       "title": "Introduction to College Research",
       "authors": [
@@ -7913,6 +8353,129 @@
       "figure_exclusions": [],
       "rights_notes": [],
       "subject_id": "applied-mathematics",
+      "version": 1
+    },
+    {
+      "id": "introduction-to-human-geography-2nd-edition",
+      "title": "Introduction to Human Geography - 2nd Edition",
+      "authors": [
+        "David Dorrell",
+        "Joseph P. Henderson"
+      ],
+      "edition": "2nd Edition",
+      "source_url": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-human-geography-dorrell",
+      "download_url": "https://open.umn.edu/opentextbooks/formats/1523",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "file:///C:/WEB/capy-notebook/data/knowledge-base/sources/05d9a9f6cd0779dc51b6d6561015b16e87c77179971dc995b15f4df23dda7714.pdf#page=3",
+      "license_evidence_quote": "Copyright 2018 by University System of Georgia. Introduction to Human Geography is licensed under a Creative Commons Attribution 4.0 International License. This license allows you to remix, tweak, and build upon this work, even commercially, as long as you credit this original source for the creation. If you reuse this content elsewhere, in order to comply with the attribution requirements of the license please attribute the original source to the University System of Georgia. NOTE: The above copyright license which University System of Georgia uses for their original content does not extend to or include content which was accessed and incorporated, and which is licensed under various other CC Licenses, such as ND licenses. Nor does it extend to or include any Special Permissions which were granted to us by the rightsholders for our use of their content. To determine copyright status of any content please refer to the bibliographies and appendices for original source information to further research specific copyright licenses. Image Disclaimer: All images and figures in this book are believed to be (after a reasonable investigation) either public domain or carry a compatible Creative Commons license. If you are the copyright owner of images in this book and you have not authorized the use of your work under these terms, please contact the University of North Georgia Press at ungpress@ung.edu to have the content removed. This title is a product of an Affordable Learning Georgia Textbook Transformation grant. Produced by the University System of Georgia Cover Design and Layout Design by Corey Parson Cover Photo by Atik Sulianami",
+      "attribution_reviewed": false,
+      "attribution": "Introduction to Human Geography - 2nd Edition, David Dorrell, Joseph P. Henderson, 2nd Edition. CC BY 4.0. https://open.umn.edu/opentextbooks/textbooks/introduction-to-human-geography-dorrell",
+      "pdf_path": "data/knowledge-base/sources/05d9a9f6cd0779dc51b6d6561015b16e87c77179971dc995b15f4df23dda7714.pdf",
+      "sha256": "05d9a9f6cd0779dc51b6d6561015b16e87c77179971dc995b15f4df23dda7714",
+      "bytes": 59349803,
+      "pages": 285,
+      "first_content_page": 11,
+      "figure_exclusions": [
+        {
+          "page": 14,
+          "bbox": [
+            119.103,
+            461.919,
+            873.038,
+            740.317
+          ],
+          "figure": "Figure 1.3 | Comparison of Map Scales. The map on the left is a small scale map, showing a larger area. The map on the right is a large scale map, showing a smaller area.",
+          "figure_id": "fig_392d4811e7ff59_144",
+          "credit": "Author | Corey Parson, Google Maps; Source | Google Maps; License | © Google Maps. Used with Permission."
+        },
+        {
+          "page": 59,
+          "bbox": [
+            274.423,
+            270.74,
+            724.683,
+            547.883
+          ],
+          "figure": "Figure 3.6 | Google News headlines on Danish border control. Search Results Screen Capture for terms “Danish border control.” 6 September 2017.",
+          "figure_id": "fig_392d4811e7ff59_599",
+          "credit": "Author | Google News; Source | Google News; License | © Google. Used with permission."
+        },
+        {
+          "page": 173,
+          "bbox": [
+            177.451,
+            87.449,
+            822.031,
+            332.6
+          ],
+          "figure": "Figure 9.3 | Gross National Income by Country",
+          "figure_id": "fig_392d4811e7ff59_1981",
+          "credit": "Author | © Copyright Worldmapper.org / Benjamin D. Hennig; Source | WorldMapper; License | CC BY NC ND 4.0"
+        },
+        {
+          "page": 202,
+          "bbox": [
+            155.964,
+            133.838,
+            843.627,
+            441.971
+          ],
+          "figure": "Figure 10.6 | Employment in Agriculture, 2014",
+          "figure_id": "fig_392d4811e7ff59_2254",
+          "credit": "Author | Actualitix; Source | Actualitix.com; License | CC BY NC SA 4.0. Inside image: Source: The World Bank - 2014; Copyright © Actualitix.com All rights reserved; CC BY NC SA symbols."
+        },
+        {
+          "page": 207,
+          "bbox": [
+            177.472,
+            87.984,
+            822.003,
+            435.62
+          ],
+          "figure": "Figure 10.13 | Crop-livestock Integration. Sheep grazing under tall-stemmed fruit trees (the Netherlands).",
+          "figure_id": "fig_392d4811e7ff59_2304",
+          "credit": "Author | FAO; Source | FAO; License | © FAO. Used with permission."
+        },
+        {
+          "page": 215,
+          "bbox": [
+            174.603,
+            682.218,
+            579.412,
+            913.332
+          ],
+          "figure": "Figure 10.27 | Population & Food supply",
+          "figure_id": "fig_392d4811e7ff59_2418",
+          "credit": "Author | FAO; Source | Infogram; License | © FAO. Used with permission."
+        },
+        {
+          "page": 251,
+          "bbox": [
+            177.137,
+            621.843,
+            822.712,
+            843.557
+          ],
+          "figure": "Figure 12.8 | Undredal, Norway",
+          "figure_id": "fig_392d4811e7ff59_2806",
+          "credit": "Micha L. Rieser | Wikimedia Commons | © Micha L. Rieser. Used with permission."
+        },
+        {
+          "page": 278,
+          "bbox": [
+            174.003,
+            189.287,
+            821.961,
+            581.092
+          ],
+          "figure": "Figure 13.4 | Natural and anthropogenically-forced greenhouse effect",
+          "figure_id": "fig_392d4811e7ff59_3087",
+          "credit": "National Park Service and U.S. Global Change Research Program | U.S. Global Change Research Program | Used with Permission."
+        }
+      ],
+      "rights_notes": [],
+      "subject_id": "human-geography",
       "version": 1
     },
     {
@@ -8285,7 +8848,7 @@
       "authors": [
         "Tony R. Kuphaldt"
       ],
-      "edition": "Version 3.01",
+      "edition": "Version 2.33 (development)",
       "source_url": "http://www.ibiblio.org/kuphaldt/socratic/sinst/",
       "download_url": "http://www.ibiblio.org/kuphaldt/socratic/sinst/book/liii.pdf",
       "license": "CC BY 4.0",
@@ -8293,7 +8856,7 @@
       "license_evidence_url": "http://www.ibiblio.org/kuphaldt/socratic/sinst/",
       "license_evidence_quote": "These worksheets, the Lessons In Industrial Instrumentation textbook, and files on this site created by Tony Kuphaldt are licensed under the Creative Commons Attribution 4.0 International Public License.",
       "attribution_reviewed": false,
-      "attribution": "Lessons In Industrial Instrumentation, Tony R. Kuphaldt, Version 3.01. CC BY 4.0. http://www.ibiblio.org/kuphaldt/socratic/sinst/",
+      "attribution": "Lessons In Industrial Instrumentation, Tony R. Kuphaldt, Version 2.33 (development). CC BY 4.0. http://www.ibiblio.org/kuphaldt/socratic/sinst/",
       "pdf_path": "data/knowledge-base/sources/22256a8f4e25cbc973bcbd0764e98450b391f55268a0fafcf41a417c2e0d9724.pdf",
       "sha256": "22256a8f4e25cbc973bcbd0764e98450b391f55268a0fafcf41a417c2e0d9724",
       "bytes": 103240098,
@@ -8301,7 +8864,8 @@
       "first_content_page": 32,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "industrial-systems-engineering"
+      "subject_id": "industrial-systems-engineering",
+      "version": 1
     },
     {
       "id": "liquidity-markets-and-trading-in-action",
@@ -9267,9 +9831,143 @@
       "bytes": 35166435,
       "pages": 1470,
       "first_content_page": 35,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 39,
+          "bbox": [
+            69.477,
+            108.611,
+            930.523,
+            389.307
+          ],
+          "figure": "Figure 1.1 Mental Health Continuum",
+          "figure_id": "fig_27fdf8dfa6de5c_188",
+          "credit": "Adapted from “Continuum.jpg” by University of Michigan (used with permission)."
+        },
+        {
+          "page": 222,
+          "bbox": [
+            69.477,
+            185.316,
+            930.523,
+            466.011
+          ],
+          "figure": "Figure 4.2 Mental Health Continuum",
+          "figure_id": "fig_27fdf8dfa6de5c_1297",
+          "credit": "Adapted from “Continuum.jpg” by University of Michigan (used with permission). Access original at https://hr.umich.edu/sites/default/files/promoting-mh-in-the-workplace.pdf"
+        },
+        {
+          "page": 257,
+          "bbox": [
+            180.147,
+            351.755,
+            819.853,
+            598.914
+          ],
+          "figure": "Figure 4.4 Human Life Cycle",
+          "figure_id": "fig_27fdf8dfa6de5c_1517",
+          "credit": "“shutterstock_149010437.jpg” by Robert Adrian Hillman is used under license from Shutterstock.com"
+        },
+        {
+          "page": 644,
+          "bbox": [
+            226.103,
+            53.687,
+            773.897,
+            416.511
+          ],
+          "figure": "Figure 9.6 Agoraphobia",
+          "figure_id": "fig_27fdf8dfa6de5c_3921",
+          "credit": "“Agoraphobia” by Ali Emad is licensed under CC BY-NC-ND 4.0"
+        },
+        {
+          "page": 658,
+          "bbox": [
+            230.392,
+            108.611,
+            769.608,
+            421.111
+          ],
+          "figure": "Figure 9.7 Obsessive Compulsive Disorder",
+          "figure_id": "fig_27fdf8dfa6de5c_4021",
+          "credit": "“Cope-With-Obsessive-Compulsive-Disorder-Step-15.jpg” by unknown author at wikihow.com is licensed under CC BY-NC-SA 3.0"
+        },
+        {
+          "page": 972,
+          "bbox": [
+            236.52,
+            108.611,
+            763.48,
+            379.413
+          ],
+          "figure": "Figure 12.9 Children With Special Needs Playing at an Autism School",
+          "figure_id": "fig_27fdf8dfa6de5c_6058",
+          "credit": "“4885680339_721cd1843e_k” by World Bank Photo Collection is licensed under CC BY-NC-ND 2.0"
+        },
+        {
+          "page": 1011,
+          "bbox": [
+            280.637,
+            361.467,
+            719.363,
+            587.588
+          ],
+          "figure": "Figure 13.4 Underweight model",
+          "figure_id": "fig_27fdf8dfa6de5c_6316",
+          "credit": "“7991065935_8f05b38f46_k” by Farrukh is licensed under CC BY-NC 2.0."
+        },
+        {
+          "page": 1261,
+          "bbox": [
+            193.015,
+            210.884,
+            806.985,
+            685.316
+          ],
+          "figure": "Figure 15.10 Safety Plan",
+          "figure_id": "fig_27fdf8dfa6de5c_7926",
+          "credit": "16. “vaw-covid-1.jpg” by unknown author for World Health Organization is licensed under CC BY-NC-SA 3.0 IGO. Access for free at https://www.who.int/ multi-media/details/make-a-safety-plan-for-you-and-your-children"
+        },
+        {
+          "page": 1326,
+          "bbox": [
+            243.26,
+            53.687,
+            756.74,
+            351.271
+          ],
+          "figure": "Figure 16.9 Primary Prevention: An Immunization Clinic",
+          "figure_id": "fig_27fdf8dfa6de5c_8368",
+          "credit": "“10442934136_1f910af332_b” by Lower Columbia College (LCC) is licensed under CC BY_NC-ND 2.0"
+        },
+        {
+          "page": 1357,
+          "bbox": [
+            198.529,
+            53.687,
+            801.471,
+            363.08
+          ],
+          "figure": "Figure 17.3 Child of a Minority Population",
+          "figure_id": "fig_27fdf8dfa6de5c_8570",
+          "credit": "“3678466365_da63d01385_b” by Xavier Donat is licensed under CC BY-NC-ND 2.0"
+        },
+        {
+          "page": 1372,
+          "bbox": [
+            206.495,
+            108.611,
+            793.505,
+            459.441
+          ],
+          "figure": "Figure 17.10 Migrant Workers Harvesting Cabbage",
+          "figure_id": "fig_27fdf8dfa6de5c_8671",
+          "credit": "“5123728839_1b7ce92b5c_k” by Bob Jagendorf is licensed under CC BY-NC 2.0"
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "nursing"
+      "subject_id": "nursing",
+      "version": 1
     },
     {
       "id": "online-statistics-education-an-interactive-multimedia-course",
@@ -10265,7 +10963,8 @@
       "first_content_page": 1,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "programming"
+      "subject_id": "programming",
+      "version": 1
     },
     {
       "id": "programming-fundamentals-a-modular-structured-approach-using",
@@ -10393,6 +11092,37 @@
       "rights_notes": [],
       "subject_id": "political-science",
       "version": 2
+    },
+    {
+      "id": "quantitative-research-methods-for-political-science-public-p",
+      "title": "Quantitative Research Methods for Political Science, Public Policy and Public Administration (With Applications in R)",
+      "authors": [
+        "Jenkins-Smith, Hank C.",
+        "Ripberger, Joseph T.",
+        "Copeland, Gary",
+        "Nowlin, Matthew C.",
+        "Hughes, Tyler",
+        "Fister, Aaron L.",
+        "Wehde, Wesley"
+      ],
+      "edition": "3rd Edition",
+      "source_url": "https://shareok.org/items/76bc8ffa-e266-4301-ae5d-47402145ce3d",
+      "download_url": "https://shareok.org/bitstreams/f0dc6522-ec87-461b-baa5-2aa604e6e71d/download",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "license_evidence_url": "https://shareok.org/bitstreams/f0dc6522-ec87-461b-baa5-2aa604e6e71d/download#page=3",
+      "license_evidence_quote": "This work is licensed under a Creative Commons Attribution 4.0 International License (CC BY 4.0).",
+      "attribution_reviewed": false,
+      "attribution": "Quantitative Research Methods for Political Science, Public Policy and Public Administration (With Applications in R), Jenkins-Smith, Hank C., Ripberger, Joseph T., Copeland, Gary, Nowlin, Matthew C., Hughes, Tyler, Fister, Aaron L., Wehde, Wesley, 3rd Edition. CC BY 4.0. https://shareok.org/items/76bc8ffa-e266-4301-ae5d-47402145ce3d",
+      "pdf_path": "data/knowledge-base/sources/3e77c7b33abac00da1348bec25312e8c30d7edacb1373a9ee850a094211b851e.pdf",
+      "sha256": "3e77c7b33abac00da1348bec25312e8c30d7edacb1373a9ee850a094211b851e",
+      "bytes": 4311716,
+      "pages": 259,
+      "first_content_page": 11,
+      "figure_exclusions": [],
+      "rights_notes": [],
+      "subject_id": "political-science",
+      "version": 1
     },
     {
       "id": "restorying-education-critical-perspectives-in-public-educati",
@@ -11427,9 +12157,23 @@
       "bytes": 2759704,
       "pages": 454,
       "first_content_page": 1,
-      "figure_exclusions": [],
+      "figure_exclusions": [
+        {
+          "page": 1,
+          "bbox": [
+            235.294,
+            136.364,
+            764.706,
+            698.485
+          ],
+          "figure": "Cover art and CALI/eLangdell logos",
+          "figure_id": "fig_45f0614e4eb772_0",
+          "credit": "Cover art design is a copyrighted work of CALI, all rights reserved; cover art and logos excluded from CC BY-SA 4.0 and require written CALI permission."
+        }
+      ],
       "rights_notes": [],
-      "subject_id": "civil-law-procedure"
+      "subject_id": "civil-law-procedure",
+      "version": 1
     },
     {
       "id": "tourism-the-international-business",
@@ -11612,7 +12356,8 @@
       "first_content_page": 9,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "discrete-mathematics"
+      "subject_id": "discrete-mathematics",
+      "version": 1
     },
     {
       "id": "you-re-smarter-than-you-think-introduction-to-statistics-com",
@@ -11636,7 +12381,8 @@
       "first_content_page": 10,
       "figure_exclusions": [],
       "rights_notes": [],
-      "subject_id": "statistics"
+      "subject_id": "statistics",
+      "version": 1
     }
   ]
 }
