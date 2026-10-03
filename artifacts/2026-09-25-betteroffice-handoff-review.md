@@ -1,5 +1,7 @@
 # Review of the 2026-09-24 BetterOffice upstream handoff
 
+> **Status:** Completed 2026-09-26. Kept as history; open Office work is in `todo-office.md`.
+
 Date: 2026-09-25. Reviews `artifacts/2026-09-24-betteroffice-upstream-handoff.md` against
 `origin/capy-ci` (`dfa3f05e`), upstream at `0ba58e5a`, and Capy at HEAD. Doc line numbers
 refer to the handoff file. `ci:` and `up:` mean the same refs as in the handoff.

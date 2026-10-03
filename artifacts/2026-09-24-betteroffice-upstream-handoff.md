@@ -1,5 +1,7 @@
 # BetterOffice upstream port handoff
 
+> **Status:** Completed 2026-09-26 (upstream merge landed). Kept as history; open Office work is in `todo-office.md`.
+
 Date: 2026-09-24. For Epo, continuing locally after the chat review of the same day.
 
 This compares our fork `samyung0/betteroffice` at `capy-ci` (`dfa3f05e`, the commit

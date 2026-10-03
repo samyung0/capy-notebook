@@ -1,5 +1,7 @@
 # DOCX follow-up handoff (2026-10-01)
 
+> **Status:** Completed 2026-10-03: items 1–6, the toolbar, perf and header tracks landed (fork `capy-ci` dd87c75e). Kept as history; open items and the how-to-work notes moved to `todo-office.md`.
+
 For the agent picking up the remaining BetterOffice DOCX items. It replaces the
 2026-09-30 handoff.
 

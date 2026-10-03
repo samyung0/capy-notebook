@@ -1,5 +1,7 @@
 # Office round: upstream merge, storage and publication fixes
 
+> **Status:** Completed (C1–C6, F1–F3 landed by 2026-09-29; progress in `artifacts/2026-09-25-office-progress/`). Kept as history; its "Not in this round" list moved to `todo-office.md`.
+
 Date: 2026-09-25. Plan for implementer agents, one work package per run, each followed by a
 reviewer run (`human` skill review loop). Every decision this plan implements is recorded in
 `human/`; this file only orders the work and says where it goes. If a step here and a record in
