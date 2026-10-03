@@ -148,12 +148,6 @@ and `/Users/sam/web/capy-docx-review-harnesses/2026-10-02-toolbar/screenshots/`.
 
 Left over:
 
-- XLSX and PPTX get the same treatment as a separate task (decided, last
-  XLSX/PPTX line in `human/frontend/office-files.md`). Their editors still
-  paint light chrome in dark mode, and the row under the file header is an
-  empty 40 px strip once their editor is ready.
-- After a runtime reload the host re-sends `load` and `set-appearance` but not
-  `set-citation` or `set-capabilities` (older than this track).
 - Inline SVGs in the print preview, find/replace and shortcut dialogs, toasts
   and placeholders still draw the fork's icons (outside the icon decision).
 - The edge fades were checked in Chromium only, not a real Firefox.
