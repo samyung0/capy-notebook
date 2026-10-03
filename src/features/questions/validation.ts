@@ -155,7 +155,14 @@ const graphElement = z.discriminatedUnion('type', [
   z.strictObject({
     id: identifier,
     points: z.tuple([identifier, identifier]),
-    type: z.enum(['line', 'segment']),
+    type: z.literal('line'),
+    ...style,
+  }),
+  z.strictObject({
+    id: identifier,
+    points: z.tuple([identifier, identifier]),
+    ticks: z.number().int().min(1).max(3).optional(),
+    type: z.literal('segment'),
     ...style,
   }),
   z.strictObject({
@@ -171,6 +178,35 @@ const graphElement = z.discriminatedUnion('type', [
     id: identifier,
     text,
     type: z.literal('text'),
+  }),
+  z.strictObject({
+    hidden: z.boolean().optional(),
+    id: identifier,
+    label: meta.optional(),
+    points: z.tuple([identifier, identifier, identifier]),
+    type: z.literal('angle'),
+  }),
+  z.strictObject({
+    center: identifier,
+    id: identifier,
+    points: z.tuple([identifier, identifier]),
+    type: z.literal('arc'),
+    ...style,
+  }),
+  z.strictObject({
+    center: identifier,
+    id: identifier,
+    points: z.tuple([identifier, identifier]),
+    shade: z.boolean().optional(),
+    type: z.literal('sector'),
+    ...style,
+  }),
+  z.strictObject({
+    id: identifier,
+    points: z.array(identifier).min(3).max(limits.QUESTION_GRAPH_POLYGON_MAX),
+    shade: z.boolean().optional(),
+    type: z.literal('polygon'),
+    ...style,
   }),
 ]);
 
@@ -217,7 +253,6 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         )
         .min(1)
         .max(limits.QUESTION_CHART_SERIES_MAX),
-      showValues: z.boolean().optional(),
       title: meta,
       type: z.literal('chart'),
       unit: meta.optional(),
@@ -290,12 +325,20 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
             message: m.question_validation_graph_ids(),
           });
         ids.add(element.id);
-        if ('points' in element && element.points.some((id) => !points.has(id)))
+        if (
+          'points' in element &&
+          (element.points.some((id) => !points.has(id)) ||
+            new Set(element.points).size !== element.points.length)
+        )
           ctx.addIssue({
             code: 'custom',
             message: m.question_validation_graph_lines(),
           });
-        if (element.type === 'circle' && !points.has(element.center))
+        if (
+          'center' in element &&
+          (!points.has(element.center) ||
+            ('points' in element && element.points.includes(element.center)))
+        )
           ctx.addIssue({
             code: 'custom',
             message: m.question_validation_graph_circles(),
@@ -384,19 +427,24 @@ export const questionSchema = z.strictObject({
           .max(limits.QUESTION_BLOCKS_MAX),
         id: identifier,
         itemAwards: z.array(finite).optional(),
+        marks: z.number().int().min(1).max(limits.QUESTION_MARKS_MAX),
         markscheme: z
           .array(
-            z
-              .string()
-              .trim()
-              .min(1)
-              .refine(
-                (value) => [...value].length <= limits.QUESTION_MARK_ITEM_MAX,
-                { error: () => m.question_validation_text_too_long() }
-              )
+            z.strictObject({
+              marks: z.number().int().min(1),
+              text: z
+                .string()
+                .trim()
+                .min(1)
+                .refine(
+                  (value) => [...value].length <= limits.QUESTION_MARK_ITEM_MAX,
+                  { error: () => m.question_validation_text_too_long() }
+                ),
+            })
           )
           .min(1)
-          .max(limits.QUESTION_MARKSCHEME_MAX),
+          .max(limits.QUESTION_MARKSCHEME_MAX)
+          .optional(),
         solution: z.array(questionBlockSchema).max(limits.QUESTION_BLOCKS_MAX),
       })
     )
@@ -435,17 +483,20 @@ export function validateQuestion(
       (part.awarded !== undefined || part.itemAwards !== undefined)
     )
       throw new CopyError(m.question_validation_awarded_marks());
+    // Only open parts have a marking scheme, which Jev grades against.
+    if ((part.answer.type === 'open') !== (part.markscheme !== undefined))
+      throw new CopyError(m.question_validation_markscheme_open());
+    if (
+      part.markscheme &&
+      part.markscheme.reduce((sum, item) => sum + item.marks, 0) !== part.marks
+    )
+      throw new CopyError(m.question_validation_markscheme_total());
     if (
       part.awarded !== undefined &&
-      (part.awarded > part.markscheme.length || (part.awarded * 2) % 1 !== 0)
+      (part.awarded > part.marks || (part.awarded * 2) % 1 !== 0)
     )
       throw new CopyError(m.question_validation_awarded_range());
-    if (
-      part.itemAwards !== undefined &&
-      (part.itemAwards.length !== part.markscheme.length ||
-        part.itemAwards.some((award) => ![0, 0.5, 1].includes(award)) ||
-        part.itemAwards.reduce((sum, award) => sum + award, 0) !== part.awarded)
-    )
+    if (part.itemAwards !== undefined && !validItemAwards(part))
       throw new CopyError(m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
       throw new CopyError(m.question_validation_bank_solution());
@@ -475,9 +526,24 @@ export function validateQuestion(
   return question;
 }
 
+/** Open parts earn none, half or all of each item's marks, summing to `awarded`. */
+function validItemAwards(part: Question['parts'][number]): boolean {
+  const awards = part.itemAwards ?? [];
+  const items = part.markscheme;
+  return (
+    items !== undefined &&
+    awards.length === items.length &&
+    awards.every((award, i) => {
+      const marks = items[i].marks;
+      return award === 0 || award === marks / 2 || award === marks;
+    }) &&
+    awards.reduce((sum, award) => sum + award, 0) === part.awarded
+  );
+}
+
 /** User quizzes (not the bank) cap marking items and sample answer length per part. */
 function quizPartBounds(part: Question['parts'][number]) {
-  if (part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
+  if (part.markscheme && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
     throw new CopyError(
       m.question_validation_quiz_markscheme({ max: limits.QUIZ_MARKSCHEME_MAX })
     );

@@ -45,7 +45,7 @@ func TestBankMigrationAndReviewSurviveEdit(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES ('exam','Exam',1);INSERT INTO subjects VALUES ('subject','exam','Subject',1);INSERT INTO topics VALUES ('topic','subject','Topic',1)`); err != nil {
 		t.Fatal(err)
 	}
-	raw := `{"id":"q","stem":[{"type":"text","text":"Question"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"short","accepted":["2"]},"markscheme":["Correct"],"solution":[{"type":"text","text":"Two"}]}],"layout":"paper","labels":"letters"}`
+	raw := `{"id":"q","stem":[{"type":"text","text":"Question"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"short","accepted":["2"]},"marks":1,"solution":[{"type":"text","text":"Two"}]}],"layout":"paper","labels":"letters"}`
 	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q','topic',1,$1,'run')`, raw); err != nil {
 		t.Fatal(err)
 	}

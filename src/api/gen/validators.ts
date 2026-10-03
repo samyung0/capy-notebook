@@ -205,16 +205,33 @@ export const BankQuestionBatchResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "question": zod.record(zod.string(), zod.unknown()),
   "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
   "reviewedBy": zod.string(),
   "reviewerName": zod.string(),
   "sources": zod.array(zod.object({
-  "bookId": zod.string(),
-  "excerptId": zod.string(),
-  "version": zod.int()
+  "authors": zod.array(zod.string()).nullish(),
+  "bookId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
+  "kind": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional(),
+  "version": zod.int().optional()
 })).nullable(),
   "subjectLabel": zod.string(),
   "topicId": zod.string(),
@@ -248,16 +265,33 @@ export const BankQuestionResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "question": zod.record(zod.string(), zod.unknown()),
   "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
   "reviewedBy": zod.string(),
   "reviewerName": zod.string(),
   "sources": zod.array(zod.object({
-  "bookId": zod.string(),
-  "excerptId": zod.string(),
-  "version": zod.int()
+  "authors": zod.array(zod.string()).nullish(),
+  "bookId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
+  "kind": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional(),
+  "version": zod.int().optional()
 })).nullable(),
   "subjectLabel": zod.string(),
   "topicId": zod.string(),
@@ -295,16 +329,33 @@ export const SaveBankQuestionResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "question": zod.record(zod.string(), zod.unknown()),
   "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
   "reviewedBy": zod.string(),
   "reviewerName": zod.string(),
   "sources": zod.array(zod.object({
-  "bookId": zod.string(),
-  "excerptId": zod.string(),
-  "version": zod.int()
+  "authors": zod.array(zod.string()).nullish(),
+  "bookId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
+  "kind": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional(),
+  "version": zod.int().optional()
 })).nullable(),
   "subjectLabel": zod.string(),
   "topicId": zod.string(),
@@ -359,16 +410,33 @@ export const ReviewBankQuestionResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "question": zod.record(zod.string(), zod.unknown()),
   "reviewedAt": zod.iso.datetime({"offset":true}).nullable(),
   "reviewedBy": zod.string(),
   "reviewerName": zod.string(),
   "sources": zod.array(zod.object({
-  "bookId": zod.string(),
-  "excerptId": zod.string(),
-  "version": zod.int()
+  "authors": zod.array(zod.string()).nullish(),
+  "bookId": zod.string().optional(),
+  "excerptId": zod.string().optional(),
+  "kind": zod.string(),
+  "license": zod.string().optional(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional(),
+  "version": zod.int().optional()
 })).nullable(),
   "subjectLabel": zod.string(),
   "topicId": zod.string(),
@@ -853,7 +921,16 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
@@ -889,7 +966,16 @@ export const ExploreQuizzesResponseItem = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -988,7 +1074,16 @@ export const ListOwnedFilesResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
@@ -1047,7 +1142,16 @@ export const GetFileResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
@@ -1095,7 +1199,16 @@ export const UpdateFileResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
@@ -1433,7 +1546,16 @@ export const CreateFlashcardSetResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
@@ -1579,7 +1701,16 @@ export const GetFlashcardSetResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
@@ -1693,7 +1824,16 @@ export const CloneFlashcardSetResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
@@ -1790,7 +1930,16 @@ export const UpdateFlashcardSetResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
@@ -1834,7 +1983,16 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sharePath": zod.string().optional(),
@@ -2033,7 +2191,16 @@ export const CreateStandaloneMaterialResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -2107,7 +2274,16 @@ export const GetMaterialResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -2163,7 +2339,16 @@ export const CloneMaterialResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -2341,7 +2526,16 @@ export const CreateEmbeddedMaterialResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -2430,7 +2624,16 @@ export const UpdateMaterialSharingResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -2635,7 +2838,16 @@ export const GetMistakesResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -2798,7 +3010,16 @@ export const GetAnonymousFlashcardsResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional()
 })
 
@@ -2827,7 +3048,16 @@ export const GetAnonymousQuizResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.unknown()
 })
@@ -2942,7 +3172,16 @@ export const CreateQuizResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -2999,7 +3238,16 @@ export const GetQuizResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -3073,7 +3321,16 @@ export const CloneQuizResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -3120,7 +3377,16 @@ export const UpdateQuizContentResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -3189,7 +3455,16 @@ export const UpdateQuizMetadataResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -3232,7 +3507,16 @@ export const UpdateQuizSharingResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "revision": zod.int(),
@@ -4088,7 +4372,16 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
@@ -4177,7 +4470,16 @@ export const ListMaterialsResponseItem = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
@@ -4244,7 +4546,16 @@ export const CreateMaterialResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "role": zod.enum(['owner', 'editor', 'viewer']).optional(),
@@ -4392,7 +4703,16 @@ export const UploadSourceResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
@@ -4564,7 +4884,16 @@ export const CompleteSourceUploadResponse = zod.object({
   "title": zod.string(),
   "version": zod.int()
 })),
-  "license": zod.string().optional()
+  "license": zod.string().optional(),
+  "web": zod.array(zod.object({
+  "authors": zod.array(zod.string()),
+  "license": zod.string(),
+  "licenseUrl": zod.string().optional(),
+  "publisher": zod.string().optional(),
+  "retrievedAt": zod.string(),
+  "title": zod.string(),
+  "url": zod.string()
+})).nullish()
 }).optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),

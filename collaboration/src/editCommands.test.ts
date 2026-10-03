@@ -46,7 +46,7 @@ describe('material edit commands', () => {
           answer: { correct: true, type: 'boolean' },
           blocks: [{ text: 'True?', type: 'text' }],
           id: 'p1',
-          markscheme: ['Correct'],
+          marks: 1,
           solution: [],
         },
       ],

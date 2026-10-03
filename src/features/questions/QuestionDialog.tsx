@@ -34,8 +34,9 @@ import {
   AnswerEditor,
   answerLabels,
   emptyAnswer,
+  MarkschemeList,
+  markOptions,
   SelectField,
-  StringList,
 } from './editorFields';
 import { renderGraphSvg } from './graph';
 import { type BlockSection, QuestionBlockView } from './QuestionView';
@@ -44,6 +45,7 @@ import {
   blankQuestion,
   QUESTION_TYPES,
   type Question,
+  type QuestionAnswer,
   type QuestionBlock,
   type QuestionPart,
 } from './types';
@@ -57,6 +59,25 @@ const blockLabels = {
   table: m.question_ui_table,
   text: m.question_ui_text,
 };
+/** Open answers carry a marking scheme worth the part's marks; closed ones drop it. */
+const withAnswer = (
+  part: QuestionPart,
+  answer: QuestionAnswer
+): QuestionPart =>
+  answer.type === 'open'
+    ? {
+        ...part,
+        answer,
+        markscheme: part.markscheme ?? [{ marks: part.marks, text: '' }],
+      }
+    : { ...part, answer, itemAwards: undefined, markscheme: undefined };
+
+// Only open parts have a marking scheme.
+const answerTitle = (part: QuestionPart) =>
+  part.answer.type === 'open'
+    ? m.question_ui_answer_and_marking_scheme()
+    : m.question_ui_answer_and_marks();
+
 const marksLabel = (count: number) =>
   count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
 const blockSummary = (block: QuestionBlock) =>
@@ -556,7 +577,7 @@ function QuestionDialogSession({
                     setEditing({ kind: 'part', part: structuredClone(part) })
                   }
                 >
-                  {m.question_ui_answer_and_marking_scheme()}
+                  {answerTitle(part)}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
               </>
@@ -832,7 +853,7 @@ function QuestionDialogSession({
             </Button>
             <h3 className="t-large-card-title">
               {editing.kind === 'part'
-                ? m.question_ui_answer_and_marking_scheme()
+                ? answerTitle(editing.part)
                 : blockLabels[editing.block.type]()}
             </h3>
             {editing.kind === 'block' ? (
@@ -857,22 +878,43 @@ function QuestionDialogSession({
                   onChange={(answer) =>
                     setEditing({
                       ...editing,
-                      part: { ...editing.part, answer },
+                      part: withAnswer(editing.part, answer),
                     })
                   }
                 />
-                <StringList
-                  label={m.question_ui_scheme_marks({
-                    marks: marksLabel(editing.part.markscheme.length),
-                  })}
-                  onChange={(markscheme) =>
-                    setEditing({
-                      ...editing,
-                      part: { ...editing.part, markscheme },
-                    })
-                  }
-                  values={editing.part.markscheme}
-                />
+                {editing.part.markscheme ? (
+                  <MarkschemeList
+                    items={editing.part.markscheme}
+                    label={m.question_ui_scheme_marks({
+                      marks: marksLabel(editing.part.marks),
+                    })}
+                    onChange={(markscheme) =>
+                      setEditing({
+                        ...editing,
+                        part: {
+                          ...editing.part,
+                          marks: markscheme.reduce(
+                            (sum, item) => sum + item.marks,
+                            0
+                          ),
+                          markscheme,
+                        },
+                      })
+                    }
+                  />
+                ) : (
+                  <SelectField
+                    label={m.question_ui_part_marks()}
+                    onChange={(value) =>
+                      setEditing({
+                        ...editing,
+                        part: { ...editing.part, marks: Number(value) },
+                      })
+                    }
+                    options={markOptions}
+                    value={String(editing.part.marks)}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -998,14 +1040,10 @@ function QuestionDialogSession({
                         }
                       )
                     )}
-                    {row(
-                      { kind: 'part', partId: part.id },
-                      m.question_ui_answer_and_marking_scheme(),
-                      {
-                        mark: part.blocks.length ? undefined : mark,
-                        meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.markscheme.length)}`,
-                      }
-                    )}
+                    {row({ kind: 'part', partId: part.id }, answerTitle(part), {
+                      mark: part.blocks.length ? undefined : mark,
+                      meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.marks)}`,
+                    })}
                     {row(
                       { kind: 'solution', partId: part.id },
                       m.question_ui_worked_solution(),

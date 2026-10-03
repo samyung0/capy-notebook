@@ -69,7 +69,7 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO exams VALUES('e','Exam',1);INSERT INTO subjects VALUES('s','e','Subject',1);INSERT INTO topics VALUES('t','s','Topic',1)`); err != nil {
 		t.Fatal(err)
 	}
-	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"short","accepted":["secret-answer"]},"markscheme":["secret-scheme"],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
+	q := `{"id":"q","stem":[{"type":"text","text":"Stem"}],"parts":[{"id":"p","blocks":[{"type":"text","text":"Answer this"}],"answer":{"type":"open","accepted":["secret-answer"],"hints":[]},"marks":1,"markscheme":[{"text":"secret-scheme","marks":1}],"solution":[{"type":"text","text":"secret-solution"}]}],"layout":"paper","labels":"letters"}`
 	if _, err := pool.Exec(ctx, `INSERT INTO questions(id,topic_id,position,content,run)VALUES('q','t',1,$1,'test')`, q); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,8 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
  INSERT INTO library_books VALUES('book','Source book','["Author"]','Edition','CC BY-SA 4.0','https://creativecommons.org/licenses/by-sa/4.0/','https://source.example/book');
  INSERT INTO library_book_versions VALUES('book',1,'old'),('book',2,'new');
  INSERT INTO library_excerpts VALUES('excerpt','book','old');
- UPDATE questions SET sources='[{"excerptId":"excerpt","bookId":"book","version":1}]' WHERE id='q'`); err != nil {
+ UPDATE questions SET sources='[{"kind":"library","excerptId":"excerpt","bookId":"book","version":1}]' WHERE id='q';
+ UPDATE questions SET sources='[{"kind":"web","url":"https://open.example/essay","title":"An essay","authors":["Writer"],"license":"CC BY 4.0","retrievedAt":"2026-10-02"}]' WHERE id='q2'`); err != nil {
 		t.Fatal(err)
 	}
 	bankStore := bank.New(bankDSN, bankDSN, "https://bank.example/assets", bankDSN)
@@ -121,6 +122,9 @@ func TestBankHTTPPermissionsAssetsAndComments(t *testing.T) {
 	var page struct{ Questions []bank.Detail }
 	if err := json.Unmarshal(batch.Body.Bytes(), &page); err != nil || batch.Code != 200 {
 		t.Fatalf("batch: %d %s", batch.Code, batch.Body.String())
+	}
+	if web := page.Questions[0].Provenance; web == nil || len(web.Web) != 1 || web.Web[0].URL != "https://open.example/essay" || len(web.Books) != 0 || web.License != "" {
+		t.Fatalf("web attribution: %#v", web)
 	}
 	if len(page.Questions) != 2 || page.Questions[0].Question["id"] != "q2" || page.Questions[1].Provenance == nil || !strings.Contains(batch.Body.String(), "secret-answer") {
 		t.Fatalf("batch order or attribution: %s", batch.Body.String())

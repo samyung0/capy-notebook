@@ -4,6 +4,21 @@ No model calls, uploads or database writes happen on import or during `check`.
 Each stage below is explicit. Question data stays under ignored
 `data/question-bank`; private references never enter writer or solver input.
 
+Round 2 (2026-10-02) replaces the per-topic `references` and `style` stages
+with one private writer guide per exam, built from analyses of real papers
+(`data/question-bank/style/`, `data/question-bank/analysis/`). Each topic's
+`style.md` is a copy of its exam's guide, and `references/` holds copies of the
+exam's private reference texts for the copy check. See
+`question-bank-round-2-plan.md`.
+
+IELTS passages are adapted to the difficulty of real Cambridge passages.
+`readability.py check <passage.txt>` (run with
+`uv run --no-project --with wordfreq`) reports mean sentence length, the share
+of sentences over 35 words and the share of uncommon words (Zipf below 3), lists
+those words and sentences, and fails above the 75th percentile of the 24
+Cambridge IELTS 19 and 20 passages. `readability.py calibrate` rebuilds that band
+from the private book texts.
+
 Before a pilot, supply an official syllabus and a topic directory containing
 `topic.json`. This contains `exam`, `subject`, and `topic` objects, each with
 `id`, `label`, and integer `position`; `topic` also needs a verified
@@ -93,11 +108,16 @@ those and merges them into both manifests, so the other questions keep their
 blind evidence. A whole-topic rerender changes every learner PNG whenever the
 components have changed, and every question then needs a fresh blind solve.
 
-`passage` writes one question per entry of `passages.json`, each an excerpt
-record (`excerptId`, `bookId`, `version`, book, licence and exact library text)
-chosen for the topic's task type. The writer may lightly adapt the passage but
-adds no facts. Admission records each question's `sources.json` entry from its
-packet's excerpt, never from the writer.
+`passage` writes one full IELTS passage question per entry of `passages.json`.
+Each entry names its `section` pattern (1, 2 or 3) and is either a library
+excerpt (`kind: "library"`, `excerptId`, `bookId`, `version`, book, licence and
+exact library text) or an openly licensed web page (`kind: "web"`, `url`,
+`title`, `authors`, `publisher`, `license`, `licenseUrl`, `retrievedAt`, the
+licence evidence and the exact text). `topic.json`'s subject must carry the
+syllabus `question_types`. The writer may lightly adapt the passage but adds no
+facts. Admission records each question's `sources.json` entry from its packet's
+passage, never from the writer, and its task types in `question-types.json`,
+which `prepare-publish` carries into `publish.json` as `questionTypes`.
 
 Copy checking flags every shared 12-word run against extracted references.
 `prepare-publish` rejects missing/stale evidence, drops unresolved disagreements

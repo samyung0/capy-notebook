@@ -12,109 +12,109 @@
       "topics": [
         {
           "id": "hkdse-math-compulsory-quadratic-equations",
-          "label": "Solving single-variable quadratics",
+          "label": "Quadratic equations in one unknown",
           "position": 1,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=6"
         },
         {
           "id": "hkdse-math-compulsory-functions-and-graphs",
-          "label": "Functions and their graphs",
+          "label": "Functions and graphs",
           "position": 2,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=9"
         },
         {
           "id": "hkdse-math-compulsory-exponentials-and-logarithms",
-          "label": "Exponential functions and logarithms",
+          "label": "Exponential and logarithmic functions",
           "position": 3,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=12"
         },
         {
           "id": "hkdse-math-compulsory-polynomials",
-          "label": "Polynomial operations and theorems",
+          "label": "More about polynomials",
           "position": 4,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=15"
         },
         {
           "id": "hkdse-math-compulsory-equations",
-          "label": "Further equation-solving methods",
+          "label": "More about equations",
           "position": 5,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=17"
         },
         {
           "id": "hkdse-math-compulsory-variations",
-          "label": "Direct, inverse and joint variation",
+          "label": "Variations",
           "position": 6,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=19"
         },
         {
           "id": "hkdse-math-compulsory-sequences-and-series",
-          "label": "Arithmetic/geometric sequences and sums",
+          "label": "Arithmetic and geometric sequences and their summations",
           "position": 7,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=20"
         },
         {
           "id": "hkdse-math-compulsory-inequalities-and-linear-programming",
-          "label": "Solving inequalities and linear optimisation",
+          "label": "Inequalities and linear programming",
           "position": 8,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=22"
         },
         {
           "id": "hkdse-math-compulsory-graphs-of-functions",
-          "label": "Transforming and comparing function graphs",
+          "label": "More about graphs of functions",
           "position": 9,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=24"
         },
         {
           "id": "hkdse-math-compulsory-straight-lines",
-          "label": "Straight-line coordinate equations",
+          "label": "Equations of straight lines",
           "position": 10,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=26"
         },
         {
           "id": "hkdse-math-compulsory-circle-properties",
-          "label": "Circle geometry and theorems",
+          "label": "Basic properties of circles",
           "position": 11,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=28"
         },
         {
           "id": "hkdse-math-compulsory-loci",
-          "label": "Geometric loci",
+          "label": "Loci",
           "position": 12,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=31"
         },
         {
           "id": "hkdse-math-compulsory-circle-equations",
-          "label": "Circle equations in coordinates",
+          "label": "Equations of circles",
           "position": 13,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=32"
         },
         {
           "id": "hkdse-math-compulsory-trigonometry",
-          "label": "Trigonometric relationships and applications",
+          "label": "More about trigonometry",
           "position": 14,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=33"
         },
         {
           "id": "hkdse-math-compulsory-permutations-and-combinations",
-          "label": "Counting arrangements and selections",
+          "label": "Permutations and combinations",
           "position": 15,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=35"
         },
         {
           "id": "hkdse-math-compulsory-probability",
-          "label": "Combined events and probability",
+          "label": "More about probability",
           "position": 16,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=37"
         },
         {
           "id": "hkdse-math-compulsory-dispersion",
-          "label": "Quantifying spread in data",
+          "label": "Measures of dispersion",
           "position": 17,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=39"
         },
         {
           "id": "hkdse-math-compulsory-uses-and-abuses-of-statistics",
-          "label": "Evaluating statistical methods and claims",
+          "label": "Uses and abuses of statistics",
           "position": 18,
           "syllabus_reference": "https://www.edb.gov.hk/attachment/en/curriculum-development/kla/ma/curr/EN_CP_e.pdf#page=41"
         }

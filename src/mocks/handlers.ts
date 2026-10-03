@@ -3227,7 +3227,7 @@ function anonymousMaterial(token: string, kind: 'quiz' | 'flashcards') {
   );
 }
 
-/** Credits a marking item when the answer shares a long word with it. */
+/** Credits a marking item's marks when the answer shares a long word with it. */
 function mockGradeParts(
   questions: Question[],
   answers: Record<string, string>
@@ -3235,13 +3235,13 @@ function mockGradeParts(
   const parts: Record<string, { awarded: number; itemAwards: number[] }> = {};
   for (const part of questions.flatMap((question) => question.parts)) {
     const answer = answers[part.id]?.toLowerCase().trim();
-    if (part.answer.type !== 'open' || !answer) continue;
+    if (part.answer.type !== 'open' || !part.markscheme || !answer) continue;
     const itemAwards = part.markscheme.map((item): number =>
-      item
+      item.text
         .toLowerCase()
         .split(/\s+/)
         .some((word) => word.length > 3 && answer.includes(word))
-        ? 1
+        ? item.marks
         : 0
     );
     parts[part.id] = {

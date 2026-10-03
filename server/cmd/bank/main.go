@@ -31,11 +31,17 @@ type node struct {
 	Label             string `json:"label"`
 	Position          int    `json:"position"`
 	SyllabusReference string `json:"syllabus_reference"`
+	// QuestionTypes is a subject's task-type vocabulary, when it has one.
+	QuestionTypes []struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+	} `json:"question_types"`
 }
 type entry struct {
-	Content map[string]any  `json:"content"`
-	Sources json.RawMessage `json:"sources"`
-	SHA256  string          `json:"sha256"`
+	Content       map[string]any  `json:"content"`
+	Sources       json.RawMessage `json:"sources"`
+	QuestionTypes []string        `json:"questionTypes"`
+	SHA256        string          `json:"sha256"`
 }
 type publication struct {
 	Syllabus struct {
@@ -121,6 +127,19 @@ func loadPublication(dir, base string) (publication, []byte, error) {
 	if p.Syllabus.Topic.SyllabusReference == "" {
 		return p, nil, errors.New("verified syllabus reference required")
 	}
+	vocabulary := map[string]bool{}
+	for _, t := range p.Syllabus.Subject.QuestionTypes {
+		vocabulary[t.ID] = true
+	}
+	for _, q := range p.Questions {
+		seen := map[string]bool{}
+		for _, t := range q.QuestionTypes {
+			if !vocabulary[t] || seen[t] {
+				return p, nil, fmt.Errorf("question type %q is not in the subject's vocabulary or repeats", t)
+			}
+			seen[t] = true
+		}
+	}
 	all := make([]map[string]any, 0, len(p.Questions))
 	for _, q := range p.Questions {
 		id, ok := q.Content["id"].(string)
@@ -193,11 +212,11 @@ func parseSources(raw json.RawMessage) ([]bank.Source, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&sources); err != nil || sources == nil || len(sources) > 1024 {
-		return nil, errors.New("sources must be an explicit array of at most 1024 excerpt references")
+		return nil, errors.New("sources must be an explicit array of at most 1024 references")
 	}
 	for _, source := range sources {
-		if strings.TrimSpace(source.ExcerptID) == "" || strings.TrimSpace(source.BookID) == "" || source.Version < 1 {
-			return nil, errors.New("sources require excerptId, bookId and a positive version")
+		if err := source.Check(); err != nil {
+			return nil, err
 		}
 	}
 	return sources, nil
@@ -386,7 +405,11 @@ func insertPublication(ctx context.Context, pool *pgxpool.Pool, p publication) e
 	for _, q := range p.Questions {
 		id := q.Content["id"].(string)
 		content, _ := json.Marshal(q.Content)
-		tag, e := tx.Exec(ctx, "INSERT INTO questions(id,topic_id,position,content,sources,run) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(id) DO NOTHING", id, t.ID, position, content, q.Sources, p.Run)
+		types := q.QuestionTypes
+		if types == nil {
+			types = []string{}
+		}
+		tag, e := tx.Exec(ctx, "INSERT INTO questions(id,topic_id,position,content,sources,question_types,run) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(id) DO NOTHING", id, t.ID, position, content, q.Sources, types, p.Run)
 		if e != nil {
 			return e
 		}

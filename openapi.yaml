@@ -2881,6 +2881,11 @@ components:
           type: array
         license:
           type: string
+        web:
+          items:
+            $ref: "#/components/schemas/ProvenanceWeb"
+          nullable: true
+          type: array
       required:
         - books
       type: object
@@ -2916,6 +2921,32 @@ components:
         - authors
         - version
         - excerptIds
+      type: object
+    ProvenanceWeb:
+      additionalProperties: false
+      properties:
+        authors:
+          items:
+            type: string
+          type: array
+        license:
+          type: string
+        licenseUrl:
+          type: string
+        publisher:
+          type: string
+        retrievedAt:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+      required:
+        - url
+        - title
+        - authors
+        - license
+        - retrievedAt
       type: object
     PublicFlashcardSet:
       additionalProperties: false
@@ -3426,17 +3457,34 @@ components:
     Source:
       additionalProperties: false
       properties:
+        authors:
+          items:
+            type: string
+          nullable: true
+          type: array
         bookId:
           type: string
         excerptId:
+          type: string
+        kind:
+          type: string
+        license:
+          type: string
+        licenseUrl:
+          type: string
+        publisher:
+          type: string
+        retrievedAt:
+          type: string
+        title:
+          type: string
+        url:
           type: string
         version:
           format: int64
           type: integer
       required:
-        - excerptId
-        - bookId
-        - version
+        - kind
       type: object
     SourceCandidateReadOutputBody:
       additionalProperties: false

@@ -1073,9 +1073,19 @@ def test_normalize_questions_canonical_ids_and_optional_level():
                 {
                     "blocks": [{"type": "text", "text": "Explain"}],
                     "answer": {"type": "open", "accepted": ["Because"], "hints": []},
-                    "markscheme": ["States the cause"],
+                    "marks": 3,
+                    "markscheme": [
+                        {"text": "States the cause", "marks": 1},
+                        {"text": "Links it to the effect", "marks": 2},
+                    ],
                     "solution": [],
-                }
+                },
+                {
+                    "blocks": [{"type": "text", "text": "True?"}],
+                    "answer": {"type": "boolean", "correct": True},
+                    "marks": 2,
+                    "solution": [],
+                },
             ],
             "layout": "paper",
             "labels": "letters",
@@ -1096,6 +1106,24 @@ def test_normalize_questions_rejects_legacy_or_partial_output():
     for data in ([{"type": "short", "prompt": "?"}], ["nope", None], []):
         with pytest.raises(workflows.GenerateEmpty):
             workflows.normalize_questions(data)
+    open_answer = {"type": "open", "accepted": ["Because"], "hints": []}
+    closed_answer = {"type": "boolean", "correct": True}
+    item = {"text": "States the cause", "marks": 1}
+    # Old string items, boolean marks, mismatched sums and closed schemes.
+    for answer, extra in (
+        (open_answer, {"marks": 1, "markscheme": ["States the cause"]}),
+        (open_answer, {"marks": 1, "markscheme": [{"text": "States", "marks": True}]}),
+        (open_answer, {"marks": 2, "markscheme": [item]}),
+        (open_answer, {"marks": 1}),
+        (closed_answer, {"marks": 1, "markscheme": [item]}),
+        (closed_answer, {}),
+        (closed_answer, {"marks": True}),
+    ):
+        part = {"blocks": [{"type": "text", "text": "Explain"}], "answer": answer}
+        part |= extra | {"solution": []}
+        question = {"stem": [], "parts": [part], "layout": "paper", "labels": "letters"}
+        with pytest.raises(workflows.GenerateEmpty):
+            workflows.normalize_questions([question])
 
 
 def test_scope_label_names_both_axes():

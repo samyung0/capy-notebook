@@ -59,15 +59,15 @@ function WorkspacesSection() {
         <SkeletonCardGrid count={6} />
       ) : !recent || recent.length === 0 ? (
         <div
-          className="mt-16 flex w-full flex-col items-center justify-center gap-6 text-center"
+          className="mt-16 flex w-full flex-col items-center justify-center gap-4 text-center"
           ref={revealRef}
         >
           <p className="t-subtitle">{m.workspaces_empty()}</p>
           <Button
             asChild
-            className="hover:bg-surface-hover-bg/80"
-            iconLeft="wand"
-            size="xs"
+            className="t-subtitle! underline hover:bg-surface-hover-bg/80"
+            iconRight="sparkles"
+            size="sm"
             variant="ghost-link"
           >
             <Link preload="intent" to="/workspaces">

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -168,11 +169,50 @@ type Row struct {
 	ReviewedBy   string     `json:"reviewedBy"`
 	ReviewerName string     `json:"reviewerName"`
 }
+
+// Source is where a bank question's material came from: a library excerpt,
+// or an openly licensed web page recorded as it read when the passage was adapted.
 type Source struct {
-	ExcerptID string `json:"excerptId"`
-	BookID    string `json:"bookId"`
-	Version   int    `json:"version"`
+	Kind        string   `json:"kind"`
+	ExcerptID   string   `json:"excerptId,omitempty"`
+	BookID      string   `json:"bookId,omitempty"`
+	Version     int      `json:"version,omitempty"`
+	URL         string   `json:"url,omitempty"`
+	Title       string   `json:"title,omitempty"`
+	Authors     []string `json:"authors,omitempty"`
+	Publisher   string   `json:"publisher,omitempty"`
+	License     string   `json:"license,omitempty"`
+	LicenseURL  string   `json:"licenseUrl,omitempty"`
+	RetrievedAt string   `json:"retrievedAt,omitempty"`
 }
+
+// reusable rejects licences that forbid adapting or commercial use: learners
+// see bank passages, and passages are always adapted.
+var unusableLicense = regexp.MustCompile(`(?i)\b(ND|NC)\b|no ?deriv|non-?commercial`)
+
+// Check validates a source's own fields; Provenance resolves library excerpts.
+func (src Source) Check() error {
+	switch src.Kind {
+	case "library":
+		if strings.TrimSpace(src.ExcerptID) == "" || strings.TrimSpace(src.BookID) == "" || src.Version < 1 || src.URL != "" || src.Title != "" || len(src.Authors) > 0 || src.Publisher != "" || src.License != "" || src.LicenseURL != "" || src.RetrievedAt != "" {
+			return errors.New("library sources take excerptId, bookId and a positive version only")
+		}
+	case "web":
+		if src.ExcerptID != "" || src.BookID != "" || src.Version != 0 {
+			return errors.New("web sources take no excerpt fields")
+		}
+		if _, err := time.Parse(time.DateOnly, src.RetrievedAt); err != nil {
+			return errors.New("web sources need retrievedAt as YYYY-MM-DD")
+		}
+		if strings.TrimSpace(src.License) == "" || unusableLicense.MatchString(src.License) {
+			return errors.New("web sources need a licence that allows adapted commercial reuse")
+		}
+	default:
+		return errors.New(`sources need kind "library" or "web"`)
+	}
+	return nil
+}
+
 type Detail struct {
 	Question     map[string]any    `json:"question"`
 	Sources      []Source          `json:"sources"`
@@ -332,29 +372,55 @@ func (s *Store) Provenance(ctx context.Context, sources []Source) (*store.Proven
 	if len(sources) == 0 {
 		return nil, nil
 	}
-	if len(sources) > 1024 || s.library.dsn == "" {
+	if len(sources) > 1024 {
 		return nil, ErrUnavailable
 	}
-	pool, err := s.library.connect(ctx)
-	if err != nil {
-		return nil, err
-	}
 	result := &store.Provenance{Books: []store.ProvenanceBook{}}
-	indices := map[string]int{}
-	seen := map[Source]bool{}
+	seen := map[string]bool{}
 	excerptIDs, bookIDs := []string{}, []string{}
 	versions := []int{}
 	for _, source := range sources {
-		if seen[source] {
+		if err := source.Check(); err != nil {
+			return nil, fmt.Errorf("%w: %s", ErrUnavailable, err)
+		}
+		if source.Kind == "web" {
+			if !seen["web "+source.URL] {
+				seen["web "+source.URL] = true
+				result.Web = append(result.Web, store.ProvenanceWeb{
+					URL: source.URL, Title: source.Title, Authors: source.Authors, Publisher: source.Publisher,
+					License: source.License, LicenseURL: source.LicenseURL, RetrievedAt: source.RetrievedAt,
+				})
+			}
 			continue
 		}
-		seen[source] = true
-		if source.ExcerptID == "" || source.BookID == "" || source.Version < 1 {
-			return nil, fmt.Errorf("%w: invalid bank source", ErrUnavailable)
+		key := fmt.Sprintf("library %s %s %d", source.ExcerptID, source.BookID, source.Version)
+		if seen[key] {
+			continue
 		}
+		seen[key] = true
 		excerptIDs = append(excerptIDs, source.ExcerptID)
 		bookIDs = append(bookIDs, source.BookID)
 		versions = append(versions, source.Version)
+	}
+	if len(excerptIDs) > 0 {
+		if err := s.libraryBooks(ctx, result, excerptIDs, bookIDs, versions); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := store.ValidateStoredProvenance(result); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrUnavailable, err)
+	}
+	return result, nil
+}
+
+// libraryBooks resolves excerpt references to the book versions they were read from.
+func (s *Store) libraryBooks(ctx context.Context, result *store.Provenance, excerptIDs, bookIDs []string, versions []int) error {
+	if s.library.dsn == "" {
+		return ErrUnavailable
+	}
+	pool, err := s.library.connect(ctx)
+	if err != nil {
+		return err
 	}
 	rows, err := pool.Query(ctx, `SELECT w.excerpt_id,b.id,b.title,b.authors,b.edition,v.version,b.license,b.license_url,b.source_url
  FROM unnest($1::text[],$2::text[],$3::int[]) WITH ORDINALITY AS w(excerpt_id,book_id,version,position)
@@ -362,15 +428,16 @@ func (s *Store) Provenance(ctx context.Context, sources []Source) (*store.Proven
  JOIN library_excerpts e ON e.book_id=b.id AND e.content_id=v.content_id AND e.id=w.excerpt_id
  ORDER BY w.position`, excerptIDs, bookIDs, versions)
 	if err != nil {
-		return nil, dbError(err)
+		return dbError(err)
 	}
 	defer rows.Close()
+	indices := map[string]int{}
 	count := 0
 	for rows.Next() {
 		var book store.ProvenanceBook
 		var excerptID string
 		if err := rows.Scan(&excerptID, &book.ID, &book.Title, &book.Authors, &book.Edition, &book.Version, &book.License, &book.LicenseURL, &book.SourceURL); err != nil {
-			return nil, dbError(err)
+			return dbError(err)
 		}
 		count++
 		key := fmt.Sprintf("%s/%d", book.ID, book.Version)
@@ -383,15 +450,12 @@ func (s *Store) Provenance(ctx context.Context, sources []Source) (*store.Proven
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, dbError(err)
+		return dbError(err)
 	}
 	if count != len(excerptIDs) {
-		return nil, fmt.Errorf("%w: bank source could not be resolved", ErrUnavailable)
+		return fmt.Errorf("%w: bank source could not be resolved", ErrUnavailable)
 	}
-	if _, err := store.ValidateStoredProvenance(result); err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrUnavailable, err)
-	}
-	return result, nil
+	return nil
 }
 func (s *Store) Validate(q map[string]any) error {
 	return questions.Validate(q, questions.Policy{Bank: true, BankAssetsURL: s.assetsURL})

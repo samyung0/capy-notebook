@@ -15,9 +15,9 @@ export { TextView } from './TextView';
 import {
   type GraphBlock,
   type ImageBlock,
+  isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
-  partMarks,
   type Question,
   type QuestionBlock,
   type QuestionPart,
@@ -225,6 +225,11 @@ export function AnswerView({ part }: { part: QuestionPart }) {
 
 export const optionLetter = (index: number) => String.fromCharCode(65 + index);
 
+/** Paper questions set options two by two (A B / C D) once the answer area is
+ * wide enough; split questions keep one column beside their passage. */
+export const optionColumns = (question: Question | LearnerQuestion) =>
+  question.layout === 'paper';
+
 /** Option label column: a dotted letter or number (A., 1.), or a result icon. */
 export function OptionKey({
   className,
@@ -286,18 +291,26 @@ export function MatchingLayout({
 }
 
 // Answer areas span the text and marks columns of a part row.
-function Choices({ part }: { part: QuestionPart | LearnerPart }) {
+function Choices({
+  part,
+  twoColumns,
+}: {
+  part: QuestionPart | LearnerPart;
+  twoColumns: boolean;
+}) {
   const answer = part.answer;
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <ol className="col-[2/-1] grid min-w-0 gap-2">
-        {answer.options.map((text, i) => (
-          <li className={answerRowClass()} key={i}>
-            <OptionKey>{optionLetter(i)}.</OptionKey>
-            <TextView className="min-w-0 flex-1" text={text} />
-          </li>
-        ))}
-      </ol>
+      <div className="@container col-[2/-1] min-w-0">
+        <ol className={cn('grid gap-2', twoColumns && '@xl:grid-cols-2')}>
+          {answer.options.map((text, i) => (
+            <li className={answerRowClass()} key={i}>
+              <OptionKey>{optionLetter(i)}.</OptionKey>
+              <TextView className="min-w-0 flex-1" text={text} />
+            </li>
+          ))}
+        </ol>
+      </div>
     );
   if (answer.type === 'matching')
     return (
@@ -357,8 +370,8 @@ export function QuestionView({
   renderBlock,
   renderMarks,
 }: QuestionViewProps) {
-  // A lone part needs no label. With no stem either, its first text block
-  // joins the header, whose marks then stand in for the part's.
+  // A lone part needs no label, and the header's marks stand in for its own.
+  // With no stem either, its first text block joins the header.
   const lone = question.parts.length === 1;
   const merged = lone && question.stem.length === 0;
   const lead = merged ? question.parts[0].blocks : question.stem;
@@ -394,7 +407,7 @@ export function QuestionView({
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        {merged && renderMarks ? (
+        {lone && renderMarks ? (
           <span className="whitespace-nowrap text-fg-muted text-xs">
             {renderMarks(question.parts[0])}
           </span>
@@ -445,13 +458,17 @@ export function QuestionView({
                   {blocks(partBlocks(part), { partId: part.id }, partOffset)}
                 </div>
               )}
-              {!merged && (
+              {!lone && (
                 <span className="col-start-3 whitespace-nowrap pt-1 text-fg-muted text-xs">
-                  {renderMarks ? renderMarks(part) : `[${partMarks(part)}]`}
+                  {renderMarks ? renderMarks(part) : `[${part.marks}]`}
                 </span>
               )}
-              {renderAnswer ? renderAnswer(part) : <Choices part={part} />}
-              {review && 'markscheme' in part && (
+              {renderAnswer ? (
+                renderAnswer(part)
+              ) : (
+                <Choices part={part} twoColumns={optionColumns(question)} />
+              )}
+              {review && isAuthoredPart(part) && (
                 <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
                   <h4 className="font-semibold text-fg-muted text-xs">
                     {m.question_ui_answer()}
@@ -459,16 +476,26 @@ export function QuestionView({
                   <div>
                     <AnswerView part={part} />
                   </div>
-                  <h4 className="pt-2 font-semibold text-fg-muted text-xs">
-                    {m.question_ui_marking_scheme()}
-                  </h4>
-                  <ul className="space-y-1">
-                    {part.markscheme.map((item, i) => (
-                      <li key={i}>
-                        <TextView text={item} />
-                      </li>
-                    ))}
-                  </ul>
+                  {part.markscheme && (
+                    <>
+                      <h4 className="pt-2 font-semibold text-fg-muted text-xs">
+                        {m.question_ui_marking_scheme()}
+                      </h4>
+                      <ul className="space-y-1">
+                        {part.markscheme.map((item, i) => (
+                          <li className="flex items-baseline gap-4" key={i}>
+                            <TextView
+                              className="min-w-0 flex-1"
+                              text={item.text}
+                            />
+                            <span className="shrink-0 text-fg-muted text-xs tabular-nums">
+                              [{item.marks}]
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                   {part.solution.length > 0 && (
                     // Editors check solutions, so they start open here;
                     // learners' after-submit review keeps them collapsed.
@@ -505,56 +532,61 @@ export function QuestionReview({
       question={question}
       questionNumber={questionNumber}
       renderAnswer={(part) => {
-        if (!('markscheme' in part)) return null;
-        const max = partMarks(part);
-        // Closed parts are all or nothing; open parts carry Jev's item marks.
-        const itemAward = (i: number) =>
-          part.itemAwards?.[i] ??
-          (part.answer.type !== 'open' && part.awarded != null
-            ? part.awarded === max
-              ? 1
-              : 0
-            : undefined);
+        if (!isAuthoredPart(part)) return null;
+        // Closed parts have no scheme: their answer key and solution explain them.
+        const items = part.markscheme ?? [];
+        if (items.length === 0 && part.solution.length === 0)
+          return renderAnswer?.(part);
         return (
           <>
             {renderAnswer?.(part)}
             <details className="col-start-2 min-w-0 text-sm">
               <summary className="cursor-pointer font-semibold text-fg-secondary">
-                {part.solution.length > 0
-                  ? m.question_ui_scheme_and_solution()
-                  : m.question_ui_marking_scheme()}
+                {items.length === 0
+                  ? m.question_ui_worked_solution()
+                  : part.solution.length > 0
+                    ? m.question_ui_scheme_and_solution()
+                    : m.question_ui_marking_scheme()}
               </summary>
               <div className="grid gap-3 pt-3 text-fg-secondary">
-                <ul className="space-y-1">
-                  {part.markscheme.map((item, i) => (
-                    <li className="flex items-baseline gap-4" key={i}>
-                      <TextView className="min-w-0 flex-1" text={item} />
-                      {itemAward(i) != null && (
-                        <span
-                          className={cn(
-                            'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
-                            itemAward(i) === 1
-                              ? 'text-tint-success-fg'
-                              : itemAward(i) === 0.5
-                                ? 'text-tint-warning-fg'
-                                : 'text-tint-error-fg'
-                          )}
-                        >
-                          <Icon
-                            name={
-                              itemAward(i) === 1
-                                ? 'check'
-                                : itemAward(i) === 0.5
-                                  ? 'minus'
-                                  : 'x'
-                            }
-                            size={12}
-                          />
-                          {itemAward(i)}
-                        </span>
-                      )}
-                    </li>
-                  ))}
+                <ul className="space-y-1 empty:hidden">
+                  {items.map((item, i) => {
+                    // Jev's marks per item, once the open part is graded.
+                    const award = part.itemAwards?.[i];
+                    return (
+                      <li className="flex items-baseline gap-4" key={i}>
+                        <TextView className="min-w-0 flex-1" text={item.text} />
+                        {award == null ? (
+                          <span className="shrink-0 text-fg-muted text-xs tabular-nums">
+                            [{item.marks}]
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              'inline-flex shrink-0 items-center gap-1 font-semibold text-xs tabular-nums',
+                              award === item.marks
+                                ? 'text-tint-success-fg'
+                                : award > 0
+                                  ? 'text-tint-warning-fg'
+                                  : 'text-tint-error-fg'
+                            )}
+                          >
+                            <Icon
+                              name={
+                                award === item.marks
+                                  ? 'check'
+                                  : award > 0
+                                    ? 'minus'
+                                    : 'x'
+                              }
+                              size={12}
+                            />
+                            {award} / {item.marks}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {part.solution.map((block, i) => (
                   <QuestionBlockView block={block} key={i} />
@@ -567,7 +599,7 @@ export function QuestionReview({
       renderBlock={renderBlock}
       renderMarks={(part) => {
         const awarded = 'awarded' in part ? part.awarded : undefined;
-        const max = partMarks(part);
+        const max = part.marks;
         return (
           <span
             className={cn(

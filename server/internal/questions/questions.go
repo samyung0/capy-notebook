@@ -222,11 +222,21 @@ func Validate(q map[string]any, policy Policy) error {
 		if err != nil {
 			return err
 		}
-		optional := ""
-		if policy.Snapshot {
-			optional = "awarded itemAwards"
+		// Only open parts carry a marking scheme: Jev grades against it. A
+		// closed part's answer is its own key and its solution explains it.
+		a, _ := p["answer"].(map[string]any)
+		open := a["type"] == "open"
+		required, optional := "id blocks answer marks solution", ""
+		if open {
+			required += " markscheme"
 		}
-		if err := keys(p, "id blocks answer markscheme solution", optional); err != nil {
+		if policy.Snapshot {
+			optional = "awarded"
+			if open {
+				optional += " itemAwards"
+			}
+		}
+		if err := keys(p, required, optional); err != nil {
 			return err
 		}
 		if !str(p["id"], fieldlimits.QuestionID, true) {
@@ -249,20 +259,30 @@ func Validate(q map[string]any, policy Policy) error {
 		if policy.Bank && len(p["solution"].([]any)) == 0 {
 			return fail("bank part requires a solution")
 		}
-		if !stringsArray(p["markscheme"], 1, maxItems, fieldlimits.QuestionMarkItem) {
-			return fail(fmt.Sprintf("a marking scheme has 1 to %d items", maxItems))
+		marks, ok := num(p["marks"])
+		if !ok || marks < 1 || marks > fieldlimits.QuestionMarks || marks != math.Trunc(marks) {
+			return fail(fmt.Sprintf("a part has 1 to %d marks", fieldlimits.QuestionMarks))
+		}
+		if open {
+			_, itemMarks, err := markscheme(p["markscheme"], maxItems)
+			if err != nil {
+				return err
+			}
+			if sum(itemMarks) != marks {
+				return fail("marking items must add up to the part's marks")
+			}
+			if err := itemAwards(p, itemMarks); err != nil {
+				return err
+			}
 		}
 		if err := answer(p["answer"], policy); err != nil {
 			return err
 		}
 		if v, exists := p["awarded"]; exists {
 			n, ok := num(v)
-			if !ok || n < 0 || n > float64(len(p["markscheme"].([]any))) || n*2 != math.Trunc(n*2) {
+			if !ok || n < 0 || n > marks || n*2 != math.Trunc(n*2) {
 				return fail("invalid awarded marks")
 			}
-		}
-		if err := itemAwards(p); err != nil {
-			return err
 		}
 	}
 	return nil
@@ -349,7 +369,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			width = len(cells)
 		}
 	case "chart":
-		if err := keys(b, "type kind title labels series", "unit xTitle yTitle gridlines showValues"); err != nil {
+		if err := keys(b, "type kind title labels series", "unit xTitle yTitle gridlines"); err != nil {
 			return err
 		}
 		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) || !stringsArray(b["labels"], 1, fieldlimits.QuestionChartLabels, fieldlimits.QuestionText) {
@@ -362,9 +382,6 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		}
 		if g, ok := b["gridlines"]; ok && !enum(g, "normal fine") {
 			return fail("invalid gridlines")
-		}
-		if !optionalBool(b, "showValues") {
-			return fail("invalid showValues")
 		}
 		series, ok := array(b["series"], 1, fieldlimits.QuestionChartSeries)
 		if !ok {
@@ -545,22 +562,43 @@ func graph(b map[string]any) error {
 		case "point":
 			required += " coords"
 			optional += " name"
-		case "line", "segment":
+		case "line":
 			required += " points"
 			optional += " dash"
+		case "segment":
+			// ticks: 1 to 3 hatch marks showing equal lengths.
+			required += " points"
+			optional += " dash ticks"
 		case "circle":
 			required += " center radius"
 			optional += " dash"
 		case "text":
 			required += " coords text"
+		case "angle":
+			required += " points"
+			optional += " label"
+		case "arc":
+			required += " center points"
+			optional += " dash"
+		case "sector":
+			required += " center points"
+			optional += " dash shade"
+		case "polygon":
+			required += " points"
+			optional += " dash shade"
 		default:
 			return fail("unsupported graph element")
 		}
 		if err := keys(e, required, optional); err != nil {
 			return err
 		}
-		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") {
+		if !optionalBool(e, "hidden") || !optionalBool(e, "dash") || !optionalBool(e, "shade") {
 			return fail("invalid graph flag")
+		}
+		if t, exists := e["ticks"]; exists {
+			if n, ok := num(t); !ok || n < 1 || n > 3 || n != math.Trunc(n) {
+				return fail("invalid equal-length ticks")
+			}
 		}
 		switch e["type"] {
 		case "functiongraph":
@@ -584,16 +622,39 @@ func graph(b map[string]any) error {
 			if e["type"] == "text" && !str(e["text"], fieldlimits.QuestionText, true) {
 				return fail("invalid graph text")
 			}
-		case "line", "segment":
-			refs, ok := array(e["points"], 2, 2)
+		case "line", "segment", "angle", "arc", "sector", "polygon":
+			// Angles take three points with the vertex in the middle; arcs and
+			// sectors run counterclockwise between two points around a center.
+			count, most := 2, 2
+			switch e["type"] {
+			case "angle":
+				count, most = 3, 3
+			case "polygon":
+				count, most = 3, fieldlimits.QuestionGraphPolygon
+			}
+			refs, ok := array(e["points"], count, most)
 			if !ok {
 				return fail("invalid point references")
 			}
+			seen := map[string]bool{}
 			for _, ref := range refs {
 				id, ok := ref.(string)
 				if !ok || !points[id] {
 					return fail("unknown graph point")
 				}
+				if seen[id] {
+					return fail("repeated graph point")
+				}
+				seen[id] = true
+			}
+			if center, exists := e["center"]; exists {
+				id, ok := center.(string)
+				if !ok || !points[id] || seen[id] {
+					return fail("invalid arc center")
+				}
+			}
+			if !optionalString(e, "label", fieldlimits.QuestionMetadata) {
+				return fail("invalid angle label")
 			}
 		case "circle":
 			center, ok := e["center"].(string)
@@ -606,23 +667,62 @@ func graph(b map[string]any) error {
 	return nil
 }
 
-// itemAwards are an open part's Jev marks: one 0, 0.5 or 1 per marking item,
-// summing to the part's awarded marks.
-func itemAwards(p map[string]any) error {
+// markscheme checks an open part's marking items and returns their texts and
+// marks. Each item carries whole marks, so a harder step can be worth more.
+func markscheme(v any, maxItems int) ([]string, []float64, error) {
+	items, ok := array(v, 1, maxItems)
+	if !ok {
+		return nil, nil, fail(fmt.Sprintf("a marking scheme has 1 to %d items", maxItems))
+	}
+	texts, marks := make([]string, len(items)), make([]float64, len(items))
+	for i, raw := range items {
+		item, err := obj(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := keys(item, "text marks", ""); err != nil {
+			return nil, nil, err
+		}
+		n, ok := num(item["marks"])
+		if !str(item["text"], fieldlimits.QuestionMarkItem, true) || !ok || n < 1 || n != math.Trunc(n) {
+			return nil, nil, fail("a marking item has text and whole marks")
+		}
+		texts[i], marks[i] = item["text"].(string), n
+	}
+	return texts, marks, nil
+}
+
+func sum(values []float64) float64 {
+	total := 0.0
+	for _, v := range values {
+		total += v
+	}
+	return total
+}
+
+// MarkItems returns a validated open part's marking item texts and marks.
+func MarkItems(p map[string]any) ([]string, []float64) {
+	texts, marks, _ := markscheme(p["markscheme"], math.MaxInt)
+	return texts, marks
+}
+
+// itemAwards are an open part's Jev marks: none, half or all of each marking
+// item's marks, summing to the part's awarded marks.
+func itemAwards(p map[string]any, itemMarks []float64) error {
 	raw, exists := p["itemAwards"]
 	if !exists {
 		return nil
 	}
-	list, ok := array(raw, len(p["markscheme"].([]any)), len(p["markscheme"].([]any)))
+	list, ok := array(raw, len(itemMarks), len(itemMarks))
 	awarded, hasAwarded := num(p["awarded"])
 	if !ok || !hasAwarded {
 		return fail("item awards need one mark per marking item and an awarded total")
 	}
 	total := 0.0
-	for _, v := range list {
+	for i, v := range list {
 		n, ok := num(v)
-		if !ok || (n != 0 && n != 0.5 && n != 1) {
-			return fail("item awards are 0, 0.5 or 1")
+		if !ok || (n != 0 && n != itemMarks[i]/2 && n != itemMarks[i]) {
+			return fail("item awards are none, half or all of an item's marks")
 		}
 		total += n
 	}
@@ -779,10 +879,14 @@ func Marks(q map[string]any) int {
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
-		scheme, _ := p["markscheme"].([]any)
-		total += len(scheme)
+		total += partMarks(p)
 	}
 	return total
+}
+
+func partMarks(p map[string]any) int {
+	marks, _ := num(p["marks"])
+	return int(marks)
 }
 
 // Authored removes attempt-only scores without mutating the submitted snapshot.
@@ -843,7 +947,7 @@ func LearnerView(q map[string]any) map[string]any {
 			rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
 			learner["items"] = items
 		}
-		parts = append(parts, map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": len(p["markscheme"].([]any))})
+		parts = append(parts, map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)})
 	}
 	out["parts"] = parts
 	return out

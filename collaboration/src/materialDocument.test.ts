@@ -27,7 +27,7 @@ function quiz(_timeLimitMin: number) {
               answer: { correct: true, type: 'boolean' },
               blocks: [{ text: 'True?', type: 'text' }],
               id: 'part_1',
-              markscheme: ['Correct'],
+              marks: 1,
               solution: [],
             },
           ],

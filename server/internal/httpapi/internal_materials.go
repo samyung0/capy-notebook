@@ -73,6 +73,10 @@ func validateProvenance(p *store.Provenance) (string, error) {
 	if p == nil {
 		return "", nil
 	}
+	// Web pages are credited only by the question bank, never by a model call.
+	if len(p.Web) > 0 {
+		return "invalid_input", errors.New("provenance may name library books only")
+	}
 	for i := range p.Books {
 		book := &p.Books[i]
 		if len(book.ExcerptIDs) > maxProvenanceEntries || len(book.Authors) > maxProvenanceAuthors {

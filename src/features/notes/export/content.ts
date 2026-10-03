@@ -162,9 +162,7 @@ export function flattenStudyBlocks(
         heading(`${labels.question} ${i + 1}`),
         ...questionBlocks(question.stem),
         ...question.parts.flatMap((part, j) => [
-          paragraph(
-            `${partLabel(question, j)} ${labels.marks}: ${part.markscheme.length}`
-          ),
+          paragraph(`${partLabel(question, j)} ${labels.marks}: ${part.marks}`),
           ...questionBlocks(part.blocks),
           ...choices(part, labels),
         ]),
@@ -176,12 +174,18 @@ export function flattenStudyBlocks(
             { exportBold: true }
           ),
           ...answerLines(part, labels).map((text) => paragraph(text)),
-          paragraph(
-            `${labels.markscheme} · ${labels.marks}: ${part.markscheme.length}`
-          ),
-          ...part.markscheme.map((text) =>
-            paragraph(text, { indent: 1, listStyleType: 'disc' })
-          ),
+          paragraph(`${labels.marks}: ${part.marks}`),
+          ...(part.markscheme
+            ? [
+                paragraph(labels.markscheme, { exportBold: true }),
+                ...part.markscheme.map((item) =>
+                  paragraph(`${item.text} [${item.marks}]`, {
+                    indent: 1,
+                    listStyleType: 'disc',
+                  })
+                ),
+              ]
+            : []),
           ...(part.solution.length
             ? [
                 paragraph(labels.solution, { exportBold: true }),

@@ -62,7 +62,7 @@ func licenseVersion(normalized string) float64 {
 }
 
 // ValidateStoredProvenance bounds the record a material keeps and computes the
-// work's own licence: empty unless a source book is copyleft, in which case the
+// work's own licence from its books and web pages: empty unless a source is copyleft, in which case the
 // work carries that family's newest version written exactly as its book wrote
 // it (CC BY-SA 3.0 plus 4.0 is the 4.0 book's string). Sources from two
 // different copyleft families have no single answer, so the work is refused.
@@ -70,14 +70,10 @@ func licenseVersion(normalized string) float64 {
 // so only the book count and the field lengths are bounded here. The returned
 // code is the tool error code the model sees.
 func ValidateStoredProvenance(p *Provenance) (string, error) {
-	if len(p.Books) == 0 || len(p.Books) > MaxProvenanceBooks {
-		return "invalid_input", errors.New("provenance must name one to 32 books")
+	if count := len(p.Books) + len(p.Web); count == 0 || count > MaxProvenanceBooks {
+		return "invalid_input", errors.New("provenance must name one to 32 sources")
 	}
-	var (
-		family string
-		newest float64
-		chosen string
-	)
+	licenses := []string{}
 	for i := range p.Books {
 		book := &p.Books[i]
 		if book.ID == "" || book.Title == "" || len(book.ExcerptIDs) == 0 {
@@ -96,20 +92,45 @@ func ValidateStoredProvenance(p *Provenance) (string, error) {
 		if book.Authors == nil {
 			book.Authors = []string{}
 		}
-		normalized := normalizeLicense(book.License)
+		licenses = append(licenses, book.License)
+	}
+	for i := range p.Web {
+		page := &p.Web[i]
+		if !strings.HasPrefix(page.URL, "https://") || page.Title == "" || page.License == "" || page.RetrievedAt == "" {
+			return "invalid_input", errors.New("each web source needs an https url, a title, a licence and a retrieval date")
+		}
+		for _, value := range append([]string{
+			page.URL, page.Title, page.Publisher, page.License, page.LicenseURL, page.RetrievedAt,
+		}, page.Authors...) {
+			if len(value) > maxProvenanceTextLen {
+				return "invalid_input", errors.New("provenance field is too long")
+			}
+		}
+		if page.Authors == nil {
+			page.Authors = []string{}
+		}
+		licenses = append(licenses, page.License)
+	}
+	var (
+		family string
+		newest float64
+		chosen string
+	)
+	for _, license := range licenses {
+		normalized := normalizeLicense(license)
 		current := licenseFamily(normalized)
 		switch {
 		case current == "":
 		case family == "":
-			family, chosen, newest = current, book.License, licenseVersion(normalized)
+			family, chosen, newest = current, license, licenseVersion(normalized)
 		case current != family:
 			return "lifecycle_rejected", fmt.Errorf(
 				"sources carry two copyleft licence families (%s and %s); one material cannot be licensed under both",
 				family, current)
 		default:
-			// Ties keep the first book's wording; only a newer version replaces it.
+			// Ties keep the first source's wording; only a newer version replaces it.
 			if version := licenseVersion(normalized); version > newest {
-				chosen, newest = book.License, version
+				chosen, newest = license, version
 			}
 		}
 	}

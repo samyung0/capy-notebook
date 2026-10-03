@@ -1,0 +1,38 @@
+{
+  "name": "markscheme-marks-zero-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": ["explanation"],
+          "hints": ["reason"]
+        },
+        "marks": 1,
+        "markscheme": [
+          { "text": "Correct answer", "marks": 1 },
+          { "text": "Extra point", "marks": 0 }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

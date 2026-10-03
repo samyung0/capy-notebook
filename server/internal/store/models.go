@@ -269,8 +269,21 @@ type Material struct {
 // copyleft.
 type Provenance struct {
 	Books []ProvenanceBook `json:"books" nullable:"false"`
+	// Web lists pages a bank passage was adapted from; library materials leave it empty.
+	Web []ProvenanceWeb `json:"web,omitempty"`
 	// License is computed by the server from the books, never supplied.
 	License string `json:"license,omitempty"`
+}
+
+// ProvenanceWeb is one openly licensed web page, as it read on RetrievedAt.
+type ProvenanceWeb struct {
+	URL         string   `json:"url"`
+	Title       string   `json:"title"`
+	Authors     []string `json:"authors" nullable:"false"`
+	Publisher   string   `json:"publisher,omitempty"`
+	License     string   `json:"license"`
+	LicenseURL  string   `json:"licenseUrl,omitempty"`
+	RetrievedAt string   `json:"retrievedAt"`
 }
 
 // ProvenanceBook is one source book with the excerpts the material used.

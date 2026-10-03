@@ -1,0 +1,113 @@
+{
+  "name": "graph-geometry",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "o",
+            "name": "O",
+            "coords": [0, 0]
+          },
+          {
+            "type": "point",
+            "id": "a",
+            "name": "A",
+            "coords": [3, 0]
+          },
+          {
+            "type": "point",
+            "id": "b",
+            "name": "B",
+            "coords": [0, 3]
+          },
+          {
+            "type": "point",
+            "id": "c",
+            "name": "C",
+            "coords": [-2, -2]
+          },
+          {
+            "type": "angle",
+            "id": "right",
+            "points": ["a", "o", "b"]
+          },
+          {
+            "type": "angle",
+            "id": "theta",
+            "points": ["b", "c", "a"],
+            "label": "\u03b8"
+          },
+          {
+            "type": "arc",
+            "id": "minor",
+            "center": "o",
+            "points": ["a", "b"],
+            "dash": true
+          },
+          {
+            "type": "sector",
+            "id": "wedge",
+            "center": "o",
+            "points": ["a", "b"],
+            "shade": true
+          },
+          {
+            "type": "polygon",
+            "id": "tri",
+            "points": ["a", "b", "c"],
+            "shade": false,
+            "dash": false
+          },
+          {
+            "type": "segment",
+            "id": "oa",
+            "points": ["o", "a"],
+            "ticks": 2
+          },
+          {
+            "type": "segment",
+            "id": "ob",
+            "points": ["o", "b"],
+            "ticks": 2
+          }
+        ],
+        "image": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+        },
+        "width": 320,
+        "height": 190,
+        "description": "Circle geometry with marked angles"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

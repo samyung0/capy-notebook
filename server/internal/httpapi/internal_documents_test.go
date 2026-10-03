@@ -156,7 +156,7 @@ func TestInternalDocumentsReachEmbeddedMaterials(t *testing.T) {
 	cleanupMaterial(t, st, noteID)
 	quiz, err := st.CreateEmbeddedMaterial(context.Background(), "u_editor", noteID, store.EmbeddedDraft{
 		Kind:      "quiz",
-		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)

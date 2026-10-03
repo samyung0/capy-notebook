@@ -76,7 +76,7 @@
           "type": "short",
           "accepted": ["alpha"]
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
         "solution": []
       }
     ],

@@ -33,7 +33,6 @@ samples[0].stem = [
   },
 ];
 samples[0].parts[0].blocks = [{ text: 'Find its width.', type: 'text' }];
-samples[0].parts[0].markscheme = ['Divides 12 by 4 to obtain a width of 3 cm.'];
 samples[0].parts[0].solution = [
   { text: '$w=12/4=3\\,\\mathrm{cm}$.', type: 'text' },
 ];
@@ -45,9 +44,6 @@ samples[1].stem = [
 ];
 samples[1].parts[0].blocks = [
   { text: 'Match the paragraphs to their headings.', type: 'text' },
-];
-samples[1].parts[0].markscheme = [
-  'Matches paragraph 1 to A and paragraph 2 to B.',
 ];
 samples[1].parts[0].solution = [
   { text: 'A summarizes paragraph 1. B summarizes paragraph 2.', type: 'text' },
@@ -66,7 +62,6 @@ const practice = Array.from({ length: 34 }, (_, index) => {
     },
   ];
   question.parts[0].blocks = [{ text: 'Find its area in cm².', type: 'text' }];
-  question.parts[0].markscheme = [`Multiplies to obtain ${a * 3} cm².`];
   question.parts[0].solution = [
     { text: `$${a}\\times 3=${a * 3}$`, type: 'text' },
   ];

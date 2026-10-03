@@ -33,8 +33,8 @@ func TestMistakesBatchesPreserveUnattemptedQuestions(t *testing.T) {
 					"id": fmt.Sprintf("q-%03d", i), "stem": blocks, "layout": "paper", "labels": "letters",
 					"parts": []any{map[string]any{
 						"id": "part-1", "blocks": blocks,
-						"answer":     map[string]any{"type": "boolean", "correct": true},
-						"markscheme": []string{"Identifies the evidence."}, "solution": []any{},
+						"answer": map[string]any{"type": "boolean", "correct": true},
+						"marks":  1, "solution": []any{},
 					}},
 				}
 				var err error

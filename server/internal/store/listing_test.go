@@ -43,7 +43,7 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 		t.Fatal(err)
 	}
 	embedded, err := s.CreateEmbeddedMaterial(ctx, ownerID, note.ID, EmbeddedDraft{
-		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]`),
+		Kind: "quiz", Questions: json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`),
 	})
 	if err != nil {
 		t.Fatal(err)

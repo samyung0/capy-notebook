@@ -121,8 +121,8 @@ var itemCriteria = map[string]string{
 
 var awards = map[string]float64{"zero": 0, "partial": 0.5, "full": 1}
 
-// GradePart awards 0, 0.5 or 1 per marking item. An answer that is only a list
-// of subject vocabulary scores 0 on every item.
+// GradePart returns the share of each marking item earned: 0, 0.5 or 1. An
+// answer that is only a list of subject vocabulary scores 0 on every item.
 func (c *Client) GradePart(ctx context.Context, question string, markscheme []string, userAnswer string) ([]float64, Usage, error) {
 	if c == nil {
 		return nil, Usage{}, ErrUnavailable

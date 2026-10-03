@@ -1,5 +1,5 @@
 import type { Question, QuestionPart } from '@/api/types';
-import { partMarks, questionMarks } from '@/features/questions/types';
+import { questionMarks } from '@/features/questions/types';
 import { quantityValuePattern } from '@/features/questions/validation';
 
 export type Answer =
@@ -135,7 +135,7 @@ export function scorePart(
   part: QuestionPart,
   answer: Answer | undefined
 ): QuestionScore {
-  const max = partMarks(part);
+  const max = part.marks;
   if (part.answer.type === 'open')
     return { awarded: Math.min(max, Math.max(0, part.awarded ?? 0)), max };
   return { awarded: closedCorrect(part, answer) ? max : 0, max };
@@ -151,7 +151,7 @@ export function scoreQuestion(
 /** An open part's per-item marks; a blank answer earns 0 on every item. */
 export function applyItemAwards(
   part: QuestionPart,
-  itemAwards: number[] = part.markscheme.map(() => 0)
+  itemAwards: number[] = part.markscheme?.map(() => 0) ?? []
 ): QuestionPart {
   return {
     ...part,

@@ -65,7 +65,7 @@ func stubRetrieval(t *testing.T) *pipeline.Client {
 		w.Header().Set("Content-Type", "application/json")
 		switch in.Kind {
 		case "quiz":
-			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]}`))
+			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 		case "flashcards":
 			_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
 		case "mindmap", "diagram":
@@ -417,7 +417,7 @@ func TestStudyToolMutationPathsSeparateContentMetadataSharingAndStudyState(t *te
 
 	quizQuestions := []map[string]any{{
 		"id": "q_mut_2", "stem": []any{}, "layout": "paper", "labels": "letters",
-		"parts": []any{map[string]any{"id": "q_mut_2:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Updated workspace question?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "markscheme": []any{"Correct answer."}, "solution": []any{}}},
+		"parts": []any{map[string]any{"id": "q_mut_2:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Updated workspace question?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}}},
 	}}
 	rec := doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
 		"expectedRevision": revision("qz_e2e_private"),

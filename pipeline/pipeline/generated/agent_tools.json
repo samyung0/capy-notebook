@@ -1,5 +1,5 @@
 {
-  "version": 8,
+  "version": 9,
   "operations": [
     "source.read",
     "material.read",
@@ -447,7 +447,7 @@
             "type": "string"
           },
           "questions": {
-            "description": "quiz only; Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
+            "description": "quiz only; Question JSON: id, stem typed blocks, parts [{id, blocks, answer, marks 1-20, markscheme [{text, marks}] on open parts only, solution blocks}], layout paper|split, labels letters|numbers, optional level. An open part's markscheme item marks add up to its marks; closed parts have no markscheme and explain in solution. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
             "items": {
               "additionalProperties": true,
               "type": "object"
@@ -790,7 +790,7 @@
                   "properties": {
                     "question": {
                       "additionalProperties": true,
-                      "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
+                      "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, marks 1-20, markscheme [{text, marks}] on open parts only, solution blocks}], layout paper|split, labels letters|numbers, optional level. An open part's markscheme item marks add up to its marks; closed parts have no markscheme and explain in solution. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
                       "type": "object"
                     },
                     "question_id": {
@@ -819,7 +819,7 @@
                     },
                     "question": {
                       "additionalProperties": true,
-                      "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, markscheme string[], solution blocks}], layout paper|split, labels letters|numbers, optional level. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
+                      "description": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, marks 1-20, markscheme [{text, marks}] on open parts only, solution blocks}], layout paper|split, labels letters|numbers, optional level. An open part's markscheme item marks add up to its marks; closed parts have no markscheme and explain in solution. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional fixed unit; matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
                       "type": "object"
                     },
                     "type": {

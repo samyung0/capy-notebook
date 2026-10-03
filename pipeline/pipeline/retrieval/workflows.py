@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from ..config import cfg
+from ..generated import limits
 from ..prompts import generate as generate_prompts
 from . import compact, models, pending, store
 from .chunking import estimate_tokens
@@ -239,6 +240,31 @@ async def produce(
     )
 
 
+def _whole_marks(value: object) -> bool:
+    """Marks are positive whole numbers; bool is an int subclass, so not marks."""
+    return type(value) is int and value >= 1
+
+
+def _markscheme_fits(part: dict[str, Any]) -> bool:
+    """Only open parts have a markscheme, and its item marks add up to the part's."""
+    if part["answer"]["type"] != "open":
+        return "markscheme" not in part
+    items = part.get("markscheme")
+    return (
+        isinstance(items, list)
+        and bool(items)
+        and all(
+            isinstance(item, dict)
+            and set(item) == {"text", "marks"}
+            and isinstance(item["text"], str)
+            and bool(item["text"].strip())
+            and _whole_marks(item["marks"])
+            for item in items
+        )
+        and sum(item["marks"] for item in items) == part["marks"]
+    )
+
+
 def normalize_questions(data: Any) -> list[dict[str, Any]]:
     """Assign fresh UUIDs to canonical generated questions; reject legacy shapes.
 
@@ -270,16 +296,11 @@ def normalize_questions(data: Any) -> list[dict[str, Any]]:
         for part in question["parts"]:
             if (
                 not isinstance(part, dict)
-                or set(part) - {"id", "blocks", "answer", "markscheme", "solution"}
+                or set(part)
+                - {"id", "blocks", "answer", "marks", "markscheme", "solution"}
                 or not isinstance(part.get("blocks"), list)
                 or not part["blocks"]
                 or not isinstance(part.get("solution"), list)
-                or not isinstance(part.get("markscheme"), list)
-                or not part["markscheme"]
-                or not all(
-                    isinstance(mark, str) and mark.strip()
-                    for mark in part["markscheme"]
-                )
                 or not isinstance(part.get("answer"), dict)
                 or part["answer"].get("type")
                 not in (
@@ -291,6 +312,9 @@ def normalize_questions(data: Any) -> list[dict[str, Any]]:
                     "ordering",
                     "open",
                 )
+                or not _whole_marks(part.get("marks"))
+                or part["marks"] > limits.QUESTION_MARKS_MAX
+                or not _markscheme_fits(part)
             ):
                 raise GenerateEmpty("quiz")
             part["id"] = str(uuid.uuid4())

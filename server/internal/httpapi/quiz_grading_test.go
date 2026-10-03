@@ -17,8 +17,9 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-// openGradingAPI serves the API with a stub Jev that fully credits every item.
-func openGradingAPI(t *testing.T) (http.Handler, *store.Store, *atomic.Int32) {
+// openGradingAPI serves the API with a stub Jev that gives every item the same
+// choice: "zero", "partial" or "full".
+func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32) {
 	t.Helper()
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -29,7 +30,7 @@ func openGradingAPI(t *testing.T) (http.Handler, *store.Store, *atomic.Int32) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		answers := map[string]any{}
 		for key := range body.Questions {
-			answers[key] = map[string]any{"choice": "full", "noul": 0.01}
+			answers[key] = map[string]any{"choice": choice, "noul": 0.01}
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"model": jev.Model, "answers": answers, "usage": map[string]any{"input_tokens": 1000}})
 	}))
@@ -60,10 +61,10 @@ func gradingQuiz(t *testing.T, h http.Handler, privacy string) string {
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
 			"parts": []any{
 				map[string]any{"id": "open-a", "blocks": []any{map[string]any{"type": "text", "text": "Explain."}},
-					"answer":     map[string]any{"type": "open", "accepted": []any{"Because."}, "hints": []any{}},
-					"markscheme": []any{"Point one", "Point two"}, "solution": []any{}},
+					"answer": map[string]any{"type": "open", "accepted": []any{"Because."}, "hints": []any{}}, "marks": 3,
+					"markscheme": []any{map[string]any{"text": "Point one", "marks": 2}, map[string]any{"text": "Point two", "marks": 1}}, "solution": []any{}},
 				map[string]any{"id": "closed-b", "blocks": []any{map[string]any{"type": "text", "text": "True?"}},
-					"answer": map[string]any{"type": "boolean", "correct": true}, "markscheme": []any{"Correct"}, "solution": []any{}},
+					"answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}},
 			},
 		}},
 	})
@@ -76,12 +77,12 @@ func gradingQuiz(t *testing.T, h http.Handler, privacy string) string {
 }
 
 func TestGradeQuizByReferenceRecordsUncharged(t *testing.T) {
-	h, st, calls := openGradingAPI(t)
+	h, st, calls := openGradingAPI(t, "full")
 	id := gradingQuiz(t, h, "private")
 	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/grade", "u_owner", map[string]any{
 		"answers": map[string]string{"open-a": "Because of reasons."},
 	})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"itemAwards":[1,1]`) {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"itemAwards":[2,1]`) {
 		t.Fatalf("grade → %d %s", rec.Code, rec.Body.String())
 	}
 	var credits, tokens int64
@@ -109,8 +110,20 @@ func TestGradeQuizByReferenceRecordsUncharged(t *testing.T) {
 	}
 }
 
+// Jev's partial credit is half of each item's own marks.
+func TestGradeQuizScalesPartialCreditByItemMarks(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "partial")
+	id := gradingQuiz(t, h, "private")
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes/"+id+"/grade", "u_owner", map[string]any{
+		"answers": map[string]string{"open-a": "Because of reasons."},
+	})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"awarded":1.5,"itemAwards":[1,0.5]`) {
+		t.Fatalf("grade → %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
-	h, st, _ := openGradingAPI(t)
+	h, st, _ := openGradingAPI(t, "full")
 	id := gradingQuiz(t, h, "link")
 	token := store.ShareToken(nil, id)
 	grade := func(ip string) *httptest.ResponseRecorder {
@@ -122,7 +135,7 @@ func TestGradeAnonymousQuizCapsPerIP(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		return rec
 	}
-	if rec := grade("203.0.113.7"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"awarded":2`) {
+	if rec := grade("203.0.113.7"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"awarded":3`) {
 		t.Fatalf("anonymous grade → %d %s", rec.Code, rec.Body.String())
 	}
 	var parts int

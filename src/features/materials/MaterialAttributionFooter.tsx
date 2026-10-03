@@ -13,10 +13,61 @@ function webUrl(value: string | undefined): string | null {
   }
 }
 
+/** One credit line: who wrote it, then its licence and source as links when they are web addresses. */
+function Credit({
+  label,
+  license,
+  licenseUrl,
+  sourceUrl,
+}: {
+  label: string;
+  license?: string;
+  licenseUrl?: string;
+  sourceUrl?: string;
+}) {
+  const licenseLink = webUrl(licenseUrl);
+  const sourceLink = webUrl(sourceUrl);
+  return (
+    <li>
+      {label}
+      {license && (
+        <>
+          {' · '}
+          {licenseLink ? (
+            <a
+              className="underline"
+              href={licenseLink}
+              rel="noreferrer license"
+              target="_blank"
+            >
+              {license}
+            </a>
+          ) : (
+            license
+          )}
+        </>
+      )}
+      {sourceLink && (
+        <>
+          {' · '}
+          <a
+            className="underline"
+            href={sourceLink}
+            rel="noreferrer"
+            target="_blank"
+          >
+            {m.material_attribution_source()}
+          </a>
+        </>
+      )}
+    </li>
+  );
+}
+
 /**
- * Credit for a material the chat agent wrote from the shared knowledge
- * library: one line per source book, plus the material's own licence when a
- * source is ShareAlike.
+ * Credit for a material written from the shared knowledge library, or for a
+ * bank question adapted from an openly licensed web page: one line per source,
+ * plus the work's own licence when a source is ShareAlike.
  *
  * It renders outside the editable document and is not part of the Yjs state,
  * so the attribution survives every edit of the material itself.
@@ -26,58 +77,45 @@ export function MaterialAttributionFooter({
 }: {
   provenance: Provenance | undefined;
 }) {
-  if (!provenance?.books.length) return null;
+  if (!(provenance?.books.length || provenance?.web?.length)) return null;
   return (
     <footer className="border-divider border-t px-5 py-3 text-fg-muted text-xs">
       <p className="font-medium">{m.material_attribution_title()}</p>
       <ul className="mt-1 flex flex-col gap-1">
-        {provenance.books.map((book) => {
-          const licenseUrl = webUrl(book.licenseUrl);
-          const sourceUrl = webUrl(book.sourceUrl);
-          return (
-            <li key={book.id}>
-              {m.material_attribution_book({
-                authors: book.authors.join(', ') || book.title,
-                title: `${book.title} (${[
-                  book.edition,
-                  m.material_attribution_version({ version: book.version }),
-                ]
-                  .filter(Boolean)
-                  .join(', ')})`,
-              })}
-              {book.license && (
-                <>
-                  {' · '}
-                  {licenseUrl ? (
-                    <a
-                      className="underline"
-                      href={licenseUrl}
-                      rel="noreferrer license"
-                      target="_blank"
-                    >
-                      {book.license}
-                    </a>
-                  ) : (
-                    book.license
-                  )}
-                </>
-              )}
-              {sourceUrl && (
-                <>
-                  {' · '}
-                  <a
-                    className="underline"
-                    href={sourceUrl}
-                    rel="noreferrer"
-                    target="_blank"
-                  >
-                    {m.material_attribution_source()}
-                  </a>
-                </>
-              )}
-            </li>
-          );
-        })}
+        {provenance.books.map((book) => (
+          <Credit
+            key={book.id}
+            label={m.material_attribution_book({
+              authors: book.authors.join(', ') || book.title,
+              title: `${book.title} (${[
+                book.edition,
+                m.material_attribution_version({ version: book.version }),
+              ]
+                .filter(Boolean)
+                .join(', ')})`,
+            })}
+            license={book.license}
+            licenseUrl={book.licenseUrl}
+            sourceUrl={book.sourceUrl}
+          />
+        ))}
+        {provenance.web?.map((page) => (
+          <Credit
+            key={page.url}
+            label={m.material_attribution_book({
+              authors: page.authors.join(', ') || page.publisher || page.title,
+              title: `${page.title} (${[
+                page.publisher,
+                m.material_attribution_retrieved({ date: page.retrievedAt }),
+              ]
+                .filter(Boolean)
+                .join(', ')})`,
+            })}
+            license={page.license}
+            licenseUrl={page.licenseUrl}
+            sourceUrl={page.url}
+          />
+        ))}
       </ul>
       {provenance.license && (
         <p className="mt-1">

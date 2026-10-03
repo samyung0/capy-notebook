@@ -42,7 +42,18 @@ export function exampleQuestion(
         answer,
         blocks: [{ text: 'Which organelle produces ATP?', type: 'text' }],
         id: `${id}-part`,
-        markscheme: ['Identifies mitochondria as the site of ATP production.'],
+        marks: 1,
+        // Only open parts carry a marking scheme.
+        ...(answer.type === 'open'
+          ? {
+              markscheme: [
+                {
+                  marks: 1,
+                  text: 'Identifies mitochondria as the site of ATP production.',
+                },
+              ],
+            }
+          : {}),
         solution: [
           {
             text: 'Mitochondria produce ATP through cellular respiration.',

@@ -22,7 +22,6 @@ export type ChartBlock = {
   xTitle?: string;
   yTitle?: string;
   gridlines?: 'normal' | 'fine';
-  showValues?: boolean;
 };
 export type GraphElement =
   | {
@@ -41,10 +40,19 @@ export type GraphElement =
       hidden?: boolean;
     }
   | {
-      type: 'line' | 'segment';
+      type: 'line';
       id: string;
       points: [string, string];
       dash?: boolean;
+      hidden?: boolean;
+    }
+  | {
+      type: 'segment';
+      id: string;
+      points: [string, string];
+      dash?: boolean;
+      /** 1 to 3 hatch marks; segments with the same count are equal in length. */
+      ticks?: number;
       hidden?: boolean;
     }
   | {
@@ -60,6 +68,40 @@ export type GraphElement =
       id: string;
       coords: [number, number];
       text: string;
+      hidden?: boolean;
+    }
+  | {
+      /** The non-reflex angle at the middle point; 90° draws the square mark. */
+      type: 'angle';
+      id: string;
+      points: [string, string, string];
+      label?: string;
+      hidden?: boolean;
+    }
+  | {
+      /** Counterclockwise from the first point to the second around `center`. */
+      type: 'arc';
+      id: string;
+      center: string;
+      points: [string, string];
+      dash?: boolean;
+      hidden?: boolean;
+    }
+  | {
+      type: 'sector';
+      id: string;
+      center: string;
+      points: [string, string];
+      dash?: boolean;
+      shade?: boolean;
+      hidden?: boolean;
+    }
+  | {
+      type: 'polygon';
+      id: string;
+      points: string[];
+      dash?: boolean;
+      shade?: boolean;
       hidden?: boolean;
     };
 export type GraphBlock = {
@@ -105,15 +147,20 @@ export type QuestionAnswer =
   | { type: 'ordering'; items: string[] }
   | { type: 'open'; accepted: string[]; hints: string[] };
 
+/** An open part's marking item; harder steps can carry more whole marks. */
+export type MarkItem = { text: string; marks: number };
+
 export type QuestionPart = {
   id: string;
   blocks: QuestionBlock[];
   answer: QuestionAnswer;
-  markscheme: string[];
+  marks: number;
+  /** Open parts only, adding up to `marks`; closed answers are their own key. */
+  markscheme?: MarkItem[];
   solution: QuestionBlock[];
   /** Attempt snapshots only; authored content rejects these fields. */
   awarded?: number;
-  /** Open parts: Jev's 0, 0.5 or 1 per marking item, summing to `awarded`. */
+  /** Open parts: none, half or all of each item's marks, summing to `awarded`. */
   itemAwards?: number[];
 };
 export type Question = {
@@ -141,12 +188,15 @@ export type LearnerQuestion = Omit<Question, 'parts'> & {
   parts: LearnerPart[];
 };
 
-export function partMarks(part: QuestionPart | LearnerPart): number {
-  return 'markscheme' in part ? part.markscheme.length : part.marks;
+/** Authored parts carry a worked solution; learner parts never do. */
+export function isAuthoredPart(
+  part: QuestionPart | LearnerPart
+): part is QuestionPart {
+  return 'solution' in part;
 }
 
 export function questionMarks(question: Question | LearnerQuestion): number {
-  return question.parts.reduce((total, part) => total + partMarks(part), 0);
+  return question.parts.reduce((total, part) => total + part.marks, 0);
 }
 
 export function blankQuestion(): Question {
@@ -159,7 +209,7 @@ export function blankQuestion(): Question {
         answer: { accepted: [''], type: 'short' },
         blocks: [{ text: '', type: 'text' }],
         id: crypto.randomUUID(),
-        markscheme: [''],
+        marks: 1,
         solution: [],
       },
     ],

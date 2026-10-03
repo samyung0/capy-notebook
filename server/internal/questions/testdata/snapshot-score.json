@@ -22,10 +22,12 @@
           }
         ],
         "answer": {
-          "type": "short",
-          "accepted": ["alpha"]
+          "type": "open",
+          "accepted": ["alpha"],
+          "hints": []
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
+        "markscheme": [{ "text": "Correct answer", "marks": 1 }],
         "solution": [],
         "awarded": 0.5
       }

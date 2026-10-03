@@ -45,14 +45,22 @@ ELEMENT = {
             {"id": TEXT, "name": TEXT, "coords": PAIR, "hidden": BOOL},
             ["id", "coords"],
         ),
-        *[
-            tagged(
-                kind,
-                {"id": TEXT, "points": array(TEXT, 2, 2), "dash": BOOL, "hidden": BOOL},
-                ["id", "points"],
-            )
-            for kind in ("line", "segment")
-        ],
+        tagged(
+            "line",
+            {"id": TEXT, "points": array(TEXT, 2, 2), "dash": BOOL, "hidden": BOOL},
+            ["id", "points"],
+        ),
+        tagged(
+            "segment",
+            {
+                "id": TEXT,
+                "points": array(TEXT, 2, 2),
+                "dash": BOOL,
+                "ticks": {"type": "integer", "minimum": 1, "maximum": 3},
+                "hidden": BOOL,
+            },
+            ["id", "points"],
+        ),
         tagged(
             "circle",
             {
@@ -68,6 +76,39 @@ ELEMENT = {
             "text",
             {"id": TEXT, "coords": PAIR, "text": TEXT, "hidden": BOOL},
             ["id", "coords", "text"],
+        ),
+        # points: [first, vertex, second]; 90 degrees draws the square mark.
+        tagged(
+            "angle",
+            {"id": TEXT, "points": array(TEXT, 3, 3), "label": TEXT, "hidden": BOOL},
+            ["id", "points"],
+        ),
+        # Counterclockwise from points[0] to points[1] around center.
+        *[
+            tagged(
+                kind,
+                {
+                    "id": TEXT,
+                    "center": TEXT,
+                    "points": array(TEXT, 2, 2),
+                    "dash": BOOL,
+                    **({"shade": BOOL} if kind == "sector" else {}),
+                    "hidden": BOOL,
+                },
+                ["id", "center", "points"],
+            )
+            for kind in ("arc", "sector")
+        ],
+        tagged(
+            "polygon",
+            {
+                "id": TEXT,
+                "points": array(TEXT, 3, 12),
+                "dash": BOOL,
+                "shade": BOOL,
+                "hidden": BOOL,
+            },
+            ["id", "points"],
         ),
     ]
 }
@@ -88,7 +129,6 @@ BLOCK = {
                 "xTitle": TEXT,
                 "yTitle": TEXT,
                 "gridlines": {"enum": ["normal", "fine"]},
-                "showValues": BOOL,
             },
             ["kind", "title", "labels", "series"],
         ),
@@ -139,13 +179,18 @@ ANSWER = {
         tagged("open", {"accepted": array(TEXT, 1), "hints": array(TEXT)}),
     ]
 }
+# Only open parts have a markscheme; its items' marks add up to the part's.
 PART = obj(
     {
         "blocks": array(BLOCK, 1, 40),
         "answer": ANSWER,
-        "markscheme": array(TEXT, 1, 20),
+        "marks": {"type": "integer", "minimum": 1, "maximum": 20},
+        "markscheme": array(
+            obj({"text": TEXT, "marks": {"type": "integer", "minimum": 1}}), 1, 20
+        ),
         "solution": array(BLOCK, 1, 40),
-    }
+    },
+    ["blocks", "answer", "marks", "solution"],
 )
 QUESTION = obj(
     {
@@ -158,6 +203,11 @@ QUESTION = obj(
     ["stem", "parts", "layout", "labels"],
 )
 WRITE = obj({"questions": array(QUESTION, 1, 50)})
+# One full passage plus the subject's question-type ids it uses; the driver
+# checks the ids against the topic's vocabulary.
+PASSAGE = obj(
+    {"questions": array(QUESTION, 1, 1), "question_types": array(TEXT, 1, 11)}
+)
 REFERENCES = obj(
     {"references": array(obj({"url": TEXT, "title": TEXT, "notes": TEXT}), 1)}
 )

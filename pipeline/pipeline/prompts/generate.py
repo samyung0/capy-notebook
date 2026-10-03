@@ -89,15 +89,19 @@ def diagram_instruction(diagram_type: str) -> str:
 
 QUESTION_CONTRACT = (
     """Return canonical question objects only, with no legacy fields:
-{"stem": [Block], "parts": [{"blocks": [Block], "answer": Answer,
-"markscheme": ["one explicit marking item per mark"], "solution": [Block]}],
+{"stem": [Block], "parts": [{"blocks": [Block], "answer": Answer, "marks": 1,
+"markscheme": [{"text": "one explicit marking item", "marks": 1}], "solution": [Block]}],
 "layout": "paper" or "split", "labels": "letters" or "numbers"}.
 The application assigns UUID ids to questions and parts; omit their ids.
 """
     + (
         f"Every question has 1 to {limits.QUIZ_QUESTION_PARTS_MAX} parts. Each part has "
-        f"nonempty blocks, 1 to {limits.QUIZ_MARKSCHEME_MAX} marking items and a worked "
-        f"solution. The whole quiz has at most {limits.QUIZ_PARTS_MAX} parts, of which "
+        f"nonempty blocks, whole marks from 1 to {limits.QUESTION_MARKS_MAX} and a worked "
+        "solution. Only an open part has a markscheme: 1 to "
+        f"{limits.QUIZ_MARKSCHEME_MAX} items, each with whole marks, adding up to the "
+        "part's marks; harder steps can carry more. Every other answer type has no "
+        "markscheme key and explains its answer in the solution. The whole quiz has "
+        f"at most {limits.QUIZ_PARTS_MAX} parts, of which "
         f"at most {limits.QUIZ_OPEN_PARTS_MAX} are open answers, and an open model answer "
         f"stays under {limits.QUIZ_OPEN_ANSWER_MAX} characters. A one-part question may "
         "have an empty stem.\n"
@@ -105,7 +109,7 @@ The application assigns UUID ids to questions and parts; omit their ids.
     + """Block forms:
 - {"type":"text", "text":"plain text with $inline math$ or $$display math$$", "label":"optional paragraph label"}.
 - {"type":"table", "header":true, "rows":[["cell", "cell"]]}.
-- {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "unit", "xTitle", "yTitle", "gridlines":"normal|fine", "showValues":false}.
+- {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "unit", "xTitle", "yTitle", "gridlines":"normal|fine"}.
 Do not invent image URLs or SVGs. Use text, tables or charts for generated app quizzes.
 Answer is one of:
 - {"type":"mcq" or "multi", "options":["text option"], "correct":[0]} using zero-based indices; mcq has exactly one correct index.
@@ -115,8 +119,8 @@ Answer is one of:
 - {"type":"ordering", "items":["first", "second"]} stored in correct order.
 - {"type":"open", "accepted":["model answer"], "hints":["hint"]}.
 Strings are plain strings, never {value:...} wrappers. Put explanations in the
-part's solution blocks, not on options. Marks equal markscheme item count; do
-not emit points, rubrics, prompt, difficulty, explanation or top-level type.
+part's solution blocks, not on options. Do not emit points, rubrics, prompt,
+difficulty, explanation or top-level type.
 Open/essay answers must be NON-COMPUTATIONAL: only facts, definitions and
 explanations assessable from text. Calculations, numerical equivalence, algebraic
 or logical derivations and proofs must use deterministic answer types such as

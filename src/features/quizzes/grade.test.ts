@@ -3,14 +3,14 @@ import { exampleQuestion } from '@/features/questions/questionFixtures';
 import { answerKey, applyItemAwards, fuzzyMatch, scoreQuestion } from './grade';
 
 describe('part grading', () => {
-  it('derives marks from scheme items and uses stable part IDs', () => {
+  it('scores a closed part by its marks and uses stable part IDs', () => {
     const question = exampleQuestion('q');
-    question.parts[0].markscheme.push('Provides supporting evidence.');
+    question.parts[0].marks = 3;
     expect(scoreQuestion(question, answerKey(question))).toEqual({
-      awarded: 2,
-      max: 2,
+      awarded: 3,
+      max: 3,
     });
-    expect(scoreQuestion(question, { q: [1] })).toEqual({ awarded: 0, max: 2 });
+    expect(scoreQuestion(question, { q: [1] })).toEqual({ awarded: 0, max: 3 });
     const open = exampleQuestion('open', {
       accepted: ['Evidence'],
       hints: [],

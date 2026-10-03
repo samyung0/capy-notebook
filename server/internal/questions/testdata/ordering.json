@@ -23,7 +23,7 @@
           "type": "ordering",
           "items": ["A", "B"]
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
         "solution": []
       }
     ],

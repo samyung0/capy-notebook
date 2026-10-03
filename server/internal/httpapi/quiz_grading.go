@@ -63,6 +63,7 @@ func (a *api) registerQuizGrading(api huma.API) {
 type openPart struct {
 	question   string
 	markscheme []string
+	itemMarks  []float64
 	answer     string
 }
 
@@ -100,12 +101,8 @@ func openParts(raw json.RawMessage, answers map[string]string) (map[string]openP
 		if strings.TrimSpace(answer) == "" {
 			continue
 		}
-		scheme, _ := loc.part["markscheme"].([]any)
-		items := make([]string, len(scheme))
-		for i, item := range scheme {
-			items[i], _ = item.(string)
-		}
-		out[id] = openPart{question: questions.GradingText(loc.question, loc.index), markscheme: items, answer: answer}
+		items, marks := questions.MarkItems(loc.part)
+		out[id] = openPart{question: questions.GradingText(loc.question, loc.index), markscheme: items, itemMarks: marks, answer: answer}
 	}
 	return out, nil
 }
@@ -124,9 +121,11 @@ func (a *api) gradeOpenParts(ctx context.Context, parts map[string]openPart) (Gr
 			if err != nil {
 				return err
 			}
+			// Jev judges each item as none, half or all of it; items carry their own marks.
 			total := 0.0
-			for _, award := range awards {
-				total += award
+			for i := range awards {
+				awards[i] *= part.itemMarks[i]
+				total += awards[i]
 			}
 			mu.Lock()
 			defer mu.Unlock()
@@ -271,11 +270,7 @@ func (a *api) checkQuestionComputation(ctx context.Context, in *computationCheck
 		if p["id"] != in.Body.PartID || answer["type"] != "open" {
 			continue
 		}
-		scheme, _ := p["markscheme"].([]any)
-		items := make([]string, len(scheme))
-		for j, item := range scheme {
-			items[j], _ = item.(string)
-		}
+		items, _ := questions.MarkItems(p)
 		probability, usage, err := a.jev.RequiresComputation(ctx, questions.GradingText(in.Body.Question, i), items)
 		if err != nil {
 			obs.CaptureErr(ctx, err, map[string]string{"surface": store.SurfaceQuiz})

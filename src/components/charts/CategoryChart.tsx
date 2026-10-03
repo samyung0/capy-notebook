@@ -1,6 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { ChartBlock } from '@/features/questions/types';
-import { m } from '@/i18n';
 
 export type ChartData = Omit<ChartBlock, 'type'> & {
   illustrative?: boolean;
@@ -14,23 +13,21 @@ export type ChartFrameProps = {
   legend: string[];
   values: { columns: string[]; rows: (string | number)[][] };
   children?: ReactNode;
-  showValues?: boolean;
   xTitle?: string;
   yTitle?: string;
 };
+// Question charts sit at about the width of graph figures, title centred.
 function QuestionChartFrame({
   title,
   unit,
   legend,
-  values,
   children,
-  showValues,
   xTitle,
   yTitle,
 }: ChartFrameProps) {
   return (
-    <figure className="my-3 min-w-0">
-      <figcaption className="mb-2 font-semibold">
+    <figure className="mx-auto my-3 w-full min-w-0 max-w-md">
+      <figcaption className="mb-2 text-center font-semibold">
         {title}
         {unit && <span className="ml-2 font-normal text-fg-muted">{unit}</span>}
       </figcaption>
@@ -38,7 +35,6 @@ function QuestionChartFrame({
       <div className="overflow-x-auto">{children}</div>
       {xTitle && <p className="t-meta text-center text-fg-muted">{xTitle}</p>}
       <ChartLegend names={legend} />
-      {showValues && <ChartValues {...values} />}
     </figure>
   );
 }
@@ -83,10 +79,10 @@ function bar(x: number, y0: number, y1: number, width: number) {
   return `M${x},${y0} h${width} V${y1 - r} a${r},${r} 0 0 1 -${r},${r} h-${width - 2 * r} a${r},${r} 0 0 1 -${r},-${r} Z`;
 }
 
-export function ChartLegend({ names }: { names: string[] }) {
+function ChartLegend({ names }: { names: string[] }) {
   if (names.length < 2) return null;
   return (
-    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-fg-secondary">
+    <div className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-0.5 text-[11px] text-fg-secondary">
       {names.map((name, index) => (
         <span
           className="inline-flex items-center gap-1"
@@ -100,50 +96,6 @@ export function ChartLegend({ names }: { names: string[] }) {
         </span>
       ))}
     </div>
-  );
-}
-
-export function ChartValues({
-  columns,
-  rows,
-}: {
-  columns: string[];
-  rows: (string | number)[][];
-}) {
-  return (
-    <details className="mt-1 text-[11px]">
-      <summary className="cursor-pointer text-fg-muted">
-        {m.chat_chart_values()}
-      </summary>
-      <table className="mt-1 w-full border-collapse">
-        <thead>
-          <tr>
-            {columns.map((column, index) => (
-              <th
-                className="border-divider border-b px-1 py-0.5 text-left font-semibold"
-                key={index}
-              >
-                {column}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={index}>
-              {row.map((cell, cellIndex) => (
-                <td
-                  className="px-1 py-0.5 tabular-nums first:font-semibold"
-                  key={cellIndex}
-                >
-                  {typeof cell === 'number' ? format(cell) : cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
   );
 }
 
@@ -222,7 +174,6 @@ export function CategoryChart({
     illustrative: props.illustrative,
     legend,
     passages: props.passages,
-    showValues: props.showValues,
     title: props.title,
     unit: props.unit,
     values,

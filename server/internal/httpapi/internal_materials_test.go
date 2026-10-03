@@ -339,7 +339,7 @@ func TestInternalGeneratedQuizAndFlashcardSetPersistResolvedScope(t *testing.T) 
 			body: map[string]any{
 				"questions": []map[string]any{{
 					"id": "q_scope", "stem": []any{}, "layout": "paper", "labels": "letters",
-					"parts": []any{map[string]any{"id": "q_scope:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Was this scope persisted?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "markscheme": []any{"Correct answer."}, "solution": []any{}}},
+					"parts": []any{map[string]any{"id": "q_scope:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Was this scope persisted?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}}},
 				}},
 			},
 		},
@@ -473,6 +473,19 @@ func TestInternalMaterialStoresProvenanceAndShareAlikeLicense(t *testing.T) {
 	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("a book without a version: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	body["toolCallId"] = "call_prov_web"
+	body["title"] = "Web credit"
+	body["provenance"] = map[string]any{
+		"books": []map[string]any{},
+		"web": []map[string]any{
+			{"url": "https://open.example/essay", "title": "An essay", "authors": []string{}, "license": "CC BY 4.0", "retrievedAt": "2026-10-02"},
+		},
+	}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("web provenance from a model call: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

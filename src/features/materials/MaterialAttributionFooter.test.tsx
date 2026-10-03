@@ -35,6 +35,30 @@ describe('MaterialAttributionFooter', () => {
     expect(html).toContain('This material is licensed CC BY-SA 4.0.');
   });
 
+  it('credits a web page with its publisher, retrieval date and link', () => {
+    const html = renderToStaticMarkup(
+      <MaterialAttributionFooter
+        provenance={{
+          books: [],
+          web: [
+            {
+              authors: ['Writer'],
+              license: 'CC BY 4.0',
+              publisher: 'Open Journal',
+              retrievedAt: '2026-10-02',
+              title: 'An essay',
+              url: 'https://open.example/essay',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(html).toContain('An essay (Open Journal, retrieved 2026-10-02)');
+    expect(html).toContain('Writer');
+    expect(html).toContain('https://open.example/essay');
+  });
+
   it('still names the book version when the book has no edition', () => {
     const html = renderToStaticMarkup(
       <MaterialAttributionFooter

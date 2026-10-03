@@ -24,7 +24,7 @@
           "options": ["A", "B"],
           "correct": [0]
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
         "solution": []
       }
     ],

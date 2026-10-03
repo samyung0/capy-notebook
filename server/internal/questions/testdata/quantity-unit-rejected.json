@@ -24,7 +24,7 @@
           "unit": "m",
           "accepted": ["1 cm"]
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
         "solution": []
       }
     ],

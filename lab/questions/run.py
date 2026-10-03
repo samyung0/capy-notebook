@@ -49,8 +49,13 @@ class PendingStage(Exception):
 def validate_stage_output(stage, payload, value):
     if stage == "write" and len(value["questions"]) != payload["count"]:
         raise ValueError("Writer returned a different question count")
-    if stage == "passage" and len(value["questions"]) != 1:
-        raise ValueError("A passage packet returns one question")
+    if stage == "passage":
+        if len(value["questions"]) != 1:
+            raise ValueError("A passage packet returns one question")
+        types = value["question_types"]
+        allowed = {t["id"] for t in payload["question_types"]}
+        if len(set(types)) != len(types) or not set(types) <= allowed:
+            raise ValueError("Passage question types must be distinct vocabulary ids")
     if stage == "solve":
         parts = payload["question"]["parts"]
         answers = value["answers"]
@@ -198,8 +203,7 @@ def learner(question):
         if "unit" in answer:
             visible["unit"] = answer["unit"]
         part["answer"] = visible
-        part["marks"] = len(part["markscheme"])
-        part.pop("markscheme")
+        part.pop("markscheme", None)
         part.pop("solution")
     for blocks in [view["stem"], *(part["blocks"] for part in view["parts"])]:
         for index, block in enumerate(blocks):
@@ -274,6 +278,30 @@ def reference_text(topic):
     return {p.name: p.read_text(encoding="utf-8") for p in paths}
 
 
+WEB_SOURCE_KEYS = (
+    "url",
+    "title",
+    "authors",
+    "publisher",
+    "license",
+    "licenseUrl",
+    "retrievedAt",
+)
+
+
+def passage_source(passage):
+    """The bank source for a passage entry: a library excerpt or a licensed web page."""
+    if passage.get("kind") == "web":
+        return {
+            "kind": "web",
+            **{k: passage[k] for k in WEB_SOURCE_KEYS if k in passage},
+        }
+    return {
+        "kind": "library",
+        **{k: passage[k] for k in ("excerptId", "bookId", "version")},
+    }
+
+
 def check():
     graph = {
         "type": "graph",
@@ -296,7 +324,7 @@ def check():
                     "options": ["a", "b"],
                     "pairs": [{"left": "x", "right": 1}],
                 },
-                "markscheme": ["secret"],
+                "marks": 1,
                 "solution": [{"type": "text", "text": "secret"}],
             }
         ],
@@ -306,7 +334,7 @@ def check():
         "secret" not in json.dumps(visible)
         and "pairs" not in visible["parts"][0]["answer"]
     )
-    assert q["parts"][0]["markscheme"] == ["secret"]
+    assert q["parts"][0]["solution"] == [{"type": "text", "text": "secret"}]
     for block in (visible["stem"][0], visible["parts"][0]["blocks"][0]):
         assert block == {
             "type": "image",
@@ -502,14 +530,23 @@ def main():
             assign_ids(question)
             save(topic / "questions" / (question["id"] + ".json"), question)
     elif args.stage == "passage":
-        # One packet per library excerpt; provenance comes from passages.json, never the writer.
+        # One packet per passage (library excerpt or web page); provenance comes from passages.json, never the writer.
         if list((topic / "questions").glob("*.json")):
             raise ValueError(
                 "Questions already exist; use fix or a fresh topic run directory"
             )
+        vocabulary = metadata["subject"].get("question_types")
+        if not vocabulary:
+            raise ValueError(
+                "topic.json subject needs question_types from the syllabus"
+            )
         written = []
         pending = False
         for passage in read(topic / "passages.json"):
+            if passage.get("section") not in (1, 2, 3):
+                raise ValueError(
+                    "Each passage names its IELTS section pattern: 1, 2 or 3"
+                )
             try:
                 result = invoke(
                     topic,
@@ -518,24 +555,26 @@ def main():
                         "topic": metadata,
                         "style": (topic / "style.md").read_text(encoding="utf-8"),
                         "passage": passage,
+                        "section": passage["section"],
+                        "question_types": vocabulary,
                         "contract": QUESTION_CONTRACT,
                     },
-                    schema.WRITE,
+                    schema.PASSAGE,
                 )
             except PendingStage:
                 pending = True
                 continue
-            written.append((passage, result["questions"][0]))
+            written.append((passage, result))
         if pending:
             raise PendingStage()
-        sources = {}
-        for passage, question in written:
-            assign_ids(question)
+        sources, types = {}, {}
+        for passage, result in written:
+            question = assign_ids(result["questions"][0])
             save(topic / "questions" / (question["id"] + ".json"), question)
-            sources[question["id"]] = [
-                {key: passage[key] for key in ("excerptId", "bookId", "version")}
-            ]
+            sources[question["id"]] = [passage_source(passage)]
+            types[question["id"]] = result["question_types"]
         save(topic / "sources.json", sources)
+        save(topic / "question-types.json", types)
     elif args.stage == "solve":
         pending = False
         for path, question in questions(topic):
@@ -638,6 +677,8 @@ def main():
     else:
         source_path = topic / "sources.json"
         source_refs = read(source_path) if source_path.exists() else {}
+        types_path = topic / "question-types.json"
+        question_types = read(types_path) if types_path.exists() else {}
         comparisons = {r["id"]: r for r in read(topic / "compare.json")}
         copies = {r["id"]: r for r in read(topic / "copycheck.json")}
         renders = read(topic / "render" / "manifest.json")
@@ -667,6 +708,7 @@ def main():
                 {
                     "content": q,
                     "sources": source_refs.get(q["id"], []),
+                    "questionTypes": question_types.get(q["id"], []),
                     "sha256": digest,
                 }
             )

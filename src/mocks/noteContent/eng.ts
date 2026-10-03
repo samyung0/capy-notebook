@@ -121,9 +121,7 @@ export const engNotes: SeedNote[] = [
                   },
                 ],
                 id: 'eng_gatsby_q1:part',
-                markscheme: [
-                  'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',
-                ],
+                marks: 1,
                 solution: [
                   {
                     text: 'The strongest claims link Nick’s narrative reliability to theme, not plot summary.',

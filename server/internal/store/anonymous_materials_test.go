@@ -17,7 +17,7 @@ func TestAnonymousMaterialsVisibilityAndAssets(t *testing.T) {
 	ownerID := newBlobTestUser(t, s, "u_anon_owner")
 	assetID, strayID := uid("asset"), uid("asset")
 	content, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[{"type":"image","image":{"assetId":"`+assetID+`"},"width":10,"height":10,"description":"Figure"}],
-		"parts":[{"id":"q1-a","blocks":[{"type":"text","text":"Explain."}],"answer":{"type":"open","accepted":["Because."],"hints":[]},"markscheme":["States why"],"solution":[]}],
+		"parts":[{"id":"q1-a","blocks":[{"type":"text","text":"Explain."}],"answer":{"type":"open","accepted":["Because."],"hints":[]},"marks":1,"markscheme":[{"text":"States why","marks":1}],"solution":[]}],
 		"layout":"paper","labels":"letters"}]`), nil)
 	if err != nil {
 		t.Fatal(err)

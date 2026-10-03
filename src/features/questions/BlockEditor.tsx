@@ -266,16 +266,6 @@ function ChartEditor({
               ]}
               value={block.gridlines ?? 'normal'}
             />
-            <label className="flex items-center gap-2">
-              <input
-                checked={block.showValues ?? false}
-                onChange={(event) =>
-                  onChange({ ...block, showValues: event.target.checked })
-                }
-                type="checkbox"
-              />
-              {m.question_ui_show_the_data_table_under_the_chart()}
-            </label>
           </Collapsible.Content>
         </Collapsible.Root>
       </div>

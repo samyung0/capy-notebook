@@ -6,7 +6,16 @@
  */
 
 export interface Source {
-  bookId: string;
-  excerptId: string;
-  version: number;
+  /** @nullable */
+  authors?: string[] | null;
+  bookId?: string;
+  excerptId?: string;
+  kind: string;
+  license?: string;
+  licenseUrl?: string;
+  publisher?: string;
+  retrievedAt?: string;
+  title?: string;
+  url?: string;
+  version?: number;
 }

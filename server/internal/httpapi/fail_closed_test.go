@@ -25,7 +25,7 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 		default:
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"mcq","options":["a","b"],"correct":[0]},"markscheme":["Correct answer."],"solution":[]}],"layout":"paper","labels":"letters"}]}`))
+		_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Q?"}],"answer":{"type":"mcq","options":["a","b"],"correct":[0]},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]}`))
 	}))
 	t.Cleanup(srv.Close)
 

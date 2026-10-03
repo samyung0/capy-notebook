@@ -62,18 +62,20 @@ export function validateGraphRecipe(graph: GraphBlock): void {
     )
       throw new GraphError(m.question_ui_enter_valid_coordinates());
     if (
-      (element.type === 'line' || element.type === 'segment') &&
-      (element.points[0] === element.points[1] ||
+      'points' in element &&
+      (new Set(element.points).size !== element.points.length ||
         element.points.some((id) => !points.has(id)))
     )
-      throw new GraphError(
-        m.question_ui_select_two_different_points_for_the_line()
-      );
+      throw new GraphError(m.question_ui_select_different_points());
+    if (
+      'center' in element &&
+      (!points.has(element.center) ||
+        ('points' in element && element.points.includes(element.center)))
+    )
+      throw new GraphError(m.question_ui_select_a_center_point());
     if (
       element.type === 'circle' &&
-      (!points.has(element.center) ||
-        !Number.isFinite(element.radius) ||
-        element.radius <= 0)
+      (!Number.isFinite(element.radius) || element.radius <= 0)
     )
       throw new GraphError(
         m.question_ui_select_a_center_and_a_positive_radius()
@@ -111,6 +113,36 @@ export async function createGraphBoard(
   };
   const board = JXG.JSXGraph.initBoard(container, boardOptions);
   const points = new Map<string, Point>();
+  const [left, top, right, bottom] = graph.board.bbox;
+  // Pixels per board unit; proportional boards have scaleX === scaleY.
+  const scaleX = graph.width / (right - left);
+  const scaleY = graph.height / (top - bottom);
+  // Point names sit on the side facing away from the figure's centre, so a
+  // vertex label lands outside its polygon instead of on an edge.
+  const named = graph.elements.filter(
+    (element) => element.type === 'point' && element.name && !element.hidden
+  ) as Extract<GraphElement, { type: 'point' }>[];
+  const centre = named.length
+    ? named
+        .reduce(
+          ([x, y], element) => [x + element.coords[0], y + element.coords[1]],
+          [0, 0]
+        )
+        .map((sum) => sum / named.length)
+    : [0, 0];
+  const labelPlacement = ([x, y]: [number, number]) => {
+    const dx = (x - centre[0]) * scaleX;
+    const dy = (y - centre[1]) * scaleY;
+    const length = Math.hypot(dx, dy);
+    if (named.length < 3 || length < 1) return { offset: [8, 8] };
+    return {
+      anchorX: dx >= 0 ? 'left' : 'right',
+      anchorY: dy >= 0 ? 'bottom' : 'top',
+      offset: [(dx / length) * 8, (dy / length) * 8],
+    } as const;
+  };
+  // Angle marks scale with the board so they read the same at any zoom.
+  const angleRadius = Math.min(right - left, top - bottom) * 0.06;
   const add = (element: GraphElement) => {
     const attributes = {
       dash: 'dash' in element && element.dash ? 2 : 0,
@@ -128,7 +160,11 @@ export async function createGraphBoard(
           element.id,
           board.create('point', element.coords, {
             ...attributes,
-            label: { display: 'internal', parse: false },
+            label: {
+              display: 'internal',
+              parse: false,
+              ...labelPlacement(element.coords),
+            },
             name: element.name ?? '',
             size: 2,
           })
@@ -144,13 +180,30 @@ export async function createGraphBoard(
         break;
       }
       case 'line':
-      case 'segment':
         board.create(
-          element.type,
+          'line',
           element.points.map((id) => points.get(id)),
           attributes
         );
         break;
+      case 'segment': {
+        const segment = board.create(
+          'segment',
+          element.points.map((id) => points.get(id)),
+          attributes
+        );
+        // Equal sides carry the same number of short marks across their middle.
+        if (element.ticks)
+          board.create('hatch', [segment, element.ticks], {
+            ...attributes,
+            dash: 0,
+            id: `${element.id}-ticks`,
+            majorHeight: 10,
+            strokeWidth: 1.5,
+            ticksDistance: 5 / Math.min(scaleX, scaleY),
+          });
+        break;
+      }
       case 'circle':
         board.create('circle', [points.get(element.center), element.radius], {
           ...attributes,
@@ -164,6 +217,97 @@ export async function createGraphBoard(
           parse: false,
           useMathJax: false,
         });
+        break;
+      case 'angle': {
+        const [first, vertex, second] = element.points.map(
+          (id) => points.get(id) as Point
+        );
+        board.create('nonreflexangle', [first, vertex, second], {
+          ...attributes,
+          fillOpacity: 0,
+          orthoType: 'square',
+          radius: angleRadius,
+          withLabel: false,
+        });
+        if (element.label) {
+          // Centre the value on the bisector just beyond the arc, so it sits
+          // inside the angle instead of on one of its arms.
+          const unit = (to: Point) => {
+            const dx = (to.X() - vertex.X()) * scaleX;
+            const dy = (to.Y() - vertex.Y()) * scaleY;
+            const length = Math.hypot(dx, dy) || 1;
+            return [dx / length, dy / length];
+          };
+          const [ax, ay] = unit(first);
+          const [bx, by] = unit(second);
+          let [mx, my] = [ax + bx, ay + by];
+          if (Math.hypot(mx, my) < 1e-6) [mx, my] = [-ay, ax];
+          const length = Math.hypot(mx, my);
+          // Narrow angles push the value out until the wedge fits about two
+          // characters (13px either side of the bisector), up to 70px.
+          const half =
+            Math.acos(Math.max(-1, Math.min(1, ax * bx + ay * by))) / 2;
+          const distance = Math.min(
+            70,
+            Math.max(
+              angleRadius * 1.9 * scaleX,
+              13 / Math.tan(Math.max(half, 0.05))
+            )
+          );
+          board.create(
+            'text',
+            [
+              vertex.X() + ((mx / length) * distance) / scaleX,
+              vertex.Y() + ((my / length) * distance) / scaleY,
+              element.label,
+            ],
+            {
+              ...attributes,
+              anchorX: 'middle',
+              anchorY: 'middle',
+              display: 'internal',
+              id: `${element.id}-label`,
+              parse: false,
+              useMathJax: false,
+            }
+          );
+        }
+        break;
+      }
+      case 'arc':
+      case 'sector':
+        board.create(
+          element.type,
+          [
+            points.get(element.center),
+            ...element.points.map((id) => points.get(id)),
+          ],
+          {
+            ...attributes,
+            fillOpacity: element.type === 'sector' && element.shade ? 0.15 : 0,
+          }
+        );
+        break;
+      case 'polygon':
+        board.create(
+          'polygon',
+          element.points.map((id) => points.get(id)),
+          {
+            ...attributes,
+            // Borders default to half the width of segments; match them.
+            borders: {
+              dash: attributes.dash,
+              fixed: true,
+              highlight: false,
+              strokeColor: '#222222',
+              strokeWidth: 2,
+              visible: attributes.visible,
+            },
+            fillOpacity: element.shade ? 0.15 : 0,
+            hasInnerPoints: false,
+            vertices: { visible: false },
+          }
+        );
         break;
     }
   };

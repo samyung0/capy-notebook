@@ -26,7 +26,8 @@
           ],
           "hints": []
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
+        "markscheme": [{ "text": "Correct answer", "marks": 1 }],
         "solution": []
       }
     ],

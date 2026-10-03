@@ -150,7 +150,14 @@ const graphElement = z.discriminatedUnion('type', [
   z.strictObject({
     id: identifier,
     points: z.tuple([identifier, identifier]),
-    type: z.enum(['line', 'segment']),
+    type: z.literal('line'),
+    ...style,
+  }),
+  z.strictObject({
+    id: identifier,
+    points: z.tuple([identifier, identifier]),
+    ticks: z.number().int().min(1).max(3).optional(),
+    type: z.literal('segment'),
     ...style,
   }),
   z.strictObject({
@@ -166,6 +173,35 @@ const graphElement = z.discriminatedUnion('type', [
     id: identifier,
     text,
     type: z.literal('text'),
+  }),
+  z.strictObject({
+    hidden: z.boolean().optional(),
+    id: identifier,
+    label: meta.optional(),
+    points: z.tuple([identifier, identifier, identifier]),
+    type: z.literal('angle'),
+  }),
+  z.strictObject({
+    center: identifier,
+    id: identifier,
+    points: z.tuple([identifier, identifier]),
+    type: z.literal('arc'),
+    ...style,
+  }),
+  z.strictObject({
+    center: identifier,
+    id: identifier,
+    points: z.tuple([identifier, identifier]),
+    shade: z.boolean().optional(),
+    type: z.literal('sector'),
+    ...style,
+  }),
+  z.strictObject({
+    id: identifier,
+    points: z.array(identifier).min(3).max(limits.QUESTION_GRAPH_POLYGON_MAX),
+    shade: z.boolean().optional(),
+    type: z.literal('polygon'),
+    ...style,
   }),
 ]);
 
@@ -213,7 +249,6 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         )
         .min(1)
         .max(limits.QUESTION_CHART_SERIES_MAX),
-      showValues: z.boolean().optional(),
       title: meta,
       type: z.literal('chart'),
       unit: meta.optional(),
@@ -287,12 +322,20 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
             message: 'Graph element IDs must be unique.',
           });
         ids.add(element.id);
-        if ('points' in element && element.points.some((id) => !points.has(id)))
+        if (
+          'points' in element &&
+          (element.points.some((id) => !points.has(id)) ||
+            new Set(element.points).size !== element.points.length)
+        )
           ctx.addIssue({
             code: 'custom',
             message: 'Lines must refer to existing points.',
           });
-        if (element.type === 'circle' && !points.has(element.center))
+        if (
+          'center' in element &&
+          (!points.has(element.center) ||
+            ('points' in element && element.points.includes(element.center)))
+        )
           ctx.addIssue({
             code: 'custom',
             message: 'Circle centers must refer to existing points.',
@@ -384,10 +427,17 @@ export const questionSchema = z.strictObject({
           .max(limits.QUESTION_BLOCKS_MAX),
         id: identifier,
         itemAwards: z.array(finite).optional(),
+        marks: z.number().int().min(1).max(limits.QUESTION_MARKS_MAX),
         markscheme: z
-          .array(z.string().trim().min(1).max(1000))
+          .array(
+            z.strictObject({
+              marks: z.number().int().min(1),
+              text: z.string().trim().min(1).max(limits.QUESTION_MARK_ITEM_MAX),
+            })
+          )
           .min(1)
-          .max(limits.QUESTION_MARKSCHEME_MAX),
+          .max(limits.QUESTION_MARKSCHEME_MAX)
+          .optional(),
         solution: z.array(questionBlockSchema).max(limits.QUESTION_BLOCKS_MAX),
       })
     )
@@ -423,23 +473,39 @@ export function validateQuestion(value: unknown, policy: QuestionPolicy = {}) {
       (part.awarded !== undefined || part.itemAwards !== undefined)
     )
       throw new Error('Authored questions cannot contain awarded marks.');
+    // Only open parts have a marking scheme, which Jev grades against.
+    if ((part.answer.type === 'open') !== (part.markscheme !== undefined))
+      throw new Error(
+        'Open answers need a marking scheme, and only open answers have one.'
+      );
+    const marks = part.markscheme?.map((item) => item.marks) ?? [];
+    if (part.markscheme && marks.reduce((sum, n) => sum + n, 0) !== part.marks)
+      throw new Error("The marking items must add up to the part's marks.");
     if (
       part.awarded !== undefined &&
-      (part.awarded > part.markscheme.length || (part.awarded * 2) % 1 !== 0)
+      (part.awarded > part.marks || (part.awarded * 2) % 1 !== 0)
     )
-      throw new Error(
-        'Awarded marks exceed the marking scheme or are not half marks.'
-      );
+      throw new Error('Awarded marks exceed the part or are not half marks.');
     if (
       part.itemAwards !== undefined &&
-      (part.itemAwards.length !== part.markscheme.length ||
-        part.itemAwards.some((award) => ![0, 0.5, 1].includes(award)) ||
+      (!part.markscheme ||
+        part.itemAwards.length !== marks.length ||
+        part.itemAwards.some(
+          (award, i) =>
+            award !== 0 && award !== marks[i] / 2 && award !== marks[i]
+        ) ||
         part.itemAwards.reduce((sum, award) => sum + award, 0) !== part.awarded)
     )
-      throw new Error('Item awards must give each marking item one mark.');
+      throw new Error(
+        "Item awards must give none, half or all of each marking item's marks."
+      );
     if (policy.bank && part.solution.length === 0)
       throw new Error('Bank questions need a worked solution for every part.');
-    if (!policy.bank && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
+    if (
+      !policy.bank &&
+      part.markscheme &&
+      part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX
+    )
       throw new Error(
         `A part has at most ${limits.QUIZ_MARKSCHEME_MAX} marking items.`
       );

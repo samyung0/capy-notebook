@@ -20,16 +20,18 @@
           }
         ],
         "answer": {
-          "type": "short",
-          "accepted": ["alpha"]
+          "type": "open",
+          "accepted": ["alpha"],
+          "hints": []
         },
+        "marks": 6,
         "markscheme": [
-          "Point 1",
-          "Point 2",
-          "Point 3",
-          "Point 4",
-          "Point 5",
-          "Point 6"
+          { "text": "Point 1", "marks": 1 },
+          { "text": "Point 2", "marks": 1 },
+          { "text": "Point 3", "marks": 1 },
+          { "text": "Point 4", "marks": 1 },
+          { "text": "Point 5", "marks": 1 },
+          { "text": "Point 6", "marks": 1 }
         ],
         "solution": []
       }

@@ -39,14 +39,16 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	sql, err := bankmigrations.FS.ReadFile("0001_init.sql")
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"0001_init.sql", "0002_question_types.sql"} {
+		sql, err := bankmigrations.FS.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, string(sql)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err = pool.Exec(ctx, string(sql)); err != nil {
-		t.Fatal(err)
-	}
-	p := publication{Run: "first", Questions: []entry{{Content: map[string]any{"id": "question-1", "text": "original"}, Sources: json.RawMessage("[]")}}}
+	p := publication{Run: "first", Questions: []entry{{Content: map[string]any{"id": "question-1", "text": "original"}, Sources: json.RawMessage("[]"), QuestionTypes: []string{"matching-headings"}}}}
 	p.Syllabus.Exam = node{ID: "exam", Label: "Exam"}
 	p.Syllabus.Subject = node{ID: "subject", Label: "Subject"}
 	p.Syllabus.Topic = node{ID: "topic", Label: "Topic"}
@@ -54,8 +56,9 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 		t.Fatal(err)
 	}
 	var position int
-	if err = pool.QueryRow(ctx, "SELECT position FROM questions WHERE id='question-1'").Scan(&position); err != nil || position != 1 {
-		t.Fatalf("first question position=%d err=%v", position, err)
+	var types []string
+	if err = pool.QueryRow(ctx, "SELECT position,question_types FROM questions WHERE id='question-1'").Scan(&position, &types); err != nil || position != 1 || len(types) != 1 || types[0] != "matching-headings" {
+		t.Fatalf("first question position=%d types=%v err=%v", position, types, err)
 	}
 	if _, err = pool.Exec(ctx, "UPDATE questions SET reviewed_at=now(),reviewed_by='reviewer' WHERE id='question-1'"); err != nil {
 		t.Fatal(err)
@@ -79,12 +82,25 @@ func TestPublicationNeverOverwritesExistingQuestions(t *testing.T) {
 }
 
 func TestSourceReferenceContract(t *testing.T) {
-	for _, raw := range []string{`null`, `[{"excerptId":"e","bookId":"b","version":0}]`, `[{"excerptId":"e","bookId":"b","version":1,"extra":true}]`} {
+	for _, raw := range []string{
+		`null`,
+		`[{"excerptId":"e","bookId":"b","version":1}]`,
+		`[{"kind":"library","excerptId":"e","bookId":"b","version":0}]`,
+		`[{"kind":"library","excerptId":"e","bookId":"b","version":1,"extra":true}]`,
+		`[{"kind":"library","excerptId":"e","bookId":"b","version":1,"url":"https://x.org"}]`,
+		`[{"kind":"web","url":"https://x.org/a","title":"A","license":"CC BY-ND 4.0","retrievedAt":"2026-10-02"}]`,
+		`[{"kind":"web","url":"https://x.org/a","title":"A","license":"CC BY-NC-SA 4.0","retrievedAt":"2026-10-02"}]`,
+		`[{"kind":"web","url":"https://x.org/a","title":"A","license":"CC BY 4.0","retrievedAt":"yesterday"}]`,
+	} {
 		if _, err := parseSources(json.RawMessage(raw)); err == nil {
 			t.Fatalf("accepted %s", raw)
 		}
 	}
-	for _, raw := range []string{`[]`, `[{"excerptId":"e","bookId":"b","version":1}]`} {
+	for _, raw := range []string{
+		`[]`,
+		`[{"kind":"library","excerptId":"e","bookId":"b","version":1}]`,
+		`[{"kind":"web","url":"https://x.org/a","title":"A","authors":["B"],"publisher":"P","license":"CC BY 4.0","licenseUrl":"https://creativecommons.org/licenses/by/4.0/","retrievedAt":"2026-10-02"}]`,
+	} {
 		if _, err := parseSources(json.RawMessage(raw)); err != nil {
 			t.Fatal(err)
 		}

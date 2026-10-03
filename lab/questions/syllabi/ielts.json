@@ -11,70 +11,92 @@
       "position": 1,
       "topics": [
         {
-          "id": "ielts-academic-reading-multiple-choice",
-          "label": "Selecting answers from choices",
+          "id": "ielts-academic-reading-nature-and-wildlife",
+          "label": "Nature and wildlife",
           "position": 1,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         },
         {
-          "id": "ielts-academic-reading-identifying-information",
-          "label": "Checking factual statements against the passage",
+          "id": "ielts-academic-reading-environment-and-climate",
+          "label": "Environment and climate",
           "position": 2,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         },
         {
-          "id": "ielts-academic-reading-identifying-writer-views",
-          "label": "Checking the writer's opinions and claims",
+          "id": "ielts-academic-reading-mind-and-behaviour",
+          "label": "Mind and behaviour",
           "position": 3,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         },
         {
-          "id": "ielts-academic-reading-matching-information",
-          "label": "Locating details in paragraphs",
+          "id": "ielts-academic-reading-health-and-medicine",
+          "label": "Health and medicine",
           "position": 4,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         },
         {
-          "id": "ielts-academic-reading-matching-headings",
-          "label": "Choosing paragraph headings",
+          "id": "ielts-academic-reading-science-and-technology",
+          "label": "Science and technology",
           "position": 5,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         },
         {
-          "id": "ielts-academic-reading-matching-features",
-          "label": "Linking details to people or categories",
+          "id": "ielts-academic-reading-history-and-archaeology",
+          "label": "History and archaeology",
           "position": 6,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
         },
         {
-          "id": "ielts-academic-reading-matching-sentence-endings",
-          "label": "Selecting endings for sentence beginnings",
+          "id": "ielts-academic-reading-society-and-culture",
+          "label": "Society and culture",
           "position": 7,
           "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+        }
+      ],
+      "question_types": [
+        {
+          "id": "multiple-choice",
+          "label": "Multiple choice"
         },
         {
-          "id": "ielts-academic-reading-sentence-completion",
-          "label": "Filling sentence gaps from the passage",
-          "position": 8,
-          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+          "id": "identifying-information",
+          "label": "Identifying information (True/False/Not given)"
         },
         {
-          "id": "ielts-academic-reading-summary-note-table-flow-chart-completion",
-          "label": "Completing summaries, notes, tables and flow charts",
-          "position": 9,
-          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+          "id": "identifying-writer-views",
+          "label": "Identifying writer’s views/claims (Yes/No/Not given)"
         },
         {
-          "id": "ielts-academic-reading-diagram-label-completion",
-          "label": "Supplying missing diagram labels",
-          "position": 10,
-          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+          "id": "matching-information",
+          "label": "Matching information"
         },
         {
-          "id": "ielts-academic-reading-short-answer",
-          "label": "Answering factual questions briefly",
-          "position": 11,
-          "syllabus_reference": "https://ielts.org/take-a-test/test-types/ielts-academic-test/ielts-academic-format-reading"
+          "id": "matching-headings",
+          "label": "Matching headings"
+        },
+        {
+          "id": "matching-features",
+          "label": "Matching features"
+        },
+        {
+          "id": "matching-sentence-endings",
+          "label": "Matching sentence endings"
+        },
+        {
+          "id": "sentence-completion",
+          "label": "Sentence completion"
+        },
+        {
+          "id": "summary-note-table-flow-chart-completion",
+          "label": "Summary/note/table/flow chart completion"
+        },
+        {
+          "id": "diagram-label-completion",
+          "label": "Diagram label completion"
+        },
+        {
+          "id": "short-answer",
+          "label": "Short-answer questions"
         }
       ]
     }

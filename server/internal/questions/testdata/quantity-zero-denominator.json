@@ -24,7 +24,7 @@
           "unit": "m",
           "accepted": ["1/0e5"]
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
         "solution": []
       }
     ],

@@ -27,8 +27,13 @@ which edits and reviews update in place.
 ## Shared question format
 
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
-part has a stable ID, blocks, one of seven answer types, plain marking items and
-worked-solution blocks. Its marks equal the number of marking items. A matching
+part has a stable ID, blocks, one of seven answer types, whole `marks` (1–20)
+and worked-solution blocks. Only open parts carry a marking scheme: items of
+text and whole marks that add up to the part's marks, because Jev grades against
+them. A closed part's answer is its own key and its solution explains it, so it
+has none; the editor sets a closed part's marks from a dropdown and an open
+part's from its items. Authored parts are told from learner parts by their
+worked solution (`isAuthoredPart`). A matching
 answer stores the full choice pool independently from its correct pairings, so
 unused and reused options survive generation, editing and rendering.
 
@@ -62,7 +67,13 @@ component with matching fonts/layout and no keyboard or menu controls. `BlockToo
 is shared by question blocks, note embeds, tables and columns.
 
 Charts reuse the SVG renderer extracted from ChatChart. Graphs store a bounded
-JSXGraph recipe and a static rendering. User quizzes and notes keep validated
+JSXGraph recipe and a static rendering. Recipe elements are function graphs,
+points, lines, segments, circles, labels, angles (three points with the vertex
+in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
+(counterclockwise from the first point around a centre) and polygons (3–12
+points); sectors and polygons can be shaded. A segment's `ticks` (1–3) draws
+JSXGraph hatch marks, so equal sides carry the same count. Question charts sit
+at about a graph's width with a centred title and never show a values table. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed
@@ -104,7 +115,8 @@ non-computational questions.
 Quiz open parts are graded by Jev, one request per part, with the contract
 benchmarked in
 [2026-10-02-jev-production-contract.md](../bench/grading/reports/2026-10-02-jev-production-contract.md):
-each marking item earns 0, 0.5 or 1 from a zero/partial/full `choice`, and an
+each marking item earns none, half or all of its marks from a zero/partial/full
+`choice` (the server scales Jev's 0, 0.5 or 1 by the item's marks), and an
 answer that is only a list of subject vocabulary earns 0 on every item. The
 part's award is the sum and the snapshot keeps `itemAwards`. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
@@ -129,8 +141,11 @@ one page (`QuizQuestionList`) with one Submit. Completion and saved attempt page
 share the part review renderer: "You scored" with one green/red square per
 question (blank answers are wrong; grey is reserved for a future Skip), marks in
 tint-fg colours, the submitted answer, then one collapsed disclosure holding the
-marking scheme and worked solution. Closed parts show item awards from their
-deterministic result; open parts show Jev's mark beside each marking item.
+worked solution, and for open parts the marking scheme with Jev's marks beside
+each item. Closed parts are all or nothing. A question with one part shows its
+marks once, in the header. Multiple-choice options sit two by two (A B / C D)
+when a paper-layout answer area is at least 36rem wide (a container query);
+split-layout questions keep one column beside their passage.
 
 Workspace quiz previews center the question column in the viewer; other quiz
 entry points retain left alignment.
@@ -162,10 +177,15 @@ the bank has its own migrations and roles. See
 [deployment-runbook.md](deployment-runbook.md) for provisioning, environment
 values, public/private buckets, local tunnel, comment recipient and backups.
 
-Sources identify an excerpt, book and historical version. Both publisher and
-reader resolve those references and apply the same provenance bounds and
-copyleft-family computation. Publication refuses incompatible sources before
-inserting a question.
+Each source has a `kind`. A `library` source names an excerpt, book and
+historical version, resolved through the library database. A `web` source
+records an openly licensed page as it read on its retrieval date: URL, title,
+authors, publisher, licence and licence URL. Its licence must allow adapted
+commercial reuse, so ND and NC are refused. Both publisher and reader apply the
+same provenance bounds and copyleft-family computation, and the attribution
+footer credits web pages beside books. Publication refuses incompatible
+sources before inserting a question. Web credits come only from the bank:
+internal material tools reject provenance that names web pages.
 
 `lab/questions` is a local staged builder. References stay private; a clean-room
 writer, blind solver, judge/fix pass, actual component renderer and copy check
@@ -182,7 +202,7 @@ immutable assets and inserts new IDs; it does not overwrite later reviewer edits
 ## Delivery and checks
 
 The Biology 101 MSW quiz and both note-embedded quizzes share
-`src/mocks/biologyQuiz.ts`: 10 questions, 12 parts and 21 marks covering all seven
+`src/mocks/biologyQuiz.ts`: 10 questions, 12 parts and 23 marks covering all seven
 answer types, fixed-unit quantities, multipart questions, both layouts, formulas,
 tables, an editable graph and all six chart styles. Every part has a worked
 solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded

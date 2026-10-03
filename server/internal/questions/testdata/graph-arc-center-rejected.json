@@ -1,0 +1,75 @@
+{
+  "name": "graph-arc-center-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "graph",
+        "board": {
+          "bbox": [-5, 5, 5, -5],
+          "axis": true,
+          "grid": false
+        },
+        "elements": [
+          {
+            "type": "point",
+            "id": "o",
+            "name": "O",
+            "coords": [0, 0]
+          },
+          {
+            "type": "point",
+            "id": "a",
+            "name": "A",
+            "coords": [3, 0]
+          },
+          {
+            "type": "point",
+            "id": "b",
+            "name": "B",
+            "coords": [0, 3]
+          },
+          {
+            "type": "point",
+            "id": "c",
+            "name": "C",
+            "coords": [-2, -2]
+          },
+          {
+            "type": "sector",
+            "id": "wedge",
+            "center": "a",
+            "points": ["a", "b"]
+          }
+        ],
+        "image": {
+          "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>"
+        },
+        "width": 320,
+        "height": 190,
+        "description": "Circle geometry with marked angles"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

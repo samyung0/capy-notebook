@@ -17,6 +17,7 @@ import {
   answerRowClass,
   MatchingLayout,
   OptionKey,
+  optionColumns,
   optionLetter,
   QuestionReview,
   QuestionView,
@@ -24,9 +25,9 @@ import {
   TextView,
 } from '@/features/questions/QuestionView';
 import {
+  isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
-  partMarks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -77,13 +78,14 @@ export function QuestionRunner({
   renderBlock?: QuestionViewProps['renderBlock'];
 }) {
   const answer = (part: QuestionPart | LearnerPart) => (
-    <div className="col-[2/-1] min-w-0">
+    <div className="@container col-[2/-1] min-w-0">
       <PartRunner
         disabled={disabled}
         key={part.id}
         onChange={(value) => onChange?.(part.id, value)}
         part={part}
         review={review}
+        twoColumns={optionColumns(question)}
         value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
       />
     </div>
@@ -192,16 +194,18 @@ function PartRunner({
   onChange,
   review,
   disabled,
+  twoColumns,
 }: {
   part: QuestionPart | LearnerPart;
   value: Answer;
   onChange: (value: Answer) => void;
   review: boolean;
   disabled: boolean;
+  twoColumns: boolean;
 }) {
   const answer = part.answer;
   // Learner questions carry no key; only a graded review reads it.
-  const key = 'markscheme' in part ? part.answer : undefined;
+  const key = isAuthoredPart(part) ? part.answer : undefined;
   // Ordering starts shuffled and the shown order is the answer, so it is
   // committed as soon as a learner sees it. Matching letters follow the
   // stored option order.
@@ -215,7 +219,7 @@ function PartRunner({
   const [unitError, setUnitError] = useState(false);
   if (answer.type === 'mcq' || answer.type === 'multi')
     return (
-      <div className="grid gap-2">
+      <div className={cn('grid gap-2', twoColumns && '@xl:grid-cols-2')}>
         {answer.options.map((option, i) => {
           const selected = Array.isArray(value) && value.includes(i);
           return (
@@ -277,7 +281,7 @@ function PartRunner({
       </div>
     );
   if (answer.type === 'short') {
-    const right = 'awarded' in part && part.awarded === partMarks(part);
+    const right = 'awarded' in part && part.awarded === part.marks;
     return (
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-3">
@@ -334,7 +338,7 @@ function PartRunner({
             {m.question_ui_value_only({ unit: answer.unit })}
           </InputError>
         )}
-        {review && 'markscheme' in part && (
+        {review && isAuthoredPart(part) && (
           <p className="mt-2 text-sm">
             <span className="mr-1.5 font-bold text-tint-success-fg text-xs">
               {m.question_ui_accepted_answers()}

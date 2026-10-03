@@ -24,7 +24,8 @@
           "accepted": ["explanation"],
           "hints": ["reason"]
         },
-        "markscheme": ["Correct answer"],
+        "marks": 1,
+        "markscheme": [{ "text": "Correct answer", "marks": 1 }],
         "solution": []
       }
     ],

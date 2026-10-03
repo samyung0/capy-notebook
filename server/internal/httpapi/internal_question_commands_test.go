@@ -12,7 +12,7 @@ func TestQuizQuestionCommandPreservesTargetIdentity(t *testing.T) {
 			t.Fatalf("%s accepted missing target", kind)
 		}
 	}
-	commands, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(`{"type":"replace_question","question_id":"existing","question":{"id":"model-id","stem":[],"parts":[{"id":"part1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"markscheme":["Correct"],"solution":[]}],"layout":"paper","labels":"letters"}}`)})
+	commands, err := normalizeMaterialCommands("quiz", []json.RawMessage{json.RawMessage(`{"type":"replace_question","question_id":"existing","question":{"id":"model-id","stem":[],"parts":[{"id":"part1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}}`)})
 	if err != nil {
 		t.Fatal(err)
 	}

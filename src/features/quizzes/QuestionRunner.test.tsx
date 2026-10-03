@@ -5,15 +5,16 @@ import { applyItemAwards } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 import { gradeAttemptQuestions } from './scoreAttempt';
 
-it('reviews the graded snapshot with marks, the answer before a collapsed scheme, and a fixed unit', async () => {
+it('reviews the graded snapshot with marks, the answer before a collapsed solution, and a fixed unit', async () => {
   const question = exampleQuestion('quantity', {
     accepted: ['2'],
     type: 'short',
     unit: 'cm',
   });
-  question.parts[0].markscheme = [
-    'Divides the length by two.',
-    'Obtains 2 cm.',
+  question.parts[0].marks = 2;
+  question.parts[0].solution = [
+    { text: 'Divides the length by two.', type: 'text' },
+    { text: 'Obtains 2 cm.', type: 'text' },
   ];
   const answers = { 'quantity-part': '2' };
   const graded = await gradeAttemptQuestions([question], answers, async () => {
@@ -65,7 +66,11 @@ it('shows an open part with one mark per marking item and an unanswered ordering
     hints: [],
     type: 'open',
   });
-  question.parts[0].markscheme = ['States the claim.', 'Gives evidence.'];
+  question.parts[0].marks = 2;
+  question.parts[0].markscheme = [
+    { marks: 1, text: 'States the claim.' },
+    { marks: 1, text: 'Gives evidence.' },
+  ];
   question.parts[0] = applyItemAwards(question.parts[0], [1, 0.5]);
   const html = renderToStaticMarkup(
     <QuestionRunner

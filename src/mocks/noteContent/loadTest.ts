@@ -156,7 +156,7 @@ function featureSkeleton(): MaterialValue {
               },
               blocks: [{ text: 'Primary ATP organelle?', type: 'text' }],
               id: 'bio_load_q1:part',
-              markscheme: ['Mitochondria produce most ATP.'],
+              marks: 1,
               solution: [
                 { text: 'Mitochondria produce most ATP.', type: 'text' },
               ],

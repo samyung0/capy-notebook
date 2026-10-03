@@ -41,7 +41,6 @@ const photosynthesis: ChartBlock = {
     { name: 'Low CO₂', values: [0, 3, 6, 6, 6] },
     { name: 'High CO₂', values: [0, 4, 8, 10, 10] },
   ],
-  showValues: true,
   title: 'Photosynthesis at two carbon dioxide concentrations',
   type: 'chart',
   xTitle: 'Light intensity (µmol photons m⁻² s⁻¹)',
@@ -68,9 +67,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q1:part',
-        markscheme: [
-          'Identifies mitochondria as the organelles that produce most ATP during aerobic respiration.',
-        ],
+        marks: 1,
         solution: [
           {
             label: 'Reasoning',
@@ -123,9 +120,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q2:part',
-        markscheme: [
-          'Distinguishes the bilayer structure from the proportions of substances by mass.',
-        ],
+        marks: 1,
         solution: [
           {
             label: 'Verdict',
@@ -152,7 +147,6 @@ export const biologyQuizQuestions: Question[] = [
         kind: 'pie',
         labels: ['Proteins', 'Lipids', 'Carbohydrates'],
         series: [{ name: 'Dry mass', values: [50, 40, 10] }],
-        showValues: true,
         title: 'Membrane composition',
         type: 'chart',
         unit: '%',
@@ -177,10 +171,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q3:part',
-        markscheme: [
-          'Identifies the nucleus as membrane-bound.',
-          'Identifies mitochondria as membrane-bound.',
-        ],
+        marks: 2,
         solution: [
           {
             header: true,
@@ -217,7 +208,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q4:part',
-        markscheme: ['Names osmosis.'],
+        marks: 1,
         solution: [
           {
             label: 'Definition',
@@ -267,11 +258,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q5:part',
-        markscheme: [
-          'Places protein synthesis at a ribosome before entry into the rough ER.',
-          'Places the Golgi apparatus after the rough ER.',
-          'Places the secretory vesicle before fusion with the cell membrane.',
-        ],
+        marks: 3,
         solution: [
           {
             label: '1. Synthesize',
@@ -321,12 +308,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q6:part',
-        markscheme: [
-          'Matches the nucleus to DNA storage.',
-          'Matches the mitochondrion to ATP synthesis.',
-          'Matches the ribosome to protein synthesis.',
-          'Matches the chloroplast to ATP synthesis.',
-        ],
+        marks: 4,
         solution: [
           {
             header: true,
@@ -379,9 +361,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q11:part',
-        markscheme: [
-          'Identifies that the ratio halves when side length doubles.',
-        ],
+        marks: 1,
         solution: [
           {
             label: 'Read the graph',
@@ -420,7 +400,7 @@ export const biologyQuizQuestions: Question[] = [
           { text: 'Ribosomes are membrane-bound organelles.', type: 'text' },
         ],
         id: 'q12:part',
-        markscheme: ['Recognizes that ribosomes have no surrounding membrane.'],
+        marks: 1,
         solution: [
           {
             label: 'Correct the statement',
@@ -462,10 +442,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q13:part',
-        markscheme: [
-          'Calculates surface area as 24 µm² and volume as 8 µm³.',
-          'Divides surface area by volume to obtain 3 µm⁻¹.',
-        ],
+        marks: 3,
         solution: [
           {
             label: 'Method 1: calculate separately',
@@ -516,10 +493,20 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q14:part',
+        marks: 4,
         markscheme: [
-          'Describes the low-CO₂ plateau at 6 µmol/min from light intensity 200 onward.',
-          'Explains that additional light no longer increases the rate, so light is not limiting there.',
-          'Uses the higher rate at higher CO₂ and the same light intensity as evidence that CO₂ supply is limiting.',
+          {
+            marks: 1,
+            text: 'Describes the low-CO₂ plateau at 6 µmol/min from light intensity 200 onward.',
+          },
+          {
+            marks: 1,
+            text: 'Explains that additional light no longer increases the rate, so light is not limiting there.',
+          },
+          {
+            marks: 2,
+            text: 'Uses the higher rate at higher CO₂ and the same light intensity as evidence that CO₂ supply is limiting.',
+          },
         ],
         solution: [
           {
@@ -531,7 +518,6 @@ export const biologyQuizQuestions: Question[] = [
             kind: 'bar',
             labels: ['Low CO₂', 'High CO₂'],
             series: [{ name: 'Oxygen production', values: [6, 10] }],
-            showValues: true,
             title: 'Compare CO₂ at light intensity 300',
             type: 'chart',
             unit: 'µmol/min',
@@ -557,9 +543,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q14:increase',
-        markscheme: [
-          'Subtracts 6 from 10 to obtain an increase of 4 µmol/min.',
-        ],
+        marks: 1,
         solution: [
           {
             text: '$$\\Delta r=r_{\\mathrm{high}}-r_{\\mathrm{low}}=10-6=4\\,\\mathrm{µmol/min}$$',
@@ -568,7 +552,6 @@ export const biologyQuizQuestions: Question[] = [
           {
             ...photosynthesis,
             kind: 'area',
-            showValues: false,
             title: 'Both rate curves, shown as filled areas',
           },
           {
@@ -586,7 +569,7 @@ export const biologyQuizQuestions: Question[] = [
           },
         ],
         id: 'q14:control',
-        markscheme: ['Identifies temperature as a controlled variable.'],
+        marks: 1,
         solution: [
           {
             header: true,

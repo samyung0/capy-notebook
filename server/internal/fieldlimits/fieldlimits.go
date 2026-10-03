@@ -37,6 +37,7 @@ const (
 	QuestionAnswers        = 100
 	QuestionMarkscheme     = 20
 	QuestionMarkItem       = 1_000
+	QuestionMarks          = 20
 	QuestionUnit           = 100
 	QuestionTableRows      = 30
 	QuestionTableColumns   = 10
@@ -44,6 +45,7 @@ const (
 	QuestionChartSeries    = 8
 	QuestionGraphElements  = 60
 	QuestionGraphTerm      = 200
+	QuestionGraphPolygon   = 12
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
@@ -70,6 +72,7 @@ var QuestionBounds = map[string]int{
 	"QUESTION_ANSWERS_MAX":         QuestionAnswers,
 	"QUESTION_MARKSCHEME_MAX":      QuestionMarkscheme,
 	"QUESTION_MARK_ITEM_MAX":       QuestionMarkItem,
+	"QUESTION_MARKS_MAX":           QuestionMarks,
 	"QUESTION_UNIT_MAX":            QuestionUnit,
 	"QUESTION_TABLE_ROWS_MAX":      QuestionTableRows,
 	"QUESTION_TABLE_COLUMNS_MAX":   QuestionTableColumns,
@@ -77,6 +80,7 @@ var QuestionBounds = map[string]int{
 	"QUESTION_CHART_SERIES_MAX":    QuestionChartSeries,
 	"QUESTION_GRAPH_ELEMENTS_MAX":  QuestionGraphElements,
 	"QUESTION_GRAPH_TERM_MAX":      QuestionGraphTerm,
+	"QUESTION_GRAPH_POLYGON_MAX":   QuestionGraphPolygon,
 	"QUESTION_SVG_BYTES_MAX":       QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX": QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":       QuestionAssetURL,

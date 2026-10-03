@@ -100,9 +100,14 @@ try {
   });
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${address.port}/bank-render`);
+  // The first load compiles the whole component tree; give a busy machine time.
+  await page.goto(`http://127.0.0.1:${address.port}/bank-render`, {
+    timeout: 120_000,
+  });
   await page.waitForFunction(
     () => typeof window.renderBankQuestion === 'function',
+    undefined,
+    { timeout: 120_000 },
   );
   if (errors.length) throw new Error(errors.join('\n'));
   for (const [index, name] of files.entries()) {

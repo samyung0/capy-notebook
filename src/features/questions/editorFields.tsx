@@ -5,6 +5,7 @@ import {
   type ReactNode,
   useId,
 } from 'react';
+import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/Select';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
-import type { QuestionAnswer, QuestionType } from './types';
+import type { MarkItem, QuestionAnswer, QuestionType } from './types';
 import { QUESTION_TYPES } from './types';
 
 export function Field({
@@ -114,6 +115,76 @@ export function StringList({
       <Button
         iconLeft="plus"
         onClick={() => onChange([...values, ''])}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        {m.question_ui_add_item()}
+      </Button>
+    </div>
+  );
+}
+export const markOptions = Array.from(
+  { length: limits.QUESTION_MARKS_MAX },
+  (_, i) => ({ label: String(i + 1), value: String(i + 1) })
+);
+
+/** An open part's marking items, each with its own whole marks. */
+export function MarkschemeList({
+  label,
+  items,
+  onChange,
+}: {
+  label: string;
+  items: MarkItem[];
+  onChange: (items: MarkItem[]) => void;
+}) {
+  const update = (index: number, change: Partial<MarkItem>) =>
+    onChange(
+      items.map((item, i) => (i === index ? { ...item, ...change } : item))
+    );
+  return (
+    <div className="space-y-2">
+      <p className="t-label">{label}</p>
+      {items.map((item, index) => (
+        <div className="flex items-center gap-2" key={index}>
+          <Input
+            aria-label={m.question_ui_numbered_item({
+              label,
+              number: index + 1,
+            })}
+            onChange={(e) => update(index, { text: e.target.value })}
+            value={item.text}
+          />
+          <Select
+            onValueChange={(value) => update(index, { marks: Number(value) })}
+            value={String(item.marks)}
+          >
+            <SelectTrigger
+              aria-label={m.question_ui_item_marks({ number: index + 1 })}
+              className="w-20 shrink-0"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {markOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <ToolbarButton
+            label={m.question_ui_remove_item({ label, number: index + 1 })}
+            onClick={() => onChange(items.filter((_, i) => i !== index))}
+          >
+            <Icon name="trash" />
+          </ToolbarButton>
+        </div>
+      ))}
+      <Button
+        iconLeft="plus"
+        onClick={() => onChange([...items, { marks: 1, text: '' }])}
         size="sm"
         type="button"
         variant="ghost"
