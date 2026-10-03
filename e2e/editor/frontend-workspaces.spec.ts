@@ -9,7 +9,7 @@ test('workspace creation and editing share icon and description fields', async (
     .click();
   const create = page.getByRole('dialog', {
     exact: true,
-    name: 'Create workspace',
+    name: 'Create one',
   });
   await expect(create.getByPlaceholder('Workspace name')).toBeFocused();
   await create.getByPlaceholder('Workspace name').fill('Metadata workspace');

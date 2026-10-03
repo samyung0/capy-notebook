@@ -673,7 +673,7 @@ test('icon chooser tracks browsing and confirms only the current draft', async (
   await page
     .getByRole('button', { exact: true, name: 'New workspace' })
     .click();
-  const workspace = page.getByRole('dialog', { name: 'Create workspace' });
+  const workspace = page.getByRole('dialog', { name: 'Create one' });
   const preview = workspace.locator('img').first();
   const initialIcon = await preview.getAttribute('src');
   const choose = workspace.getByRole('button', {
@@ -741,7 +741,7 @@ test('workspace creation resets cancelled drafts and saves the previewed default
     name: 'New workspace',
   });
   await create.click();
-  const dialog = page.getByRole('dialog', { name: 'Create workspace' });
+  const dialog = page.getByRole('dialog', { name: 'Create one' });
   const icon = dialog.locator('img').first();
   await expect(icon).toHaveAttribute('src', /\/icons\/waves-\d{2}\.svg$/);
   const initialIcon = await icon.getAttribute('src');

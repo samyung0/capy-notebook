@@ -411,7 +411,7 @@
   "color_choose_custom": "选择自定义颜色",
   "tag_search_placeholder": "搜索或创建标签…",
   "tag_remove": "移除 {name}",
-  "workspace_create_title": "创建工作区",
+  "workspace_create_title": "创建一个",
   "workspace_edit_title": "编辑工作区",
   "workspace_name_placeholder": "工作区名称",
   "workspace_card_meta": "{chapters} 个章节 · {files} 个文件",
