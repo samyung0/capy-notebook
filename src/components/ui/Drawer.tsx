@@ -116,8 +116,10 @@ function DrawerContent({
       >
         <DrawerPrimitive.Popup
           className={cn(
-            // Base.
-            'group/drawer-popup transform-[translate3d(var(--translate-x,0px),var(--translate-y,0px),0)_scale(var(--stack-scale))] pointer-events-auto fixed z-50 m-(--drawer-inset,0px) flex h-(--drawer-content-height) max-h-(--drawer-content-max-height,none) min-h-0 w-(--drawer-content-width,auto) select-none flex-col rounded-[min(var(--radius-4xl),24px)] bg-surface text-fg shadow-xl outline-none transition-[transform,height,opacity,filter] duration-(--motion-duration-slow) ease-(--motion-ease-smooth-out) will-change-transform [--drawer-bleed-background:transparent] [--drawer-inset:--spacing(2)] [--drawer-stacked-shadow:0_-20px_25px_-5px_rgb(0_0_0/0.1),0_-8px_10px_-6px_rgb(0_0_0/0.1)] [interpolate-size:allow-keywords] data-[swipe-direction=down]:data-nested-drawer-open:shadow-(--drawer-stacked-shadow)',
+            // Base. A 2D transform and swipe-only will-change keep the settled popup
+            // off its own GPU layer, which otherwise lands on a fractional pixel
+            // (82dvh) and blurs the text.
+            'group/drawer-popup transform-[translate(var(--translate-x,0px),var(--translate-y,0px))_scale(var(--stack-scale))] pointer-events-auto fixed z-50 m-(--drawer-inset,0px) flex h-(--drawer-content-height) max-h-(--drawer-content-max-height,none) min-h-0 w-(--drawer-content-width,auto) select-none flex-col rounded-[min(var(--radius-4xl),24px)] bg-surface text-fg shadow-xl outline-none transition-[transform,height,opacity,filter] duration-(--motion-duration-slow) ease-(--motion-ease-smooth-out) [--drawer-bleed-background:transparent] [--drawer-inset:--spacing(2)] [--drawer-stacked-shadow:0_-20px_25px_-5px_rgb(0_0_0/0.1),0_-8px_10px_-6px_rgb(0_0_0/0.1)] [interpolate-size:allow-keywords] data-[swipe-direction=down]:data-nested-drawer-open:shadow-(--drawer-stacked-shadow) data-swiping:will-change-transform',
             // Nested.
             'data-nested-drawer-open:overflow-hidden data-nested-drawer-open:brightness-95',
             // Bleed.
