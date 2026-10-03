@@ -1,12 +1,26 @@
-import type { DisplayList } from '@betteroffice/docx/layout/render';
+import {
+  createCanvasImageResolver,
+  type DisplayList,
+  rasterizeDisplayPage,
+} from '@betteroffice/docx/layout/render';
 import { DocxDisplayListViewer } from '@betteroffice/docx-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type {
   OfficeAnalysis,
   OfficeCitation,
+  OfficeLocale,
+  OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
 import { CITATION_FILL, docxCitation } from './citations';
+import { docxT, downloadMenu, printItem } from './docxMenus';
 import { type OfficeFace, registerOfficeFaces } from './officeFonts';
+import {
+  canvasPage,
+  type OfficeMenuReporter,
+  type OfficeRenderer,
+} from './runtimeMenus';
+
+const ZOOMS = [50, 75, 90, 100, 125, 150, 200];
 
 type WorkerResponse =
   | {
@@ -21,16 +35,83 @@ type WorkerResponse =
 export function DocxViewer({
   bytes,
   citation,
+  locale,
   onAnalysis,
   onError,
+  onMenus,
+  onRenderer,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
+  locale: OfficeLocale;
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
+  onMenus: OfficeMenuReporter;
+  onRenderer: (renderer: OfficeRenderer | null) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [displayList, setDisplayList] = useState<DisplayList | null>(null);
+  const [zoom, setZoom] = useState(100);
+
+  // View mode offers what works here: Download and Print, and the zoom.
+  useEffect(() => {
+    if (!displayList) return;
+    const t = docxT(locale);
+    onMenus({
+      menus: [
+        {
+          id: 'file',
+          items: [downloadMenu(locale), printItem(locale)],
+          label: t('toolbar.file'),
+        },
+        {
+          id: 'view',
+          items: [
+            {
+              icon: 'zoomIn',
+              id: 'zoom',
+              items: ZOOMS.map((value) => ({
+                checked: value === zoom,
+                id: `zoom:${value}`,
+                kind: 'item' as const,
+                label: `${value}%`,
+              })),
+              kind: 'submenu',
+              label: t('hostMenus.zoom'),
+            },
+          ],
+          label: t('hostMenus.view'),
+        },
+      ],
+      run: (id) => {
+        const [command, value] = id.split(':');
+        if (command === 'zoom') setZoom(Number(value));
+      },
+    });
+    return () => onMenus(null);
+  }, [displayList, locale, onMenus, zoom]);
+
+  useEffect(() => {
+    if (!displayList) return;
+    const resolveImage = createCanvasImageResolver();
+    onRenderer(async (kind) => {
+      if (kind !== 'print') throw new Error('Nothing to render');
+      // One page drawn, encoded and released at a time, as pptxRender does;
+      // a page that cannot be drawn fails the print.
+      const pages: OfficeRenderedPage[] = [];
+      for (const page of displayList.pages) {
+        const canvas = await rasterizeDisplayPage(page, { resolveImage });
+        try {
+          pages.push(await canvasPage(canvas, page.width, page.height));
+        } finally {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
+      }
+      return pages;
+    });
+    return () => onRenderer(null);
+  }, [displayList, onRenderer]);
 
   useEffect(() => {
     const worker = new Worker(
@@ -117,11 +198,11 @@ export function DocxViewer({
     return () => {
       for (const overlay of overlays) overlay.remove();
     };
-  }, [displayList, citation]);
+  }, [displayList, citation, zoom]);
 
   return displayList ? (
     <div className="docx-runtime-viewer" ref={hostRef}>
-      <DocxDisplayListViewer displayList={displayList} />
+      <DocxDisplayListViewer displayList={displayList} zoom={zoom / 100} />
     </div>
   ) : null;
 }

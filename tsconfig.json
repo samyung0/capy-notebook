@@ -63,6 +63,9 @@
       "@betteroffice/pptx-react": [
         "./vendor/betteroffice/packages/pptx-react/src/index.ts"
       ],
+      "@betteroffice/pptx-react/presentation": [
+        "./vendor/betteroffice/packages/pptx-react/src/presentation.ts"
+      ],
       "@betteroffice/pptx-i18n": [
         "./vendor/betteroffice/packages/pptx-i18n/src/index.ts"
       ]

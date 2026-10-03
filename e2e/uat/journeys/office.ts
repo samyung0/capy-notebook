@@ -15,6 +15,15 @@ import {
 } from './files';
 import type { Actor, UatRun } from './runtime';
 
+/** File › Save in the Office file header (the Save button is gone). */
+export async function saveOffice(page: Page) {
+  await page
+    .getByRole('menubar', { name: 'Menu bar' })
+    .getByRole('menuitem', { exact: true, name: 'File' })
+    .click();
+  await page.getByRole('menuitem', { name: /^Save/ }).click();
+}
+
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 type Checkpoint = {
   format: OfficeFormat;
@@ -284,13 +293,15 @@ export async function openEditor(
   // The URL's mode, not the Material mode toggle: the browser remembers the
   // last mode per file, so a second open would toggle back to View.
   await openFile(run, actor, workspaceId, fileId, 'edit');
-  // Save is enabled once the replica is ready; large workbooks take longer
-  // than the action timeout to open.
-  const save = actor.page.getByRole('button', { exact: true, name: 'Save' });
+  // The editor's Edit menu arrives once the replica is ready; large workbooks
+  // take longer than the action timeout to open.
+  const edit = actor.page
+    .getByRole('menubar', { name: 'Menu bar' })
+    .getByRole('menuitem', { exact: true, name: 'Edit' });
   await whenReady(run, actor, 'office-editor', () =>
-    expect(save).toBeEnabled({ timeout: 120_000 })
+    expect(edit).toBeVisible({ timeout: 120_000 })
   );
-  await save.click();
+  await saveOffice(actor.page);
   return actor.page.frameLocator('iframe[src*="office-runtime"]');
 }
 
@@ -336,7 +347,7 @@ export async function editOffice(
         : 'Owner sentence: The launch code is CEDAR-42.'
     );
   }
-  await actor.page.getByRole('button', { exact: true, name: 'Save' }).click();
+  await saveOffice(actor.page);
 }
 
 export async function replaceSlideText(

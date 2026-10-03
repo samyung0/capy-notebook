@@ -1,0 +1,141 @@
+/* The workbook viewer and editor in Capy's colours. Capy's role tokens come
+   from office-runtime.css and follow the theme the host sends. */
+
+/* xlsx-react reads its chrome colours from these variables; its dropdowns
+   and pickers read the shared --office-menu-* set in office-runtime.css. */
+:root {
+  --xlsx-font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  --xlsx-chrome-bg: var(--surface-card-bg);
+  --xlsx-text: var(--text-primary);
+  --xlsx-text-muted: var(--text-muted);
+  --xlsx-text-disabled: var(--text-placeholder);
+  --xlsx-hover-bg: var(--surface-card-hover-bg);
+  /* ToolbarButton's pressed state, as Capy's. */
+  --xlsx-active-bg: color-mix(
+    in srgb,
+    var(--tint-accent-1-bg) 50%,
+    transparent
+  );
+  --xlsx-active-text: var(--tint-accent-1-fg);
+  --xlsx-border: var(--border-default);
+  --xlsx-divider: var(--divider);
+  --xlsx-input-bg: var(--surface-card-bg);
+  --xlsx-focus: var(--action-primary-bg);
+  --xlsx-error: var(--tint-error-fg);
+  /* The single row as Capy's Toolbar and ToolbarButton. */
+  --xlsx-button-size: 32px;
+  --xlsx-button-radius: var(--radius-button);
+  --xlsx-control-font-size: 0.875rem;
+  --xlsx-control-font-weight: 600;
+  /* Sheet tabs as Capy's Tabs. */
+  --xlsx-accent: var(--action-primary-bg);
+  --xlsx-tabs-bg: var(--surface-card-bg);
+  --xlsx-active-tab-bg: transparent;
+  --xlsx-tabs-padding: 0 8px;
+  --xlsx-tab-padding: 8px 12px 6px;
+  --xlsx-tab-font-size: 0.875rem;
+}
+
+/* The viewer's read-only formula bar, drawn as the editor's (xlsx-react's
+   flat formula bar). */
+.xlsx-formula-bar {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+  height: 40px;
+  padding: 0 8px;
+  background: var(--xlsx-chrome-bg);
+  border-bottom: 1px solid var(--xlsx-divider);
+}
+
+.xlsx-name-box,
+.xlsx-formula-value {
+  height: 28px;
+  color: var(--xlsx-text);
+  outline-color: var(--xlsx-focus);
+  background: var(--xlsx-input-bg);
+  border: 1px solid var(--xlsx-border);
+  border-radius: 6px;
+}
+
+.xlsx-name-box {
+  flex: 0 0 auto;
+  width: 64px;
+  font:
+    600 12px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  text-align: center;
+}
+
+.xlsx-formula-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 20px;
+  height: 28px;
+  font:
+    italic 700 12px Georgia,
+    serif;
+  color: var(--xlsx-text-muted);
+  user-select: none;
+}
+
+.xlsx-formula-value {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 0 8px;
+  font: 13px var(--xlsx-font-family);
+}
+
+/* The sheet tabs under the grid, the same strip the editor draws. */
+.xlsx-sheet-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: var(--xlsx-tabs-padding);
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--xlsx-tabs-bg);
+  border-top: 1px solid var(--xlsx-divider);
+}
+.xlsx-sheet-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.xlsx-sheet-tab {
+  flex: 0 0 auto;
+  padding: var(--xlsx-tab-padding);
+  font-size: var(--xlsx-tab-font-size);
+  color: var(--xlsx-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+}
+
+.xlsx-sheet-tab[aria-selected="true"] {
+  font-weight: 600;
+  color: var(--xlsx-text);
+  border-bottom-color: var(--xlsx-accent);
+}
+
+/* Capy's thin scrollbars on both grids, so the grid keeps its size between
+   view and edit. */
+.xlsx-viewport,
+.xlsx-editor__scroll {
+  scrollbar-color: auto;
+}
+.xlsx-viewport::-webkit-scrollbar,
+.xlsx-editor__scroll::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.xlsx-viewport::-webkit-scrollbar-thumb,
+.xlsx-editor__scroll::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: 999px;
+}

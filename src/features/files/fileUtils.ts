@@ -39,6 +39,14 @@ export function formatFileSize(bytes: number): string {
   return `${bytes} B`;
 }
 
+/** DOCX, XLSX and PPTX open in the Office runtime under the two-row header. */
+export function officeFormatOf(
+  file: Pick<SourceFile, 'name'>
+): 'docx' | 'xlsx' | 'pptx' | null {
+  const ext = fileExt(file.name);
+  return ext === 'docx' || ext === 'xlsx' || ext === 'pptx' ? ext : null;
+}
+
 export function isImageFile(file: Pick<SourceFile, 'kind' | 'name'>) {
   return file.kind === 'image' || IMAGE_EXTS.has(fileExt(file.name));
 }

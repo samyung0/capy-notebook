@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
+import { officeEditMenu, saveOffice } from '../helpers/office';
 
 const marker = 'My unsaved scenario edit.';
 const savedMarker = 'My saved scenario edit.';
@@ -125,7 +126,7 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await expect(page.getByTestId('editor-save-state')).toHaveText(
       'Not saved. Retrying…'
     );
-    await page.getByRole('button', { exact: true, name: 'Save' }).click();
+    await saveOffice(page);
     await expect(page.getByTestId('editor-save-state')).toHaveText('Saved');
     expect(await mounted!.evaluate((node) => node.isConnected)).toBe(true);
     const mode = page.getByRole('button', { name: 'Material mode' });
@@ -140,9 +141,7 @@ for (const format of ['docx', 'xlsx', 'pptx']) {
     await expect(mode).toHaveAttribute('aria-pressed', 'true', {
       timeout: 30_000,
     });
-    await expect(
-      page.getByRole('button', { exact: true, name: 'Save' })
-    ).toBeEnabled({ timeout: 30_000 });
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
 
     const panel = page.getByTestId('mock-scenario-panel');
     await panel.evaluate((node: HTMLDetailsElement) => {

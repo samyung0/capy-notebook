@@ -16,7 +16,9 @@ import {
 import { FileViewer } from '@/features/files/FileViewer';
 import {
   EditorStatusContext,
+  FileActionsTarget,
   FileHeaderTarget,
+  FileMenuTarget,
   FileModeContext,
 } from '@/features/files/fileModeContext';
 import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
@@ -92,6 +94,8 @@ export function CenterContent({
   workspaceId: string;
 }) {
   const [fileHeader, setFileHeader] = useState<HTMLSpanElement | null>(null);
+  const [fileMenu, setFileMenu] = useState<HTMLSpanElement | null>(null);
+  const [fileActions, setFileActions] = useState<HTMLSpanElement | null>(null);
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
   const materialMode =
     requestedMode ?? (item ? readDocumentMode(item) : 'view');
@@ -129,70 +133,83 @@ export function CenterContent({
       value={{ mode: materialMode, onChange: changeMaterialMode }}
     >
       <FileHeaderTarget.Provider value={fileHeader}>
-        <EditorStatusContext.Provider value={setEditorStatus}>
-          <div
-            className={cn(
-              'flex min-h-0 flex-1 flex-col bg-surface',
-              isFullscreen && 'fixed inset-0 z-40'
-            )}
-          >
-            <Header
-              beforeFileDelete={beforeFileDelete}
-              chapters={chapters}
-              color={color}
-              editorStatus={editorStatus}
-              fileControls={
-                <span className="flex items-center" ref={setFileHeader} />
-              }
-              imageZoom={imageZoom}
-              isFullscreen={isFullscreen}
-              item={item}
-              leading={leading}
-              materialMode={materialMode}
-              onDeleted={onDeleted}
-              onImageZoomChange={setImageZoom}
-              onMaterialModeChange={changeMaterialMode}
-              onToggleFullscreen={() => setIsFullscreen((value) => !value)}
-              readOnly={readOnly}
-              standalone={standalone}
-              workspaceId={workspaceId}
-            />
-            <div
-              className={cn(
-                'relative min-h-0 flex-1',
-                item.kind === 'file'
-                  ? 'flex flex-col overflow-hidden'
-                  : 'overflow-auto'
-              )}
-            >
-              {item.kind === 'material' && (
-                <MaterialBody
-                  allowExternalAssets={!readOnly}
-                  centerQuiz={!standalone}
-                  key={item.id}
-                  materialId={item.id}
-                  mode={materialMode}
-                  onEditorStatusChange={setEditorStatus}
+        <FileMenuTarget.Provider value={fileMenu}>
+          <FileActionsTarget.Provider value={fileActions}>
+            <EditorStatusContext.Provider value={setEditorStatus}>
+              <div
+                className={cn(
+                  'flex min-h-0 flex-1 flex-col bg-surface',
+                  isFullscreen && 'fixed inset-0 z-40'
+                )}
+              >
+                <Header
+                  beforeFileDelete={beforeFileDelete}
+                  chapters={chapters}
+                  color={color}
+                  editorStatus={editorStatus}
+                  fileActions={
+                    <span className="flex items-center" ref={setFileActions} />
+                  }
+                  fileControls={
+                    <span className="flex items-center" ref={setFileHeader} />
+                  }
+                  imageZoom={imageZoom}
+                  isFullscreen={isFullscreen}
+                  item={item}
+                  leading={leading}
+                  materialMode={materialMode}
+                  menuBar={
+                    <span
+                      className="flex min-w-0 items-center"
+                      ref={setFileMenu}
+                    />
+                  }
+                  onDeleted={onDeleted}
+                  onImageZoomChange={setImageZoom}
+                  onMaterialModeChange={changeMaterialMode}
+                  onToggleFullscreen={() => setIsFullscreen((value) => !value)}
                   readOnly={readOnly}
+                  standalone={standalone}
                   workspaceId={workspaceId}
                 />
-              )}
-              {item.kind === 'file' && (
-                <FileBody
-                  citation={item.citation}
-                  color={color}
-                  fileId={item.id}
-                  imageZoom={imageZoom}
-                  key={item.id}
-                  onImageZoomChange={setImageZoom}
-                  onViewerDirtyChange={onFileViewerDirtyChange}
-                  page={item.page}
-                  regions={item.regions}
-                />
-              )}
-            </div>
-          </div>
-        </EditorStatusContext.Provider>
+                <div
+                  className={cn(
+                    'relative min-h-0 flex-1',
+                    item.kind === 'file'
+                      ? 'flex flex-col overflow-hidden'
+                      : 'overflow-auto'
+                  )}
+                >
+                  {item.kind === 'material' && (
+                    <MaterialBody
+                      allowExternalAssets={!readOnly}
+                      centerQuiz={!standalone}
+                      key={item.id}
+                      materialId={item.id}
+                      mode={materialMode}
+                      onEditorStatusChange={setEditorStatus}
+                      readOnly={readOnly}
+                      workspaceId={workspaceId}
+                    />
+                  )}
+                  {item.kind === 'file' && (
+                    <FileBody
+                      citation={item.citation}
+                      color={color}
+                      fileId={item.id}
+                      imageZoom={imageZoom}
+                      key={item.id}
+                      onImageZoomChange={setImageZoom}
+                      onViewerDirtyChange={onFileViewerDirtyChange}
+                      page={item.page}
+                      regions={item.regions}
+                    />
+                  )}
+                </div>
+              </div>
+            </EditorStatusContext.Provider>
+          </FileActionsTarget.Provider>
+        </FileMenuTarget.Provider>
       </FileHeaderTarget.Provider>
     </FileModeContext.Provider>
   );

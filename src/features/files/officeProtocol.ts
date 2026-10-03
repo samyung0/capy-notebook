@@ -1,6 +1,22 @@
 import { STYLES, type Style, THEMES, type Theme } from '@/theme/theme';
+import {
+  isOfficeHeaderActions,
+  isOfficeMenus,
+  type OfficeHeaderAction,
+  type OfficeMenu,
+} from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 6 as const;
+export const OFFICE_PROTOCOL_VERSION = 7 as const;
+
+/** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
+export type OfficeLocale = 'en' | 'zh';
+
+/** One page or image from `render`: PNG bytes and its CSS size in px. */
+export interface OfficeRenderedPage {
+  bytes: ArrayBuffer;
+  height: number;
+  width: number;
+}
 
 export type OfficeFormat = 'docx' | 'xlsx' | 'pptx';
 export type OfficeCitation = { quote: string; page?: number };
@@ -78,6 +94,31 @@ export type OfficeHostMessage =
       theme: Theme;
       /** The viewport is below lg, where the PDF toolbar drops zoom too. */
       narrow: boolean;
+      locale: OfficeLocale;
+    }
+  /** A click on a runtime menu item or header action (not a host command). */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'menu-command';
+      id: string;
+      /** A grid's size, "<rows>x<cols>". */
+      value?: string;
+    }
+  /** The file Capy's picker returned for a `pick` item. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'menu-file';
+      id: string;
+      name: string;
+      mimeType: string;
+      bytes: ArrayBuffer;
+    }
+  /** Pages to print, or one image to save as PNG; answered by `rendered`. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'render';
+      id: string;
+      kind: 'print' | 'png';
     };
 
 export type OfficeRuntimeMessage =
@@ -138,6 +179,30 @@ export type OfficeRuntimeMessage =
       type: 'error';
       message: string;
       revision: number;
+    }
+  /** The whole menu bar and header actions, re-sent when either changes. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'menus';
+      menus: OfficeMenu[];
+      actions: OfficeHeaderAction[];
+      revision: number;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'rendered';
+      id: string;
+      pages: OfficeRenderedPage[];
+      revision: number;
+      /** A sheet longer than the page cap printed only its first pages. */
+      truncated: boolean;
+    }
+  /** The pages could not be drawn; the document itself is fine. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'render-failed';
+      id: string;
+      revision: number;
     };
 
 type WithoutVersion<T> = T extends unknown ? Omit<T, 'version'> : never;
@@ -160,7 +225,25 @@ export function isOfficeHostMessage(
     return (
       STYLES.some((style) => style.value === candidate.style) &&
       THEMES.some((theme) => theme.value === candidate.theme) &&
-      typeof candidate.narrow === 'boolean'
+      typeof candidate.narrow === 'boolean' &&
+      (candidate.locale === 'en' || candidate.locale === 'zh')
+    );
+  if (candidate.type === 'menu-command')
+    return (
+      typeof candidate.id === 'string' &&
+      (candidate.value === undefined || typeof candidate.value === 'string')
+    );
+  if (candidate.type === 'menu-file')
+    return (
+      typeof candidate.id === 'string' &&
+      typeof candidate.name === 'string' &&
+      typeof candidate.mimeType === 'string' &&
+      candidate.bytes instanceof ArrayBuffer
+    );
+  if (candidate.type === 'render')
+    return (
+      typeof candidate.id === 'string' &&
+      (candidate.kind === 'print' || candidate.kind === 'png')
     );
   return (
     candidate.version === OFFICE_PROTOCOL_VERSION &&
@@ -214,6 +297,16 @@ export function isOfficeRuntimeMessage(
     return true;
   if (raw.version === OFFICE_PROTOCOL_VERSION && isCount(raw.revision)) {
     if (raw.type === 'checkpoint') return true;
+    if (raw.type === 'menus')
+      return isOfficeMenus(raw.menus) && isOfficeHeaderActions(raw.actions);
+    if (raw.type === 'rendered')
+      return (
+        typeof raw.id === 'string' &&
+        typeof raw.truncated === 'boolean' &&
+        Array.isArray(raw.pages) &&
+        raw.pages.every(isRenderedPage)
+      );
+    if (raw.type === 'render-failed') return typeof raw.id === 'string';
     if (raw.type === 'exported')
       return typeof raw.id === 'string' && raw.bytes instanceof ArrayBuffer;
     if (
@@ -243,6 +336,16 @@ export function isOfficeRuntimeMessage(
         (candidate as { bytes?: unknown }).bytes instanceof ArrayBuffer) ||
       (candidate.type === 'error' &&
         typeof (candidate as { message?: unknown }).message === 'string'))
+  );
+}
+
+function isRenderedPage(value: unknown): value is OfficeRenderedPage {
+  if (!value || typeof value !== 'object') return false;
+  const page = value as Record<string, unknown>;
+  return (
+    page.bytes instanceof ArrayBuffer &&
+    isFiniteNumber(page.width) &&
+    isFiniteNumber(page.height)
   );
 }
 

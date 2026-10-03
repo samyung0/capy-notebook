@@ -80,6 +80,7 @@ export default defineConfig(({ mode }) => {
         '@betteroffice/pptx/editor',
         '@betteroffice/pptx/viewer',
         '@betteroffice/pptx-react',
+        '@betteroffice/pptx-react/presentation',
         '@betteroffice/xlsx',
         '@betteroffice/xlsx/collaboration',
         '@betteroffice/xlsx/editor',
@@ -213,6 +214,13 @@ export default defineConfig(({ mode }) => {
           replacement: path.resolve(
             import.meta.dirname,
             './vendor/betteroffice/packages/xlsx/src/viewer.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/pptx-react/presentation',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/pptx-react/src/presentation.ts'
           ),
         },
         {

@@ -30,6 +30,7 @@ import {
   savedExport,
   savedFacts,
   savedState,
+  saveOffice,
 } from './office';
 import { expect, test } from './runtime';
 
@@ -112,9 +113,7 @@ for (const [format, name] of [
         'Owner sentence: The launch code is CEDAR-42. Fresh client confirmed the saved field survey.'
       );
     }
-    await outsider.page
-      .getByRole('button', { exact: true, name: 'Save' })
-      .click();
+    await saveOffice(outsider.page);
     const fresh = await savedFacts(run, fileId, [
       ownerFact,
       editorFact,

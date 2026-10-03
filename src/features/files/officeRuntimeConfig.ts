@@ -1,4 +1,6 @@
 export interface OfficeRuntimeConfig {
+  /** Permissions policy: the editors' Cut, Copy and Paste menu items use the clipboard. */
+  allow: string;
   error: string | null;
   origin: string;
   sandbox: string;
@@ -34,6 +36,7 @@ export function resolveOfficeRuntimeConfig({
   const url = new URL('/office-runtime.html', origin);
   url.searchParams.set('parentOrigin', appOrigin);
   return {
+    allow: 'clipboard-read; clipboard-write',
     error,
     origin,
     sandbox: 'allow-same-origin allow-scripts',

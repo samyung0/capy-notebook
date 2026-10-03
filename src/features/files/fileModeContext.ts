@@ -9,6 +9,10 @@ export type FileMode = 'view' | 'edit';
 // Keep context identity separate from the hot-reloaded file controls.
 export const FileHeaderTarget = createContext<HTMLElement | null>(null);
 
+/** An Office file header's menu bar row and its action buttons (Present). */
+export const FileMenuTarget = createContext<HTMLElement | null>(null);
+export const FileActionsTarget = createContext<HTMLElement | null>(null);
+
 export const FileModeContext = createContext<{
   mode: FileMode;
   onChange: (mode: FileMode) => void;

@@ -2,11 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
-import { m } from '@/i18n';
+import { userToast } from '@/components/ui/userToast';
+import { getLocale, m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
+import { fileExt } from './fileUtils';
+import {
+  fitOfficeMenus,
+  type OfficeHeaderAction,
+  type OfficeMenu,
+  officeHostCommand,
+} from './officeMenus';
 import {
   isOfficeRuntimeMessage,
   isOutdatedOfficeRuntime,
@@ -16,8 +24,10 @@ import {
   type OfficeFormat,
   type OfficeHostMessage,
   type OfficeMode,
+  type OfficeRenderedPage,
 } from './officeProtocol';
 import { getOfficeRuntimeConfig } from './officeRuntimeConfig';
+import { printPages } from './printPages';
 import {
   decodeSourceState,
   SOURCE_IFRAME_ORIGIN,
@@ -88,6 +98,11 @@ export function useOfficeRuntime({
   const [analysis, setAnalysis] = useState<OfficeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(config.error);
   const [outdated, setOutdated] = useState(false);
+  // The runtime's menu bar and header actions; each frame sends its own.
+  const [menus, setMenus] = useState<{
+    menus: OfficeMenu[];
+    actions: OfficeHeaderAction[];
+  } | null>(null);
   const [replicaReady, setReplicaReady] = useState(false);
   const [leaving, setLeaving] = useState(false);
   // The room turned read-only (a storage or frozen refusal): the session
@@ -127,6 +142,15 @@ export function useOfficeRuntime({
       { resolve: (bytes: ArrayBuffer) => void; reject: (error: Error) => void }
     >()
   );
+  const renderRequests = useRef(
+    new Map<
+      string,
+      {
+        resolve: (rendered: Rendered) => void;
+        reject: (error: Error) => void;
+      }
+    >()
+  );
   const post = useCallback(
     (message: OfficeHostMessage, transfer: Transferable[] = []) =>
       iframeRef.current?.contentWindow?.postMessage(
@@ -141,6 +165,7 @@ export function useOfficeRuntime({
   useEffect(() => {
     if (frameLoaded)
       post({
+        locale: getLocale() === 'zh' ? 'zh' : 'en',
         narrow,
         style,
         theme,
@@ -343,35 +368,23 @@ export function useOfficeRuntime({
     post,
   ]);
 
-  // After the load above, and again whenever the runtime document boots: the
-  // load carries the raw canEdit, and this narrows it to the session's pauses.
+  // The load carries the raw canEdit; this narrows it to the session's pauses.
+  const editable =
+    canEdit &&
+    !source.handoff &&
+    !source.replaced &&
+    source.status !== 'recovery' &&
+    (mode !== 'edit' ||
+      (!!source.doc && !source.discarding && source.status !== 'connecting'));
+  // After the load above, and again whenever the runtime document boots.
   useEffect(() => {
     if (frameLoaded)
       post({
-        canEdit:
-          canEdit &&
-          !source.handoff &&
-          !source.replaced &&
-          source.status !== 'recovery' &&
-          (mode !== 'edit' ||
-            (!!source.doc &&
-              !source.discarding &&
-              source.status !== 'connecting')),
+        canEdit: editable,
         type: 'set-capabilities',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [
-    canEdit,
-    frameBoot,
-    frameLoaded,
-    mode,
-    source.doc,
-    source.discarding,
-    source.handoff,
-    source.replaced,
-    source.status,
-    post,
-  ]);
+  }, [editable, frameBoot, frameLoaded, post]);
 
   useEffect(() => {
     const doc = source.doc;
@@ -404,6 +417,7 @@ export function useOfficeRuntime({
         active = sourceRef.current;
       if (message.type === 'initialized') {
         setReplicaReady(false);
+        setMenus(null);
         initializedFrame.current = -1;
         setFrameLoaded(true);
         setFrameBoot((value) => value + 1);
@@ -415,6 +429,26 @@ export function useOfficeRuntime({
         active.pendingInput(message.dirty);
         return;
       }
+      if (message.type === 'menus') {
+        setMenus({
+          actions: message.actions,
+          menus: fitOfficeMenus(message.menus),
+        });
+        return;
+      }
+      if (message.type === 'rendered') {
+        renderRequests.current.get(message.id)?.resolve(message);
+        renderRequests.current.delete(message.id);
+        return;
+      }
+      if (message.type === 'render-failed') {
+        // The pages could not be drawn; the document is unaffected.
+        renderRequests.current
+          .get(message.id)
+          ?.reject(new Error('render-failed'));
+        renderRequests.current.delete(message.id);
+        return;
+      }
       if (message.type === 'ready') {
         setAnalysis(message.analysis);
         setError(null);
@@ -423,9 +457,11 @@ export function useOfficeRuntime({
       if (message.type === 'error') {
         // The runtime's own text is English engine detail; the host owns copy.
         setError(m.error_file_body());
-        for (const waiter of frameRequests.current.values())
-          waiter.reject(new Error(message.message));
-        frameRequests.current.clear();
+        for (const waiters of [frameRequests, renderRequests]) {
+          for (const waiter of waiters.current.values())
+            waiter.reject(new Error(message.message));
+          waiters.current.clear();
+        }
         return;
       }
       if (message.type === 'collaboration-ready') setReplicaReady(true);
@@ -477,14 +513,100 @@ export function useOfficeRuntime({
   }, [config.origin, post, checkpoint]);
 
   const downloadDraft = useCallback(async () => {
-    const bytes = await request('export');
-    const url = URL.createObjectURL(new Blob([bytes]));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = file.name;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveBlob(new Blob([await request('export')]), file.name);
   }, [file.name, request]);
+
+  const render = useCallback(
+    (kind: 'print' | 'png') =>
+      new Promise<Rendered>((resolve, reject) => {
+        const id = crypto.randomUUID();
+        const timeout = setTimeout(() => {
+          renderRequests.current.delete(id);
+          reject(new Error(m.error_generic_body()));
+        }, 60_000);
+        renderRequests.current.set(id, {
+          reject: (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          },
+          resolve: (rendered) => {
+            clearTimeout(timeout);
+            resolve(rendered);
+          },
+        });
+        post({ id, kind, type: 'render', version: OFFICE_PROTOCOL_VERSION });
+      }),
+    [post]
+  );
+
+  /** A menu item or header action: Capy's own commands run here. */
+  const runMenuCommand = useCallback(
+    (id: string, value?: string) => {
+      const command = officeHostCommand(id);
+      const run = async () => {
+        if (command === 'save') {
+          // Disabled in the paused menus; a stale click does nothing.
+          if (editable) await checkpoint();
+        } else if (command === 'download') await downloadDraft();
+        else if (command === 'print') {
+          const { pages, truncated } = await render('print');
+          await printPages(pages);
+          if (truncated)
+            userToast({
+              title: m.files_office_print_truncated({
+                count: String(pages.length),
+              }),
+            });
+        } else if (command === 'png') {
+          const [image] = (await render('png')).pages;
+          if (image)
+            saveBlob(
+              new Blob([image.bytes], { type: 'image/png' }),
+              `${file.name.slice(0, -(fileExt(file.name).length + 1)) || file.name}.png`
+            );
+        } else
+          post({
+            id,
+            type: 'menu-command',
+            value,
+            version: OFFICE_PROTOCOL_VERSION,
+          });
+      };
+      void run().catch((value: unknown) => {
+        // A failed print leaves the document as it was: a toast, no banner.
+        if (command === 'print' || command === 'png')
+          userToast({
+            title:
+              command === 'print'
+                ? m.files_office_print_failed()
+                : m.files_office_png_failed(),
+            variant: 'error',
+          });
+        else setError(errorCopy(value, m.error_generic_body()));
+      });
+    },
+    [checkpoint, downloadDraft, editable, file.name, post, render]
+  );
+
+  /** A `pick` item's file, from Capy's picker. */
+  const sendMenuFile = useCallback(
+    (id: string, file: File) => {
+      void file.arrayBuffer().then((bytes) =>
+        post(
+          {
+            bytes,
+            id,
+            mimeType: file.type,
+            name: file.name,
+            type: 'menu-file',
+            version: OFFICE_PROTOCOL_VERSION,
+          },
+          [bytes]
+        )
+      );
+    },
+    [post]
+  );
 
   const setRuntimeMode = useCallback(
     async (next: OfficeMode) => {
@@ -515,9 +637,11 @@ export function useOfficeRuntime({
 
   useEffect(
     () => () => {
-      for (const waiter of frameRequests.current.values())
-        waiter.reject(new Error(m.source_edit_save_failed()));
-      frameRequests.current.clear();
+      for (const waiters of [frameRequests, renderRequests]) {
+        for (const waiter of waiters.current.values())
+          waiter.reject(new Error(m.source_edit_save_failed()));
+        waiters.current.clear();
+      }
     },
     []
   );
@@ -530,10 +654,12 @@ export function useOfficeRuntime({
     downloadDraft,
     error: error ?? source.error,
     handoff: source.handoff,
+    iframeAllow: config.allow,
     iframeKey: `${file.id}:${frameGeneration}`,
     iframeRef,
     iframeSandbox: config.sandbox,
     iframeUrl: config.url,
+    menus,
     mode,
     paused: source.paused,
     pausedAtOpen,
@@ -541,11 +667,26 @@ export function useOfficeRuntime({
     ready: mode === 'view' ? !!analysis : replicaReady,
     replaced: source.replaced,
     retryView,
-    save: checkpoint,
+    runMenuCommand,
     saving: leaving || source.status === 'saving',
+    sendMenuFile,
     setFrameLoaded,
     setRuntimeMode,
     status: source.status,
     unavailable: outdated ? ('outdated' as const) : source.unavailable,
   };
+}
+
+interface Rendered {
+  pages: OfficeRenderedPage[];
+  truncated: boolean;
+}
+
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = name;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

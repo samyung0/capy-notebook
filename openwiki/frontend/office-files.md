@@ -22,8 +22,10 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 Create cards open `/materials/:id` and Files cards open `/files/:id` through SPA router Links, as do dashboard recent rows and workspace file/material rows. Each item remembers its own View/Edit mode in localStorage (`capy.document.mode.<kind>.<id>`); an explicit URL mode wins, followed by the saved mode, then View.
 Both routes use the workspace's `CenterContent` header and renderers, with
 the app sidebar and a back icon. They omit workspace navigation and Move to
-chapter. `FileModeControl` portals file View/Edit and Save controls into that
-shared header while each runtime retains its save and collaboration lifecycle.
+chapter. `FileModeControl` portals file View/Edit (and, for text files, Save)
+controls into that shared header while each runtime retains its save and
+collaboration lifecycle. DOCX, XLSX and PPTX use the two-row Office header
+described under [Browser loading model](#browser-loading-model).
 New standalone notes request Edit explicitly; dedicated quiz/study actions retain their existing behavior.
 
 ## Repository boundary
@@ -120,7 +122,7 @@ lock, so a suspended owner's shared files keep rendering) that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
 saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
 with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the
-hash as `checkpointSeedSHA256` on the `load` message (protocol version 6); the
+hash as `checkpointSeedSHA256` on the `load` message (protocol version 7); the
 runtime applies it over the base with the editor engines in a disposable
 `exportCheckpoint` worker, which for a change seeds the base first and refuses
 a seed whose hash differs (the same composition as the
@@ -483,20 +485,137 @@ resolve revisions in nested fields and controls and remove resolved move
 wrappers and range markers. Deleting a break in a field result removes it from
 the saved field too.
 
-The DOCX editor uses the fork's single-row toolbar (`singleRowToolbar`), drawn
-like Capy's own toolbars. A ☰ menu at the left holds File, Format, Insert and
-View sections; View has one checked item that shows or hides the document
-outline, so no outline button sits on the row or in the page gutter. Then come
-undo/redo, the style picker, the font picker, the size box (no −/+ steps) and
-the formatting groups, with alignment and lists before superscript/subscript
-and clear formatting. A percent zoom dropdown and the comments toggle stay
-pinned at the right. Below lg (the viewport, as the PDF toolbar) the zoom
-dropdown, the font picker and the size box are hidden. The groups scroll
-sideways: a vertical mouse wheel scrolls them, and an edge with more to scroll
-fades (`data-scroll-start`/`-end`, so it needs no scroll-driven animations). In
-edit mode this row takes the place of Capy's file header row whenever a file
-header exists (`DocxView`), so a page sits at the same place in view and edit
-mode at every width; the view mode row keeps the page count.
+DOCX, XLSX and PPTX files have a two-row header in both modes, inside the
+usual 56px (`CenterContentHeader` picks it by extension, `officeFormatOf`):
+a 4px gap under the panel's top edge, two 24px rows 2px apart, then the
+divider. The top row holds back, the sidebar toggle, the workspace picker (a
+24px pill with 6px padding, slimmer than elsewhere) and the file name; the row
+under it holds Google-style menus from the left edge (File, Edit, View,
+Insert, Format…, 24px triggers) with the save status as icon and word after
+them. The mode toggle, header actions (PPTX Present) and ⋮ sit right, centred
+on both rows, or on the top row below sm at the row's 24px, where the menus
+take the full width and scroll sideways with edge fades. There is no Save button: autosave, Ctrl/Cmd+S,
+File › Save and leaving Edit save. Rename, Move, Properties and Delete stay in
+⋮. The Office views render `OfficeHeader` (`OfficeMenuBar.tsx`), which portals
+the runtime's menus and actions into the header and draws the menus as a Radix
+menu bar (`Menubar.tsx`, in DropdownMenu's look): Arrow Left and Right move
+between the menus, assistive technology announces a menu bar, shortcuts are in
+`aria-keyshortcuts`, and the triggers keep their width so a narrow row scrolls.
+A closing menu stays mounted for its exit animation, so it ignores focus and
+clicks outside while closed, and a click reopening a menu does not dismiss it.
+After a picked item focus goes to the runtime frame (Escape returns it to the
+trigger). The editor inside the frame takes focus on load only when its
+document already has it, so a menu opened during load stays open. Without a
+file header (no portal target) a row of its own carries the label and the
+toggle. Notes, PDFs and other files keep the one-row header.
+
+The menus come from the runtime as data (protocol v7, `officeMenus.ts`): a
+`menus` message carries the whole bar (items with labels already in Capy's
+locale, shortcuts, ticks, Capy icon names, submenus, Capy's table-size grid)
+and the header actions, and is re-sent when either changes; in edit mode it
+waits for the editor's replica, as the old Save button did. A click sends
+`menu-command` {id, value?}; an item's parameter rides in its id after a colon
+("zoom:125"), `value` carries only the grid's "<rows>x<cols>". Items marked
+`pick: 'image'` open Capy's own file picker, because a click in the host gives
+the frame no user activation, and the file goes over as `menu-file`. Capy
+performs its own commands without a round trip to the runtime's code:
+`capy.save` takes the checkpoint, `capy.download` saves the bytes `export`
+returns (in view mode the saved state the viewer opened), `capy.print` prints
+the pages `render` {kind: 'print'} returns from a hidden frame on the app's own
+document, and `capy.png` saves the image `render` {kind: 'png'} returns; the
+runtime's sandbox stays without downloads, popups or modals. View mode offers
+only what works, never disabled items: DOCX has File › Download and Print and
+View › Zoom. A print the runtime cannot draw answers `render-failed`, not
+`error`: the host shows a short toast instead of the "couldn't open" banner and
+pending flushes are untouched. Edit-mode rendering flushes pending input first,
+as export does. Pages are drawn, encoded and released one at a time (DOCX
+`renderPages`/`rasterizeDisplayPage`, as PPTX), and a page whose canvas has no
+2D context fails the print. The host drops a submenu longer than 80 entries
+rather than the whole bar; DOCX Format › Paragraph styles lists the first 40
+styles (the toolbar's style picker keeps all).
+
+While editing is paused (handoff, replaced, recovery, connecting, discarding:
+the host's narrowed `canEdit` in `set-capabilities`), the runtime re-sends its
+menus with every editing item disabled, File › Save included, and a submenu
+with nothing left to run disabled too (`pausedMenus`); Download, Print, PNG,
+the View menu (except XLSX's freeze, which edits the workbook) and the header
+actions stay usable, and the runtime drops any other `menu-command` or
+`menu-file` (`runsWhilePaused`). The DOCX menu model refuses a disabled item's
+id too. A case-by-case standard per pause state is a later task.
+
+In edit mode the DOCX editor shows one toolbar row under the header, in Google
+Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
+`onMenus`): undo/redo, zoom, style, font, size box (no −/+ steps), bold,
+italic, underline, text colour and highlight, then link, comment and image,
+alignment with line spacing, lists and indent, and clear formatting, with the
+comments toggle pinned right; image or table controls follow the lists when an
+image or a cell is selected. Strikethrough, superscript and subscript live in
+Format › Text. Below lg (the viewport, as the PDF toolbar) the zoom dropdown,
+the font picker and the size box are hidden. The row scrolls sideways: a
+vertical mouse wheel scrolls it, and an edge with more to scroll fades
+(`data-scroll-start`/`-end`, so it needs no scroll-driven animations). The DOCX
+menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
+added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Page setup,
+Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
+document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
+Comment, Watermark, Break ▸) and Format (Text ▸, Paragraph styles ▸, Align &
+indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table
+properties and Image options in context, Clear formatting). Placeholders that
+do nothing stay hidden: Insert › Table of contents, the table menu's vertical
+alignment, table alignment, header row, distribute columns, auto-fit and
+no-wrap, and Line spacing's empty Paragraph spacing heading. Cut, Copy and
+Paste are left out of the menus (a host click cannot reach the frame's
+clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+
+The XLSX editor's toolbar row follows Google Sheets (xlsx-react's
+`singleRowToolbar`, no menu button): undo, redo and paint format, zoom (a
+boxless combobox), number formats, the font picker, the size box (no −/+
+steps), bold, italic, strikethrough and text colour, fill, borders and merge,
+then alignment and wrapping, scrolling sideways like the DOCX row; below lg the
+font picker, size box and zoom are hidden. Capy hides the fork's Search menus
+button (it does nothing), its agent proposals button (Capy stages no proposals)
+and the custom number format item (it only reapplies the current pattern)
+through `showSearchMenus`, `showProposals` and `showCustomNumberFormat`. Its
+dropdowns and pickers are drawn as the note toolbar's popovers: xlsx-react
+reads the shared `--office-menu-*` variables (the panel, rows, popover buttons,
+section labels and swatches; see the shared menu style below), the alignment
+popovers stack one icon button per alignment, and the text, fill and border
+colours open the same palette as the note editor's (Default clears the colour,
+Custom color takes any). The formula bar is its own 40px row under the
+toolbar and the sheet tabs sit under the grid. The viewer draws the same formula
+bar, read-only, in the same place: a click selects a cell (widened to its merged
+range, outlined in the editor's Excel green) and shows its address and full
+text, so the two modes differ only by the toolbar row. xlsx-react reads its
+other chrome colours, font and control sizes from `--xlsx-*` variables too; the
+grid stays white in dark themes, as pages do. Its icons come through
+`XlsxEditor`'s `icons` prop: `src/office-runtime/xlsxIcons.tsx` maps every
+toolbar icon and the border and alignment glyphs the fork otherwise draws
+(`TOOLBAR_ICON_NAMES`, `DRAWN_ICON_NAMES`) to Capy's Hugeicons.
+
+The XLSX menus come from `src/office-runtime/xlsxMenus.ts`, labelled from
+xlsx-i18n (zh-CN for zh): File (Save, Download ▸ Microsoft Excel and PNG image,
+Print), Edit (Undo, Redo, Select all, Delete ▸ values, rows, columns), View
+(Freeze ▸ rows and columns, Zoom ▸), Insert (rows above and below, columns left
+and right, Sheet) and Format (Number, Text, Alignment, Wrapping, Merge cells,
+Clear formatting), with counts in the labels ("3 rows above") and items enabled
+and ticked from the editor's `onCommandStateChange` state. A runtime item's id
+is an `XLSX_COMMANDS` id that `XlsxEditorApi.run` performs, the engine-only ones
+included (insert and delete rows and columns, delete values, freeze, add sheet,
+clear formatting). For PNG and Print `src/office-runtime/xlsxRender.ts` paints
+the sheet's display list: the part on screen for PNG, and for Print the active
+sheet on A4 portrait pages fit to width as Google Sheets prints (the columns up
+to the rightmost text scale to the page width; rows run down the pages, each
+ending at a row edge, frozen rows repeat as titles, trailing pages without text
+are left out). Print stops at 50 pages: the width scan covers the rows those
+pages print, and when text goes on past them `rendered` says `truncated` and
+the host shows "Printed the first 50 pages". View mode offers File with
+Download, PNG and Print.
+
+Below lg, while a DOCX, XLSX or PPTX file is open, the workspace's floating
+Files/Chat/Create/Settings bar folds into one button at the bottom right, above
+the sheet tabs and the slide pager, that morphs into a menu of the same items
+(`Menu`'s morph variant, as the Files panel's plus); other files keep the bar
+(`WorkspaceOpen`).
 
 The runtime is its own document, so `office-runtime.css` brings Capy's look
 itself. It imports Tailwind's preflight (in a lower layer) and Capy's theme
@@ -505,9 +624,10 @@ toolbar variables and its shadcn variables. The shadcn ones are HSL triplets
 and take relative colour syntax (`from var(--token) h s l`); on Chrome and Edge
 111–118, which lack it, an `@supports` fallback gives menus and dropdowns
 Capy's tokens directly. The host sends `set-appearance` (`style`, `theme`,
-`narrow` below lg) before `load`, on every change and again after every runtime
-boot; the runtime sets `data-style`/`data-theme` on its root, passes
-`colorMode` to `DocxEditor` and hides the narrow controls. `set-capabilities`
+`narrow` below lg, `locale`) before `load`, on every change and again after
+every runtime boot; the runtime sets `data-style`/`data-theme` and `lang` on
+its root, sets its own locale, passes `colorMode` and the editor's zh-CN
+strings for `zh` to `DocxEditor`, and hides the narrow controls. `set-capabilities`
 also follows every boot, after the boot's `load` (which carries the raw
 `canEdit`), so a runtime that reloads during a handoff, a replacement,
 recovery, a discard or while connecting stays inert. Pages stay white in
@@ -516,6 +636,35 @@ and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
 files carry their copyright and licence link, and the OFL text stays in the
 repo beside them).
+
+Every Office menu, dropdown and picker looks like the note toolbar's popovers
+(`ToolbarPopover.tsx`). The header menus (`OfficeMenuBar.tsx`) restyle Capy's
+dropdown menu with the same classes: a rounded-lg panel with px-1 py-1.5,
+28px rows with px-2 and gap-2, hover in surface-hover-bg/80, the ✓ for a
+checked item at the end of the row, shortcuts in muted text-xs, inset
+separators. Inside the frame, `office-runtime.css` defines the shared
+`--office-menu-*` variables (panel, rows, toolbar buttons, section labels,
+swatches) for the DOCX, XLSX and PPTX runtimes, and `office-runtime.html` sets
+`data-office-menus="host"` on its root. docx-react then draws its style, font,
+size, zoom, line spacing, colour, alignment, table and image dropdowns and its
+right-click menus from those variables (the rules in the fork's shared
+`editor.css`, keyed on `docx-popover*` classes, with `!important` because the
+pickers style themselves inline); without the attribute it keeps its own
+look. The style list shows plain names at row height instead of previews,
+Word's built-in styles under Word's names (`heading 4` shows as Heading 4; the
+document keeps its names), the size list is the note toolbar's narrow centred
+list, alignment stacks its buttons, and a dropdown near the window edge moves
+back inside it. Capy's sentence case replaces the editor's title case in these
+popovers (`docxMenus.ts` passes it over the built-in English, and under zh-CN
+for any string it lacks): Text color, Highlight color, Custom color, No
+color, Paste as plain text, Select all; Word's Automatic colour and table
+style names keep theirs. The text, highlight and table colour
+pickers take Capy's 40 document colours (`DocxEditor`'s `colorPalette`, from
+`DOCUMENT_COLORS`) in place of Word's theme and standard colours, with the
+clear button beside the label and a custom colour from the browser's picker
+(the row shows only Custom color and its swatch, no hex code), as the note
+toolbar and PPTX pick colours; a picked colour is a plain RGB
+value, not a theme colour.
 
 The editor draws Capy's icons through one hook: `DocxEditor`'s `icons` prop
 takes an `IconSet` that names every Material icon the editor uses and the icons
@@ -526,6 +675,74 @@ through `HugeIcon`, and its `Record<keyof IconSet, …>` type fails the build if
 a name is missing. The fork's print preview, find/replace and keyboard
 shortcut dialogs, its error toasts and its empty-document placeholder still
 draw their own SVGs.
+
+PPTX view and edit share one layout: the slide strip at the left (thumbnails
+at their slide's aspect ratio), the slide fitted with 20px around it, and the
+speaker notes below when shown (read-only in view). The viewer (`PptxViewer.tsx`) copies
+the editor's strip and notes geometry in `pptx-runtime.css`, which also maps
+Capy's tokens onto pptx-react's `--pptx-*` variables (their fallbacks are the
+fork's own colours); slides keep their own colours. The viewer's strip ends in
+a pager (previous, "Slide x of y", next). View mode has no count row, so the
+strip and the notes start right under the file header; edit mode adds the
+editor's flat 40px toolbar row (`singleRowToolbar`) above the same layout. In
+a frame under 640px (phones) the strip is a row of 96px thumbnails under the
+slide in both modes, the viewer's pager under it.
+
+The PPTX toolbar row follows Google Slides: new slide with a layout dropdown,
+undo and redo, a zoom dropdown, then select, text box, image and shape. A
+selected text box or text adds font, size box (no steps), bold, italic,
+underline, text colour and an alignment dropdown; a selected shape adds fill,
+border colour, border weight and its adjustment. Below lg zoom, font and size
+are hidden. The row scrolls sideways under a vertical wheel, with edge fades. `src/office-runtime/pptxIcons.tsx` maps every toolbar icon name to
+Capy's Hugeicons (`PptxEditor`'s `icons`). Capy hides the editor's agent
+proposals (`showProposals`) and its Present button (`showPresentButton`);
+save, PNG export, arrange and the slide operations without other UI (delete
+slide, move slide, delete object) are host menu commands that
+`PptxEditorApi.runCommand` runs by id (`PPTX_COMMAND_IDS`), with
+`onCommandState` reporting what each can do. Delete or Backspace deletes a
+selected object unless its text is being edited.
+
+Both modes hide the speaker notes until View › Show speaker notes (the
+`view.speakerNotes` id, a checkbox item) or the Notes button at the bottom
+right of the slide area shows them; the two flip one state. In edit mode that
+is pptx-react's (`pptx-notes-toggle`, icon only in the narrow layout); the
+viewer draws the same button in `pptx-runtime.css`. The choice is one per
+person for every PPTX file and both modes, kept in the runtime origin's
+`localStorage` under `capy.pptx.speakerNotes` (`pptxSpeakerNotes.ts`; the
+editor takes it as `defaultSpeakerNotes` and reports changes through
+`onSpeakerNotesChange`); when storage is blocked the notes start hidden. In
+production the runtime is a separate origin inside Capy's page, so browsers
+keep that storage partitioned under Capy's site, and Safari may clear it after
+some days without a visit, after which the notes start hidden again.
+Presenter view (notes while presenting) is a later track.
+
+Below lg the workspace's floating tools button covers the frame's bottom
+right. The runtime marks its root `data-narrow` then, and
+`--pptx-notes-toggle-right` moves the Notes button left of that column. While
+the notes are open the host lifts the button above the notes box: `PptxView`
+sets `data-office-notes-open` when the runtime's menus tick
+`view.speakerNotes`, and `WorkspaceOpen` moves the button up for it.
+
+PPTX's header menus follow Google Slides: File (Save, which Capy performs as
+`capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit, View (Present, Zoom, Show speaker notes), Insert, Format,
+Slide (new, delete, move) and Arrange (`pptxEditorMenus.ts`, labels from
+`pptx-i18n` for the locale and Capy messages for the rest). A menu id carries
+its command's value after a colon (`view.zoom:1.5`, `insert.shape:ellipse`,
+`slide.newWithLayout:<layout part>`). Insert › Image is a `pick` item: Capy's
+picker hands the file to `PptxEditorApi.insertImage`. View mode offers File ›
+Download and Print and View › Present and Show speaker notes (`pptxMenus.ts`). Present is a header
+action in both modes; the viewer presents through pptx-react's
+`PresentationOverlay`, exported alone as `@betteroffice/pptx-react/presentation`
+so the viewer loads no editor code. Print and PNG pages are the slides painted
+at twice their size from the open deck (`pptxRender.ts`).
+
+PPTX's dropdowns inside the runtime take the note toolbar's popover look
+through the shared `--office-menu-*` variables in `office-runtime.css`, which
+pptx-react reads directly (its fallbacks are its own look). Colour buttons
+open Capy's 40-colour palette under Document colors, with the clear item and
+a Custom color row; the shape picker is a labelled grid of popover buttons
+and alignment a column of them.
+Strip thumbnails paint off screen and show only their latest paint.
 
 The collaboration service refuses a client update that writes outside the
 engine's document roots (the bundle's `OFFICE_DOCUMENT_ROOTS`, the contributor
@@ -567,7 +784,11 @@ contains a compromised document engine without relying on the sandbox's
 same-origin escape-prone combination on the application origin. The engines
 are single-threaded; an iframe alone does not enable `SharedArrayBuffer`. If
 threaded WASM is introduced later, configure isolation headers on this runtime
-origin without isolating the SPA.
+origin without isolating the SPA. The iframes also get
+`allow="clipboard-read; clipboard-write"` (`officeRuntimeConfig.ts`, next to
+`sandbox`) so the editors' right-click Cut, Copy and Paste reach the
+clipboard; Paste shows the browser's permission prompt once, and the sandbox
+flags are unchanged.
 
 PDF is not loaded into the Office iframe. `react-pdf` is the only PDF viewer
 surface and `pdfjs-dist` is its engine. Both the viewer and upload-analysis
@@ -714,8 +935,9 @@ and the maintenance pause. A save starts from the instance's last durable copy
 of the room while the row still names its checkpoint and base, reading only the row's
 pending effects (captions land there without a checkpoint); a conflict reads
 the session and state again. Shutdown flushes every room's pending store, and
-the collaboration container has a 60 s stop grace period for it. The DOCX File > Save and the PPTX save button request the same
-checkpoint through `onSaveRequest`, with nothing serialized. The XLSX save
+the collaboration container has a 60 s stop grace period for it. File › Save in the Office header is Capy's own command
+(`capy.save`) and takes the checkpoint directly, as Ctrl/Cmd+S in the runtime does through its `checkpoint` message, with
+nothing serialized. The XLSX save
 button has no such hook: it serializes the workbook, and the runtime discards
 the bytes and requests the checkpoint. Flushing pending input awaits each editor's own
 flush (`flushPendingInput` in DOCX and PPTX; XLSX `flush`, which settles or

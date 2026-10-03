@@ -1,0 +1,268 @@
+/* Capy's colours on pptx-react's --pptx-* variables (the tokens already follow
+   the theme). Its dropdowns read the shared --office-menu-* set in
+   office-runtime.css. The viewer below reads the same variables and copies the
+   editor's strip and notes geometry, so a slide sits at the same place in view
+   and edit. Slides keep their own colours. */
+:root {
+  --pptx-font: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  --pptx-bg: var(--surface-card-bg);
+  --pptx-surface: var(--surface-card-bg);
+  --pptx-strip-bg: var(--surface-card-bg);
+  --pptx-rail: var(--surface-card-hover-bg);
+  --pptx-text: var(--text-primary);
+  --pptx-text-muted: var(--text-muted);
+  --pptx-text-disabled: var(--text-placeholder);
+  --pptx-divider: var(--divider);
+  --pptx-border: var(--border-default);
+  --pptx-hover: var(--surface-card-hover-bg);
+  /* Capy's ToolbarButton pressed state, as DOCX's --doc-toggle-active-*. */
+  --pptx-pressed: color-mix(in srgb, var(--tint-accent-1-bg) 50%, transparent);
+  --pptx-pressed-text: var(--tint-accent-1-fg);
+  --pptx-accent: var(--action-accent-bg);
+  --pptx-on-accent: var(--action-accent-fg);
+  --pptx-error-bg: var(--tint-error-bg);
+  --pptx-error-text: var(--tint-error-fg);
+  --pptx-error-border: var(--tint-error-fg);
+  --pptx-success-bg: var(--tint-success-bg);
+  --pptx-success-text: var(--tint-success-fg);
+  --pptx-warning-bg: var(--tint-warning-bg);
+  --pptx-warning-text: var(--tint-warning-fg);
+  /* The toolbar row as Capy's Toolbar and ToolbarButton. */
+  --pptx-toolbar-height: 40px;
+  --pptx-button-size: 32px;
+  --pptx-button-radius: var(--radius-button);
+  /* As the DOCX size box. */
+  --pptx-input-radius: 6px;
+  --pptx-control-font-size: 0.875rem;
+  --pptx-control-font-weight: 500;
+}
+
+.pptx-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--pptx-text);
+  background: var(--pptx-bg);
+}
+
+.pptx-viewer-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* pptx-react's slideStrip, slideButton, slideNumber and slidePreview. */
+.pptx-viewer-strip {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  width: 184px;
+  background: var(--pptx-strip-bg);
+  border-right: 1px solid var(--pptx-divider);
+}
+
+.pptx-viewer-slides {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 10px;
+  overflow-y: auto;
+}
+
+.pptx-viewer-slide {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 4px;
+  margin-bottom: 12px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  border-radius: 5px;
+}
+
+.pptx-viewer-slide[aria-current="page"] {
+  border-color: var(--pptx-accent);
+}
+
+.pptx-viewer-slide-number {
+  flex: 0 0 auto;
+  width: 18px;
+  padding-top: 3px;
+  font-size: 11px;
+  color: var(--pptx-text-muted);
+  text-align: right;
+}
+
+.pptx-viewer-slide-preview {
+  display: block;
+  flex: 0 0 auto;
+  width: 126px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(20 31 50 / 16%);
+}
+
+.pptx-viewer-slide-preview canvas {
+  display: block;
+}
+
+.pptx-viewer-pager {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  font-size: 12px;
+  color: var(--pptx-text-muted);
+  border-top: 1px solid var(--pptx-divider);
+}
+
+.pptx-viewer-pager button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--pptx-text);
+  cursor: pointer;
+  border-radius: var(--radius-button);
+}
+
+.pptx-viewer-pager button:hover:not(:disabled) {
+  background: var(--pptx-hover);
+}
+
+.pptx-viewer-pager button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* pptx-react's canvasHost: the slide fits with 20px around it, centred. */
+.pptx-viewer-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  overflow: auto;
+}
+
+.pptx-viewer-stage canvas {
+  display: block;
+  flex: 0 0 auto;
+  background: #fff;
+  box-shadow: 0 8px 32px rgb(27 39 61 / 20%);
+}
+
+/* pptx-react's Notes button (a ToolbarButton at the stage's bottom right). */
+.pptx-viewer-notes-toggle {
+  position: absolute;
+  right: var(--pptx-notes-toggle-right, 8px);
+  bottom: 8px;
+  z-index: 5;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: var(--pptx-button-size);
+  padding: 0 10px;
+  font: var(--pptx-control-font-weight, 500) var(--pptx-control-font-size, 13px)
+    var(--pptx-font);
+  line-height: 1;
+  color: var(--pptx-text);
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--pptx-button-radius, 4px);
+}
+
+.pptx-viewer-notes-toggle:hover {
+  background: var(--pptx-hover);
+}
+
+.pptx-viewer-notes-toggle[aria-pressed="true"] {
+  color: var(--pptx-pressed-text);
+  background: var(--pptx-pressed);
+}
+
+/* Below lg Capy's floating tools button (WorkspaceOpen, right-4) sits over
+   the frame's bottom right, so the Notes button keeps that column clear. */
+:root[data-narrow] {
+  --pptx-notes-toggle-right: 64px;
+}
+
+/* pptx-react's notesPanel, read-only. */
+.pptx-viewer-notes {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 14px 10px;
+  background: var(--pptx-surface);
+  border-top: 1px solid var(--pptx-divider);
+}
+
+.pptx-viewer-notes-label {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--pptx-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.pptx-viewer-notes-text {
+  height: 64px;
+  padding: 6px 8px;
+  overflow-y: auto;
+  font: 13px var(--pptx-font);
+  color: var(--pptx-text);
+  white-space: pre-wrap;
+  border: 1px solid var(--pptx-border);
+  border-radius: 6px;
+}
+
+/* pptx-react's narrow layout (an editor under 640px): the strip becomes a row
+   of 96px thumbnails under the slide, the pager under it. */
+@media (max-width: 639.98px) {
+  /* Icon only, as the editor's narrow layout. */
+  .pptx-viewer-notes-toggle {
+    justify-content: center;
+    width: var(--pptx-button-size);
+    padding: 0;
+  }
+
+  .pptx-viewer-notes-toggle span {
+    display: none;
+  }
+
+  .pptx-viewer-workspace {
+    flex-direction: column;
+  }
+
+  .pptx-viewer-strip {
+    order: 1;
+    width: auto;
+    border-top: 1px solid var(--pptx-divider);
+    border-right: 0;
+  }
+
+  .pptx-viewer-slides {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    padding: 8px 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .pptx-viewer-slide {
+    flex: 0 0 auto;
+    width: auto;
+    margin-bottom: 0;
+  }
+
+  .pptx-viewer-slide-preview {
+    width: 96px;
+  }
+}

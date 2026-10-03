@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import type { ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
-import { FileModeControl } from './FileModeControl';
 import { FileError, FileUnavailable, SourceBanners } from './FileStates';
 import { useReportEditorStatus } from './fileModeContext';
+import { OfficeHeader } from './OfficeMenuBar';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 import { sourceHeaderStatus } from './useSourceSession';
@@ -89,39 +89,25 @@ export default function SheetView({
         readOnly={runtime.readOnly}
         replaced={runtime.replaced}
       />
-      <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
-        <span className="t-meta flex-1 text-fg-muted">
-          {runtime.ready
+      <OfficeHeader
+        canEdit={canEdit}
+        label={
+          runtime.ready
             ? runtime.mode === 'view' &&
               runtime.analysis?.format === 'xlsx' &&
               m.files_office_sheet_count({
                 count: runtime.analysis.sheetCount,
               })
-            : m.files_office_opening_workbook()}
-        </span>
-        <FileModeControl
-          canEdit={canEdit}
-          disabled={
-            runtime.mode === 'view'
-              ? !runtime.analysis
-              : !runtime.ready ||
-                runtime.saving ||
-                runtime.handoff ||
-                runtime.replaced
-          }
-          mode={runtime.mode}
-          onChange={runtime.setRuntimeMode}
-          onSave={() => {
-            void runtime.save().catch(() => {});
-          }}
-          saveDisabled={!runtime.ready || runtime.handoff || runtime.replaced}
-        />
-      </div>
+            : m.files_office_opening_workbook()
+        }
+        runtime={runtime}
+      />
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />
         )}
         <iframe
+          allow={runtime.iframeAllow}
           className="h-full w-full border-0"
           key={runtime.iframeKey}
           ref={runtime.iframeRef}

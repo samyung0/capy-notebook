@@ -32,6 +32,7 @@ import {
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
   isImageFile,
+  officeFormatOf,
 } from '@/features/files/fileUtils';
 import {
   type NoteEditorSaveState,
@@ -240,9 +241,15 @@ export function Header({
   leading,
   standalone = false,
   fileControls,
+  fileActions,
+  menuBar,
 }: {
   standalone?: boolean;
   fileControls?: ReactNode;
+  /** Office files: buttons the runtime adds before the mode toggle (Present). */
+  fileActions?: ReactNode;
+  /** Office files: where the runtime's menu bar renders, on the second row. */
+  menuBar?: ReactNode;
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file: layout toggle and workspace menu. */
   leading?: ReactNode;
@@ -280,6 +287,152 @@ export function Header({
   const online = useOnlineStatus();
   // Phones have no room to go fuller than the panel already is.
   const sm = useMediaQuery('(min-width: 640px)');
+  const office = !!file && !!officeFormatOf(file);
+  const name = (
+    <>
+      <FileIcon
+        className="size-4 shrink-0 -translate-y-px md:size-5"
+        name={icon}
+      />
+      <h2
+        className={cn(
+          'min-w-0 truncate',
+          leading ? 't-body font-semibold' : 't-subtitle'
+        )}
+      >
+        {title ?? '--'}
+      </h2>
+    </>
+  );
+  const right = (
+    <>
+      {item.kind === 'file' && office && fileActions}
+      {item.kind === 'file' && fileControls}
+      {item.kind === 'material' && activeMode === 'view' && materialKind && (
+        <MaterialViewActions kind={materialKind} materialId={item.id} />
+      )}
+      {!readOnly && modes && modes.length > 1 && activeMode && (
+        <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
+      )}
+      {showImageZoom && (
+        <>
+          <ToolbarButton
+            disabled={imageZoom <= IMAGE_MIN_ZOOM}
+            label={m.material_zoom_out()}
+            onClick={() =>
+              onImageZoomChange(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))
+            }
+          >
+            <Icon name="zoomOut" />
+          </ToolbarButton>
+          <ToolbarButton
+            disabled={imageZoom >= IMAGE_MAX_ZOOM}
+            label={m.material_zoom_in()}
+            onClick={() =>
+              onImageZoomChange(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))
+            }
+          >
+            <Icon name="zoomIn" />
+          </ToolbarButton>
+        </>
+      )}
+      <ContentActions
+        beforeDelete={file ? beforeFileDelete : undefined}
+        chapters={chapters}
+        color={color}
+        content={
+          file
+            ? toFileActionTarget(file)
+            : material
+              ? toMaterialActionTarget(material)
+              : undefined
+        }
+        display="menu"
+        key={`${item.kind}:${item.id}`}
+        leadingItems={
+          sm
+            ? [
+                {
+                  icon: isFullscreen ? 'minimize' : 'maximize',
+                  label: isFullscreen
+                    ? m.material_fullscreen_exit()
+                    : m.material_fullscreen(),
+                  onClick: onToggleFullscreen,
+                },
+              ]
+            : []
+        }
+        menuTrigger={
+          <ToolbarButton label={m.a11y_open_menu()}>
+            <Icon name="moreVertical" />
+          </ToolbarButton>
+        }
+        onDeleted={onDeleted}
+        readOnly={
+          readOnly ||
+          (materialCapabilities ? !materialCapabilities.canEdit : false)
+        }
+        renameFieldLabel={m.files_file_name()}
+        showMove={!standalone}
+        workspaceId={workspaceId}
+      />
+    </>
+  );
+  // Office files: the top row carries the file, the second the runtime's menu
+  // bar and the save status, both 24px under a 4px gap; the mode toggle and ⋮
+  // sit centred on both, or on the top row below sm, where the menu bar takes
+  // the full width.
+  if (office)
+    return (
+      <div
+        className="grid h-14 shrink-0 grid-cols-[minmax(0,1fr)_auto] grid-rows-[24px_24px] gap-x-2 gap-y-0.5 border-divider border-b pt-1 pr-2 pl-4"
+        data-layout="office"
+        data-testid="content-header"
+      >
+        <div
+          className={cn(
+            'flex min-w-0 items-center gap-2',
+            // The workspace chrome at the row's height; the workspace picker
+            // (a dropdown trigger) as a slimmer pill.
+            '[&_[data-slot=button]:not([data-variant])]:w-6 [&_[data-slot=button]]:h-6',
+            '[&_[data-slot=dropdown-menu-trigger]]:h-6 [&_[data-slot=dropdown-menu-trigger]]:gap-1.5 [&_[data-slot=dropdown-menu-trigger]]:px-1.5'
+          )}
+        >
+          {leading}
+          <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
+            {name}
+            <OfflineStatus />
+            <WorkspaceStatusButton
+              workspaceId={standalone ? '' : workspaceId}
+            />
+          </div>
+        </div>
+        <div className="col-span-2 row-start-2 flex min-w-0 items-center sm:col-span-1">
+          {menuBar}
+          {online && editorStatus && statusLabel && (
+            <span
+              className={cn(
+                'ml-2 inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[0.8125rem] text-fg-muted',
+                (editorStatus.saveState === 'error' ||
+                  editorStatus.saveState === 'unsaved') &&
+                  'text-solid-error'
+              )}
+              data-testid="editor-save-state"
+              role="status"
+            >
+              <Icon
+                className="size-[15px]"
+                name={STATUS_ICON[editorStatus.saveState]}
+              />
+              {statusLabel}
+            </span>
+          )}
+        </div>
+        <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-6 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-6">
+          {right}
+        </div>
+      </div>
+    );
   return (
     <div
       className="flex h-14 items-center gap-2 border-divider border-b py-4 pr-2 pl-4"
@@ -324,80 +477,7 @@ export function Header({
         )}
         <WorkspaceStatusButton workspaceId={standalone ? '' : workspaceId} />
       </div>
-      <div className="ml-auto flex items-center gap-0">
-        {item.kind === 'file' && fileControls}
-        {item.kind === 'material' && activeMode === 'view' && materialKind && (
-          <MaterialViewActions kind={materialKind} materialId={item.id} />
-        )}
-        {!readOnly && modes && modes.length > 1 && activeMode && (
-          <MaterialModeToggle
-            mode={activeMode}
-            onChange={onMaterialModeChange}
-          />
-        )}
-        {showImageZoom && (
-          <>
-            <ToolbarButton
-              disabled={imageZoom <= IMAGE_MIN_ZOOM}
-              label={m.material_zoom_out()}
-              onClick={() =>
-                onImageZoomChange(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))
-              }
-            >
-              <Icon name="zoomOut" />
-            </ToolbarButton>
-            <ToolbarButton
-              disabled={imageZoom >= IMAGE_MAX_ZOOM}
-              label={m.material_zoom_in()}
-              onClick={() =>
-                onImageZoomChange(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))
-              }
-            >
-              <Icon name="zoomIn" />
-            </ToolbarButton>
-          </>
-        )}
-        <ContentActions
-          beforeDelete={file ? beforeFileDelete : undefined}
-          chapters={chapters}
-          color={color}
-          content={
-            file
-              ? toFileActionTarget(file)
-              : material
-                ? toMaterialActionTarget(material)
-                : undefined
-          }
-          display="menu"
-          key={`${item.kind}:${item.id}`}
-          leadingItems={
-            sm
-              ? [
-                  {
-                    icon: isFullscreen ? 'minimize' : 'maximize',
-                    label: isFullscreen
-                      ? m.material_fullscreen_exit()
-                      : m.material_fullscreen(),
-                    onClick: onToggleFullscreen,
-                  },
-                ]
-              : []
-          }
-          menuTrigger={
-            <ToolbarButton label={m.a11y_open_menu()}>
-              <Icon name="moreVertical" />
-            </ToolbarButton>
-          }
-          onDeleted={onDeleted}
-          readOnly={
-            readOnly ||
-            (materialCapabilities ? !materialCapabilities.canEdit : false)
-          }
-          renameFieldLabel={m.files_file_name()}
-          showMove={!standalone}
-          workspaceId={workspaceId}
-        />
-      </div>
+      <div className="ml-auto flex items-center gap-0">{right}</div>
     </div>
   );
 }

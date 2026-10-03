@@ -28,6 +28,7 @@ import {
   ChevronRightIcon,
   ChevronUpIcon,
   CircleIcon,
+  ClipboardPasteIcon,
   Clock01Icon,
   ClosedCaptionIcon,
   CloudAlertIcon,
@@ -106,9 +107,12 @@ import {
   PencilEdit02Icon,
   PlusSignCircleIcon,
   PlusSignIcon,
+  Presentation01Icon,
+  PrinterIcon,
   QuoteDownIcon,
   Redo03Icon,
   RefreshCcwIcon,
+  ScissorIcon,
   Search01Icon,
   SearchAddIcon,
   SearchMinusIcon,
@@ -176,6 +180,7 @@ const HugeIcons = {
   circleCheck: CheckmarkCircle02Icon,
   circleX: CancelCircleIcon,
   clipboard: Task01Icon,
+  clipboardPaste: ClipboardPasteIcon,
   clock: Clock01Icon,
   clone: Copy02Icon,
   closedCaption: ClosedCaptionIcon,
@@ -270,6 +275,8 @@ const HugeIcons = {
   plusCircle: PlusSignCircleIcon,
   preferences: Settings02Icon,
   premium: Crown03Icon,
+  presentation: Presentation01Icon,
+  print: PrinterIcon,
   profile: User02Icon,
   quiz: HelpSquareIcon,
   quote: QuoteDownIcon,
@@ -278,6 +285,7 @@ const HugeIcons = {
   refresh: RefreshCcwIcon,
   removeFromChapter: Eraser01Icon,
   schedule: Calendar04Icon,
+  scissors: ScissorIcon,
   search: Search01Icon,
   securityWarning: SecurityWarningIcon,
   send: SendHorizontalIcon,
@@ -312,6 +320,11 @@ const HugeIcons = {
 } as const;
 
 export type IconName = keyof typeof HugeIcons;
+
+/** For names that arrive as data, such as the Office runtime's menus. */
+export function isIconName(name: string): name is IconName {
+  return Object.hasOwn(HugeIcons, name);
+}
 
 export type IconProps = React.ComponentProps<'svg'> & {
   className?: string;

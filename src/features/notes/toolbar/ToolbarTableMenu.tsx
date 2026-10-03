@@ -213,7 +213,8 @@ function TablePopoverGroup({
   );
 }
 
-function TablePicker({
+/** Also the Office menus' Insert › Table picker. */
+export function TablePicker({
   onInsert,
 }: {
   onInsert: (rowCount: number, colCount: number) => void;

@@ -13,13 +13,6 @@ type Runtime = ReturnType<typeof useOfficeRuntime>;
 
 const HEADER_ROW = /<div class="([^"]*)"><span class="t-meta/;
 
-/** The classes of the header row, the div around the page-count label. */
-function headerRow(markup: string) {
-  const row = HEADER_ROW.exec(markup);
-  if (!row) throw new Error('no header row');
-  return row[1].split(' ');
-}
-
 function render(
   runtime: Partial<Runtime>,
   headerTarget: HTMLElement | null = null
@@ -56,19 +49,15 @@ describe('DocxView header', () => {
     );
   });
 
-  it("gives its row to the editor's toolbar while editing under a file header", () => {
+  it('leaves the mode control and menus to the file header in both modes', () => {
     const target = {} as HTMLElement;
     const analysis = { format: 'docx', pageCount: 15 } as const;
-    expect(headerRow(render({ analysis, ready: true }, target))).not.toContain(
-      'hidden'
+    expect(render({ analysis, ready: true }, target)).not.toMatch(HEADER_ROW);
+    expect(render({ mode: 'edit', ready: true }, target)).not.toMatch(
+      HEADER_ROW
     );
-    expect(headerRow(render({ mode: 'edit', ready: true }, target))).toContain(
-      'hidden'
-    );
-    // Without a header the row keeps the mode control.
-    expect(headerRow(render({ mode: 'edit', ready: true }))).not.toContain(
-      'hidden'
-    );
+    // Without a file header a row of its own keeps the count and the toggle.
+    expect(render({ analysis, ready: true })).toMatch(HEADER_ROW);
   });
 
   it('asks for a reload when the Office runtime speaks another protocol version', () => {

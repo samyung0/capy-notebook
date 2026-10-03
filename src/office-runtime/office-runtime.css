@@ -123,6 +123,57 @@
   --doc-menu-trigger-font-weight: 600;
   --doc-menu-trigger-height: 32px;
   --doc-menu-trigger-radius: var(--radius-button);
+
+  /* Menus, dropdowns and pickers as the note toolbar's popovers
+     (ToolbarPopover.tsx), shared by the DOCX, XLSX and PPTX runtimes;
+     office-runtime.html opts docx-react in with data-office-menus="host".
+     Panel: rounded-lg, px-1 py-1.5, shadow-pop. Rows (ToolbarPopoverItem):
+     h-7, px-2, gap-2, rounded-lg, hover surface-hover-bg/80, picks in
+     tint-accent-1. Buttons (ToolbarButton): size-8, rounded-button, pressed
+     tint-accent-1/50. Labels (ToolbarPopoverGroup): text-xs medium muted,
+     pt-3 pb-1.5 (pt-1 for the first). Swatches (ColorPicker): line-strong
+     border, ring-action when picked. */
+  --office-menu-bg: var(--surface-card-bg);
+  --office-menu-text: var(--text-primary);
+  --office-menu-muted: var(--text-muted);
+  /* The palette's labels (ColorPicker: text-xs semibold fg-secondary). */
+  --office-menu-secondary: var(--text-secondary);
+  --office-menu-border: var(--border-default);
+  --office-menu-separator: var(--divider);
+  --office-menu-radius: 0.5rem;
+  --office-menu-shadow: var(--shadow-pop);
+  --office-menu-padding: 6px 4px;
+  --office-menu-font-family: var(--font-sans);
+  --office-menu-font-size: 0.875rem;
+  --office-menu-font-weight: 500;
+  --office-menu-line-height: var(--body-line-height);
+  --office-menu-icon-size: 16px;
+  --office-menu-item-height: 28px;
+  --office-menu-item-padding-x: 8px;
+  --office-menu-item-gap: 8px;
+  --office-menu-item-radius: 0.5rem;
+  --office-menu-hover: color-mix(
+    in srgb,
+    var(--surface-card-hover-bg) 80%,
+    transparent
+  );
+  --office-menu-selected-bg: var(--tint-accent-1-bg);
+  --office-menu-selected-text: var(--tint-accent-1-fg);
+  --office-menu-button-size: 32px;
+  --office-menu-button-radius: var(--radius-button);
+  --office-menu-button-hover: var(--surface-card-hover-bg);
+  --office-menu-pressed-bg: color-mix(
+    in srgb,
+    var(--tint-accent-1-bg) 50%,
+    transparent
+  );
+  --office-menu-pressed-text: var(--tint-accent-1-fg);
+  --office-menu-label-padding: 12px 8px 6px;
+  --office-menu-label-font-size: 0.75rem;
+  --office-menu-label-font-weight: 500;
+  --office-menu-label-line-height: 1rem;
+  --office-menu-swatch-border: var(--border-strong);
+  --office-menu-ring: var(--action-primary-bg);
 }
 
 /* Chrome and Edge 111–118 have no relative colour syntax, so the shadcn
@@ -235,31 +286,6 @@ button {
   white-space: nowrap;
   border: 0;
   clip: rect(0 0 0 0);
-}
-
-.office-tabs {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 4px;
-  min-height: 37px;
-  padding: 5px 8px;
-  overflow-x: auto;
-  background: var(--surface-card-bg);
-  border-bottom: 1px solid var(--divider);
-}
-
-.office-tab {
-  padding: 4px 10px;
-  white-space: nowrap;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: 5px;
-}
-
-.office-tab[aria-selected="true"] {
-  font-weight: 600;
-  background: var(--surface-card-hover-bg);
 }
 
 .xlsx-viewport {

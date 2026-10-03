@@ -2,37 +2,69 @@ import {
   type A11yGrid,
   analyzeOpenWorkbook,
   buildA11yGrid,
+  cellAtPoint,
   cellRect,
   type DisplayList,
   initWasm,
   openWorkbook,
   paintDisplayList,
+  rangeRect,
   type WorkbookAnalysis,
   type WorkbookViewerHandle,
 } from '@betteroffice/xlsx/viewer';
 import {
   type KeyboardEvent,
+  type MouseEvent,
   useCallback,
   useEffect,
   useId,
   useRef,
   useState,
 } from 'react';
-import type { OfficeCitation } from '@/features/files/officeProtocol';
+import type {
+  OfficeCitation,
+  OfficeLocale,
+} from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { CITATION_FILL } from './citations';
+import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
 import { type CellCitation, xlsxCitation } from './xlsxCitation';
+import { xlsxViewMenus } from './xlsxMenus';
+import { sheetPages, viewportPage } from './xlsxRender';
+import './xlsx-runtime.css';
+
+interface Cell {
+  col: number;
+  row: number;
+}
+
+/** The selected cell, widened to the merged range it belongs to. */
+interface SheetSelection {
+  cell: Cell;
+  range: { bottom: number; left: number; right: number; top: number } | null;
+}
+
+const ORIGIN: SheetSelection = { cell: { col: 0, row: 0 }, range: null };
+// The editor's selection colours: the outline stays Excel green.
+const SELECTION_STROKE = '#217346';
+const SELECTION_FILL = 'rgba(33, 115, 70, 0.12)';
 
 export function XlsxViewer({
   bytes,
   citation,
+  locale,
   onAnalysis,
   onError,
+  onMenus,
+  onRenderer,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
+  locale: OfficeLocale;
   onAnalysis: (analysis: WorkbookAnalysis) => void;
   onError: (error: Error) => void;
+  onMenus: OfficeMenuReporter;
+  onRenderer: (renderer: OfficeRenderer | null) => void;
 }) {
   const highlightRef = useRef<CellCitation | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -43,11 +75,26 @@ export function XlsxViewer({
   const sheetNamesRef = useRef<string[]>([]);
   const activeSheetRef = useRef(0);
   const a11yWindowKeyRef = useRef('');
+  const frameRef = useRef<DisplayList | null>(null);
+  const selectionRef = useRef<SheetSelection>(ORIGIN);
   const tabsId = useId();
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
   const [a11yGrid, setA11yGrid] = useState<A11yGrid | null>(null);
   const [extent, setExtent] = useState({ height: 0, width: 0 });
+  // The read-only formula bar: the selected cell's address and full text.
+  const [formula, setFormula] = useState({ address: '', text: '' });
+
+  const select = useCallback((handle: WorkbookViewerHandle, cell: Cell) => {
+    const sheet = activeSheetRef.current;
+    const selection = selectionOf(handle, sheet, cell);
+    selectionRef.current = selection;
+    a11yWindowKeyRef.current = '';
+    setFormula({
+      address: cellAddress(selection.cell),
+      text: handle.cellText(sheet, selection.cell.row, selection.cell.col),
+    });
+  }, []);
 
   const paint = useCallback(() => {
     const scroll = scrollRef.current;
@@ -64,6 +111,8 @@ export function XlsxViewer({
         x: scroll.scrollLeft,
         y: scroll.scrollTop,
       });
+      frameRef.current = frame;
+      const selection = selectionRef.current;
       const sheetName = sheetNamesRef.current[activeSheetRef.current] ?? '';
       const windowKey = visibleGridWindowKey(
         frame,
@@ -73,7 +122,12 @@ export function XlsxViewer({
       if (windowKey !== a11yWindowKeyRef.current) {
         a11yWindowKeyRef.current = windowKey;
         setA11yGrid(
-          buildA11yGrid(frame, null, sheetName, spreadsheetA11yStrings())
+          buildA11yGrid(
+            frame,
+            { anchor: selection.cell, focus: selection.cell },
+            sheetName,
+            spreadsheetA11yStrings()
+          )
         );
       }
       const dpr = window.devicePixelRatio || 1;
@@ -89,13 +143,28 @@ export function XlsxViewer({
           target?.sheet === activeSheetRef.current
             ? cellRect(frame.grid, target.row, target.col)
             : null;
+        context.save();
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
         if (rect) {
-          context.save();
-          context.setTransform(dpr, 0, 0, dpr, 0, 0);
           context.fillStyle = CITATION_FILL;
           context.fillRect(rect.x, rect.y, rect.w, rect.h);
-          context.restore();
         }
+        const selected = selection.range
+          ? rangeRect(frame.grid, selection.range)
+          : cellRect(frame.grid, selection.cell.row, selection.cell.col);
+        if (selected) {
+          context.fillStyle = SELECTION_FILL;
+          context.fillRect(selected.x, selected.y, selected.w, selected.h);
+          context.strokeStyle = SELECTION_STROKE;
+          context.lineWidth = 2;
+          context.strokeRect(
+            selected.x + 1,
+            selected.y + 1,
+            selected.w - 2,
+            selected.h - 2
+          );
+        }
+        context.restore();
       }
     } catch (value) {
       onError(toError(value));
@@ -108,6 +177,9 @@ export function XlsxViewer({
     a11yWindowKeyRef.current = '';
     activeSheetRef.current = 0;
     sheetNamesRef.current = [];
+    frameRef.current = null;
+    selectionRef.current = ORIGIN;
+    setFormula({ address: '', text: '' });
     setA11yGrid(null);
     setActiveSheet(0);
     setExtent({ height: 0, width: 0 });
@@ -134,6 +206,7 @@ export function XlsxViewer({
           setSheetNames(info.sheetNames);
           setActiveSheet(info.activeSheet);
           setExtent({ height: info.contentHeight, width: info.contentWidth });
+          select(handle, ORIGIN.cell);
           onAnalysis(analysis);
           requestAnimationFrame(paint);
         } catch (value) {
@@ -150,7 +223,7 @@ export function XlsxViewer({
       sheetNamesRef.current = [];
       handle?.dispose();
     };
-  }, [bytes, onAnalysis, onError, paint]);
+  }, [bytes, onAnalysis, onError, paint, select]);
 
   useEffect(() => {
     const scroll = scrollRef.current;
@@ -185,6 +258,7 @@ export function XlsxViewer({
       a11yWindowKeyRef.current = '';
       setActiveSheet(match.sheet);
       setExtent({ height: info.contentHeight, width: info.contentWidth });
+      select(handle, { col: match.col, row: match.row });
     }
     const raf = requestAnimationFrame(() => {
       if (match && scrollRef.current) {
@@ -195,7 +269,7 @@ export function XlsxViewer({
       paint();
     });
     return () => cancelAnimationFrame(raf);
-  }, [bytes, citation, sheetNames, paint]);
+  }, [bytes, citation, sheetNames, paint, select]);
 
   const selectSheet = (index: number) => {
     const handle = handleRef.current;
@@ -204,14 +278,58 @@ export function XlsxViewer({
       handle.setActiveSheet(index);
       const info = handle.sheetInfo();
       activeSheetRef.current = index;
-      a11yWindowKeyRef.current = '';
       setActiveSheet(index);
       setExtent({ height: info.contentHeight, width: info.contentWidth });
+      select(handle, ORIGIN.cell);
       const scroll = scrollRef.current;
       if (scroll) {
         scroll.scrollLeft = info.initialScrollX;
         scroll.scrollTop = info.initialScrollY;
       }
+      paint();
+    } catch (value) {
+      onError(toError(value));
+    }
+  };
+
+  // View mode offers what works here: Download, PNG and Print, which Capy
+  // performs from the images drawn below.
+  const loaded = sheetNames.length > 0;
+  useEffect(() => {
+    if (!loaded) return;
+    onMenus({ menus: xlsxViewMenus(locale), run: () => {} });
+    return () => onMenus(null);
+  }, [loaded, locale, onMenus]);
+  useEffect(() => {
+    onRenderer(async (kind) => {
+      const handle = handleRef.current;
+      const scroll = scrollRef.current;
+      if (!(handle && scroll)) throw new Error('Nothing to render');
+      const draw = handle.displayList.bind(handle);
+      if (kind === 'print') return sheetPages(draw, handle.sheetInfo());
+      return [
+        await viewportPage(draw, {
+          height: scroll.clientHeight,
+          width: scroll.clientWidth,
+          x: scroll.scrollLeft,
+          y: scroll.scrollTop,
+        }),
+      ];
+    });
+    return () => onRenderer(null);
+  }, [onRenderer]);
+
+  const selectAtPointer = (event: MouseEvent<HTMLDivElement>) => {
+    const handle = handleRef.current;
+    const box = event.currentTarget.getBoundingClientRect();
+    const cell = cellAtPoint(
+      frameRef.current?.grid,
+      event.clientX - box.left,
+      event.clientY - box.top
+    );
+    if (!(handle && cell)) return;
+    try {
+      select(handle, cell);
       paint();
     } catch (value) {
       onError(toError(value));
@@ -256,36 +374,37 @@ export function XlsxViewer({
 
   return (
     <div className="office-runtime">
-      {sheetNames.length > 1 && (
-        <div className="office-tabs" role="tablist">
-          {sheetNames.map((name, index) => (
-            <button
-              aria-controls={panelId}
-              aria-selected={index === activeSheet}
-              className="office-tab"
-              id={`${tabsId}-tab-${index}`}
-              key={`${name}-${index}`}
-              onClick={() => selectSheet(index)}
-              onKeyDown={(event) => handleSheetTabKeyDown(event, index)}
-              ref={(element) => {
-                tabRefs.current[index] = element;
-              }}
-              role="tab"
-              tabIndex={index === activeSheet ? 0 : -1}
-              type="button"
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Where the editor's formula bar sits, so the two modes line up apart
+          from the editor's toolbar row. */}
       <div
-        aria-label={sheetNames.length === 1 ? a11yGrid?.label : undefined}
-        aria-labelledby={sheetNames.length > 1 ? activeTabId : undefined}
+        aria-label={m.files_office_spreadsheet_formula_bar()}
+        className="xlsx-formula-bar"
+        role="group"
+      >
+        <input
+          aria-label={m.files_office_spreadsheet_name_box()}
+          className="xlsx-name-box"
+          readOnly
+          value={formula.address}
+        />
+        <span aria-hidden="true" className="xlsx-formula-mark">
+          fx
+        </span>
+        <input
+          aria-label={m.files_office_spreadsheet_cell_contents()}
+          className="xlsx-formula-value"
+          readOnly
+          value={formula.text}
+        />
+      </div>
+      <div
+        aria-label={sheetNames.length > 0 ? undefined : a11yGrid?.label}
+        aria-labelledby={sheetNames.length > 0 ? activeTabId : undefined}
         className="xlsx-viewport"
         id={panelId}
+        onClick={selectAtPointer}
         ref={scrollRef}
-        role={sheetNames.length > 1 ? 'tabpanel' : 'region'}
+        role={sheetNames.length > 0 ? 'tabpanel' : 'region'}
       >
         <div
           aria-hidden="true"
@@ -302,6 +421,30 @@ export function XlsxViewer({
         </div>
         {a11yGrid && <SpreadsheetA11yMirror grid={a11yGrid} />}
       </div>
+      {/* Even one sheet gets its tab, as in the editor. */}
+      {sheetNames.length > 0 && (
+        <div className="xlsx-sheet-tabs" role="tablist">
+          {sheetNames.map((name, index) => (
+            <button
+              aria-controls={panelId}
+              aria-selected={index === activeSheet}
+              className="xlsx-sheet-tab"
+              id={`${tabsId}-tab-${index}`}
+              key={`${name}-${index}`}
+              onClick={() => selectSheet(index)}
+              onKeyDown={(event) => handleSheetTabKeyDown(event, index)}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              role="tab"
+              tabIndex={index === activeSheet ? 0 : -1}
+              type="button"
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -392,6 +535,30 @@ function visibleGridWindowKey(
       chart.placeholder ?? false,
     ]),
   ]);
+}
+
+/** The click's cell, or the top-left cell of the merged range it falls in. */
+function selectionOf(
+  handle: WorkbookViewerHandle,
+  sheet: number,
+  cell: Cell
+): SheetSelection {
+  const merged = handle.mergedRanges(sheet, cellAddress(cell))[0];
+  if (!merged) return { cell, range: null };
+  const range = {
+    bottom: Math.max(merged.start.row, merged.end.row),
+    left: Math.min(merged.start.col, merged.end.col),
+    right: Math.max(merged.start.col, merged.end.col),
+    top: Math.min(merged.start.row, merged.end.row),
+  };
+  return { cell: { col: range.left, row: range.top }, range };
+}
+
+function cellAddress({ col, row }: Cell) {
+  let letters = '';
+  for (let n = col + 1; n > 0; n = Math.floor((n - 1) / 26))
+    letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+  return `${letters}${row + 1}`;
 }
 
 function toError(value: unknown) {

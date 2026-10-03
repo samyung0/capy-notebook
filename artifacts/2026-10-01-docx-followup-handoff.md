@@ -12,12 +12,14 @@ For the agent picking up the remaining BetterOffice DOCX items. It replaces the
   needs no maintenance window.
 - Landed 2026-10-03: the Performance track (`capy-ci` = `8a891c89`, Capy
   commit "Land the DOCX performance track").
-- In flight on local fork branches (not pushed): the 2026-10-03 header
-  redesign (`capy/office-header`, `capy/xlsx-toolbar`, `capy/pptx-toolbar`;
-  decisions are the 2026-10-03 lines in `human/frontend/office-files.md`, mock
-  at `artifacts/2026-10-03-office-header-mocks.html`) and DOCX keyboard
-  copy/cut (`capy/docx-clipboard`). Each rebases onto the current `capy-ci`
-  before landing.
+- Landed 2026-10-03: the Office header batch (`capy-ci` = `dd87c75e`, Capy
+  commit "Land the Office header batch"): the two-row Google-style header and
+  menu bar (protocol v7, Radix Menubar), Plate-style popovers for DOCX, XLSX
+  and PPTX, PPTX speaker notes hidden by default, DOCX keyboard copy/cut with
+  copy-only cuts for content plain text can't carry, and clipboard permission
+  for the Office iframes. Decisions are the 2026-10-03 lines in
+  `human/frontend/office-files.md`; screenshots in
+  `artifacts/2026-10-03-office-header/` and `artifacts/2026-10-02-pptx-toolbar/`.
 - Capy ships the engine's CJK faces (`c254fcee`), loaded on demand. Before
   that, CJK text overlapped in view mode and vanished in edit mode. Check CJK
   files (`e2e/fixtures/files/rich-content/exchange-plan.docx`) in both modes
@@ -82,6 +84,12 @@ Also done: Backspace and Delete step over an invisible field marker (2026-10-02,
   paragraph's end shows after the field in the editor while the save puts it
   inside the result.
 - DOCX Insert/Update table of contents, as its own engine track.
+- Header menus and toolbars per pause state (handoff, replaced, recovery,
+  connecting, discarding): editing items are disabled for now; a case-by-case
+  standard is a later task (e.g. Select all is greyed although it only selects).
+- DOCX view mode: a selectable text layer over the drawn pages, for copy.
+- PPTX presenter view showing speaker notes while presenting.
+- PPTX lists and indent (engine), XLSX view-mode zoom.
 - The six DOCX table-menu items (vertical alignment, table alignment, header
   row, distribute columns, auto-fit, no-wrap), as a later engine task.
 

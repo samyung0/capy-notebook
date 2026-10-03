@@ -1,11 +1,10 @@
-import { useContext, useEffect } from 'react';
+import { useEffect } from 'react';
 import type { ViewableFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { FileModeControl } from './FileModeControl';
 import { FileError, FileUnavailable, SourceBanners } from './FileStates';
-import { FileHeaderTarget, useReportEditorStatus } from './fileModeContext';
+import { useReportEditorStatus } from './fileModeContext';
+import { OfficeHeader } from './OfficeMenuBar';
 import type { OfficeCitation } from './officeProtocol';
 import { useOfficeRuntime } from './useOfficeRuntime';
 import { sourceHeaderStatus } from './useSourceSession';
@@ -23,7 +22,6 @@ export default function DocxView({
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
 }) {
-  const headerTarget = useContext(FileHeaderTarget);
   const runtime = useOfficeRuntime({
     canEdit,
     citation,
@@ -91,46 +89,23 @@ export default function DocxView({
         readOnly={runtime.readOnly}
         replaced={runtime.replaced}
       />
-      {/* In edit mode the editor's toolbar row takes this row's place, as the
-          PDF toolbar does, so the page stays put; the mode control portals
-          into the file header. */}
-      <div
-        className={cn(
-          'flex min-h-10 items-center gap-2 border-line border-b px-2',
-          runtime.mode === 'edit' && headerTarget && 'hidden'
-        )}
-      >
-        <span className="t-meta flex-1 text-fg-muted">
-          {/* Only the viewer counts pages: an open editor shows no count. */}
-          {runtime.ready
+      <OfficeHeader
+        canEdit={canEdit}
+        label={
+          runtime.ready
             ? runtime.mode === 'view' &&
               runtime.analysis?.format === 'docx' &&
               m.files_office_page_count({ count: runtime.analysis.pageCount })
-            : m.files_office_opening_document()}
-        </span>
-        <FileModeControl
-          canEdit={canEdit}
-          disabled={
-            runtime.mode === 'view'
-              ? !runtime.analysis
-              : !runtime.ready ||
-                runtime.saving ||
-                runtime.handoff ||
-                runtime.replaced
-          }
-          mode={runtime.mode}
-          onChange={runtime.setRuntimeMode}
-          onSave={() => {
-            void runtime.save().catch(() => {});
-          }}
-          saveDisabled={!runtime.ready || runtime.handoff || runtime.replaced}
-        />
-      </div>
+            : m.files_office_opening_document()
+        }
+        runtime={runtime}
+      />
       <div className="relative min-h-0 flex-1">
         {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />
         )}
         <iframe
+          allow={runtime.iframeAllow}
           className="h-full w-full border-0"
           key={runtime.iframeKey}
           ref={runtime.iframeRef}

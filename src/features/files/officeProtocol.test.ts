@@ -64,8 +64,9 @@ describe('office host protocol', () => {
     ).toBe(true);
   });
 
-  it("accepts only Capy's own styles and themes, with the narrow flag", () => {
+  it("accepts only Capy's own styles, themes and locales, with the narrow flag", () => {
     const message = {
+      locale: 'zh',
       narrow: false,
       style: 'classroom',
       theme: 'mocha',
@@ -77,6 +78,114 @@ describe('office host protocol', () => {
     expect(isOfficeHostMessage({ ...message, theme: 'dark' })).toBe(false);
     expect(isOfficeHostMessage({ ...message, style: undefined })).toBe(false);
     expect(isOfficeHostMessage({ ...message, narrow: undefined })).toBe(false);
+    expect(isOfficeHostMessage({ ...message, locale: 'zh-CN' })).toBe(false);
+  });
+
+  it('carries menu clicks, picked files and render requests to the runtime', () => {
+    const version = OFFICE_PROTOCOL_VERSION;
+    const accepted = [
+      { id: 'zoom:125', type: 'menu-command', version },
+      { id: 'insert-table', type: 'menu-command', value: '3x4', version },
+      {
+        bytes: new ArrayBuffer(4),
+        id: 'insert-image',
+        mimeType: 'image/png',
+        name: 'cell.png',
+        type: 'menu-file',
+        version,
+      },
+      { id: 'r1', kind: 'print', type: 'render', version },
+      { id: 'r2', kind: 'png', type: 'render', version },
+    ];
+    for (const message of accepted)
+      expect(isOfficeHostMessage(message)).toBe(true);
+    expect(
+      isOfficeHostMessage({ id: 'r3', kind: 'pdf', type: 'render', version })
+    ).toBe(false);
+    expect(
+      isOfficeHostMessage({ id: 'x', type: 'menu-command', value: 3, version })
+    ).toBe(false);
+  });
+
+  it('accepts menus only in the shape the header draws', () => {
+    const menus = (items: unknown[], actions: unknown[] = []) => ({
+      actions,
+      menus: [{ id: 'file', items, label: 'File' }],
+      revision: 1,
+      type: 'menus',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    const download = {
+      icon: 'download',
+      id: 'download',
+      items: [{ id: 'capy.download', kind: 'item', label: 'Word document' }],
+      kind: 'submenu',
+      label: 'Download',
+    };
+    expect(
+      isOfficeRuntimeMessage(
+        menus(
+          [
+            { id: 'capy.save', kind: 'item', label: 'Save', shortcut: '⌘S' },
+            { kind: 'separator' },
+            download,
+            { checked: true, id: 'show-outline', kind: 'item', label: 'X' },
+            { id: 'insert-image', kind: 'item', label: 'Image', pick: 'image' },
+            { id: 'insert-table', kind: 'grid' },
+          ],
+          [{ icon: 'presentation', id: 'view.present', label: 'Present' }]
+        )
+      )
+    ).toBe(true);
+    const nested = (depth: number): unknown =>
+      depth
+        ? {
+            id: `d${depth}`,
+            items: [nested(depth - 1)],
+            kind: 'submenu',
+            label: 'Deeper',
+          }
+        : { id: 'leaf', kind: 'item', label: 'Leaf' };
+    for (const bad of [
+      [{ icon: 'not-an-icon', id: 'a', kind: 'item', label: 'A' }],
+      [{ id: 'a', kind: 'item', label: 'A', pick: 'pdf' }],
+      [{ id: 'a', kind: 'item', label: '' }],
+      [nested(4)],
+    ])
+      expect(isOfficeRuntimeMessage(menus(bad))).toBe(false);
+    expect(
+      isOfficeRuntimeMessage(
+        menus([], [{ icon: 'not-an-icon', id: 'p', label: 'Present' }])
+      )
+    ).toBe(false);
+  });
+
+  it('accepts rendered pages as PNG bytes with their size', () => {
+    const rendered = (pages: unknown[]) => ({
+      id: 'r1',
+      pages,
+      revision: 1,
+      truncated: false,
+      type: 'rendered',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    const page = { bytes: new ArrayBuffer(8), height: 1056, width: 816 };
+    expect(isOfficeRuntimeMessage(rendered([page, page]))).toBe(true);
+    expect(isOfficeRuntimeMessage(rendered([{ ...page, width: -1 }]))).toBe(
+      false
+    );
+    expect(isOfficeRuntimeMessage(rendered([{ ...page, bytes: 'png' }]))).toBe(
+      false
+    );
+    // A failed render is its own reply, not the runtime's error.
+    expect(
+      isOfficeRuntimeMessage({
+        id: 'r1',
+        revision: 1,
+        type: 'render-failed',
+        version: OFFICE_PROTOCOL_VERSION,
+      })
+    ).toBe(true);
   });
 
   it('tells a runtime from another protocol version apart from a malformed message', () => {

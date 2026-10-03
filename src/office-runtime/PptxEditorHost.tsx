@@ -1,12 +1,24 @@
-import { PptxEditor, type PptxEditorApi } from '@betteroffice/pptx-react';
+import {
+  type PptxCommandState,
+  PptxEditor,
+  type PptxEditorApi,
+} from '@betteroffice/pptx-react';
 import { useEffect, useRef, useState } from 'react';
+import type { OfficeLocale } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import type {
   OfficeCollaboration,
   OfficeExporter,
   OfficeFlusher,
 } from './officeCollaboration';
+import { editorMenus, splitCommand } from './pptxEditorMenus';
 import { loadPptxFonts } from './pptxFonts';
+import { pptxIcons } from './pptxIcons';
+import { pptxStrings, presentAction } from './pptxMenus';
+import { renderSlides } from './pptxRender';
+import { readSpeakerNotes, writeSpeakerNotes } from './pptxSpeakerNotes';
+import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import './pptx-runtime.css';
 
 export function PptxEditorHost({
   bytes,
@@ -14,8 +26,12 @@ export function PptxEditorHost({
   onExporter,
   onFlusher,
   fileName,
+  locale,
+  narrow,
   onError,
+  onMenus,
   onPendingChange,
+  onRenderer,
   onSave,
 }: {
   bytes: Uint8Array;
@@ -23,11 +39,62 @@ export function PptxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   fileName: string;
+  locale: OfficeLocale;
+  /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
+  narrow: boolean;
   onError: (error: Error) => void;
+  onMenus: OfficeMenuReporter;
   onPendingChange: (pending: boolean) => void;
+  onRenderer: (renderer: OfficeRenderer | null) => void;
   onSave: () => void;
 }) {
   const apiRef = useRef<PptxEditorApi | null>(null);
+  const [commandState, setCommandState] = useState<PptxCommandState | null>(
+    null
+  );
+  // Read once: the editor only takes it as its starting state.
+  const [speakerNotes] = useState(() => readSpeakerNotes());
+  // The header's menus and Present run the editor's commands; Insert › Image
+  // arrives with the file Capy's picker chose.
+  useEffect(() => {
+    if (!commandState) return;
+    onMenus({
+      actions: [presentAction(locale)],
+      menus: editorMenus(commandState, locale),
+      run: (id, _value, file) => {
+        const api = apiRef.current;
+        if (!api) return;
+        if (file) {
+          if (id === 'insert.image')
+            void file
+              .arrayBuffer()
+              .then((buffer) =>
+                api.insertImage(new Uint8Array(buffer), file.name)
+              )
+              // The editor reports its own insert failures.
+              .catch(() => {});
+          return;
+        }
+        api.runCommand(...splitCommand(id));
+      },
+    });
+  }, [commandState, locale, onMenus]);
+  useEffect(() => () => onMenus(null), [onMenus]);
+  // Capy prints the slides and saves the PNG: the sandboxed frame can do neither.
+  useEffect(() => {
+    onRenderer(async (kind) => {
+      const api = apiRef.current;
+      if (!(api && commandState)) throw new Error('Editor is still loading');
+      const count = api.handle.snapshot().slides.length;
+      return renderSlides(
+        api.handle,
+        kind === 'png'
+          ? [commandState.slideIndex]
+          : Array.from({ length: count }, (_, index) => index)
+      );
+    });
+    return () => onRenderer(null);
+  }, [commandState, onRenderer]);
   useEffect(() => {
     onExporter(async () => {
       const api = apiRef.current;
@@ -96,9 +163,13 @@ export function PptxEditorHost({
       <PptxEditor
         className="office-editor-host"
         collaboration={collaboration}
+        defaultSpeakerNotes={speakerNotes}
         file={bytes}
         fileName={fileName}
         fonts={fonts}
+        i18n={pptxStrings(locale)}
+        icons={pptxIcons}
+        onCommandState={setCommandState}
         onError={onError}
         onPendingChange={onPendingChange}
         onReady={(api) => {
@@ -108,6 +179,14 @@ export function PptxEditorHost({
         onSaveRequest={() => {
           onSave();
         }}
+        onSpeakerNotesChange={(visible) => writeSpeakerNotes(visible)}
+        // Present is a header action and Capy has no PPTX agent proposals.
+        showFontPicker={!narrow}
+        showFontSizePicker={!narrow}
+        showPresentButton={false}
+        showProposals={false}
+        showZoomControl={!narrow}
+        singleRowToolbar
       />
     </div>
   );

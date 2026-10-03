@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { sanitize } from './evidence';
 import { api, fileRow, object, string } from './files';
+import { saveOffice } from './office';
 import type { UatRun } from './runtime';
 
 /** UAT's COLLABORATION_UAT_PUBLICATION_HOLD holds a file named with it. */
@@ -113,7 +114,7 @@ export async function editTocLink(page: Page, frame: FrameLocator) {
     );
   }
   await input.pressSequentially('Z');
-  await page.getByRole('button', { exact: true, name: 'Save' }).click();
+  await saveOffice(page);
   return { published: 'IntroZduction' };
 }
 

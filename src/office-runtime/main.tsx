@@ -15,11 +15,12 @@ import {
   type OfficeCitation,
   type OfficeFormat,
   type OfficeHostMessage,
+  type OfficeLocale,
   type OfficeMode,
   type OfficeRuntimePayload,
 } from '@/features/files/officeProtocol';
 import { parentOriginFromRuntimeUrl } from '@/features/files/officeRuntimeConfig';
-import { m } from '@/i18n';
+import { m, setLocale } from '@/i18n';
 import { THEMES } from '@/theme/theme';
 import { exportCheckpoint } from './exportCheckpoint';
 import type {
@@ -27,6 +28,12 @@ import type {
   OfficeFlusher,
   OfficeReplica,
 } from './officeCollaboration';
+import {
+  type OfficeMenuSource,
+  type OfficeRenderer,
+  pausedMenus,
+  runsWhilePaused,
+} from './runtimeMenus';
 import '../../vendor/betteroffice/packages/docx-react/dist/styles.css';
 // After docx-react's styles: its variables are overridden with Capy's.
 import './office-runtime.css';
@@ -74,6 +81,9 @@ function OfficeRuntime() {
   const [mode, setMode] = useState<OfficeMode>('view');
   const [dark, setDark] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [locale, setLocaleState] = useState<OfficeLocale>('en');
+  const menuSourceRef = useRef<OfficeMenuSource | null>(null);
+  const rendererRef = useRef<OfficeRenderer | null>(null);
   const revisionRef = useRef<number | null>(null);
   const epochRef = useRef<number | null>(null);
   const replicaRef = useRef<OfficeReplica | null>(null);
@@ -131,23 +141,66 @@ function OfficeRuntime() {
   const reportExporter = useCallback((exporter: OfficeExporter | null) => {
     exporterRef.current = exporter;
   }, []);
-  const reportReplica = useCallback((replica: OfficeReplica | null) => {
-    unsubscribeRef.current?.();
-    replicaRef.current = replica;
-    if (!replica) return;
-    for (const update of pendingUpdates.current.splice(0))
-      replica.applyUpdate(update);
-    const revision = revisionRef.current,
-      epoch = epochRef.current;
-    if (revision === null || epoch === null) return;
-    unsubscribeRef.current = replica.onUpdate((update, origin) => {
-      if (origin !== 'local') return;
-      const bytes = update.slice().buffer;
-      post({ bytes, epoch, revision, type: 'update' }, [bytes]);
-    });
-    const bytes = replica.encodeStateAsUpdate().slice().buffer;
-    post({ bytes, epoch, revision, type: 'collaboration-ready' }, [bytes]);
+  const reportRenderer = useCallback((renderer: OfficeRenderer | null) => {
+    rendererRef.current = renderer;
   }, []);
+  // Editors re-report their menus as selection state changes: the host gets
+  // the latest once things settle, and only when it differs.
+  const menusSent = useRef('');
+  const menusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // An editor's menus wait for its replica, as the old Save button did:
+  // anything in them (File › Save first) can then reach the room.
+  const sendMenus = useCallback(() => {
+    if (menusTimer.current) clearTimeout(menusTimer.current);
+    menusTimer.current = setTimeout(() => {
+      const revision = revisionRef.current;
+      const current = menuSourceRef.current;
+      if (
+        revision === null ||
+        (epochRef.current !== null && !replicaRef.current)
+      )
+        return;
+      const menus = current?.menus ?? [];
+      // A paused editor lists its editing items disabled (File › Save too).
+      const editing = epochRef.current !== null;
+      const payload = {
+        actions: current?.actions ?? [],
+        menus: editing && pausedRef.current ? pausedMenus(menus) : menus,
+      };
+      const text = JSON.stringify(payload);
+      if (text === menusSent.current) return;
+      menusSent.current = text;
+      post({ ...payload, revision, type: 'menus' });
+    }, 50);
+  }, []);
+  const reportMenus = useCallback(
+    (source: OfficeMenuSource | null) => {
+      menuSourceRef.current = source;
+      sendMenus();
+    },
+    [sendMenus]
+  );
+  const reportReplica = useCallback(
+    (replica: OfficeReplica | null) => {
+      unsubscribeRef.current?.();
+      replicaRef.current = replica;
+      if (!replica) return;
+      for (const update of pendingUpdates.current.splice(0))
+        replica.applyUpdate(update);
+      const revision = revisionRef.current,
+        epoch = epochRef.current;
+      if (revision === null || epoch === null) return;
+      unsubscribeRef.current = replica.onUpdate((update, origin) => {
+        if (origin !== 'local') return;
+        const bytes = update.slice().buffer;
+        post({ bytes, epoch, revision, type: 'update' }, [bytes]);
+      });
+      const bytes = replica.encodeStateAsUpdate().slice().buffer;
+      post({ bytes, epoch, revision, type: 'collaboration-ready' }, [bytes]);
+      sendMenus();
+    },
+    [sendMenus]
+  );
   const collaboration = useMemo(
     () =>
       file?.initialUpdate
@@ -194,10 +247,16 @@ function OfficeRuntime() {
         // Selects Capy's role tokens imported in office-runtime.css.
         document.documentElement.dataset.style = message.style;
         document.documentElement.dataset.theme = message.theme;
+        document.documentElement.lang = message.locale;
+        // The runtime's own copy and the editors' labels follow Capy's locale.
+        setLocale(message.locale, { reload: false });
+        setLocaleState(message.locale);
         setDark(
           THEMES.some((theme) => theme.value === message.theme && theme.isDark)
         );
         setNarrow(message.narrow);
+        // Below lg, for CSS that keeps clear of Capy's floating tools button.
+        document.documentElement.toggleAttribute('data-narrow', message.narrow);
         return;
       }
       if (message.type === 'load') {
@@ -235,8 +294,50 @@ function OfficeRuntime() {
         setCitation(message.citation);
         return;
       }
+      if (
+        (message.type === 'menu-command' || message.type === 'menu-file') &&
+        epochRef.current !== null &&
+        pausedRef.current &&
+        !runsWhilePaused(menuSourceRef.current, message.id)
+      )
+        return;
+      if (message.type === 'menu-command') {
+        menuSourceRef.current?.run(message.id, message.value);
+        return;
+      }
+      if (message.type === 'menu-file') {
+        const file = new File([message.bytes], message.name, {
+          type: message.mimeType,
+        });
+        menuSourceRef.current?.run(message.id, undefined, file);
+        return;
+      }
+      if (message.type === 'render' && revisionRef.current !== null) {
+        const revision = revisionRef.current;
+        // A failed print is its own reply: the document stays open and usable.
+        let rendered: Awaited<ReturnType<OfficeRenderer>>;
+        try {
+          const renderer = rendererRef.current;
+          if (!renderer) throw new Error('Nothing to render yet');
+          // As export: what is being typed reaches the pages first.
+          await flush();
+          rendered = await renderer(message.kind);
+        } catch {
+          post({ id: message.id, revision, type: 'render-failed' });
+          return;
+        }
+        const { pages, truncated } = Array.isArray(rendered)
+          ? { pages: rendered, truncated: false }
+          : rendered;
+        post(
+          { id: message.id, pages, revision, truncated, type: 'rendered' },
+          pages.map((page) => page.bytes)
+        );
+        return;
+      }
       if (message.type === 'set-capabilities') {
         pausedRef.current = !message.canEdit;
+        sendMenus();
         if (!message.canEdit) await flush();
         if (pausedRef.current !== !message.canEdit) return;
         if (hostRef.current) hostRef.current.inert = !message.canEdit;
@@ -339,6 +440,16 @@ function OfficeRuntime() {
     [runtimeRevision]
   );
 
+  // View mode downloads what it shows: the saved state it opened.
+  useEffect(() => {
+    if (mode !== 'view' || !file) return;
+    const bytes = file.bytes;
+    exporterRef.current = async () => bytes;
+    return () => {
+      exporterRef.current = null;
+    };
+  }, [file, mode]);
+
   if (!file)
     return (
       <div className="office-runtime-state">
@@ -413,11 +524,14 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               colorMode={dark ? 'dark' : 'light'}
+              locale={locale}
               narrow={narrow}
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
+              onMenus={reportMenus}
               onPendingChange={reportHostPending}
+              onRenderer={reportRenderer}
               onSave={save}
             />
           ) : file.format === 'xlsx' ? (
@@ -425,9 +539,13 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               fileName={file.fileName}
+              locale={locale}
+              narrow={narrow}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
+              onMenus={reportMenus}
               onPendingChange={reportHostPending}
+              onRenderer={reportRenderer}
               onSave={save}
             />
           ) : (
@@ -435,10 +553,14 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               fileName={file.fileName}
+              locale={locale}
+              narrow={narrow}
               onError={reportError}
               onExporter={reportExporter}
               onFlusher={reportFlusher}
+              onMenus={reportMenus}
               onPendingChange={reportHostPending}
+              onRenderer={reportRenderer}
               onSave={save}
             />
           )
@@ -446,22 +568,31 @@ function OfficeRuntime() {
           <DocxViewer
             bytes={file.bytes}
             citation={citation}
+            locale={locale}
             onAnalysis={reportAnalysis}
             onError={reportError}
+            onMenus={reportMenus}
+            onRenderer={reportRenderer}
           />
         ) : file.format === 'xlsx' ? (
           <XlsxViewer
             bytes={file.bytes}
             citation={citation}
+            locale={locale}
             onAnalysis={reportAnalysis}
             onError={reportError}
+            onMenus={reportMenus}
+            onRenderer={reportRenderer}
           />
         ) : (
           <PptxViewer
             bytes={file.bytes}
             citation={citation}
+            locale={locale}
             onAnalysis={reportAnalysis}
             onError={reportError}
+            onMenus={reportMenus}
+            onRenderer={reportRenderer}
           />
         )}
       </Suspense>

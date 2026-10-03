@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
 
 declare global {
   interface Window {
@@ -64,12 +65,19 @@ for (const [format, name] of [
     const mode = page.getByRole('button', { name: 'Material mode' });
     await mode.click();
     await expect(mode).toHaveAttribute('aria-pressed', 'true');
-    const save = page.getByRole('button', { exact: true, name: 'Save' });
-    await expect(save).toBeEnabled({ timeout: 30_000 });
-    await save.click();
+    await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+    // File › Save is a menuitem, a ticked row a menuitemcheckbox.
+    await saveOffice(page);
     await expect(
       page.getByRole('status').filter({ hasText: /^Saved$/ })
     ).toBeVisible();
+    if (format === 'docx') {
+      await officeMenu(page, 'View').click();
+      await expect(
+        page.getByRole('menuitemcheckbox', { name: 'Show comments' })
+      ).toBeVisible();
+      await page.keyboard.press('Escape');
+    }
     if (format === 'pptx') {
       await frame.locator('aside button').nth(2).click();
       const canvas = frame.getByTestId('pptx-slide-canvas');
@@ -96,7 +104,7 @@ for (const [format, name] of [
       });
       await cdp.send('Input.insertText', { text: '日本語' });
       await cdp.detach();
-      await save.click();
+      await saveOffice(page);
       await expect(
         page.getByRole('status').filter({ hasText: /^Saved$/ })
       ).toBeVisible();
@@ -137,7 +145,7 @@ for (const [format, name] of [
         timeout: 60_000,
       });
       await mode.click();
-      await expect(save).toBeEnabled({ timeout: 30_000 });
+      await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
       const input = frame.getByTestId('yrs-input');
       const paragraph = frame
         .getByRole('paragraph')
@@ -195,7 +203,7 @@ for (const [format, name] of [
             return event.defaultPrevented;
           });
         expect(await blocksUnload()).toBe(true);
-        await save.click();
+        await saveOffice(page);
         await expect
           .poll(() => runtime.evaluate(() => window.officeInputProbe.flushed))
           .toBe(true);
@@ -238,10 +246,14 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   const opened = sessions;
 
   // One column below lg, two columns at lg: both switch the surrounding layout.
-  for (const width of [900, 1280]) {
+  // Below lg an open Office file folds the workspace tools into one button.
+  for (const [width, tools] of [
+    [900, 'Workspace tools'],
+    [1280, 'Files'],
+  ] as const) {
     await page.setViewportSize({ height: 800, width });
     await expect(
-      page.getByRole('button', { name: 'Files' }).first()
+      page.getByRole('button', { name: tools }).first()
     ).toBeVisible();
     await expect(iframe).toHaveAttribute('data-layout-probe', 'kept');
   }
@@ -295,9 +307,8 @@ test('Office runtime that reloads while editing is paused stays inert', async ({
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 60_000,
   });
-  const save = page.getByRole('button', { exact: true, name: 'Save' });
-  await expect(save).toBeEnabled({ timeout: 30_000 });
-  await save.click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  await saveOffice(page);
   await expect(
     page.getByRole('status').filter({ hasText: /^Saved$/ })
   ).toBeVisible();
@@ -315,6 +326,45 @@ test('Office runtime that reloads while editing is paused stays inert', async ({
   await expect(page.getByText('A newer version of this file')).toBeVisible();
   await expect(host).toHaveJSProperty('inert', true);
 
+  // Paused, the menus keep editing items listed but disabled (File › Save
+  // too), Download stays usable, and the runtime ignores editing commands.
+  await officeMenu(page, 'File').click();
+  await expect(page.getByRole('menuitem', { name: /^Save/ })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  );
+  await expect(
+    page.getByRole('menuitem', { name: 'Download' })
+  ).not.toHaveAttribute('aria-disabled', 'true');
+  await page.keyboard.press('Escape');
+  await officeMenu(page, 'Insert').click();
+  await expect(page.getByRole('menuitem', { name: 'Break' })).toHaveAttribute(
+    'aria-disabled',
+    'true'
+  );
+  await page.keyboard.press('Escape');
+  const updates = await page.evaluate(async () => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[src*="office-runtime"]'
+    );
+    if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+    let count = 0;
+    const counter = (event: MessageEvent) => {
+      if (event.data?.type === 'update') count += 1;
+    };
+    window.addEventListener('message', counter);
+    const origin = new URL(iframe.src).origin;
+    for (let click = 0; click < 3; click += 1)
+      iframe.contentWindow.postMessage(
+        { id: 'insert-page-break', type: 'menu-command', version: 7 },
+        origin
+      );
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    window.removeEventListener('message', counter);
+    return count;
+  });
+  expect(updates).toBe(0);
+
   // The runtime document reloads by itself; its new load still pauses it.
   const runtime = page
     .frames()
@@ -330,4 +380,68 @@ test('Office runtime that reloads while editing is paused stays inert', async ({
     timeout: 60_000,
   });
   await expect(host).toHaveJSProperty('inert', true);
+});
+
+test('PPTX speaker notes start hidden, and one remembered toggle serves view and edit', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const viewNotes = frame.getByRole('note');
+  const notesButton = frame.getByTestId('pptx-notes-toggle');
+  const showNotes = page.getByRole('menuitemcheckbox', {
+    name: 'Show speaker notes',
+  });
+  const openView = async () => {
+    await officeMenu(page, 'View').click();
+    await expect(showNotes).toBeVisible();
+  };
+
+  // View mode: the Notes button and View › Show speaker notes flip one state.
+  await expect(notesButton).toBeVisible();
+  await expect(viewNotes).toHaveCount(0);
+  await notesButton.click();
+  await expect(viewNotes).toBeVisible();
+  await openView();
+  await expect(showNotes).toHaveAttribute('aria-checked', 'true');
+  await showNotes.click();
+  await expect(viewNotes).toHaveCount(0);
+  await expect(notesButton).toHaveAttribute('aria-pressed', 'false');
+  await openView();
+  await expect(showNotes).toHaveAttribute('aria-checked', 'false');
+  await showNotes.click();
+  await expect(viewNotes).toBeVisible();
+
+  // Below lg the floating tools button sits above the open notes box.
+  await page.setViewportSize({ height: 800, width: 390 });
+  const tools = page.getByRole('button', { name: 'Workspace tools' });
+  await expect(tools).toBeVisible();
+  await expect(async () => {
+    const toolsBox = await tools.boundingBox();
+    const notesBox = await viewNotes.boundingBox();
+    expect(toolsBox && notesBox).toBeTruthy();
+    if (toolsBox && notesBox)
+      expect(toolsBox.y + toolsBox.height).toBeLessThanOrEqual(notesBox.y);
+  }).toPass();
+  await page.setViewportSize({ height: 800, width: 1280 });
+
+  // Edit mode opens with the same choice, and hiding it there carries back.
+  const mode = page.getByRole('button', { name: 'Material mode' });
+  await mode.click();
+  await expect(officeEditMenu(page)).toBeVisible({ timeout: 30_000 });
+  const editNotes = frame.getByTestId('pptx-notes-textarea');
+  await expect(editNotes).toBeVisible();
+  await notesButton.click();
+  await expect(editNotes).toHaveCount(0);
+  await mode.click();
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(notesButton).toHaveAttribute('aria-pressed', 'false');
+  await expect(viewNotes).toHaveCount(0);
 });

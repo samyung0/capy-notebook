@@ -20,6 +20,8 @@ import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { FloatingToolbar } from '@/components/ui/BlockToolbar';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import {
   ResizableHandle,
@@ -29,6 +31,7 @@ import {
 import { Tabs } from '@/components/ui/Tabs';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { userToast } from '@/components/ui/userToast';
+import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
@@ -227,6 +230,30 @@ export default function WorkspaceOpen() {
     compact: layout === 'one',
     onOpenSettings: canShare ? () => setSettingsOpen(true) : undefined,
   };
+  // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
+  // pager) clear: the tools bar folds into one morphing button, as the Files
+  // panel's plus.
+  const openFile =
+    openItem?.kind === 'file'
+      ? files?.find((file) => file.id === openItem.id)
+      : undefined;
+  const officeOpen = !!openFile && !!officeFormatOf(openFile);
+  const toolItems: MenuItem[] = [
+    ...panelTabs.map((t) => ({
+      icon: TAB_ICON[t],
+      label: tabLabel(t),
+      onClick: () => showTab(t),
+    })),
+    ...(rowProps.onOpenSettings
+      ? [
+          {
+            icon: 'settings' as const,
+            label: m.workspace_settings_short(),
+            onClick: rowProps.onOpenSettings,
+          },
+        ]
+      : []),
+  ];
   const addProps = readOnly
     ? {}
     : {
@@ -449,7 +476,28 @@ export default function WorkspaceOpen() {
           >
             <div className="relative h-full">
               {viewer}
-              {layout === 'one' && (
+              {layout === 'one' && officeOpen && (
+                <div
+                  // Above an open PPTX notes box (PptxView's data-office-notes-open).
+                  className="absolute right-4 bottom-14 z-10 flex [:has([data-office-notes-open])>&]:bottom-28"
+                  data-workspace-tools-menu
+                >
+                  <Menu
+                    items={toolItems}
+                    trigger={
+                      <IconButton
+                        className="size-11 rounded-full p-2.5 text-solid-accent-1 active:scale-100"
+                        icon="panelRight"
+                        label={m.workspace_tools()}
+                        strokeWidth={2.2}
+                        variant="ghost-hover"
+                      />
+                    }
+                    variant="morph"
+                  />
+                </div>
+              )}
+              {layout === 'one' && !officeOpen && (
                 <FloatingToolbar
                   aria-label={m.workspace_tools()}
                   className="gap-1.5 rounded-full! px-2.5 py-1 sm:gap-0 sm:px-2"

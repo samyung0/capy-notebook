@@ -1,5 +1,6 @@
 import {
   analyzeOpenPresentation,
+  type CanvasImageResolver,
   initWasm,
   openPresentation,
   type PresentationAnalysis,
@@ -8,23 +9,44 @@ import {
   type SlideDisplayList,
   sizeCanvasForSlide,
 } from '@betteroffice/pptx/viewer';
+import { PresentationOverlay } from '@betteroffice/pptx-react/presentation';
+import {
+  ArrowLeft04Icon,
+  ArrowRight04Icon,
+  Note01Icon,
+} from '@hugeicons/core-free-icons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { OfficeCitation } from '@/features/files/officeProtocol';
+import { HugeIcon } from '@/components/ui/HugeIcon';
+import type {
+  OfficeCitation,
+  OfficeLocale,
+} from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
 import { loadPptxFonts } from './pptxFonts';
 import { PptxImageCache } from './pptxImageCache';
+import { pptxT, presentAction, viewerMenus } from './pptxMenus';
+import { renderSlides } from './pptxRender';
+import { readSpeakerNotes, writeSpeakerNotes } from './pptxSpeakerNotes';
+import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
+import './pptx-runtime.css';
 
 export function PptxViewer({
   bytes,
   citation,
+  locale,
   onAnalysis,
   onError,
+  onMenus,
+  onRenderer,
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
+  locale: OfficeLocale;
   onAnalysis: (analysis: PresentationAnalysis) => void;
   onError: (error: Error) => void;
+  onMenus: OfficeMenuReporter;
+  onRenderer: (renderer: OfficeRenderer | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -32,9 +54,54 @@ export function PptxViewer({
   const imagesRef = useRef(new PptxImageCache());
   const paintGenerationRef = useRef(0);
   const [slideIndex, setSlideIndex] = useState(0);
-  const [slideCount, setSlideCount] = useState(0);
-  const [frame, setFrame] = useState<SlideDisplayList | null>(null);
+  // Every slide, laid out at open as the editor's strip does; null while opening.
+  // ponytail: eager layout of the whole deck; lay thumbnails out on scroll if large decks open slowly.
+  const [slides, setSlides] = useState<
+    { frame: SlideDisplayList; notes: string }[] | null
+  >(null);
   const [stageSize, setStageSize] = useState({ height: 0, width: 0 });
+  const [presenting, setPresenting] = useState(false);
+  // The same remembered choice as edit mode; hidden by default.
+  const [speakerNotes, setSpeakerNotes] = useState(() => readSpeakerNotes());
+  const toggleSpeakerNotes = useCallback(() => {
+    setSpeakerNotes(!speakerNotes);
+    writeSpeakerNotes(!speakerNotes);
+  }, [speakerNotes]);
+  const slideCount = slides?.length ?? 0;
+  const slideIndexRef = useRef(slideIndex);
+  slideIndexRef.current = slideIndex;
+
+  // View mode offers what works here: Download, Print, Present and the notes.
+  useEffect(() => {
+    if (!slides) return;
+    const hasSlides = slides.length > 0;
+    onMenus({
+      actions: hasSlides ? [presentAction(locale)] : [],
+      menus: viewerMenus(locale, hasSlides, speakerNotes),
+      run: (id) => {
+        if (id === 'view.present' && hasSlides) setPresenting(true);
+        if (id === 'view.speakerNotes' && hasSlides) toggleSpeakerNotes();
+      },
+    });
+  }, [locale, onMenus, slides, speakerNotes, toggleSpeakerNotes]);
+  useEffect(() => () => onMenus(null), [onMenus]);
+
+  // Capy prints the slides and saves the PNG: the sandboxed frame can do neither.
+  useEffect(() => {
+    if (!slides) return;
+    onRenderer(async (kind) => {
+      const handle = handleRef.current;
+      if (!handle) throw new Error('The presentation is not open');
+      return renderSlides(
+        handle,
+        kind === 'png'
+          ? [slideIndexRef.current]
+          : slides.map((_, index) => index)
+      );
+    });
+    return () => onRenderer(null);
+  }, [onRenderer, slides]);
+  const frame = slides?.[slideIndex]?.frame ?? null;
   const accessibleItems = useMemo(
     () => (frame ? slideA11yItems(frame) : []),
     [frame]
@@ -43,9 +110,8 @@ export function PptxViewer({
   useEffect(() => {
     let disposed = false;
     let handle: PresentationViewerHandle | null = null;
-    setSlideCount(0);
+    setSlides(null);
     setSlideIndex(0);
-    setFrame(null);
     void Promise.all([initWasm(), loadPptxFonts()]).then(
       ([, fonts]) => {
         if (disposed) return;
@@ -53,9 +119,13 @@ export function PptxViewer({
           handle = openPresentation(bytes, { fonts });
           handleRef.current = handle;
           const analysis = analyzeOpenPresentation(handle);
-          setSlideCount(analysis.slideCount);
-          setSlideIndex(0);
-          setFrame(analysis.slideCount > 0 ? handle.layoutSlide(0) : null);
+          const open = handle;
+          setSlides(
+            open.snapshot().slides.map((slide, index) => ({
+              frame: open.layoutSlide(index),
+              notes: slide.notes ?? '',
+            }))
+          );
           onAnalysis(analysis);
         } catch (value) {
           onError(toError(value));
@@ -91,26 +161,22 @@ export function PptxViewer({
   } | null>(null);
   useEffect(() => {
     setHighlight(null);
-    const handle = handleRef.current;
-    if (!handle || !citation || slideCount === 0) return;
-    // ponytail: bounded scan of native text boxes; large decks open unhighlighted.
-    if (slideCount > 200) return;
+    if (!citation || !slides?.length) return;
     try {
-      const items = Array.from({ length: slideCount }, (_, slide) =>
-        slideCitationItems(handle.layoutSlide(slide)).map((item) => ({
+      const items = slides.flatMap((slide, index) =>
+        slideCitationItems(slide.frame).map((item) => ({
           ...item,
-          slide,
+          slide: index,
         }))
-      ).flat();
+      );
       const match = uniqueCitation(items, citation.quote);
       if (!match?.rects.length) return;
       setHighlight(match);
       setSlideIndex(match.slide);
-      setFrame(handle.layoutSlide(match.slide));
     } catch {
       /* Best-effort navigation must not fail the viewer. */
     }
-  }, [citation, slideCount, bytes]);
+  }, [citation, slides]);
 
   const resolveImage = useCallback((assetId: string) => {
     const cached = imagesRef.current.get(assetId);
@@ -128,6 +194,7 @@ export function PptxViewer({
     const canvas = canvasRef.current;
     if (!canvas || !frame || stageSize.height === 0 || stageSize.width === 0)
       return;
+    // The editor's fit zoom (pptx-react fitScale), so the slide matches it.
     const scale = Math.min(
       (stageSize.width - 40) / frame.width,
       (stageSize.height - 40) / frame.height,
@@ -165,92 +232,193 @@ export function PptxViewer({
   }, [frame, onError, resolveImage, stageSize, highlight, slideIndex]);
 
   const selectSlide = (next: number) => {
-    const handle = handleRef.current;
-    if (!handle || next < 0 || next >= slideCount) return;
-    try {
-      setSlideIndex(next);
-      setFrame(handle.layoutSlide(next));
-    } catch (value) {
-      onError(toError(value));
-    }
+    if (next >= 0 && next < slideCount) setSlideIndex(next);
   };
 
   return (
-    <div className="pptx-runtime">
-      <div className="pptx-stage" ref={stageRef}>
-        {frame ? (
-          <>
-            <div aria-hidden="true" className="pptx-canvas-layer">
-              <canvas ref={canvasRef} />
+    <div className="pptx-viewer">
+      <div className="pptx-viewer-workspace">
+        {slides && slideCount > 0 && (
+          <aside
+            aria-label={m.files_office_slide_count({ count: slideCount })}
+            className="pptx-viewer-strip"
+          >
+            <div className="pptx-viewer-slides">
+              {slides.map((slide, index) => (
+                <button
+                  aria-current={index === slideIndex ? 'page' : undefined}
+                  className="pptx-viewer-slide"
+                  key={index}
+                  onClick={() => selectSlide(index)}
+                  type="button"
+                >
+                  <span className="pptx-viewer-slide-number">{index + 1}</span>
+                  <span
+                    aria-hidden="true"
+                    className="pptx-viewer-slide-preview"
+                    style={{
+                      aspectRatio: `${slide.frame.width} / ${slide.frame.height}`,
+                    }}
+                  >
+                    <SlideThumbnail
+                      frame={slide.frame}
+                      resolveImage={resolveImage}
+                    />
+                  </span>
+                </button>
+              ))}
             </div>
-            <div
-              aria-label={m.files_office_slide_content({
-                current: slideIndex + 1,
-                total: slideCount,
-              })}
-              className="office-a11y-only"
-              role="region"
-            >
-              {accessibleItems.length > 0 ? (
-                accessibleItems.map((item, index) => {
-                  const key = `${item.kind}:${index}:${item.text}`;
-                  if (item.kind === 'chart') {
-                    return (
-                      <div
-                        aria-label={m.files_office_slide_chart({
-                          label: item.text,
-                        })}
-                        key={key}
-                        role="img"
-                      />
-                    );
-                  }
-                  return (
-                    <p key={key}>
-                      {item.kind === 'placeholder'
-                        ? m.files_office_slide_placeholder({
-                            label: item.text,
-                          })
-                        : item.text}
-                    </p>
-                  );
-                })
-              ) : (
-                <p>{m.files_office_slide_no_accessible_content()}</p>
-              )}
+            <div className="pptx-viewer-pager">
+              <button
+                aria-label={m.files_office_previous_slide()}
+                disabled={slideIndex === 0}
+                onClick={() => selectSlide(slideIndex - 1)}
+                title={m.files_office_previous_slide()}
+                type="button"
+              >
+                <HugeIcon icon={ArrowLeft04Icon} size={16} />
+              </button>
+              <span aria-atomic="true" aria-live="polite" role="status">
+                {m.files_office_slide_position({
+                  current: slideIndex + 1,
+                  total: slideCount,
+                })}
+              </span>
+              <button
+                aria-label={m.files_office_next_slide()}
+                data-testid="pptx-next-slide"
+                disabled={slideIndex === slideCount - 1}
+                onClick={() => selectSlide(slideIndex + 1)}
+                title={m.files_office_next_slide()}
+                type="button"
+              >
+                <HugeIcon icon={ArrowRight04Icon} size={16} />
+              </button>
             </div>
-          </>
-        ) : (
-          <p>{m.files_office_no_slides()}</p>
+          </aside>
         )}
-      </div>
-      {slideCount > 0 && (
-        <div className="pptx-controls">
-          <button
-            disabled={slideIndex === 0}
-            onClick={() => selectSlide(slideIndex - 1)}
-            type="button"
-          >
-            {m.files_office_previous_slide()}
-          </button>
-          <span aria-atomic="true" aria-live="polite" role="status">
-            {m.files_office_slide_position({
-              current: slideIndex + 1,
-              total: slideCount,
-            })}
-          </span>
-          <button
-            data-testid="pptx-next-slide"
-            disabled={slideIndex === slideCount - 1}
-            onClick={() => selectSlide(slideIndex + 1)}
-            type="button"
-          >
-            {m.files_office_next_slide()}
-          </button>
+        <div className="pptx-viewer-stage" ref={stageRef}>
+          {frame ? (
+            <>
+              <div aria-hidden="true">
+                <canvas ref={canvasRef} />
+              </div>
+              <div
+                aria-label={m.files_office_slide_content({
+                  current: slideIndex + 1,
+                  total: slideCount,
+                })}
+                className="office-a11y-only"
+                role="region"
+              >
+                {accessibleItems.length > 0 ? (
+                  accessibleItems.map((item, index) => {
+                    const key = `${item.kind}:${index}:${item.text}`;
+                    if (item.kind === 'chart') {
+                      return (
+                        <div
+                          aria-label={m.files_office_slide_chart({
+                            label: item.text,
+                          })}
+                          key={key}
+                          role="img"
+                        />
+                      );
+                    }
+                    return (
+                      <p key={key}>
+                        {item.kind === 'placeholder'
+                          ? m.files_office_slide_placeholder({
+                              label: item.text,
+                            })
+                          : item.text}
+                      </p>
+                    );
+                  })
+                ) : (
+                  <p>{m.files_office_slide_no_accessible_content()}</p>
+                )}
+              </div>
+            </>
+          ) : (
+            slides && <p>{m.files_office_no_slides()}</p>
+          )}
+          {slides && slideCount > 0 && (
+            // As the editor's Notes button (pptx-react's pptx-notes-toggle).
+            <button
+              aria-label={pptxT(locale)('notes.toggle')}
+              aria-pressed={speakerNotes}
+              className="pptx-viewer-notes-toggle"
+              data-testid="pptx-notes-toggle"
+              onClick={toggleSpeakerNotes}
+              title={pptxT(locale)('notes.toggle')}
+              type="button"
+            >
+              <HugeIcon icon={Note01Icon} size={16} />
+              <span>{pptxT(locale)('notes.toggle')}</span>
+            </button>
+          )}
         </div>
+      </div>
+      {slides && slideCount > 0 && speakerNotes && (
+        <div className="pptx-viewer-notes">
+          <span className="pptx-viewer-notes-label" id="pptx-viewer-notes">
+            {m.files_office_speaker_notes()}
+          </span>
+          <div
+            aria-labelledby="pptx-viewer-notes"
+            className="pptx-viewer-notes-text"
+            role="note"
+          >
+            {slides[slideIndex]?.notes}
+          </div>
+        </div>
+      )}
+      {presenting && handleRef.current && slideCount > 0 && (
+        <PresentationOverlay
+          counterLabel={(current, total) =>
+            pptxT(locale)('presentation.slideCounter', { current, total })
+          }
+          exitLabel={pptxT(locale)('presentation.exit')}
+          handle={handleRef.current}
+          label={pptxT(locale)('presentation.label')}
+          nextLabel={pptxT(locale)('presentation.nextSlide')}
+          onError={(value) => onError(toError(value))}
+          onExit={() => setPresenting(false)}
+          previousLabel={pptxT(locale)('presentation.previousSlide')}
+          resolveImage={resolveImage}
+          slideCount={slideCount}
+          startIndex={slideIndex}
+        />
       )}
     </div>
   );
+}
+
+/** pptx-react's SlideThumbnail, painted at the strip's 126px width. */
+function SlideThumbnail({
+  frame,
+  resolveImage,
+}: {
+  frame: SlideDisplayList;
+  resolveImage: CanvasImageResolver;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    const scale = 126 / frame.width;
+    const dpr = window.devicePixelRatio || 1;
+    sizeCanvasForSlide(canvas, frame, dpr, scale);
+    // Fills its frame, which is narrower in the narrow layout.
+    canvas.style.width = '100%';
+    canvas.style.height = 'auto';
+    void paintSlide(context, frame, dpr, scale, { resolveImage }).catch(
+      () => undefined
+    );
+  }, [frame, resolveImage]);
+  return <canvas ref={canvasRef} />;
 }
 
 type SlideA11yItem = {
