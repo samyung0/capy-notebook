@@ -51,6 +51,9 @@ export function FloatingBlockToolbar({
         )}
         contentEditable={false}
         data-slot="popover-content"
+        // Pair with `collisionBoundary` so it hides with its block when that
+        // scrolls out of a clipped area.
+        hideWhenDetached
         inert={!open}
         onOpenAutoFocus={(event) => event.preventDefault()}
         side="bottom"

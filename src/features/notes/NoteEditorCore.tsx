@@ -59,6 +59,7 @@ import {
 } from './documentStats';
 import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorStatus } from './editorMode';
+import { EditorScrollAreaContext } from './editorScrollArea';
 import { FloatingToolbar } from './FloatingToolbar';
 import { noteComponents } from './nodeComponents';
 import { useNoteEditorPrefs } from './noteEditorPrefs';
@@ -369,6 +370,7 @@ export function NoteEditorCore({
       parseMaterialDocument(material.content)?.value ??
       ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue)
   );
+  const [scrollArea, setScrollArea] = useState<HTMLDivElement | null>(null);
   // Seeded from the last projection so the footer has numbers before the first
   // checkpoint receipt; the service owns every value after that.
   const [documentStats, setDocumentStats] = useState<MaterialDocumentStats>(
@@ -821,7 +823,7 @@ export function NoteEditorCore({
             discussions={discussions}
           >
             <NoteToolbar />
-            <div className="min-h-0 flex-1 overflow-auto">
+            <div className="min-h-0 flex-1 overflow-auto" ref={setScrollArea}>
               <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
                 {/* The room replaces the projection copy the moment it syncs,
                  * so painting that copy first renders the whole document
@@ -833,10 +835,12 @@ export function NoteEditorCore({
                   <FileLoading message={m.editor_connecting()} />
                 ) : (
                   <>
-                    <NoteEditorContent
-                      discussions={discussions}
-                      shouldShowStats={shouldShowDocumentStats(documentStats)}
-                    />
+                    <EditorScrollAreaContext.Provider value={scrollArea}>
+                      <NoteEditorContent
+                        discussions={discussions}
+                        shouldShowStats={shouldShowDocumentStats(documentStats)}
+                      />
+                    </EditorScrollAreaContext.Provider>
                     <DocumentStatsFooter
                       limitError={documentLimitError}
                       stats={documentStats}

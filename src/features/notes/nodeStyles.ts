@@ -84,6 +84,8 @@ export const FLASHCARD_CLASS =
   'grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-start gap-3 rounded-card border border-line bg-surface p-3 text-sm';
 export const FLASHCARD_FRONT_CLASS = 'font-medium text-fg';
 export const FLASHCARD_BACK_CLASS = 'text-fg-secondary';
+/** Images, embeds and diagrams stop at the half-width column in full-width notes. */
+export const MEDIA_MAX_WIDTH_CLASS = 'mx-auto max-w-3xl';
 export const MEDIA_CAPTION_CLASS =
   'mx-auto mt-2 block max-w-full text-center text-fg-muted text-sm';
 export const MERMAID_CAPTION_CLASS = 'mt-2 text-center text-sm text-fg-muted';

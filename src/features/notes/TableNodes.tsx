@@ -29,6 +29,7 @@ import { Popover, PopoverAnchor } from '@/components/ui/Popover';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useEditorScrollArea } from './editorScrollArea';
 import { FloatingActionButton } from './nodeComponents';
 import {
   TABLE_CLASS,
@@ -115,11 +116,16 @@ function TableFloatingToolbar({ children }: { children: React.ReactElement }) {
     []
   );
   const open = focused && (collapsedInside || selectedCellCount > 1);
+  const scrollArea = useEditorScrollArea();
 
   return (
     <Popover modal={false} open={open}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
-      <FloatingBlockToolbar className="empty:hidden" open={open}>
+      <FloatingBlockToolbar
+        className="empty:hidden"
+        collisionBoundary={scrollArea}
+        open={open}
+      >
         <TableFloatingToolbarContent multiCell={selectedCellCount > 1} />
       </FloatingBlockToolbar>
     </Popover>

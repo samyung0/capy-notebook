@@ -92,7 +92,7 @@ export function MediaFrame({
   return (
     <div
       className={cn(
-        'group/media relative mx-auto max-w-full',
+        'group/media relative mx-auto max-w-[min(100%,var(--container-3xl))]',
         current === undefined && (fill ? 'w-full' : 'w-fit'),
         dragWidth &&
           'rounded-card outline-2 outline-solid-accent-1 outline-offset-2'

@@ -36,6 +36,7 @@ import {
   LI_CLASS,
   LINK_CLASS,
   MEDIA_CAPTION_CLASS,
+  MEDIA_MAX_WIDTH_CLASS,
   MENTION_CLASS,
   MERMAID_CAPTION_CLASS,
   OL_CLASS,
@@ -420,7 +421,10 @@ function MaterialRefElement(props: SlateElementProps) {
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   return (
-    <SlateElement {...props} className="my-3 border border-transparent">
+    <SlateElement
+      {...props}
+      className={cn('my-3 border border-transparent', MEDIA_MAX_WIDTH_CLASS)}
+    >
       <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
       <Mermaid code={element.source} theme={element.theme} />
       {props.children}
@@ -431,7 +435,10 @@ function MermaidElement(props: SlateElementProps) {
 function QuestionFigure(props: SlateElementProps) {
   const element = props.element as unknown as QuestionFigureElement;
   return (
-    <SlateElement {...props} className="my-3 border border-transparent">
+    <SlateElement
+      {...props}
+      className={cn('my-3 border border-transparent', MEDIA_MAX_WIDTH_CLASS)}
+    >
       <QuestionBlockView block={element.block} />
     </SlateElement>
   );

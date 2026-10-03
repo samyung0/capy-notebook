@@ -18,6 +18,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { setColumnLayout } from './columnLayout';
+import { useEditorScrollArea } from './editorScrollArea';
 import { FloatingActionButton } from './nodeComponents';
 import { COLUMN_CLASS, COLUMN_GROUP_CLASS } from './nodeStyles';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
@@ -45,11 +46,12 @@ function ColumnFloatingToolbar({ children }: { children: React.ReactElement }) {
   );
   const isFocusedLast = useFocusedLast();
   const open = isFocusedLast && !readOnly && selected && isCollapsed;
+  const scrollArea = useEditorScrollArea();
 
   return (
     <Popover modal={false} open={open}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
-      <FloatingBlockToolbar open={open}>
+      <FloatingBlockToolbar collisionBoundary={scrollArea} open={open}>
         <ColumnFloatingToolbarContent />
       </FloatingBlockToolbar>
     </Popover>

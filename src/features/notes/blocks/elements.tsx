@@ -60,10 +60,12 @@ import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { uid } from '@/lib/id';
+import { useEditorScrollArea } from '../editorScrollArea';
 import {
   FLASHCARD_BACK_CLASS,
   FLASHCARD_CLASS,
   FLASHCARD_FRONT_CLASS,
+  MEDIA_MAX_WIDTH_CLASS,
   MERMAID_CAPTION_CLASS,
   QUIZ_REVIEW_QUESTION_CLASS,
   STUDY_BLOCK_LIST_CLASS,
@@ -506,12 +508,15 @@ function EmbedShell({
   props,
   onEdit,
   tools,
+  media = false,
   children,
 }: {
   props: PlateElementProps;
   onEdit: () => void;
   /** Block-specific controls placed before edit, copy and delete. */
   tools?: React.ReactNode;
+  /** Diagrams and charts share the media width cap. */
+  media?: boolean;
   children: React.ReactNode;
 }) {
   const editor = useEditorRef();
@@ -522,6 +527,7 @@ function EmbedShell({
     []
   );
   const active = selected && collapsed && !readOnly;
+  const scrollArea = useEditorScrollArea();
   const locate = () => editor.api.findPath(props.element);
   async function copy() {
     const at = locate();
@@ -543,6 +549,7 @@ function EmbedShell({
   }
   const className = cn(
     'relative my-4 rounded-md border border-transparent p-2',
+    media && MEDIA_MAX_WIDTH_CLASS,
     active && 'border-action-accent ring-2 ring-action-accent/20'
   );
   const body = (
@@ -598,7 +605,11 @@ function EmbedShell({
           {spacer}
         </PlateElement>
       </PopoverAnchor>
-      <FloatingBlockToolbar aria-label={m.editor_study_actions()} open={active}>
+      <FloatingBlockToolbar
+        aria-label={m.editor_study_actions()}
+        collisionBoundary={scrollArea}
+        open={active}
+      >
         {tools}
         {actions}
       </FloatingBlockToolbar>
@@ -617,7 +628,7 @@ export function VisualBlockElement(props: PlateElementProps) {
     });
   }
   return (
-    <EmbedShell onEdit={edit} props={props}>
+    <EmbedShell media onEdit={edit} props={props}>
       <QuestionBlockView block={element.block} />
     </EmbedShell>
   );
@@ -676,6 +687,7 @@ export function MermaidElement(props: PlateElementProps) {
   return (
     <>
       <EmbedShell
+        media
         onEdit={() => setEditing(true)}
         props={props}
         tools={
