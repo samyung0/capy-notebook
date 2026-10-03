@@ -10,11 +10,16 @@ const apiUrl = process.env.E2E_API_URL!;
 const collaborationUrl = `http://127.0.0.1:${process.env.E2E_COLLABORATION_PORT}`;
 const secret = process.env.E2E_AUTH_SECRET!;
 const composeProject = process.env.E2E_COMPOSE_PROJECT!;
+// Extra compose files layered on the stack (the collaboration stress test).
+const composeFiles = [
+  composeFile,
+  ...(process.env.E2E_COMPOSE_OVERRIDES?.split(',').filter(Boolean) ?? []),
+].flatMap((file) => ['-f', file]);
 
 function compose(args: string[]) {
   const result = spawnSync(
     'docker',
-    ['compose', '-f', composeFile, '-p', composeProject, ...args],
+    ['compose', ...composeFiles, '-p', composeProject, ...args],
     {
       cwd: root,
       encoding: 'utf8',
@@ -51,8 +56,7 @@ function applySeed() {
     'docker',
     [
       'compose',
-      '-f',
-      composeFile,
+      ...composeFiles,
       '-p',
       composeProject,
       'exec',

@@ -1,0 +1,46 @@
+# Layered on deploy/docker-compose.e2e.yml by stress.ts (E2E_COMPOSE_OVERRIDES).
+# The e2e stack's memory blob store hands out memory:// URLs, which the
+# collaboration service cannot fetch, so an Office room cannot load there.
+# This points the server's B2 client at fake-s3.mjs, run in the collaboration
+# image so the stack needs no extra image. The server only accepts
+# https://*.backblazeb2.com endpoints, so the fake answers under such a name
+# inside the network, with a throwaway certificate stress.ts creates
+# (STRESS_TLS_DIR) that the server and the collaboration service trust.
+services:
+  s3:
+    image: capy-e2e-collaboration:local
+    command: ["node", "/stress/fake-s3.mjs"]
+    volumes:
+      - ${STRESS_FAKE_S3:?set by stress.ts}:/stress/fake-s3.mjs:ro
+      - ${STRESS_TLS_DIR:?set by stress.ts}:/stress/tls:ro
+    networks:
+      default:
+        aliases:
+          - s3.stress.backblazeb2.com
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9000/capy"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  server:
+    environment:
+      BLOB_BACKEND: b2
+      B2_ENDPOINT: https://s3.stress.backblazeb2.com:9443
+      B2_REGION: us-west-000
+      B2_BUCKET: capy
+      B2_KEY_ID: stress
+      B2_APP_KEY: stress
+      B2_FORCE_PATH_STYLE: "true"
+      SSL_CERT_FILE: /stress/tls/cert.pem
+    volumes:
+      - ${STRESS_TLS_DIR:?set by stress.ts}:/stress/tls:ro
+    depends_on:
+      s3:
+        condition: service_healthy
+
+  collaboration:
+    environment:
+      NODE_EXTRA_CA_CERTS: /stress/tls/cert.pem
+    volumes:
+      - ${STRESS_TLS_DIR:?set by stress.ts}:/stress/tls:ro

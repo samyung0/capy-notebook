@@ -93,6 +93,7 @@ changing any of them.
 
 | Family          | Measures                                                                         | Runs in CI |
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
+| `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`) | Yes, manual |
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
 | `bench/parsers` | Ingest-host parser accuracy, OCR modes, concurrency, worker memory and OOM        | No, VM     |
 | `bench/grading` | Small local models against the production quiz-grading rubric, native and browser | No         |

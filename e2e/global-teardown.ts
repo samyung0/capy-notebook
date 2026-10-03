@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const composeFile = path.join(root, 'deploy', 'docker-compose.e2e.yml');
 const composeProject = process.env.E2E_COMPOSE_PROJECT!;
+const composeFiles = [
+  composeFile,
+  ...(process.env.E2E_COMPOSE_OVERRIDES?.split(',').filter(Boolean) ?? []),
+].flatMap((file) => ['-f', file]);
 
 export default async function globalTeardown() {
   if (
@@ -17,8 +21,7 @@ export default async function globalTeardown() {
     'docker',
     [
       'compose',
-      '-f',
-      composeFile,
+      ...composeFiles,
       '-p',
       composeProject,
       'down',

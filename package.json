@@ -173,6 +173,7 @@
     "review:validate-scanners": "node --test scripts/review/validate-strix-run.test.mjs scripts/review/validate-codex-scan.test.mjs",
     "bench:editor": "playwright test --config=bench/editor/scripts/playwright.perf.config.ts",
     "bench:office": "playwright test --config=bench/editor/scripts/playwright.office.config.ts",
+    "bench:stress": "tsx bench/collaboration/scripts/stress.ts",
     "chaos:peers": "pnpm --filter @capy-notebook/collaboration chaos --",
     "check": "ultracite check && pnpm run typecheck",
     "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml -python-slots ../pipeline/pipeline/generated/slot.py -python-limits ../pipeline/pipeline/generated/limits.py -typescript-limits ../src/api/limits.generated.ts -collaboration-limits ../collaboration/src/questionLimits.generated.ts -agent-tools ../pipeline/pipeline/generated/agent_tools.json",

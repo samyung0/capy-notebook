@@ -1,6 +1,6 @@
-# Every performance benchmark that runs on GitHub, dispatched by hand.
-# Production promotion calls this file for the editor budgets (job `perf`);
-# the Office runtime bench runs on dispatch only until it has CI budgets.
+# Performance and stress tests, dispatched by hand. Production promotion
+# calls this file for the editor budgets (job `perf`); the Office runtime
+# bench and the collaboration stress test run on dispatch only.
 name: Performance
 
 on:
@@ -8,6 +8,10 @@ on:
     inputs:
       office:
         description: Also run the Office runtime bench
+        default: true
+        type: boolean
+      stress:
+        description: Also run the collaboration stress test
         default: true
         type: boolean
   workflow_call:
@@ -18,6 +22,10 @@ on:
         type: string
       office:
         description: Also run the Office runtime bench
+        default: false
+        type: boolean
+      stress:
+        description: Also run the collaboration stress test
         default: false
         type: boolean
 
@@ -162,4 +170,67 @@ jobs:
           path: |
             bench/editor/.results/office/
             test-results/
+          retention-days: 90
+
+  stress:
+    if: inputs.stress
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+          submodules: recursive
+      # The e2e_stack job's images and layer cache (ci.yml).
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: collaboration/Dockerfile
+          tags: capy-e2e-collaboration:local
+          load: true
+          cache-from: type=gha,scope=e2e-collaboration
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          tags: capy-e2e-server:local
+          load: true
+          cache-from: type=gha,scope=e2e-server
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      # Exit 2 is a missed latency budget alone; the next step reports it.
+      - name: Run collaboration stress test
+        run: pnpm bench:stress || [ $? -eq 2 ]
+        env:
+          E2E_PREBUILT_IMAGES: "true"
+          STRESS_OUT: bench/collaboration/.results
+      # Provisional until three runs here recalibrate it: shown, not failing.
+      - name: Check the provisional latency budget
+        continue-on-error: true
+        run: |
+          node -e '
+            const r = require("./bench/collaboration/.results/stress.json");
+            const slow = r.rooms.filter((room) => room.latencyP95Ms > r.budgetP95Ms);
+            for (const room of slow) console.log(`::warning::${room.room} p95 ${room.latencyP95Ms} ms > ${r.budgetP95Ms} ms`);
+            process.exit(slow.length ? 1 : 0);
+          '
+      - name: Write stress results
+        if: always()
+        run: |
+          if [ -f bench/collaboration/.results/stress.json ]; then
+            { echo '### Collaboration stress'; echo '```json'; cat bench/collaboration/.results/stress.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload stress results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: collaboration-stress-results
+          path: bench/collaboration/.results/
           retention-days: 90

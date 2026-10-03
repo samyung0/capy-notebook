@@ -39,8 +39,10 @@ deltas.
 [`bench/editor/scripts/docx.office.ts`](../bench/editor/scripts/docx.office.ts)
 runs against a production build ([`playwright.office.config.ts`](../bench/editor/scripts/playwright.office.config.ts)
 builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
-with the runtime on `127.0.0.1` against the app's `localhost`, so the iframe is
-cross-origin as in production). The build takes a few minutes. Per DOCX fixture
+with the runtime on the next port of `localhost`: another origin on the same
+site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
+and shares the app's renderer process as in production). The build takes a few
+minutes. Per DOCX fixture
 (15 and 62 pages) it reports:
 
 - open to first paint: the file click to the runtime's `ready`, on the host's
@@ -53,10 +55,39 @@ cross-origin as in production). The build takes a few minutes. Per DOCX fixture
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. It fails on unpainted keys, a worker fallback, or a missed
 budget (`BUDGET` in the spec: open, View to Edit, key p50 and p90 per fixture).
-The budgets are provisional, ~1.3x the median of three laptop runs; a fourth
-run at load 24 missed four of the eight, so treat a local miss as noise.
+The budgets are provisional, ~1.3x the median of three laptop runs at load 7
+to 10; an earlier set from runs at load 16 to 24 sat 20 to 50% higher, so a
+local miss on a busy machine is noise.
 Recalibrate them from three runs of the `office` job below, as the editor
 budgets were.
+
+## Collaboration stress (`pnpm bench:stress`)
+
+[`bench/collaboration/scripts/stress.ts`](../bench/collaboration/scripts/stress.ts)
+starts the e2e Docker stack through `e2e/global-setup.ts` with
+[`docker-compose.stress.yml`](../bench/collaboration/scripts/docker-compose.stress.yml)
+layered on (`E2E_COMPOSE_OVERRIDES`). That overlay replaces the memory blob
+store, whose `memory://` URLs the collaboration service cannot fetch, with
+[`fake-s3.mjs`](../bench/collaboration/scripts/fake-s3.mjs) in the collaboration
+image, served over TLS under a `*.backblazeb2.com` name the server accepts with
+a throwaway certificate. The owner uploads `exchange-plan.docx` and creates a
+Plate note, then `STRESS_PEERS` peers (20) per room, with API tokens, type
+unique markers for `STRESS_MINUTES` (3), about one per `STRESS_EDIT_MS`
+(1500); each drops offline for 1 to 5 s at `STRESS_DROP_PER_SECOND` (0.02) and
+keeps typing, sending on reconnect. A watching peer that never drops times
+each marker typed online. Then:
+
+- every peer and a late joiner hold the same text (convergence);
+- every typed marker is there exactly once (no lost or doubled update);
+- the collaboration service logged no error;
+- p95 marker latency within `STRESS_P95_BUDGET_MS`, provisional 50 ms
+  (~1.3x the slower room's median of three runs at load 6 to 8: Office 29,
+  Plate 37 ms).
+
+A failed check exits 1, a missed budget alone exits 2. Under heavy load
+(load 34) a run logged a projection deadlock (`40P01`), a store statement
+timeout and a source access 500, with p95 over 40 s: worth a look on the CI
+runner before the budget is trusted.
 
 ## GitHub Actions
 
@@ -66,7 +97,7 @@ dispatch and by `workflow_call` from `promote-production.yml`, which passes the
 candidate SHA as `revision`. Pin is `ubuntu-24.04`. Typical wall time is 15 to
 25 minutes.
 
-It has two jobs. `perf` is the editor suite below; production promotion's
+It has three jobs. `perf` is the editor suite below; production promotion's
 `editor_perf` job calls the file and `deploy_production` needs it, so these
 budgets gate promotion (check name `editor_perf / perf`).
 `scripts/review/validate-review-boundaries.mjs` fails CI if promotion stops
@@ -76,6 +107,12 @@ runs `pnpm bench:office` on dispatch only (input `office`, default true; a
 budgets are provisional, has `continue-on-error`: a miss shows on the job, the
 run stays green, and the run's editor snapshot still counts as a baseline. Its
 results go to the job summary and the `office-perf-results` artifact.
+`stress` runs `pnpm bench:stress` (below) on dispatch only (input `stress`,
+false on `workflow_call`) against the `e2e_stack` images, built from the same
+GitHub Actions layer cache; a failed check fails the job, while a missed
+latency budget (exit 2) only fails the `continue-on-error` budget step. Its
+`stress.json` goes to the summary and the `collaboration-stress-results`
+artifact.
 
 Steps of the `perf` job:
 

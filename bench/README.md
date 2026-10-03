@@ -1,8 +1,9 @@
 # Benchmarks
 
 Every performance, capacity, and model-quality measurement in the repository.
-Only the editor suite runs in CI; the rest are manual, and most need a VM or a
-downloaded model runtime.
+Only the editor and collaboration suites run in CI (the `Performance` workflow,
+dispatched by hand); the rest are manual, and most need a VM or a downloaded
+model runtime.
 
 Each family uses the same three buckets:
 
@@ -19,6 +20,7 @@ Raw run artifacts sit in a sibling `YYYY-MM-DD-<machine>/` directory.
 
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX open, View to Edit and typing in the Office runtime | `pnpm bench:editor`, `pnpm bench:office` |
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
@@ -44,6 +46,22 @@ fails on unpainted keys, a fallback to the main-thread engine, or a missed
 provisional budget (from three laptop runs). It runs as the `office` job of the same
 `Performance` workflow, on dispatch only, without failing the run until its
 budgets are recalibrated there.
+
+### collaboration
+
+`collaboration/scripts/stress.ts` starts the e2e Docker stack through
+`e2e/global-setup.ts` (collaboration, server, Postgres, Redis) with
+`docker-compose.stress.yml` layered on: the e2e stack's memory blob store gives
+the collaboration service `memory://` URLs it cannot fetch, so a fake S3
+(`fake-s3.mjs`, run in the collaboration image, TLS under a `*.backblazeb2.com`
+name the server accepts) holds the uploaded DOCX. STRESS_PEERS peers (20) type
+markers into an Office room (`exchange-plan.docx`) and a Plate note for
+STRESS_MINUTES (3), each dropping offline for 1-5 s now and then and typing on.
+It fails when the peers and a late joiner do not converge, a typed marker is
+missing or duplicated, or the collaboration service logs an error (exit 1),
+and reports a missed provisional p95 latency budget with exit 2. The
+`Performance` workflow's `stress` job runs it on dispatch only. Results land in
+the gitignored `collaboration/.results/`.
 
 ### parsers
 
@@ -245,7 +263,8 @@ Narrative and current position: [HANDOFF-rag.md](../HANDOFF-rag.md).
 
 ## Not benchmarks
 
-`collaboration/` has a peer-churn chaos driver (`pnpm chaos:peers`) and
+`collaboration/` has a peer-churn chaos driver (`pnpm chaos:peers`, an open-ended
+dev harness against a live room; the bounded test is `bench/collaboration`) and
 `pipeline/scripts/certify_agentic_loop_model.py` records and replays one
 provider's agentic loop. Both are correctness harnesses, not measurements, and
 stay where they are.
