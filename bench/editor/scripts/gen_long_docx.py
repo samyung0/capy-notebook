@@ -236,15 +236,22 @@ ct = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 root_rels = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{R}/officeDocument" Target="word/document.xml"/></Relationships>"""
 
-with zipfile.ZipFile(src) as source, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-    z.writestr("[Content_Types].xml", ct)
-    z.writestr("_rels/.rels", root_rels)
-    z.writestr("word/_rels/document.xml.rels", rels)
-    z.writestr("word/document.xml", document)
-    z.writestr("word/styles.xml", styles)
-    z.writestr("word/numbering.xml", numbering)
-    z.writestr("word/header1.xml", header)
-    z.writestr("word/footer1.xml", footer)
+def put(z, name, data):
+    # A fixed timestamp keeps the output byte-identical run to run.
+    info = zipfile.ZipInfo(name, date_time=(2026, 10, 2, 0, 0, 0))
+    info.compress_type = zipfile.ZIP_DEFLATED
+    z.writestr(info, data)
+
+
+with zipfile.ZipFile(src) as source, zipfile.ZipFile(out, "w") as z:
+    put(z, "[Content_Types].xml", ct)
+    put(z, "_rels/.rels", root_rels)
+    put(z, "word/_rels/document.xml.rels", rels)
+    put(z, "word/document.xml", document)
+    put(z, "word/styles.xml", styles)
+    put(z, "word/numbering.xml", numbering)
+    put(z, "word/header1.xml", header)
+    put(z, "word/footer1.xml", footer)
     for i in (1, 2, 3):
-        z.writestr(f"word/media/image{i}.png", source.read(f"word/media/image{i}.png"))
+        put(z, f"word/media/image{i}.png", source.read(f"word/media/image{i}.png"))
 print(out, len(body), "blocks", len(toc_entries), "headings")

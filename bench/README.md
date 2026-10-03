@@ -34,13 +34,14 @@ Results land in the gitignored `editor/.results/`, so this family has no
 committed reports.
 
 `pnpm bench:office` is the Office runtime's spec (`editor/scripts/docx.office.ts`):
-a production build with MSW, the runtime on a second origin, and two DOCX
+a production build with MSW, the runtime on a second port of `localhost` (another
+origin on the same site, as in production), and two DOCX
 fixtures, the 15-page `exchange-plan.docx` and the generated 62-page
 `editor/fixtures/office/long-handbook.docx` (`editor/scripts/gen_long_docx.py`;
 its checkpoint comes from `scripts/dev/seed-scenario-office.ts`). It reports
-open to first paint, View to Edit ready and keystroke to painted frame against
-provisional budgets (from three laptop runs), and fails on unpainted keys or a
-fallback to the main-thread engine. It runs as the `office` job of the same
+open to first paint, View to Edit ready and keystroke to painted frame, and
+fails on unpainted keys, a fallback to the main-thread engine, or a missed
+provisional budget (from three laptop runs). It runs as the `office` job of the same
 `Performance` workflow, on dispatch only, without failing the run until its
 budgets are recalibrated there.
 

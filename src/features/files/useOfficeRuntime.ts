@@ -632,6 +632,8 @@ export function useOfficeRuntime({
       initializedFrame.current = -1;
       setFrameLoaded(false);
       setFrameGeneration((value) => value + 1);
+      // The new frame reports its own: an edit frame's ready also sets one.
+      setAnalysis(null);
       setMode(next);
       return true;
     },
