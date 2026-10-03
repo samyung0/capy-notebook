@@ -191,7 +191,7 @@ export function MermaidSwatch({
   return (
     <span
       className={cn(
-        'grid size-4 shrink-0 place-items-center rounded-sm ring-1 ring-black/15',
+        'grid size-4 shrink-0 place-items-center rounded-sm ring-1 ring-fg/40',
         className
       )}
       style={{ background: panel }}

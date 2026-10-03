@@ -150,8 +150,9 @@ export function MediaAssetView({
           <img
             alt={element.name || asset.name}
             className={cn(
-              'max-h-full max-w-full rounded-card object-contain',
-              fill && 'size-full'
+              'max-h-full max-w-full rounded-card',
+              // No intrinsic size: take the height, width from the viewBox.
+              fill && 'h-full w-auto'
             )}
             src={asset.url}
           />

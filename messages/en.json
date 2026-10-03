@@ -836,6 +836,7 @@
   "material_mode": "Material mode",
   "material_zoom_out": "Zoom out",
   "material_zoom_in": "Zoom in",
+  "media_zoom_reset": "Reset zoom",
   "material_heavy_title": "This note is large",
   "material_heavy_body": "{title} is {size} across {count} blocks. Editing it may be slow on this device.",
   "material_open_readonly": "Open read-only",

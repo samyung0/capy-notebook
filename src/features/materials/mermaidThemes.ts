@@ -41,5 +41,6 @@ export const MERMAID_THEME_SWATCH: Record<
   handDrawn: ['#fffef9', '#ffffff', '#1a1a1a'],
   kawaii: ['#fff5f8', '#ffe9f5', '#ff9ec7'],
   linearDark: ['#09090b', '#18181b', '#27272a'],
-  linearLight: ['#ffffff', '#ffffff', '#e5e5e5'],
+  // Darker than the theme's #e5e5e5 node border so the swatch reads at 16px.
+  linearLight: ['#ffffff', '#ffffff', '#a1a1aa'],
 };

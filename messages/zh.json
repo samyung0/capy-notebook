@@ -836,6 +836,7 @@
   "material_mode": "材料模式",
   "material_zoom_out": "缩小",
   "material_zoom_in": "放大",
+  "media_zoom_reset": "重置缩放",
   "material_heavy_title": "这篇笔记较大",
   "material_heavy_body": "{title} 大小为 {size}，共 {count} 个块。在此设备上编辑可能会较慢。",
   "material_open_readonly": "以只读打开",

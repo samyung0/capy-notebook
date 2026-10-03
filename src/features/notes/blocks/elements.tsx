@@ -653,12 +653,17 @@ function MermaidThemeMenu({
   return (
     <Popover modal={false} onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        {/* Swatch only: the hover toolbar keeps square buttons. */}
+        {/* `!`: the media toolbar squares every button; this one has a label. */}
         <ToolbarButton
-          label={`${m.mermaid_theme()}: ${MERMAID_THEME_LABEL[theme]()}`}
+          className="w-auto! px-1.5 text-sm"
+          dropdown
+          label={m.mermaid_theme()}
           tooltipSide="top"
         >
           <MermaidSwatch theme={theme} />
+          <span className="translate-y-px pl-1">
+            {MERMAID_THEME_LABEL[theme]()}
+          </span>
         </ToolbarButton>
       </PopoverTrigger>
       <ToolbarPopoverContent align="end" className="w-46" open={open}>

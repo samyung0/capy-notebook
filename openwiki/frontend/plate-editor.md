@@ -216,7 +216,9 @@ that shows on hover, and in edit mode two side handles that resize the block
 symmetrically and store `width` as a percentage string (`"62%"`). Frames stop at
 48rem wide and images and diagrams at `min(70vh, 48rem)` tall. Clicking an image
 or diagram opens `MediaPreview`, a full-screen view on a dark backdrop with the
-name above and the caption below, in every editor mode. Exports scale a
+name above and the caption below, in every editor mode. It zooms to 8× with the
+wheel, pinch, double-click and header buttons (`react-zoom-pan-pinch`), pans on
+drag, and closes on a still click outside the media. Exports scale a
 percentage against the 560px image cap. In edit mode the image toolbar adds a
 caption (Plate `CaptionPlugin`; the field focuses in place and an empty one hides
 on blur), open in new tab and replace; replace keeps the node id, width and
@@ -284,7 +286,7 @@ after rendering. Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
 `FontFace` before the render, since mermaid measures labels while drawing; a
 failed font load draws in the fallback font. In edit mode the hover toolbar has
-theme (a swatch), caption, edit, copy and delete. A resized diagram stretches
+theme, caption, edit, copy and delete. A resized diagram stretches
 past its natural width. The
 caption is typed in a field under the diagram that rewrites the
 `mermaid_caption` text with `voids: true`. The node stays void, so a DOM

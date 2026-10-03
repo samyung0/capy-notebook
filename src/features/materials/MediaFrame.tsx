@@ -56,6 +56,8 @@ export function MediaFrame({
       aria-hidden
       className={cn(
         'absolute top-1/2 z-10 h-12 w-1.5 -translate-y-1/2 cursor-ew-resize touch-none rounded-full border border-black/35 bg-white/95 opacity-0 shadow-sm transition-opacity group-hover/media:opacity-100',
+        // The bar stays thin; this widens what the pointer can grab.
+        "before:absolute before:-inset-x-3 before:-inset-y-4 before:content-['']",
         side === 'left' ? 'left-2' : 'right-2',
         dragWidth &&
           'border-solid-accent-1 opacity-100 ring-3 ring-solid-accent-1/35'
