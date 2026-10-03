@@ -343,6 +343,8 @@ export function useOfficeRuntime({
     post,
   ]);
 
+  // After the load above, and again whenever the runtime document boots: the
+  // load carries the raw canEdit, and this narrows it to the session's pauses.
   useEffect(() => {
     if (frameLoaded)
       post({
@@ -360,6 +362,7 @@ export function useOfficeRuntime({
       });
   }, [
     canEdit,
+    frameBoot,
     frameLoaded,
     mode,
     source.doc,

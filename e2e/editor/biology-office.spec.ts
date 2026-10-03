@@ -283,3 +283,51 @@ test("Office runtime keeps Capy's theme after reloading and asks for a page relo
   await expect(page.getByText('An update is ready')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Reload' })).toBeVisible();
 });
+
+test('Office runtime that reloads while editing is paused stays inert', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  // The runtime's own host; the editor's hosts nest inside it.
+  const host = frame.locator('.office-editor-host').first();
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const save = page.getByRole('button', { exact: true, name: 'Save' });
+  await expect(save).toBeEnabled({ timeout: 30_000 });
+  await save.click();
+  await expect(
+    page.getByRole('status').filter({ hasText: /^Saved$/ })
+  ).toBeVisible();
+  await expect(host).toHaveJSProperty('inert', false);
+
+  // A newer version is published while the saved editor is open: the session
+  // is replaced and the runtime pauses under the reload banner.
+  await page.evaluate(async () => {
+    const modulePath = '/src/mocks/collaboration.ts';
+    const { announceSourceEpoch } = (await import(
+      modulePath
+    )) as typeof import('../../src/mocks/collaboration');
+    announceSourceEpoch('bio-office-docx', 2);
+  });
+  await expect(page.getByText('A newer version of this file')).toBeVisible();
+  await expect(host).toHaveJSProperty('inert', true);
+
+  // The runtime document reloads by itself; its new load still pauses it.
+  const runtime = page
+    .frames()
+    .find((candidate) => candidate.url().includes('office-runtime'));
+  if (!runtime) throw new Error('Missing Office runtime');
+  const reloaded = page.waitForEvent(
+    'framenavigated',
+    (navigated) => navigated === runtime
+  );
+  await runtime.evaluate(() => setTimeout(() => location.reload()));
+  await reloaded;
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect(host).toHaveJSProperty('inert', true);
+});

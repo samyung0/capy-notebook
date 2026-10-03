@@ -507,7 +507,10 @@ and take relative colour syntax (`from var(--token) h s l`); on Chrome and Edge
 Capy's tokens directly. The host sends `set-appearance` (`style`, `theme`,
 `narrow` below lg) before `load`, on every change and again after every runtime
 boot; the runtime sets `data-style`/`data-theme` on its root, passes
-`colorMode` to `DocxEditor` and hides the narrow controls. Pages stay white in
+`colorMode` to `DocxEditor` and hides the narrow controls. `set-capabilities`
+also follows every boot, after the boot's `load` (which carries the raw
+`canEdit`), so a runtime that reloads during a handoff, a replacement,
+recovery, a discard or while connecting stays inert. Pages stay white in
 dark themes, as PDF pages do. The chrome uses Capy's Fustat (latin 400, 500
 and 600 from `@fontsource/fustat` 5.3.0, self-hosted in
 `src/office-runtime/fonts/` because the runtime's CSP allows no font host; the
